@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 enum ReaderQuickPageTurnOption: String, CaseIterable, Identifiable, Hashable {
     case slide
+    case cover
     case curl
     case fastFade
     case scroll
@@ -13,6 +14,7 @@ enum ReaderQuickPageTurnOption: String, CaseIterable, Identifiable, Hashable {
     var titleKey: String {
         switch self {
         case .slide: return "Slide"
+        case .cover: return "覆蓋翻頁"
         case .curl: return "Curl"
         case .fastFade: return "Fast Fade"
         case .scroll: return "Scroll"
@@ -22,6 +24,7 @@ enum ReaderQuickPageTurnOption: String, CaseIterable, Identifiable, Hashable {
     var iconName: String {
         switch self {
         case .slide: return "arrow.left.square"
+        case .cover: return "square.on.square"
         case .curl: return "doc"
         case .fastFade: return "bolt.square"
         case .scroll: return "doc.plaintext"

@@ -32,7 +32,10 @@ struct CoreTextScrollOnlineCacheTests {
         await engine.start(initialChapter: 1, contentWidth: 320)
 
         #expect(requestedChapters == [0])
-        #expect(engine.chapterRanges[0] == nil)
+        // An uncached chapter now occupies its slot with a 載入中 placeholder instead of
+        // contributing nothing, so it has a range but not its body.
+        #expect(engine.chapterRanges[0] != nil)
+        #expect(!renderedText(in: engine).contains("Previous chapter body"))
         #expect(engine.chapterRanges[1] != nil)
 
         builder.cachedChapters[0] = "Previous chapter body"
@@ -41,6 +44,35 @@ struct CoreTextScrollOnlineCacheTests {
         #expect(didRetry)
         #expect(engine.chapterRanges[0] != nil)
         #expect(engine.chunks.first?.chapterIndex == 0)
+        #expect(renderedText(in: engine).contains("Previous chapter body"))
+    }
+
+    @Test("arriving chapter content takes its placeholder's slot instead of an end")
+    func arrivingChapterReplacesPlaceholderInPlace() async throws {
+        // Both chapters start uncached, so both are appended as placeholders in order.
+        // Chapter 0 was first requested with `prepend == false`; re-deriving head/tail
+        // from that flag appended its body *after* chapter 1's placeholder, which is how
+        // the reader ended up showing chapter 2 above chapter 1.
+        let builder = MutableOnlineLikeBuilder(chapterCount: 2)
+        let engine = CoreTextScrollEngine(
+            builder: builder,
+            renderSettings: makeSettings()
+        )
+
+        await engine.start(initialChapter: 0, contentWidth: 320)
+
+        #expect(engine.chunks.first?.chapterIndex == 0)
+        #expect(engine.chunks.last?.chapterIndex == 1)
+
+        builder.cachedChapters[0] = "First chapter body"
+        let didRetry = await engine.retryChapterIfNeeded(0)
+
+        #expect(didRetry)
+        let firstRange = try #require(engine.chapterRanges[0])
+        let secondRange = try #require(engine.chapterRanges[1])
+        #expect(firstRange.upperBound <= secondRange.lowerBound)
+        #expect(engine.chunks.first?.chapterIndex == 0)
+        #expect(renderedText(in: engine).contains("First chapter body"))
     }
 
     @Test("refreshing a loaded scroll chapter replaces its rendered content")

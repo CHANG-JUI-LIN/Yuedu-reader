@@ -661,6 +661,13 @@ struct ReaderView: View {
         return ok
     }
 
+    /// Raises or hides the reader chrome. Loading surfaces route their taps here so a
+    /// chapter that never arrives is not a dead end: the toolbar is the only way to
+    /// refresh, change source, or leave, and without it the reader had to be force-quit.
+    func toggleReaderChrome() {
+        withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
+    }
+
     var currentChapterOverlayState: ReaderChapterOverlayState {
         guard book?.onlineChapters?.isEmpty == false else { return .hidden }
         return ReaderChapterPresentation.overlayState(
@@ -1309,6 +1316,8 @@ struct ReaderView: View {
                     ProgressView(localized("載入中…"))
                     Spacer()
                 }
+                .frame(maxWidth: .infinity)
+                .readerLoadingChromeTap { toggleReaderChrome() }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else if usesFixedLayoutRenderer, let flEngine = epubRenderer.engine {
                 CoreTextPageEngineView(
@@ -1346,6 +1355,7 @@ struct ReaderView: View {
                     if epubRenderer.scrollEngine != nil, !epubRenderer.scrollEngineReady {
                         readerSurfaceBackground
                             .overlay { ProgressView(localized("載入中…")) }
+                            .readerLoadingChromeTap { toggleReaderChrome() }
                             .transition(.opacity)
                     }
                 }
@@ -1393,6 +1403,8 @@ struct ReaderView: View {
                     ProgressView(localized("載入中…"))
                     Spacer()
                 }
+                .frame(maxWidth: .infinity)
+                .readerLoadingChromeTap { toggleReaderChrome() }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
 
@@ -1402,6 +1414,7 @@ struct ReaderView: View {
             if manuallyRefreshingChapterIndex == currentChapterIndex {
                 readerSurfaceBackground
                     .overlay { ProgressView(localized("載入中…")) }
+                    .readerLoadingChromeTap { toggleReaderChrome() }
                     .transition(.opacity)
             }
 

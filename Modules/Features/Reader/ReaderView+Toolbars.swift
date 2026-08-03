@@ -402,8 +402,9 @@ extension ReaderView {
         }
         switch settings.pageTurnStyle {
         case .slide: return .slide
+        case .cover: return .cover
         case .curl: return .curl
-        case .cover, .none: return .fastFade
+        case .none: return .fastFade
         }
     }
 
@@ -412,6 +413,9 @@ extension ReaderView {
         case .slide:
             settings.scrollMode = false
             settings.pageTurnStyle = .slide
+        case .cover:
+            settings.scrollMode = false
+            settings.pageTurnStyle = .cover
         case .curl:
             settings.scrollMode = false
             settings.pageTurnStyle = .curl

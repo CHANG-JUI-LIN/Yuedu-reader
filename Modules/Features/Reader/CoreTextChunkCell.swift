@@ -484,7 +484,12 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        drawView.chunk?.evictFrame()
+        // The CTFrame belongs to `CoreTextScrollEngine`, not to this cell — the cell is
+        // only its current tenant. Evicting it here used cell recycling as the memory
+        // policy, which is exactly wrong for small scroll deltas: the same few chunks
+        // cycle through the reuse pool, so every reappearance paid a synchronous CTFrame
+        // rebuild plus a full CoreText redraw. Frame lifetime is now owned by the engine
+        // (`trimMaterializedChunks`), keyed on distance from the visible row.
         // `setNeedsDisplay()` is deferred. Without dropping the backing stores
         // immediately, a reused cell can composite its previous chunk for one
         // frame while fast scrolling, which appears as text/image ghosting.
