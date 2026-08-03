@@ -17,10 +17,12 @@ struct ReaderViewModelChapterStateTests {
 
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
         await waitForState(.loading, in: viewModel, chapterIndex: 0)
+        #expect(!viewModel.isChapterContentAvailable(at: 0))
         await waitUntil { await fetcher.hasPendingRequest(for: 0) }
 
         await fetcher.resolvePending(chapterIndex: 0, with: .success(readyPackage))
         await waitForState(.ready, in: viewModel, chapterIndex: 0)
+        #expect(viewModel.isChapterContentAvailable(at: 0))
     }
 
     @Test("cached chapters become ready without fetching")
@@ -33,6 +35,31 @@ struct ReaderViewModelChapterStateTests {
         await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
 
         #expect(viewModel.chapterStates[0] == .ready)
+        #expect(viewModel.isChapterContentAvailable(at: 0))
+        #expect(await fetcher.fetchCount(for: 0) == 0)
+    }
+
+    @Test("cached review metadata is inspected without a chapter fetch")
+    func cachedReviewMetadataDoesNotFetch() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let package = makePackage(
+            bookId: book.id,
+            chapterIndex: 0,
+            content: "<a href=\"ydreview://r?d=1\">review</a>"
+        )
+        await fetcher.setCached(chapterIndex: 0, package: package)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+
+        await viewModel.ensureChapterReady(
+            book: book,
+            chapterIndex: 0,
+            priority: .immediate,
+            store: nil
+        )
+        await waitUntil { viewModel.hasParagraphReviews }
+
+        #expect(viewModel.isChapterContentAvailable(at: 0))
         #expect(await fetcher.fetchCount(for: 0) == 0)
     }
 
@@ -53,6 +80,7 @@ struct ReaderViewModelChapterStateTests {
             with: .failure(MockChapterFetcher.MockError(message: "network"))
         )
         await waitForFailure("network", in: viewModel, chapterIndex: 0)
+        #expect(!viewModel.isChapterContentAvailable(at: 0))
     }
 
     @Test("failed packages map to failed chapter state")
@@ -134,6 +162,7 @@ struct ReaderViewModelChapterStateTests {
 
         #expect(viewModel.chapterStates[0] == nil)
         #expect(viewModel.chapterState(for: 0) == .idle)
+        #expect(!viewModel.isChapterContentAvailable(at: 0))
     }
 
     @Test("jump promotes an in-flight immediate request")
@@ -278,6 +307,7 @@ actor MockChapterFetcher: ChapterFetching {
     }
 
     private var cachedChapters = Set<Int>()
+    private var cachedPackages: [Int: ChapterPackage] = [:]
     private var outcomes: [Int: [Outcome]] = [:]
     private var pendingContinuations: [Int: CheckedContinuation<ChapterPackage, Error>] = [:]
     private var fetchRecords: [Int: [ChapterFetchPriority]] = [:]
@@ -287,6 +317,11 @@ actor MockChapterFetcher: ChapterFetching {
 
     func setCached(chapterIndex: Int) {
         cachedChapters.insert(chapterIndex)
+    }
+
+    func setCached(chapterIndex: Int, package: ChapterPackage) {
+        cachedChapters.insert(chapterIndex)
+        cachedPackages[chapterIndex] = package
     }
 
     func enqueuePending(chapterIndex: Int) {
@@ -333,6 +368,10 @@ actor MockChapterFetcher: ChapterFetching {
 
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool {
         cachedChapters.contains(chapterIndex)
+    }
+
+    func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) async -> ChapterPackage? {
+        cachedPackages[chapterIndex]
     }
 
     func fetchChapter(

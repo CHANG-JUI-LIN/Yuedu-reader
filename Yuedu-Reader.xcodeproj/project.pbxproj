@@ -108,14 +108,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		AA11BB22CC33DD44EE55FF66AA11BB22 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA11BB22CC33DD44EE55FF66AA11BB22 /* Exceptions for "Widget" folder in "Yuedu-Reader Widget" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 3D398CD107E29DC5585FDF83 /* Yuedu-Reader Widget */;
 		};
-		BB22CC33DD44EE55FF66AA11BB22CC33 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		BB22CC33DD44EE55FF66AA11BB22CC33 /* Exceptions for "ShareExtension" folder in "Yuedu-Reader ShareExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -143,7 +143,7 @@
 		501150730FA6492E85D96D0235061651 /* Widget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				AA11BB22CC33DD44EE55FF66AA11BB22 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				AA11BB22CC33DD44EE55FF66AA11BB22 /* Exceptions for "Widget" folder in "Yuedu-Reader Widget" target */,
 			);
 			path = Widget;
 			sourceTree = "<group>";
@@ -161,7 +161,7 @@
 		A1BCCA3D5B9C4DD1AFB56B678141488F /* ShareExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				BB22CC33DD44EE55FF66AA11BB22CC33 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				BB22CC33DD44EE55FF66AA11BB22CC33 /* Exceptions for "ShareExtension" folder in "Yuedu-Reader ShareExtension" target */,
 			);
 			path = ShareExtension;
 			sourceTree = "<group>";

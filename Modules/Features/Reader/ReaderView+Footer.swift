@@ -66,8 +66,19 @@ extension ReaderView {
             .safeAreaInsets.bottom) ?? 0
     }
 
+    /// Reads only tracked state — never `windowSafeTop`. Every caller of this runs during
+    /// body evaluation (the render-settings snapshot, `scrollBody`, the header, TXT
+    /// vertical scroll), and `windowSafeTop` reaches into
+    /// `UIApplication.shared.connectedScenes` for the key window's safe area. Querying
+    /// UIKit window geometry from inside a SwiftUI update is what froze the shelf entry:
+    /// the reader is evaluated while the card push is still laying the window out, and
+    /// the hosting controller then stopped producing any further body evaluations.
+    ///
+    /// The window value is not lost. `onPreferenceChange(ReaderSafeAreaTopKey)` already
+    /// folds it in with `max($0, windowSafeTop)` before storing — an event handler, which
+    /// is the correct place to consult UIKit — so this returns the same number.
     var effectiveReaderSafeTop: CGFloat {
-        max(readerSafeAreaTop, windowSafeTop)
+        readerSafeAreaTop
     }
 
     // MARK: - Inline Footer (curl mode: baked into page texture, moves with the page)

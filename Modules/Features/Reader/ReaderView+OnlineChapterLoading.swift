@@ -26,6 +26,7 @@ extension ReaderView {
         let previousStates = observedChapterStates
         observedChapterStates = states
 
+
         for (chapterIndex, newState) in states where previousStates[chapterIndex] != newState {
             #if DEBUG
             AppLogger.render("[StateDebug] chapterStates[\(chapterIndex)] \(String(describing: previousStates[chapterIndex])) → \(newState) currentChapter=\(currentChapterIndex) usesCoreText=\(usesCoreTextEPUB) isCoreTextReady=\(epubRenderer.isCoreTextReady)")
@@ -33,10 +34,6 @@ extension ReaderView {
             // Narration stalled at a chapter boundary waits on exactly this signal.
             handleTTSChapterWaitStateChange(newState, at: chapterIndex)
             if newState == .ready {
-                if let package = cachedChapterPackage(for: chapterIndex),
-                   containsParagraphReview(in: package.content) {
-                    hasParagraphReviews = true
-                }
                 prefetchAdjacentChapters(around: chapterIndex)
             }
             if case .failed = newState,
@@ -48,7 +45,9 @@ extension ReaderView {
     }
 
     func applyChapterRefreshAction(for chapterIndex: Int, newState: ChapterLoadState) {
-        let contentAvailable = isChapterContentAvailable(at: chapterIndex)
+        // `chapterStates` is published only after ReaderViewModel updates this in-memory
+        // availability snapshot, so this callback never needs to re-open the cache.
+        let contentAvailable = readerViewModel.isChapterContentAvailable(at: chapterIndex)
         if newState == .ready,
            !contentAvailable,
            manuallyRefreshingChapterIndex == chapterIndex {
@@ -68,18 +67,44 @@ extension ReaderView {
             }
             return
         }
+        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
+            // A chapter arriving is a data event: each chapter is independent and none
+            // supersedes another. Feed the engine directly so it can never be cancelled
+            // by the next chapter's refresh — that is what left the visible chapter
+            // stranded on its 載入中 placeholder when several chapters landed at once
+            // (opening a book loads N, N-1 and N+1 together). Fall back to a refresh only
+            // when the engine had nothing pending and this is the chapter on screen.
+            let renderer = epubRenderer
+            let fallbackRequest = chapterIndex == currentChapterIndex
+                ? chapterContentRefreshRequest(chapterIndex: chapterIndex)
+                : nil
+            Task { @MainActor in
+                let didRetry = await scrollEngine.retryChapterIfNeeded(chapterIndex)
+                if !didRetry, let fallbackRequest {
+                    _ = await renderer.refresh(fallbackRequest)
+                }
+                if manuallyRefreshingChapterIndex == chapterIndex {
+                    manuallyRefreshingChapterIndex = nil
+                }
+            }
+            return
+        }
         submitChapterContentRefresh(chapterIndex: chapterIndex)
     }
 
-    func submitChapterContentRefresh(chapterIndex: Int) {
-        guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else { return }
-        let request = ReaderRenderRefreshRequest(
+    func chapterContentRefreshRequest(chapterIndex: Int) -> ReaderRenderRefreshRequest {
+        ReaderRenderRefreshRequest(
             intent: .chapterContent(chapterIndex),
             mode: activeReaderDisplayMode,
             settings: activeReaderRenderSettings,
             position: currentReaderRefreshPosition,
             viewportSize: currentReaderRenderSize
         )
+    }
+
+    func submitChapterContentRefresh(chapterIndex: Int) {
+        guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else { return }
+        let request = chapterContentRefreshRequest(chapterIndex: chapterIndex)
         Task { @MainActor in
             let result = await epubRenderer.refresh(request)
             guard manuallyRefreshingChapterIndex == chapterIndex else { return }

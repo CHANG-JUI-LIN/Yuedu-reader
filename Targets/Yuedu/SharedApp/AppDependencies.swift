@@ -133,6 +133,10 @@ protocol OnlineBookCoordinating: AnyObject {
 protocol ChapterFetching: Sendable {
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool
 
+    /// Returns an already-validated cached package without starting a network request.
+    /// Metadata consumers use this off the main actor after cache readiness is known.
+    func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) async -> ChapterPackage?
+
     func fetchChapter(
         book: ReadingBook,
         chapterIndex: Int,
@@ -143,6 +147,12 @@ protocol ChapterFetching: Sendable {
     func cancelChapter(bookId: UUID, chapterIndex: Int) async
 
     func cancelAll(for bookId: UUID) async
+}
+
+extension ChapterFetching {
+    func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) async -> ChapterPackage? {
+        nil
+    }
 }
 
 struct LiveWebContentFetcher: WebContentFetching {
@@ -279,6 +289,10 @@ struct LiveChapterFetcher: ChapterFetching {
 
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool {
         await chapterFetchManager.isChapterCached(book: book, chapterIndex: chapterIndex)
+    }
+
+    func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) async -> ChapterPackage? {
+        await chapterFetchManager.cachedChapterPackage(book: book, chapterIndex: chapterIndex)
     }
 
     func fetchChapter(

@@ -414,6 +414,58 @@ struct ReaderRenderRefreshTests {
         #expect(renderer.pendingVisibleRefreshCommit == nil)
     }
 
+    @Test("a superseding refresh keeps an unacknowledged visible commit alive")
+    func supersedingRefreshKeepsOutstandingVisibleCommit() async {
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: MutableReaderRefreshBuilder(body: "Body"),
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+
+        let activation = Task {
+            await renderer.refresh(
+                Self.request(
+                    intent: .modeActivation,
+                    mode: .scroll,
+                    fontSize: 18
+                )
+            )
+        }
+        let commit = await waitForVisibleCommit(renderer)
+
+        // The host has not acknowledged `commit` yet, and the commit is the only thing
+        // that makes the scroll collection reslice. Changing an online chapter always
+        // lands a second refresh at exactly this point — the `.ready` transition also
+        // prefetches the adjacent chapters, and each of those completions submits its
+        // own refresh — so dropping the commit here left the chapter blank forever.
+        let follower = Task {
+            await renderer.refresh(
+                Self.request(
+                    intent: .chapterContent(1),
+                    mode: .scroll,
+                    fontSize: 18
+                )
+            )
+        }
+        #expect(await activation.value == .superseded(transactionID: 1))
+        #expect(await follower.value == .completed(transactionID: 2))
+        #expect(
+            renderer.pendingVisibleRefreshCommit?.transactionID
+                == commit.transactionID
+        )
+
+        // The superseded transaction answered its caller already; acknowledging its
+        // commit must still clear the channel without resuming that caller twice.
+        renderer.finishVisibleRefresh(
+            transactionID: commit.transactionID,
+            outcome: .applied
+        )
+        #expect(renderer.pendingVisibleRefreshCommit == nil)
+    }
+
     @Test("paged host applies a visible refresh commit")
     func pagedHostAppliesVisibleRefreshCommit() async throws {
         let renderer = EPUBPageRenderer()

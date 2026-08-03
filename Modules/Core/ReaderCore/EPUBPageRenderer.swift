@@ -71,7 +71,10 @@ final class EPUBPageRenderer: ObservableObject {
     private struct RefreshTransactionContext {
         let request: ReaderRenderRefreshRequest
         let revisions: RefreshRevisionSnapshot
-        let continuation: CheckedContinuation<ReaderRenderRefreshResult, Never>
+        /// Resumed exactly once, then cleared. A superseded transaction answers its
+        /// caller immediately but stays registered while its visible commit is still
+        /// outstanding, so the host's acknowledgement can still record the coverage.
+        var continuation: CheckedContinuation<ReaderRenderRefreshResult, Never>?
         var coverage: RefreshRevisionCoverage = .none
     }
 
@@ -190,6 +193,13 @@ final class EPUBPageRenderer: ObservableObject {
                     )
                 )
             case .chapterContent(let chapterIndex):
+                // Chapter *supply* deliberately does not happen here. A refresh
+                // transaction is latest-wins and cancels the preparation task of the
+                // one before it, so loading a chapter from inside this closure let one
+                // chapter's arrival cancel another's mid-load and strand it on its
+                // placeholder forever. `ReaderView` drives `retryChapterIfNeeded` from
+                // the chapter-ready event instead, and only asks for a refresh here
+                // when the engine still has nothing for the visible chapter.
                 if chapterIndex == request.position.spineIndex {
                     scrollEngine.invalidateChapterDocument(at: chapterIndex)
                     return .requiresVisibleCommit(
@@ -200,14 +210,11 @@ final class EPUBPageRenderer: ObservableObject {
                         )
                     )
                 }
-                let didRetry = await scrollEngine.retryChapterIfNeeded(
-                    chapterIndex
-                )
                 return .completed(
                     RefreshRevisionCoverage(
                         layout: nil,
                         appearance: nil,
-                        content: didRetry ? revisions.content : nil
+                        content: nil
                     )
                 )
             case .modeActivation:
@@ -608,10 +615,9 @@ final class EPUBPageRenderer: ObservableObject {
         outcome: ReaderVisibleRefreshOutcome
     ) {
         guard pendingVisibleRefreshCommit?.transactionID == transactionID,
-              let context = refreshTransactions[transactionID]
+              let context = refreshTransactions.removeValue(forKey: transactionID)
         else { return }
 
-        refreshTransactions.removeValue(forKey: transactionID)
         pendingVisibleRefreshCommit = nil
         switch outcome {
         case .applied:
@@ -619,11 +625,11 @@ final class EPUBPageRenderer: ObservableObject {
                 context.coverage,
                 to: context.request.mode
             )
-            context.continuation.resume(
+            context.continuation?.resume(
                 returning: .completed(transactionID: transactionID)
             )
         case .failed(let failure):
-            context.continuation.resume(
+            context.continuation?.resume(
                 returning: .failed(
                     transactionID: transactionID,
                     failure: failure
@@ -640,16 +646,32 @@ final class EPUBPageRenderer: ObservableObject {
         currentRefreshTransactionID = nextRefreshTransactionID
         let transactionID = currentRefreshTransactionID
 
+        // A published visible commit is a command the host may not have consumed yet:
+        // SwiftUI applies `pendingVisibleRefreshCommit` on its own update pass, so
+        // clearing it here dropped the scroll reslice outright whenever a second
+        // refresh arrived first. Changing an online chapter always does that —
+        // `handleChapterStateChanges` prefetches the adjacent chapters on the same
+        // `.ready` transition, and each of those completions submits its own refresh —
+        // which left the chapter blank forever. Keep the commit outstanding instead;
+        // a newer commit replaces it in `completeRefreshPreparation`, and only the
+        // host's acknowledgement clears it.
+        let outstandingCommitID = pendingVisibleRefreshCommit?.transactionID
         let supersededTransactions = refreshTransactions
         refreshTransactions.removeAll(keepingCapacity: true)
-        pendingVisibleRefreshCommit = nil
         let supersededPreparationTasks = refreshPreparationTasks
         refreshPreparationTasks.removeAll(keepingCapacity: true)
         supersededPreparationTasks.values.forEach { $0.cancel() }
         for (supersededID, context) in supersededTransactions {
-            context.continuation.resume(
+            context.continuation?.resume(
                 returning: .superseded(transactionID: supersededID)
             )
+            // The caller is answered, but the host still owes this commit an
+            // acknowledgement — keep the coverage so `finishVisibleRefresh` can
+            // record which revisions the mode ended up applying.
+            guard supersededID == outstandingCommitID else { continue }
+            var retained = context
+            retained.continuation = nil
+            refreshTransactions[supersededID] = retained
         }
         engine?.cancelPendingWork()
 
@@ -718,6 +740,12 @@ final class EPUBPageRenderer: ObservableObject {
         switch result {
         case .requiresVisibleCommit(let coverage):
             currentContext.coverage = coverage
+            // This commit replaces any still-outstanding one, so the transaction that
+            // owned the previous commit is now unreachable — drop its retained context.
+            if let previousCommitID = pendingVisibleRefreshCommit?.transactionID,
+               previousCommitID != transactionID {
+                refreshTransactions.removeValue(forKey: previousCommitID)
+            }
             refreshTransactions[transactionID] = currentContext
             pendingVisibleRefreshCommit = ReaderVisibleRefreshCommit(
                 transactionID: transactionID,
@@ -727,12 +755,12 @@ final class EPUBPageRenderer: ObservableObject {
         case .completed(let coverage):
             refreshTransactions.removeValue(forKey: transactionID)
             apply(coverage, to: currentContext.request.mode)
-            currentContext.continuation.resume(
+            currentContext.continuation?.resume(
                 returning: .completed(transactionID: transactionID)
             )
         case .failed(let failure):
             refreshTransactions.removeValue(forKey: transactionID)
-            currentContext.continuation.resume(
+            currentContext.continuation?.resume(
                 returning: .failed(
                     transactionID: transactionID,
                     failure: failure

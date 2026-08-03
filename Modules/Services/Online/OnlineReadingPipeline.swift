@@ -179,43 +179,39 @@ actor ChapterFetchManager {
             return true
         }
 
-        let sanitizedURL = RuleEngine.sanitizeExtractedURL(refs[chapterIndex].url)
-        var shouldClearCachedChapter = false
+        return cachedChapterPackage(book: book, chapterIndex: chapterIndex) != nil
+    }
 
-        if let cached = bookSourceFetcher.loadChapterPackageSync(
-            bookId: book.id,
-            chapterIndex: chapterIndex,
-            expectedSourceURL: sanitizedURL,
-            expectedTOCTitle: refs[chapterIndex].title
-        ), isReusableCachedPackage(cached, for: book) {
-            states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
-            return true
-        } else if bookSourceFetcher.loadChapterPackageSync(
-            bookId: book.id,
-            chapterIndex: chapterIndex,
-            expectedSourceURL: sanitizedURL,
-            expectedTOCTitle: refs[chapterIndex].title
-        ) != nil {
-            shouldClearCachedChapter = true
+    /// Resolves and validates an existing chapter package on the fetch-manager actor. Keeping
+    /// this work actor-isolated lets presentation code consume cached metadata without running
+    /// file I/O, checksum validation, or rejected-page scans on the main actor.
+    func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) -> ChapterPackage? {
+        guard let refs = book.onlineChapters, refs.indices.contains(chapterIndex) else {
+            return nil
         }
 
-        if sanitizedURL != refs[chapterIndex].url,
-            let cached = bookSourceFetcher.loadChapterPackageSync(
+        let ref = refs[chapterIndex]
+        guard !ref.shouldRenderAsVolumeSeparator else { return nil }
+
+        let sanitizedURL = RuleEngine.sanitizeExtractedURL(ref.url)
+        var shouldClearCachedChapter = false
+        var candidateURLs = [sanitizedURL]
+        if sanitizedURL != ref.url {
+            candidateURLs.append(ref.url)
+        }
+
+        for expectedSourceURL in candidateURLs {
+            guard let cached = bookSourceFetcher.loadChapterPackageSync(
                 bookId: book.id,
                 chapterIndex: chapterIndex,
-                expectedSourceURL: refs[chapterIndex].url,
-                expectedTOCTitle: refs[chapterIndex].title
-            ), isReusableCachedPackage(cached, for: book)
-        {
-            states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
-            return true
-        } else if sanitizedURL != refs[chapterIndex].url,
-                  bookSourceFetcher.loadChapterPackageSync(
-                    bookId: book.id,
-                    chapterIndex: chapterIndex,
-                    expectedSourceURL: refs[chapterIndex].url,
-                    expectedTOCTitle: refs[chapterIndex].title
-                  ) != nil {
+                expectedSourceURL: expectedSourceURL,
+                expectedTOCTitle: ref.title
+            ) else { continue }
+
+            if isReusableCachedPackage(cached, for: book) {
+                states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
+                return cached
+            }
             shouldClearCachedChapter = true
         }
 
@@ -223,7 +219,7 @@ actor ChapterFetchManager {
             bookSourceFetcher.clearChapterCache(bookId: book.id, chapterIndex: chapterIndex)
         }
 
-        return false
+        return nil
     }
 
     func fetchChapter(

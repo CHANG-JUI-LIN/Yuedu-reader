@@ -5,6 +5,12 @@ import SwiftUI
 @MainActor
 final class ReaderViewModel: ObservableObject {
     @Published private(set) var chapterStates: [Int: ChapterLoadState] = [:]
+    @Published private(set) var hasParagraphReviews = false
+
+    /// Chapter cache availability validated by the loading pipeline. This is deliberately
+    /// kept in memory so SwiftUI presentation code never re-opens and re-validates chapter
+    /// files during `body` evaluation.
+    private var availableChapterIndexes: Set<Int> = []
 
     // MARK: - Source Change State
 
@@ -29,6 +35,14 @@ final class ReaderViewModel: ObservableObject {
     /// Books already checked for auto manga detection this session (cached-chapter path),
     /// so a genuine text book is not re-probed on every `ensureChapterReady`.
     private var mangaDetectionAttempted: Set<UUID> = []
+    private struct CachedChapterInspectionKey: Hashable {
+        let bookId: UUID
+        let chapterIndex: Int
+    }
+    /// Cached chapters already inspected for paragraph-review capability. The inspection
+    /// uses `ChapterFetching` asynchronously instead of synchronously reading files from a
+    /// SwiftUI update callback.
+    private var paragraphReviewInspectionAttempted: Set<CachedChapterInspectionKey> = []
     /// The current 換源 (source switch) search, so a re-open cancels the previous run.
     private var changeSourceSearchTask: Task<Void, Never>?
     /// Background TOC warm-up for the top 換源 candidates (see `prefetchTopOriginTOCs`).
@@ -59,6 +73,10 @@ final class ReaderViewModel: ObservableObject {
         chapterStates[chapterIndex] ?? .idle
     }
 
+    func isChapterContentAvailable(at chapterIndex: Int) -> Bool {
+        availableChapterIndexes.contains(chapterIndex)
+    }
+
     func configure(
         chapterFetcher: ChapterFetching,
         offlineDownloadManager: any OfflineDownloadManaging
@@ -71,6 +89,7 @@ final class ReaderViewModel: ObservableObject {
         if let existing = inFlightRequests.removeValue(forKey: chapterIndex) {
             existing.task.cancel()
         }
+        availableChapterIndexes.remove(chapterIndex)
         chapterStates.removeValue(forKey: chapterIndex)
     }
 
@@ -93,18 +112,18 @@ final class ReaderViewModel: ObservableObject {
                 existing.task.cancel()
                 await chapterFetcher.cancelChapter(bookId: book.id, chapterIndex: chapterIndex)
             }
-            chapterStates[chapterIndex] = .ready
+            setChapterState(.ready, for: chapterIndex, contentAvailable: true)
             return
         }
 
         if await chapterFetcher.isChapterCached(book: book, chapterIndex: chapterIndex) {
-            chapterStates[chapterIndex] = .ready
+            setChapterState(.ready, for: chapterIndex, contentAvailable: true)
             if let existing = inFlightRequests.removeValue(forKey: chapterIndex) {
                 existing.task.cancel()
                 await chapterFetcher.cancelChapter(bookId: book.id, chapterIndex: chapterIndex)
             }
-            detectMangaInCachedChapter(
-                book: book, chapterIndex: chapterIndex, priority: priority, store: store)
+            inspectCachedChapter(
+                book: book, chapterIndex: chapterIndex, store: store)
             return
         }
 
@@ -120,7 +139,7 @@ final class ReaderViewModel: ObservableObject {
                 priority: priority,
                 task: Task<Void, Never> {}
             )
-            chapterStates[chapterIndex] = .loading
+            setChapterState(.loading, for: chapterIndex, contentAvailable: false)
             await chapterFetcher.cancelChapter(bookId: book.id, chapterIndex: chapterIndex)
             guard inFlightRequests[chapterIndex]?.token == token else {
                 return
@@ -136,7 +155,7 @@ final class ReaderViewModel: ObservableObject {
             return
         }
 
-        chapterStates[chapterIndex] = .loading
+        setChapterState(.loading, for: chapterIndex, contentAvailable: false)
         let token = UUID()
         let task = startFetchTask(
             book: book,
@@ -492,31 +511,66 @@ final class ReaderViewModel: ObservableObject {
 
     // MARK: - Private
 
-    /// One-shot manga probe for an already-cached chapter: a book that was cached as
-    /// text before auto-detection existed still needs to be flipped to the image reader.
-    /// Runs at most once per book per session and reuses the cached package (no network).
-    private func detectMangaInCachedChapter(
+    /// Reads an already-validated cached package off the main presentation path. Besides the
+    /// one-shot media probe, each cached text chapter is inspected until paragraph-review
+    /// capability is found. `ChapterFetching` returns the existing package here; no network
+    /// fallback is introduced because this method is called only after `isChapterCached`.
+    private func inspectCachedChapter(
         book: ReadingBook,
         chapterIndex: Int,
-        priority: ChapterFetchPriority,
         store: BookStore?
     ) {
-        guard book.isOnline,
-              book.contentPipelineKind != .manga,
-              let store,
-              !mangaDetectionAttempted.contains(book.id)
-        else { return }
-        mangaDetectionAttempted.insert(book.id)
+        let inspectionKey = CachedChapterInspectionKey(
+            bookId: book.id,
+            chapterIndex: chapterIndex
+        )
+        let shouldInspectParagraphReviews = !hasParagraphReviews
+            && paragraphReviewInspectionAttempted.insert(inspectionKey).inserted
+        let shouldDetectMedia = book.isOnline
+            && book.contentPipelineKind != .manga
+            && store != nil
+            && mangaDetectionAttempted.insert(book.id).inserted
+
+        guard shouldInspectParagraphReviews || shouldDetectMedia else { return }
         Task { [weak self] in
             guard let self else { return }
-            guard let package = try? await self.chapterFetcher.fetchChapter(
-                book: book, chapterIndex: chapterIndex, priority: priority, store: store),
+            guard let package = await self.chapterFetcher.cachedChapterPackage(
+                book: book, chapterIndex: chapterIndex),
                   !package.content.isEmpty
             else { return }
-            if !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content) {
+
+            if shouldInspectParagraphReviews {
+                self.recordParagraphReviewsIfPresent(in: package.content)
+            }
+            if shouldDetectMedia, let store,
+               !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content) {
                 store.upgradeToAudioIfDetected(bookId: book.id, content: package.content)
             }
         }
+    }
+
+    private func recordParagraphReviewsIfPresent(in content: String) {
+        guard !hasParagraphReviews else { return }
+        if content.range(of: "showcmt(", options: .caseInsensitive) != nil
+            || content.range(
+                of: "\(ReaderHTMLUtilities.reviewURLScheme)://",
+                options: .caseInsensitive
+            ) != nil {
+            hasParagraphReviews = true
+        }
+    }
+
+    private func setChapterState(
+        _ state: ChapterLoadState,
+        for chapterIndex: Int,
+        contentAvailable: Bool
+    ) {
+        if contentAvailable {
+            availableChapterIndexes.insert(chapterIndex)
+        } else {
+            availableChapterIndexes.remove(chapterIndex)
+        }
+        chapterStates[chapterIndex] = state
     }
 
     private func startFetchTask(
@@ -529,21 +583,19 @@ final class ReaderViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                print("[FetchStateDebug] ch=\(chapterIndex) fetchChapter START priority=\(priority)")
                 let package = try await self.chapterFetcher.fetchChapter(
                     book: book,
                     chapterIndex: chapterIndex,
                     priority: priority,
                     store: store
                 )
-                guard !Task.isCancelled else {
-                    print("[FetchStateDebug] ch=\(chapterIndex) fetchChapter CANCELLED after return")
-                    return
-                }
+                guard !Task.isCancelled else { return }
                 let result: ChapterLoadState = package.state == .cached && !package.content.isEmpty
                     ? .ready
                     : .failed(reason: package.failureReason ?? "empty")
-                print("[FetchStateDebug] ch=\(chapterIndex) fetchChapter DONE pkgState=\(package.state) contentLen=\(package.content.count) → result=\(result)")
+                if case .ready = result {
+                    self.recordParagraphReviewsIfPresent(in: package.content)
+                }
                 if case .ready = result, let store {
                     // Aggregation sources serve manga under a text (type-0) source; once the
                     // first chapter comes back as an image list, flip the book to the manga
@@ -562,7 +614,6 @@ final class ReaderViewModel: ObservableObject {
                 }
                 self.finishFetch(chapterIndex: chapterIndex, token: token, result: result)
             } catch is CancellationError {
-                print("[FetchStateDebug] ch=\(chapterIndex) fetchChapter CancellationError")
                 self.clearInFlight(chapterIndex: chapterIndex, token: token)
             } catch {
                 guard !Task.isCancelled else { return }
@@ -587,20 +638,16 @@ final class ReaderViewModel: ObservableObject {
         token: UUID,
         result: ChapterLoadState
     ) {
-        guard inFlightRequests[chapterIndex]?.token == token else {
-            print("[FetchStateDebug] ch=\(chapterIndex) finishFetch SKIPPED (token mismatch)")
-            return
-        }
-        print("[FetchStateDebug] ch=\(chapterIndex) finishFetch SET state=\(result)")
+        guard inFlightRequests[chapterIndex]?.token == token else { return }
         inFlightRequests.removeValue(forKey: chapterIndex)
-        chapterStates[chapterIndex] = result
+        setChapterState(result, for: chapterIndex, contentAvailable: result == .ready)
     }
 
     private func clearInFlight(chapterIndex: Int, token: UUID) {
         guard inFlightRequests[chapterIndex]?.token == token else { return }
         inFlightRequests.removeValue(forKey: chapterIndex)
         if chapterStates[chapterIndex] == .loading {
-            chapterStates[chapterIndex] = .idle
+            setChapterState(.idle, for: chapterIndex, contentAvailable: false)
         }
     }
 }

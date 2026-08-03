@@ -43,6 +43,45 @@ struct CoreTextScrollOnlineCacheTests {
         #expect(engine.chunks.first?.chapterIndex == 0)
     }
 
+    @Test("current online scroll chapter closes its pending load when cache becomes ready")
+    func currentMissingChapterClosesPendingLoadAfterReady() async throws {
+        let builder = MutableOnlineLikeBuilder(chapterCount: 2)
+        builder.cachedChapters[1] = "Next chapter body"
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: builder,
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: makeSettings()
+        )
+        let engine = try #require(renderer.scrollEngine)
+        var requestedChapters: [Int] = []
+        engine.onChapterContentRequired = { requestedChapters.append($0) }
+
+        await engine.start(initialChapter: 0, contentWidth: 320)
+
+        #expect(requestedChapters.contains(0))
+        #expect(engine.chapterRanges[0] == nil)
+        #expect(engine.chunks.first?.chapterIndex == 1)
+
+        builder.cachedChapters[0] = "Current chapter body"
+        let result = await renderer.refresh(
+            ReaderRenderRefreshRequest(
+                intent: .chapterContent(0),
+                mode: .scroll,
+                settings: makeSettings(),
+                position: .chapterStart(0),
+                viewportSize: CGSize(width: 320, height: 480)
+            )
+        )
+
+        #expect(result == .completed(transactionID: 1))
+        #expect(renderer.pendingVisibleRefreshCommit == nil)
+        #expect(engine.chapterRanges[0] != nil)
+        #expect(engine.chunks.first?.chapterIndex == 0)
+        #expect(renderedText(in: engine).contains("Current chapter body"))
+    }
+
     @Test("refreshing a loaded scroll chapter replaces its rendered content")
     func refreshingLoadedChapterReplacesRenderedContent() async throws {
         let builder = MutableOnlineLikeBuilder(chapterCount: 1)

@@ -70,7 +70,6 @@ struct ReaderView: View {
     // Online chapter lazy loading
     @StateObject var readerViewModel = ReaderViewModel()
     @State var observedChapterStates: [Int: ChapterLoadState] = [:]
-    @State var hasParagraphReviews = false
 
     /// Top safe area (points), passed to EPUB engine as minimum margin-top.
     @State var readerSafeAreaTop: CGFloat = 59
@@ -439,46 +438,11 @@ struct ReaderView: View {
             ?? (chapters.indices.contains(currentChapterIndex) ? chapters[currentChapterIndex] : nil)
     }
 
-    /// Paragraph-review bubbles are detected from rendered review links as well
-    /// as freshly fetched source HTML. The latter makes the setting available
-    /// as soon as a review-bearing online chapter finishes loading.
+    /// Paragraph-review capability is published by the loading pipeline. Keeping this
+    /// lookup in memory prevents settings-sheet construction from scanning every rendered
+    /// attributed string (or reopening the cached chapter) during `body` evaluation.
     private var currentBookHasParagraphReviews: Bool {
-        if hasParagraphReviews {
-            return true
-        }
-        if let engine = epubRenderer.engine,
-           engine.layouts.values.contains(where: { containsParagraphReview(in: $0.attributedString) }) {
-            return true
-        }
-        if let scrollEngine = epubRenderer.scrollEngine,
-           scrollEngine.chunks.contains(where: { containsParagraphReview(in: $0.attributedString) }) {
-            return true
-        }
-        if let package = cachedChapterPackage(for: currentChapterIndex) {
-            return containsParagraphReview(in: package.content)
-        }
-        return false
-    }
-
-    private func containsParagraphReview(in attributedString: NSAttributedString) -> Bool {
-        guard attributedString.length > 0 else { return false }
-        var containsReview = false
-        attributedString.enumerateAttribute(
-            HTMLAttributedStringBuilder.internalLinkAttribute,
-            in: NSRange(location: 0, length: attributedString.length)
-        ) { value, _, stop in
-            if let link = value as? String,
-               link.hasPrefix("\(ReaderHTMLUtilities.reviewURLScheme)://") {
-                containsReview = true
-                stop.pointee = true
-            }
-        }
-        return containsReview
-    }
-
-    func containsParagraphReview(in content: String) -> Bool {
-        content.localizedCaseInsensitiveContains("showcmt(")
-            || content.localizedCaseInsensitiveContains("\(ReaderHTMLUtilities.reviewURLScheme)://")
+        readerViewModel.hasParagraphReviews
     }
 
     func tocChapter(forSpineIndex spineIndex: Int, charOffset: Int) -> BookChapter? {
@@ -637,10 +601,19 @@ struct ReaderView: View {
         return ok
     }
 
+    /// Raises or hides the reader chrome. Loading surfaces route their taps here so a
+    /// chapter that never arrives is not a dead end: the toolbar is the only way to
+    /// refresh, change source, or leave, and without it the reader had to be force-quit.
+    func toggleReaderChrome() {
+        withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
+    }
+
     var currentChapterOverlayState: ReaderChapterOverlayState {
         guard book?.onlineChapters?.isEmpty == false else { return .hidden }
         return ReaderChapterPresentation.overlayState(
-            isContentAvailable: isChapterContentAvailable(at: currentChapterIndex),
+            isContentAvailable: readerViewModel.isChapterContentAvailable(
+                at: currentChapterIndex
+            ),
             loadState: readerViewModel.chapterState(for: currentChapterIndex)
         )
     }
@@ -1287,6 +1260,8 @@ struct ReaderView: View {
                     ProgressView(localized("載入中…"))
                     Spacer()
                 }
+                .frame(maxWidth: .infinity)
+                .readerLoadingChromeTap { toggleReaderChrome() }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else if usesFixedLayoutRenderer, let flEngine = epubRenderer.engine {
                 CoreTextPageEngineView(
@@ -1331,6 +1306,7 @@ struct ReaderView: View {
                     if epubRenderer.scrollEngine != nil, !epubRenderer.scrollEngineReady {
                         readerSurfaceBackground
                             .overlay { ProgressView(localized("載入中…")) }
+                            .readerLoadingChromeTap { toggleReaderChrome() }
                             .transition(.opacity)
                     }
                 }
@@ -1385,6 +1361,8 @@ struct ReaderView: View {
                     ProgressView(localized("載入中…"))
                     Spacer()
                 }
+                .frame(maxWidth: .infinity)
+                .readerLoadingChromeTap { toggleReaderChrome() }
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
 
@@ -1394,6 +1372,7 @@ struct ReaderView: View {
             if manuallyRefreshingChapterIndex == currentChapterIndex {
                 readerSurfaceBackground
                     .overlay { ProgressView(localized("載入中…")) }
+                    .readerLoadingChromeTap { toggleReaderChrome() }
                     .transition(.opacity)
             }
 

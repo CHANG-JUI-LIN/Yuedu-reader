@@ -1158,6 +1158,10 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             // During scrolling: build frames off-main to avoid hitching.
             engine.warmChunksAhead(around: row, radius: 2)
         }
+        // The visible window moved, so this is also where frames that fell far behind
+        // are released. Bounding materialized frames by distance replaces the eviction
+        // that used to ride on cell reuse.
+        engine.trimMaterializedChunks(around: row)
     }
 
     private func visibleCanonicalPosition() -> CoreTextReadingPosition? {
