@@ -1,8 +1,12 @@
 import Combine
+import FirebaseAuth
+import FirebaseCore
+import FirebaseFirestore
 import Foundation
 import StoreKit
 import SwiftUI
 import UIKit
+import os
 
 enum SubscriptionProductReloadPolicy {
     static func shouldReload(
@@ -26,6 +30,52 @@ enum SubscriptionProductReloadPolicy {
 final class SubscriptionStore: ObservableObject {
     static let shared = SubscriptionStore()
 
+    private static let subscriptionLog = Logger(
+        subsystem: "com.zhangruilin.yuedureader",
+        category: "Subscription"
+    )
+
+    /// Compile-time build kind; DEBUG (Xcode-launched) builds accept sandbox
+    /// transactions so development testing keeps working, Release builds
+    /// (TestFlight/App Store) filter them unless explicitly enabled.
+    private static let isDebugBuild: Bool = {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    /// Resolves and persists the running environment from `AppTransaction`. Safe
+    /// to call repeatedly; it touches `AppTransaction` only until it succeeds once.
+    private func resolveRunningEnvironment() async {
+        guard SubscriptionRuntimeEnvironment.current == nil else { return }
+        do {
+            let result = try await AppTransaction.shared
+            guard case .verified(let appTransaction) = result else { return }
+            SubscriptionRuntimeEnvironment.remember(appTransaction.environment)
+            Self.subscriptionLog.notice(
+                "Running environment resolved: \(appTransaction.environment.rawValue, privacy: .public)"
+            )
+        } catch {
+            // Left unresolved rather than guessed. Unresolved means StoreKit's own
+            // separation stays in charge, which is safe; guessing wrong would file
+            // a TestFlight entitlement under the App Store slot and re-create the
+            // exact leak this is meant to close.
+            Self.subscriptionLog.error(
+                "AppTransaction unavailable: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func acceptsTransaction(_ environment: AppStore.Environment) -> Bool {
+        SubscriptionEntitlementFilter.shouldAccept(
+            environment: environment,
+            runningEnvironment: SubscriptionRuntimeEnvironment.current,
+            isDebugBuild: Self.isDebugBuild
+        )
+    }
+
     /// The product identifiers configured in App Store Connect and the local
     /// `.storekit` file. Order here is the display order on the paywall.
     enum ProProduct: String, CaseIterable {
@@ -41,6 +91,9 @@ final class SubscriptionStore: ObservableObject {
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var storeKitIsProActive: Bool = false
     @Published private(set) var accountIsProActive: Bool = false
+    /// Mirrored into the iCloud account, which survives an App Store account
+    /// switch. See `SubscriptionICloudMirror`.
+    @Published private(set) var iCloudIsProActive: Bool = false
     /// `true` while any Pro entitlement is active. Everything gates on this.
     @Published private(set) var isProActive: Bool = false
     @Published private(set) var isLoadingProducts: Bool = false
@@ -63,6 +116,29 @@ final class SubscriptionStore: ObservableObject {
     private var loadedStorefrontID: String?
     private var productLoadGeneration = 0
     private let accountService = SubscriptionAccountService.shared
+    private let iCloudMirror = SubscriptionICloudMirror.shared
+    /// Throttle for the fire-and-forget drop diagnostic: one report per
+    /// process per 5 minutes, so a repeatedly-failing device cannot flood
+    /// the diagnostics collection.
+    private var lastDropReportDate: Date?
+    /// Persisted across launches: `true` once this device ever held a Pro
+    /// entitlement. Cold-start drops (app relaunched while the entitlement is
+    /// already false — the common "退出重進就掉了" report pattern) only report
+    /// when this flag is set, so devices that never had Pro stay silent.
+    private var hadProEver: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.hadProEverKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.hadProEverKey) }
+    }
+    private static let hadProEverKey = "subscription_had_pro_ever"
+    /// Revoked transaction count from the last `currentEntitlements` read, so
+    /// the drop diagnostic can distinguish "no transactions at all" from
+    /// "transactions were revoked".
+    private var lastRevokedCount = 0
+    /// Products whose binding the backend rejected for a reason no retry can fix
+    /// (already owned by another account, payload rejected). Kept per process so
+    /// the deferred-binding retry doesn't re-run — and re-surface its error — on
+    /// every foreground. A temporary failure deliberately stays out of this set.
+    private var permanentBindFailureProductIDs: Set<String> = []
 
     private init() {
         // Start listening for transactions BEFORE any purchase so we never miss
@@ -70,7 +146,14 @@ final class SubscriptionStore: ObservableObject {
         // purchase interrupted by an Ask-to-Buy / SCA prompt.
         updatesListenerTask = listenForTransactions()
         storefrontUpdatesListenerTask = listenForStorefrontChanges()
-        Task { await refreshEntitlements() }
+        Task {
+            // Before anything reads an environment-scoped store: the suffix that
+            // separates TestFlight from App Store state depends on it.
+            await resolveRunningEnvironment()
+            seedAccountEntitlementFromCache()
+            await refreshEntitlements()
+            await refreshICloudEntitlement()
+        }
     }
 
     deinit {
@@ -150,13 +233,18 @@ final class SubscriptionStore: ObservableObject {
             lastErrorMessage = localized("請先登入後再綁定會員")
             return false
         }
-        do {
-            let token = try await accountService.accountToken()
-            return await purchase(product, accountToken: token)
-        } catch {
-            lastErrorMessage = localized("無法連接帳號服務，請檢查網路後再試")
-            return false
+        // Minting the token needs Cloud Functions, which is precisely what is
+        // unreachable from mainland China without a VPN. Refusing the purchase
+        // there helps nobody: Apple's side works, and the entitlement still
+        // reaches the reader through StoreKit and the iCloud mirror. So buy
+        // first and link later — `bindPendingPurchaseIfNeeded()` finishes the
+        // binding on a foreground once Firebase answers again.
+        let token = try? await accountService.accountToken()
+        let purchased = await purchase(product, accountToken: token)
+        if purchased, token == nil {
+            lastErrorMessage = localized("購買成功，帳號服務暫時無法連線，恢復連線後會自動綁定")
         }
+        return purchased
     }
 
     @discardableResult
@@ -175,12 +263,21 @@ final class SubscriptionStore: ObservableObject {
             switch result {
             case .success(let verification):
                 let transaction = try checkVerified(verification)
-                if accountToken != nil {
+                // The environment filter belongs here too, not just in
+                // `refreshEntitlements`. This was the one path that reached
+                // `bind` unfiltered. It stays filtered by *this build's*
+                // environment: a TestFlight purchase binds and unlocks TestFlight,
+                // an App Store purchase binds and unlocks the App Store build, and
+                // neither leaks into the other.
+                if accountToken != nil, acceptsTransaction(transaction.environment) {
                     do {
                         accountIsProActive = try await accountService.bind(transaction: verification)
                     } catch {
                         // The Apple purchase is already valid. Keep StoreKit access and
                         // explain that cross-Apple-Account binding still needs retrying.
+                        if !accountService.isRetryable(error) {
+                            permanentBindFailureProductIDs.insert(transaction.productID)
+                        }
                         lastErrorMessage = localized("購買成功，但未能綁定帳號，請稍後使用恢復購買重試")
                     }
                 }
@@ -246,6 +343,10 @@ final class SubscriptionStore: ObservableObject {
             // A failed sync is non-fatal — currentEntitlements may still resolve.
         }
         await refreshEntitlements()
+        // The iCloud mirror is a restorable grant too: a guest purchase made on
+        // the previous App Store account lives only there. Reading it before the
+        // verdict below keeps restore from reporting nothing to restore.
+        await refreshICloudEntitlement()
         if accountService.isAuthenticated {
             await bindCurrentStoreKitEntitlementsToAccount()
         }
@@ -258,23 +359,131 @@ final class SubscriptionStore: ObservableObject {
 
     /// Recomputes the entitlement from `Transaction.currentEntitlements`.
     func refreshEntitlements() async {
+        // Every entitlement path funnels through here, including purchase and the
+        // `Transaction.updates` listener. The environment must be resolved before
+        // `mirrorToICloud` writes, or an unresolved suffix would file a TestFlight
+        // entitlement in the App Store slot.
+        await resolveRunningEnvironment()
         var owned: Set<String> = []
+        var revokedCount = 0
+        var signedTransaction: String?
+        var latestExpiry: Date?
+        var hasUnexpiringProduct = false
         for await result in Transaction.currentEntitlements {
-            guard let transaction = try? checkVerified(result) else { continue }
+            guard case .verified(let transaction) = result else { continue }
+            guard acceptsTransaction(transaction.environment) else { continue }
             if transaction.revocationDate == nil {
                 owned.insert(transaction.productID)
+                if ProProduct(rawValue: transaction.productID) != nil {
+                    signedTransaction = result.jwsRepresentation
+                    if let expiration = transaction.expirationDate {
+                        latestExpiry = max(latestExpiry ?? expiration, expiration)
+                    } else {
+                        // Lifetime: outlives any dated entitlement, so the mirror
+                        // must not carry an expiry at all.
+                        hasUnexpiringProduct = true
+                    }
+                }
+            } else {
+                revokedCount += 1
             }
         }
         purchasedProductIDs = owned
+        lastRevokedCount = revokedCount
+        Self.subscriptionLog.notice(
+            "StoreKit currentEntitlements: owned \(owned.sorted().joined(separator: ","), privacy: .public) revoked \(revokedCount)"
+        )
         recomputeEntitlement()
+        await mirrorToICloud(
+            owned: owned,
+            revokedCount: revokedCount,
+            expiresAt: hasUnexpiringProduct ? nil : latestExpiry,
+            signedTransaction: signedTransaction
+        )
     }
 
     /// Call only after Firebase has been configured (app active/auth callbacks).
     func refreshAllEntitlements() async {
+        await resolveRunningEnvironment()
+        seedAccountEntitlementFromCache()
         await refreshEntitlements()
+        await refreshICloudEntitlement()
         if let accountEntitlement = await accountService.refreshEntitlement() {
             accountIsProActive = accountEntitlement
         }
+        recomputeEntitlement()
+        await bindPendingPurchaseIfNeeded()
+    }
+
+    /// Reads the iCloud mirror. Like the keychain seed, a missing or unreadable
+    /// mirror means "nothing to say" and leaves access alone; only a mirror the
+    /// app itself cleared after an Apple revocation reports `false`.
+    private func refreshICloudEntitlement() async {
+        guard let entitlement = await iCloudMirror.load() else { return }
+        let isActive = entitlement.isActive()
+        guard isActive != iCloudIsProActive else { return }
+        iCloudIsProActive = isActive
+        recomputeEntitlement()
+    }
+
+    /// Writes the StoreKit entitlement into the iCloud mirror so it outlives an
+    /// App Store account switch. An empty entitlement set deliberately writes
+    /// nothing — see `SubscriptionICloudMirrorPolicy`, that state is exactly what
+    /// a switched account looks like.
+    ///
+    /// A backend `false` never reaches here: a guest purchase is real in iCloud
+    /// while `entitlements/{uid}` legitimately has nothing, so only Apple's own
+    /// revocation may clear the mirror.
+    private func mirrorToICloud(
+        owned: Set<String>,
+        revokedCount: Int,
+        expiresAt: Date?,
+        signedTransaction: String?
+    ) async {
+        switch SubscriptionICloudMirrorPolicy.action(
+            ownedCount: owned.count,
+            revokedCount: revokedCount
+        ) {
+        case .store:
+            await iCloudMirror.store(
+                CachedSubscriptionEntitlement(isProActive: true, expiresAt: expiresAt),
+                productIDs: owned,
+                signedTransaction: signedTransaction
+            )
+            if !iCloudIsProActive {
+                iCloudIsProActive = true
+                recomputeEntitlement()
+            }
+        case .revoke:
+            await iCloudMirror.clear()
+            if iCloudIsProActive {
+                iCloudIsProActive = false
+                recomputeEntitlement()
+            }
+        case .leaveAlone:
+            break
+        }
+    }
+
+    /// Restores the last backend-verified account entitlement before any network
+    /// work. `accountIsProActive` otherwise starts at `false` on every cold launch
+    /// and can only rise from a live Firebase response, so a device that cannot
+    /// reach Firebase — mainland China without a VPN, where `entitlements/{uid}`
+    /// is `true` on the server but unreadable — presented a paid account as
+    /// unsubscribed, leaving only the Apple-Account half of the entitlement and
+    /// making Pro look bound to the Apple ID.
+    ///
+    /// Deliberately one-directional: it only raises access from a value the
+    /// backend already verified for this UID. Revocation (refund, expiry,
+    /// cancellation) stays the exclusive job of a real server response, which
+    /// `refreshEntitlement()` applies and writes back to the cache.
+    private func seedAccountEntitlementFromCache() {
+        guard SubscriptionEntitlementSeedPolicy.shouldSeed(
+            current: accountIsProActive,
+            cached: accountService.cachedEntitlement()
+        ) else { return }
+        accountIsProActive = true
+        Self.subscriptionLog.notice("Seeded account entitlement from keychain cache")
         recomputeEntitlement()
     }
 
@@ -284,10 +493,23 @@ final class SubscriptionStore: ObservableObject {
             recomputeEntitlement()
             return
         }
+        // Fires from the auth listener, which can beat `init`'s resolve. Both the
+        // keychain seed below and the Firestore read pick their storage slot and
+        // field names from the environment.
+        await resolveRunningEnvironment()
+        // Verified state first, network second: sign-in restore on a launch behind
+        // an unreachable Firebase must not present a paid account as unsubscribed.
+        seedAccountEntitlementFromCache()
         if let accountEntitlement = await accountService.refreshEntitlement() {
             accountIsProActive = accountEntitlement
             recomputeEntitlement()
         }
+        // Backfill: purchases made while signed out (or on another device) were
+        // never bound — bind runs only during purchase/restore — so the server
+        // document stays missing and refreshEntitlement above keeps returning
+        // nil. Sign-in is the last chance to fix the backend while Firebase is
+        // known to be reachable.
+        await bindCurrentStoreKitEntitlementsToAccount()
     }
 
     func deleteCurrentAccountSubscriptionData() async throws {
@@ -300,11 +522,16 @@ final class SubscriptionStore: ObservableObject {
         var didFailBinding = false
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result),
-                  ProProduct(rawValue: transaction.productID) != nil else { continue }
+                  ProProduct(rawValue: transaction.productID) != nil,
+                  acceptsTransaction(transaction.environment) else { continue }
             do {
                 accountIsProActive = try await accountService.bind(transaction: result)
+                permanentBindFailureProductIDs.remove(transaction.productID)
             } catch {
                 didFailBinding = true
+                if !accountService.isRetryable(error) {
+                    permanentBindFailureProductIDs.insert(transaction.productID)
+                }
             }
         }
         recomputeEntitlement()
@@ -313,20 +540,108 @@ final class SubscriptionStore: ObservableObject {
         }
     }
 
+    /// Completes a binding the purchase itself could not do: the buyer was signed
+    /// in but Cloud Functions was unreachable, so Apple has a valid transaction
+    /// our backend has never seen.
+    ///
+    /// The trigger is the state itself rather than a persisted flag — signed in,
+    /// StoreKit says Pro, backend says nothing — so it stops being true the
+    /// moment a bind succeeds and needs no cleanup. Products the backend
+    /// permanently rejected are excluded so a transaction owned by someone else
+    /// doesn't re-post its error on every foreground.
+    private func bindPendingPurchaseIfNeeded() async {
+        guard accountService.isAuthenticated,
+              storeKitIsProActive,
+              !accountIsProActive,
+              !purchasedProductIDs.subtracting(permanentBindFailureProductIDs).isEmpty
+        else { return }
+        Self.subscriptionLog.notice("Retrying deferred purchase binding")
+        await bindCurrentStoreKitEntitlementsToAccount()
+    }
+
     private func recomputeEntitlement() {
         let hasPurchase = ProProduct.allCases.contains { purchasedProductIDs.contains($0.rawValue) }
         storeKitIsProActive = hasPurchase
         #if DEBUG
         isProActive = SubscriptionAccessPolicy.isProActive(
             storeKit: hasPurchase || debugForceProActive,
-            account: accountIsProActive
+            account: accountIsProActive,
+            iCloud: iCloudIsProActive
         )
         #else
         isProActive = SubscriptionAccessPolicy.isProActive(
             storeKit: hasPurchase,
-            account: accountIsProActive
+            account: accountIsProActive,
+            iCloud: iCloudIsProActive
         )
         #endif
+        if isProActive {
+            hadProEver = true
+        }
+        Self.subscriptionLog.notice(
+            "Entitlement recompute: storeKit \(hasPurchase, privacy: .public) account \(self.accountIsProActive, privacy: .public) iCloud \(self.iCloudIsProActive, privacy: .public) → pro \(self.isProActive, privacy: .public)"
+        )
+        // Report when Pro is (now) off on a device that ever had it — covers
+        // both in-process drops and cold-start drops (relaunch with the
+        // entitlement already false, where `previous` is always false).
+        if !isProActive && hadProEver {
+            reportEntitlementDrop(
+                storeKit: hasPurchase,
+                account: accountIsProActive,
+                iCloud: iCloudIsProActive
+            )
+        }
+    }
+
+    /// Fire-and-forget telemetry: when the Pro entitlement drops, write the
+    /// exact state (StoreKit flag, account flag, owned product IDs, uid,
+    /// app version, storefront) to Firestore `entitlementDiagnostics` so the
+    /// developer can diagnose a device they cannot reach (e.g. a user
+    /// reporting from behind a VPN). Deliberately best-effort: failure must
+    /// never affect the reader, and Firebase may not be configured yet at
+    /// early launch — guarded.
+    private func reportEntitlementDrop(storeKit: Bool, account: Bool, iCloud: Bool) {
+        let now = Date()
+        if let last = lastDropReportDate, now.timeIntervalSince(last) < 300 { return }
+        lastDropReportDate = now
+        guard FirebaseApp.app() != nil else { return }
+        let info = Bundle.main.infoDictionary
+        var data: [String: Any] = [
+            "storeKit": storeKit,
+            "account": account,
+            "iCloud": iCloud,
+            "ownedProducts": purchasedProductIDs.sorted().joined(separator: ","),
+            "revokedCount": lastRevokedCount,
+            "uid": Auth.auth().currentUser?.uid ?? "",
+            "appVersion": info?["CFBundleShortVersionString"] as? String ?? "",
+            "build": info?["CFBundleVersion"] as? String ?? "",
+            "createdAt": FieldValue.serverTimestamp()
+        ]
+        // Storefront (App Store region) is async; fold it in after the read so
+        // the report shows whether Apple resolved the entitlement against the
+        // user's home region or the VPN exit region.
+        Task {
+            let storefrontID = await Storefront.current?.id ?? ""
+            data["storefront"] = storefrontID
+            // Distinguishes "iCloud signed out, mirror could never help" from
+            // "iCloud available and the mirror still had nothing" — the evidence
+            // for whether users switch only the App Store account or the whole
+            // Apple ID.
+            data["iCloudAccountStatus"] = await self.iCloudMirror.accountStatusDescription()
+            Self.subscriptionLog.notice("Reporting entitlement drop diagnostic to Firestore")
+            do {
+                _ = try await Firestore.firestore()
+                    .collection("entitlementDiagnostics")
+                    .addDocument(data: data)
+            } catch {
+                // Still best-effort (the reader must not care), but a silent failure
+                // means the diagnostic the developer is waiting on never arrives —
+                // and "no documents" would read as "no entitlement drops".
+                Self.subscriptionLog.error(
+                    "Entitlement drop diagnostic write failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
     }
 
     // MARK: - Transaction listener

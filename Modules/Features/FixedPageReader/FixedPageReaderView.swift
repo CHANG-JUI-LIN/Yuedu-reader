@@ -102,6 +102,14 @@ struct FixedPageReaderView: View {
         }
         .animation(DSAnimation.fast, value: state.showControls)
         .statusBarHidden(!state.showControls)
+        // Same immersive rule as the flowing reader: the home indicator fades with
+        // the controls and comes back with them.
+        .persistentSystemOverlays(
+            ReaderOverlayPresentationPolicy.hidesHomeIndicator(
+                showsReaderChrome: state.showControls,
+                isEditing: false
+            ) ? .hidden : .automatic
+        )
         .onAppear {
             beginReadingStatsSession()
         }
@@ -318,8 +326,11 @@ struct FixedPageChapterListView: View {
                         }
                         .padding(.vertical, 2)
                     }
+                    .interfaceSectionSurface()
                     .id(item.index)
                 }
+                // Rows need their own transparent surface too — `scrollContentBackground`
+                // only clears the list container. docs/design.md §4.1.
                 .scrollContentBackground(.hidden)
                 .onAppear {
                     proxy.scrollTo(state.currentChapterIndex, anchor: .center)

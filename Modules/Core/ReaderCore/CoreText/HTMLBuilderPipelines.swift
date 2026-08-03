@@ -3,10 +3,42 @@ import SwiftSoup
 import UIKit
 import YueduCoreText
 
+/// Publication-scoped cache for immutable CSS parse results. The processed stylesheet text is
+/// already cached by the EPUB/online resource builders; this second layer avoids reparsing the
+/// same rules every time a new chapter creates an HTMLAttributedStringBuilder.
+final class HTMLStylesheetCache {
+    final class ParsedStylesheet {
+        let regularRules: [CSSRule]
+        let firstLetterRules: [CSSRule]
+
+        init(regularRules: [CSSRule], firstLetterRules: [CSSRule]) {
+            self.regularRules = regularRules
+            self.firstLetterRules = firstLetterRules
+        }
+    }
+
+    private var entries: [String: ParsedStylesheet] = [:]
+
+    func parsedStylesheet(css: String, orderOffset: Int) -> ParsedStylesheet {
+        let key = "\(orderOffset)|\(css)"
+        if let cached = entries[key] {
+            return cached
+        }
+        let parsed = CSSParser.parseWithFirstLetter(css: css, orderOffset: orderOffset)
+        let result = ParsedStylesheet(
+            regularRules: parsed.regular,
+            firstLetterRules: parsed.firstLetter
+        )
+        entries[key] = result
+        return result
+    }
+}
+
 final class HTMLBuilderDOMParser {
     func parse(
         html: String,
-        collectStyles: @escaping (Document) async -> [String]
+        collectStyles: @escaping (Document) async -> [String],
+        stylesheetCache: HTMLStylesheetCache? = nil
     ) async -> HTMLAttributedStringBuilder.ParsedHTML? {
         let parsedDOM: (document: Document, body: Element)? = ReaderPerfTrace.span(
             .htmlParse,
@@ -41,9 +73,21 @@ final class HTMLBuilderDOMParser {
         var regularRules: [CSSRule] = []
         var firstLetterRules: [CSSRule] = []
         for (index, css) in stylesheetTexts.enumerated() {
-            let (reg, fl) = CSSParser.parseWithFirstLetter(css: css, orderOffset: index * 10_000)
-            regularRules.append(contentsOf: reg)
-            firstLetterRules.append(contentsOf: fl)
+            if let stylesheetCache {
+                let parsed = stylesheetCache.parsedStylesheet(
+                    css: css,
+                    orderOffset: index * 10_000
+                )
+                regularRules.append(contentsOf: parsed.regularRules)
+                firstLetterRules.append(contentsOf: parsed.firstLetterRules)
+            } else {
+                let (reg, fl) = CSSParser.parseWithFirstLetter(
+                    css: css,
+                    orderOffset: index * 10_000
+                )
+                regularRules.append(contentsOf: reg)
+                firstLetterRules.append(contentsOf: fl)
+            }
         }
         ReaderPerfTrace.end(
             cssParseTrace,

@@ -33,6 +33,7 @@ extension ReaderView {
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isSelected)
                 }
+                .interfaceSectionSurface()
 
                 // 其他可切換的書源。Results stream in one source at a time, so show them
                 // as soon as the first match arrives instead of blocking on the full
@@ -41,6 +42,9 @@ extension ReaderView {
                     if !changeSourceOrigins.isEmpty {
                         ForEach(changeSourceOrigins) { origin in
                             Button { switchToOrigin(origin) } label: { changeSourceRow(origin) }
+                                // One switch at a time: a second tap would cancel the first
+                                // and restart the wait the user is already sitting through.
+                                .disabled(changeSourcePendingOrigin != nil)
                         }
                         if changeSourceLoading {
                             HStack(spacing: 8) {
@@ -68,6 +72,7 @@ extension ReaderView {
                             .foregroundColor(.red)
                     }
                 }
+                .interfaceSectionSurface()
             }
             .scrollContentBackground(.hidden)
             .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
@@ -105,7 +110,21 @@ extension ReaderView {
                     .accessibilityLabel(localized("更多"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(localized("關閉")) { showChangeSourceSheet = false }
+                    // Legado's WaitDialog is dismissible and its cancel listener aborts the
+                    // coroutine; this is the same escape hatch. Without it a slow source held
+                    // the sheet hostage with no way out but force-quitting.
+                    //
+                    // One Button whose title changes, never an if/else pair: branching on the
+                    // view itself gives the toolbar item a new identity, and toolbar items
+                    // that change identity flicker or drop out entirely.
+                    let isSwitching = changeSourcePendingOrigin != nil
+                    Button(localized(isSwitching ? "取消" : "關閉")) {
+                        if isSwitching {
+                            readerViewModel.cancelPendingSourceSwitch()
+                        } else {
+                            showChangeSourceSheet = false
+                        }
+                    }
                 }
             }
             .sheet(isPresented: $showSourceVariableEditor) {
@@ -187,7 +206,19 @@ extension ReaderView {
                 }
             }
             Spacer()
-            if changeSourceFailedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)) {
+            let originKey = ChangeSourceCache.originKey(
+                sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+            if changeSourcePendingOrigin?.id == origin.id {
+                // The tap is being worked on. Without this the sheet sat completely
+                // unchanged while the TOC downloaded, which reads as "nothing happened".
+                HStack(spacing: 6) {
+                    ProgressView()
+                    Text(localized("正在載入目錄…"))
+                        .font(DSFont.caption)
+                        .foregroundColor(.secondary)
+                }
+            } else if changeSourceFailedKeys.contains(originKey)
+                || changeSourceFailedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)) {
                 Text(localized("載入失敗"))
                     .font(DSFont.caption2)
                     .foregroundColor(.red)
@@ -217,22 +248,56 @@ extension ReaderView {
         let oldRefs = book?.onlineChapters ?? []
         let oldIndex = currentChapterIndex
         let livePosition = readerSessionCoordinator?.state.location.coreTextPosition
-        Task {
+        // The fan-out holds the connection pool and the JS bridge, and from this tap onward it
+        // is racing the one fetch the user is waiting on. Legado's `getToc` opens with the
+        // same `stopSearch()`.
+        readerViewModel.stopChangeSourceSearch()
+        let switchStartedAt = ProcessInfo.processInfo.systemUptime
+        readerViewModel.beginSourceSwitch(to: origin) {
             do {
-                try await store.updateOnlineBookSource(
-                    bookId: bookId,
-                    origin: origin,
-                    offlineChapterStore: dependencies.offlineChapterStore
-                )
-                let mappedPosition: CoreTextReadingPosition? = await MainActor.run {
-                    let newRefs = store.books.first(where: { $0.id == bookId })?.onlineChapters ?? []
-                    guard !oldRefs.isEmpty, !newRefs.isEmpty else { return nil }
-                    let mapped = ChapterAlignment.mappedChapterIndex(
-                        oldIndex: oldIndex,
-                        oldTitle: oldRefs.indices.contains(oldIndex) ? oldRefs[oldIndex].title : nil,
-                        oldCount: oldRefs.count,
-                        newTitles: newRefs.map(\.title)
+                // Resolved here rather than inside the commit so this step is the cancellable
+                // one, and so the commit never fetches the same TOC again.
+                let tocPackage = try await SourcePerfTrace.spanAsync(
+                    "changeSource.toc", origin.sourceName
+                ) {
+                    try await readerViewModel.prepareTOCPackage(for: origin)
+                }
+                try Task.checkCancellation()
+                try await SourcePerfTrace.spanAsync(
+                    "changeSource.commit", "\(tocPackage.chapters.count)ch"
+                ) {
+                    try await store.updateOnlineBookSource(
+                        bookId: bookId,
+                        origin: origin,
+                        preparedTOC: tocPackage,
+                        offlineChapterStore: dependencies.offlineChapterStore
                     )
+                }
+                try Task.checkCancellation()
+                // It just worked; a stale flag from an earlier attempt would otherwise keep
+                // this row badged 載入失敗 in every future session.
+                readerViewModel.clearOriginFailure(
+                    bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+
+                // The new source's chapter list is already live in `store`, so every cache
+                // lookup from here on asks about *its* chapters. The load states still
+                // describe the old source's, and a stale `.ready` there is read as
+                // "ready but nothing on disk" — the 資料不一致 overlay users hit on every
+                // source switch. They belong to the source we just left; drop them.
+                readerViewModel.resetAllChapterStates()
+                chapterConsistencyRecoveryAttempts.removeAll()
+
+                let newRefs = store.books.first(where: { $0.id == bookId })?.onlineChapters ?? []
+                var mappedPosition: CoreTextReadingPosition?
+                if !oldRefs.isEmpty, !newRefs.isEmpty {
+                    let mapped = SourcePerfTrace.span("changeSource.align") {
+                        ChapterAlignment.mappedChapterIndex(
+                            oldIndex: oldIndex,
+                            oldTitle: oldRefs.indices.contains(oldIndex) ? oldRefs[oldIndex].title : nil,
+                            oldCount: oldRefs.count,
+                            newTitles: newRefs.map(\.title)
+                        )
+                    }
                     // Same chapter text in a new source starts at a different
                     // offset anyway; only a same-index mapping keeps the offset.
                     let keepOffset = (mapped == oldIndex && livePosition?.spineIndex == oldIndex)
@@ -243,7 +308,7 @@ extension ReaderView {
                     setCoreTextExternalTarget(position)
                     currentChapterIndex = mapped
                     scrollVisibleChapter = mapped
-                    return position
+                    mappedPosition = position
                 }
                 // Persist before loadContent so any restore path that re-reads the
                 // position store already sees the mapped chapter.
@@ -251,15 +316,22 @@ extension ReaderView {
                     let storeKey = book?.id.uuidString ?? bookId.uuidString
                     await dependencies.readingPositionStore.save(mappedPosition, for: storeKey)
                 }
-                await MainActor.run {
-                    showChangeSourceSheet = false
-                    loadContent()
-                }
+                // Leave the pending state before dismissing: the sheet's dismiss handler
+                // cancels a pending switch, and at this point that switch is this one.
+                readerViewModel.finishSourceSwitch()
+                showChangeSourceSheet = false
+                SourcePerfTrace.span("changeSource.loadContent") { loadContent() }
+                // Whole-tap total, so the stage spans above can be read as a share of what
+                // the user actually waited through.
+                SourcePerfTrace.record(
+                    "changeSource.total", origin.sourceName, since: switchStartedAt)
+            } catch is CancellationError {
+                // The user cancelled the wait. Nothing was committed and the source is not
+                // known to be bad, so it must not be flagged as a failed origin.
             } catch {
-                await MainActor.run {
-                    readerViewModel.markOriginFailed(bookId: bookId, bookUrl: origin.bookUrl)
-                    readerViewModel.reportChangeSourceError(error.localizedDescription)
-                }
+                readerViewModel.markOriginFailed(
+                    bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+                readerViewModel.reportChangeSourceError(error.localizedDescription)
             }
         }
     }

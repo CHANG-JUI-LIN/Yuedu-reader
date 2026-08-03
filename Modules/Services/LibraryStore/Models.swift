@@ -196,7 +196,7 @@ struct ReadingBook: Identifiable, Codable {
     // Bookmarks
     var bookmarks: [Bookmark] = []
 
-    // Cover image path (relative filename under Documents, e.g. "xxx_cover.jpg")
+    // Cover image path (relative filename under Application Support/Covers, e.g. "xxx_cover.jpg")
     var coverImagePath: String?
     var rendererPreference: BookRendererPreference
     var compatibilityState: BookCompatibilityState

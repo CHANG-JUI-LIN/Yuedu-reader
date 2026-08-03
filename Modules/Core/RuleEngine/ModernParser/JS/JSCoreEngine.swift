@@ -155,6 +155,7 @@ class JSCoreEngine {
     // MARK: - Resolved source headers
 
     private var resolvedHeaderCache: [String: String]?
+    private var resolvedHeaderLoginInfoRevision: UInt64?
     private let resolvedHeaderCacheLock = NSLock()
     private var isResolvingHeaders = false
 
@@ -169,30 +170,41 @@ class JSCoreEngine {
         // `java.ajaxAll` waits on worker requests while occupying the JS queue.
         // Those workers still need the already-resolved headers; hopping back to
         // the occupied queue here deadlocks the batch until its timeout.
+        let loginInfoRevision = currentLoginInfoRevision()
         resolvedHeaderCacheLock.lock()
         let cached = resolvedHeaderCache
+        let cachedRevision = resolvedHeaderLoginInfoRevision
         resolvedHeaderCacheLock.unlock()
-        if let cached { return cached }
+        if let cached, cachedRevision == loginInfoRevision { return cached }
 
         return onJSQueue { [self] () -> [String: String] in
+            let currentRevision = currentLoginInfoRevision()
             resolvedHeaderCacheLock.lock()
             let cached = resolvedHeaderCache
+            let cachedRevision = resolvedHeaderLoginInfoRevision
             resolvedHeaderCacheLock.unlock()
-            if let cached { return cached }
+            if let cached, cachedRevision == currentRevision { return cached }
             guard !isResolvingHeaders, let header = bookSource?.header else { return [:] }
             isResolvingHeaders = true
             let headers = parseHeaders(header)
             isResolvingHeaders = false
             resolvedHeaderCacheLock.lock()
             resolvedHeaderCache = headers
+            resolvedHeaderLoginInfoRevision = currentRevision
             resolvedHeaderCacheLock.unlock()
             return headers
         }
     }
 
+    private func currentLoginInfoRevision() -> UInt64 {
+        guard let sourceUrl = bookSource?.bookSourceUrl else { return 0 }
+        return LoginManager.shared.loginInfoRevision(sourceUrl: sourceUrl)
+    }
+
     private func clearResolvedHeaderCache() {
         resolvedHeaderCacheLock.lock()
         resolvedHeaderCache = nil
+        resolvedHeaderLoginInfoRevision = nil
         resolvedHeaderCacheLock.unlock()
     }
 
@@ -377,6 +389,92 @@ class JSCoreEngine {
         neutralizeDestructuringArrowParams(neutralizeResultRedeclaration(script))
     }
 
+    /// Detect a `return` that belongs to the rule snippet itself. Returns inside
+    /// a function/arrow body are valid in a block and must not force the outer
+    /// function wrapper, otherwise the block's final expression is lost.
+    private static func containsTopLevelReturn(_ script: String) -> Bool {
+        let bytes = Array(script.utf8)
+        var braceDepth = 0
+        var quote: UInt8?
+        var escaped = false
+        var lineComment = false
+        var blockComment = false
+        var index = 0
+
+        while index < bytes.count {
+            let byte = bytes[index]
+            let next = index + 1 < bytes.count ? bytes[index + 1] : 0
+
+            if lineComment {
+                if byte == 10 || byte == 13 { lineComment = false }
+                index += 1
+                continue
+            }
+            if blockComment {
+                if byte == 42 && next == 47 {
+                    blockComment = false
+                    index += 2
+                } else {
+                    index += 1
+                }
+                continue
+            }
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if byte == 92 {
+                    escaped = true
+                } else if byte == activeQuote {
+                    quote = nil
+                }
+                index += 1
+                continue
+            }
+            if byte == 47 && next == 47 {
+                lineComment = true
+                index += 2
+                continue
+            }
+            if byte == 47 && next == 42 {
+                blockComment = true
+                index += 2
+                continue
+            }
+            if byte == 39 || byte == 34 || byte == 96 {
+                quote = byte
+                index += 1
+                continue
+            }
+            if byte == 123 {
+                braceDepth += 1
+                index += 1
+                continue
+            }
+            if byte == 125 {
+                braceDepth = max(0, braceDepth - 1)
+                index += 1
+                continue
+            }
+            if braceDepth == 0, byte == 114,
+               index + 6 <= bytes.count,
+               Array(bytes[index..<(index + 6)]) == Array("return".utf8),
+               (index == 0 || !isIdentifierByte(bytes[index - 1])),
+               (index + 6 == bytes.count || !isIdentifierByte(bytes[index + 6])) {
+                return true
+            }
+            index += 1
+        }
+        return false
+    }
+
+    private static func isIdentifierByte(_ byte: UInt8) -> Bool {
+        (byte >= 48 && byte <= 57)
+            || (byte >= 65 && byte <= 90)
+            || (byte >= 97 && byte <= 122)
+            || byte == 95
+            || byte == 36
+    }
+
     /// Evaluate with multiple bindings injected into the context before execution.
     func evaluate(_ script: String, bindings: [String: Any]) -> String? {
         switch onJSQueueWithTimeout({ [self] () -> String? in
@@ -392,14 +490,26 @@ class JSCoreEngine {
         }
     }
 
-    /// Evaluate a rule snippet in a block scope so `let`/`const` declarations
-    /// from one Legado rule segment do not leak into later segments.
+    /// Evaluate a rule snippet in an isolated scope so `let`/`const` declarations
+    /// from one Legado rule segment do not leak into later segments. Legado also
+    /// permits a top-level `return` in rule snippets, which JavaScriptCore only
+    /// accepts inside a function body. Most snippets instead rely on the final
+    /// expression's completion value; wrapping those in a function would turn
+    /// the same valid value into `undefined`.
     func evaluateIsolated(_ script: String, result: Any?, bindings: [String: Any] = [:]) -> String? {
-        evaluate("{\n\(script)\n}", result: result, bindings: bindings)
+        let prepared = Self.prepareSourceJS(script)
+        let isolated = Self.containsTopLevelReturn(prepared)
+            ? "(function() {\n\(prepared)\n})()"
+            : "{\n\(prepared)\n}"
+        return evaluate(isolated, result: result, bindings: bindings)
     }
 
     func evaluateIsolated(_ script: String, bindings: [String: Any]) -> String? {
-        evaluate("{\n\(script)\n}", bindings: bindings)
+        let prepared = Self.prepareSourceJS(script)
+        let isolated = Self.containsTopLevelReturn(prepared)
+            ? "(function() {\n\(prepared)\n})()"
+            : "{\n\(prepared)\n}"
+        return evaluate(isolated, bindings: bindings)
     }
 
     /// Evaluate a script whose result is BYTES (Legado image-decode convention:
@@ -519,6 +629,25 @@ class JSCoreEngine {
 
         // Inject the `java` bridge object
         ctx.setObject(bridge, forKeyedSubscript: "java" as NSString)
+        // JavaScriptCore performs an Objective-C receiver check when an exported
+        // bridge method is called as a detached function (`const b64 =
+        // java.base64Encode; b64(...)`). Legado sources commonly use that form;
+        // install closures for the string codecs so those calls retain a valid
+        // receiver instead of throwing `self type check failed`.
+        let base64EncodeBlock: @convention(block) (String) -> String = { [weak bridge] value in
+            bridge?.base64Encode(value) ?? ""
+        }
+        let base64DecodeBlock: @convention(block) (String) -> String = { [weak bridge] value in
+            bridge?.base64Decode(value) ?? ""
+        }
+        ctx.setObject(base64EncodeBlock, forKeyedSubscript: "__yueduBase64Encode" as NSString)
+        ctx.setObject(base64DecodeBlock, forKeyedSubscript: "__yueduBase64Decode" as NSString)
+        ctx.evaluateScript("""
+            java.base64Encode = __yueduBase64Encode;
+            java.base64Decode = __yueduBase64Decode;
+            delete __yueduBase64Encode;
+            delete __yueduBase64Decode;
+        """)
         let getCookieBlock: @convention(block) (String, JSValue?) -> String = { [weak bridge] url, keyValue in
             guard let bridge else { return "" }
             let key: String

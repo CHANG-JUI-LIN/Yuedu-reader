@@ -77,6 +77,7 @@ struct TTSPanelView: View {
                             .foregroundColor(DSColor.textSecondary)
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     VStack(spacing: 16) {
@@ -169,6 +170,7 @@ struct TTSPanelView: View {
                     }
                     .padding(.vertical, 8)
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     Button {
@@ -191,6 +193,7 @@ struct TTSPanelView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("語速"))) {
                     HStack {
@@ -232,6 +235,7 @@ struct TTSPanelView: View {
                         .foregroundColor(DSColor.textSecondary)
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("定時停止"))) {
                     Menu {
@@ -252,6 +256,20 @@ struct TTSPanelView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
+
+                Section(header: Text(localized("播放行為"))) {
+                    Toggle(isOn: $gs.ttsKeepsScreenAwake) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(localized("朗讀時保持螢幕開啟"))
+                                .font(DSFont.body)
+                            Text(localized("只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。"))
+                                .font(DSFont.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("高亮"))) {
                     Toggle(isOn: ttsHighlightEnabledBinding) {
@@ -296,6 +314,7 @@ struct TTSPanelView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
             }
             .scrollContentBackground(.hidden)
             .navigationTitle(localized("語音朗讀"))
@@ -313,6 +332,19 @@ struct TTSPanelView: View {
             }
             .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
             .pageBackgroundToolbar(for: .settings)
+            .alert(
+                localized("語音朗讀"),
+                isPresented: Binding(
+                    get: { tts.errorMessage != nil },
+                    set: { isPresented in
+                        if !isPresented { tts.dismissError() }
+                    }
+                )
+            ) {
+                Button(localized("好"), role: .cancel) { tts.dismissError() }
+            } message: {
+                Text(tts.errorMessage ?? "")
+            }
             .sheet(isPresented: $showChapterPicker) {
                 NavigationStack {
                     List(chapters.indices, id: \.self) { index in
@@ -351,6 +383,9 @@ struct TTSPanelView: View {
                 if !isScrubbing {
                     scrubProgress = playbackProgress
                 }
+            }
+            .onChange(of: gs.ttsKeepsScreenAwake) { _, _ in
+                tts.updateScreenAwakePreference()
             }
         }
     }
@@ -420,6 +455,7 @@ struct AutoReadPanelView: View {
                     }
                     .padding(.vertical, 8)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("翻頁速度"))) {
                     HStack {
@@ -448,8 +484,14 @@ struct AutoReadPanelView: View {
                     .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
                 }
+                .interfaceSectionSurface()
             }
             .scrollContentBackground(.hidden)
+            // Matches the 聽書 panel above: hiding the list background only helps if
+            // something is painted behind it, otherwise this sheet showed bare system
+            // chrome while its sibling honoured the page background.
+            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .settings)
             .navigationTitle(localized("自動閱讀"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

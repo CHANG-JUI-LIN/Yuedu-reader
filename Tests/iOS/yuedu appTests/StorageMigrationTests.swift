@@ -89,6 +89,26 @@ struct StorageMigrationTests {
         #expect(fixture.legacyExists("books_meta.json"))
     }
 
+    @Test("repairs covers imported to Documents after the migration")
+    func repairsMisplacedCoversAfterMigration() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+
+        // Complete the normal one-time migration first.
+        StorageMigration.runIfNeeded(userDefaults: fixture.defaults)
+
+        let coverName = "\(UUID().uuidString)_cover.jpg"
+        var book = ReadingBook(title: "T", author: "A", contentFilename: "book.epub")
+        book.coverImagePath = coverName
+        try fixture.writeCurrentMetadata([book])
+        try fixture.writeLegacy(coverName, contents: "cover-bytes")
+
+        StorageMigration.runIfNeeded(userDefaults: fixture.defaults)
+
+        #expect(!fixture.legacyExists(coverName))
+        #expect(fixture.text(at: StorageLocations.coverFile(coverName)) == "cover-bytes")
+    }
+
     @Test("a stale legacy copy is removed when the destination already exists")
     func removesStaleLegacyCopyOnRetry() throws {
         let fixture = try Fixture()
@@ -140,6 +160,16 @@ struct StorageMigrationTests {
             let url = documents.appendingPathComponent("books_meta.json")
             try data.write(to: url, options: .atomic)
             createdPaths.append(url)
+        }
+
+        func writeCurrentMetadata(_ books: [ReadingBook]) throws {
+            let data = try JSONEncoder().encode(books)
+            try FileManager.default.createDirectory(
+                at: StorageLocations.booksMetadataFile.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: StorageLocations.booksMetadataFile, options: .atomic)
+            createdPaths.append(StorageLocations.booksMetadataFile)
         }
 
         func writeLegacyDirectory(_ name: String, file: String, contents: String) throws {

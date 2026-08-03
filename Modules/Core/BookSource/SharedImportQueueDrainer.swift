@@ -122,7 +122,7 @@ final class SharedImportQueueDrainer: ObservableObject {
     }
 
     /// Set after a drain that processed at least one queued item. The UI observes
-    /// this to show a toast, then resets it to `nil`.
+    /// this to show an alert, then resets it to `nil` after dismissal.
     @Published var lastOutcome: Outcome?
 
     private let defaults: UserDefaults?

@@ -102,12 +102,12 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         }
     }
 
-    /// Called when near the bottom; appends the next chapter.
-    ///
-    /// A chapter already known to be uncached is skipped: it is standing on a placeholder
-    /// and its fetch is already requested, so `retryChapterIfNeeded` owns resuming it.
-    /// Without this guard the caller — `scrollViewDidScroll`, i.e. every frame near a
-    /// boundary — kept re-entering the build only to hit `contentNotCached` again.
+    /// Called when near the bottom; appends the next chapter
+    /// A chapter already known to be uncached is skipped: it is standing on a loading
+    /// placeholder and its fetch is already requested, so `retryChapterIfNeeded` owns
+    /// resuming it. Without this guard the caller — `scrollViewDidScroll`, i.e. every
+    /// frame near a boundary — kept re-entering the build only to hit `contentNotCached`
+    /// again, re-requesting the same chapter on every frame.
     func ensureChapterAhead(of chapterIndex: Int) {
         let next = chapterIndex + 1
         guard next < builder.chapterCount,
@@ -298,10 +298,10 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     @discardableResult
     func retryChapterIfNeeded(_ chapterIndex: Int) async -> Bool {
         // Read, never consume: `loadChapter` clears this entry once the chapter is
-        // actually sliced and re-arms it when the content is still uncached. Removing
-        // it up front lost the chapter permanently whenever the load below threw —
-        // cancellation included, and this runs inside a refresh preparation task that
-        // the next refresh cancels — because nothing else records that it is missing.
+        // actually sliced and re-arms it when the content is still uncached. Removing it
+        // up front lost the chapter permanently whenever the load below threw for any
+        // other reason, because nothing else records that it is still missing — and with
+        // the loading placeholder in place that strands a visible 載入中 block.
         guard let prepend = pendingMissingChapters[chapterIndex],
               !loadedChapters.contains(chapterIndex),
               !slicingChapters.contains(chapterIndex)

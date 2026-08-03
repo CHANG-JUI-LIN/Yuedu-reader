@@ -12,39 +12,44 @@ struct CJKTypographyProcessorTests {
 
     // MARK: kern 壓縮
 
-    @Test("閉括號後接開括號套用 -1em kern")
-    func closingThenOpeningAppliesFullEmKern() {
+    @Test("閉括號後接開括號在安全範圍內壓縮")
+    func closingThenOpeningCompressesWithoutOverlap() {
         let font = UIFont.systemFont(ofSize: 20)
         let attr = NSAttributedString(string: "」「", attributes: [.font: font])
 
         let result = CJKTypographyProcessor.apply(to: attr)
 
-        let kern = result.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat ?? 0
-        // halfEm = 10, 閉+開 → -halfEm * 2 = -20
-        #expect(kern == -20.0)
+        assertSafeCompression(result, maximumMagnitude: font.pointSize)
     }
 
-    @Test("閉括號後接閉括號套用 -0.5em kern")
-    func closingThenClosingAppliesHalfEmKern() {
+    @Test("閉括號後接閉括號在安全範圍內壓縮")
+    func closingThenClosingCompressesWithoutOverlap() {
         let font = UIFont.systemFont(ofSize: 20)
         let attr = NSAttributedString(string: "。，", attributes: [.font: font])
 
         let result = CJKTypographyProcessor.apply(to: attr)
 
-        let kern = result.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat ?? 0
-        // halfEm = 10, 閉+閉 → -halfEm = -10
-        #expect(kern == -10.0)
+        assertSafeCompression(result, maximumMagnitude: font.pointSize * 0.5)
     }
 
-    @Test("開括號後接開括號套用 -0.5em kern")
-    func openingThenOpeningAppliesHalfEmKern() {
+    @Test("開括號後接開括號在安全範圍內壓縮")
+    func openingThenOpeningCompressesWithoutOverlap() {
         let font = UIFont.systemFont(ofSize: 20)
         let attr = NSAttributedString(string: "「（", attributes: [.font: font])
 
         let result = CJKTypographyProcessor.apply(to: attr)
 
-        let kern = result.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat ?? 0
-        #expect(kern == -10.0)
+        assertSafeCompression(result, maximumMagnitude: font.pointSize * 0.5)
+    }
+
+    @Test("省略號後接右括號不重疊")
+    func ellipsisAndClosingBracketDoNotOverlap() {
+        let font = UIFont.systemFont(ofSize: 20)
+        let attr = NSAttributedString(string: "……】", attributes: [.font: font])
+
+        let result = CJKTypographyProcessor.apply(to: attr)
+
+        assertAdjacentGlyphsDoNotOverlap(result)
     }
 
     @Test("一般 ASCII 文字不加 kern")
@@ -85,13 +90,16 @@ struct CJKTypographyProcessorTests {
     @Test("已有 kern 的情況下累加而非覆蓋")
     func kernAccumulates() {
         let font = UIFont.systemFont(ofSize: 20)
+        let baseline = CJKTypographyProcessor.apply(
+            to: NSAttributedString(string: "」「", attributes: [.font: font])
+        )
+        let baselineKern = baseline.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat ?? 0
         let mutable = NSMutableAttributedString(string: "」「", attributes: [.font: font])
         mutable.addAttribute(.kern, value: CGFloat(-5.0), range: NSRange(location: 0, length: 1))
 
         let result = CJKTypographyProcessor.apply(to: mutable)
         let kern = result.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat ?? 0
-        // 既有 -5 + 閉+開 -20 = -25
-        #expect(kern == -25.0)
+        #expect(abs(kern - (baselineKern - 5.0)) < 0.001)
     }
 
     @Test("中文和半形英文數字邊界不再插入自動 kern 且不改字串長度")
@@ -190,6 +198,62 @@ struct CJKTypographyProcessorTests {
         let diff = CJKTypographyProcessor.closingMarks.subtracting(
             CJKTypographyProcessor.lineStartForbidden)
         #expect(diff.isEmpty)
+    }
+
+    private func assertSafeCompression(
+        _ attributed: NSAttributedString,
+        maximumMagnitude: CGFloat
+    ) {
+        let kern = attributed.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat ?? 0
+        #expect(kern < 0)
+        #expect(kern >= -maximumMagnitude)
+        assertAdjacentGlyphsDoNotOverlap(attributed)
+    }
+
+    private func assertAdjacentGlyphsDoNotOverlap(_ attributed: NSAttributedString) {
+        let line = CTLineCreateWithAttributedString(attributed)
+        let inkRects = glyphInkRectsByStringIndex(in: line)
+        for index in 0..<(attributed.length - 1) {
+            guard let current = inkRects[index], let next = inkRects[index + 1] else {
+                Issue.record("Missing shaped glyph bounds at UTF-16 pair \(index)")
+                continue
+            }
+            #expect(next.minX >= current.maxX)
+        }
+    }
+
+    private func glyphInkRectsByStringIndex(in line: CTLine) -> [Int: CGRect] {
+        var result: [Int: CGRect] = [:]
+        for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+            let count = CTRunGetGlyphCount(run)
+            guard count > 0 else { continue }
+            let attributes = CTRunGetAttributes(run) as NSDictionary
+            guard let fontValue = attributes[kCTFontAttributeName] else { continue }
+            let font = fontValue as! CTFont
+
+            var glyphs = [CGGlyph](repeating: 0, count: count)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            var stringIndices = [CFIndex](repeating: 0, count: count)
+            CTRunGetGlyphs(run, CFRangeMake(0, 0), &glyphs)
+            CTRunGetPositions(run, CFRangeMake(0, 0), &positions)
+            CTRunGetStringIndices(run, CFRangeMake(0, 0), &stringIndices)
+
+            for glyphIndex in 0..<count {
+                var glyph = glyphs[glyphIndex]
+                let bounds = CTFontGetBoundingRectsForGlyphs(
+                    font,
+                    .horizontal,
+                    &glyph,
+                    nil,
+                    1
+                )
+                result[stringIndices[glyphIndex]] = bounds.offsetBy(
+                    dx: positions[glyphIndex].x,
+                    dy: positions[glyphIndex].y
+                )
+            }
+        }
+        return result
     }
 }
 

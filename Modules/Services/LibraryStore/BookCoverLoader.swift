@@ -53,6 +53,13 @@ enum BookCoverLoader {
         cache.object(forKey: urlString as NSString)
     }
 
+    /// Drops decoded cover bitmaps without touching the persisted cover files.
+    /// Cache management calls this after deleting the file-backed cover cache so
+    /// an already-visible screen cannot keep serving stale images from memory.
+    static func clearMemoryCache() {
+        cache.removeAllObjects()
+    }
+
     /// Fetch a cover image, honoring the in-memory cache and the supplied headers.
     static func loadImage(urlString: String, headers: [String: String]) async -> UIImage? {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,7 +112,7 @@ enum BookCoverLoader {
         return cgImage.bytesPerRow * cgImage.height
     }
 
-    /// Download a cover and save it as JPEG under Documents; returns the saved
+    /// Download a cover and save it as JPEG under Application Support/Covers; returns the saved
     /// filename (to store in `ReadingBook.coverImagePath`) or nil on failure.
     static func downloadAndSave(
         urlString: String,

@@ -47,7 +47,7 @@ struct ReaderBatterySVGImportView: View {
                             }
                         }
                     }
-                    .listRowBackground(DSColor.surface)
+                    .interfaceSectionSurface()
                 }
 
                 Section {
@@ -55,7 +55,7 @@ struct ReaderBatterySVGImportView: View {
                 } header: {
                     Text(localized("電量 SVG 模板"))
                 }
-                .listRowBackground(DSColor.surface)
+                .interfaceSectionSurface()
 
                 Section {
                     Button {
@@ -67,7 +67,7 @@ struct ReaderBatterySVGImportView: View {
                 } footer: {
                     Text(localized("只會匯入通過安全驗證的 SVG，動態標記會保留供分享。"))
                 }
-                .listRowBackground(DSColor.surface)
+                .interfaceSectionSurface()
             }
             .listStyle(.insetGrouped)
             .themedAppSurface()
@@ -112,13 +112,12 @@ struct ReaderBatterySVGImportView: View {
                 renamePendingAsset()
             }
         }
-        .confirmationDialog(
+        .alert(
             localized("刪除 SVG 模板？"),
             isPresented: Binding(
                 get: { assetPendingDeletion != nil },
                 set: { if !$0 { assetPendingDeletion = nil } }
             ),
-            titleVisibility: .visible,
             presenting: assetPendingDeletion
         ) { asset in
             Button(localized("刪除"), role: .destructive) {

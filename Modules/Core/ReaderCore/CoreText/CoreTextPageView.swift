@@ -2270,7 +2270,7 @@ final class SnapshotPageViewController: UIViewController {
 extension SnapshotPageViewController: PageIndexProviding {}
 extension SnapshotPageViewController: CoreTextReadingPositionProviding {}
 
-/// Back side used by curl's double-sided page animation.
+/// Mirrored back of the same logical page for UIKit's double-sided curl.
 final class PageBackViewController: UIViewController {
     let virtualIndex: Int
     let logicalPageIndex: Int
@@ -2314,10 +2314,10 @@ final class PageBackViewController: UIViewController {
             imageView.clipsToBounds = true
             imageView.frame = view.bounds
             imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            imageView.transform = CGAffineTransform(scaleX: -1, y: 1)
             view.addSubview(imageView)
         }
 
-        // Purely decorative half of the curl pair — never announce it.
         view.accessibilityElementsHidden = true
     }
 }

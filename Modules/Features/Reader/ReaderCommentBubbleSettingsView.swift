@@ -32,6 +32,7 @@ struct ReaderCommentBubbleSettingsView: View {
                 }
                 .padding(.vertical, DSSpacing.sm)
             }
+            .interfaceSectionSurface()
 
             Section {
                 Toggle(localized("優先使用選取的氣泡樣式"), isOn: prioritizeSelectedBubbleBinding)
@@ -40,6 +41,7 @@ struct ReaderCommentBubbleSettingsView: View {
             } footer: {
                 Text(localized("開啟後優先使用選取的氣泡樣式；關閉後依書源提供的 SVG 顯示。"))
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("管理"))) {
                 Button(action: openNewStyleEditor) {
@@ -72,6 +74,7 @@ struct ReaderCommentBubbleSettingsView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("整體大小"))) {
                 BubbleSliderRow(
@@ -85,6 +88,7 @@ struct ReaderCommentBubbleSettingsView: View {
                     .font(DSFont.caption)
                     .foregroundStyle(DSColor.textSecondary)
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("文字大小"))) {
                 BubbleSliderRow(
@@ -98,6 +102,7 @@ struct ReaderCommentBubbleSettingsView: View {
                     .font(DSFont.caption)
                     .foregroundStyle(DSColor.textSecondary)
             }
+            .interfaceSectionSurface()
         }
         .navigationTitle(localized("氣泡設定"))
         .toolbarTitleDisplayMode(.inline)
@@ -122,7 +127,7 @@ struct ReaderCommentBubbleSettingsView: View {
             defaultFilename: exportFilename,
             onCompletion: handleSVGExport
         )
-        .confirmationDialog(
+        .alert(
             localized("刪除目前樣式？"),
             isPresented: Binding(
                 get: { stylePendingDeletion != nil },
@@ -132,7 +137,6 @@ struct ReaderCommentBubbleSettingsView: View {
                     }
                 }
             ),
-            titleVisibility: .visible,
             presenting: stylePendingDeletion
         ) { style in
             Button(localized("刪除目前樣式"), role: .destructive) {
@@ -507,6 +511,7 @@ private struct CommentBubbleStyleEditorView: View {
                 Section(header: Text(localized("樣式名稱"))) {
                     TextField(localized("樣式名稱"), text: $nameDraft)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("SVG / TXT"))) {
                     TextEditor(text: $svgDraft)
@@ -521,6 +526,7 @@ private struct CommentBubbleStyleEditorView: View {
                         Label(localized("從剪貼簿貼上 SVG"), systemImage: "doc.on.clipboard")
                     }
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized(draft.titleKey))
             .toolbarTitleDisplayMode(.inline)

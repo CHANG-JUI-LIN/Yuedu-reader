@@ -153,7 +153,7 @@ struct ReaderOverlayComponentPickerView: View {
                                     .foregroundStyle(DSColor.textPrimary)
                                     .frame(minHeight: DSLayout.readerAppleBooksControlSize)
                             }
-                            .listRowBackground(DSColor.surface)
+                            .interfaceSectionSurface()
                         }
                     }
                 }

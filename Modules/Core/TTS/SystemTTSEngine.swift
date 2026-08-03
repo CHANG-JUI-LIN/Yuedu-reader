@@ -10,9 +10,19 @@ import UIKit
 /// `TTSPlayable` without special-casing.
 final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
+    static func shouldRecoverFromCancelledUtterance(
+        isPlaying: Bool,
+        isPaused: Bool,
+        hasActiveUtterance: Bool,
+        afterMediaServicesReset: Bool
+    ) -> Bool {
+        hasActiveUtterance && isPlaying && !isPaused && afterMediaServicesReset
+    }
+
     var isPlaying: Bool = false
     var onPageFinished: (() -> TTSNextUnitOutcome)?
     var onStop: (() -> Void)?
+    var onError: ((Error) -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
 
@@ -34,6 +44,10 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private var playbackToken = UUID()
     private var activeUtterance: AVSpeechUtterance?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    /// `didCancel` does not include an error. Only a preceding media-services-reset notification
+    /// authorizes recovery; an unqualified cancellation is treated as a system voice failure so
+    /// iOS 17's broken voice provider cannot trigger an endless retry loop.
+    private var shouldRecoverCancellation = false
     /// UTF-16 offset (into the current chunk) of the last word the synthesizer reported it was
     /// about to speak. Used so a resume that lost the paused state — the OS commonly ends a
     /// paused utterance when backgrounded — can re-speak only the remainder of the sentence
@@ -130,6 +144,31 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
     }
 
+    /// Re-issues the current utterance after a media-services reset. If AVSpeechSynthesizer
+    /// has already emitted `didCancel`, that delegate path owns recovery; otherwise only
+    /// rebuild when it no longer reports an active utterance, avoiding two overlapping speaks.
+    func recoverAfterAudioSessionReset() {
+        guard isPlaying else { return }
+        if isWaitingForNextUnit {
+            silence.restart()
+            return
+        }
+        guard !isPaused else { return }
+        shouldRecoverCancellation = true
+        guard !synthesizer.isSpeaking else {
+            ttsLog("[TTS][SystemEngine] media-services reset; synthesizer still speaking")
+            return
+        }
+
+        shouldRecoverCancellation = false
+        if activeUtterance != nil {
+            synthesizer.stopSpeaking(at: .immediate)
+            activeUtterance = nil
+        }
+        ttsLog("[TTS][SystemEngine] recovering after media-services reset index=\(currentIndex) offset=\(spokenUTF16Offset)")
+        resumeCurrentChunkFromSpokenOffset(token: playbackToken)
+    }
+
     func stop() {
         ttsLog("[TTS][SystemEngine] stop requested")
         playbackToken = UUID()
@@ -215,12 +254,17 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             rate: lastRate,
             pronunciationHints: hints
         )
-        utterance.voice = preferredVoice(for: chunks[index])
+        guard let voice = Self.preferredVoice(for: chunks[index]) else {
+            failPlayback(TTSPlaybackError.systemVoiceUnavailable)
+            return
+        }
+        utterance.voice = voice
         activeUtterance = utterance
         isPlaying = true
 
         onPlaybackStarted?(estimatedDuration(for: chunks[index]))
-        ttsLog("[TTS][SystemEngine] speak chunk index=\(index) rate=\(utterance.rate) voice=\(utterance.voice?.identifier ?? "default")")
+        let voiceIdentifier = utterance.voice?.identifier ?? "system-default"
+        ttsLog("[TTS][SystemEngine] speak chunk index=\(index) rate=\(utterance.rate) voice=\(voiceIdentifier)")
         synthesizer.speak(utterance)
     }
 
@@ -246,7 +290,11 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
         let hints = remainingHints(forChunk: currentIndex, fromUTF16Offset: offset)
         let utterance = Self.makeUtterance(text: remaining, rate: lastRate, pronunciationHints: hints)
-        utterance.voice = preferredVoice(for: remaining)
+        guard let voice = Self.preferredVoice(for: remaining) else {
+            failPlayback(TTSPlaybackError.systemVoiceUnavailable)
+            return
+        }
+        utterance.voice = voice
         activeUtterance = utterance
         utteranceBaseOffset = offset
         isPlaying = true
@@ -288,6 +336,36 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         activeUtterance = nil
         guard isPlaying, !isPaused else { return }
         speakChunk(at: finishedIndex + 1, token: playbackToken)
+    }
+
+    private func handlePlaybackCancelled(_ utterance: AVSpeechUtterance) {
+        guard utterance === activeUtterance else { return }
+        guard Self.shouldRecoverFromCancelledUtterance(
+            isPlaying: isPlaying,
+            isPaused: isPaused,
+            hasActiveUtterance: activeUtterance != nil,
+            afterMediaServicesReset: shouldRecoverCancellation
+        ) else {
+            ttsLog("[TTS][SystemEngine] utterance cancelled without media-services reset")
+            activeUtterance = nil
+            shouldRecoverCancellation = false
+            failPlayback(TTSPlaybackError.systemVoiceUnavailable)
+            return
+        }
+
+        ttsLog("[TTS][SystemEngine] utterance cancelled index=\(currentIndex) offset=\(spokenUTF16Offset)")
+        shouldRecoverCancellation = false
+        activeUtterance = nil
+        resumeCurrentChunkFromSpokenOffset(token: playbackToken)
+    }
+
+    private func failPlayback(_ error: Error) {
+        guard isPlaying else { return }
+        ttsLog("[TTS][SystemEngine] playback failed error=\(error.localizedDescription)")
+        shouldRecoverCancellation = false
+        resetPlaybackState()
+        onError?(error)
+        onStop?()
     }
 
     private func handlePageChunksFinished(token: UUID) {
@@ -362,6 +440,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     private func resetPlaybackState() {
         stopSynthesizer()
+        shouldRecoverCancellation = false
         silence.stop()
         isWaitingForNextUnit = false
         pendingUnit = nil
@@ -377,12 +456,10 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     // MARK: - Voice & rate
 
-    private func preferredVoice(for text: String) -> AVSpeechSynthesisVoice? {
-        let savedIdentifier = GlobalSettings.shared.ttsSystemVoiceIdentifier
-        if !savedIdentifier.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: savedIdentifier) {
-            return voice
-        }
-        return AVSpeechSynthesisVoice(language: Self.preferredLanguage(for: text))
+    /// Selects a language voice from the text so Chinese content is not spoken by the
+    /// device's English default voice. This is language selection, not a user voice override.
+    static func preferredVoice(for text: String) -> AVSpeechSynthesisVoice? {
+        AVSpeechSynthesisVoice(language: preferredLanguage(for: text))
     }
 
     static func preferredLanguage(for text: String) -> String {
@@ -392,8 +469,9 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         return AVSpeechSynthesisVoice.currentLanguageCode()
     }
 
-    /// Picks Traditional vs. Simplified Chinese based on the user's preferred languages,
-    /// matching the app's own zh-Hant / zh-Hans localization.
+    /// Picks Traditional vs. Simplified Chinese from the device's language and region
+    /// preferences, while the text check above guarantees Chinese gets a Chinese voice even
+    /// when the rest of the device is configured in English.
     private static func preferredChineseLanguage() -> String {
         for code in Locale.preferredLanguages {
             let lower = code.lowercased()
@@ -421,6 +499,8 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         rate: Float,
         pronunciationHints: [TTSPronunciationHint]
     ) -> AVSpeechUtterance {
+        // The language-specific voice is assigned by the playback path after this utterance is
+        // built. Keeping construction separate lets pronunciation annotations stay testable.
         let utterance: AVSpeechUtterance
         if pronunciationHints.isEmpty {
             utterance = AVSpeechUtterance(string: text)
@@ -507,6 +587,9 @@ extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
         }
     }
 
-    // didCancel is intentionally unhandled: cancellation only happens when we stop or jump,
-    // and those paths drive the next utterance themselves.
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { [weak self] in
+            self?.handlePlaybackCancelled(utterance)
+        }
+    }
 }

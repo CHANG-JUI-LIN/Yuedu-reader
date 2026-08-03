@@ -26,6 +26,7 @@ struct RuntimeVariableEditorView: View {
                             .foregroundColor(.secondary)
                             .textSelection(.enabled)
                     }
+                    .interfaceSectionSurface()
                 }
                 Section {
                     TextEditor(text: $text)
@@ -39,6 +40,7 @@ struct RuntimeVariableEditorView: View {
                             .foregroundColor(.red)
                     }
                 }
+                .interfaceSectionSurface()
                 Section {
                     Button(role: .destructive) {
                         text = ""
@@ -46,9 +48,13 @@ struct RuntimeVariableEditorView: View {
                         Label(localized("清除"), systemImage: "trash")
                     }
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(title)
             .toolbarTitleDisplayMode(.inline)
+            // The sections already carry `interfaceSectionSurface`, but the `Form` itself
+            // was still painting an opaque grouped background over any page background.
+            .themedAppSurface(for: .settings)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(localized("取消")) { dismiss() }

@@ -62,6 +62,8 @@ struct SourceValidationListHeader: View {
     let sources: [BookSource]
     let healthById: [UUID: SourceValidationSummary]
     @Binding var filter: ValidationListFilter
+    /// Grouped ⇄ flat layout switch, parked at the trailing end of the filter chips.
+    @Binding var grouped: Bool
 
     private var enabledCount: Int { sources.filter(\.enabled).count }
     private var discoverCount: Int {
@@ -95,7 +97,11 @@ struct SourceValidationListHeader: View {
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.xs)
-        .background(Color(.secondarySystemBackground))
+        // The card carries its own surface so it follows 毛玻璃／分組卡片／透明度 like the
+        // rows below it. A hardcoded `secondarySystemBackground` here was opaque at every
+        // setting, which is what made the header read as a solid slab above a see-through
+        // list. `clipShape` stays for the `Divider`, which is content rather than surface.
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
     }
 
@@ -120,7 +126,28 @@ struct SourceValidationListHeader: View {
             chip(.fetchError, label: localized("抓取異常"), count: healthCount(.fetchError))
             chip(.contentError, label: localized("正文異常"), count: healthCount(.contentError))
             Spacer(minLength: 0)
+            groupingToggle
         }
+    }
+
+    /// Grouped ⇄ flat toggle. Icon-only, so the symbol is hidden from VoiceOver and the
+    /// button carries the name itself — an `accessibilityLabel` alone would be shadowed by
+    /// the SF Symbol's own element (docs/design.md §7.1).
+    private var groupingToggle: some View {
+        Button {
+            grouped.toggle()
+        } label: {
+            Image(systemName: grouped ? "list.bullet.indent" : "list.bullet")
+                .font(DSFont.subheadline)
+                .foregroundColor(grouped ? DSColor.accent : DSColor.textSecondary)
+                .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+                .contentShape(Rectangle())
+                .accessibilityHidden(true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(localized("書源排列方式"))
+        .accessibilityValue(localized(grouped ? "分組顯示" : "不分組"))
+        .accessibilityHint(localized("點兩下切換分組與不分組"))
     }
 
     private func chip(_ value: ValidationListFilter, label: String, count: Int) -> some View {
@@ -133,9 +160,24 @@ struct SourceValidationListHeader: View {
                 .foregroundColor(selected ? .white : DSColor.textSecondary)
                 .padding(.horizontal, DSSpacing.md)
                 .padding(.vertical, DSSpacing.sm)
-                .background(selected ? DSColor.accent : Color(.secondarySystemBackground))
+                // Chips stay opaque at every 界面效果 setting — they are tappable controls,
+                // and a glass one over a page background loses the affordance. Same neutral
+                // fill as `DSChip`, which is the app's other filter-chip.
+                .background(selected ? DSColor.accent : DSColor.neutralControlFill)
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
     }
+}
+
+#Preview {
+    @Previewable @State var filter: ValidationListFilter = .all
+    @Previewable @State var grouped = true
+    SourceValidationListHeader(
+        sources: [BookSource(), BookSource()],
+        healthById: [:],
+        filter: $filter,
+        grouped: $grouped
+    )
+    .padding()
 }

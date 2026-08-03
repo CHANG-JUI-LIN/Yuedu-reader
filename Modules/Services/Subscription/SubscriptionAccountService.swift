@@ -1,4 +1,5 @@
 import FirebaseAuth
+import FirebaseCore
 import FirebaseFirestore
 import FirebaseFunctions
 import Foundation
@@ -22,6 +23,28 @@ final class SubscriptionAccountService {
         Auth.auth().currentUser != nil
     }
 
+    /// The last entitlement this device saw the backend verify for the signed-in
+    /// UID, readable synchronously and without a network round-trip. Returns nil
+    /// when signed out, before Firebase is configured, or when this UID was never
+    /// verified here. An expired subscription reads as `false` through
+    /// `isActive()`, so this cannot keep a lapsed monthly plan alive offline.
+    func cachedEntitlement() -> Bool? {
+        guard FirebaseApp.app() != nil, let uid = Auth.auth().currentUser?.uid else { return nil }
+        return SubscriptionEntitlementCache.load(uid: uid)?.isActive()
+    }
+
+    /// Whether a failed `bind` is worth retrying later. Anything that isn't a
+    /// Cloud Functions status — a URLSession failure, a decoding error — is
+    /// treated as temporary, since those are the shapes an unreachable backend
+    /// takes.
+    nonisolated func isRetryable(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return SubscriptionBindRetryPolicy.shouldRetry(
+            isFunctionsError: nsError.domain == FunctionsErrorDomain,
+            code: nsError.code
+        )
+    }
+
     func accountToken() async throws -> UUID {
         guard isAuthenticated else {
             throw SubscriptionAccountError.authenticationRequired
@@ -42,35 +65,78 @@ final class SubscriptionAccountService {
             throw SubscriptionAccountError.authenticationRequired
         }
         let jws: String = transaction.jwsRepresentation
-        let result = try await Functions.functions(region: functionsRegion)
-            .httpsCallable("bindSubscriptionPurchase")
-            .call(["signedTransaction": jws])
-        let entitlement = try entitlement(from: result.data)
-        SubscriptionEntitlementCache.save(entitlement, uid: uid)
-        return entitlement.isActive()
-    }
-
-    /// Returns nil only when Firebase is temporarily unavailable. The caller keeps
-    /// the last value for the same signed-in UID instead of revoking valid access.
-    func refreshEntitlement() async -> Bool? {
-        guard let uid = Auth.auth().currentUser?.uid else { return false }
         do {
-            let snapshot = try await Firestore.firestore()
-                .collection("entitlements")
-                .document(uid)
-                .getDocument()
-            let data = snapshot.data()
-            let entitlement = CachedSubscriptionEntitlement(
-                isProActive: data?["isProActive"] as? Bool == true,
-                expiresAt: (data?["expiresAt"] as? Timestamp)?.dateValue()
-            )
+            let result = try await Functions.functions(region: functionsRegion)
+                .httpsCallable("bindSubscriptionPurchase")
+                .call(["signedTransaction": jws])
+            let entitlement = try entitlement(from: result.data)
             SubscriptionEntitlementCache.save(entitlement, uid: uid)
             return entitlement.isActive()
         } catch {
             subscriptionAccountLog.error(
-                "Account entitlement refresh failed: \(error.localizedDescription, privacy: .public)"
+                "bindSubscriptionPurchase failed for uid \(uid, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
-            return SubscriptionEntitlementCache.load(uid: uid)?.isActive()
+            throw error
+        }
+    }
+
+    /// Returns nil when nothing authoritative is available: the backend has no
+    /// entitlement document for this UID, or Firebase is unreachable and this
+    /// device never cached a verified value. The caller keeps the last value for
+    /// the same signed-in UID instead of revoking valid access.
+    func refreshEntitlement() async -> Bool? {
+        guard let uid = Auth.auth().currentUser?.uid else { return false }
+        // Without a resolved environment there is no correct field to read:
+        // defaulting to `isProActive` would hand the App Store entitlement to a
+        // TestFlight build. Nothing to say beats saying the wrong thing.
+        guard SubscriptionRuntimeEnvironment.isResolved else { return nil }
+        do {
+            // `.server`, not the default source: the default attempts the server
+            // and silently falls back to Firestore's own offline cache, so an
+            // unreachable backend answered with either a missing document (read
+            // below as "never verified") or a stale pre-purchase document whose
+            // `false` would overwrite the verified keychain value. Both looked
+            // like a successful read, so the catch branch that consults the
+            // keychain was never reached. Requiring the server makes an applied
+            // value provably authoritative and routes an unreachable Firebase
+            // into that catch branch.
+            let snapshot = try await Firestore.firestore()
+                .collection("entitlements")
+                .document(uid)
+                .getDocument(source: .server)
+            guard SubscriptionEntitlementRefreshPolicy.shouldApplyServerValue(
+                documentExists: snapshot.exists
+            ), let data = snapshot.data() else {
+                // Missing document means "never verified on this backend" (e.g. a
+                // purchase made while signed out, bound only later on sign-in), not
+                // "no entitlement". Applying its absent value as false would revoke
+                // previously verified access once Firebase becomes reachable — the
+                // real China + VPN case behind "opening the tunnel drops Pro".
+                subscriptionAccountLog.notice(
+                    "No entitlement document for uid; keeping cached value"
+                )
+                return nil
+            }
+            // The document holds both environments side by side; read only this
+            // build's. Reading `isProActive` unconditionally is what let a free
+            // TestFlight purchase unlock the App Store build for anyone signed
+            // into the same Yuedu account — the leak that signing out cleared.
+            let fields = SubscriptionRuntimeEnvironment.entitlementFieldNames
+            let entitlement = CachedSubscriptionEntitlement(
+                isProActive: data[fields.isActive] as? Bool == true,
+                expiresAt: (data[fields.expiresAt] as? Timestamp)?.dateValue()
+            )
+            SubscriptionEntitlementCache.save(entitlement, uid: uid)
+            subscriptionAccountLog.notice(
+                "Entitlement document: uid \(uid, privacy: .public) isProActive \(entitlement.isProActive, privacy: .public)"
+            )
+            return entitlement.isActive()
+        } catch {
+            let cached = SubscriptionEntitlementCache.load(uid: uid)?.isActive()
+            subscriptionAccountLog.error(
+                "Account entitlement refresh failed: \(error.localizedDescription, privacy: .public); keychain cache \(String(describing: cached), privacy: .public)"
+            )
+            return cached
         }
     }
 

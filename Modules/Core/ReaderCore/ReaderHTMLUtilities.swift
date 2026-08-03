@@ -848,12 +848,24 @@ enum ReaderHTMLUtilities {
             cleanedTag.removeSubrange(range)
         }
 
+        let clickStyle = legadoClickStyle(fromConfigSuffix: suffix)?.lowercased()
+
         // Honor the click-config `style:"text"` directive: render the bubble inline at text size
         // (a small icon at the line end) instead of the SVG's intrinsic 180×144. We carry it as a
         // marker attribute the renderer reads — the suffix itself must be stripped so SwiftSoup's
         // `src` parsing doesn't choke on its inner quotes.
-        if legadoClickStyle(fromConfigSuffix: suffix)?.lowercased() == "text" {
+        if clickStyle == "text" {
             cleanedTag = markImageAsTextSized(cleanedTag)
+        }
+
+        let isQidianFullReview = clickStyle == "full" && isQidianSource(reviewContext)
+
+        // 起点中文的神评是 a bare `<svg><text>…</text></svg>` with `style:"FULL"`. It has no
+        // intrinsic coordinate system, so WebKit falls back to a 240×120 image and the text
+        // overflows its line box. Normalize only this source's malformed god-review payload;
+        // other sources' FULL SVGs must keep their authored dimensions and layout.
+        if isQidianFullReview {
+            cleanedTag = normalizeQidianGodReviewImage(cleanedTag)
         }
 
         guard let action = legadoClickAction(fromConfigSuffix: suffix),
@@ -874,11 +886,104 @@ enum ReaderHTMLUtilities {
                 sourceJS: target.sourceJS,
                 sourceURL: target.sourceURL
               )
-        else {
-            return cleanedTag
+        else { return cleanedTag }
+
+        // Keep FULL as inline HTML through newline normalization. Injecting a `<div>` here made
+        // newline-based Legado chapters look as if they already had authored block structure, so
+        // `wrapNewlineParagraphsIfNeeded` skipped every prose `<p>` as soon as a chapter contained
+        // a hot-review, author, or chapter-discussion card. The AST converter consumes this exact
+        // marker later and emits a render block, preserving Sigma/MD3's standalone-card behavior
+        // without changing how the source's prose structure is detected.
+        let reviewStyle = clickStyle == "full" ? " data-yd-review-style=\"full\"" : ""
+        return "<a href=\"\(href)\" class=\"yd-review-image\"\(reviewStyle)>\(cleanedTag)</a>"
+    }
+
+    private static func isQidianSource(_ context: LegadoReviewContext?) -> Bool {
+        guard let context else { return false }
+        return context.sourceName.contains("起点")
+            || context.sourceName.contains("起點")
+            || context.sourceURL.localizedCaseInsensitiveContains("qidian")
+    }
+
+    private static func normalizeQidianGodReviewImage(_ tag: String) -> String {
+        guard let srcRegex = try? NSRegularExpression(
+            pattern: #"\bsrc\s*=\s*[\"']([^\"']*)[\"']"#,
+            options: .caseInsensitive
+        ) else { return tag }
+        let tagNSString = tag as NSString
+        guard let srcMatch = srcRegex.firstMatch(
+            in: tag,
+            range: NSRange(location: 0, length: tagNSString.length)
+        ),
+        let srcRange = Range(srcMatch.range(at: 1), in: tag) else { return tag }
+
+        let src = String(tag[srcRange])
+        let prefix = "data:image/svg+xml;base64,"
+        guard src.lowercased().hasPrefix(prefix) else { return tag }
+        let payload = String(src.dropFirst(prefix.count))
+        guard let data = Data(base64Encoded: payload, options: .ignoreUnknownCharacters),
+              let svg = String(data: data, encoding: .utf8),
+              let svgTagRange = svg.range(of: #"<svg\b[^>]*>"#, options: .regularExpression),
+              let textRegex = try? NSRegularExpression(
+                  pattern: #"<text\b[^>]*>(.*?)</text>"#,
+                  options: [.caseInsensitive, .dotMatchesLineSeparators]
+              ) else { return tag }
+
+        let rootTag = String(svg[svgTagRange])
+        let rootAttributes = rootTag.lowercased()
+        guard !rootAttributes.contains("width=")
+                && !rootAttributes.contains("height=")
+                && !rootAttributes.contains("viewbox=") else { return tag }
+
+        let svgNSString = svg as NSString
+        let textMatches = textRegex.matches(
+            in: svg,
+            range: NSRange(location: 0, length: svgNSString.length)
+        )
+        guard textMatches.count == 1,
+              let textRange = Range(textMatches[0].range(at: 1), in: svg) else { return tag }
+
+        var text = String(svg[textRange])
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return tag }
+
+        var body = svg
+        body.removeSubrange(svgTagRange)
+        body = body.replacingOccurrences(of: "</svg>", with: "", options: [.caseInsensitive])
+        body = body.replacingOccurrences(of: #"<text\b[^>]*>.*?</text>"#, with: "", options: [.regularExpression, .caseInsensitive])
+        guard body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return tag }
+
+        let maxCharsPerLine = 28
+        let characters = Array(text)
+        var lines: [String] = []
+        for start in stride(from: 0, to: characters.count, by: maxCharsPerLine) {
+            lines.append(String(characters[start..<min(start + maxCharsPerLine, characters.count)]))
         }
 
-        return "<a href=\"\(href)\" class=\"yd-review-image\">\(cleanedTag)</a>"
+        let width = 720
+        let lineHeight = 32
+        let height = lines.count * lineHeight + 24
+        let textNodes = lines.enumerated().map { index, line in
+            let y = 18 + (index + 1) * lineHeight
+            return "<text x=\"12\" y=\"\(y)\" font-size=\"24\" fill=\"#666\">\(xmlEscaped(line))</text>"
+        }.joined()
+        let normalizedSVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(width)\" height=\"\(height)\" viewBox=\"0 0 \(width) \(height)\">\(textNodes)</svg>"
+        let normalizedSource = prefix + Data(normalizedSVG.utf8).base64EncodedString()
+
+        var normalizedTag = tag
+        normalizedTag.replaceSubrange(srcRange, with: normalizedSource)
+        return normalizedTag
+    }
+
+    private static func xmlEscaped(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
     }
 
     /// Extracts the `style` field from a Legado `,{json}` click-config suffix (e.g. "text" / "FULL").
@@ -1162,7 +1267,8 @@ enum ReaderHTMLUtilities {
         // use their own /comments endpoint instead of the dead api-x.shrtxs.cn.
         if let sourceURL = context?.sourceURL,
            !sourceURL.isEmpty,
-           !sourceURL.contains("m.qidian.com") {
+           !sourceURL.contains("m.qidian.com"),
+           !isQidianSource(context) {
             let path = kind == .paragraph ? "/comments" : "/chapterComments"
             var items = [
                 URLQueryItem(name: "bookId", value: cleanBookId),

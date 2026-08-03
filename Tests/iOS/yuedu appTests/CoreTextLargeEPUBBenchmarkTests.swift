@@ -64,6 +64,16 @@ struct CoreTextLargeEPUBBenchmarkTests {
         let buildMilliseconds = elapsedMilliseconds(since: buildStart)
         #expect(result.attributedString.length > 0)
 
+        let warmBuildStart = ProcessInfo.processInfo.systemUptime
+        let warmResult = try await builder.buildChapter(
+            at: chapter.index,
+            settings: Self.settings,
+            themeTextColor: .black,
+            themeBackgroundColor: .white
+        )
+        let warmBuildMilliseconds = elapsedMilliseconds(since: warmBuildStart)
+        #expect(warmResult.attributedString.length == result.attributedString.length)
+
         let paginator = CoreTextPaginator()
         let firstPageStart = ProcessInfo.processInfo.systemUptime
         let firstPage = await paginator.paginateFirstPage(
@@ -138,7 +148,7 @@ struct CoreTextLargeEPUBBenchmarkTests {
                 id=%@ bytes=%d chapters=%d spine=%d chars=%d \
                 firstPages=%d fullPages=%d \
                 openMs=%.2f buildMs=%.2f firstPageMs=%.2f \
-                fullLayoutMs=%.2f warmLayoutMs=%.2f
+                warmBuildMs=%.2f fullLayoutMs=%.2f warmLayoutMs=%.2f
                 """,
                 book.id,
                 byteSize,
@@ -150,6 +160,7 @@ struct CoreTextLargeEPUBBenchmarkTests {
                 openMilliseconds,
                 buildMilliseconds,
                 firstPageMilliseconds,
+                warmBuildMilliseconds,
                 fullLayoutMilliseconds,
                 warmLayoutMilliseconds
             )

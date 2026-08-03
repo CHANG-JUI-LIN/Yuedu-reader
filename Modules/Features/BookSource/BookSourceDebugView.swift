@@ -24,6 +24,7 @@ struct BookSourceDebugView: View {
                 List {
                     ForEach(debugger.logs) { log in
                         LogEntryRow(entry: log)
+                            .interfaceSectionSurface()
                     }
                 }
                 .listStyle(.plain)

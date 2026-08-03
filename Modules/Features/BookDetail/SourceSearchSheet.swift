@@ -71,6 +71,7 @@ struct SourceSearchSheet: View {
                                     }
                                 }
                             }
+                            .interfaceSectionSurface()
                         }
                     }
                     .listStyle(.plain)

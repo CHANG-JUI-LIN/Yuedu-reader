@@ -22,6 +22,8 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     let session: PublicationSession
     let resourceProvider: ReadiumBookResourceAdapter
     private let styleResolver: EPUBStyleResolver
+    private var processedCSSCache: [String: String] = [:]
+    private let stylesheetCache = HTMLStylesheetCache()
     /// Current render area size (injected by EPUBPageRenderer during load / notifyViewportSize).
     var renderSize: CGSize
     /// Set to true when CSS writing-mode: vertical-rl is detected from any chapter's stylesheet or body element.
@@ -139,7 +141,11 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         )
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.chapter.begin index=\(index) href=\(chapterHref) htmlLen=\(html.count) settingsWritingMode=\(settings.writingMode) configWritingMode=\(config.writingMode) renderWidth=\(config.renderWidth)")
 
-        guard let ast = await localBuilder.buildStyledAST(html: html, config: config) else {
+        guard let ast = await localBuilder.buildStyledAST(
+            html: html,
+            config: config,
+            stylesheetCache: stylesheetCache
+        ) else {
             return AttributedChapterBuildResult(
                 attributedString: NSAttributedString(),
                 imagePage: nil,
@@ -168,6 +174,10 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                 anchorOffsets: [:]
             )
         }
+
+        await styleResolver.registerFontFaces(
+            requests: HTMLStyledASTRenderableNodeConverter.referencedFonts(in: ast)
+        )
 
         let nodes = ReaderPerfTrace.span(
             .irConvert,
@@ -263,16 +273,32 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
 
     private func loadCSS(href: String, chapterHref: String) async -> String? {
         let resolved = EPUBStyleResolver.resolveImageHref(href, chapterHref: chapterHref)
+        if let cached = processedCSSCache[resolved] {
+            return cached
+        }
         let url = resourceProvider.resourceURL(for: resolved)
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.css.fetch href=\(href) chapter=\(chapterHref) resolved=\(resolved)")
-        guard let response = try? await resourceProvider.response(for: url) else {
+        let response = try? await SourcePerfTrace.spanAsync(
+            "epub.css.fetch",
+            resolved
+        ) {
+            try await resourceProvider.response(for: url)
+        }
+        guard let response else {
             CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.css.failed href=\(href) resolved=\(resolved)")
             return nil
         }
-        let cssText = String(data: response.data, encoding: .utf8) ?? ""
-        let processed = await styleResolver.processStylesheet(
-            cssText, cssHref: resolved, chapterHref: chapterHref
-        )
+        let cssText = SourcePerfTrace.span("epub.css.decode", resolved) {
+            String(data: response.data, encoding: .utf8) ?? ""
+        }
+        let processed = await SourcePerfTrace.spanAsync("epub.css.process", resolved) {
+            await styleResolver.processStylesheet(
+                cssText, cssHref: resolved, chapterHref: chapterHref
+            )
+        }
+        if !processed.isEmpty {
+            processedCSSCache[resolved] = processed
+        }
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.css.loaded href=\(href) resolved=\(resolved) rawLen=\(cssText.count) processedLen=\(processed.count) hasVertical=\(Self.cssContainsVerticalWritingMode(processed))")
         return processed.isEmpty ? nil : processed
     }

@@ -15,10 +15,12 @@ private let audioRouteLog = Logger(
 struct AudiobookDetailView: View {
     /// Aggregated search book when opened from search; `nil` from a single-source context (Discover).
     private let searchBook: SearchBook?
+    private let onRemoveFromShelf: (() -> Void)?
     private static let chapterPreviewLimit = 12
 
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.appDependencies) private var dependencies
     private var gs: GlobalSettings { GlobalSettings.shared }
     private var source: BookSource? { BookSourceStore.shared.sources.first(where: { $0.id == currentBook.sourceId }) }
@@ -40,16 +42,18 @@ struct AudiobookDetailView: View {
     // MARK: Init
 
     /// Single-source entry (Discover).
-    init(book: OnlineBook) {
+    init(book: OnlineBook, onRemoveFromShelf: (() -> Void)? = nil) {
         self.searchBook = nil
+        self.onRemoveFromShelf = onRemoveFromShelf
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
     }
 
     /// Search entry — defaults to the first audio origin, then falls back to the first origin.
-    init(searchBook: SearchBook) {
+    init(searchBook: SearchBook, onRemoveFromShelf: (() -> Void)? = nil) {
         self.searchBook = searchBook
+        self.onRemoveFromShelf = onRemoveFromShelf
         if let origin = searchBook.preferredOrigin(for: .audio) ?? searchBook.origins.first {
             let selectedIntro = searchBook.detailIntro(for: origin)
             _currentBook = State(initialValue: OnlineBook(
@@ -282,7 +286,7 @@ struct AudiobookDetailView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, DSSpacing.md)
                     .padding(.vertical, 6)
-                    .background(DSColor.surface, in: Capsule())
+                    .interfaceCardSurface(in: Capsule())
             }
         }
         .padding(.horizontal, DSSpacing.lg)
@@ -403,7 +407,7 @@ struct AudiobookDetailView: View {
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.md)
                 .frame(maxWidth: .infinity)
-                .background(DSColor.surface)
+                .interfaceCardSurface()
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
                 .contentShape(Rectangle())
             }
@@ -531,7 +535,7 @@ struct AudiobookDetailView: View {
                 .buttonStyle(.plain)
             }
         }
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 
@@ -560,6 +564,12 @@ struct AudiobookDetailView: View {
         load()
     }
 
+    private func isCurrentRequest(_ request: OnlineBook) -> Bool {
+        request.sourceId == currentBook.sourceId
+            && ChangeSourceCache.urlKey(request.bookUrl)
+                == ChangeSourceCache.urlKey(currentBook.bookUrl)
+    }
+
     private func load() {
         guard let source else { loadError = localized("書源已被刪除"); return }
         loading = true
@@ -575,7 +585,7 @@ struct AudiobookDetailView: View {
                         url: request.bookUrl, source: source, runtimeVariables: runtimeVars)
                     runtimeVars = Self.mergedRuntimeVariables(runtimeVars, pkg.runtimeVariables)
                     await MainActor.run {
-                        guard request.bookUrl == currentBook.bookUrl else { return }
+                        guard isCurrentRequest(request) else { return }
                         detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
                             pkg.onlineBook
                         )
@@ -586,14 +596,14 @@ struct AudiobookDetailView: View {
                     tocUrl: tocURL, source: source, runtimeVariables: runtimeVars)
                 runtimeVars = Self.mergedRuntimeVariables(runtimeVars, tocPkg.runtimeVariables)
                 await MainActor.run {
-                    guard request.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(request) else { return }
                     chapters = tocPkg.chapters
                     loadedRuntimeVariables = runtimeVars
                     loading = false
                 }
             } catch {
                 await MainActor.run {
-                    guard request.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(request) else { return }
                     loadError = error.localizedDescription
                     loading = false
                 }
@@ -615,7 +625,8 @@ struct AudiobookDetailView: View {
     // MARK: Play
 
     private func existingShelfBookId() -> UUID? {
-        bookStore.books.first(where: { $0.bookInfoURL == currentBook.bookUrl })?.id
+        bookStore.onlineBook(
+            sourceId: currentBook.sourceId, bookInfoURL: currentBook.bookUrl)?.id
     }
 
     private func checkAlreadyInShelf() {
@@ -625,6 +636,11 @@ struct AudiobookDetailView: View {
 
     private func removeFromShelf() {
         guard alreadyInShelf, let bookId = addedBookId else { return }
+        if let onRemoveFromShelf {
+            onRemoveFromShelf()
+        } else {
+            dismiss()
+        }
         bookStore.delete(bookId: bookId)
         addedBookId = nil
         activePlayerBookId = nil

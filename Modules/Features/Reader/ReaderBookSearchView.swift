@@ -60,8 +60,11 @@ struct ReaderBookSearchView: View {
                             }
                             .padding(.vertical, DSSpacing.xs)
                         }
+                        .interfaceSectionSurface()
                     }
                     .listStyle(.insetGrouped)
+                    // Hiding the list background alone leaves each row painting its own
+                    // opaque system fill over the `PageBackgroundView` below. docs/design.md §4.1.
                     .scrollContentBackground(.hidden)
                 }
             }

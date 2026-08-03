@@ -7,6 +7,13 @@ import ReadiumShared
 @MainActor
 final class EPUBStyleResolver {
 
+    private struct FontFaceDefinition {
+        let alias: String
+        let weight: Int
+        let italic: Bool
+        let resolvedURL: String
+    }
+
     struct RegisteredFontFace {
         let alias: String
         let familyName: String
@@ -24,6 +31,10 @@ final class EPUBStyleResolver {
     /// italic `@font-face` blocks) down to whichever happened to register first.
     private(set) var registeredFontVariants: [String: [RegisteredFontFace]] = [:]
     private var registeredFontFileURLs: [String: URL] = [:]
+    private var registeredFontAssets: [String: FontRegistrationResult] = [:]
+    private var pendingFontFaces: [String: [FontFaceDefinition]] = [:]
+    private var failedFontResourceURLs: Set<String> = []
+    private var processedStylesheetCache: [String: String] = [:]
 
     init(
         resourceProvider: any BookResourceProvider,
@@ -46,6 +57,11 @@ final class EPUBStyleResolver {
     // MARK: - Main Entry Point
 
     func processStylesheet(_ cssText: String, cssHref: String, chapterHref: String) async -> String {
+        let cacheKey = cssHref.isEmpty ? "inline:\(chapterHref)" : cssHref
+        if let cached = processedStylesheetCache[cacheKey] {
+            return cached
+        }
+
         let withImports = await inlineLocalImports(
             from: cssText, cssHref: cssHref, chapterHref: chapterHref, visited: [cssHref]
         )
@@ -53,47 +69,118 @@ final class EPUBStyleResolver {
         if !fontFaces.isEmpty {
             AppLogger.parse("[EPUBStyleResolver] discovered font faces: \(fontFaces.map { $0.alias })")
         }
-
         for fontFace in fontFaces {
-            // One `@font-face` block = one variant. Key by alias + weight + style so a family's
-            // separate bold / italic faces all register instead of the first one shadowing the rest.
-            let variantKey = "\(fontFace.alias)|\(fontFace.weight)|\(fontFace.italic ? "i" : "n")"
-            if (registeredFontVariants[fontFace.alias] ?? []).contains(where: {
-                $0.weight == fontFace.weight && $0.isItalic == fontFace.italic
-            }) { continue }
-            guard
-                let fontURL = URL(string: fontFace.resolvedURL),
-                resourceProvider.resourceAvailability(for: fontURL) != false,
-                let response = try? await resourceProvider.response(for: fontURL),
-                let registeredFont = fontRegistrationService.registerFont(
-                    data: response.data,
-                    alias: variantKey,
-                    existingTempURL: registeredFontFileURLs[variantKey]
-                )
-            else {
-                AppLogger.parse("[EPUBStyleResolver] font registration FAILED alias=\(variantKey)")
-                continue
+            let definitions = pendingFontFaces[fontFace.alias] ?? []
+            if !definitions.contains(where: {
+                $0.weight == fontFace.weight
+                    && $0.italic == fontFace.italic
+                    && $0.resolvedURL == fontFace.resolvedURL
+            }) {
+                pendingFontFaces[fontFace.alias, default: []].append(fontFace)
             }
-            if let tempFileURL = registeredFont.tempFileURL {
-                registeredFontFileURLs[variantKey] = tempFileURL
-            }
-            let face = RegisteredFontFace(
-                alias: fontFace.alias,
-                familyName: registeredFont.familyName,
-                postScriptName: registeredFont.postScriptName,
-                weight: fontFace.weight,
-                isItalic: fontFace.italic
-            )
-            registeredFontVariants[fontFace.alias, default: []].append(face)
-            if registeredFontFaces[fontFace.alias] == nil {
-                registeredFontFaces[fontFace.alias] = face
-            }
-            AppLogger.parse("[EPUBStyleResolver] registered font alias=\(fontFace.alias) weight=\(fontFace.weight) italic=\(fontFace.italic) -> family=\(registeredFont.familyName) ps=\(registeredFont.postScriptName)")
         }
 
         let stripped = stripFontFaceBlocks(from: withImports)
-        let withRewrittenURLs = rewriteResourceURLs(in: stripped, cssHref: cssHref)
-        return rewriteFontFamilies(in: withRewrittenURLs)
+        let processed = rewriteResourceURLs(in: stripped, cssHref: cssHref)
+        processedStylesheetCache[cacheKey] = processed
+        return processed
+    }
+
+    /// Browser-style lazy font loading: stylesheet parsing only records `@font-face` descriptors.
+    /// Once cascade matching has produced the chapter AST, fetch and register the families that the
+    /// chapter actually references. Local publication resources are immutable, so failed URLs are
+    /// negatively cached for the lifetime of this resolver.
+    func registerFontFaces(requests: Set<ResolvedFontRequest>) async {
+        for request in requests.sorted(by: Self.fontRequestSort) {
+            let alias = Self.normalizeFontName(request.family)
+            guard !alias.isEmpty else { continue }
+
+            let definitions = (pendingFontFaces[alias] ?? []).sorted {
+                Self.fontMatchScore(weight: $0.weight, italic: $0.italic, request: request)
+                    < Self.fontMatchScore(weight: $1.weight, italic: $1.italic, request: request)
+            }
+            guard !definitions.isEmpty else { continue }
+
+            var registeredScore = (registeredFontVariants[alias] ?? []).map {
+                Self.fontMatchScore(weight: $0.weight, italic: $0.isItalic, request: request)
+            }.min()
+
+            for fontFace in definitions {
+                let candidateScore = Self.fontMatchScore(
+                    weight: fontFace.weight,
+                    italic: fontFace.italic,
+                    request: request
+                )
+                if let registeredScore, registeredScore <= candidateScore {
+                    break
+                }
+                guard !failedFontResourceURLs.contains(fontFace.resolvedURL),
+                      let fontURL = URL(string: fontFace.resolvedURL),
+                      resourceProvider.resourceAvailability(for: fontURL) != false
+                else {
+                    failedFontResourceURLs.insert(fontFace.resolvedURL)
+                    continue
+                }
+
+                let registeredFont: FontRegistrationResult
+                if let cached = registeredFontAssets[fontFace.resolvedURL] {
+                    registeredFont = cached
+                } else {
+                    let variantDetail = "\(alias)|\(fontFace.weight)|\(fontFace.italic ? "i" : "n")"
+                    let response = try? await SourcePerfTrace.spanAsync(
+                        "epub.font.fetch",
+                        variantDetail
+                    ) {
+                        try await resourceProvider.response(for: fontURL)
+                    }
+                    guard let response else {
+                        failedFontResourceURLs.insert(fontFace.resolvedURL)
+                        AppLogger.parse("[EPUBStyleResolver] font resource FAILED alias=\(variantDetail)")
+                        continue
+                    }
+                    let assetKey = Self.fontAssetKey(for: fontFace.resolvedURL)
+                    let result = SourcePerfTrace.span(
+                        "epub.font.register",
+                        variantDetail
+                    ) {
+                        fontRegistrationService.registerFont(
+                            data: response.data,
+                            alias: assetKey,
+                            existingTempURL: registeredFontFileURLs[fontFace.resolvedURL]
+                        )
+                    }
+                    guard let result else {
+                        failedFontResourceURLs.insert(fontFace.resolvedURL)
+                        AppLogger.parse("[EPUBStyleResolver] font registration FAILED alias=\(variantDetail)")
+                        continue
+                    }
+                    registeredFontAssets[fontFace.resolvedURL] = result
+                    if let tempFileURL = result.tempFileURL {
+                        registeredFontFileURLs[fontFace.resolvedURL] = tempFileURL
+                    }
+                    registeredFont = result
+                }
+
+                let face = RegisteredFontFace(
+                    alias: alias,
+                    familyName: registeredFont.familyName,
+                    postScriptName: registeredFont.postScriptName,
+                    weight: fontFace.weight,
+                    isItalic: fontFace.italic
+                )
+                if !(registeredFontVariants[alias] ?? []).contains(where: {
+                    $0.weight == face.weight && $0.isItalic == face.isItalic
+                }) {
+                    registeredFontVariants[alias, default: []].append(face)
+                }
+                if registeredFontFaces[alias] == nil {
+                    registeredFontFaces[alias] = face
+                }
+                registeredScore = candidateScore
+                AppLogger.parse("[EPUBStyleResolver] registered font alias=\(alias) weight=\(fontFace.weight) italic=\(fontFace.italic) -> family=\(registeredFont.familyName) ps=\(registeredFont.postScriptName)")
+                break
+            }
+        }
     }
 
     func resolveRegisteredFont(
@@ -226,6 +313,36 @@ final class EPUBStyleResolver {
             .lowercased()
     }
 
+    private static func fontRequestSort(
+        _ lhs: ResolvedFontRequest,
+        _ rhs: ResolvedFontRequest
+    ) -> Bool {
+        let leftFamily = normalizeFontName(lhs.family)
+        let rightFamily = normalizeFontName(rhs.family)
+        if leftFamily != rightFamily { return leftFamily < rightFamily }
+        if lhs.weight != rhs.weight { return lhs.weight < rhs.weight }
+        return lhs.italic == false && rhs.italic == true
+    }
+
+    private static func fontMatchScore(
+        weight: Int,
+        italic: Bool,
+        request: ResolvedFontRequest
+    ) -> Int {
+        abs(weight - request.weight) * 2 + (italic == request.italic ? 0 : 1)
+    }
+
+    /// Stable publication-resource identity for the temporary file name. Descriptor aliases are
+    /// deliberately excluded because several aliases may point at the same underlying font asset.
+    private static func fontAssetKey(for resolvedURL: String) -> String {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in resolvedURL.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return "asset-\(String(hash, radix: 16))"
+    }
+
     // MARK: - Private CSS Helpers
 
     private func inlineLocalImports(
@@ -300,7 +417,7 @@ final class EPUBStyleResolver {
 
     private func extractFontFaces(
         from cssText: String, cssHref: String, chapterHref: String
-    ) -> [(alias: String, weight: Int, italic: Bool, resolvedURL: String)] {
+    ) -> [FontFaceDefinition] {
         guard
             let blockRegex = try? NSRegularExpression(
                 pattern: #"@font-face\s*\{.*?\}"#,
@@ -342,7 +459,12 @@ final class EPUBStyleResolver {
             let weight = Self.fontDescriptorValue(in: block, property: "font-weight").map(Self.cssFontWeightValue) ?? 400
             let style = Self.fontDescriptorValue(in: block, property: "font-style") ?? "normal"
             let italic = style == "italic" || style == "oblique"
-            return alias.isEmpty ? nil : (alias, weight, italic, resolvedURL)
+            return alias.isEmpty ? nil : FontFaceDefinition(
+                alias: alias,
+                weight: weight,
+                italic: italic,
+                resolvedURL: resolvedURL
+            )
         }
     }
 

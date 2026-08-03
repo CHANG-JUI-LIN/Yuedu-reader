@@ -72,7 +72,10 @@ struct IconConsistentLabelStyle: LabelStyle {
         let sized = icon
             .font(DSFont.fixed(size: 17, weight: .medium))
             .frame(width: 28, height: 28)
-        if AppearanceThemePreset.activeAppTheme != nil {
+        // A LabelStyle cannot read @Environment, so this asks whether any appearance is
+        // themed rather than the current one. The tint it applies is `Color.accentColor`,
+        // which already resolves per appearance, so the distinction costs nothing here.
+        if AppearanceThemePreset.activeAppThemes.isActive {
             sized.foregroundStyle(DSColor.accent)
         } else {
             sized
@@ -112,29 +115,25 @@ private struct ThemedAppSurfaceModifier: ViewModifier {
         return gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme)
     }
 
+    /// Single structure for every state — branching over `content` would change
+    /// the modified view's identity when a page background appears or vanishes,
+    /// and SwiftUI rebuilds what changed identity, dropping its `@State` and any
+    /// screen it had pushed. Branch inside `.background` instead.
+    /// (The two theme-less branches this replaced were already byte-identical.)
     func body(content: Content) -> some View {
-        if let slice {
-            content
-                .scrollContentBackground(.hidden)
-                .background {
-                    ZStack {
-                        DSColor.groupedBackground
+        let slice = self.slice
+        return content
+            .scrollContentBackground(.hidden)
+            .background {
+                ZStack {
+                    DSColor.groupedBackground
+                    if let slice {
                         AppearancePageBackgroundLayerView(slice: slice)
                     }
-                    .ignoresSafeArea()
                 }
-                .toolbarBackground(.hidden, for: .navigationBar)
-        } else if AppearanceThemePreset.activeAppTheme != nil {
-            content
-                .scrollContentBackground(.hidden)
-                .background(DSColor.groupedBackground.ignoresSafeArea())
-                .toolbarBackground(.hidden, for: .navigationBar)
-        } else {
-            content
-                .scrollContentBackground(.hidden)
-                .background(DSColor.groupedBackground.ignoresSafeArea())
-                .toolbarBackground(.hidden, for: .navigationBar)
-        }
+                .ignoresSafeArea()
+            }
+            .toolbarBackground(.hidden, for: .navigationBar)
     }
 }
 
@@ -152,15 +151,16 @@ private struct PageBackgroundToolbarModifier: ViewModifier {
            gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme) != nil {
             return true
         }
-        return AppearanceThemePreset.activeAppTheme != nil
+        return AppearanceThemePreset.activeAppThemes.theme(for: colorScheme) != nil
     }
 
+    /// Always the same modifier, only its visibility changes (`.automatic` is
+    /// the default bar background, i.e. what "not applied" looked like). An
+    /// `if/else` here re-identified the whole screen whenever the theme moved
+    /// between 默認 and a real theme: 外觀主題 uses this modifier, so switching
+    /// themes from it reset its own `@State` and popped it back to 設定.
     func body(content: Content) -> some View {
-        if hasBackground {
-            content.toolbarBackground(.hidden, for: .navigationBar)
-        } else {
-            content
-        }
+        content.toolbarBackground(hasBackground ? .hidden : .automatic, for: .navigationBar)
     }
 }
 
@@ -198,7 +198,7 @@ struct DSCard<Content: View>: View {
             content
         }
         .padding(DSSpacing.lg)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
         .shadow(color: DSColor.shadow, radius: 6, x: 0, y: 4)
     }
@@ -220,24 +220,6 @@ struct DSChip: View {
                 .foregroundColor(isSelected ? .white : DSColor.textPrimary)
                 .clipShape(Capsule())
         }
-    }
-}
-
-/// Toast banner for success/error messages.
-struct DSToast: View {
-    let message: String
-    let color: Color
-    
-    var body: some View {
-        Text(message)
-            .font(DSFont.subheadline)
-            .foregroundColor(.white)
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.sm)
-            .background(color.opacity(0.92))
-            .clipShape(Capsule())
-            .shadow(color: DSColor.shadow, radius: 4, y: 2)
-            .padding(.top, DSSpacing.sm)
     }
 }
 

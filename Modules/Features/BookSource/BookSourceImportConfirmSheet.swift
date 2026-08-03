@@ -78,7 +78,7 @@ struct BookSourceImportConfirmSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(DSSpacing.sm)
-            .background(DSColor.surface)
+            .interfaceCardSurface()
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
             Spacer()

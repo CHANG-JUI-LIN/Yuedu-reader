@@ -96,7 +96,11 @@ struct UserDetailView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .listRowBackground(Color.white)
+                // Same surface as every other section here. This used to pin the card to
+                // an opaque `DSColor.surface` — correct for Light/Dark, but it predates
+                // `interfaceSectionSurface`, so once the other sections started following
+                // 毛玻璃／分組卡片／透明度 this one stayed flat white above them.
+                .interfaceSectionSurface()
             }
 
             Section {
@@ -131,6 +135,7 @@ struct UserDetailView: View {
                 }
                 .buttonStyle(.plain)
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("閱讀工具"))) {
                 Button {
@@ -147,6 +152,7 @@ struct UserDetailView: View {
                 }
                 .buttonStyle(.plain)
             }
+            .interfaceSectionSurface()
 
             if gs.isLoggedIn {
                 Section(header: Text(localized("帳號資訊"))) {
@@ -179,6 +185,7 @@ struct UserDetailView: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     linkRow(title: "Google", providerID: "google.com")
@@ -205,6 +212,7 @@ struct UserDetailView: View {
                 } footer: {
                     Text(localized("連結後可用任一方式登入同一個帳號，並且至少要保留一種。"))
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     Button(role: .destructive) {
@@ -219,10 +227,9 @@ struct UserDetailView: View {
                         }
                     }
                     .disabled(isSigningOut)
-                    .confirmationDialog(
+                    .alert(
                         localized("登出帳號"),
-                        isPresented: $showSignOutConfirmation,
-                        titleVisibility: .visible
+                        isPresented: $showSignOutConfirmation
                     ) {
                         Button(localized("登出"), role: .destructive) {
                             performSignOut(revokeGoogleAccess: true)
@@ -233,6 +240,7 @@ struct UserDetailView: View {
                         Text(localized("登出後此裝置會停止使用目前帳號同步。"))
                     }
                 }
+                .interfaceSectionSurface()
 
                 Section {
                     Button(role: .destructive) {
@@ -247,10 +255,9 @@ struct UserDetailView: View {
                         }
                     }
                     .disabled(isDeletingAccount || isSigningOut)
-                    .confirmationDialog(
+                    .alert(
                         localized("刪除帳號"),
-                        isPresented: $showDeleteAccountConfirmation,
-                        titleVisibility: .visible
+                        isPresented: $showDeleteAccountConfirmation
                     ) {
                         Button(localized("永久刪除帳號"), role: .destructive) {
                             performAccountDeletion()
@@ -269,6 +276,7 @@ struct UserDetailView: View {
                 } footer: {
                     Text(localized("刪除帳號會移除您的登入資訊並清除已上傳的同步資料，且無法復原。儲存在本機的內容檔不會被刪除。"))
                 }
+                .interfaceSectionSurface()
             }
         }
         .listStyle(.insetGrouped)
@@ -319,13 +327,12 @@ struct UserDetailView: View {
         } message: {
             Text(localized("請輸入密碼以確認刪除帳號"))
         }
-        .confirmationDialog(
+        .alert(
             localized("解除連結"),
             isPresented: Binding(
                 get: { unlinkTarget != nil },
                 set: { if !$0 { unlinkTarget = nil } }
             ),
-            titleVisibility: .visible,
             presenting: unlinkTarget
         ) { target in
             Button(localized("解除連結"), role: .destructive) {

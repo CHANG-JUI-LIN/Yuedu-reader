@@ -20,6 +20,26 @@ struct BookSourceStoreTests {
         #expect(store.sources.map(\.id) == [sources[0].id, sources[2].id, sources[4].id])
     }
 
+    @Test("stale sync result cannot restore a source deleted during the network merge")
+    func staleSyncResultCannotRestoreDeletedSource() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let source = makeSource(index: 99)
+        store.replaceSourcesFromSync([source])
+        let snapshotRevision = store.mutationRevision
+
+        store.delete(id: source.id)
+        let applied = store.replaceSourcesFromSync(
+            [source],
+            expectedMutationRevision: snapshotRevision
+        )
+
+        #expect(applied == false)
+        #expect(store.sources.isEmpty)
+    }
+
     @Test("batch delete ignores missing IDs")
     func batchDeleteIgnoresMissingIDs() {
         let store = BookSourceStore.shared
@@ -76,7 +96,7 @@ struct BookSourceStoreTests {
     }
 
     @Test("置頂／置底 move a source to either end without disturbing the others")
-    func moveToTopAndBottomReorderSources() {
+    func pinToTopAndBottomReorderSources() {
         let store = BookSourceStore.shared
         let previousSources = store.sources
         defer { store.replaceSourcesFromSync(previousSources) }
@@ -84,17 +104,17 @@ struct BookSourceStoreTests {
         let sources = (0..<4).map(makeSource)
         store.replaceSourcesFromSync(sources)
 
-        store.moveToTop(id: sources[2].id)
+        store.pinToTop(id: sources[2].id)
         #expect(store.sources.map(\.id)
             == [sources[2].id, sources[0].id, sources[1].id, sources[3].id])
 
-        store.moveToBottom(id: sources[0].id)
+        store.pinToBottom(id: sources[0].id)
         #expect(store.sources.map(\.id)
             == [sources[2].id, sources[1].id, sources[3].id, sources[0].id])
     }
 
     @Test("置頂／置底 leave the sync clock alone — position isn't source content")
-    func moveDoesNotAdvanceLastUpdateTime() throws {
+    func pinDoesNotAdvanceLastUpdateTime() throws {
         let store = BookSourceStore.shared
         let previousSources = store.sources
         defer { store.replaceSourcesFromSync(previousSources) }
@@ -105,14 +125,14 @@ struct BookSourceStoreTests {
         }
         store.replaceSourcesFromSync(sources)
 
-        store.moveToTop(id: sources[2].id)
-        store.moveToBottom(id: sources[0].id)
+        store.pinToTop(id: sources[2].id)
+        store.pinToBottom(id: sources[0].id)
 
         #expect(store.sources.allSatisfy { $0.lastUpdateTime == 1000 })
     }
 
-    @Test("置頂／置底 are no-ops when the source is already at that end")
-    func moveIsNoOpAtEnds() {
+    @Test("unknown ids are no-ops; re-pinning a pinned source refreshes its timestamp")
+    func unknownIDsAreNoOpsAndRepinRefreshesTimestamp() {
         let store = BookSourceStore.shared
         let previousSources = store.sources
         defer { store.replaceSourcesFromSync(previousSources) }
@@ -120,11 +140,151 @@ struct BookSourceStoreTests {
         let sources = (0..<3).map(makeSource)
         store.replaceSourcesFromSync(sources)
 
-        store.moveToTop(id: sources[0].id)
-        store.moveToBottom(id: sources[2].id)
-        store.moveToTop(id: UUID())        // unknown id must not reorder anything
+        store.pinToTop(id: sources[0].id)
+        let firstPin = store.pinRecord(for: sources[0].id)
+        store.pinToBottom(id: sources[2].id)
 
+        store.pinToTop(id: sources[0].id)      // re-pin: newest-first, timestamp refreshes
+        store.pinToBottom(id: sources[2].id)   // re-pin: same
+        store.pinToTop(id: UUID())             // unknown ids must not reorder anything
+        store.pinToBottom(id: UUID())
+        store.unpin(id: UUID())
+
+        let secondPin = store.pinRecord(for: sources[0].id)
+        #expect(secondPin?.position == .top)
+        #expect(secondPin?.pinnedAt ?? .distantPast >= firstPin?.pinnedAt ?? .distantPast)
+        #expect(store.sources.first?.id == sources[0].id)
+        #expect(store.pinRecord(for: sources[2].id)?.position == .bottom)
+    }
+
+    @Test("置頂 pins to the head and 取消置頂 restores the original position")
+    func pinToTopThenUnpinRestoresPosition() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<5).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.pinToTop(id: sources[3].id)
+        #expect(store.pinRecord(for: sources[3].id)?.position == .top)
+        #expect(store.pinRecord(for: sources[3].id)?.originalIndex == 3)
+        #expect(store.sources.map(\.id)
+            == [sources[3].id, sources[0].id, sources[1].id, sources[2].id, sources[4].id])
+
+        store.unpin(id: sources[3].id)
+        #expect(store.pinRecord(for: sources[3].id) == nil)
         #expect(store.sources.map(\.id) == sources.map(\.id))
+    }
+
+    @Test("置底 pins to the tail and 取消置底 restores the original position")
+    func pinToBottomThenUnpinRestoresPosition() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<5).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.pinToBottom(id: sources[1].id)
+        #expect(store.pinRecord(for: sources[1].id)?.position == .bottom)
+        #expect(store.sources.map(\.id)
+            == [sources[0].id, sources[2].id, sources[3].id, sources[4].id, sources[1].id])
+
+        store.unpin(id: sources[1].id)
+        #expect(store.pinRecord(for: sources[1].id) == nil)
+        #expect(store.sources.map(\.id) == sources.map(\.id))
+    }
+
+    @Test("multiple 置頂 pins coexist, newest first")
+    func pinToTopKeepsNewestFirst() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<4).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.pinToTop(id: sources[2].id)
+        store.pinToTop(id: sources[1].id)   // newer pin lands above the older one
+
+        #expect(store.sources.map(\.id)
+            == [sources[1].id, sources[2].id, sources[0].id, sources[3].id])
+        #expect(store.pinRecord(for: sources[1].id)?.position == .top)
+        #expect(store.pinRecord(for: sources[2].id)?.position == .top)
+        let newer = store.pinRecord(for: sources[1].id)?.pinnedAt ?? .distantPast
+        let older = store.pinRecord(for: sources[2].id)?.pinnedAt ?? .distantPast
+        #expect(newer >= older)
+    }
+
+    @Test("multiple 置底 pins coexist, newest first")
+    func pinToBottomKeepsNewestFirst() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<4).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.pinToBottom(id: sources[0].id)
+        store.pinToBottom(id: sources[1].id)   // newer pin sits above the older one
+
+        #expect(store.sources.map(\.id)
+            == [sources[2].id, sources[3].id, sources[1].id, sources[0].id])
+        #expect(store.pinRecord(for: sources[1].id)?.position == .bottom)
+        #expect(store.pinRecord(for: sources[0].id)?.position == .bottom)
+    }
+
+    @Test("取消置頂 clamps to the list when sources were deleted meanwhile")
+    func unpinClampsWhenListShrank() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<5).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.pinToTop(id: sources[4].id)   // originalIndex = 4
+        store.delete(ids: [sources[1].id, sources[2].id, sources[3].id])
+        store.unpin(id: sources[4].id)
+
+        #expect(store.sources.map(\.id) == [sources[0].id, sources[4].id])
+    }
+
+    @Test("deleting a pinned source clears its pin record")
+    func deleteClearsPinRecord() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<3).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.pinToTop(id: sources[2].id)
+        store.delete(id: sources[2].id)
+
+        #expect(store.pinRecord(for: sources[2].id) == nil)
+        #expect(store.sources.map(\.id) == [sources[0].id, sources[1].id])
+    }
+
+    @Test("add() never lands above a 置頂 source")
+    func addRespectsTopPin() {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<3).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        store.pinToTop(id: sources[2].id)
+        var newcomer = BookSource()
+        newcomer.bookSourceName = "New"
+        newcomer.bookSourceUrl = "https://example.com/new"
+        store.add(newcomer)
+
+        #expect(store.sources.map(\.id)
+            == [sources[2].id, newcomer.id, sources[0].id, sources[1].id])
+        #expect(store.pinRecord(for: sources[2].id)?.position == .top)
     }
 
     private func makeSource(index: Int) -> BookSource {

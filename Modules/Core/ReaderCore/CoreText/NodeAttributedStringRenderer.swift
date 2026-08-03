@@ -38,6 +38,13 @@ struct NodeAttributedStringRenderer {
         let chapterTitleSize: CGFloat
         let chapterTitleTopSpacing: CGFloat
         let chapterTitleBottomSpacing: CGFloat
+        /// PostScript name the user explicitly picked for the chapter *name* in
+        /// 章節標題樣式. Non-nil only when 跟隨閱讀字體 is off and a font was chosen —
+        /// that explicit choice is what licenses overriding the book's own heading
+        /// face below. Left nil (the default), EPUB headings keep the publisher's
+        /// typography untouched.
+        let chapterTitleFontPostScript: String?
+        let chapterTitleWeight: ChapterTitleWeight
         let fontFamily: String?
         let renderWidth: CGFloat?
         /// Available reader content height. EPUB tables use this real page budget when they must
@@ -78,12 +85,19 @@ struct NodeAttributedStringRenderer {
             self.backgroundColor = settings.backgroundColor
             self.dialogueTextColor = settings.dialogueHighlightColor
             self.dialogueBoxColor = settings.dialogueBoxColor
-            // EPUB <h1> path: only these three are honoured (matches prior
-            // behaviour). Weight/alignment/split/fonts intentionally ignored here.
+            // EPUB <h1> path: size/spacing/visibility always apply. Font and
+            // weight apply only when the user explicitly picked a title font
+            // (跟隨閱讀字體 off) — otherwise the publisher's own heading CSS wins,
+            // so CSS-heavy EPUBs keep their designed titles. Alignment and the
+            // number/name split stay out: an EPUB heading's alignment belongs to
+            // the book's stylesheet, and its text is authored, not composed from
+            // a TOC entry.
             self.chapterTitleVisible = settings.chapterTitleStyle.visible
             self.chapterTitleSize = settings.chapterTitleStyle.size
             self.chapterTitleTopSpacing = settings.chapterTitleStyle.topSpacing
             self.chapterTitleBottomSpacing = settings.chapterTitleStyle.bottomSpacing
+            self.chapterTitleFontPostScript = settings.chapterTitleStyle.nameFontName()
+            self.chapterTitleWeight = settings.chapterTitleStyle.weight
             self.fontFamily = fontFamily
             self.renderWidth = renderWidth
             self.renderHeight = renderHeight
@@ -797,9 +811,28 @@ struct NodeAttributedStringRenderer {
         let bold = isHeading || style.bold
         let weight = bold ? max(style.fontWeight, 700) : max(style.fontWeight, ctx.fontWeight)
         let italic = style.italic
-        newCtx.font = makeFont(families: families, size: newSize, weight: weight, italic: italic)
+        var resolvedWeight = weight
+        if isHeading, headingLevel == 1, let titleFontPostScript = config.chapterTitleFontPostScript {
+            // The user picked an explicit chapter-title font in 章節標題樣式; honour
+            // it here so EPUB titles match the TXT / online ones instead of
+            // silently keeping the book's (or reader's) body face. Fallbacks are
+            // re-attached so a title with rare CJK glyphs still composes.
+            newCtx.font = addFontFallbacks(
+                to: UserReaderFontResolver.titleFont(
+                    size: newSize,
+                    weight: config.chapterTitleWeight,
+                    postScriptName: titleFontPostScript
+                ),
+                size: newSize
+            )
+            // Headings otherwise force weight >= 700, which would synthesise bold
+            // over a title the user set to 細體/常規.
+            resolvedWeight = config.chapterTitleWeight.cssWeight
+        } else {
+            newCtx.font = makeFont(families: families, size: newSize, weight: weight, italic: italic)
+        }
         newCtx.fontFamilies = families
-        newCtx.fontWeight = weight
+        newCtx.fontWeight = resolvedWeight
         if style.lineHeightMultiplier > 1.0 {
             newCtx.lineHeightMultiple = style.lineHeightMultiplier
         }
@@ -1051,7 +1084,21 @@ struct NodeAttributedStringRenderer {
         ctx: RenderContext
     ) async -> NSAttributedString {
         let badgeColor = ctx.textColor.withAlphaComponent(0.55)
-        let image = ReviewBadgeRenderer.bubble(count: count, pointSize: ctx.font.pointSize, color: badgeColor)
+        // `<comment>` carries no source SVG, but it is still a paragraph-review bubble. Route it
+        // through the reader's SVG pipeline so built-in/custom bubble styles apply consistently
+        // to sources such as 起點 that emit count markers instead of SVG images. Do not hide a
+        // broken SVG template by silently switching to a second rendering implementation.
+        guard let image = CommentBubbleSVGRecognizer.commentBadgeImage(
+            count: count,
+            pointSize: ctx.font.pointSize,
+            themeTextColor: badgeColor
+        ) else {
+            AppLogger.render("comment badge SVG template failed", context: [
+                "count": count,
+                "pointSize": ctx.font.pointSize
+            ])
+            return NSAttributedString()
+        }
         var style = RenderStyle.none
         style.width = image.size.width
         style.height = image.size.height
@@ -1099,7 +1146,8 @@ struct NodeAttributedStringRenderer {
                     src: src,
                     svgContent: svgContent,
                     pointSize: ctx.font.pointSize,
-                    themeTextColor: ctx.textColor
+                    themeTextColor: ctx.textColor,
+                    recognizedBubble: recognized
                 ) ?? CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
                 var bubbleStyle = style
                 if !settings.commentBubbleFollowsSourceSVG {

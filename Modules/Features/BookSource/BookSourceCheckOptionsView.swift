@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Pre-run page (screenshot 1): explains the four validation stages, offers the
-/// bad/slow-source policy under "更多選項", and starts the run. Presented from the
-/// source list; the run itself continues in the background after dismissal.
+/// Pre-run page (screenshot 1): explains the five validation stages, offers the
+/// Legado check toggles and the bad/slow-source policy under "更多選項", and starts
+/// the run. Presented from the source list; the run itself continues in the background
+/// after dismissal.
 struct BookSourceCheckOptionsView: View {
     let sourceCount: Int
     @State private var policy: BookSourceCheckPolicy
@@ -34,7 +35,7 @@ struct BookSourceCheckOptionsView: View {
                         Text(localized("準備驗證"))
                             .font(DSFont.title2.weight(.bold))
                         Text(
-                            "\(localized("將對")) \(sourceCount) \(localized("個書源進行四階段驗證"))"
+                            "\(localized("將對")) \(sourceCount) \(localized("個書源進行五階段驗證"))"
                         )
                         .font(DSFont.subheadline)
                         .foregroundColor(DSColor.textSecondary)
@@ -70,6 +71,7 @@ struct BookSourceCheckOptionsView: View {
                 .padding(.horizontal, DSSpacing.xl)
                 .padding(.bottom, DSSpacing.xl)
             }
+            .scrollIndicators(.hidden)
             .navigationTitle(localized("書源驗證"))
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
@@ -106,22 +108,41 @@ struct BookSourceCheckOptionsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(DSSpacing.lg)
-        .background(Color(.secondarySystemBackground))
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
     }
 
     private func stageColor(_ stage: ValidationStage) -> Color {
         switch stage {
-        case .connectivity: return .blue
-        case .booklist:     return .green
-        case .detail:       return .orange
-        case .content:      return .purple
+        case .search:      return .blue
+        case .discovery:   return .green
+        case .detail:      return .orange
+        case .toc:         return .teal
+        case .content:     return .purple
         }
     }
 
     private var moreOptions: some View {
         DisclosureGroup {
             VStack(spacing: DSSpacing.md) {
+                checkToggles
+
+                Divider()
+
+                if policy.checkSearch {
+                    TextField(localized("測試關鍵字"), text: $policy.keyword)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Picker(localized("超時"), selection: $policy.timeoutSeconds) {
+                    ForEach(BookSourceCheckPolicy.timeoutOptionsSeconds, id: \.self) { seconds in
+                        Text("\(seconds) \(localized("秒"))").tag(seconds)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Divider()
+
                 Picker(localized("壞書源處理"), selection: $policy.badAction) {
                     ForEach(BookSourceCheckPolicy.BadAction.allCases) { action in
                         Text(action.title).tag(action)
@@ -137,6 +158,7 @@ struct BookSourceCheckOptionsView: View {
                 }
 
                 Toggle(localized("停用過慢書源"), isOn: $policy.disableSlow)
+                    .padding(.trailing, 2)
 
                 if policy.disableSlow {
                     Picker(localized("過慢閾值"), selection: $policy.slowThresholdMs) {
@@ -154,8 +176,22 @@ struct BookSourceCheckOptionsView: View {
                 .foregroundColor(DSColor.textPrimary)
         }
         .padding(DSSpacing.md)
-        .background(Color(.secondarySystemBackground))
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
+    }
+
+    /// Legado `CheckSource` toggles: 檢查搜索 / 檢查發現 / 檢查詳情 / 檢查目錄 / 檢查正文.
+    /// The checkInfo/checkCategory/checkContent coupling matches Legado exactly
+    /// (checkInfo=false skips the whole detail/toc/content chain).
+    private var checkToggles: some View {
+        VStack(spacing: DSSpacing.sm) {
+            Toggle(localized("檢查搜索"), isOn: $policy.checkSearch)
+            Toggle(localized("檢查發現"), isOn: $policy.checkDiscovery)
+            Toggle(localized("檢查詳情"), isOn: $policy.checkInfo)
+            Toggle(localized("檢查目錄"), isOn: $policy.checkCategory)
+            Toggle(localized("檢查正文"), isOn: $policy.checkContent)
+        }
+        .padding(.trailing, 2)
     }
 }
 

@@ -4,7 +4,6 @@ import SwiftUI
 struct ICloudSyncView: View {
     @StateObject private var manager = ICloudSyncManager.shared
     @ObservedObject private var gs = GlobalSettings.shared
-    @Environment(\.dismiss) private var dismiss
 
     @State private var showAlert = false
     @State private var alertTitle = ""
@@ -13,40 +12,28 @@ struct ICloudSyncView: View {
     private var iCloudReady: Bool { manager.accountStatus == .available }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                accountSection
-                autoSyncSection
-                actionsSection
-                statusSection
+        Form {
+            accountSection
+            autoSyncSection
+            actionsSection
+            statusSection
+        }
+        .navigationTitle(localized("iCloud 同步"))
+        .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .settings)
+        .disabled(manager.isSyncing)
+        .overlay {
+            if manager.isSyncing {
+                syncingOverlay
             }
-            .navigationTitle(localized("iCloud 同步"))
-            .toolbarTitleDisplayMode(.inline)
-            .themedAppSurface(for: .settings)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(localized("關閉"))
-                }
-            }
-            .disabled(manager.isSyncing)
-            .overlay {
-                if manager.isSyncing {
-                    syncingOverlay
-                }
-            }
-            .alert(alertTitle, isPresented: $showAlert) {
-                Button(localized("確定"), role: .cancel) {}
-            } message: {
-                Text(alertMessage)
-            }
-            .task {
-                _ = await manager.refreshAccountStatus()
-            }
+        }
+        .alert(alertTitle, isPresented: $showAlert) {
+            Button(localized("確定"), role: .cancel) {}
+        } message: {
+            Text(alertMessage)
+        }
+        .task {
+            _ = await manager.refreshAccountStatus()
         }
     }
 
@@ -68,6 +55,7 @@ struct ICloudSyncView: View {
                     .foregroundColor(DSColor.textSecondary)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var autoSyncSection: some View {
@@ -80,6 +68,7 @@ struct ICloudSyncView: View {
         } footer: {
             Text(localized("開啟後，App 啟動與切到背景時會自動與 iCloud 合併同步（書庫、書源、替換規則與書檔）。多台裝置會智慧合併，不會互相覆蓋。"))
         }
+        .interfaceSectionSurface()
     }
 
     private var actionsSection: some View {
@@ -99,6 +88,7 @@ struct ICloudSyncView: View {
                     .foregroundColor(DSColor.accent)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var statusSection: some View {
@@ -119,6 +109,7 @@ struct ICloudSyncView: View {
                     .font(DSFont.footnote)
             }
         }
+        .interfaceSectionSurface()
     }
 
     private var statusIcon: String {
@@ -186,5 +177,7 @@ struct ICloudSyncView: View {
 }
 
 #Preview {
-    ICloudSyncView()
+    NavigationStack {
+        ICloudSyncView()
+    }
 }

@@ -6,9 +6,15 @@ struct OnlineBookView: View {
     /// The aggregated search book, when opened from search — enables source switching (換源).
     /// `nil` when opened from a single-source context (e.g. Discover).
     private let searchBook: SearchBook?
+    /// When opened from the reader, this is the shelf record whose source the detail page is
+    /// editing. `OnlineBook` is only a presentation value, so changing its local state alone
+    /// cannot update the reader's `ReadingBook`.
+    private let sourceSwitchBookId: UUID?
+    private let onRemoveFromShelf: (() -> Void)?
 
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.appDependencies) private var dependencies
     private var gs: GlobalSettings { GlobalSettings.shared }
     private var source: BookSource? { BookSourceStore.shared.sources.first(where: { $0.id == currentBook.sourceId }) }
@@ -23,6 +29,7 @@ struct OnlineBookView: View {
     @State private var alreadyInShelf = false
     @State private var temporaryReaderBookId: UUID? = nil
     @State private var detailInfo: OnlineBook? = nil
+    @State private var pendingShelfSourceSwitch = false
     @State private var introExpanded = false
     @State private var showSourcePicker = false
     @State private var showChapterList = false
@@ -32,16 +39,28 @@ struct OnlineBookView: View {
     // MARK: Init
 
     /// Single-source entry (Discover). No source switching.
-    init(book: OnlineBook) {
+    init(
+        book: OnlineBook,
+        sourceSwitchBookId: UUID? = nil,
+        onRemoveFromShelf: (() -> Void)? = nil
+    ) {
         self.searchBook = nil
+        self.sourceSwitchBookId = sourceSwitchBookId
+        self.onRemoveFromShelf = onRemoveFromShelf
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
     }
 
     /// Search entry — defaults to the first origin, keeps the rest for 換源.
-    init(searchBook: SearchBook) {
+    init(
+        searchBook: SearchBook,
+        sourceSwitchBookId: UUID? = nil,
+        onRemoveFromShelf: (() -> Void)? = nil
+    ) {
         self.searchBook = searchBook
+        self.sourceSwitchBookId = sourceSwitchBookId
+        self.onRemoveFromShelf = onRemoveFromShelf
         if let origin = searchBook.origins.first {
             _currentBook = State(initialValue: Self.makeOnlineBook(from: searchBook, origin: origin))
         } else {
@@ -324,7 +343,7 @@ struct OnlineBookView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, DSSpacing.md)
                     .padding(.vertical, 6)
-                    .background(DSColor.surface, in: Capsule())
+                    .interfaceCardSurface(in: Capsule())
             }
         }
         .padding(.horizontal, DSSpacing.lg)
@@ -395,7 +414,7 @@ struct OnlineBookView: View {
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.md)
                 .frame(maxWidth: .infinity)
-                .background(DSColor.surface)
+                .interfaceCardSurface()
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
                 .contentShape(Rectangle())
             }
@@ -530,7 +549,7 @@ struct OnlineBookView: View {
                 .buttonStyle(.plain)
             }
         }
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 
@@ -594,6 +613,7 @@ struct OnlineBookView: View {
         guard newBook.sourceId != currentBook.sourceId
             || newBook.bookUrl != currentBook.bookUrl else { return }
 
+        pendingShelfSourceSwitch = sourceSwitchBookId != nil
         currentBook = newBook
         detailInfo = nil
         chapters = []
@@ -605,11 +625,26 @@ struct OnlineBookView: View {
         Task { await loadTOC() }
     }
 
+    private func isCurrentRequest(_ request: OnlineBook) -> Bool {
+        request.sourceId == currentBook.sourceId
+            && ChangeSourceCache.urlKey(request.bookUrl)
+                == ChangeSourceCache.urlKey(currentBook.bookUrl)
+    }
+
     private func checkAlreadyInShelf() {
-        alreadyInShelf = bookStore.books.contains(where: { $0.bookInfoURL == currentBook.bookUrl })
-        if alreadyInShelf {
-            addedBookId = bookStore.books.first(where: { $0.bookInfoURL == currentBook.bookUrl })?.id
+        // Reader details edit the book that opened the page. Do not replace its identity with
+        // an already-shelved sibling just because the newly selected source is also present.
+        // The source switch must commit back to the reader's original `bookId`.
+        if let sourceSwitchBookId,
+           bookStore.books.contains(where: { $0.id == sourceSwitchBookId }) {
+            addedBookId = sourceSwitchBookId
+            alreadyInShelf = true
+            return
         }
+        let existing = bookStore.onlineBook(
+            sourceId: currentBook.sourceId, bookInfoURL: currentBook.bookUrl)
+        addedBookId = existing?.id
+        alreadyInShelf = existing != nil
     }
 
     private func loadTOC(forceRefresh: Bool = false) async {
@@ -621,6 +656,7 @@ struct OnlineBookView: View {
         loadingTOC = true
         tocError = nil
         let requestBook = currentBook
+        let shouldPersistShelfSourceSwitch = pendingShelfSourceSwitch
 
         do {
             var currentRuntimeVariables = requestBook.runtimeVariables
@@ -637,7 +673,7 @@ struct OnlineBookView: View {
                ) {
                 showedCachedTOC = true
                 await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(requestBook) else { return }
                     chapters = cached.chapters
                     loadingTOC = false
                 }
@@ -646,23 +682,51 @@ struct OnlineBookView: View {
             let applyFirstPage: ([OnlineChapterRef]) -> Void = { firstChapters in
                 // First page ready — show immediately, don't wait for multi-page fetch
                 Task { @MainActor in
-                    guard requestBook.bookUrl == self.currentBook.bookUrl else { return }
+                    guard self.isCurrentRequest(requestBook) else { return }
                     if self.chapters.isEmpty {
                         self.chapters = firstChapters
                         self.loadingTOC = false
                     }
-                    if let bookId = self.addedBookId {
+                    if !shouldPersistShelfSourceSwitch, let bookId = self.addedBookId {
                         self.bookStore.updateOnlineChapters(bookId: bookId, chapters: firstChapters)
                     }
                 }
             }
 
             let applyFinal: (TOCPackage) async -> Void = { tocPackage in
+                if shouldPersistShelfSourceSwitch, let sourceSwitchBookId = self.sourceSwitchBookId {
+                    // A second source tap can finish before this request. Never let an older
+                    // TOC commit under the newer selection's shelf record.
+                    let commitContext = await MainActor.run { () -> (UUID, BookOrigin)? in
+                        guard self.isCurrentRequest(requestBook) else { return nil }
+                        return (sourceSwitchBookId, self.sourceOrigin(for: tocPackage))
+                    }
+                    guard let (sourceSwitchBookId, origin) = commitContext else { return }
+                    do {
+                        try await self.bookStore.updateOnlineBookSource(
+                            bookId: sourceSwitchBookId,
+                            origin: origin,
+                            preparedTOC: tocPackage,
+                            offlineChapterStore: self.dependencies.offlineChapterStore
+                        )
+                    } catch {
+                        await MainActor.run {
+                            guard self.isCurrentRequest(requestBook) else { return }
+                            self.tocError = error.localizedDescription
+                            self.loadingTOC = false
+                        }
+                        return
+                    }
+                    await MainActor.run {
+                        guard self.isCurrentRequest(requestBook) else { return }
+                        self.pendingShelfSourceSwitch = false
+                    }
+                }
                 await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(requestBook) else { return }
                     chapters = tocPackage.chapters
                     loadingTOC = false
-                    if let bookId = addedBookId {
+                    if !shouldPersistShelfSourceSwitch, let bookId = addedBookId {
                         bookStore.updateOnlineChapters(bookId: bookId, chapters: tocPackage.chapters)
                     }
                 }
@@ -695,7 +759,7 @@ struct OnlineBookView: View {
                 }
                 currentRuntimeVariables = infoPackage.runtimeVariables
                 await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(requestBook) else { return }
                     detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
                         infoPackage.onlineBook
                     )
@@ -731,7 +795,7 @@ struct OnlineBookView: View {
                 }
                 currentRuntimeVariables = infoPackage.runtimeVariables
                 await MainActor.run {
-                    guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                    guard isCurrentRequest(requestBook) else { return }
                     detailInfo = OnlineBookDetailPresentationPolicy.sanitized(
                         infoPackage.onlineBook
                     )
@@ -750,7 +814,7 @@ struct OnlineBookView: View {
             await applyFinal(tocPackage)
         } catch {
             await MainActor.run {
-                guard requestBook.bookUrl == currentBook.bookUrl else { return }
+                guard isCurrentRequest(requestBook) else { return }
                 // A cached TOC is already on screen — keep it rather than
                 // replacing it with an error banner.
                 if chapters.isEmpty {
@@ -761,9 +825,36 @@ struct OnlineBookView: View {
         }
     }
 
+    /// Converts the detail page's selected source back into the shelf model. The TOC package is
+    /// passed through so the source switch does not fetch the same TOC a second time.
+    private func sourceOrigin(for tocPackage: TOCPackage) -> BookOrigin {
+        BookOrigin(
+            sourceId: currentBook.sourceId,
+            sourceName: currentBook.sourceName,
+            bookUrl: currentBook.bookUrl,
+            tocUrl: resolvedTOCURL ?? tocPackage.tocURL,
+            coverUrl: displayCoverUrl,
+            intro: displayIntro,
+            lastChapter: displayLatestChapter,
+            wordCount: displayWordCount,
+            kind: detailInfo?.kind ?? currentBook.kind,
+            runtimeVariables: tocPackage.runtimeVariables
+                ?? detailInfo?.runtimeVariables
+                ?? currentBook.runtimeVariables
+        )
+    }
+
     /// Remove from shelf.
     private func removeFromShelf() {
         guard alreadyInShelf, let bookId = addedBookId else { return }
+        // Return control to the presenting navigation route before removing its backing item.
+        // Otherwise `navigationDestination(item:)` keeps this detail destination alive after
+        // the shelf row disappears, leaving only the themed background (white or black).
+        if let onRemoveFromShelf {
+            onRemoveFromShelf()
+        } else {
+            dismiss()
+        }
         bookStore.delete(bookId: bookId)
         addedBookId = nil
         alreadyInShelf = false

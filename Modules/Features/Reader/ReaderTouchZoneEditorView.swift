@@ -58,7 +58,7 @@ struct ReaderTouchZoneEditorView: View {
             .accessibilityLabel(localized("完成"))
         }
         .foregroundStyle(DSColor.textPrimary)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
     }
 
     private var grid: some View {
@@ -114,6 +114,6 @@ struct ReaderTouchZoneEditorView: View {
                 .padding(DSSpacing.lg)
         }
         .foregroundStyle(DSColor.accent)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
     }
 }

@@ -5,6 +5,52 @@ import Testing
 
 struct SystemTTSEngineTests {
 
+    @Test func cancelledActiveUtteranceCanRecover() {
+        #expect(
+            SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: true,
+                isPaused: false,
+                hasActiveUtterance: true,
+                afterMediaServicesReset: true
+            )
+        )
+    }
+
+    @Test func cancelledUtteranceIsIgnoredAfterStopOrPause() {
+        #expect(
+            !SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: false,
+                isPaused: false,
+                hasActiveUtterance: true,
+                afterMediaServicesReset: true
+            )
+        )
+        #expect(
+            !SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: true,
+                isPaused: true,
+                hasActiveUtterance: true,
+                afterMediaServicesReset: true
+            )
+        )
+        #expect(
+            !SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: true,
+                isPaused: false,
+                hasActiveUtterance: false,
+                afterMediaServicesReset: true
+            )
+        )
+        #expect(
+            !SystemTTSEngine.shouldRecoverFromCancelledUtterance(
+                isPlaying: true,
+                isPaused: false,
+                hasActiveUtterance: true,
+                afterMediaServicesReset: false
+            )
+        )
+    }
+
     // MARK: - TTSTextChunker
 
     @Test func chunkerKeepsSentencesTogetherWithinParagraph() {
@@ -60,14 +106,21 @@ struct SystemTTSEngineTests {
         #expect(normal < fast)
     }
 
-    // MARK: - Language detection
+    // MARK: - Voice selection
 
-    @Test func chineseTextPicksChineseLanguage() {
-        #expect(SystemTTSEngine.preferredLanguage(for: "今天天氣很好").hasPrefix("zh"))
+    @Test func chineseTextSelectsChineseVoice() {
+        let text = "今天天氣很好"
+
+        #expect(SystemTTSEngine.preferredLanguage(for: text).hasPrefix("zh"))
+        #expect(SystemTTSEngine.preferredVoice(for: text)?.language.hasPrefix("zh") == true)
     }
 
-    @Test func chineseLanguageDistinguishesScriptVariant() {
-        let lang = SystemTTSEngine.preferredLanguage(for: "繁體中文")
-        #expect(lang == "zh-TW" || lang == "zh-CN")
+    @Test func nonChineseTextUsesCurrentSystemLanguage() {
+        let text = "This is an English sentence."
+
+        #expect(
+            SystemTTSEngine.preferredLanguage(for: text)
+                == AVSpeechSynthesisVoice.currentLanguageCode()
+        )
     }
 }

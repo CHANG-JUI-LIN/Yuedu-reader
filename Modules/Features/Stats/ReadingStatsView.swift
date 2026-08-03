@@ -134,7 +134,7 @@ struct ReadingStatsView: View {
         }
         .padding(DSSpacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 
@@ -176,7 +176,7 @@ struct ReadingStatsView: View {
             .frame(height: chartHeight + 24)
         }
         .padding(DSSpacing.md)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 
@@ -281,7 +281,7 @@ struct ReadingStatsView: View {
             }
         }
         .padding(DSSpacing.md)
-        .background(DSColor.surface)
+        .interfaceCardSurface()
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }
 

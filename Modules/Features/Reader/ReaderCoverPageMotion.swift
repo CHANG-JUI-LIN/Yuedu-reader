@@ -71,9 +71,11 @@ struct PageViewControllerPagingAdapterDescriptor: Equatable {
     let disablesBuiltInSwipe: Bool
     let usesCoverOverlay: Bool
     let usesInstantPan: Bool
+    let isDoubleSided: Bool
 
     init(pageTurnStyle: PageTurnStyle) {
         style = ReaderPagingStyle(pageTurnStyle: pageTurnStyle)
+        isDoubleSided = pageTurnStyle == .curl
         switch pageTurnStyle {
         case .curl:
             transitionStyle = .pageCurl
@@ -121,9 +123,7 @@ enum ReaderCurlBackPageResolver {
     }
 
     static func contentPageIndex(logicalPageIndex: Int, totalPages: Int) -> Int? {
-        guard logicalPageIndex >= 0 else { return nil }
-        let contentPage = logicalPageIndex + 1
-        guard contentPage < totalPages else { return nil }
-        return contentPage
+        guard logicalPageIndex >= 0, logicalPageIndex < totalPages else { return nil }
+        return logicalPageIndex
     }
 }

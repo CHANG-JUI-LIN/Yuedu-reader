@@ -44,12 +44,6 @@ final class SourceRule {
     /// When `true`, only the first regex match is replaced (`###` suffix).
     var replaceFirst: Bool = false
 
-    /// URL options suffix extracted from `##$##` delimiter (源阅 syntax).
-    /// When a `##`-split segment ends with `$`, the next segment carries URL
-    /// option text (e.g. `,{header}`) rather than being a regex replacement.
-    /// Saved here and appended back to the resolved rule by the caller.
-    var urlOptionsSuffix: String = ""
-
     /// Key-value pairs extracted from `@put:{…}` directives.
     var putMap: [String: String] = [:]
 
@@ -190,19 +184,9 @@ final class SourceRule {
         // Split by ## to extract regex replacement info.
         // Bracket-aware split so that `@css:div[data-x="##"]` keeps its ## intact.
         let segments = Self.bracketAwareSplitOnHashHash(rule)
-        var baseRule = segments[0]
-
-        // ##$## 源阅 delimiter: when segment[0] ends with `$`, the next ##
-        // segment carries URL options (e.g. `,{header}`), not a regex pattern.
-        urlOptionsSuffix = ""
-        if baseRule.hasSuffix("$"), segments.count > 1 {
-            baseRule = String(baseRule.dropLast()).trimmingCharacters(in: .whitespaces)
-            urlOptionsSuffix = segments[1]
-        }
-        rule = baseRule
+        rule = segments[0].trimmingCharacters(in: .whitespaces)
 
         var segIdx = 1
-        if !urlOptionsSuffix.isEmpty { segIdx = 2 }
 
         if segments.count > segIdx {
             replaceRegex = segments[segIdx]

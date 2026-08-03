@@ -357,6 +357,32 @@ struct AppearanceThemeExportFile: Codable {
     var accentHex: UInt32
     var dialogueHex: UInt32
     var pageBackgrounds: [String: PageBackgroundPayload]?
+    // Hand-authored dark palette, all-or-nothing. Absent (older files, and any
+    // theme using the derived dark version) means the importer derives it.
+    var darkBackgroundHex: UInt32?
+    var darkTextHex: UInt32?
+    var darkBarHex: UInt32?
+    var darkAccentHex: UInt32?
+    var darkDialogueHex: UInt32?
+
+    /// The dark colors to store on import, or nil when the file doesn't carry a
+    /// complete set.
+    var darkColors: AppearanceCustomThemeDarkColors? {
+        guard let darkBackgroundHex,
+              let darkTextHex,
+              let darkBarHex,
+              let darkAccentHex,
+              let darkDialogueHex else {
+            return nil
+        }
+        return AppearanceCustomThemeDarkColors(
+            backgroundHex: darkBackgroundHex,
+            textHex: darkTextHex,
+            barHex: darkBarHex,
+            accentHex: darkAccentHex,
+            dialogueHex: darkDialogueHex
+        )
+    }
 }
 
 enum AppearanceThemeImportError: Error {
@@ -375,26 +401,31 @@ enum AppearanceThemeImportError: Error {
 /// The layer painted behind a page: configured gradient with the optional
 /// background image on top. Renders nothing when the slice is empty.
 struct AppearancePageBackgroundLayerView: View {
-    let slice: AppearancePageBackgroundSlice
+    /// Optional so callers can keep this decorative layer installed while the
+    /// configuration is loading or becomes unavailable. That keeps the parent
+    /// view's structure stable when entitlements/theme state changes.
+    let slice: AppearancePageBackgroundSlice?
 
     var body: some View {
         ZStack {
-            if let colors = slice.gradientColors {
-                LinearGradient(
-                    colors: colors,
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-            if let fileName = slice.imageFileName,
-               let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
-                GeometryReader { proxy in
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
-                        .opacity(slice.imageOpacity)
+            if let slice {
+                if let colors = slice.gradientColors {
+                    LinearGradient(
+                        colors: colors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+                if let fileName = slice.imageFileName,
+                   let image = AppearancePageBackgroundImageStore.shared.image(fileName: fileName) {
+                    GeometryReader { proxy in
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
+                            .opacity(slice.imageOpacity)
+                    }
                 }
             }
         }

@@ -27,45 +27,64 @@ struct ContentView: View {
         rssStore.totalUnreadCount()
     }
 
+    private var effectiveColorScheme: ColorScheme {
+        gs.effectiveAppearanceColorScheme(systemColorScheme: colorScheme)
+    }
+
+    private var preferredAppearanceColorScheme: ColorScheme? {
+        guard !gs.appearanceFollowsSystem else { return nil }
+        return gs.appearancePinnedColorScheme.colorScheme
+    }
+
     private var appearanceTheme: AppearanceThemePreset {
         gs.appearanceTheme(
-            for: colorScheme,
+            for: effectiveColorScheme,
             isProActive: subscriptionStore.hasAccess(.readerThemePacks)
         )
     }
 
     /// The theme whose surface colors should retint the whole app, or nil for
-    /// system colors. Presets are light palettes, so surfaces only retint in
-    /// light appearance; dark mode keeps clean system colors (accent still
-    /// applies). Classic = no override.
+    /// system colors. Both appearances retint: `appearanceTheme(for:)` hands back
+    /// the theme's light palette in light mode and its derived dark palette in
+    /// dark mode, so dark mode is the theme's dark version rather than plain
+    /// system black. Classic = no override.
     ///
     /// > **Optimistic Pro theme.** On cold launch StoreKit entitlements are
     /// > still loading, so `subscriptionStore.hasAccess(.readerThemePacks)`
     /// > returns false even for Pro users. Without the optimistic fallback
-    /// > below, the first render would fall back to classic → `activeAppTheme`
-    /// > = nil → the entire UI flashes in system colors until entitlements
+    /// > below, the first render would fall back to classic → an empty
+    /// > `activeAppThemes` → the entire UI flashes in system colors until entitlements
     /// > resolve. Instead, we detect the intended theme from UserDefaults and
     /// > apply it optimistically when it requires Pro. If the user turns out
     /// > not to be Pro, the theme downgrades on the next render pass (~1
     /// > frame), which is imperceptible compared to the 500ms–2s flash.
-    private var resolvedAppTheme: AppearanceThemePreset? {
-        guard colorScheme == .light else { return nil }
+    private func resolvedAppTheme(for scheme: ColorScheme) -> AppearanceThemePreset? {
         let theme = gs.appearanceTheme(
-            for: colorScheme,
+            for: scheme,
             isProActive: subscriptionStore.hasAccess(.readerThemePacks)
         )
         if theme.isClassic {
             // The intended theme may be a Pro theme that requires Pro, but
             // entitlements haven't resolved yet. Look up the intended theme
             // from UserDefaults (synchronous) and use it optimistically.
-            let selectedID = gs.selectedAppearanceThemeID(for: colorScheme)
+            let selectedID = gs.selectedAppearanceThemeID(for: scheme)
             if let intended = AppearanceThemePreset.preset(
                 id: selectedID, customThemes: gs.customAppearanceThemes
             ), !intended.isClassic, intended.requiresPro {
-                return intended
+                return intended.palette(for: scheme)
             }
         }
         return theme.isClassic ? nil : theme
+    }
+
+    /// Both appearances, resolved together. `DSColor` turns these into dynamic colors, so
+    /// the palette is chosen by the trait collection at draw time rather than by whichever
+    /// appearance happened to be current the last time this ran.
+    private var resolvedAppThemes: ActiveAppThemes {
+        ActiveAppThemes(
+            light: resolvedAppTheme(for: .light),
+            dark: resolvedAppTheme(for: .dark)
+        )
     }
 
     private var typographyRefreshID: String {
@@ -77,24 +96,14 @@ struct ContentView: View {
         // appearance before descendants read them this render pass. This is a
         // plain global, not SwiftUI state, so assigning it here is side-effect
         // free as far as invalidation goes.
-        AppearanceThemePreset.activeAppTheme = resolvedAppTheme
+        AppearanceThemePreset.activeAppThemes = resolvedAppThemes
         GlobalAppTypography.activate(postScriptName: gs.resolvedGlobalFontPostScript)
         return tabView
         // Classic (默認) = the app's original look: no tint override at all.
         .tint(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
         .accentColor(appearanceTheme.isClassic ? nil : appearanceTheme.accentColor)
+        .preferredColorScheme(preferredAppearanceColorScheme)
         .font(DSFont.body)
-        .overlay(alignment: .top) {
-            if let outcome = importDrainer.lastOutcome {
-                SharedImportToast(outcome: outcome)
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .task(id: outcome) {
-                        try? await Task.sleep(nanoseconds: 3_000_000_000)
-                        withAnimation { importDrainer.lastOutcome = nil }
-                    }
-            }
-        }
         .overlay {
             // App-wide audiobook mini-player: controls the long-lived audiobook session
             // from any tab. Naturally hidden while a full-screen reader/player is presented.
@@ -103,7 +112,22 @@ struct ContentView: View {
         }
         .iPadAdaptiveRootTabStyle()
         .rootTabBarMinimizeStyle()
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: importDrainer.lastOutcome)
+        .alert(
+            localized("匯入"),
+            isPresented: Binding(
+                get: { importDrainer.lastOutcome != nil },
+                set: { isPresented in
+                    if !isPresented { importDrainer.lastOutcome = nil }
+                }
+            ),
+            presenting: importDrainer.lastOutcome
+        ) { _ in
+            Button(localized("確定"), role: .cancel) {
+                importDrainer.lastOutcome = nil
+            }
+        } message: { outcome in
+            Text(Self.sharedImportMessage(for: outcome))
+        }
         .task(id: typographyRefreshID) {
             await MainActor.run {
                 GlobalAppTypographyUIKitBridge.apply(
@@ -152,14 +176,40 @@ struct ContentView: View {
         }
     }
 
+    private static func sharedImportMessage(for outcome: SharedImportQueueDrainer.Outcome) -> String {
+        let imported = outcome.importedCount
+        let failed = outcome.failureCount
+        if imported > 0 && failed == 0 {
+            return localized("成功匯入") + " \(imported) " + localized("個項目")
+        } else if imported > 0 {
+            return localized("成功匯入") + " \(imported) " + localized("個項目")
+                + "，\(failed) " + localized("個失敗")
+        } else {
+            return "\(failed) " + localized("個項目匯入失敗")
+        }
+    }
+
     /// The root tab bar is driven by `GlobalSettings` so users can hide pages
     /// and customize tab icon assets without changing the feature screens.
+    @ViewBuilder
     private var tabView: some View {
+        if #available(iOS 18.0, *) {
+            visibleTabsTabView
+        } else {
+            // iOS 17 invalidates a NavigationStack inside TabView when a sibling
+            // tab is removed while that stack is visible. Keep every tab's slot in
+            // the hierarchy and use EmptyView for hidden tabs; without `.tabItem`
+            // the placeholder reserves the slot without exposing a tab-bar item.
+            // Remove this compatibility path when iOS 17 support is dropped.
+            stableSlotsTabView
+        }
+    }
+
+    private var visibleTabsTabView: some View {
         TabView(selection: $selectedRootTab) {
             ForEach(gs.visibleRootTabs) { tab in
                 rootTabContent(for: tab)
                     .modifier(ThemedSurfaceBackground(
-                        themeActive: resolvedAppTheme != nil,
                         scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
                         isProActive: subscriptionStore.hasAccess(.readerThemePacks)
                     ))
@@ -168,6 +218,27 @@ struct ContentView: View {
                         rootTabItemLabel(for: tab)
                     }
                     .badge(tab == .rss && rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
+            }
+        }
+    }
+
+    private var stableSlotsTabView: some View {
+        TabView(selection: $selectedRootTab) {
+            ForEach(RootTabItem.allCases) { tab in
+                if gs.isRootTabVisible(tab) {
+                    rootTabContent(for: tab)
+                        .modifier(ThemedSurfaceBackground(
+                            scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
+                            isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+                        ))
+                        .tag(tab)
+                        .tabItem {
+                            rootTabItemLabel(for: tab)
+                        }
+                        .badge(tab == .rss && rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
+                } else {
+                    EmptyView()
+                }
             }
         }
     }
@@ -202,7 +273,7 @@ struct ContentView: View {
     private func rootTabItemLabel(for tab: RootTabItem) -> some View {
         if let renderedIcon = RootTabIconRenderer.customIcon(
             for: tab,
-            colorScheme: colorScheme,
+            colorScheme: effectiveColorScheme,
             pointSize: CGFloat(
                 gs.usesCustomRootTabIconSize
                     ? gs.rootTabIconSize
@@ -210,9 +281,14 @@ struct ContentView: View {
             ),
             settings: gs
         ) {
-            Image(uiImage: renderedIcon.image)
-                .renderingMode(renderedIcon.isTemplate ? .template : .original)
-            if !shouldHideRootTabLabels {
+            if shouldHideRootTabLabels {
+                iconOnlyRootTabLabel(titleKey: tab.titleKey) {
+                    Image(uiImage: renderedIcon.image)
+                        .renderingMode(renderedIcon.isTemplate ? .template : .original)
+                }
+            } else {
+                Image(uiImage: renderedIcon.image)
+                    .renderingMode(renderedIcon.isTemplate ? .template : .original)
                 Text(localized(tab.titleKey))
             }
         } else if usesCustomRootTabIconSize {
@@ -220,25 +296,47 @@ struct ContentView: View {
                 for: tab,
                 pointSize: CGFloat(gs.rootTabIconSize)
             )
-            Image(uiImage: renderedIcon.image)
-                .renderingMode(.template)
-            if !shouldHideRootTabLabels {
+            if shouldHideRootTabLabels {
+                iconOnlyRootTabLabel(titleKey: tab.titleKey) {
+                    Image(uiImage: renderedIcon.image)
+                        .renderingMode(.template)
+                }
+            } else {
+                Image(uiImage: renderedIcon.image)
+                    .renderingMode(.template)
                 Text(localized(tab.titleKey))
             }
         } else if shouldHideRootTabLabels {
-            Image(systemName: tab.defaultSystemImage)
+            Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
+                .labelStyle(.iconOnly)
         } else {
             Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
         }
+    }
+
+    /// Keep the semantic tab title for VoiceOver while asking SwiftUI for its
+    /// supported icon-only layout. A bare Image is treated as the image slot of
+    /// the normal image-plus-title tab layout on iOS 17, which leaves it too high.
+    @ViewBuilder
+    private func iconOnlyRootTabLabel<Icon: View>(
+        titleKey: String,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        Label {
+            Text(localized(titleKey))
+        } icon: {
+            icon()
+        }
+        .labelStyle(.iconOnly)
     }
 }
 
 /// Retints scrollable Form/List surfaces to the active app theme by hiding the
 /// system background and painting the themed page color behind — plus, when the
 /// user configured a page background (Pro), the per-scope gradient/image layer.
-/// A no-op when neither applies, so default users keep the exact system look.
+/// The default palette resolves to the system grouped background, so default users
+/// keep the same appearance while the view structure stays stable across updates.
 private struct ThemedSurfaceBackground: ViewModifier {
-    let themeActive: Bool
     let scope: AppearancePageBackgroundScope
     let isProActive: Bool
     @ObservedObject private var gs = GlobalSettings.shared
@@ -251,56 +349,29 @@ private struct ThemedSurfaceBackground: ViewModifier {
         return gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme)
     }
 
+    /// One structure for every state, on purpose.
+    ///
+    /// An `if/else` over `content` here returns a different branch of
+    /// `_ConditionalContent` per state, which gives the tab's whole subtree a new
+    /// identity the moment the state flips — and SwiftUI rebuilds a subtree whose
+    /// identity changed. That is what popped every pushed screen back to the tab
+    /// root ("閃回設定頁") whenever the theme moved between 默認 (no override) and
+    /// any real theme, or a page background appeared. Keep `content` wrapped in
+    /// exactly one `.background`; branch *inside* it, where an identity change
+    /// only costs a redraw of the backdrop.
     func body(content: Content) -> some View {
-        if let slice = pageBackgroundSlice {
-            content
-                .background {
-                    ZStack {
-                        DSColor.groupedBackground
-                        AppearancePageBackgroundLayerView(slice: slice)
-                    }
-                    .ignoresSafeArea()
-                }
-        } else if themeActive {
-            content
-                .background(DSColor.groupedBackground.ignoresSafeArea())
-        } else {
-            content
+        let slice = pageBackgroundSlice
+        return content.background {
+            ZStack {
+                // Keep this node present for every appearance. Changing a
+                // conditional child here while a reader is directly pushed onto
+                // the shelf navigation stack can make SwiftUI reconcile the
+                // tab subtree and detach the reader on foreground resume.
+                DSColor.groupedBackground
+                AppearancePageBackgroundLayerView(slice: slice)
+            }
+            .ignoresSafeArea()
         }
-    }
-}
-
-/// Toast surfacing the real result of a Share Extension import,
-/// replacing the extension's generic "added to queue" message.
-private struct SharedImportToast: View {
-    let outcome: SharedImportQueueDrainer.Outcome
-
-    private var message: String {
-        let imported = outcome.importedCount
-        let failed = outcome.failureCount
-        if imported > 0 && failed == 0 {
-            return localized("成功匯入") + " \(imported) " + localized("個項目")
-        } else if imported > 0 {
-            return localized("成功匯入") + " \(imported) " + localized("個項目")
-                + "，\(failed) " + localized("個失敗")
-        } else {
-            return "\(failed) " + localized("個項目匯入失敗")
-        }
-    }
-
-    private var tint: Color {
-        if outcome.importedCount == 0 { return .red }
-        return outcome.failureCount == 0 ? .green : .orange
-    }
-
-    var body: some View {
-        Label(message, systemImage: outcome.importedCount > 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
-            .font(DSFont.subheadline.weight(.medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(tint.opacity(0.95), in: Capsule())
-            .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
     }
 }
 

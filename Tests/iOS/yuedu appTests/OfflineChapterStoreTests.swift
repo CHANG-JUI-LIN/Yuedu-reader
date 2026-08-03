@@ -107,6 +107,31 @@ struct OfflineChapterStoreTests {
         #expect(FileManager.default.fileExists(atPath: mangaDirectory.path))
     }
 
+    @Test("a book with no offline data reconciles without creating anything")
+    func reconcileWithoutCachedDataIsANoOp() async throws {
+        let roots = try makeRoots()
+        defer { try? FileManager.default.removeItem(at: roots.container) }
+        let bookId = UUID()
+        let store = OfflineChapterStore(roots: roots.storage, imageDownloader: StubImageDownloader())
+
+        // The ordinary 換源 case: nothing was ever downloaded, and every index mismatches
+        // because the chapters come from a different site. This used to probe six paths
+        // per chapter to find that out.
+        let oldRefs = (0..<500).map {
+            OnlineChapterRef(index: $0, title: "舊 \($0)", url: "https://old.example/\($0)")
+        }
+        let newRefs = (0..<500).map {
+            OnlineChapterRef(index: $0, title: "新 \($0)", url: "https://new.example/\($0)")
+        }
+
+        try await store.reconcileBook(bookId: bookId, oldRefs: oldRefs, newRefs: newRefs)
+
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: roots.storage.textBookDirectory(bookId: bookId).path)
+        )
+    }
+
     @Test("changed chapter identity removes text and manga artifacts together")
     func tocMismatchRemovesArtifacts() async throws {
         let roots = try makeRoots()

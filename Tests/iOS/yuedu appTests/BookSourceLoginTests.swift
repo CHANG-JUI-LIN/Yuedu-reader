@@ -115,6 +115,67 @@ struct BookSourceLoginTests {
         #expect(registerButton.action == "register()")
     }
 
+    @Test("空白登入欄位不會被當成登入成功")
+    func blankLoginFieldIsRequired() {
+        let fields = LoginUIField.parse(from: """
+        [{"name":"Token","type":"password"}]
+        """)
+
+        #expect(
+            BookSourceFormLoginView.missingRequiredFieldNames(
+                fields: fields,
+                values: ["Token": ""]
+            ) == ["Token"]
+        )
+        #expect(
+            BookSourceFormLoginView.missingRequiredFieldNames(
+                fields: fields,
+                values: ["Token": "token-for-test"]
+            ).isEmpty
+        )
+    }
+
+    @Test("登入資訊變更後會重新解析依賴 token 的書源 header")
+    func loginInfoChangeInvalidatesResolvedHeaderCache() {
+        let sourceURL = "qidian-header-cache-test-\(UUID().uuidString)"
+        var source = BookSource(bookSourceUrl: sourceURL, bookSourceName: "Header cache test")
+        source.header = """
+        <js>
+        (function() {
+            var info = source.getLoginInfoMap();
+            var token = info && info.Token;
+            return token ? JSON.stringify({Authorization: "Bearer " + token}) : "{}";
+        })();
+        </js>
+        """
+        LoginManager.shared.clearLogin(sourceUrl: sourceURL)
+        defer { LoginManager.shared.clearLogin(sourceUrl: sourceURL) }
+
+        let engine = JSCoreEngine()
+        engine.bookSource = source
+        #expect(engine.resolvedSourceHeaders().isEmpty)
+
+        engine.sourceBridge.getLoginInfoMapHandler = {
+            LoginManager.shared.getLoginInfo(sourceUrl: sourceURL) ?? [:]
+        }
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: sourceURL,
+            info: ["Token": "token-for-test"]
+        )
+
+        #expect(engine.resolvedSourceHeaders()["Authorization"] == "Bearer token-for-test")
+    }
+
+    @Test("Legado 規則支援函式外觀的頂層 return")
+    func isolatedRuleSupportsTopLevelReturn() {
+        let engine = JSCoreEngine()
+        let value = engine.evaluateIsolated(
+            "var output = 'discover'; return output + '-ok';",
+            bindings: [:]
+        )
+        #expect(value == "discover-ok")
+    }
+
     @Test("LoginUIField.parse() 正確解析 select 欄位與選項")
     func parseSelectLoginUiField() throws {
         let json = """
@@ -191,6 +252,55 @@ struct BookSourceLoginTests {
     func parseEmptyLoginUi() {
         let fields = LoginUIField.parse(from: "")
         #expect(fields.isEmpty)
+    }
+
+    @Test("已儲存的登入資料不會蓋掉神魔小說型動態選單")
+    func storedLoginInfoDoesNotReplaceDynamicLoginUiOutput() throws {
+        let sourceURL = "login-ui-stored-result-\(UUID().uuidString)"
+        var source = BookSource(bookSourceUrl: sourceURL, bookSourceName: "Stored result")
+        source.loginUrl = "function login() { return true; }"
+        // 神魔小說以最後一個 expression 回傳選單，不會把 JSON 寫回 `result`。
+        source.loginUi = """
+        @js:
+        var rows = [
+            {name: '访问令牌', type: 'password'},
+            {name: '🔑登录书源', type: 'button', action: 'login()'}
+        ];
+        JSON.stringify(rows);
+        """
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: sourceURL,
+            info: ["访问令牌": "previous-token"]
+        )
+        defer { LoginManager.shared.clearLogin(sourceUrl: sourceURL) }
+
+        let evaluation = BookSourceFormLoginView.evaluateJsLoginUiResult(source: source)
+        let fields = try #require(LoginUIField.parseResult(from: evaluation.json))
+
+        #expect(evaluation.error == nil)
+        #expect(fields.map(\.name) == ["访问令牌", "🔑登录书源"])
+    }
+
+    @Test("動態 loginUi 會共享 loginUrl 的 JS 上下文")
+    func dynamicLoginUiSharesLoginUrlContext() throws {
+        var source = BookSource(
+            bookSourceUrl: "login-ui-context-\(UUID().uuidString)",
+            bookSourceName: "Login UI context"
+        )
+        source.loginUrl = """
+        function menuTitle() {
+            return "from-login-url";
+        }
+        """
+        source.loginUi = """
+        @js:result = JSON.stringify([{"name": menuTitle(), "type": "button"}]);
+        """
+
+        let output = BookSourceFormLoginView.evaluateJsLoginUi(source: source)
+        let fields = try #require(LoginUIField.parseResult(from: output))
+
+        #expect(fields.count == 1)
+        #expect(fields[0].name == "from-login-url")
     }
 
     @Test("LoginUIField.parse() 容忍單引號 JS 物件字面量（大灰狼聚合源）")

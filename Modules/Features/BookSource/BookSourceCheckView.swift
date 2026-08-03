@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Which failure bucket the results list is filtered to.
-private enum ResultFilter: Hashable { case all, emptyRule, other }
+/// Which failure bucket the results list is filtered to (Legado failure categories).
+private enum ResultFilter: Hashable { case all, ruleMissing, parseFailed, environment }
 
 struct BookSourceCheckView: View {
     @ObservedObject var checker: BookSourceHealthChecker
@@ -11,17 +11,26 @@ struct BookSourceCheckView: View {
     private var failedItems: [BookSourceCheckItem] {
         checker.items.filter { $0.isFinished && !$0.overallPass }
     }
-    private var emptyRuleCount: Int { failedItems.filter { $0.failureCategory == .emptyRule }.count }
-    private var otherFailCount: Int { failedItems.filter { $0.failureCategory != .emptyRule }.count }
+    private var ruleMissingCount: Int {
+        failedItems.filter { $0.failureCategory?.bucket == .ruleMissing }.count
+    }
+    private var parseFailedCount: Int {
+        failedItems.filter { $0.failureCategory?.bucket == .parseFailed }.count
+    }
+    private var environmentCount: Int {
+        failedItems.filter { $0.failureCategory?.bucket == .environment }.count
+    }
 
     private var visibleItems: [BookSourceCheckItem] {
         switch filter {
         case .all:
             return checker.items
-        case .emptyRule:
-            return failedItems.filter { $0.failureCategory == .emptyRule }
-        case .other:
-            return failedItems.filter { $0.failureCategory != .emptyRule }
+        case .ruleMissing:
+            return failedItems.filter { $0.failureCategory?.bucket == .ruleMissing }
+        case .parseFailed:
+            return failedItems.filter { $0.failureCategory?.bucket == .parseFailed }
+        case .environment:
+            return failedItems.filter { $0.failureCategory?.bucket == .environment }
         }
     }
 
@@ -97,6 +106,7 @@ struct BookSourceCheckView: View {
                         .listRowSeparator(.hidden)
                 }
             }
+            .interfaceSectionSurface()
 
             Section {
                 ForEach(visibleItems) { item in
@@ -110,6 +120,7 @@ struct BookSourceCheckView: View {
             } footer: {
                 summaryFooter
             }
+            .interfaceSectionSurface()
         }
         .listStyle(.plain)
     }
@@ -133,7 +144,9 @@ struct BookSourceCheckView: View {
                 .monospacedDigit()
         }
         .padding(DSSpacing.md)
-        .background(Color(.secondarySystemBackground))
+        // Follows 毛玻璃／分組卡片／透明度 like 書源管理's stats card; a hardcoded
+        // `secondarySystemBackground` stayed opaque at every setting.
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
     }
 
@@ -144,16 +157,20 @@ struct BookSourceCheckView: View {
             HStack(spacing: DSSpacing.sm) {
                 filterChip(.all, icon: "line.3.horizontal.circle",
                            label: localized("全部"), count: failedItems.count)
-                filterChip(.emptyRule, icon: "wrench.and.screwdriver",
-                           label: localized("規則空"), count: emptyRuleCount)
-                filterChip(.other, icon: "wrench.and.screwdriver",
-                           label: localized("其他"), count: otherFailCount)
+                filterChip(.ruleMissing, icon: "wrench.and.screwdriver",
+                           label: localized("規則缺失"), count: ruleMissingCount)
+                filterChip(.parseFailed, icon: "text.badge.xmark",
+                           label: localized("解析失效"), count: parseFailedCount)
+                filterChip(.environment, icon: "network.slash",
+                           label: localized("環境問題"), count: environmentCount)
                 Spacer(minLength: 0)
             }
         }
         .padding(.top, DSSpacing.xs)
     }
 
+    /// One filter chip: selected state keeps its accent fill but the label weight stays
+    /// fixed, so tapping never changes the text's appearance — only the fill color.
     private func filterChip(_ value: ResultFilter, icon: String, label: String, count: Int) -> some View {
         let selected = filter == value
         return Button {
@@ -163,12 +180,13 @@ struct BookSourceCheckView: View {
                 Image(systemName: icon)
                     .font(DSFont.caption)
                 Text("\(label) \(count)")
-                    .font(DSFont.subheadline.weight(selected ? .semibold : .regular))
+                    .font(DSFont.subheadline)
             }
             .foregroundColor(selected ? .white : DSColor.textSecondary)
             .padding(.horizontal, DSSpacing.md)
             .padding(.vertical, DSSpacing.sm)
-            .background(selected ? DSColor.accent : Color(.secondarySystemBackground))
+            // Chips stay opaque — same neutral fill as `DSChip` and 書源管理's filter chips.
+            .background(selected ? DSColor.accent : DSColor.neutralControlFill)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -225,7 +243,7 @@ struct BookSourceCheckView: View {
             if item.isFinished, !item.overallPass {
                 HStack(spacing: DSSpacing.xs) {
                     Text(localized("失敗類型") + "：")
-                    Text(item.failureCategory == .emptyRule ? localized("規則空") : localized("其他"))
+                    Text(item.failureCategory?.title ?? localized("網站失效"))
                 }
                 .font(DSFont.caption)
                 .foregroundColor(DSColor.textSecondary)
@@ -239,7 +257,7 @@ struct BookSourceCheckView: View {
     private func stageProgressRow(item: BookSourceCheckItem) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(ValidationStage.allCases) { stage in
-                if stage != .connectivity {
+                if stage.rawValue > 0 {
                     Rectangle()
                         .fill(connectorColor(item: item, before: stage))
                         .frame(height: 1)

@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import SwiftSoup
 import Testing
 @testable import yuedu_app
 
@@ -166,6 +167,32 @@ struct RuleAnalyzerTests {
 
 @Suite("ModernParserBridge Chapter Compatibility", .serialized)
 struct ModernParserBridgeChapterCompatibilityTests {
+
+    @Test("bare JSON numeric field can feed a following JS URL rule")
+    func bareJSONNumericFieldFeedsJSURLRule() {
+        let engine = ModernRuleEngine()
+        engine.jsEvaluator = { _, result in
+            guard let result else { return nil }
+            return "https://qdgo.qimo.host/api/bookDetail?bookId=\(ModernRuleEngine.toString(result))"
+        }
+        engine.setContent(#"{"bid":1041637443}"#)
+
+        let url = engine.getString(ruleStr: "bid@js:result", isUrl: true)
+
+        #expect(url == "https://qdgo.qimo.host/api/bookDetail?bookId=1041637443")
+    }
+
+    @Test("detached java base64 method keeps its bridge receiver")
+    func detachedJavaBase64MethodKeepsBridgeReceiver() {
+        let engine = JSCoreEngine()
+        let encoded = engine.evaluateIsolated(
+            "const encode = java.base64Encode; encode('1041637443,1');",
+            bindings: [:]
+        )
+
+        #expect(encoded == "MTA0MTYzNzQ0Mywx")
+    }
+
     @Test("single-function iOS comment branch is routed through source SVG")
     func singleFunctionIOSCommentBranchUsesSourceSVG() throws {
         var source = BookSource()
@@ -275,6 +302,63 @@ struct ModernParserBridgeChapterCompatibilityTests {
         #expect(chapters[0].title == "第一卷 风起")
         #expect(chapters[3].title == "第二卷 云涌")
         #expect(chapters[1].url == "https://x.test/c/1")
+    }
+}
+
+@Suite("JSON discover bridge regression", .serialized)
+struct JSONDiscoverBridgeRegressionTests {
+
+    @Test("Qidian chapterList JS preserves chapter rows")
+    func qidianChapterListPreservesRows() throws {
+        guard let path = ProcessInfo.processInfo.environment["YueduQidianBookSourceFixturePath"],
+              !path.isEmpty else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        var source = try #require(
+            try JSONDecoder().decode([BookSource].self, from: data).first {
+                $0.bookSourceName == "起点中文"
+            }
+        )
+        source.bookSourceUrl = "qidian-toc-\(UUID().uuidString)"
+
+        let bridge = ModernParserBridge(source: source)
+        let catalog = #"{"Data":{"BookId":1041637443,"CanReadFree":1,"Volumes":[],"Chapters":[{"C":1,"N":"第1章 测试","W":1200,"DisplayTime":1785315581,"Vc":0}]}}"#
+        let chapters = try bridge.parseTOC(
+            html: catalog,
+            baseURL: "https://qdgo.qimo.host/api/chapterList?bookId=1041637443",
+            source: source
+        )
+
+        #expect(chapters.count == 1)
+        #expect(chapters.first?.title == "第1章 测试")
+        #expect(chapters.first?.url.hasPrefix("data:chapter_info;base64,") == true)
+    }
+
+    @Test("numeric book id survives bridge URL parsing")
+    func numericBookIDSurvivesBridgeURLParsing() {
+        var source = BookSource()
+        source.bookSourceName = "起点中文 fixture"
+        source.bookSourceUrl = "qidian-json-\(UUID().uuidString)"
+        source.ruleExplore.bookList = "$.data.records[*]"
+        source.ruleExplore.name = "bName"
+        source.ruleExplore.author = "bAuth"
+        source.ruleExplore.bookUrl = """
+        bid@js:
+        /^[0-9]+$/.test(result) ? 'https://qdgo.qimo.host/api/bookDetail?bookId=' + result : result;
+        """
+
+        let bridge = ModernParserBridge(source: source)
+        bridge.debugObserver = { event in
+            NSLog("❖JSON DISCOVER DEBUG❖ %@", event.legadoStyleLog)
+        }
+        let books = bridge.parseExploreResults(
+            html: #"{"data":{"records":[{"bid":1041637443,"bName":"捞尸人","bAuth":"纯洁滴小龙"}]}}"#,
+            baseURL: "https://m.qidian.com/majax/rank/yuepiaolist",
+            source: source
+        )
+
+        #expect(books.count == 1)
+        #expect(books.first?.bookUrl == "https://qdgo.qimo.host/api/bookDetail?bookId=1041637443")
     }
 }
 
@@ -417,33 +501,35 @@ struct SourceRuleTests {
         #expect(rule.mode == .json)
     }
 
-    @Test("##$## delimiter extracts URL options suffix")
-    func dollarHashHashSeparatesURLOptions() {
-        let rule = SourceRule(ruleStr: "https://example.com/api##$##,{header}")
+    @Test("##$## uses the standard end-anchor replacement")
+    func dollarHashHashUsesEndAnchorReplacement() {
+        let rule = SourceRule(ruleStr: ".count@em.0@text##$##字")
         rule.makeUpRule(
             result: nil,
             getData: { _ in "" },
             evalJS: { _ in nil },
             analyzeRule: { _ in nil }
         )
-        #expect(rule.rule == "https://example.com/api")
-        #expect(rule.urlOptionsSuffix == ",{header}")
-        #expect(rule.replaceRegex == "")
+        #expect(rule.rule == ".count@em.0@text")
+        #expect(rule.replaceRegex == "$")
+        #expect(rule.replacement == "字")
     }
 
-    @Test("##$## with regex after options")
-    func dollarHashHashWithRegexAfterOptions() {
-        let rule = SourceRule(ruleStr: "div@text##$##,{header}##pattern##replacement")
-        rule.makeUpRule(
-            result: nil,
-            getData: { _ in "" },
-            evalJS: { _ in nil },
-            analyzeRule: { _ in nil }
+    @Test("##$## URL suffix reaches the request parser")
+    func dollarHashHashURLSuffixReachesRequestParser() throws {
+        let engine = ModernRuleEngine()
+        engine.setContent(
+            #"<a href="/book/1">book</a>"#,
+            baseUrl: "https://example.com/list"
         )
-        #expect(rule.rule == "div@text")
-        #expect(rule.urlOptionsSuffix == ",{header}")
-        #expect(rule.replaceRegex == "pattern")
-        #expect(rule.replacement == "replacement")
+        let rendered = engine.getString(
+            ruleStr: #"a@href##$##,{Cookie:"reader=1"}"#,
+            isUrl: true
+        )
+        let analyzeURL = AnalyzeUrl(ruleUrl: rendered)
+
+        #expect(AnalyzeUrl.stripOptions(from: rendered) == "https://example.com/book/1")
+        #expect(analyzeURL.headers["Cookie"] == "reader=1")
     }
 }
 
@@ -1389,11 +1475,146 @@ struct AnalyzeUrlTests {
         #expect(au.retry == 3)
     }
 
+    @Test("bodyJs option is retained as a response transform")
+    func bodyJsOption() throws {
+        let script = #"JSON.stringify({wrapped: JSON.parse(result)})"#
+        let encoded = try #require(
+            String(
+                data: JSONSerialization.data(withJSONObject: ["bodyJs": script]),
+                encoding: .utf8
+            )
+        )
+        let au = AnalyzeUrl(ruleUrl: "https://example.com,\(encoded)")
+
+        #expect(au.bodyJs == script)
+    }
+
+    @Test("bodyJs transforms the raw response string before parsing")
+    func bodyJsTransformsResponse() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "bodyJs test"
+
+        let raw = #"{"data":{"records":[{"name":"榜單作品"}]}}"#
+        let payload = Data(raw.utf8).base64EncodedString()
+        let script = #"(function(){var j=JSON.parse(result);return JSON.stringify({data:{books:j.data.records}})})()"#
+        let options = try #require(
+            String(
+                data: JSONSerialization.data(withJSONObject: ["bodyJs": script]),
+                encoding: .utf8
+            )
+        )
+        let ruleURL = "data:application/json;base64,\(payload),\(options)"
+
+        let (body, _) = try await ModernParserBridge(source: source).fetch(ruleUrl: ruleURL)
+        let object = try #require(
+            JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any]
+        )
+        let data = try #require(object["data"] as? [String: Any])
+        let books = try #require(data["books"] as? [[String: Any]])
+
+        #expect(books.first?["name"] as? String == "榜單作品")
+    }
+
+    @Test("bodyJs failure is surfaced instead of parsing the original body")
+    func bodyJsFailureIsSurfaced() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "bodyJs failure test"
+
+        let payload = Data(#"{"data":{"records":[]}}"#.utf8).base64EncodedString()
+        let options = try #require(
+            String(
+                data: JSONSerialization.data(withJSONObject: ["bodyJs": "throw new Error('broken transform')"]),
+                encoding: .utf8
+            )
+        )
+
+        do {
+            _ = try await ModernParserBridge(source: source).fetch(
+                ruleUrl: "data:application/json;base64,\(payload),\(options)"
+            )
+            Issue.record("Expected bodyJs failure")
+        } catch let error as ModernParserBridgeError {
+            guard case .parseError(let message) = error else {
+                Issue.record("Unexpected parser error: \(error)")
+                return
+            }
+            #expect(message.contains("bodyJs failed"))
+        }
+    }
+
+    @Test("bodyJs also transforms responses fetched inside java.ajax")
+    func bodyJsTransformsJavaAjaxResponse() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "bodyJs java.ajax test"
+
+        let raw = #"{"records":[{"title":"榜單","url":"https://example.com/rank"}]}"#
+        let payload = Data(raw.utf8).base64EncodedString()
+        let script = #"JSON.stringify(JSON.parse(result).records)"#
+        let options = try #require(
+            String(
+                data: JSONSerialization.data(withJSONObject: ["bodyJs": script]),
+                encoding: .utf8
+            )
+        )
+        let ruleURL = "data:application/json;base64,\(payload),\(options)"
+        let jsURLLiteral = try #require(
+            String(
+                data: JSONSerialization.data(
+                    withJSONObject: ruleURL,
+                    options: [.fragmentsAllowed]
+                ),
+                encoding: .utf8
+            )
+        )
+        source.exploreUrl = "<js>java.ajax(\(jsURLLiteral));</js>"
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+
+        #expect(items.map(\.title) == ["榜單"])
+        #expect(items.map(\.url) == ["https://example.com/rank"])
+    }
+
+    @Test("bodyJs failure inside java.ajax never exposes the original response")
+    func bodyJsFailureInsideJavaAjaxDoesNotExposeRawResponse() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "bodyJs java.ajax failure test"
+
+        let raw = #"[{"title":"原始資料不得外洩","url":"https://example.com/raw"}]"#
+        let payload = Data(raw.utf8).base64EncodedString()
+        let options = try #require(
+            String(
+                data: JSONSerialization.data(
+                    withJSONObject: ["bodyJs": "throw new Error('broken transform')"]
+                ),
+                encoding: .utf8
+            )
+        )
+        let ruleURL = "data:application/json;base64,\(payload),\(options)"
+        let jsURLLiteral = try #require(
+            String(
+                data: JSONSerialization.data(
+                    withJSONObject: ruleURL,
+                    options: [.fragmentsAllowed]
+                ),
+                encoding: .utf8
+            )
+        )
+        source.exploreUrl = "<js>java.ajax(\(jsURLLiteral));</js>"
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+
+        #expect(items.isEmpty)
+    }
+
     @Test("{header} template resolves to sourceHeader in URL options")
     func headerTemplateInOptions() {
         let headerJSON = "{\"User-Agent\":\"Custom/1.0\"}"
         let au = AnalyzeUrl(
-            ruleUrl: "https://example.com/api,##$##,{header}",
+            ruleUrl: "https://example.com/api,{header}",
             sourceHeader: headerJSON
         )
         #expect(au.headers["User-Agent"] == "Custom/1.0")
@@ -1747,6 +1968,277 @@ struct BookSourceLocalFixtureTests {
         #expect(platforms.count > 6)
         #expect(platforms.contains("69书吧"))
         #expect(platforms.contains("小米"))
+    }
+}
+
+@Suite("Qidian source regression", .serialized)
+struct QidianSourceRegressionTests {
+
+    private static var fixturePath: String? {
+        let env = ProcessInfo.processInfo.environment
+        let value = env["YueduQidianBookSourceFixturePath"]
+            ?? env["TEST_RUNNER_YueduQidianBookSourceFixturePath"]
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isQidianSource(_ source: BookSource) -> Bool {
+        source.bookSourceUrl.localizedCaseInsensitiveContains("qidian")
+            || source.bookSourceName.contains("起点")
+            || source.bookSourceName.contains("起點")
+    }
+
+    @Test("provided Qidian source emits discover categories with a token")
+    func providedSourceEmitsDiscoverCategories() async throws {
+        guard let path = Self.fixturePath, !path.isEmpty,
+              let token = ProcessInfo.processInfo.environment["YueduQidianToken"],
+              !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let source = try #require(
+            try JSONDecoder().decode([BookSource].self, from: data).first(where: Self.isQidianSource)
+        )
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: source.bookSourceUrl,
+            info: ["Token": token]
+        )
+        defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
+
+        let items = await ModernParserBridge(source: source).getExploreItems(page: 1)
+
+        #expect(!items.isEmpty)
+        #expect(items.contains { ($0.url ?? "").contains("qidian.com") })
+
+        let category = try #require(items.first { item in
+            guard let url = item.url else { return false }
+            return url.contains("qidian.com")
+        })
+        let books = try await BookSourceFetcher.shared.discoverBooks(
+            from: category,
+            page: 1,
+            in: source
+        )
+        #expect(!books.isEmpty)
+    }
+
+    @Test("provided Qidian source passes every health-check stage")
+    @MainActor
+    func providedSourcePassesEveryHealthCheckStage() async throws {
+        guard let path = Self.fixturePath, !path.isEmpty,
+              let token = ProcessInfo.processInfo.environment["YueduQidianToken"],
+              !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let source = try #require(
+            try JSONDecoder().decode([BookSource].self, from: data).first(where: Self.isQidianSource)
+        )
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: source.bookSourceUrl,
+            info: ["Token": token]
+        )
+        defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
+
+        var policy = BookSourceCheckPolicy()
+        policy.badAction = .markOnly
+        policy.timeoutSeconds = 180
+
+        let checker = BookSourceHealthChecker()
+        checker.policy = policy
+        checker.prepare(sources: [source])
+        await checker.runAll()
+
+        let item = try #require(checker.items.first)
+        let stageSummary = ValidationStage.allCases.map { stage in
+            let outcome = item.outcome(stage)
+            return "\(stage.longTitle)=\(outcome.status)"
+        }.joined(separator: " ")
+        NSLog("❖QIDIAN HEALTH REGRESSION❖ %@", stageSummary)
+
+        #expect(item.isFinished)
+        #expect(item.overallPass)
+        for stage in ValidationStage.allCases {
+            #expect(item.outcome(stage).status == .pass)
+        }
+    }
+
+    @Test("provided Qidian source fetches book info TOC chapter and review markup")
+    func providedSourceFetchesTOCChapterAndReviewMarkup() async throws {
+        guard let path = Self.fixturePath, !path.isEmpty,
+              let token = ProcessInfo.processInfo.environment["YueduQidianToken"],
+              !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let source = try #require(
+            try JSONDecoder().decode([BookSource].self, from: data).first(where: Self.isQidianSource)
+        )
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: source.bookSourceUrl,
+            info: ["Token": token]
+        )
+        defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
+
+        let items = await ModernParserBridge(source: source).getExploreItems(page: 1)
+        let category = try #require(items.first { item in
+            guard let url = item.url else { return false }
+            return url.contains("qidian.com")
+        })
+        let books = try await BookSourceFetcher.shared.discoverBooks(
+            from: category,
+            page: 1,
+            in: source
+        )
+        let discovered = try #require(books.first { !$0.bookUrl.isEmpty })
+
+        let fetcher = BookSourceFetcher.shared
+        let info = try await fetcher.fetchBookInfo(
+            url: discovered.bookUrl,
+            source: source,
+            runtimeVariables: discovered.runtimeVariables
+        )
+        #expect(!info.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(info.tocUrl.contains("chapterList"))
+
+        let toc = try await fetcher.fetchTOCPackage(
+            tocUrl: info.tocUrl,
+            source: source,
+            runtimeVariables: info.runtimeVariables,
+            forceRefresh: true
+        )
+        #expect(toc.chapters.count > 0)
+        let chapter = try #require(
+            toc.chapters.first { !$0.shouldRenderAsVolumeSeparator && $0.hasLoadableContentURL }
+        )
+
+        let bookId = UUID()
+        defer { fetcher.clearAllChapterCache(bookId: bookId) }
+        let chapterPackage = try await fetcher.fetchChapterPackage(
+            ref: chapter,
+            bookId: bookId,
+            source: source
+        )
+        #expect(!chapterPackage.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+        let normalizedHTML = try #require(
+            fetcher.loadNormalizedChapterHTMLSync(
+                bookId: bookId,
+                chapterIndex: chapter.index,
+                expectedSourceURL: chapter.url,
+                expectedTOCTitle: chapter.title
+            )
+        )
+        let reviewMarkerCount = normalizedHTML.components(separatedBy: "ydreview://").count - 1
+        let reviewImageCount = normalizedHTML.components(separatedBy: "yd-review-image").count - 1
+        NSLog(
+            "❖QIDIAN REGRESSION❖ book=%@ chapters=%d chapter=%@ content=%d reviewMarkers=%d reviewImages=%d",
+            info.name,
+            toc.chapters.count,
+            chapter.title,
+            chapterPackage.content.count,
+            reviewMarkerCount,
+            reviewImageCount
+        )
+        #expect(normalizedHTML.contains("<!DOCTYPE html>"))
+    }
+}
+
+@Suite("Qimo source regression", .serialized)
+struct QimoSourceRegressionTests {
+
+    @Test("provided Qimo source transforms live discover rankings")
+    func providedSourceTransformsLiveDiscoverRankings() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let fixturePath = environment["YueduQimoBookSourceFixturePath"]
+                ?? environment["TEST_RUNNER_YueduQimoBookSourceFixturePath"],
+              !fixturePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
+        let source = try #require(
+            try JSONDecoder().decode([BookSource].self, from: data).first {
+                $0.bookSourceName.contains("柒墨")
+            }
+        )
+        let items = await ModernParserBridge(source: source).getExploreItems(page: 1)
+        let ranking = try #require(items.first { item in
+            guard let url = item.url else { return false }
+            return url.contains("m.qidian.com/majax/rank/")
+        })
+        let books = try await BookSourceFetcher.shared.discoverBooks(
+            from: ranking,
+            page: 1,
+            in: source
+        )
+
+        #expect(!books.isEmpty)
+        #expect(books.allSatisfy { !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    }
+
+    @Test("provided Qimo source preserves live paragraph and FULL review structure")
+    func providedSourcePreservesLiveReviewStructure() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let fixturePath = environment["YueduQimoBookSourceFixturePath"]
+                ?? environment["TEST_RUNNER_YueduQimoBookSourceFixturePath"],
+              let token = environment["YueduQimoToken"]
+                ?? environment["TEST_RUNNER_YueduQimoToken"],
+              !fixturePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
+        let source = try #require(
+            try JSONDecoder().decode([BookSource].self, from: data).first {
+                $0.bookSourceName.contains("柒墨")
+            }
+        )
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: source.bookSourceUrl,
+            info: ["授权令牌": token]
+        )
+        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(
+            #"{"段评开关":"已开"}"#,
+            for: source.bookSourceUrl
+        )
+        defer {
+            LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl)
+            BookSourceRuntimeStateStore.shared.setSourceVariableJSON(nil, for: source.bookSourceUrl)
+        }
+
+        let chapterPayload = Data("1033014772,794296040".utf8).base64EncodedString()
+        let chapter = OnlineChapterRef(
+            index: 1,
+            title: "1、归零",
+            url: "data:chapter_info;base64,\(chapterPayload),{\"type\":\"qdreader\"}"
+        )
+        let cacheBookID = UUID()
+        defer { BookSourceFetcher.shared.clearAllChapterCache(bookId: cacheBookID) }
+
+        let package = try await BookSourceFetcher.shared.fetchChapterPackage(
+            ref: chapter,
+            bookId: cacheBookID,
+            source: source
+        )
+        let normalizedHTML = try #require(
+            BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+                bookId: cacheBookID,
+                chapterIndex: chapter.index,
+                expectedSourceURL: chapter.url,
+                expectedTOCTitle: chapter.title
+            )
+        )
+        let document = try SwiftSoup.parse(normalizedHTML)
+        let paragraphs = try document.select("article#reader-content > p").array()
+        let reviewImages = try document.select("a.yd-review-image").array()
+        let fullReviews = try document.select(
+            #"a.yd-review-image[data-yd-review-style="full"]"#
+        ).array()
+
+        #expect(package.content.contains("洛城，秋"))
+        #expect(paragraphs.count > 20)
+        #expect(reviewImages.count > 0)
+        #expect(fullReviews.count > 0)
+        #expect(try paragraphs.allSatisfy { try $0.text().count < 500 })
     }
 }
 

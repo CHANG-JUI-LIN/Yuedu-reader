@@ -33,6 +33,17 @@ enum AppearanceReaderInterface: String, CaseIterable, Identifiable, Codable {
     var localizedTitle: String { localized(titleKey) }
 }
 
+/// Hand-authored dark-appearance colors for one custom theme. Absent means the
+/// dark version is derived from the light colors, which is what every built-in
+/// theme does and the default for custom ones too.
+struct AppearanceCustomThemeDarkColors: Codable, Hashable {
+    var backgroundHex: UInt32
+    var textHex: UInt32
+    var barHex: UInt32
+    var accentHex: UInt32
+    var dialogueHex: UInt32
+}
+
 struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
     var id: String
     var name: String
@@ -45,6 +56,10 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
     /// `AppearancePageBackgroundScope` raw value. Optional so themes saved
     /// before this field existed keep decoding.
     var pageBackgrounds: [String: AppearancePageBackgroundConfig]?
+    /// Optional hand-authored dark palette. nil = derive it (see
+    /// `AppearanceThemePreset.palette(for:)`); themes saved before this field
+    /// existed decode to nil and keep deriving, unchanged.
+    var dark: AppearanceCustomThemeDarkColors?
 
     init(
         id: String = UUID().uuidString,
@@ -54,7 +69,8 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
         barHex: UInt32,
         accentHex: UInt32,
         dialogueHex: UInt32,
-        pageBackgrounds: [String: AppearancePageBackgroundConfig]? = nil
+        pageBackgrounds: [String: AppearancePageBackgroundConfig]? = nil,
+        dark: AppearanceCustomThemeDarkColors? = nil
     ) {
         self.id = id
         self.name = name
@@ -64,6 +80,47 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
         self.accentHex = accentHex
         self.dialogueHex = dialogueHex
         self.pageBackgrounds = pageBackgrounds
+        self.dark = dark
+    }
+}
+
+/// The five colors that make up one appearance of a theme, in the form the
+/// preset draws with. Used to carry a custom theme's hand-authored dark palette.
+struct AppearanceThemeDarkColors: Hashable {
+    var background: UIColor
+    var text: UIColor
+    var bar: UIColor
+    var accent: UIColor
+    var dialogue: UIColor
+
+    init(background: UIColor, text: UIColor, bar: UIColor, accent: UIColor, dialogue: UIColor) {
+        self.background = background
+        self.text = text
+        self.bar = bar
+        self.accent = accent
+        self.dialogue = dialogue
+    }
+
+    init(_ stored: AppearanceCustomThemeDarkColors) {
+        self.init(
+            background: AppearanceThemePreset.hex(stored.backgroundHex),
+            text: AppearanceThemePreset.hex(stored.textHex),
+            bar: AppearanceThemePreset.hex(stored.barHex),
+            accent: AppearanceThemePreset.hex(stored.accentHex),
+            dialogue: AppearanceThemePreset.hex(stored.dialogueHex)
+        )
+    }
+
+    /// Storage form, for persisting into a custom theme. Falls back per slot to
+    /// a neutral dark value if a color can't be reduced to RGB.
+    var stored: AppearanceCustomThemeDarkColors {
+        AppearanceCustomThemeDarkColors(
+            backgroundHex: background.rgbHex ?? 0x1C1C1E,
+            textHex: text.rgbHex ?? 0xEBEBF0,
+            barHex: bar.rgbHex ?? 0x2C2C2E,
+            accentHex: accent.rgbHex ?? 0x0A84FF,
+            dialogueHex: dialogue.rgbHex ?? 0x2A3A4A
+        )
     }
 }
 
@@ -84,6 +141,15 @@ struct AppearanceThemePreset: Identifiable, Hashable {
     let requiresPro: Bool
     let isImagePreset: Bool
     let isCustom: Bool
+    /// True when this instance is the theme's **dark-appearance** palette, i.e.
+    /// it came out of `palette(for: .dark)`. Two things read it: the app surface
+    /// derivations below (cards lift up from the background instead of blending
+    /// toward white), and the reader, where only a dark palette is allowed to
+    /// repaint the 黑色 reading background. Never set by hand.
+    var isDarkAppearancePalette: Bool = false
+    /// Dark colors the user authored for this theme (custom themes only). When
+    /// set, `palette(for: .dark)` uses them verbatim instead of deriving.
+    var authoredDarkColors: AppearanceThemeDarkColors?
 
     var localizedName: String { displayName ?? localized(nameKey) }
     var backgroundColor: Color { Color(uiColor: background) }
@@ -100,14 +166,149 @@ struct AppearanceThemePreset: Identifiable, Hashable {
 
     /// Page / grouped-list background — the tinted "paper". Nudged toward the
     /// accent so the tint is actually visible against the near-white cards
-    /// (the raw preset background alone reads as plain white).
-    var appPageBackground: UIColor { Self.mix(background, accent, 0.12) }
-    /// Cards, rows, sheets — near-white so they lift off the tinted page.
-    var appCardBackground: UIColor { Self.mix(background, .white, 0.72) }
-    /// Nested / secondary surfaces (slightly more tint than cards).
-    var appSecondaryBackground: UIColor { Self.mix(background, .white, 0.45) }
+    /// (the raw preset background alone reads as plain white). A dark palette is
+    /// already at the right depth and carries its hue, so it is used as-is —
+    /// pulling it toward the brightened dark accent would wash the page out.
+    var appPageBackground: UIColor {
+        isDarkAppearancePalette ? background : Self.mix(background, accent, 0.12)
+    }
+    /// Cards, rows, sheets — near-white so they lift off the tinted page. In dark
+    /// appearance "lifting" means a small step up in brightness, the way the
+    /// system's grouped backgrounds stack.
+    var appCardBackground: UIColor {
+        Self.mix(background, .white, isDarkAppearancePalette ? 0.10 : 0.72)
+    }
+    /// Nested / secondary surfaces. Light: slightly more tint than cards. Dark:
+    /// one step lighter again, matching iOS's tertiary-over-secondary stacking.
+    var appSecondaryBackground: UIColor {
+        Self.mix(background, .white, isDarkAppearancePalette ? 0.16 : 0.45)
+    }
     var appSeparator: UIColor { text.withAlphaComponent(0.12) }
     var appBorder: UIColor { text.withAlphaComponent(0.18) }
+
+    // MARK: - Light / dark palettes
+
+    /// This theme's palette for `colorScheme`. Themes are authored light, so the
+    /// dark version is derived (see `derivedDarkPalette`) rather than stored —
+    /// that way the built-ins, user custom themes, and imported theme packs all
+    /// have a dark version without a second set of colors to maintain. A custom
+    /// theme may override that derivation with its own dark colors.
+    func palette(for colorScheme: ColorScheme) -> AppearanceThemePreset {
+        guard colorScheme == .dark else { return self }
+        var dark: AppearanceThemePreset
+        if let authored = authoredDarkColors {
+            dark = replacingColors(with: authored)
+        } else if isAuthoredDark {
+            dark = self
+        } else {
+            dark = derivedDarkPalette()
+        }
+        dark.isDarkAppearancePalette = true
+        return dark
+    }
+
+    /// Same theme identity, painted with an explicit set of colors.
+    private func replacingColors(with colors: AppearanceThemeDarkColors) -> AppearanceThemePreset {
+        AppearanceThemePreset(
+            id: id,
+            nameKey: nameKey,
+            displayName: displayName,
+            background: colors.background,
+            text: colors.text,
+            bar: colors.bar,
+            accent: colors.accent,
+            dialogue: colors.dialogue,
+            previewBackground: colors.bar,
+            relativePreviewImagePath: relativePreviewImagePath,
+            imagePaths: imagePaths,
+            requiresPro: requiresPro,
+            isImagePreset: isImagePreset,
+            isCustom: isCustom
+        )
+    }
+
+    /// Palettes that are already dark — an image pack built from night artwork,
+    /// or a custom theme the user gave a black background — are used as they
+    /// were authored instead of being darkened a second time.
+    private var isAuthoredDark: Bool {
+        isImagePreset || Self.relativeLuminance(background) < 0.32
+    }
+
+    /// Keeps the theme's identity (id, name, hue) and rebuilds the palette for a
+    /// dark surface: background drops to a near-black tint of the theme hue, the
+    /// text flips light, the accent brightens enough to read on it.
+    private func derivedDarkPalette() -> AppearanceThemePreset {
+        let bg = Self.hsb(background) ?? (h: 0, s: 0, b: 1)
+        let ac = Self.hsb(accent) ?? (h: 0.58, s: 0.8, b: 0.95)
+        // Theme backgrounds are pale, so their hue survives at a very low
+        // saturation that would vanish once darkened — re-saturate it. A truly
+        // neutral background (默認, white-based custom themes) has no usable hue,
+        // so the accent supplies it.
+        let hue = bg.s > 0.02 ? bg.h : ac.h
+        let tint = min(max(bg.s * 2.6, 0.06), 0.32)
+        let darkBackground = UIColor(hue: hue, saturation: tint, brightness: 0.11, alpha: 1)
+        let darkBar = UIColor(hue: hue, saturation: tint * 0.9, brightness: 0.17, alpha: 1)
+        let darkText = UIColor(
+            hue: hue,
+            saturation: min(tint * 0.25, 0.08),
+            brightness: 0.92,
+            alpha: 1
+        )
+        // Near-full brightness, saturation only lightly capped — the same shape
+        // as the system's dark-mode accents (systemBlue goes #007AFF → #0A84FF).
+        // It is what keeps accent-colored *text* above 4.5:1 on the dark
+        // background; dimmer accents measured ~4:1 and failed.
+        let darkAccent = UIColor(
+            hue: ac.h,
+            saturation: min(ac.s, 0.90),
+            brightness: max(ac.b, 0.98),
+            alpha: 1
+        )
+        return AppearanceThemePreset(
+            id: id,
+            nameKey: nameKey,
+            displayName: displayName,
+            background: darkBackground,
+            text: darkText,
+            bar: darkBar,
+            accent: darkAccent,
+            dialogue: Self.mix(darkBackground, darkAccent, 0.3),
+            previewBackground: darkBar,
+            relativePreviewImagePath: relativePreviewImagePath,
+            imagePaths: imagePaths,
+            requiresPro: requiresPro,
+            isImagePreset: isImagePreset,
+            isCustom: isCustom
+        )
+    }
+
+    private static func hsb(_ color: UIColor) -> (h: CGFloat, s: CGFloat, b: CGFloat)? {
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
+            return nil
+        }
+        return (hue, saturation, brightness)
+    }
+
+    /// WCAG relative luminance, used only to tell an authored-dark palette from
+    /// an authored-light one.
+    private static func relativeLuminance(_ color: UIColor) -> CGFloat {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return 1 }
+        func linearized(_ component: CGFloat) -> CGFloat {
+            let clamped = min(max(component, 0), 1)
+            return clamped <= 0.03928
+                ? clamped / 12.92
+                : pow((clamped + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linearized(red) + 0.7152 * linearized(green) + 0.0722 * linearized(blue)
+    }
 
     /// Linear interpolation between two colors in sRGB.
     static func mix(_ a: UIColor, _ b: UIColor, _ t: CGFloat) -> UIColor {
@@ -210,10 +411,18 @@ struct AppearanceThemePreset: Identifiable, Hashable {
     /// Active reader-surface color override (nil = built-in reader theme).
     nonisolated(unsafe) static var activeReaderTheme: AppearanceThemePreset?
 
-    /// Active app-wide appearance theme (nil = classic/system colors). Set by
-    /// `ContentView`; consulted by `DSColor` so themed surfaces retint the whole
-    /// app. Only ever mutated on the main thread.
-    nonisolated(unsafe) static var activeAppTheme: AppearanceThemePreset?
+    /// The app-wide appearance theme for *both* appearances, so `DSColor` can hand UIKit
+    /// a dynamic color that resolves at draw time. Set by `ContentView`; only ever
+    /// mutated on the main thread.
+    ///
+    /// This used to hold one already-chosen palette, which made every themed color depend
+    /// on *when* the global was last written. `ContentView.body` is the only place that
+    /// refreshes it when the system appearance flips, and SwiftUI may re-render a themed
+    /// screen before that runs — so dark mode could paint with the light palette until
+    /// something forced another pass. (`setAppearanceTheme` carries a patch for the same
+    /// ordering problem on theme *selection*: the "switch takes two taps" bug.) Resolving
+    /// per trait removes the ordering question entirely.
+    nonisolated(unsafe) static var activeAppThemes = ActiveAppThemes()
 
     static func preset(
         id: String?,
@@ -227,7 +436,7 @@ struct AppearanceThemePreset: Identifiable, Hashable {
     }
 
     static func preset(from custom: AppearanceCustomTheme) -> AppearanceThemePreset {
-        AppearanceThemePreset(
+        var preset = AppearanceThemePreset(
             id: custom.id,
             nameKey: "",
             displayName: custom.name,
@@ -243,6 +452,8 @@ struct AppearanceThemePreset: Identifiable, Hashable {
             isImagePreset: false,
             isCustom: true
         )
+        preset.authoredDarkColors = custom.dark.map { AppearanceThemeDarkColors($0) }
+        return preset
     }
 
     func customCopy(name: String) -> AppearanceCustomTheme {
@@ -252,7 +463,11 @@ struct AppearanceThemePreset: Identifiable, Hashable {
             textHex: text.rgbHex ?? 0x3E2E28,
             barHex: bar.rgbHex ?? 0xFBE1D9,
             accentHex: accent.rgbHex ?? 0xFF6B3A,
-            dialogueHex: dialogue.rgbHex ?? 0xF9D5C9
+            dialogueHex: dialogue.rgbHex ?? 0xF9D5C9,
+            // Only a hand-authored dark palette travels with the copy. A derived
+            // one stays derived, so the copy tracks the derivation rule instead
+            // of freezing today's output.
+            dark: authoredDarkColors?.stored
         )
     }
 
@@ -419,7 +634,10 @@ extension UIColor {
         var blue: CGFloat = 0
         var alpha: CGFloat = 0
         guard getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
-        return (UInt32(red * 255) << 16) | (UInt32(green * 255) << 8) | UInt32(blue * 255)
+        // Clamp before conversion: Display P3 colors can surface out-of-range
+        // components (extended range) here, and UInt32(negative) traps.
+        let byte: (CGFloat) -> UInt32 = { UInt32((min(max($0, 0), 1) * 255).rounded()) }
+        return (byte(red) << 16) | (byte(green) << 8) | byte(blue)
     }
 }
 
@@ -436,5 +654,25 @@ struct AppearanceThemeBackgroundView: View {
                 .ignoresSafeArea()
                 .accessibilityHidden(true)
         }
+    }
+}
+
+/// The active app theme per appearance. `nil` in a slot means classic — system colors.
+///
+/// Held as a pair rather than "whichever palette matches the current appearance" so
+/// `DSColor` can build a dynamic `UIColor`, which UIKit resolves against the trait
+/// collection in effect when a view actually draws. See `activeAppThemes`.
+struct ActiveAppThemes {
+    var light: AppearanceThemePreset?
+    var dark: AppearanceThemePreset?
+
+    var isActive: Bool { light != nil || dark != nil }
+
+    func theme(for colorScheme: ColorScheme) -> AppearanceThemePreset? {
+        colorScheme == .dark ? dark : light
+    }
+
+    func theme(for style: UIUserInterfaceStyle) -> AppearanceThemePreset? {
+        style == .dark ? dark : light
     }
 }

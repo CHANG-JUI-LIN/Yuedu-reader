@@ -69,4 +69,12 @@ final class TTSSilenceKeepAlive {
     func stop() {
         player?.pause()
     }
+
+    /// Recreates the decoder after AVAudioSession media services were reset. An existing
+    /// `AVAudioPlayer` can remain allocated but no longer be backed by the new audio daemon.
+    func restart() {
+        player?.stop()
+        player = nil
+        start()
+    }
 }

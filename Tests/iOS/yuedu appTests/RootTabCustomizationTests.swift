@@ -42,6 +42,31 @@ struct RootTabCustomizationTests {
         ])
     }
 
+    @Test("hiding RSS keeps the iOS 17 root tab slot order stable")
+    func hidingRSSKeepsStableRootTabSlots() {
+        let visible = GlobalSettings.sanitizedRootTabVisibleIDs([
+            RootTabItem.bookshelf.rawValue,
+            RootTabItem.explore.rawValue,
+            RootTabItem.settings.rawValue,
+            RootTabItem.search.rawValue
+        ])
+
+        #expect(RootTabItem.allCases == [
+            .bookshelf,
+            .explore,
+            .rss,
+            .settings,
+            .search,
+        ])
+        #expect(visible == [
+            RootTabItem.bookshelf.rawValue,
+            RootTabItem.explore.rawValue,
+            RootTabItem.settings.rawValue,
+            RootTabItem.search.rawValue,
+        ])
+        #expect(RootTabItem.allCases.firstIndex(of: .settings) == 3)
+    }
+
     @Test("tab icon size is clamped")
     func tabIconSizeIsClamped() {
         #expect(RootTabIconRenderer.sanitizedIconSize(10) == 22)

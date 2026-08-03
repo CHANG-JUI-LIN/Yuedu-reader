@@ -45,13 +45,18 @@ extension ReaderView {
     }
 
     func applyChapterRefreshAction(for chapterIndex: Int, newState: ChapterLoadState) {
-        // `chapterStates` is published only after ReaderViewModel updates this in-memory
-        // availability snapshot, so this callback never needs to re-open the cache.
-        let contentAvailable = readerViewModel.isChapterContentAvailable(at: chapterIndex)
-        if newState == .ready,
-           !contentAvailable,
-           manuallyRefreshingChapterIndex == chapterIndex {
-            manuallyRefreshingChapterIndex = nil
+        let contentAvailable = isChapterContentAvailable(at: chapterIndex)
+        if newState == .ready {
+            if contentAvailable {
+                chapterConsistencyRecoveryAttempts[chapterIndex] = nil
+            } else {
+                if manuallyRefreshingChapterIndex == chapterIndex {
+                    manuallyRefreshingChapterIndex = nil
+                }
+                if chapterIndex == currentChapterIndex {
+                    recoverInconsistentChapterOnce(chapterIndex)
+                }
+            }
         }
         #if DEBUG
         AppLogger.render("[StateDebug] applyRefreshAction ch=\(chapterIndex) newState=\(newState) contentAvailable=\(contentAvailable) currentCh=\(currentChapterIndex)")
@@ -117,6 +122,21 @@ extension ReaderView {
         }
     }
 
+    /// 移除下載 deleted every cached chapter of this book while the reader is open. The load
+    /// states still claim `.ready`, and against an empty cache that pair renders as
+    /// 資料不一致 — with nothing to clear it, because no state transitioned and no chapter
+    /// was entered. Drop the states the files backed, then refetch what is on screen.
+    func handleOnlineChapterCacheCleared() {
+        AppLogger.cache("⟐ offline cache cleared, resetting chapter states", context: [
+            "chapter": currentChapterIndex,
+        ])
+        readerViewModel.resetAllChapterStates()
+        chapterConsistencyRecoveryAttempts.removeAll()
+        // Resetting alone would leave the overlay spinning forever: nothing else refetches
+        // a chapter whose state merely went back to `.idle`.
+        ensureChapterReady(chapterIndex: currentChapterIndex, priority: .jump)
+    }
+
     // MARK: - Failure Surface
 
     /// Shown when the current chapter's fetch failed (`.failed` state, or
@@ -157,9 +177,30 @@ extension ReaderView {
     /// invalid artifact, clears its state, and refetches it. Other readable
     /// chapters are never purged.
     func retryCurrentChapterLoad() {
+        // An explicit tap re-arms the automatic recovery below: the user asking again
+        // means the previous attempt's verdict is no longer the last word.
+        chapterConsistencyRecoveryAttempts[currentChapterIndex] = nil
+        AppLogger.render("⟐ chapter retry tapped ch=\(currentChapterIndex)")
+        refetchChapter(at: currentChapterIndex)
+    }
+
+    /// `.ready` with nothing readable on disk means the load state and the cache disagree —
+    /// exactly what the manual 重試 button already resolves, which is why users found that
+    /// "刷新一下就好了". Do that refetch for them, but only once per chapter: a chapter that
+    /// reports the mismatch again after a full refetch is genuinely broken, and the failure
+    /// overlay is the honest answer. Looping instead would restore the endless spinner this
+    /// overlay replaced.
+    func recoverInconsistentChapterOnce(_ chapterIndex: Int) {
+        guard chapterConsistencyRecoveryAttempts[chapterIndex, default: 0] == 0 else { return }
+        chapterConsistencyRecoveryAttempts[chapterIndex] = 1
+        AppLogger.cache("⟐ chapterState/cache mismatch, auto refetch", context: [
+            "index": chapterIndex,
+        ])
+        refetchChapter(at: chapterIndex)
+    }
+
+    private func refetchChapter(at idx: Int) {
         guard let currentBook = book else { return }
-        let idx = currentChapterIndex
-        AppLogger.render("⟐ chapter retry tapped ch=\(idx)")
         dependencies.bookSourceFetcher.clearChapterCache(
             bookId: currentBook.id,
             chapterIndex: idx

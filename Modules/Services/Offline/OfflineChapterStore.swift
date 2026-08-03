@@ -5,11 +5,9 @@ struct OfflineStorageRoots: Sendable, Equatable {
     var mangaRoot: URL
 
     static var live: OfflineStorageRoots {
-        let applicationSupport = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return OfflineStorageRoots(
+        OfflineStorageRoots(
             textRoot: StorageLocations.onlineCache,
-            mangaRoot: applicationSupport.appendingPathComponent("manga", isDirectory: true)
+            mangaRoot: StorageLocations.mangaCache
         )
     }
 
@@ -367,6 +365,22 @@ actor OfflineChapterStore: OfflineChapterStoring {
     ) async throws {
         let maximumCount = max(oldRefs.count, newRefs.count)
         guard maximumCount > 0 else { return }
+
+        // Two directory listings up front instead of six `fileExists` probes per chapter.
+        // A source switch mismatches nearly every index, so the probe-per-chapter form
+        // issued 6 × chapterCount stat syscalls — thousands for a long novel — almost all
+        // of them just to discover there was nothing cached at that index. Books with no
+        // offline data at all now cost two listings and return immediately.
+        let textDirectory = roots.textBookDirectory(bookId: bookId)
+        let cachedTextFiles = Set(
+            (try? fileManager.contentsOfDirectory(atPath: textDirectory.path)) ?? []
+        )
+        let mangaDirectory = roots.mangaBookDirectory(bookId: bookId)
+        let cachedMangaChapters = Set(
+            (try? fileManager.contentsOfDirectory(atPath: mangaDirectory.path)) ?? []
+        )
+        guard !cachedTextFiles.isEmpty || !cachedMangaChapters.isEmpty else { return }
+
         for index in 0..<maximumCount {
             let oldRef = oldRefs.indices.contains(index) ? oldRefs[index] : nil
             let newRef = newRefs.indices.contains(index) ? newRefs[index] : nil
@@ -379,18 +393,16 @@ actor OfflineChapterStore: OfflineChapterStoring {
             guard !matches else { continue }
             do {
                 for suffix in ["txt", "meta.json", "package.json", "raw.html", "normalized.xhtml"] {
-                    let file = roots.textBookDirectory(bookId: bookId)
-                        .appendingPathComponent("\(index).\(suffix)")
-                    if fileManager.fileExists(atPath: file.path) {
-                        try fileManager.removeItem(at: file)
-                    }
+                    let filename = "\(index).\(suffix)"
+                    guard cachedTextFiles.contains(filename) else { continue }
+                    try fileManager.removeItem(
+                        at: textDirectory.appendingPathComponent(filename)
+                    )
                 }
-                let mangaDirectory = roots.mangaChapterDirectory(
-                    bookId: bookId,
-                    chapterIndex: index
-                )
-                if fileManager.fileExists(atPath: mangaDirectory.path) {
-                    try fileManager.removeItem(at: mangaDirectory)
+                if cachedMangaChapters.contains(String(index)) {
+                    try fileManager.removeItem(
+                        at: roots.mangaChapterDirectory(bookId: bookId, chapterIndex: index)
+                    )
                 }
             } catch {
                 throw OfflineChapterStoreError.remove(error.localizedDescription)

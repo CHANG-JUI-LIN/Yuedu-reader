@@ -85,6 +85,28 @@ struct ReaderOverlayIntegrationTests {
         )
     }
 
+    @Test("Home indicator hides with the reader chrome and the editor")
+    func homeIndicatorFollowsImmersiveState() {
+        #expect(
+            !ReaderOverlayPresentationPolicy.hidesHomeIndicator(
+                showsReaderChrome: true,
+                isEditing: false
+            )
+        )
+        #expect(
+            ReaderOverlayPresentationPolicy.hidesHomeIndicator(
+                showsReaderChrome: false,
+                isEditing: false
+            )
+        )
+        #expect(
+            ReaderOverlayPresentationPolicy.hidesHomeIndicator(
+                showsReaderChrome: true,
+                isEditing: true
+            )
+        )
+    }
+
     @Test("Component movement never changes content reservations")
     func movementDoesNotReflow() {
         var layout = ReaderOverlayLayout.default

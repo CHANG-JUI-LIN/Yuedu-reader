@@ -412,10 +412,14 @@ struct HomeView: View {
             }
             .navigationDestination(item: $selectedOnlineBookDetail) { book in
                 if BookSourceStore.shared.isAudiobook(book) {
-                    AudiobookDetailView(book: book)
+                    AudiobookDetailView(book: book, onRemoveFromShelf: {
+                        selectedOnlineBookDetail = nil
+                    })
                         .environmentObject(store)
                 } else {
-                    OnlineBookView(book: book)
+                    OnlineBookView(book: book, onRemoveFromShelf: {
+                        selectedOnlineBookDetail = nil
+                    })
                         .environmentObject(store)
                 }
             }
@@ -517,7 +521,6 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(DSFont.toolbarIcon)
-                    .foregroundColor(.black)
             }
         } else {
             Menu {
@@ -541,7 +544,6 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(DSFont.toolbarIcon)
-                    .foregroundColor(.black)
             }
             .id("\(Locale.autoupdatingCurrent.identifier)_add_menu")
         }
@@ -577,7 +579,6 @@ struct HomeView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(DSFont.toolbarIcon)
-                .foregroundColor(.black)
         }
         .id("\(Locale.autoupdatingCurrent.identifier)_menu")
     }
@@ -764,6 +765,7 @@ struct EditBookSheet: View {
                             }
                         }
                     }
+                    .interfaceSectionSurface()
                     Section(header: Text(localized("閱讀進度"))) {
                         HStack {
                             Text(localized("目前進度"))
@@ -784,6 +786,7 @@ struct EditBookSheet: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                    .interfaceSectionSurface()
                 }
                 .navigationTitle(localized("書籍資訊"))
                 .toolbarTitleDisplayMode(.inline)
@@ -1304,11 +1307,13 @@ struct BulkAddToGroupSheet: View {
                         }
                     }
                 }
+                .interfaceSectionSurface()
                 Section {
                     Text(localized("將套用到") + " \(bookCount) " + localized("本書"))
                         .font(DSFont.footnote)
                         .foregroundColor(DSColor.textSecondary)
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("加入分組"))
             .toolbarTitleDisplayMode(.inline)

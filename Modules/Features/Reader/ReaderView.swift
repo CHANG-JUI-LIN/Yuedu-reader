@@ -70,6 +70,10 @@ struct ReaderView: View {
     // Online chapter lazy loading
     @StateObject var readerViewModel = ReaderViewModel()
     @State var observedChapterStates: [Int: ChapterLoadState] = [:]
+    /// Chapters already refetched once because their `.ready` state disagreed with the cache
+    /// on disk. Bounds `recoverInconsistentChapterOnce` so a genuinely broken chapter still
+    /// reaches the failure overlay instead of refetching forever.
+    @State var chapterConsistencyRecoveryAttempts: [Int: Int] = [:]
 
     /// Top safe area (points), passed to EPUB engine as minimum margin-top.
     @State var readerSafeAreaTop: CGFloat = 59
@@ -171,6 +175,7 @@ struct ReaderView: View {
     var changeSourceLoading: Bool { readerViewModel.changeSourceLoading }
     var changeSourceError: String? { readerViewModel.changeSourceError }
     var changeSourceFailedKeys: Set<String> { readerViewModel.changeSourceFailedKeys }
+    var changeSourcePendingOrigin: BookOrigin? { readerViewModel.changeSourcePendingOrigin }
 
     @State private var systemBrightness: Double = 0.5
 
@@ -229,8 +234,11 @@ struct ReaderView: View {
     /// When "follow system" theme is on, align the reader theme with the current
     /// system light/dark appearance. Setting `readerConfig.theme` triggers the
     /// `.appearance` refresh through `ReaderConfig`'s binding, so pages recolor.
+    ///
+    /// 綁定閱讀主題 supersedes this: it maps each appearance to a theme the user
+    /// chose, so `syncActiveThemePreset` is the single writer while it is on.
     func applyFollowSystemThemeIfNeeded() {
-        guard settings.readerFollowSystemTheme else { return }
+        guard settings.readerFollowSystemTheme, !settings.appearanceBindReaderTheme else { return }
         let desired = ReaderTheme.forSystem(dark: systemColorScheme == .dark)
         if readerConfig.theme != desired {
             readerConfig.theme = desired
@@ -238,21 +246,44 @@ struct ReaderView: View {
     }
 
     /// Applies the selected app appearance theme to the reader only when the
-    /// user explicitly enables "bind reading theme" in Settings.
+    /// user explicitly enables "bind reading theme" in Settings. While bound, the
+    /// reader follows the system appearance through the user's 淺色閱讀主題 /
+    /// 黑色閱讀主題 picks: 跟隨外觀主題 repaints the reader with the appearance
+    /// theme's palette, any other pick switches to that reading background.
     func syncActiveThemePreset() {
-        let preset: AppearanceThemePreset?
+        var preset: AppearanceThemePreset?
+        var boundTheme: ReaderTheme?
         if let customBackgroundPreset = settings.readerCustomBackgroundPreset {
             preset = customBackgroundPreset
         } else if settings.appearanceBindReaderTheme {
-            preset = settings.appearanceTheme(
-                for: systemColorScheme,
-                isProActive: subscriptionStore.hasAccess(.readerThemePacks)
-            )
-        } else {
-            preset = nil
+            let choice = settings.boundReaderTheme(for: systemColorScheme)
+            boundTheme = choice.resolvedReaderTheme(for: systemColorScheme)
+            if case .followAppearanceTheme = choice {
+                preset = settings.appearanceTheme(
+                    for: systemColorScheme,
+                    isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+                )
+            }
         }
-        guard AppearanceThemePreset.activeReaderTheme != preset else { return }
-        AppearanceThemePreset.activeReaderTheme = preset
+
+        // Order matters: changing the theme recolors the render-settings snapshot, so
+        // the preset must already be in place before that happens.
+        let presetChanged = AppearanceThemePreset.activeReaderTheme != preset
+        if presetChanged {
+            AppearanceThemePreset.activeReaderTheme = preset
+        }
+        if let boundTheme, readerConfig.theme != boundTheme {
+            // The theme write flows through the unified settings observation, which
+            // classifies it as an appearance refresh on its own.
+            readerConfig.theme = boundTheme
+            return
+        }
+        // A preset-only change moves no observed property, so nothing else would notice
+        // that the palette is different — submit the appearance refresh explicitly.
+        // (`ReaderConfig.refresh` no longer exists; every refresh goes through the one
+        // pipeline entry.)
+        guard presetChanged else { return }
+        submitReaderRefresh(intent: .appearance)
     }
 
     var usesReadableReaderWidth: Bool {
@@ -840,14 +871,21 @@ struct ReaderView: View {
         progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex) visiblePosition=\(String(describing: visiblePosition))")
 
         if chapterChanged {
+            let entryState = readerViewModel.chapterState(for: newChapter)
+            let entryContentAvailable = isChapterContentAvailable(at: newChapter)
             let entryAction = ReaderChapterPresentation.entryRefreshAction(
                 chapterIndex: newChapter,
                 usesCoreText: usesCoreTextEPUB,
-                loadState: readerViewModel.chapterState(for: newChapter),
-                isContentAvailable: isChapterContentAvailable(at: newChapter),
+                loadState: entryState,
+                isContentAvailable: entryContentAvailable,
                 isLayoutAvailable: engine.layouts[newChapter] != nil
             )
             ensureChapterReady(chapterIndex: newChapter)
+            // Entering a chapter whose state was already `.ready` publishes no transition, so
+            // the state/cache mismatch check in `applyChapterRefreshAction` never runs for it.
+            if entryState == .ready, !entryContentAvailable {
+                recoverInconsistentChapterOnce(newChapter)
+            }
             if case .notifyChapterDataChanged = entryAction {
                 submitChapterContentRefresh(chapterIndex: newChapter)
             }
@@ -1483,6 +1521,18 @@ struct ReaderView: View {
                 isEditing: readerHeaderFooterEditorModel != nil
             )
         )
+        // The home indicator is the other half of the system chrome the immersive
+        // page has to shed. `.hidden` is an auto-hide request, so the indicator
+        // fades out while reading and still reappears on the next touch — exactly
+        // how it behaves in Books. Applied on the same layer as `.statusBarHidden`
+        // because that layer is proven to reach the hosting controller through the
+        // reader's inner NavigationStack.
+        .persistentSystemOverlays(
+            ReaderOverlayPresentationPolicy.hidesHomeIndicator(
+                showsReaderChrome: showBars,
+                isEditing: readerHeaderFooterEditorModel != nil
+            ) ? .hidden : .automatic
+        )
         .animation(.easeInOut(duration: 0.25), value: showBars)
         // Chrome-owned panels close with the chrome, wherever the chrome was hidden
         // from — the tap zone, the touch-zone editor, or a search result jump. Clearing
@@ -1673,6 +1723,12 @@ struct ReaderView: View {
         .onChanged(of: settings.appearanceBindReaderTheme) { _ in
             syncActiveThemePreset()
         }
+        .onChanged(of: settings.appearanceBoundLightReaderTheme) { _ in
+            syncActiveThemePreset()
+        }
+        .onChanged(of: settings.appearanceBoundDarkReaderTheme) { _ in
+            syncActiveThemePreset()
+        }
         .onChanged(of: settings.readerCustomBackgroundMode) { _ in
             syncActiveThemePreset()
         }
@@ -1728,6 +1784,10 @@ struct ReaderView: View {
         }
         .onReceive(readerViewModel.$chapterStates) { states in
             handleChapterStateChanges(states)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .onlineChapterCacheDidClear)) { notification in
+            guard notification.userInfo?["bookId"] as? UUID == bookId else { return }
+            handleOnlineChapterCacheCleared()
         }
         .onChanged(of: settings.pageTurnStyle) { _ in
             if settings.pageTurnStyle == .curl {
@@ -1903,7 +1963,7 @@ struct ReaderView: View {
         .fullScreenCover(isPresented: $showOnlineBookDetail) {
             if let detail = onlineBookDetail {
                 NavigationStack {
-                    OnlineBookView(book: detail)
+                    OnlineBookView(book: detail, sourceSwitchBookId: bookId)
                         .environmentObject(store)
                         .navigationTitle(localized("書籍詳情"))
                         .toolbarTitleDisplayMode(.inline)
@@ -2018,7 +2078,14 @@ struct ReaderView: View {
         return AnyView(
             presentationLayers
                 .onChanged(of: showChangeSourceSheet) { show in
-            if show { loadOtherOrigins() }
+            if show {
+                loadOtherOrigins()
+            } else {
+                // Swiping the sheet away is a cancel too — otherwise a switch the user
+                // walked away from would still commit and yank them to another source.
+                readerViewModel.cancelPendingSourceSwitch()
+                readerViewModel.stopChangeSourceSearch()
+            }
         }
         .onChanged(of: epubRenderer.isCoreTextReady) { ready in
             if ready {

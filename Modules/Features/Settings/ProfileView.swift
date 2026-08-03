@@ -10,8 +10,8 @@ struct SettingsView: View {
     @State private var showSourceList = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
-    @State private var showICloudSync = false
-    @State private var showWebDAVSync = false
+    @State private var showBackupSync = false
+    @State private var showCacheManagement = false
     @State private var showLanServer = false
     @State private var showLegadoMigration = false
     @State private var showTTSSettings = false
@@ -59,6 +59,7 @@ struct SettingsView: View {
                             AccountRowContent()
                         }
                     }
+                    .interfaceSectionSurface()
                     // ── App Language ──
                     Section(
                         header: Text(localized("App 語言")),
@@ -76,6 +77,7 @@ struct SettingsView: View {
                             }
                         )
                     }
+                    .interfaceSectionSurface()
 
                     Section(header: Text(localized("外觀"))) {
                         NavigationLink {
@@ -92,6 +94,7 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    .interfaceSectionSurface()
 
                     Section(header: Text(localized("書架顯示"))) {
                         Picker(selection: $gs.bookshelfGridColumnCount) {
@@ -106,6 +109,7 @@ struct SettingsView: View {
                         }
                         .pickerStyle(.menu)
                     }
+                    .interfaceSectionSurface()
 
                     // ── Book Source Management ──
                     Section(header: Text(localized("書源管理"))) {
@@ -129,6 +133,7 @@ struct SettingsView: View {
                             action: { showNetworkSettings = true }
                         )
                     }
+                    .interfaceSectionSurface()
 
                     // ── Reading Tools ──
                     Section(header: Text(localized("閱讀工具"))) {
@@ -145,19 +150,23 @@ struct SettingsView: View {
                         )
 
                     }
+                    .interfaceSectionSurface()
 
                     // ── Data Management ──
                     Section(header: Text(localized("資料管理"))) {
                         DSSettingsRow(
-                            icon: "icloud.fill",
-                            title: localized("iCloud 同步"),
-                            action: { showICloudSync = true }
+                            icon: "arrow.triangle.2.circlepath.icloud",
+                            title: localized("備份與同步"),
+                            detail: localized("iCloud、WebDAV"),
+                            action: { showBackupSync = true }
                         )
+
                         DSSettingsRow(
-                            icon: "icloud.and.arrow.up.fill",
-                            title: localized("WebDAV 同步"),
-                            action: { showWebDAVSync = true }
+                            icon: "externaldrive.fill",
+                            title: localized("快取管理"),
+                            action: { showCacheManagement = true }
                         )
+
                         DSSettingsRow(
                             icon: "wifi",
                             title: localized("局域網服務"),
@@ -169,6 +178,7 @@ struct SettingsView: View {
                             action: { showLegadoMigration = true }
                         )
                     }
+                    .interfaceSectionSurface()
 
                     // ── About ──
                     Section(header: Text(localized("關於"))) {
@@ -196,6 +206,7 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    .interfaceSectionSurface()
                 }
             .themedAppSurface(for: .settings)
             .navigationTitle(localized("設定"))
@@ -218,11 +229,11 @@ struct SettingsView: View {
             .sheet(isPresented: $showReplaceRules) {
                 ReplaceRuleListView()
             }
-            .sheet(isPresented: $showICloudSync) {
-                ICloudSyncView()
+            .sheet(isPresented: $showBackupSync) {
+                BackupSyncView()
             }
-            .sheet(isPresented: $showWebDAVSync) {
-                WebDAVSyncView()
+            .sheet(isPresented: $showCacheManagement) {
+                CacheManagementView()
             }
             .sheet(isPresented: $showLanServer) {
                 LanServerView().environmentObject(store)
@@ -280,7 +291,9 @@ struct SettingsView: View {
 }
 
 private struct AboutSupportView: View {
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.openURL) private var openURL
+    @ObservedObject private var gs = GlobalSettings.shared
     @State private var showCopiedQQGroup = false
     let appVersion: String
     let feedbackEmail: String
@@ -315,6 +328,7 @@ private struct AboutSupportView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("版本資訊"))) {
                 HStack {
@@ -326,6 +340,26 @@ private struct AboutSupportView: View {
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
+            }
+            .interfaceSectionSurface()
+
+            if gs.isLoggedIn && subscriptionStore.accountIsProActive {
+                Section(header: Text(localized("加入測試"))) {
+                    NavigationLink {
+                        TestFlightApplyView()
+                    } label: {
+                        HStack {
+                            Label(localized("加入 TestFlight 測試版"), systemImage: "testtube.2")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                            Spacer(minLength: 12)
+                            Text(localized("測試版"))
+                                .font(DSFont.caption)
+                                .foregroundColor(DSColor.textSecondary)
+                        }
+                    }
+                }
+                .interfaceSectionSurface()
             }
 
             Section(header: Text(localized("開放原始碼"))) {
@@ -340,6 +374,7 @@ private struct AboutSupportView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
 
             Section(header: Text(localized("聯絡方式"))) {
                 actionRow(
@@ -374,6 +409,7 @@ private struct AboutSupportView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
 
             Section(
                 header: Text(localized("政策與協議")),
@@ -412,6 +448,7 @@ private struct AboutSupportView: View {
                     }
                 }
             }
+            .interfaceSectionSurface()
         }
         .navigationTitle(localized("關於 Yuedu Reader"))
         .toolbarTitleDisplayMode(.inline)

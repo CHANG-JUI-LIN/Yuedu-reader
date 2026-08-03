@@ -157,8 +157,14 @@ enum ReaderTheme: String, CaseIterable {
         self != .night
     }
 
+    /// 黑色 is a "force dark" reading background: a light palette must not repaint
+    /// it, which is what keeps a custom background (or a bound light theme) from
+    /// bleeding into night mode. A *dark* palette is itself the dark look — the
+    /// dark version of the bound appearance theme — so it is allowed through.
     private var activeAppearancePreset: AppearanceThemePreset? {
-        self == .night ? nil : AppearanceThemePreset.activeReaderTheme
+        guard let preset = AppearanceThemePreset.activeReaderTheme else { return nil }
+        guard self != .night || preset.isDarkAppearancePalette else { return nil }
+        return preset
     }
 
     var uiBackgroundColor: UIColor {
@@ -224,6 +230,66 @@ enum ReaderTheme: String, CaseIterable {
         case .green: return "green"
         case .sepia: return "sepia"
         case .night: return "night"
+        }
+    }
+}
+
+/// What paints the reader for one system appearance while 綁定閱讀主題 is on.
+/// The user picks one of these per appearance (淺色閱讀主題 / 黑色閱讀主題), which
+/// is the whole content of the binding: light appearance applies the light pick,
+/// dark appearance applies the dark pick.
+enum ReaderBoundTheme: Hashable, Identifiable {
+    /// Paint the reader with the app appearance theme itself — its light palette
+    /// in light appearance, its dark palette in dark appearance.
+    case followAppearanceTheme
+    /// Paint the reader with one of its own reading backgrounds.
+    case reading(ReaderTheme)
+
+    /// Menu order: the follow entry first, then the reading backgrounds from
+    /// lightest to darkest (`ReaderTheme.allCases` starts at 夜間, which reads
+    /// wrong at the top of a list).
+    static let menuOptions: [ReaderBoundTheme] = [
+        .followAppearanceTheme,
+        .reading(.white),
+        .reading(.green),
+        .reading(.sepia),
+        .reading(.night),
+    ]
+
+    private static let followStorageValue = "follow_appearance"
+
+    var id: String { storageValue }
+
+    var storageValue: String {
+        switch self {
+        case .followAppearanceTheme: return Self.followStorageValue
+        case .reading(let theme): return theme.rawValue
+        }
+    }
+
+    init(storageValue: String) {
+        if let theme = ReaderTheme(rawValue: storageValue) {
+            self = .reading(theme)
+        } else {
+            self = .followAppearanceTheme
+        }
+    }
+
+    var localizedTitle: String {
+        switch self {
+        case .followAppearanceTheme: return localized("跟隨外觀主題")
+        case .reading(let theme): return theme.localizedTitle
+        }
+    }
+
+    /// The reading background the reader sits on for this choice. 跟隨外觀主題 keeps
+    /// the reader on its natural background for the appearance — which matters
+    /// because the reader toolbars read `.night` to pick their own color scheme —
+    /// and lets the appearance palette repaint it.
+    func resolvedReaderTheme(for appearance: ColorScheme) -> ReaderTheme {
+        switch self {
+        case .followAppearanceTheme: return ReaderTheme.forSystem(dark: appearance == .dark)
+        case .reading(let theme): return theme
         }
     }
 }
@@ -385,6 +451,23 @@ func localized(_ key: String, bundle: Bundle = .main) -> String {
     NSLocalizedString(key, bundle: bundle, comment: "")
 }
 
+enum AppearanceColorScheme: String, Equatable {
+    case light
+    case dark
+
+    init(_ colorScheme: ColorScheme) {
+        self = colorScheme == .dark ? .dark : .light
+    }
+
+    init(storageValue: String?) {
+        self = Self(rawValue: storageValue ?? "") ?? .light
+    }
+
+    var colorScheme: ColorScheme {
+        self == .dark ? .dark : .light
+    }
+}
+
 // MARK: - Global Settings
 
 class GlobalSettings: ObservableObject {
@@ -395,14 +478,22 @@ class GlobalSettings: ObservableObject {
     /// "默認" (classic) — the app's original look; also the fallback when a
     /// selected Pro theme becomes unavailable (entitlement lapse / deletion).
     static let defaultAppearanceThemeID = AppearanceThemePreset.classicID
+    static let defaultAppearanceFollowsSystem = true
     private static let appearanceThemeIDKey = "yd_appearance_theme_id"
     private static let appearanceDarkThemeIDKey = "yd_appearance_dark_theme_id"
+    private static let appearanceFollowsSystemKey = "yd_appearance_follows_system"
+    private static let appearancePinnedColorSchemeKey = "yd_appearance_pinned_color_scheme"
     private static let appearanceSeparateDarkThemeKey = "yd_appearance_separate_dark_theme"
     private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
+    private static let appearanceBoundLightReaderThemeKey = "yd_appearance_bound_light_reader_theme"
+    private static let appearanceBoundDarkReaderThemeKey = "yd_appearance_bound_dark_reader_theme"
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
     private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
     private static let interfaceGlassTransparencyKey = "yd_interface_glass_transparency"
+    /// Key kept at the original `list_sections` spelling: the setting shipped under that
+    /// name and renaming the key would silently reset it for anyone who already turned it on.
+    private static let interfaceGlassCardsKey = "yd_interface_glass_list_sections"
     private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
     private static let appearancePageBackgroundsKey = "yd_appearance_page_backgrounds"
     private static let globalFontPostScriptKey = "yd_global_font_postscript"
@@ -412,6 +503,7 @@ class GlobalSettings: ObservableObject {
     private static let commentBubbleCustomStyleNameKey = "yd_comment_bubble_custom_style_name"
     private static let commentBubbleCustomStylesV2Key = "yd_comment_bubble_custom_styles_v2"
     private static let commentBubbleSelectedCustomStyleIDKey = "yd_comment_bubble_selected_custom_style_id"
+    private static let commentBubbleSelectionSyncClockKey = "yd_comment_bubble_selection_sync_clock"
     private static let commentBubbleScaleKey = "yd_comment_bubble_scale"
     private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
     private static let chapterTitleStyleKey = "yd_chapter_title_style_v1"
@@ -432,6 +524,7 @@ class GlobalSettings: ObservableObject {
     private static let ttsHighlightBoxEnabledKey = "yd_tts_highlight_box_enabled"
     private static let ttsHighlightBoxColorHexKey = "yd_tts_highlight_box_color_hex"
     private static let ttsHighlightBoxStyleKey = "yd_tts_highlight_box_style"
+    private static let ttsKeepsScreenAwakeKey = "yd_tts_keeps_screen_awake"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
     private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
@@ -455,6 +548,11 @@ class GlobalSettings: ObservableObject {
     /// before 界面效果 existed, and 透明度 100% reproduces that look exactly.
     static let defaultInterfaceFrostedGlass = true
     static let defaultInterfaceGlassTransparency: Double = 1.0
+    /// Off by default. Apple's HIG puts Liquid Glass in the functional layer
+    /// (controls, navigation, transient UI) and keeps it out of the content layer,
+    /// which is where a settings list's cards live — so this stays opt-in, and off
+    /// reproduces the original opaque cards exactly.
+    static let defaultInterfaceGlassCards = false
     static let commentBubbleScaleRange: ClosedRange<Double> = 0.5...2.0
     static let commentBubbleTextScaleRange: ClosedRange<Double> = 0.2...0.8
     static let defaultCommentBubbleScale = 1.0
@@ -740,6 +838,21 @@ class GlobalSettings: ObservableObject {
             Self.saveCommentBubbleSelectedCustomStyleID(commentBubbleSelectedCustomStyleID)
         }
     }
+    /// iCloud merge clock for the bubble *selection* record. Advances ONLY on
+    /// user actions that change the selection (`selectCommentBubbleCustomStyle`
+    /// / `upsertCommentBubbleCustomStyle` / `deleteCommentBubbleCustomStyle`),
+    /// never on launch-load or on applying a synced selection — otherwise the
+    /// newest-write-wins merge would let a device stamp itself as "newer" every
+    /// launch and clobber the other device's choice.
+    private(set) var commentBubbleSelectionSyncClock: Date? {
+        didSet {
+            if let commentBubbleSelectionSyncClock {
+                UserDefaults.standard.set(commentBubbleSelectionSyncClock, forKey: Self.commentBubbleSelectionSyncClockKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.commentBubbleSelectionSyncClockKey)
+            }
+        }
+    }
     var commentBubbleSelectedCustomStyle: ReaderCommentBubbleCustomStyle? {
         guard let commentBubbleSelectedCustomStyleID else { return nil }
         return commentBubbleCustomStyles.first { $0.id == commentBubbleSelectedCustomStyleID }
@@ -798,6 +911,21 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - App Appearance Themes
 
+    @Published var appearanceFollowsSystem: Bool {
+        didSet {
+            UserDefaults.standard.set(appearanceFollowsSystem, forKey: Self.appearanceFollowsSystemKey)
+        }
+    }
+
+    @Published var appearancePinnedColorScheme: AppearanceColorScheme {
+        didSet {
+            UserDefaults.standard.set(
+                appearancePinnedColorScheme.rawValue,
+                forKey: Self.appearancePinnedColorSchemeKey
+            )
+        }
+    }
+
     @Published var appearanceThemeID: String {
         didSet { UserDefaults.standard.set(appearanceThemeID, forKey: Self.appearanceThemeIDKey) }
     }
@@ -808,7 +936,34 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(appearanceUsesSeparateDarkTheme, forKey: Self.appearanceSeparateDarkThemeKey) }
     }
     @Published var appearanceBindReaderTheme: Bool {
-        didSet { UserDefaults.standard.set(appearanceBindReaderTheme, forKey: Self.appearanceBindReaderThemeKey) }
+        didSet {
+            UserDefaults.standard.set(appearanceBindReaderTheme, forKey: Self.appearanceBindReaderThemeKey)
+            // 綁定 owns the appearance → reading-theme mapping once it is on,
+            // including the light/dark split. Leaving 跟隨系統 on would make two
+            // writers of `ReaderConfig.theme` that disagree whenever the user
+            // maps an appearance to something other than the system default.
+            if appearanceBindReaderTheme { readerFollowSystemTheme = false }
+        }
+    }
+    /// Reading theme applied while 綁定閱讀主題 is on and the system is in light
+    /// appearance. Stored as `ReaderBoundTheme.storageValue`.
+    @Published var appearanceBoundLightReaderTheme: String {
+        didSet {
+            UserDefaults.standard.set(
+                appearanceBoundLightReaderTheme,
+                forKey: Self.appearanceBoundLightReaderThemeKey
+            )
+        }
+    }
+    /// Reading theme applied while 綁定閱讀主題 is on and the system is in dark
+    /// appearance. Stored as `ReaderBoundTheme.storageValue`.
+    @Published var appearanceBoundDarkReaderTheme: String {
+        didSet {
+            UserDefaults.standard.set(
+                appearanceBoundDarkReaderTheme,
+                forKey: Self.appearanceBoundDarkReaderThemeKey
+            )
+        }
     }
 
     // MARK: - Launch Image (App Splash)
@@ -867,6 +1022,12 @@ class GlobalSettings: ObservableObject {
                 UserDefaults.standard.set(interfaceGlassTransparency, forKey: Self.interfaceGlassTransparencyKey)
             }
         }
+    }
+    /// Whether content-layer cards — Form/List sections and the hand-drawn cards on
+    /// 外觀主題, 統計, 書籍詳情 — wear the same glass as floating elements. Rides
+    /// `interfaceFrostedGlass` and 透明度 rather than owning its own material.
+    @Published var interfaceGlassCards: Bool {
+        didSet { UserDefaults.standard.set(interfaceGlassCards, forKey: Self.interfaceGlassCardsKey) }
     }
     @Published var customAppearanceThemes: [AppearanceCustomTheme] {
         didSet { Self.saveCustomAppearanceThemes(customAppearanceThemes) }
@@ -1025,6 +1186,12 @@ class GlobalSettings: ObservableObject {
     @Published var searchCacheDays: Int {
         didSet { UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days") }
     }
+    /// 換源搜索時順便抓每個候選源的目錄（Legado `changeSourceLoadToc`）。Tapping a source
+    /// whose TOC was captured this way switches without a network round trip. Off by default
+    /// — same as Legado — because it turns one request per source into two.
+    @Published var changeSourceLoadToc: Bool {
+        didSet { UserDefaults.standard.set(changeSourceLoadToc, forKey: "yd_change_source_load_toc") }
+    }
 
     /// Auto iCloud sync: merge with iCloud on launch and when backgrounding.
     @Published var iCloudAutoSync: Bool {
@@ -1046,12 +1213,24 @@ class GlobalSettings: ObservableObject {
     @Published var ttsUseSystemVoice: Bool {
         didSet { UserDefaults.standard.set(ttsUseSystemVoice, forKey: "yd_tts_use_system_voice") }
     }
-    /// Selected `AVSpeechSynthesisVoice` identifier for the offline engine; empty = auto by language.
+    /// Prevents automatic screen dimming while TTS is actively reading. Pressing the
+    /// hardware lock button still locks the device and does not stop background audio.
+    @Published var ttsKeepsScreenAwake: Bool {
+        didSet { UserDefaults.standard.set(ttsKeepsScreenAwake, forKey: Self.ttsKeepsScreenAwakeKey) }
+    }
+    /// Legacy persisted voice identifier kept for settings compatibility. System TTS now lets
+    /// AVSpeechSynthesizer choose the voice from the device's own speech settings.
     @Published var ttsSystemVoiceIdentifier: String {
         didSet { UserDefaults.standard.set(ttsSystemVoiceIdentifier, forKey: "yd_tts_system_voice_id") }
     }
     @Published var sourceDisclaimerAccepted: Bool {
         didSet { UserDefaults.standard.set(sourceDisclaimerAccepted, forKey: "yd_source_disclaimer_accepted") }
+    }
+    /// 書源管理列表是否按分組摺疊顯示。Off flattens every source into one plain list,
+    /// which is what a user with a handful of sources wants; on is the default because
+    /// imported source packs arrive pre-grouped.
+    @Published var bookSourceListGrouped: Bool {
+        didSet { UserDefaults.standard.set(bookSourceListGrouped, forKey: "yd_booksource_list_grouped") }
     }
 
     /// The currently active TTS source, derived from matching `httpTtsUrlTemplate` against imported sources.
@@ -1312,6 +1491,9 @@ class GlobalSettings: ObservableObject {
         commentBubblePresetMode = loadedBubbleMode
         commentBubbleCustomStyles = loadedCustomStyles
         commentBubbleSelectedCustomStyleID = loadedSelectedCustomStyleID
+        commentBubbleSelectionSyncClock = UserDefaults.standard.object(
+            forKey: Self.commentBubbleSelectionSyncClockKey
+        ) as? Date
         if shouldPersistLoadedLibrary {
             Self.saveCommentBubbleCustomStyles(loadedCustomStyles)
             Self.saveCommentBubbleSelectedCustomStyleID(loadedSelectedCustomStyleID)
@@ -1339,12 +1521,26 @@ class GlobalSettings: ObservableObject {
         readerCustomBackgroundImageFileName = UserDefaults.standard.string(forKey: Self.readerCustomBackgroundImageFileNameKey)
         customAppearanceThemes = Self.loadCustomAppearanceThemes()
         appearancePageBackgrounds = Self.loadPageBackgrounds()
+        appearanceFollowsSystem =
+            (UserDefaults.standard.object(forKey: Self.appearanceFollowsSystemKey) as? Bool)
+            ?? Self.defaultAppearanceFollowsSystem
+        appearancePinnedColorScheme = AppearanceColorScheme(
+            storageValue: UserDefaults.standard.string(forKey: Self.appearancePinnedColorSchemeKey)
+        )
         appearanceThemeID = UserDefaults.standard.string(forKey: Self.appearanceThemeIDKey)
             ?? Self.defaultAppearanceThemeID
         appearanceDarkThemeID = UserDefaults.standard.string(forKey: Self.appearanceDarkThemeIDKey)
             ?? Self.defaultAppearanceThemeID
         appearanceUsesSeparateDarkTheme = UserDefaults.standard.bool(forKey: Self.appearanceSeparateDarkThemeKey)
         appearanceBindReaderTheme = UserDefaults.standard.bool(forKey: Self.appearanceBindReaderThemeKey)
+        // Defaults reproduce what binding did before it was configurable: the
+        // appearance theme paints the reader in light mode, dark mode is 黑色.
+        appearanceBoundLightReaderTheme =
+            UserDefaults.standard.string(forKey: Self.appearanceBoundLightReaderThemeKey)
+            ?? ReaderBoundTheme.followAppearanceTheme.storageValue
+        appearanceBoundDarkReaderTheme =
+            UserDefaults.standard.string(forKey: Self.appearanceBoundDarkReaderThemeKey)
+            ?? ReaderBoundTheme.reading(.night).storageValue
         launchImageEnabled = UserDefaults.standard.bool(forKey: Self.launchImageEnabledKey)
         launchImageLightFileName = UserDefaults.standard.string(forKey: Self.launchImageLightFileNameKey)
         launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
@@ -1361,6 +1557,9 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: Self.interfaceGlassTransparencyKey) as? Double)
                 ?? Self.defaultInterfaceGlassTransparency
         )
+        interfaceGlassCards =
+            (UserDefaults.standard.object(forKey: Self.interfaceGlassCardsKey) as? Bool)
+            ?? Self.defaultInterfaceGlassCards
         rootTabVisibleIDs = Self.sanitizedRootTabVisibleIDs(
             UserDefaults.standard.stringArray(forKey: Self.rootTabVisibleIDsKey)
                 ?? Self.defaultRootTabVisibleIDs
@@ -1402,14 +1601,19 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_search_auto_pause_count") as? Int) ?? 0
         searchCacheDays =
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
+        changeSourceLoadToc =
+            (UserDefaults.standard.object(forKey: "yd_change_source_load_toc") as? Bool) ?? false
         iCloudAutoSync =
             (UserDefaults.standard.object(forKey: "yd_icloud_auto_sync") as? Bool) ?? true
         httpTtsUrlTemplate = UserDefaults.standard.string(forKey: "yd_http_tts_url_template") ?? ""
         httpTtsHeaders = Self.loadTTSHeaders()
         importedTTSSources = Self.loadImportedTTSSources()
         ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
+        ttsKeepsScreenAwake = UserDefaults.standard.bool(forKey: Self.ttsKeepsScreenAwakeKey)
         ttsSystemVoiceIdentifier = UserDefaults.standard.string(forKey: "yd_tts_system_voice_id") ?? ""
         sourceDisclaimerAccepted = UserDefaults.standard.bool(forKey: "yd_source_disclaimer_accepted")
+        bookSourceListGrouped =
+            (UserDefaults.standard.object(forKey: "yd_booksource_list_grouped") as? Bool) ?? true
     }
 
     func selectCommentBubbleBuiltinStyle() {
@@ -1427,11 +1631,13 @@ class GlobalSettings: ObservableObject {
         ) != nil else {
             commentBubbleSelectedCustomStyleID = nil
             commentBubblePresetMode = .builtin
+            stampCommentBubbleSelectionSyncClock()
             return
         }
 
         commentBubbleSelectedCustomStyleID = id
         commentBubblePresetMode = .custom
+        stampCommentBubbleSelectionSyncClock()
     }
 
     func upsertCommentBubbleCustomStyle(_ style: ReaderCommentBubbleCustomStyle) {
@@ -1443,6 +1649,7 @@ class GlobalSettings: ObservableObject {
         )
         commentBubbleSelectedCustomStyleID = style.id
         commentBubblePresetMode = .custom
+        stampCommentBubbleSelectionSyncClock()
     }
 
     func deleteCommentBubbleCustomStyle(id: UUID) {
@@ -1455,6 +1662,45 @@ class GlobalSettings: ObservableObject {
         guard wasSelected else { return }
         commentBubbleSelectedCustomStyleID = nil
         commentBubblePresetMode = .builtin
+        stampCommentBubbleSelectionSyncClock()
+    }
+
+    /// Applies the iCloud-merged bubble style list (per-item last-write-wins).
+    /// Does NOT re-stamp `updatedAt` — the merged values carry their own merge
+    /// clock from the winning device.
+    func applyCommentBubbleSync(styles: [ReaderCommentBubbleCustomStyle]) {
+        commentBubbleCustomStyles = ReaderCommentBubbleCustomStyleLibrary.uniqued(styles)
+        // Keep the invariant that select/delete maintain: a .custom selection
+        // must point at a style that actually exists.
+        guard commentBubblePresetMode == .custom,
+              let selectedID = commentBubbleSelectedCustomStyleID,
+              ReaderCommentBubbleCustomStyleLibrary.validatedSelectedID(selectedID, in: commentBubbleCustomStyles) == nil
+        else { return }
+        commentBubbleSelectedCustomStyleID = nil
+        commentBubblePresetMode = .builtin
+    }
+
+    /// Applies the iCloud-merged bubble selection (single last-write-wins
+    /// record). Mirroring the user picking a style: a synced selection becomes
+    /// the active custom bubble; a cleared selection falls back to builtin when
+    /// the custom mode was active. Never touches the sync clock.
+    func applyCommentBubbleSync(selection: UUID?) {
+        guard let selection else {
+            guard commentBubblePresetMode == .custom else { return }
+            commentBubbleSelectedCustomStyleID = nil
+            commentBubblePresetMode = .builtin
+            return
+        }
+        guard ReaderCommentBubbleCustomStyleLibrary.validatedSelectedID(
+            selection,
+            in: commentBubbleCustomStyles
+        ) != nil else { return }
+        commentBubbleSelectedCustomStyleID = selection
+        commentBubblePresetMode = .custom
+    }
+
+    private func stampCommentBubbleSelectionSyncClock() {
+        commentBubbleSelectionSyncClock = Date()
     }
 
     private static func saveCommentBubbleCustomStyles(
@@ -1617,7 +1863,34 @@ class GlobalSettings: ObservableObject {
         return appearanceThemeID
     }
 
+    func setAppearanceFollowsSystem(
+        _ followsSystem: Bool,
+        currentColorScheme: ColorScheme
+    ) {
+        if !followsSystem {
+            appearancePinnedColorScheme = AppearanceColorScheme(currentColorScheme)
+        }
+        appearanceFollowsSystem = followsSystem
+    }
+
+    func effectiveAppearanceColorScheme(systemColorScheme: ColorScheme) -> ColorScheme {
+        appearanceFollowsSystem ? systemColorScheme : appearancePinnedColorScheme.colorScheme
+    }
+
+    /// The theme in effect for `colorScheme`, already resolved to that
+    /// appearance's palette — the light colors in light appearance, the derived
+    /// dark colors in dark appearance.
     func appearanceTheme(
+        for colorScheme: ColorScheme,
+        isProActive: Bool
+    ) -> AppearanceThemePreset {
+        appearanceBaseTheme(for: colorScheme, isProActive: isProActive).palette(for: colorScheme)
+    }
+
+    /// Same resolution as `appearanceTheme(for:isProActive:)` but without the
+    /// light/dark palette step — the theme's *identity*. Use it when comparing
+    /// against a preset id (selection state) rather than drawing with it.
+    func appearanceBaseTheme(
         for colorScheme: ColorScheme,
         isProActive: Bool
     ) -> AppearanceThemePreset {
@@ -1632,25 +1905,54 @@ class GlobalSettings: ObservableObject {
         ) ?? AppearanceThemePreset.freeSolidPresets[0]
     }
 
-    func setAppearanceTheme(_ preset: AppearanceThemePreset, for colorScheme: ColorScheme) {
-        if appearanceUsesSeparateDarkTheme, colorScheme == .dark {
-            appearanceDarkThemeID = preset.id
-        } else {
-            appearanceThemeID = preset.id
-        }
+    /// Selects `preset` for one appearance slot.
+    ///
+    /// - Parameters:
+    ///   - slot: which slot the pick belongs to. With 單獨設定深色主題 off there is
+    ///     only one slot, so anything but an explicit dark pick lands on it.
+    ///   - activeAppearance: the appearance actually on screen. It can differ
+    ///     from `slot` — the 淺色／深色 picker in 外觀主題 edits the dark slot while
+    ///     the device is still in light mode — and only a change to the slot in
+    ///     use may retint the running app.
+    func setAppearanceTheme(
+        _ preset: AppearanceThemePreset,
+        for slot: ColorScheme,
+        activeAppearance: ColorScheme
+    ) {
+        selectAppearanceTheme(id: preset.id, for: slot)
         applyPageBackgroundsFromCustomTheme(id: preset.id)
+        guard slot == activeAppearance else { return }
         // Sync the DSColor-facing global in the same turn as the selection.
-        // `activeAppTheme` is otherwise refreshed only in ContentView.body, which
+        // `activeAppThemes` is otherwise refreshed only in ContentView.body, which
         // SwiftUI may run *after* re-rendering the themed screen that triggered
         // this — so surfaces would read last frame's theme and only catch up on
         // the next tap (the "switch takes two taps" bug). Matches ContentView's
-        // resolvedAppTheme rule: presets retint only in light appearance.
-        AppearanceThemePreset.activeAppTheme =
-            (colorScheme == .light && !preset.isClassic) ? preset : nil
+        // resolvedAppTheme rule: classic (默認) means no override.
+        let active = preset.palette(for: activeAppearance)
+        let resolved = active.isClassic ? nil : active
+        // Only the slot on screen; `ContentView.body` refreshes both on the pass this
+        // selection triggers. Which *preset* is active still needs this immediate write —
+        // the per-trait dynamic colors fixed appearance ordering, not selection ordering.
+        if activeAppearance == .dark {
+            AppearanceThemePreset.activeAppThemes.dark = resolved
+        } else {
+            AppearanceThemePreset.activeAppThemes.light = resolved
+        }
+    }
+
+    private func selectAppearanceTheme(id: String, for slot: ColorScheme) {
+        if appearanceUsesSeparateDarkTheme, slot == .dark {
+            appearanceDarkThemeID = id
+        } else {
+            appearanceThemeID = id
+        }
     }
 
     @discardableResult
-    func createCustomAppearanceTheme(from preset: AppearanceThemePreset) -> AppearanceCustomTheme {
+    func createCustomAppearanceTheme(
+        from preset: AppearanceThemePreset,
+        for slot: ColorScheme = .light
+    ) -> AppearanceCustomTheme {
         var custom = preset.customCopy(name: localized("自訂主題"))
         var index = 1
         let existingNames = Set(customAppearanceThemes.map(\.name))
@@ -1659,8 +1961,26 @@ class GlobalSettings: ObservableObject {
             custom.name = localized("自訂主題") + " \(index)"
         }
         customAppearanceThemes.append(custom)
-        appearanceThemeID = custom.id
+        selectAppearanceTheme(id: custom.id, for: slot)
         return custom
+    }
+
+    // MARK: - 綁定閱讀主題 (appearance → reading theme)
+
+    func boundReaderTheme(for appearance: ColorScheme) -> ReaderBoundTheme {
+        ReaderBoundTheme(
+            storageValue: appearance == .dark
+                ? appearanceBoundDarkReaderTheme
+                : appearanceBoundLightReaderTheme
+        )
+    }
+
+    func setBoundReaderTheme(_ choice: ReaderBoundTheme, for appearance: ColorScheme) {
+        if appearance == .dark {
+            appearanceBoundDarkReaderTheme = choice.storageValue
+        } else {
+            appearanceBoundLightReaderTheme = choice.storageValue
+        }
     }
 
     /// Deletes a custom theme. Any selection (light or dark slot) pointing at
@@ -1833,7 +2153,8 @@ class GlobalSettings: ObservableObject {
     @discardableResult
     func saveCurrentAppearanceAsTheme(
         named name: String,
-        basedOn preset: AppearanceThemePreset
+        basedOn preset: AppearanceThemePreset,
+        for slot: ColorScheme = .light
     ) -> AppearanceCustomTheme {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var custom = preset.customCopy(
@@ -1841,7 +2162,7 @@ class GlobalSettings: ObservableObject {
         )
         custom.pageBackgrounds = duplicatedPageBackgrounds(appearancePageBackgrounds)
         customAppearanceThemes.append(custom)
-        appearanceThemeID = custom.id
+        selectAppearanceTheme(id: custom.id, for: slot)
         return custom
     }
 
@@ -1883,6 +2204,10 @@ class GlobalSettings: ObservableObject {
                 darkImageOpacity: config.darkImageOpacity
             )
         }
+        // Exports the theme's light colors plus, only if the user authored one,
+        // its dark palette. A derived dark version is left out so the importing
+        // install derives it with its own rules.
+        let dark = preset.authoredDarkColors?.stored
         return AppearanceThemeExportFile(
             format: AppearanceThemeExportFile.formatIdentifier,
             version: 1,
@@ -1892,7 +2217,12 @@ class GlobalSettings: ObservableObject {
             barHex: preset.bar.rgbHex ?? 0xFFFFFF,
             accentHex: preset.accent.rgbHex ?? 0x007AFF,
             dialogueHex: preset.dialogue.rgbHex ?? 0xD8E9FB,
-            pageBackgrounds: payloads.isEmpty ? nil : payloads
+            pageBackgrounds: payloads.isEmpty ? nil : payloads,
+            darkBackgroundHex: dark?.backgroundHex,
+            darkTextHex: dark?.textHex,
+            darkBarHex: dark?.barHex,
+            darkAccentHex: dark?.accentHex,
+            darkDialogueHex: dark?.dialogueHex
         )
     }
 
@@ -1945,7 +2275,8 @@ class GlobalSettings: ObservableObject {
             barHex: file.barHex,
             accentHex: file.accentHex,
             dialogueHex: file.dialogueHex,
-            pageBackgrounds: payloadConfigs.isEmpty ? nil : payloadConfigs
+            pageBackgrounds: payloadConfigs.isEmpty ? nil : payloadConfigs,
+            dark: file.darkColors
         )
         customAppearanceThemes.append(custom)
         appearanceThemeID = custom.id
@@ -2265,7 +2596,7 @@ enum ReaderCustomBackgroundStorageError: Error {
     var messageKey: String {
         switch self {
         case .unsupportedImageFile:
-            return "只支援 WebP、JPG、JPEG 圖片。"
+            return "只支援 WebP、JPG、JPEG、PNG 圖片。"
         case .cannotReadImage:
             return "無法讀取圖片。"
         }
@@ -2276,7 +2607,7 @@ final class ReaderCustomBackgroundStorageManager {
     static let shared = ReaderCustomBackgroundStorageManager()
 
     private let fileManager: FileManager
-    private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg"]
+    private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg", "png"]
 
     private init(fileManager: FileManager = .default) {
         self.fileManager = fileManager

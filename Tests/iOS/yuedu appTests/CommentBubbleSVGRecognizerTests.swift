@@ -1,9 +1,10 @@
 import Foundation
 import Testing
 import UIKit
+import CoreText
 @testable import yuedu_app
 
-@Suite("Comment bubble SVG recognizer")
+@Suite("Comment bubble SVG recognizer", .serialized)
 struct CommentBubbleSVGRecognizerTests {
     @Test("returns the selected built-in SVG template")
     func returnsSelectedTemplate() {
@@ -140,6 +141,30 @@ struct CommentBubbleSVGRecognizerTests {
         #expect(bubble.replacingDisplayText(with: "99").displayText == "99")
     }
 
+    @Test("reuses an SVG shape template without leaking the previous count")
+    func reusesTemplateForDifferentCounts() throws {
+        func svg(count: String) -> String {
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" viewBox="0 0 64 48">
+              <path d="M2 2 H62 V46 H2 Z" fill="none" stroke="#888888" />
+              <text x="32" y="32" font-size="20" text-anchor="middle">\(count)</text>
+            </svg>
+            """
+        }
+
+        let first = try #require(
+            CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg(count: "5"))
+        )
+        let second = try #require(
+            CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg(count: "99+"))
+        )
+
+        #expect(first.displayText == "5")
+        #expect(second.displayText == "99+")
+        #expect(first.viewBox == second.viewBox)
+        #expect(first.elements.count == second.elements.count)
+    }
+
     @Test("parses rgb(r,g,b) outline fills so bubble.json shapes actually paint")
     func parsesRGBFills() throws {
         let svg = """
@@ -173,5 +198,79 @@ struct CommentBubbleSVGRecognizerTests {
         let weight = "900"
         let isNumericBold = Int(weight) ?? 0 >= 600
         #expect(isNumericBold)
+    }
+
+    @Test("comment-tag badges use the selected native SVG path")
+    @MainActor
+    func commentTagUsesSelectedNativeSVGPath() async throws {
+        let settings = GlobalSettings.shared
+        let oldFollowSource = settings.commentBubbleFollowsSourceSVG
+        let oldPresetMode = settings.commentBubblePresetMode
+        defer {
+            settings.commentBubblePresetMode = oldPresetMode
+            settings.commentBubbleFollowsSourceSVG = oldFollowSource
+        }
+
+        settings.commentBubblePresetMode = .square
+        settings.commentBubbleFollowsSourceSVG = false
+
+        let renderSettings = ReaderRenderSettings(
+            theme: "test",
+            textColor: .black,
+            backgroundColor: .white,
+            fontSize: 18,
+            lineHeightMultiple: 1.4,
+            lineSpacing: 0,
+            paragraphSpacing: 0,
+            letterSpacing: 0,
+            marginH: 0,
+            marginV: 0,
+            footerHeight: 0,
+            contentInsets: .zero,
+            writingMode: .horizontal
+        )
+        let renderer = NodeAttributedStringRenderer(
+            config: NodeAttributedStringRenderer.Config(
+                from: renderSettings,
+                textColor: .black,
+                renderWidth: 320
+            )
+        )
+        let result = await renderer.render([
+            .paragraph([
+                .text("正文"),
+                .commentBadge(
+                    count: "12",
+                    reviewURL: "ydreview://test",
+                    title: "本章說"
+                )
+            ], style: .body)
+        ])
+
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var info: ImageRunInfo?
+        result.enumerateAttribute(
+            delegateKey,
+            in: NSRange(location: 0, length: result.length)
+        ) { value, _, stop in
+            guard let value else { return }
+            info = Unmanaged<ImageRunInfo>
+                .fromOpaque(CTRunDelegateGetRefCon(value as! CTRunDelegate))
+                .takeUnretainedValue()
+            stop.pointee = true
+        }
+
+        let runInfo = try #require(info)
+        let renderedImage = try #require(runInfo.image)
+        let expectedImage = try #require(
+            CommentBubbleSVGRecognizer.commentBadgeImage(
+                count: "12",
+                pointSize: renderSettings.fontSize,
+                themeTextColor: .black.withAlphaComponent(0.55)
+            )
+        )
+
+        #expect(runInfo.isTextSized)
+        #expect(renderedImage.size == expectedImage.size)
     }
 }

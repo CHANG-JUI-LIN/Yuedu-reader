@@ -43,6 +43,7 @@ struct ReplaceRuleListView: View {
                             ReplaceRuleRow(rule: rule) {
                                 editingRule = rule
                             }
+                            .interfaceSectionSurface()
                         }
                         .onDelete { offsets in
                             offsets.map { store.rules[$0].id }.forEach { store.delete(id: $0) }
@@ -50,6 +51,9 @@ struct ReplaceRuleListView: View {
                         .onMove { store.move(fromOffsets: $0, toOffset: $1) }
                     }
                     .listStyle(.plain)
+                    // `themedAppSurface` below only hides the *list's* background; a `.plain`
+                    // row still paints its own opaque `systemBackground` unless handed one.
+                    // Same fix as 書源管理 / 語音朗讀設定.
                 }
             }
             .navigationTitle(localized("替換規則"))
@@ -271,6 +275,7 @@ struct ReplaceRuleEditView: View {
                     TextField(localized("規則名稱"), text: $rule.name)
                     Toggle(localized("啟用"), isOn: $rule.enabled)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("匹配"))) {
                     Toggle(localized("正則表達式"), isOn: $rule.isRegex)
@@ -282,6 +287,7 @@ struct ReplaceRuleEditView: View {
                         .font(DSFont.fixed(size: 14, design: .monospaced))
                         .autocapitalization(.none)
                 }
+                .interfaceSectionSurface()
 
                 Section(header: Text(localized("作用範圍"))) {
                     Picker(localized("範圍"), selection: $rule.scope) {
@@ -292,6 +298,7 @@ struct ReplaceRuleEditView: View {
                     }
                     .pickerStyle(.inline)
                 }
+                .interfaceSectionSurface()
             }
             .navigationTitle(rule.name.isEmpty ? localized("新增規則") : rule.name)
             .toolbarTitleDisplayMode(.inline)

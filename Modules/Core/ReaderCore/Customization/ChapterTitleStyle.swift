@@ -24,6 +24,19 @@ enum ChapterTitleWeight: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// CSS numeric weight, for the HTML/IR rendering path — which decides
+    /// synthetic bold from `fontWeight >= 600` and would otherwise embolden a
+    /// title the user deliberately set to 細體/常規.
+    var cssWeight: Int {
+        switch self {
+        case .light: return 300
+        case .regular: return 400
+        case .medium: return 500
+        case .semibold: return 600
+        case .bold: return 700
+        }
+    }
+
     /// Localization key for the picker label.
     var localizedNameKey: String {
         switch self {

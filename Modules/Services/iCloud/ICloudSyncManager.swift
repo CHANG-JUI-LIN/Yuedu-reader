@@ -135,11 +135,16 @@ final class ICloudSyncManager: ObservableObject {
     private static let fileRecordType = "YueduSyncFile"
     private static let bookFileRecordType = "YueduBookFile"
     private static let uploadedBookFilesKey = "icloud_uploaded_book_files"
+    /// Fixed per-device id for the single bubble-selection sync record, so two
+    /// devices merge the same record instead of appending duplicates.
+    private static let bubbleSelectionRecordID = "comment_bubble_selection"
 
     // Local merge shadows (per-id updatedAt/hash/deleted) for the auto-merge sync.
     private static let shadowBooks = "icloud_books"
     private static let shadowBookSources = "icloud_bookSources"
     private static let shadowReplaceRules = "icloud_replaceRules"
+    private static let shadowCommentBubbleStyles = "icloud_commentBubbleStyles"
+    private static let shadowCommentBubbleSelection = "icloud_commentBubbleSelection"
 
     /// Bound at launch so the merge sync can read/write the live bookshelf.
     /// `BookStore` is not a singleton (created in the app entry point).
@@ -232,7 +237,9 @@ final class ICloudSyncManager: ObservableObject {
         iCloudSyncLog.notice("sync(\(reason, privacy: .public)): start")
         do {
             // 1. Book sources (singleton store).
-            let localSources = await MainActor.run { BookSourceStore.shared.sources }
+            let (localSources, sourceMutationRevision) = await MainActor.run {
+                (BookSourceStore.shared.sources, BookSourceStore.shared.mutationRevision)
+            }
             var changedRemote = false
 
             let sourceMerge = try await mergeType(
@@ -245,7 +252,15 @@ final class ICloudSyncManager: ObservableObject {
             )
             changedRemote = changedRemote || sourceMerge.uploaded
             if sourceMerge.shouldApplyLocally {
-                await MainActor.run { BookSourceStore.shared.replaceSourcesFromSync(sourceMerge.values) }
+                // The network merge can outlive a user deletion. Only apply its result when the
+                // store still has the exact snapshot that was merged; otherwise the deletion
+                // remains local and the next sync can publish its tombstone.
+                await MainActor.run {
+                    _ = BookSourceStore.shared.replaceSourcesFromSync(
+                        sourceMerge.values,
+                        expectedMutationRevision: sourceMutationRevision
+                    )
+                }
             }
 
             // 2. Replace rules (singleton store).
@@ -263,7 +278,55 @@ final class ICloudSyncManager: ObservableObject {
                 await MainActor.run { ReplaceRuleStore.shared.replaceRulesFromSync(ruleMerge.values) }
             }
 
-            // 3. Bookshelf (bound store). Progress lives in each book's
+            // 3. Custom comment-bubble styles + selection (singleton settings).
+            //    Styles merge per-item (last-write-wins on their stamped
+            //    `updatedAt`); the selection rides as ONE always-present record
+            //    whose merge clock only advances on user selection changes.
+            //    "Cleared" is a value (selectedCustomStyleID nil), never an empty
+            //    local array: an empty array would let mergeType's local-deletion
+            //    loop tombstone the constant-id record with `now`, killing a
+            //    valid newer selection picked on another device.
+            let (localBubbleStyles, bubbleSelectionClock) = await MainActor.run {
+                let settings = GlobalSettings.shared
+                return (settings.commentBubbleCustomStyles, settings.commentBubbleSelectionSyncClock)
+            }
+            let bubbleStyleMerge = try await mergeType(
+                recordName: "comment_bubble_styles",
+                shadowKey: Self.shadowCommentBubbleStyles,
+                local: localBubbleStyles,
+                id: { $0.id.uuidString },
+                hash: { Self.stableHash($0) },
+                fallbackUpdatedAt: { $0.updatedAt ?? .distantPast }
+            )
+            changedRemote = changedRemote || bubbleStyleMerge.uploaded
+            if bubbleStyleMerge.shouldApplyLocally {
+                await MainActor.run { GlobalSettings.shared.applyCommentBubbleSync(styles: bubbleStyleMerge.values) }
+            }
+            // Snapshot the selection AFTER applying merged styles: a style
+            // removed by sync may clear the local selection (invariant cleanup),
+            // which must ride this same pass as the nil value.
+            let localBubbleSelectionID = await MainActor.run {
+                GlobalSettings.shared.commentBubbleSelectedCustomStyleID
+            }
+            let bubbleSelection = ReaderCommentBubbleSyncSelection(
+                selectedCustomStyleID: localBubbleSelectionID,
+                modifiedAt: bubbleSelectionClock
+            )
+            let bubbleSelectionMerge = try await mergeType(
+                recordName: "comment_bubble_selection",
+                shadowKey: Self.shadowCommentBubbleSelection,
+                local: [bubbleSelection],
+                id: { _ in Self.bubbleSelectionRecordID },
+                hash: { Self.stableHash($0) },
+                fallbackUpdatedAt: { $0.modifiedAt ?? .distantPast }
+            )
+            changedRemote = changedRemote || bubbleSelectionMerge.uploaded
+            if bubbleSelectionMerge.shouldApplyLocally {
+                let mergedSelection = bubbleSelectionMerge.values.first?.selectedCustomStyleID
+                await MainActor.run { GlobalSettings.shared.applyCommentBubbleSync(selection: mergedSelection) }
+            }
+
+            // 4. Bookshelf (bound store). Progress lives in each book's
             //    lastOpenedDate, so newest-wins handles reading-progress merges too.
             if let store = boundBookStore {
                 let localBooks = await MainActor.run { store.books }
@@ -281,12 +344,12 @@ final class ICloudSyncManager: ObservableObject {
                 }
             }
 
-            // 4. Binary book files (EPUB/TXT content + cover images).
+            // 5. Binary book files (EPUB/TXT content + cover images).
             let uploadedBookFileCount = try await uploadBookFiles()
             changedRemote = changedRemote || uploadedBookFileCount > 0
             _ = try await downloadMissingBookFiles()
 
-            // 5. Manifest + timestamp.
+            // 6. Manifest + timestamp.
             let date = Date()
             if changedRemote {
                 try await saveManifest(await makeManifest(date: date))
@@ -336,13 +399,12 @@ final class ICloudSyncManager: ObservableObject {
         // let an older remote copy overwrite the fresh local one.
         for value in local {
             let key = id(value)
-            guard let entry = shadow[key], !entry.deleted else { continue }
-            let currentHash = hash(value)
-            if entry.hash != currentHash {
-                shadow[key] = SyncShadowEntry(
-                    updatedAt: fallbackUpdatedAt(value), hash: currentHash, deleted: false
-                )
-            }
+            guard let updated = Self.updatedShadowEntry(
+                existing: shadow[key],
+                currentHash: hash(value),
+                fallbackUpdatedAt: fallbackUpdatedAt(value)
+            ) else { continue }
+            shadow[key] = updated
         }
         let result = FirestoreSyncMerge.merge(
             local: local, remote: remote.records, shadow: shadow,
@@ -451,6 +513,28 @@ final class ICloudSyncManager: ObservableObject {
         hash: (T) -> String
     ) -> [String] {
         values.map { "\(id($0)):\(hash($0))" }
+    }
+
+    /// Advances a single item's sync shadow from its current local state.
+    /// Returns nil when nothing needs to change (new item — the merge seeds it;
+    /// unchanged live item; or a tombstone whose deletion is still newer).
+    /// Returns a live entry when the item was locally edited (hash changed) or
+    /// re-created under a tombstoned id and its own merge clock is newer than
+    /// the deletion. The bubble-selection record has a constant id, so clearing
+    /// and re-picking hits the re-creation case — without the revival the
+    /// tombstone timestamp would pin the record as deleted forever.
+    static func updatedShadowEntry(
+        existing: SyncShadowEntry?,
+        currentHash: String,
+        fallbackUpdatedAt: Date
+    ) -> SyncShadowEntry? {
+        guard let existing else { return nil }
+        if existing.deleted {
+            guard fallbackUpdatedAt > existing.updatedAt else { return nil }
+            return SyncShadowEntry(updatedAt: fallbackUpdatedAt, hash: currentHash, deleted: false)
+        }
+        guard existing.hash != currentHash else { return nil }
+        return SyncShadowEntry(updatedAt: fallbackUpdatedAt, hash: currentHash, deleted: false)
     }
 
     static func encodeCloudSyncRecords<T: Codable>(_ records: [CloudSyncRecord<T>]) throws -> Data {

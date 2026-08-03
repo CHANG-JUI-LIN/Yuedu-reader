@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 enum ReaderQuickPageTurnOption: String, CaseIterable, Identifiable, Hashable {
     case slide
+    case cover
     case curl
     case fastFade
     case scroll
@@ -13,6 +14,7 @@ enum ReaderQuickPageTurnOption: String, CaseIterable, Identifiable, Hashable {
     var titleKey: String {
         switch self {
         case .slide: return "Slide"
+        case .cover: return "覆蓋翻頁"
         case .curl: return "Curl"
         case .fastFade: return "Fast Fade"
         case .scroll: return "Scroll"
@@ -22,6 +24,7 @@ enum ReaderQuickPageTurnOption: String, CaseIterable, Identifiable, Hashable {
     var iconName: String {
         switch self {
         case .slide: return "arrow.left.square"
+        case .cover: return "square.on.square"
         case .curl: return "doc"
         case .fastFade: return "bolt.square"
         case .scroll: return "doc.plaintext"
@@ -345,8 +348,13 @@ struct ReaderQuickThemePanelView: View {
     }
 
     private func readingBackgroundButton(_ background: ReaderTheme) -> some View {
+        // While 綁定閱讀主題 maps this appearance to 跟隨外觀主題 the page is painted by
+        // the appearance theme, so no reading background is the one in effect.
+        // Any other bound pick *is* one of these backgrounds and marks it.
+        let paintedByAppearanceTheme = settings.appearanceBindReaderTheme
+            && settings.boundReaderTheme(for: colorScheme) == .followAppearanceTheme
         let selected = (background == .night || settings.readerCustomBackgroundMode == .none)
-            && !settings.appearanceBindReaderTheme
+            && !paintedByAppearanceTheme
             && readerTheme == background
         return Button {
             settings.readerFollowSystemTheme = false
@@ -522,7 +530,7 @@ private struct ReaderCustomBackgroundImportAlert: Identifiable {
     let message: String
 }
 
-/// A pushed choice page avoids presenting a `confirmationDialog` above the
+/// A pushed choice page avoids presenting another modal choice surface above the
 /// quick-settings sheet, which otherwise produces an overlapping popover on
 /// the immersive reader surface.
 private struct ReaderCustomBackgroundOptionsView: View {
@@ -538,6 +546,7 @@ private struct ReaderCustomBackgroundOptionsView: View {
         UTType(filenameExtension: "webp") ?? .data,
         UTType(filenameExtension: "jpg") ?? .jpeg,
         UTType(filenameExtension: "jpeg") ?? .jpeg,
+        UTType(filenameExtension: "png") ?? .png,
     ]
 
     var body: some View {
@@ -570,7 +579,7 @@ private struct ReaderCustomBackgroundOptionsView: View {
                     .font(DSFont.footnote)
                     .foregroundStyle(DSColor.textSecondary)
             }
-            .listRowBackground(DSColor.surface)
+            .interfaceSectionSurface()
         }
         .font(DSFont.body)
         .listStyle(.insetGrouped)
@@ -668,7 +677,7 @@ private struct ReaderCustomBackgroundColorEditorView: View {
                     .font(DSFont.footnote)
                     .foregroundStyle(DSColor.textSecondary)
             }
-            .listRowBackground(DSColor.surface)
+            .interfaceSectionSurface()
         }
         .font(DSFont.body)
         .scrollContentBackground(.hidden)
