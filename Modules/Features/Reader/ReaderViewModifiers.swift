@@ -53,16 +53,3 @@ extension View {
             .accessibilityHint(localized("顯示閱讀工具列"))
     }
 }
-
-extension View {
-    /// Makes a full-bleed loading surface tappable so it can raise the reader chrome.
-    /// `ProgressView` and a plain background have no hit area of their own, so a stalled
-    /// load used to swallow every touch — leaving refresh, 換源 and back unreachable.
-    func readerLoadingChromeTap(_ action: @escaping () -> Void) -> some View {
-        contentShape(Rectangle())
-            .onTapGesture(perform: action)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel(localized("載入中…"))
-            .accessibilityHint(localized("顯示閱讀工具列"))
-    }
-}
