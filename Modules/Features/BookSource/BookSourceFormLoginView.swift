@@ -16,8 +16,11 @@ struct BookSourceFormLoginView: View {
     private let gs = GlobalSettings.shared
     @State private var fields: [LoginUIField] = []
     @State private var values: [String: String] = [:]
-    @State private var isLoading = false
+    // Dynamic loginUi is evaluated asynchronously. Start in the same loading state
+    // as Legado so the first render never presents an empty form as if it were ready.
+    @State private var isLoading = true
     @State private var showFanqieLogin = false
+    @State private var canRetryLoginUi = false
     /// What a menu button's run reported when the source itself said nothing.
     /// Alert only, never the inline error Section: that Section sits below the whole
     /// form, which on a long source menu is far off-screen — the button still read
@@ -100,6 +103,7 @@ struct BookSourceFormLoginView: View {
                     } label: {
                         Image(systemName: "xmark")
                     }
+                    .accessibilityLabel(localized("取消"))
                 }
                 if !fields.contains(where: { $0.type == .button }) {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -111,6 +115,7 @@ struct BookSourceFormLoginView: View {
                             } label: {
                                 Image(systemName: "checkmark")
                             }
+                            .accessibilityLabel(localized("完成"))
                         }
                     }
                 } else {
@@ -121,6 +126,7 @@ struct BookSourceFormLoginView: View {
                         } label: {
                             Image(systemName: "checkmark")
                         }
+                        .accessibilityLabel(localized("完成"))
                     }
                 }
             }
@@ -134,9 +140,17 @@ struct BookSourceFormLoginView: View {
             ),
             presenting: menuAlert
         ) { _ in
+            if canRetryLoginUi {
+                Button(localized("重試")) {
+                    menuAlert = nil
+                    canRetryLoginUi = false
+                    loadUI()
+                }
+            }
             Button(localized("好"), role: .cancel) {
                 let dismissesView = menuAlert?.dismissesView == true
                 menuAlert = nil
+                canRetryLoginUi = false
                 if dismissesView { onDismiss() }
             }
         } message: { alert in
@@ -177,6 +191,8 @@ struct BookSourceFormLoginView: View {
     // MARK: - Setup
 
     private func loadUI() {
+        isLoading = true
+        canRetryLoginUi = false
         let rawUi = source.loginUi.trimmingCharacters(in: .whitespacesAndNewlines)
         // Some sources (e.g. 起点) define `loginUi` as JS (`@js:` / `<js>…</js>`) that
         // builds the form by calling a jsLib helper like `Menu()`. Evaluate it first,
@@ -185,13 +201,19 @@ struct BookSourceFormLoginView: View {
             isLoading = true
             let src = source
             Task.detached(priority: .userInitiated) {
-                let json = Self.evaluateJsLoginUi(source: src)
-                let parsed = LoginUIField.parse(from: json)
+                let evaluation = Self.evaluateJsLoginUiResult(source: src)
+                let parsed = LoginUIField.parseResult(from: evaluation.json)
                 let stored = LoginManager.shared.getLoginInfo(sourceUrl: src.bookSourceUrl)
                 await MainActor.run {
-                    self.fields = parsed
-                    self.values = Self.initialValues(for: parsed, stored: stored)
+                    self.fields = parsed ?? []
+                    self.values = Self.initialValues(for: parsed ?? [], stored: stored)
                     self.isLoading = false
+                    guard parsed == nil else { return }
+                    self.canRetryLoginUi = true
+                    self.menuAlert = MenuActionAlert(
+                        title: localized("書源腳本錯誤"),
+                        detail: evaluation.error ?? localized("載入失敗，點按重試")
+                    )
                 }
             }
             return
@@ -202,11 +224,26 @@ struct BookSourceFormLoginView: View {
             for: fields,
             stored: LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl)
         )
+        isLoading = false
+    }
+
+    struct LoginUIEvaluationResult: Sendable {
+        let json: String
+        let error: String?
     }
 
     /// Evaluate a JS-based `loginUi` (with jsLib + source runtime wired) and return
-    /// the JSON form definition it produces (via `result = JSON.stringify(...)`).
-    nonisolated private static func evaluateJsLoginUi(source: BookSource) -> String {
+    /// the JSON form definition produced by its completion value or result assignment.
+    nonisolated static func evaluateJsLoginUi(source: BookSource) -> String {
+        evaluateJsLoginUiResult(source: source).json
+    }
+
+    /// Legado, Sigma, and the MD3 implementation evaluate loginUrl JS before loginUi JS
+    /// in the same engine. Dynamic menus commonly call helpers declared by loginUrl, so
+    /// evaluating loginUi in isolation produces a blank form after the JS error is swallowed.
+    nonisolated static func evaluateJsLoginUiResult(
+        source: BookSource
+    ) -> LoginUIEvaluationResult {
         let engine = JSCoreEngine()
         engine.bookSource = source
         configureLegadoRuntime(engine, source: source)
@@ -215,15 +252,37 @@ struct BookSourceFormLoginView: View {
         }
 
         let raw = source.loginUi.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let loginJS = LoginManager.shared.extractLoginJs(rawLogin) ?? ""
         let jsBody = LoginManager.shared.extractLoginJs(raw) ?? raw
-        // Run the body (which assigns `result`), then return `result`.
+        let storedLoginInfo = LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl) ?? [:]
+        // Run loginUrl and loginUi in one JS context, mirroring Legado's evalUiJs.
+        // `book` and `chapter` are null for a standalone login sheet, as in Legado.
+        // Do not append `result` here. Legado returns the loginUi script's completion
+        // value; 神魔小說 ends with `JSON.stringify(rows)` while `result` still contains
+        // previously stored credentials. Returning `result` would replace the menu JSON
+        // with that credentials object and make the form parser report a load failure.
         let wrapped = """
+        \(loginJS)
         \(jsBody)
-        ;(typeof result !== 'undefined' && result !== null ? result : '')
         """
-        let out = engine.evaluate(wrapped, bindings: ["baseUrl": source.bookSourceUrl]) ?? ""
-        AppLogger.parse("⟐ menuEval", context: ["resultLen": out.count, "head": String(out.prefix(120))])
-        return out
+        let out = engine.evaluate(
+            wrapped,
+            result: storedLoginInfo,
+            bindings: [
+                "baseUrl": source.bookSourceUrl,
+                "book": NSNull(),
+                "chapter": NSNull(),
+            ]
+        ) ?? ""
+        let error = engine.lastError
+        AppLogger.parse("⟐ menuEval", context: [
+            "resultLen": out.count,
+            "head": String(out.prefix(120)),
+            "hasLoginJs": !loginJS.isEmpty,
+            "jsError": error ?? "none",
+        ])
+        return LoginUIEvaluationResult(json: out, error: error)
     }
 
     private func binding(for name: String) -> Binding<String> {
@@ -335,6 +394,7 @@ struct BookSourceFormLoginView: View {
     private func doLogin() {
         guard !isLoading else { return }
         menuAlert = nil
+        canRetryLoginUi = false
 
         // Validate: collect non-button field values
         let credentials = currentFormValues()
@@ -554,8 +614,15 @@ struct BookSourceFormLoginView: View {
             // multi-page source menus (起点's 评论设置 → 段评开关) can actually navigate.
             engine.reLoginViewHandler = {
                 AppLogger.parse("⟐ reLoginView FIRED", context: [:])
-                let json = Self.evaluateJsLoginUi(source: source)
-                let parsed = LoginUIField.parse(from: json)
+                let evaluation = Self.evaluateJsLoginUiResult(source: source)
+                // Keep the current menu if a source's refresh script fails; replacing it
+                // with an empty array would hide the only actionable controls.
+                guard let parsed = LoginUIField.parseResult(from: evaluation.json) else {
+                    AppLogger.parse("⟐ reLoginView failed", context: [
+                        "error": evaluation.error ?? "invalid loginUi JSON"
+                    ])
+                    return
+                }
                 AppLogger.parse("⟐ reLoginView", context: [
                     "newFields": parsed.count,
                     "names": parsed.prefix(8).map { $0.name }.joined(separator: "|")
@@ -840,10 +907,16 @@ struct LoginUIField: Identifiable {
     enum FieldType: String { case text, password, select, button, toggle }
 
     static func parse(from json: String) -> [LoginUIField] {
+        parseResult(from: json) ?? []
+    }
+
+    /// Returns nil when the JS result is not an array. A valid `[]` remains an empty
+    /// menu, allowing the caller to distinguish an intentional empty form from failure.
+    static func parseResult(from json: String) -> [LoginUIField]? {
         // Legado's loginUi is frequently authored as a JS object literal
         // (single-quoted keys, trailing commas) that strict JSON rejects;
         // LoginManager.lenientJSONArray normalizes those before decoding.
-        guard let array = LoginManager.lenientJSONArray(json) else { return [] }
+        guard let array = LoginManager.lenientJSONArray(json) else { return nil }
 
         return array.compactMap { dict in
             guard let name = dict["name"] as? String, !name.isEmpty else { return nil }

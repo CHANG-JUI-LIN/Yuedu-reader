@@ -274,8 +274,29 @@ class ModernParserBridge {
                     self?.jsEngine.evaluateIsolated(jsCode, bindings: bindings)
                 }
             )
+
+            func transformResponse(_ body: String, baseURL: String) -> String? {
+                do {
+                    return try self.applyResponseBodyScript(
+                        analyzeUrl.bodyJs,
+                        to: body,
+                        baseURL: baseURL
+                    )
+                } catch {
+                    AppLogger.parse("bodyJs response transform failed", context: [
+                        "source": sourceName,
+                        "url": String(baseURL.prefix(160)),
+                        "error": error.localizedDescription
+                    ])
+                    return nil
+                }
+            }
+
             if analyzeUrl.isDataUri {
-                return Self.bodyForDataURI(analyzeUrl)
+                return transformResponse(
+                    Self.bodyForDataURI(analyzeUrl),
+                    baseURL: analyzeUrl.evaluatedRuleUrl
+                )
             }
             guard var request = analyzeUrl.toURLRequest() else { return nil }
             for (key, value) in self.resolvedSourceHeaders() {
@@ -295,6 +316,7 @@ class ModernParserBridge {
             var result: String?
             var responseStatusCode: Int?
             var responseError: Error?
+            var responseFinalURL: String?
             let reviewSummaryCacheKey = "\(sourceUrl)#\(self.sourceRuleData.source.lastUpdateTime)"
             let isReviewSummaryRequest = Self.isChapterReviewSummaryRequest(request)
             var ownsReviewRequest = false
@@ -312,7 +334,7 @@ class ModernParserBridge {
                         since: cacheLookupStarted,
                         thresholdMs: 0
                     )
-                    return cached
+                    return transformResponse(cached, baseURL: requestURL)
                 case .inFlight:
                     let waitStarted = ProcessInfo.processInfo.systemUptime
                     if let cached = ReviewSummaryResponseCache.shared.waitForRequest(
@@ -326,7 +348,7 @@ class ModernParserBridge {
                             since: waitStarted,
                             thresholdMs: 0
                         )
-                        return cached
+                        return transformResponse(cached, baseURL: requestURL)
                     }
                     // The shared request failed or timed out. Issue this call's own request
                     // instead of handing the source JS a null — sharing a request is an
@@ -339,6 +361,7 @@ class ModernParserBridge {
             let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, error in
                 if let httpResponse = response as? HTTPURLResponse {
                     responseStatusCode = httpResponse.statusCode
+                    responseFinalURL = httpResponse.url?.absoluteString
                 }
                 responseError = error
                 if let data {
@@ -408,7 +431,11 @@ class ModernParserBridge {
                     "bodyHead": (result ?? "nil").prefix(200).description
                 ])
             }
-            return result
+            guard let result else { return nil }
+            return transformResponse(
+                result,
+                baseURL: responseFinalURL ?? request.url?.absoluteString ?? analyzeUrl.url
+            )
         }
 
         // Evaluate jsLib if present, cache the hash to avoid re-evaluation
@@ -2116,7 +2143,13 @@ class ModernParserBridge {
             // `undefined`, the rule fetched `/undefined/catalog`, and every branch of
             // its `if (type === 'novel')` chain missed → 目录为空, with nothing thrown.
             // Same rule shape drives its ruleContent, so chapters were next.
-            return (Self.bodyForDataURI(analyzeUrl), analyzeUrl.evaluatedRuleUrl)
+            let finalURL = analyzeUrl.evaluatedRuleUrl
+            let body = try applyResponseBodyScript(
+                analyzeUrl.bodyJs,
+                to: Self.bodyForDataURI(analyzeUrl),
+                baseURL: finalURL
+            )
+            return (body, finalURL)
         }
 
         guard var request = analyzeUrl.toURLRequest() else {
@@ -2220,7 +2253,38 @@ class ModernParserBridge {
             body: body
         )
 
-        return (body, finalUrl)
+        let transformedBody = try applyResponseBodyScript(
+            analyzeUrl.bodyJs,
+            to: body,
+            baseURL: finalUrl
+        )
+        return (transformedBody, finalUrl)
+    }
+
+    /// Applies Legado's `UrlOption.bodyJs` response transform exactly once, after charset
+    /// decoding and before any explore/search/content rule sees the body. The raw response
+    /// must stay a JavaScript string: ordinary rule evaluation intentionally converts JSON
+    /// strings into objects, while `bodyJs` sources commonly call `JSON.parse(result)`.
+    /// A configured transform is part of the primary request contract, so failure is surfaced
+    /// instead of silently parsing the untransformed body.
+    private func applyResponseBodyScript(
+        _ script: String?,
+        to body: String,
+        baseURL: String
+    ) throws -> String {
+        guard let script,
+              !script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return body }
+
+        guard let transformed = jsEngine.evaluateIsolated(
+            script,
+            bindings: ["result": body, "baseUrl": baseURL]
+        ) else {
+            throw ModernParserBridgeError.parseError(
+                "bodyJs failed: \(jsEngine.lastError ?? "script returned no value")"
+            )
+        }
+        return transformed
     }
 
     // MARK: - Private: Runtime Variable Helpers

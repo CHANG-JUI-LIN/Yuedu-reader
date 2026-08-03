@@ -551,6 +551,87 @@ struct OnlineReaderPipelineUnificationTests {
         }
     }
 
+    @Test("Qimo TEXT and FULL reviews preserve CRLF paragraph geometry")
+    func qimoReviewsPreserveCRLFParagraphGeometry() async throws {
+        func image(style: String, type: String, action: String) -> String {
+            let svg = #"<svg width="1000" height="120" xmlns="http://www.w3.org/2000/svg"><text x="12" y="64">review</text></svg>"#
+            let base64 = Data(svg.utf8).base64EncodedString()
+            let config = #"{"style":"\#(style)","type":"\#(type)","click":"\#(action)"}"#
+            return "<img src=\"data:image/svg+xml;base64,\(base64),\(config)\">"
+        }
+
+        let textReview = image(
+            style: "TEXT",
+            type: "qd",
+            action: "showQdCmt('1033014772','794296040','1','1785687535633')"
+        )
+        let godReview = image(
+            style: "FULL",
+            type: "god",
+            action: "showQdCmt('1033014772','794296040','3','1785687535633')"
+        )
+        let chapterReview = image(
+            style: "FULL",
+            type: "chapter",
+            action: "showQdChapter('1033014772','794296040','1785687535633')"
+        )
+        let raw = [
+            "洛城，秋。\(textReview)",
+            "",
+            "空洞的辦公室裡。",
+            "",
+            "中年醫生推了推眼鏡。",
+            godReview,
+            chapterReview,
+        ].joined(separator: "\r\n")
+
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "1、歸零",
+            plainTextContent: "洛城，秋。\n空洞的辦公室裡。\n中年醫生推了推眼鏡。",
+            rawHTMLContent: raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "柒墨小说",
+                sourceURL: "https://qimo.com"
+            )
+        )
+
+        for paragraph in ["洛城，秋。", "空洞的辦公室裡。", "中年醫生推了推眼鏡。"] {
+            #expect(normalizedHTML.contains("<p>\(paragraph)"))
+        }
+        #expect(normalizedHTML.components(separatedBy: #"data-yd-review-style="full""#).count - 1 == 2)
+
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "1、歸零",
+                plainText: "洛城，秋。\n空洞的辦公室裡。\n中年醫生推了推眼鏡。",
+                body: .html(normalizedHTML),
+                sourceHref: "https://qimo.com/chapter/794296040"
+            )
+        ])
+        let attributed = try await OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 360, height: 640)
+        ).buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: .label,
+            themeBackgroundColor: .systemBackground
+        ).attributedString
+
+        let ns = attributed.string as NSString
+        for text in ["洛城，秋。", "空洞的辦公室裡。", "中年醫生推了推眼鏡。"] {
+            let range = ns.range(of: text)
+            let location = try #require(range.location == NSNotFound ? nil : range.location)
+            let paragraph = try #require(
+                attributed.attribute(.paragraphStyle, at: location, effectiveRange: nil)
+                    as? NSParagraphStyle
+            )
+            #expect(abs(paragraph.firstLineHeadIndent - Self.settings.fontSize * 2) < 0.5)
+            #expect(abs(paragraph.paragraphSpacing - Self.settings.paragraphSpacing) < 0.5)
+        }
+    }
+
     // MARK: - Legacy parity: provider builder renders cached HTML images
 
     @Test("provider builder renders cached HTML images")

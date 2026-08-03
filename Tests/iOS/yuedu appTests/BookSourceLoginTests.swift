@@ -254,6 +254,55 @@ struct BookSourceLoginTests {
         #expect(fields.isEmpty)
     }
 
+    @Test("已儲存的登入資料不會蓋掉神魔小說型動態選單")
+    func storedLoginInfoDoesNotReplaceDynamicLoginUiOutput() throws {
+        let sourceURL = "login-ui-stored-result-\(UUID().uuidString)"
+        var source = BookSource(bookSourceUrl: sourceURL, bookSourceName: "Stored result")
+        source.loginUrl = "function login() { return true; }"
+        // 神魔小說以最後一個 expression 回傳選單，不會把 JSON 寫回 `result`。
+        source.loginUi = """
+        @js:
+        var rows = [
+            {name: '访问令牌', type: 'password'},
+            {name: '🔑登录书源', type: 'button', action: 'login()'}
+        ];
+        JSON.stringify(rows);
+        """
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: sourceURL,
+            info: ["访问令牌": "previous-token"]
+        )
+        defer { LoginManager.shared.clearLogin(sourceUrl: sourceURL) }
+
+        let evaluation = BookSourceFormLoginView.evaluateJsLoginUiResult(source: source)
+        let fields = try #require(LoginUIField.parseResult(from: evaluation.json))
+
+        #expect(evaluation.error == nil)
+        #expect(fields.map(\.name) == ["访问令牌", "🔑登录书源"])
+    }
+
+    @Test("動態 loginUi 會共享 loginUrl 的 JS 上下文")
+    func dynamicLoginUiSharesLoginUrlContext() throws {
+        var source = BookSource(
+            bookSourceUrl: "login-ui-context-\(UUID().uuidString)",
+            bookSourceName: "Login UI context"
+        )
+        source.loginUrl = """
+        function menuTitle() {
+            return "from-login-url";
+        }
+        """
+        source.loginUi = """
+        @js:result = JSON.stringify([{"name": menuTitle(), "type": "button"}]);
+        """
+
+        let output = BookSourceFormLoginView.evaluateJsLoginUi(source: source)
+        let fields = try #require(LoginUIField.parseResult(from: output))
+
+        #expect(fields.count == 1)
+        #expect(fields[0].name == "from-login-url")
+    }
+
     @Test("LoginUIField.parse() 容忍單引號 JS 物件字面量（大灰狼聚合源）")
     func parseSingleQuotedLoginUi() {
         // 大灰狼/光遇等聚合源的 loginUi 後半段以 JS 物件字面量撰寫（單引號 key/value），

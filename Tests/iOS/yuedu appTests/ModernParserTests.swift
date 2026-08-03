@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import SwiftSoup
 import Testing
 @testable import yuedu_app
 
@@ -500,33 +501,35 @@ struct SourceRuleTests {
         #expect(rule.mode == .json)
     }
 
-    @Test("##$## delimiter extracts URL options suffix")
-    func dollarHashHashSeparatesURLOptions() {
-        let rule = SourceRule(ruleStr: "https://example.com/api##$##,{header}")
+    @Test("##$## uses the standard end-anchor replacement")
+    func dollarHashHashUsesEndAnchorReplacement() {
+        let rule = SourceRule(ruleStr: ".count@em.0@text##$##字")
         rule.makeUpRule(
             result: nil,
             getData: { _ in "" },
             evalJS: { _ in nil },
             analyzeRule: { _ in nil }
         )
-        #expect(rule.rule == "https://example.com/api")
-        #expect(rule.urlOptionsSuffix == ",{header}")
-        #expect(rule.replaceRegex == "")
+        #expect(rule.rule == ".count@em.0@text")
+        #expect(rule.replaceRegex == "$")
+        #expect(rule.replacement == "字")
     }
 
-    @Test("##$## with regex after options")
-    func dollarHashHashWithRegexAfterOptions() {
-        let rule = SourceRule(ruleStr: "div@text##$##,{header}##pattern##replacement")
-        rule.makeUpRule(
-            result: nil,
-            getData: { _ in "" },
-            evalJS: { _ in nil },
-            analyzeRule: { _ in nil }
+    @Test("##$## URL suffix reaches the request parser")
+    func dollarHashHashURLSuffixReachesRequestParser() throws {
+        let engine = ModernRuleEngine()
+        engine.setContent(
+            #"<a href="/book/1">book</a>"#,
+            baseUrl: "https://example.com/list"
         )
-        #expect(rule.rule == "div@text")
-        #expect(rule.urlOptionsSuffix == ",{header}")
-        #expect(rule.replaceRegex == "pattern")
-        #expect(rule.replacement == "replacement")
+        let rendered = engine.getString(
+            ruleStr: #"a@href##$##,{Cookie:"reader=1"}"#,
+            isUrl: true
+        )
+        let analyzeURL = AnalyzeUrl(ruleUrl: rendered)
+
+        #expect(AnalyzeUrl.stripOptions(from: rendered) == "https://example.com/book/1")
+        #expect(analyzeURL.headers["Cookie"] == "reader=1")
     }
 }
 
@@ -1472,11 +1475,146 @@ struct AnalyzeUrlTests {
         #expect(au.retry == 3)
     }
 
+    @Test("bodyJs option is retained as a response transform")
+    func bodyJsOption() throws {
+        let script = #"JSON.stringify({wrapped: JSON.parse(result)})"#
+        let encoded = try #require(
+            String(
+                data: JSONSerialization.data(withJSONObject: ["bodyJs": script]),
+                encoding: .utf8
+            )
+        )
+        let au = AnalyzeUrl(ruleUrl: "https://example.com,\(encoded)")
+
+        #expect(au.bodyJs == script)
+    }
+
+    @Test("bodyJs transforms the raw response string before parsing")
+    func bodyJsTransformsResponse() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "bodyJs test"
+
+        let raw = #"{"data":{"records":[{"name":"榜單作品"}]}}"#
+        let payload = Data(raw.utf8).base64EncodedString()
+        let script = #"(function(){var j=JSON.parse(result);return JSON.stringify({data:{books:j.data.records}})})()"#
+        let options = try #require(
+            String(
+                data: JSONSerialization.data(withJSONObject: ["bodyJs": script]),
+                encoding: .utf8
+            )
+        )
+        let ruleURL = "data:application/json;base64,\(payload),\(options)"
+
+        let (body, _) = try await ModernParserBridge(source: source).fetch(ruleUrl: ruleURL)
+        let object = try #require(
+            JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any]
+        )
+        let data = try #require(object["data"] as? [String: Any])
+        let books = try #require(data["books"] as? [[String: Any]])
+
+        #expect(books.first?["name"] as? String == "榜單作品")
+    }
+
+    @Test("bodyJs failure is surfaced instead of parsing the original body")
+    func bodyJsFailureIsSurfaced() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "bodyJs failure test"
+
+        let payload = Data(#"{"data":{"records":[]}}"#.utf8).base64EncodedString()
+        let options = try #require(
+            String(
+                data: JSONSerialization.data(withJSONObject: ["bodyJs": "throw new Error('broken transform')"]),
+                encoding: .utf8
+            )
+        )
+
+        do {
+            _ = try await ModernParserBridge(source: source).fetch(
+                ruleUrl: "data:application/json;base64,\(payload),\(options)"
+            )
+            Issue.record("Expected bodyJs failure")
+        } catch let error as ModernParserBridgeError {
+            guard case .parseError(let message) = error else {
+                Issue.record("Unexpected parser error: \(error)")
+                return
+            }
+            #expect(message.contains("bodyJs failed"))
+        }
+    }
+
+    @Test("bodyJs also transforms responses fetched inside java.ajax")
+    func bodyJsTransformsJavaAjaxResponse() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "bodyJs java.ajax test"
+
+        let raw = #"{"records":[{"title":"榜單","url":"https://example.com/rank"}]}"#
+        let payload = Data(raw.utf8).base64EncodedString()
+        let script = #"JSON.stringify(JSON.parse(result).records)"#
+        let options = try #require(
+            String(
+                data: JSONSerialization.data(withJSONObject: ["bodyJs": script]),
+                encoding: .utf8
+            )
+        )
+        let ruleURL = "data:application/json;base64,\(payload),\(options)"
+        let jsURLLiteral = try #require(
+            String(
+                data: JSONSerialization.data(
+                    withJSONObject: ruleURL,
+                    options: [.fragmentsAllowed]
+                ),
+                encoding: .utf8
+            )
+        )
+        source.exploreUrl = "<js>java.ajax(\(jsURLLiteral));</js>"
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+
+        #expect(items.map(\.title) == ["榜單"])
+        #expect(items.map(\.url) == ["https://example.com/rank"])
+    }
+
+    @Test("bodyJs failure inside java.ajax never exposes the original response")
+    func bodyJsFailureInsideJavaAjaxDoesNotExposeRawResponse() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com/source"
+        source.bookSourceName = "bodyJs java.ajax failure test"
+
+        let raw = #"[{"title":"原始資料不得外洩","url":"https://example.com/raw"}]"#
+        let payload = Data(raw.utf8).base64EncodedString()
+        let options = try #require(
+            String(
+                data: JSONSerialization.data(
+                    withJSONObject: ["bodyJs": "throw new Error('broken transform')"]
+                ),
+                encoding: .utf8
+            )
+        )
+        let ruleURL = "data:application/json;base64,\(payload),\(options)"
+        let jsURLLiteral = try #require(
+            String(
+                data: JSONSerialization.data(
+                    withJSONObject: ruleURL,
+                    options: [.fragmentsAllowed]
+                ),
+                encoding: .utf8
+            )
+        )
+        source.exploreUrl = "<js>java.ajax(\(jsURLLiteral));</js>"
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+
+        #expect(items.isEmpty)
+    }
+
     @Test("{header} template resolves to sourceHeader in URL options")
     func headerTemplateInOptions() {
         let headerJSON = "{\"User-Agent\":\"Custom/1.0\"}"
         let au = AnalyzeUrl(
-            ruleUrl: "https://example.com/api,##$##,{header}",
+            ruleUrl: "https://example.com/api,{header}",
             sourceHeader: headerJSON
         )
         #expect(au.headers["User-Agent"] == "Custom/1.0")
@@ -2002,6 +2140,105 @@ struct QidianSourceRegressionTests {
             reviewImageCount
         )
         #expect(normalizedHTML.contains("<!DOCTYPE html>"))
+    }
+}
+
+@Suite("Qimo source regression", .serialized)
+struct QimoSourceRegressionTests {
+
+    @Test("provided Qimo source transforms live discover rankings")
+    func providedSourceTransformsLiveDiscoverRankings() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let fixturePath = environment["YueduQimoBookSourceFixturePath"]
+                ?? environment["TEST_RUNNER_YueduQimoBookSourceFixturePath"],
+              !fixturePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
+        let source = try #require(
+            try JSONDecoder().decode([BookSource].self, from: data).first {
+                $0.bookSourceName.contains("柒墨")
+            }
+        )
+        let items = await ModernParserBridge(source: source).getExploreItems(page: 1)
+        let ranking = try #require(items.first { item in
+            guard let url = item.url else { return false }
+            return url.contains("m.qidian.com/majax/rank/")
+        })
+        let books = try await BookSourceFetcher.shared.discoverBooks(
+            from: ranking,
+            page: 1,
+            in: source
+        )
+
+        #expect(!books.isEmpty)
+        #expect(books.allSatisfy { !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    }
+
+    @Test("provided Qimo source preserves live paragraph and FULL review structure")
+    func providedSourcePreservesLiveReviewStructure() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let fixturePath = environment["YueduQimoBookSourceFixturePath"]
+                ?? environment["TEST_RUNNER_YueduQimoBookSourceFixturePath"],
+              let token = environment["YueduQimoToken"]
+                ?? environment["TEST_RUNNER_YueduQimoToken"],
+              !fixturePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
+        let source = try #require(
+            try JSONDecoder().decode([BookSource].self, from: data).first {
+                $0.bookSourceName.contains("柒墨")
+            }
+        )
+        LoginManager.shared.storeLoginInfo(
+            sourceUrl: source.bookSourceUrl,
+            info: ["授权令牌": token]
+        )
+        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(
+            #"{"段评开关":"已开"}"#,
+            for: source.bookSourceUrl
+        )
+        defer {
+            LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl)
+            BookSourceRuntimeStateStore.shared.setSourceVariableJSON(nil, for: source.bookSourceUrl)
+        }
+
+        let chapterPayload = Data("1033014772,794296040".utf8).base64EncodedString()
+        let chapter = OnlineChapterRef(
+            index: 1,
+            title: "1、归零",
+            url: "data:chapter_info;base64,\(chapterPayload),{\"type\":\"qdreader\"}"
+        )
+        let cacheBookID = UUID()
+        defer { BookSourceFetcher.shared.clearAllChapterCache(bookId: cacheBookID) }
+
+        let package = try await BookSourceFetcher.shared.fetchChapterPackage(
+            ref: chapter,
+            bookId: cacheBookID,
+            source: source
+        )
+        let normalizedHTML = try #require(
+            BookSourceFetcher.shared.loadNormalizedChapterHTMLSync(
+                bookId: cacheBookID,
+                chapterIndex: chapter.index,
+                expectedSourceURL: chapter.url,
+                expectedTOCTitle: chapter.title
+            )
+        )
+        let document = try SwiftSoup.parse(normalizedHTML)
+        let paragraphs = try document.select("article#reader-content > p").array()
+        let reviewImages = try document.select("a.yd-review-image").array()
+        let fullReviews = try document.select(
+            #"a.yd-review-image[data-yd-review-style="full"]"#
+        ).array()
+
+        #expect(package.content.contains("洛城，秋"))
+        #expect(paragraphs.count > 20)
+        #expect(reviewImages.count > 0)
+        #expect(fullReviews.count > 0)
+        #expect(try paragraphs.allSatisfy { try $0.text().count < 500 })
     }
 }
 

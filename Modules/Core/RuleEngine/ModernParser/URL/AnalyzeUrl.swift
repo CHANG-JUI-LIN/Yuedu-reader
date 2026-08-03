@@ -31,6 +31,11 @@ class AnalyzeUrl {
     /// JavaScript to execute inside WebView after page load.
     private(set) var webJs: String?
 
+    /// JavaScript that transforms the decoded HTTP response body before rule parsing.
+    /// Legado exposes the raw response string as `result` and uses the script's return
+    /// value as the new response body.
+    private(set) var bodyJs: String?
+
     /// Delay in milliseconds before extracting WebView content.
     private(set) var webViewDelayTime: Int = 0
 
@@ -420,6 +425,26 @@ class AnalyzeUrl {
             return
         }
 
+        // 源阅 also accepts a bare header map after the URL (for example
+        // `href##$##,{Cookie:"..."}` or `href##$##,{header}`). This is a
+        // distinct, deterministic option shape: none of the keys belong to
+        // Legado's UrlOption model, so the whole object represents headers.
+        // Keep this in the primary parser instead of retrying failed requests.
+        let urlOptionKeys: Set<String> = [
+            "method", "headers", "body", "type", "charset", "retry",
+            "usewebview", "webview", "webjs", "bodyjs",
+            "webviewdelaytime", "webviewdelay", "serverid", "js"
+        ]
+        let isBareHeaderMap = !dict.keys.contains {
+            urlOptionKeys.contains($0.lowercased())
+        }
+        if isBareHeaderMap {
+            for (key, value) in dict where !(value is NSNull) {
+                headers[key] = "\(value)"
+            }
+            return
+        }
+
         if let m = dict["method"] as? String {
             method = m.uppercased()
         }
@@ -457,6 +482,11 @@ class AnalyzeUrl {
         }
 
         webJs = dict["webJs"] as? String
+
+        if let script = (dict["bodyJs"] ?? dict["bodyJS"]) as? String {
+            let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
+            bodyJs = trimmed.isEmpty ? nil : script
+        }
 
         if let delay = (dict["webViewDelayTime"] ?? dict["webViewDelay"]) as? Int {
             webViewDelayTime = delay
