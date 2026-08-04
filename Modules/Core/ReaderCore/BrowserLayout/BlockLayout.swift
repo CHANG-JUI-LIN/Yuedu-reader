@@ -8,6 +8,10 @@ enum BlockLayout {
     /// Lays out `box` and all descendants; returns the box's content-box height.
     /// `rootFontSize` is the chapter's root font size — the rem base (never the
     /// current element's font size).
+    ///
+    /// Child frames are positioned relative to THIS box's CONTENT box (inside
+    /// border+padding). The fragment walk adds each box's own border+padding
+    /// when descending, so parent padding is never double-counted.
     @discardableResult
     static func layOut(root box: BlockBox, containerWidth: CGFloat, rootFontSize: CGFloat = 17) -> CGFloat {
         let sides = resolveSides(box, containerWidth: containerWidth, rootFontSize: rootFontSize)
@@ -17,7 +21,7 @@ enum BlockLayout {
         box.contentSize.width = sides.contentWidth
         box.frame = CGRect(x: 0, y: 0, width: sides.borderBoxWidth, height: 0)
 
-        var cursorY: CGFloat = box.borders.top + box.padding.top
+        var cursorY: CGFloat = 0   // content-box-relative
         var previousBottomMargin: CGFloat? = nil
         var previousChild: BlockBox? = nil
 
@@ -32,7 +36,7 @@ enum BlockLayout {
                 child.frame.origin.y = 0
             } else {
                 collapsedTop = child.margins.top
-                child.frame.origin.y = cursorY
+                child.frame.origin.y = cursorY + child.margins.top
             }
             child.frame.origin.x = child.margins.left
             let borderBoxH = child.borders.vertical + child.padding.vertical + childContentHeight
@@ -51,10 +55,10 @@ enum BlockLayout {
         // Block-level replaced element (image): its content box IS the image.
         if let attachment = box.imageAttachment {
             box.contentSize = attachment.usedSize
-            cursorY = box.borders.top + box.padding.top + attachment.usedSize.height
+            cursorY = attachment.usedSize.height
         }
 
-        box.contentSize.height = max(0, cursorY - box.borders.top - box.padding.top)
+        box.contentSize.height = max(0, cursorY)
         if case .px(let fixed) = box.style.height { box.contentSize.height = fixed }
         box.frame.size.height = box.borders.vertical + box.padding.vertical + box.contentSize.height
         return box.contentSize.height

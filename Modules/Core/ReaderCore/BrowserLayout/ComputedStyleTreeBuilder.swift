@@ -78,10 +78,18 @@ final class ComputedStyleTreeBuilder {
     }
 
     func buildTree(body: Element) -> ComputedStyleNode {
-        let rootStyle = baseStyle(for: body)
+        // The root body element goes through the SAME cascade as every other
+        // element (author rules like `body { margin: 0 }` must apply).
+        let defaultParent = ComputedStyle(
+            fontSize: rootFontSize,
+            fontFamilies: configFontFamilies,
+            color: textColor,
+            backgroundColor: backgroundColor
+        )
+        let bodyStyle = resolvedStyle(for: body, parent: defaultParent, parentElement: nil)
         let root = ComputedStyleNode(
-            tag: "body", element: body, style: rootStyle,
-            children: children(of: body, parentStyle: rootStyle, parentElement: body, inheritedLink: nil),
+            tag: "body", element: body, style: bodyStyle,
+            children: children(of: body, parentStyle: bodyStyle, parentElement: body, inheritedLink: nil),
             nodeID: nextNodeID,
             linkTarget: nil,
             anchorID: linkAnchorID(of: body)
@@ -133,7 +141,7 @@ final class ComputedStyleTreeBuilder {
 
     // MARK: - Cascade for one element
 
-    private func resolvedStyle(for element: Element, parent: ComputedStyle, parentElement: Element) -> ComputedStyle {
+    private func resolvedStyle(for element: Element, parent: ComputedStyle, parentElement: Element?) -> ComputedStyle {
         var style = parent.inherited(from: parent)
         let ua = UserAgentStyle.basis(for: element.tagName().lowercased())
         style = style.applyingUA(ua)
@@ -156,14 +164,6 @@ final class ComputedStyleTreeBuilder {
         cascadeApply(inlineDecl.important, to: &style, ctx: ctx)
 
         if element.hasAttr("hidden") { style.isHidden = true }
-        return style
-    }
-
-    private func baseStyle(for element: Element) -> ComputedStyle {
-        var style = UserAgentStyle.basis(for: element.tagName().lowercased())
-        style.configParagraphSpacing = 6
-        style.color = style.color ?? textColor
-        style.backgroundColor = style.backgroundColor ?? backgroundColor
         return style
     }
 }
@@ -192,6 +192,8 @@ private extension ComputedStyle {
         paddingRight = ua.paddingRight
         paddingBottom = ua.paddingBottom
         paddingLeft = ua.paddingLeft
+        // `white-space` is inherited; a UA default (only `<pre>`) overrides it.
+        if ua.whiteSpace != .normal { whiteSpace = ua.whiteSpace }
         if ua.fontSize != 17 { fontSize = ua.fontSize }
         if ua.fontWeight != 400 { fontWeight = ua.fontWeight }
         if ua.isItalic { isItalic = true }
@@ -270,6 +272,18 @@ enum ComputedStylePropertyApplier {
         case "border-right-width": style.borderRightWidth = numericWidth(value) ?? style.borderRightWidth
         case "border-bottom-width": style.borderBottomWidth = numericWidth(value) ?? style.borderBottomWidth
         case "border-left-width": style.borderLeftWidth = numericWidth(value) ?? style.borderLeftWidth
+        case "border-width": applyBorderWidthShorthand(value, to: &style)
+        case "border":
+            // `border: <width> <style> <color>` shorthand. Phase 1.5: width +
+            // color applied; border-style parsed but ignored (solid assumed).
+            for part in value.split(separator: " ").map(String.init) {
+                if let w = numericWidth(part) {
+                    style.borderTopWidth = w; style.borderRightWidth = w
+                    style.borderBottomWidth = w; style.borderLeftWidth = w
+                } else if let c = parseColor(part) {
+                    style.borderColor = c
+                }
+            }
         case "border-color": style.borderColor = parseColor(value)
         case "border-radius": style.borderRadius = numericWidth(value) ?? 0
         case "background": if let c = parseColor(shorthandBackgroundColor(value)) { style.backgroundColor = c }
@@ -311,6 +325,18 @@ enum ComputedStylePropertyApplier {
 
     fileprivate static func numericWidth(_ value: String) -> CGFloat? {
         CSSLengthResolver.resolve(CSSLengthResolver.parse(value) ?? .auto, emBase: 17, remBase: 17, percentBase: 400)
+    }
+
+    fileprivate static func applyBorderWidthShorthand(_ value: String, to style: inout ComputedStyle) {
+        let widths = value.split(separator: " ").map(String.init).map(numericWidth)
+        guard !widths.isEmpty else { return }
+        func w(_ i: Int) -> CGFloat { widths[min(i, widths.count - 1)] ?? 0 }
+        switch widths.count {
+        case 1: style.borderTopWidth = w(0); style.borderRightWidth = w(0); style.borderBottomWidth = w(0); style.borderLeftWidth = w(0)
+        case 2: style.borderTopWidth = w(0); style.borderRightWidth = w(1); style.borderBottomWidth = w(0); style.borderLeftWidth = w(1)
+        case 3: style.borderTopWidth = w(0); style.borderRightWidth = w(1); style.borderBottomWidth = w(2); style.borderLeftWidth = w(1)
+        default: style.borderTopWidth = w(0); style.borderRightWidth = w(1); style.borderBottomWidth = w(2); style.borderLeftWidth = w(3)
+        }
     }
 
     fileprivate static func shorthandBackgroundColor(_ value: String) -> String {

@@ -70,9 +70,18 @@ enum PageFragmentation {
         }
 
         mutating func placeText(_ frag: TextFragment) {
-            let target = max(0, Int(floor(frag.rect.minY / pageHeight)))
+            var target = max(0, Int(floor(frag.rect.minY / pageHeight)))
+            let pageLocalY = frag.rect.minY - CGFloat(target) * pageHeight
+            var adjustedY = pageLocalY
+            // Line boxes never split: a line that fits a page but not the
+            // remaining space moves wholesale to the next page (basic
+            // fragmentation; no orphan/widow control yet).
+            if frag.rect.height <= pageHeight, pageLocalY + frag.rect.height > pageHeight + 0.001 {
+                target += 1
+                adjustedY = 0
+            }
             advanceToPage(target)
-            let dy = -pageOriginY
+            let dy = adjustedY - frag.rect.minY
             pageItems.append(.text(TextFragment(
                 sourceRange: frag.sourceRange,
                 nodeID: frag.nodeID,
@@ -99,9 +108,18 @@ enum PageFragmentation {
         }
 
         mutating func placeImage(_ frag: ImageFragment) {
-            let target = max(0, Int(floor(frag.rect.minY / pageHeight)))
+            var target = max(0, Int(floor(frag.rect.minY / pageHeight)))
+            let pageLocalY = frag.rect.minY - CGFloat(target) * pageHeight
+            var adjustedY = pageLocalY
+            // Atomic items that fit a page but not the remaining space move
+            // wholesale to the next page (spec: "move wholesale to the next
+            // page when they do not fit").
+            if frag.rect.height <= pageHeight, pageLocalY + frag.rect.height > pageHeight + 0.001 {
+                target += 1
+                adjustedY = 0
+            }
             advanceToPage(target)
-            let dy = -pageOriginY
+            let dy = adjustedY - frag.rect.minY
             pageItems.append(.image(ImageFragment(
                 source: frag.source,
                 image: frag.image,

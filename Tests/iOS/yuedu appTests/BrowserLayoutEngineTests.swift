@@ -258,9 +258,9 @@ struct InlineLayoutTests {
         style.textAlign = .left
         let runs = [
             InlineRun(text: "The quick brown fox jumps over the lazy dog.", style: style,
-                      sourceRange: NSRange(location: 0, length: 45)),
+                      sourceRange: NSRange(location: 0, length: 44)),
             InlineRun(text: " Padding makes layout robust.", style: style,
-                      sourceRange: NSRange(location: 45, length: 29)),
+                      sourceRange: NSRange(location: 44, length: 29)),
         ]
         let lines = InlineLayout.layoutLines(runs: runs, maxWidth: 150, rootFontSize: 16,
                                              lineHeight: nil, sourceText: "The quick brown fox jumps over the lazy dog. Padding makes layout robust.")
@@ -305,7 +305,9 @@ struct PageFragmentationTests {
         _ = BlockLayout.layOut(root: block, containerWidth: 300)
         let pages = PageFragmentation.fragment(box: block, pageSize: CGSize(width: 300, height: 100))
         #expect(pages.count == 4)                      // 400pt content / 100pt pages
-        #expect(pages.map(\.fragments.count) == [3, 2, 3, 2])
+        // Whole line boxes move to the next page when they don't fit the
+        // remaining space: lines 0,1 | 2,3,4 | 5,6 | 7,8,9.
+        #expect(pages.map(\.fragments.count) == [2, 3, 2, 3])
         for page in pages {
             #expect(page.index >= 0)
             #expect(!page.fragments.isEmpty)

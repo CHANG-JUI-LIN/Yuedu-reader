@@ -145,9 +145,40 @@ enum InlineLayout {
                 xCursor += width
             }
 
-            // Trim edge spaces from the first/last run ranges so concatenating
-            // visible fragments reproduces the rendered text exactly.
-            trimEdgeWhitespace(from: &lineRuns, sourceText: sourceText)
+            // The breaker's measured line width (≤ maxWidth) is authoritative:
+            // per-run slice measures can drift a few points (e.g. a restored
+            // trailing space or cross-run kerning). Clamp the last TEXT run so
+            // the line never overflows the column. Atomic runs keep their
+            // exact size.
+            if let last = lineRuns.last, last.atomic == nil {
+                let clampedWidth: CGFloat
+                if lineRuns.count == 1 {
+                    clampedWidth = breakInfo.width
+                } else {
+                    let sumOthers = lineRuns.dropLast().reduce(CGFloat(0)) { $0 + $1.width }
+                    clampedWidth = max(0, breakInfo.width - sumOthers)
+                }
+                lineRuns[lineRuns.count - 1] = LineRun(
+                    sourceRange: last.sourceRange,
+                    x: last.x,
+                    width: clampedWidth,
+                    style: last.style, font: last.font,
+                    nodeID: last.nodeID, linkTarget: last.linkTarget, atomic: last.atomic
+                )
+            }
+
+            // Collapsing whitespace modes remove leading whitespace at the
+            // START of a rendered line (e.g. after a <br> or pre-line newline).
+            // The range is trimmed and the run shifts right by the removed
+            // advance; trailing spaces stay in ranges (they are part of the
+            // line's rendered advance and keep source parity exact).
+            trimLineLeadingWhitespace(from: &lineRuns, sourceText: sourceText)
+
+            // The FINAL line of the whole text stream also trims trailing
+            // whitespace (CSS: block-edge whitespace is not rendered).
+            if breakInfo.range.location + breakInfo.range.length >= attributed.length {
+                trimLineTrailingWhitespace(from: &lineRuns, sourceText: sourceText)
+            }
 
             let height = lineHeight
                 ?? runs.first?.style.lineHeight
@@ -173,44 +204,74 @@ enum InlineLayout {
         return result
     }
 
-    /// Strips leading/trailing spaces from a line's run ranges (CSS: collapsed
-    /// whitespace at line edges is not rendered). Widths are kept as measured —
-    /// browsers include the trailing space in hit areas.
-    private static func trimEdgeWhitespace(from runs: inout [LineRun], sourceText: String) {
-        func isSpace(_ index: Int) -> Bool {
-            let c = (sourceText as NSString).character(at: index)
-            return c == 0x20 || c == 0x09
-        }
-        if var first = runs.first {
+    /// Removes leading whitespace from the first run of a line when the run's
+    /// whitespace mode collapses spaces (normal/nowrap/preLine). The run's x
+    /// advances by the removed advance so hit-testing stays aligned.
+    private static func trimLineLeadingWhitespace(from runs: inout [LineRun], sourceText: String) {
+        let ns = sourceText as NSString
+        while var first = runs.first {
+            if first.atomic != nil { return }
+            let mode = first.style.whiteSpace
+            guard mode == .normal || mode == .nowrap || mode == .preLine else { return }
+            guard first.sourceRange.location >= 0,
+                  first.sourceRange.location + first.sourceRange.length <= ns.length else { return }
             var advance = 0
-            while advance < first.sourceRange.length, isSpace(first.sourceRange.location + advance) {
-                advance += 1
+            while advance < first.sourceRange.length {
+                let c = ns.character(at: first.sourceRange.location + advance)
+                if c == 0x20 || c == 0x09 { advance += 1 } else { break }
             }
-            if advance > 0 {
+            guard advance > 0 else { return }
+            let spaceWidth: CGFloat = {
+                let space = NSAttributedString(string: String(repeating: " ", count: advance),
+                                               attributes: [.font: first.font])
+                let spaceLine = CTLineCreateWithAttributedString(space)
+                return CTLineGetTypographicBounds(spaceLine, nil, nil, nil)
+            }()
+            let newLength = first.sourceRange.length - advance
+            if newLength > 0 {
                 first = LineRun(
-                    sourceRange: NSRange(location: first.sourceRange.location + advance,
-                                         length: first.sourceRange.length - advance),
-                    x: first.x, width: first.width, style: first.style, font: first.font,
+                    sourceRange: NSRange(location: first.sourceRange.location + advance, length: newLength),
+                    x: first.x + spaceWidth,
+                    width: first.width - spaceWidth,
+                    style: first.style, font: first.font,
                     nodeID: first.nodeID, linkTarget: first.linkTarget, atomic: first.atomic
                 )
                 runs[0] = first
+                return
             }
+            // The first run was entirely whitespace: drop it and re-check.
+            runs.removeFirst()
         }
-        if runs.count > 1, var last = runs.last {
-            var tail = 0
-            while tail < last.sourceRange.length,
-                  isSpace(last.sourceRange.location + last.sourceRange.length - 1 - tail) {
-                tail += 1
-            }
-            if tail > 0 {
-                last = LineRun(
-                    sourceRange: NSRange(location: last.sourceRange.location,
-                                         length: last.sourceRange.length - tail),
-                    x: last.x, width: last.width, style: last.style, font: last.font,
-                    nodeID: last.nodeID, linkTarget: last.linkTarget, atomic: last.atomic
-                )
-                runs[runs.count - 1] = last
-            }
+    }
+
+    /// Removes trailing whitespace from the last run of a line for collapsing
+    /// whitespace modes (block-edge whitespace is not rendered). Width stays
+    /// as measured — browsers include the trailing space in the hit area.
+    private static func trimLineTrailingWhitespace(from runs: inout [LineRun], sourceText: String) {
+        guard var last = runs.last, last.atomic == nil else { return }
+        let mode = last.style.whiteSpace
+        guard mode == .normal || mode == .nowrap || mode == .preLine else { return }
+        let ns = sourceText as NSString
+        // Defensive: malformed ranges must never crash the app via an objc
+        // exception (NSString.character(at:) throws NSRangeException).
+        guard last.sourceRange.location >= 0,
+              last.sourceRange.location + last.sourceRange.length <= ns.length else { return }
+        var tail = 0
+        while tail < last.sourceRange.length {
+            let c = ns.character(at: last.sourceRange.location + last.sourceRange.length - 1 - tail)
+            if c == 0x20 || c == 0x09 { tail += 1 } else { break }
+        }
+        guard tail > 0 else { return }
+        let newLength = last.sourceRange.length - tail
+        if newLength > 0 {
+            last = LineRun(
+                sourceRange: NSRange(location: last.sourceRange.location, length: newLength),
+                x: last.x, width: last.width, style: last.style, font: last.font,
+                nodeID: last.nodeID, linkTarget: last.linkTarget, atomic: last.atomic
+            )
+            runs[runs.count - 1] = last
+        } else {
+            runs.removeLast()
         }
     }
 
