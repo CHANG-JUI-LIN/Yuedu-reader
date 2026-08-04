@@ -118,3 +118,74 @@ struct ComputedStyleTreeTests {
         #expect(strong.style.color?.isEqual(UIColor.blue) == true)
     }
 }
+
+struct BlockLayoutTests {
+    func style(width: CSSLength = .auto, ml: CSSLength = .px(0), mr: CSSLength = .px(0),
+               pt: CGFloat = 0, pb: CGFloat = 0, bt: CGFloat = 0) -> ComputedStyle {
+        var s = ComputedStyle(fontSize: 17, fontFamilies: ["PingFangSC-Regular"])
+        s.width = width; s.marginLeft = ml; s.marginRight = mr
+        s.paddingTop = .px(pt); s.paddingBottom = .px(pb)
+        s.borderTopWidth = bt
+        return s
+    }
+
+    @Test func stacksChildrenVertically() {
+        let childA = BlockBox(style: style(), boxType: .block)
+        let childB = BlockBox(style: style(), boxType: .block)
+        let root = BlockBox(style: style(), boxType: .block, children: [childA, childB])
+        _ = BlockLayout.layOut(root: root, containerWidth: 200)
+        #expect(childA.frame == CGRect(x: 0, y: 0, width: 200, height: 0))
+        #expect(childB.frame == CGRect(x: 0, y: 0, width: 200, height: 0))
+        #expect(root.contentSize.height == 0)
+    }
+
+    @Test func fillsContainerWidthWhenAuto() {
+        let child = BlockBox(style: style(), boxType: .block)
+        let root = BlockBox(style: style(), boxType: .block, children: [child])
+        _ = BlockLayout.layOut(root: root, containerWidth: 200)
+        #expect(child.frame.width == 200)
+    }
+
+    @Test func percentWidthResolvesAgainstContainer() {
+        var s = style()
+        s.width = .percent(0.5)
+        let child = BlockBox(style: s, boxType: .block)
+        let root = BlockBox(style: style(), boxType: .block, children: [child])
+        _ = BlockLayout.layOut(root: root, containerWidth: 200)
+        #expect(child.contentSize.width == 100)
+    }
+
+    @Test func autoMarginsCenterFixedWidth() {
+        var s = style()
+        s.width = .px(100)
+        s.marginLeft = .auto
+        s.marginRight = .auto
+        let child = BlockBox(style: s, boxType: .block)
+        let root = BlockBox(style: style(), boxType: .block, children: [child])
+        _ = BlockLayout.layOut(root: root, containerWidth: 200)
+        #expect(child.frame.minX == 50)
+        #expect(child.margins.left == 50)
+    }
+
+    @Test func paddingAndBorderConsumeWidth() {
+        var s = style()
+        s.paddingLeft = .px(10)
+        s.paddingRight = .px(10)
+        s.borderLeftWidth = 2
+        s.borderRightWidth = 2
+        let child = BlockBox(style: s, boxType: .block)
+        let root = BlockBox(style: style(), boxType: .block, children: [child])
+        _ = BlockLayout.layOut(root: root, containerWidth: 200)
+        #expect(child.contentSize.width == 176) // 200 - 20 - 4
+    }
+
+    @Test func contentHeightFromChildren() {
+        var childS = style()
+        childS.marginTop = .px(10); childS.marginBottom = .px(10)
+        var child = BlockBox(style: childS, boxType: .block)
+        _ = BlockLayout.layOut(root: child, containerWidth: 200) // empty: height auto = 0
+        let root = BlockBox(style: style(), boxType: .block, children: [child])
+        _ = BlockLayout.layOut(root: root, containerWidth: 200)
+        #expect(root.contentSize.height == 20) // margins of empty child collapse into parent? see Task 6
+    }
+}
