@@ -1905,18 +1905,6 @@ final class CoreTextPaginator {
                         at: max(0, CTRunGetStringRange(run).location),
                         effectiveRange: nil
                     ) as? NSParagraphStyle
-                    let flush: CGFloat
-                    switch paragraphStyle?.alignment ?? .natural {
-                    case .center:
-                        flush = 0.5
-                    case .right:
-                        flush = 1
-                    default:
-                        flush = 0
-                    }
-                    let penOffset = CGFloat(
-                        CTLineGetPenOffsetForFlush(line, Double(flush), Double(contentPathRect.width))
-                    )
 
                     var runAscent: CGFloat = 0
                     var runDescent: CGFloat = 0
@@ -2000,9 +1988,17 @@ final class CoreTextPaginator {
                                         height: info.drawHeight
                                     )
                                 } else {
+                                    // `lineOrigin.x` (CTFrameGetLineOrigins) already carries the
+                                    // paragraph's flush — that is why CTFrameDraw renders centered
+                                    // and right-aligned lines correctly, and why hit-testing and
+                                    // annotation rects treat it as the line's left edge. Adding
+                                    // CTLineGetPenOffsetForFlush on top double-counted it, which
+                                    // pinned a centered chapter title's 章名段评 bubble to the right
+                                    // margin and pushed it clean off the page when the title was
+                                    // right-aligned.
                                     let textAdvance = CTLineGetOffsetForStringIndex(line, runRange.location, nil)
                                     rect = CGRect(
-                                        x: contentPathRect.origin.x + lineOrigin.x + penOffset + textAdvance + info.paddingLeft,
+                                        x: contentPathRect.origin.x + lineOrigin.x + textAdvance + info.paddingLeft,
                                         y: uiY,
                                         width: info.drawWidth,
                                         height: info.drawHeight
