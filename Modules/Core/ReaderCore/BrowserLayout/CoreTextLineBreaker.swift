@@ -1,3 +1,4 @@
+import CoreFoundation
 import CoreText
 import Foundation
 import UIKit
@@ -16,6 +17,7 @@ final class CoreTextLineBreaker {
 
     func breakLines(attributed: NSAttributedString, maxWidth: CGFloat) -> [LineBreak] {
         let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+        let cfString = attributed.string as CFString
         var lines: [LineBreak] = []
         var charIndex = 0
         let total = attributed.length
@@ -36,6 +38,22 @@ final class CoreTextLineBreaker {
                 line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
                 (width, ascent, descent) = metrics(for: line)
             }
+            // The trim above can land inside a grapheme cluster (emoji ZWJ
+            // sequences, combining marks). Never cut a cluster: if the last
+            // kept character belongs to a cluster that extends past the line,
+            // snap DOWN to the cluster's start.
+            if count > 1 {
+                let cluster = (attributed.string as NSString).rangeOfComposedCharacterSequence(at: count - 1)
+                let lineEnd = charIndex + count
+                if cluster.location + cluster.length > lineEnd {
+                    count = cluster.location - charIndex
+                    if count > 0 {
+                        line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
+                        (width, ascent, descent) = metrics(for: line)
+                    }
+                }
+            }
+            guard count > 0 else { break }
             lines.append(LineBreak(range: NSRange(location: charIndex, length: count),
                                    width: width, ascent: ascent, descent: descent))
             charIndex += count

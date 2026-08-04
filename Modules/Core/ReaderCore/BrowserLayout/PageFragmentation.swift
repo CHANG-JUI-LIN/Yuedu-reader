@@ -2,9 +2,36 @@ import CoreGraphics
 import Foundation
 import UIKit
 
-struct TextFragment { let range: NSRange; let rect: CGRect; let baselineY: CGFloat; let font: UIFont; let color: UIColor }
-struct FillFragment { let rect: CGRect; let color: UIColor; let cornerRadius: CGFloat }
-struct ImageFragment { let rect: CGRect; let source: String; let alt: String? }
+struct TextFragment {
+    let sourceRange: NSRange
+    let nodeID: Int
+    let linkTarget: String?
+    let writingMode: ReaderWritingMode
+    let rect: CGRect
+    let baselineY: CGFloat
+    let font: UIFont
+    let color: UIColor
+}
+
+struct FillFragment {
+    let rect: CGRect
+    let color: UIColor
+    let cornerRadius: CGFloat
+    let nodeID: Int
+    let writingMode: ReaderWritingMode
+}
+
+struct ImageFragment {
+    let source: String
+    let image: UIImage?
+    let sourceRange: NSRange
+    let nodeID: Int
+    let linkTarget: String?
+    let writingMode: ReaderWritingMode
+    let rect: CGRect
+    let alt: String?
+}
+
 indirect enum Fragment {
     case text(TextFragment)
     case fill(FillFragment)
@@ -18,7 +45,7 @@ struct PageFragments {
     let fragments: [Fragment]
 }
 
-/// Phase-1 page fragmentation: walks the laid-out block tree and pages every
+/// Phase-1.5 page fragmentation: walks the laid-out block tree and pages every
 /// fragment by its ABSOLUTE Y coordinate. Blocks are split at line boundaries;
 /// atomic items (images) move wholesale to the next page when they do not fit.
 /// No orphan/widow rules yet. Fills do not split across pages (accepted Phase 1).
@@ -47,7 +74,10 @@ enum PageFragmentation {
             advanceToPage(target)
             let dy = -pageOriginY
             pageItems.append(.text(TextFragment(
-                range: frag.range,
+                sourceRange: frag.sourceRange,
+                nodeID: frag.nodeID,
+                linkTarget: frag.linkTarget,
+                writingMode: frag.writingMode,
                 rect: frag.rect.offsetBy(dx: 0, dy: dy),
                 baselineY: frag.baselineY + dy,
                 font: frag.font,
@@ -62,17 +92,39 @@ enum PageFragmentation {
             pageItems.append(.fill(FillFragment(
                 rect: frag.rect.offsetBy(dx: 0, dy: dy),
                 color: frag.color,
-                cornerRadius: frag.cornerRadius
+                cornerRadius: frag.cornerRadius,
+                nodeID: frag.nodeID,
+                writingMode: frag.writingMode
+            )))
+        }
+
+        mutating func placeImage(_ frag: ImageFragment) {
+            let target = max(0, Int(floor(frag.rect.minY / pageHeight)))
+            advanceToPage(target)
+            let dy = -pageOriginY
+            pageItems.append(.image(ImageFragment(
+                source: frag.source,
+                image: frag.image,
+                sourceRange: frag.sourceRange,
+                nodeID: frag.nodeID,
+                linkTarget: frag.linkTarget,
+                writingMode: frag.writingMode,
+                rect: frag.rect.offsetBy(dx: 0, dy: dy),
+                alt: frag.alt
             )))
         }
     }
 
-    static func fragment(box: BlockBox, pageSize: CGSize) -> [PageFragments] {
+    static func fragment(
+        box: BlockBox,
+        pageSize: CGSize,
+        writingMode: ReaderWritingMode = .horizontal
+    ) -> [PageFragments] {
         var frag = Fragmenter(
             pageHeight: max(1, pageSize.height),
             pageRect: CGRect(origin: .zero, size: pageSize)
         )
-        walk(box: box, contentOrigin: ContentOffset(x: 0, y: 0), fragmenter: &frag)
+        walk(box: box, contentOrigin: ContentOffset(x: 0, y: 0), fragmenter: &frag, writingMode: writingMode)
         if !frag.pageItems.isEmpty {
             frag.pages.append(PageFragments(index: frag.currentIndex, pageRect: frag.pageRect, fragments: frag.pageItems))
         }
@@ -85,7 +137,12 @@ enum PageFragmentation {
     }
 
     /// `contentOrigin` = absolute position of THIS box's content-box top-left.
-    private static func walk(box: BlockBox, contentOrigin: ContentOffset, fragmenter: inout Fragmenter) {
+    private static func walk(
+        box: BlockBox,
+        contentOrigin: ContentOffset,
+        fragmenter: inout Fragmenter,
+        writingMode: ReaderWritingMode
+    ) {
         // Border-box rect in absolute coordinates.
         let borderX = contentOrigin.x - box.borders.left - box.padding.left
         let borderY = contentOrigin.y - box.borders.top - box.padding.top
@@ -94,7 +151,9 @@ enum PageFragmentation {
             fragmenter.placeFill(FillFragment(
                 rect: CGRect(x: borderX, y: borderY, width: box.frame.width, height: box.frame.height),
                 color: bg,
-                cornerRadius: box.style.borderRadius
+                cornerRadius: box.style.borderRadius,
+                nodeID: -1,
+                writingMode: writingMode
             ))
         }
         if box.borders.top > 0 || box.borders.bottom > 0 || box.borders.left > 0 || box.borders.right > 0 {
@@ -102,7 +161,9 @@ enum PageFragmentation {
             fragmenter.placeFill(FillFragment(
                 rect: CGRect(x: borderX, y: borderY, width: box.frame.width, height: borderW),
                 color: box.style.borderColor ?? .black,
-                cornerRadius: 0
+                cornerRadius: 0,
+                nodeID: -1,
+                writingMode: writingMode
             ))
         }
 
@@ -111,12 +172,52 @@ enum PageFragmentation {
                 x: contentOrigin.x + child.frame.minX + child.borders.left + child.padding.left,
                 y: contentOrigin.y + child.frame.minY + child.borders.top + child.padding.top
             )
-            walk(box: child, contentOrigin: childContent, fragmenter: &fragmenter)
+            walk(box: child, contentOrigin: childContent, fragmenter: &fragmenter, writingMode: writingMode)
+        }
+
+        if let attachment = box.imageAttachment {
+            let rect = CGRect(
+                x: contentOrigin.x,
+                y: contentOrigin.y,
+                width: attachment.usedSize.width,
+                height: attachment.usedSize.height
+            )
+            fragmenter.placeImage(ImageFragment(
+                source: attachment.source,
+                image: attachment.image,
+                sourceRange: NSRange(location: 0, length: 0),
+                nodeID: -1,
+                linkTarget: nil,
+                writingMode: writingMode,
+                rect: rect,
+                alt: nil
+            ))
+            return
         }
 
         for line in box.lines {
             let lineHeight = line.height
             for run in line.runs {
+                if let atomic = run.atomic {
+                    // Inline replaced element: baseline-aligned bottom edge.
+                    let rect = CGRect(
+                        x: contentOrigin.x + line.contentX + run.x,
+                        y: contentOrigin.y + line.baseline - atomic.usedSize.height,
+                        width: atomic.usedSize.width,
+                        height: atomic.usedSize.height
+                    )
+                    fragmenter.placeImage(ImageFragment(
+                        source: atomic.source,
+                        image: atomic.image,
+                        sourceRange: run.sourceRange,
+                        nodeID: run.nodeID,
+                        linkTarget: run.linkTarget,
+                        writingMode: writingMode,
+                        rect: rect,
+                        alt: nil
+                    ))
+                    continue
+                }
                 let rect = CGRect(
                     x: contentOrigin.x + line.contentX + run.x,
                     y: contentOrigin.y + line.top,
@@ -124,7 +225,10 @@ enum PageFragmentation {
                     height: lineHeight
                 )
                 fragmenter.placeText(TextFragment(
-                    range: run.range,
+                    sourceRange: run.sourceRange,
+                    nodeID: run.nodeID,
+                    linkTarget: run.linkTarget,
+                    writingMode: writingMode,
                     rect: rect,
                     baselineY: contentOrigin.y + line.baseline,
                     font: run.font,

@@ -9,11 +9,29 @@ final class ComputedStyleNode {
     let element: Element?
     let style: ComputedStyle
     let children: [StyleTreeChild]
-    init(tag: String, element: Element?, style: ComputedStyle, children: [StyleTreeChild]) {
+    /// Stable identity assigned by `ComputedStyleTreeBuilder` (document order).
+    /// Fragments carry it so a rendered character can be traced back to its DOM node.
+    let nodeID: Int
+    /// Resolved href from the nearest ancestor `<a>` (nil when not inside a link).
+    let linkTarget: String?
+    /// This element's own `id` attribute (anchor target), nil when absent.
+    let anchorID: String?
+    init(
+        tag: String,
+        element: Element?,
+        style: ComputedStyle,
+        children: [StyleTreeChild],
+        nodeID: Int,
+        linkTarget: String?,
+        anchorID: String?
+    ) {
         self.tag = tag
         self.element = element
         self.style = style
         self.children = children
+        self.nodeID = nodeID
+        self.linkTarget = linkTarget
+        self.anchorID = anchorID
     }
 }
 
@@ -49,6 +67,7 @@ final class ComputedStyleTreeBuilder {
     private let textColor: UIColor
     private let backgroundColor: UIColor
     private let configFontFamilies: [String]
+    private var nextNodeID = 1
 
     init(rules: [CSSRule], config: BrowserLayoutConfig) {
         self.rules = rules
@@ -59,16 +78,26 @@ final class ComputedStyleTreeBuilder {
     }
 
     func buildTree(body: Element) -> ComputedStyleNode {
+        let rootStyle = baseStyle(for: body)
         let root = ComputedStyleNode(
-            tag: "body", element: body, style: baseStyle(for: body),
-            children: children(of: body, parentStyle: baseStyle(for: body), parentElement: body)
+            tag: "body", element: body, style: rootStyle,
+            children: children(of: body, parentStyle: rootStyle, parentElement: body, inheritedLink: nil),
+            nodeID: nextNodeID,
+            linkTarget: nil,
+            anchorID: linkAnchorID(of: body)
         )
+        nextNodeID += 1
         return root
     }
 
     // MARK: - Children
 
-    private func children(of element: Element, parentStyle: ComputedStyle, parentElement: Element) -> [StyleTreeChild] {
+    private func children(
+        of element: Element,
+        parentStyle: ComputedStyle,
+        parentElement: Element,
+        inheritedLink: String?
+    ) -> [StyleTreeChild] {
         var result: [StyleTreeChild] = []
         for node in element.getChildNodes() {
             if let text = node as? TextNode {
@@ -76,14 +105,30 @@ final class ComputedStyleTreeBuilder {
             } else if let child = node as? Element {
                 let style = resolvedStyle(for: child, parent: parentStyle, parentElement: element)
                 if style.isHidden { continue }
+                let childLink: String?
+                if child.tagName().lowercased() == "a", let href = try? child.attr("href"), !href.isEmpty {
+                    childLink = href
+                } else {
+                    childLink = inheritedLink
+                }
                 let childNode = ComputedStyleNode(
                     tag: child.tagName().lowercased(), element: child, style: style,
-                    children: children(of: child, parentStyle: style, parentElement: child)
+                    children: children(of: child, parentStyle: style, parentElement: child, inheritedLink: childLink),
+                    nodeID: nextNodeID,
+                    linkTarget: childLink,
+                    anchorID: linkAnchorID(of: child)
                 )
+                nextNodeID += 1
                 result.append(.element(childNode))
             }
         }
         return result
+    }
+
+    private func linkAnchorID(of element: Element) -> String? {
+        guard element.hasAttr("id") else { return nil }
+        let value = (try? element.attr("id")) ?? ""
+        return value.isEmpty ? nil : value
     }
 
     // MARK: - Cascade for one element
@@ -197,8 +242,18 @@ enum ComputedStylePropertyApplier {
             if let lh = resolveLineHeight(value, fontSize: style.fontSize, root: ctx.rootFontSize) {
                 style.lineHeight = lh
             }
+        case "white-space":
+            switch value {
+            case "normal": style.whiteSpace = .normal
+            case "nowrap": style.whiteSpace = .nowrap
+            case "pre": style.whiteSpace = .pre
+            case "pre-wrap": style.whiteSpace = .preWrap
+            case "pre-line": style.whiteSpace = .preLine
+            default: break
+            }
         case "width": if let l = CSSLengthResolver.parse(value) { style.width = l }
         case "height": if let l = CSSLengthResolver.parse(value) { style.height = l }
+        case "max-width": if let l = CSSLengthResolver.parse(value) { style.maxWidth = l }
         case "margin": applyMarginShorthand(value, to: &style)
         case "margin-top": if let l = CSSLengthResolver.parse(value) { style.marginTop = l }
         case "margin-right": if let l = CSSLengthResolver.parse(value) { style.marginRight = l }

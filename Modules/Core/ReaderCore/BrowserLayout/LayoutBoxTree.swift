@@ -2,12 +2,26 @@ import CoreGraphics
 import Foundation
 import UIKit
 
+/// A replaced element (Phase 1.5: images only). `usedSize` is the final laid-out
+/// size after CSS width/height/max-width resolution; intrinsic aspect is preserved.
+struct AtomicInline {
+    let source: String
+    let image: UIImage
+    let usedSize: CGSize
+}
+
+/// One run of inline content inside a line box. `sourceRange` points into the
+/// chapter's `sourceText` (see `BrowserLayoutDocument`) — concatenating line-run
+/// ranges in document order reassembles the visible text.
 struct LineRun {
-    let range: NSRange                // into the chapter attributed string built by InlineLayout
+    let sourceRange: NSRange
     let x: CGFloat                    // left edge of the run within the line's content box
     let width: CGFloat
     let style: ComputedStyle
     let font: UIFont
+    let nodeID: Int
+    let linkTarget: String?
+    let atomic: AtomicInline?         // non-nil = replaced element run (image)
 }
 
 struct LayoutLine {
@@ -33,6 +47,8 @@ final class BlockBox {
     let boxType: BlockBoxType
     var children: [BlockBox]
     var lines: [LayoutLine]
+    /// Non-nil when this box IS a replaced element (block-level image).
+    var imageAttachment: AtomicInline? = nil
     var frame = CGRect.zero
     var contentSize = CGSize.zero
     var margins = EdgeSizes.zero

@@ -14,6 +14,14 @@ struct EdgeSizes: Equatable {
 
 enum CSSDisplay: Equatable { case block, inline, inlineBlock, none }
 
+enum WhiteSpaceMode: Equatable {
+    case normal
+    case nowrap
+    case pre
+    case preWrap
+    case preLine
+}
+
 /// Computed style: the result of cascading + inheritance. Box-model measures
 /// are stored as `CSSLength` (specified values); the layout stage resolves
 /// percentages/auto against the containing block into *used* values.
@@ -30,10 +38,12 @@ struct ComputedStyle: Equatable {
     var backgroundColor: UIColor?
     var textAlign: NSTextAlignment = .natural
     var lineHeight: CGFloat?            // nil = normal (ascent/descent)
+    var whiteSpace: WhiteSpaceMode = .normal
 
     // Box model (specified)
     var width: CSSLength = .auto
     var height: CSSLength = .auto
+    var maxWidth: CSSLength? = nil      // nil = none
     var marginTop: CSSLength = .px(0)
     var marginRight: CSSLength = .px(0)
     var marginBottom: CSSLength = .px(0)
@@ -58,7 +68,8 @@ struct ComputedStyle: Equatable {
         color: UIColor? = nil,
         backgroundColor: UIColor? = nil,
         textAlign: NSTextAlignment = .natural,
-        lineHeight: CGFloat? = nil
+        lineHeight: CGFloat? = nil,
+        whiteSpace: WhiteSpaceMode = .normal
     ) {
         self.fontSize = fontSize
         self.fontFamilies = fontFamilies
@@ -68,6 +79,7 @@ struct ComputedStyle: Equatable {
         self.backgroundColor = backgroundColor
         self.textAlign = textAlign
         self.lineHeight = lineHeight
+        self.whiteSpace = whiteSpace
     }
 }
 
@@ -81,7 +93,8 @@ extension ComputedStyle {
             color: parent.color,
             backgroundColor: nil,
             textAlign: parent.textAlign,
-            lineHeight: parent.lineHeight
+            lineHeight: parent.lineHeight,
+            whiteSpace: parent.whiteSpace
         )
     }
 }
@@ -97,7 +110,7 @@ enum UserAgentStyle {
              "li", "dl", "dt", "dd", "hr", "pre", "address", "form", "fieldset":
             style.display = .block
         case "span", "a", "em", "i", "strong", "b", "u", "s", "small", "code",
-             "q", "cite", "mark", "time", "sub", "sup", "abbr", "label":
+             "q", "cite", "mark", "time", "sub", "sup", "abbr", "label", "br":
             style.display = .inline
             if tag == "em" || tag == "i" { style.isItalic = true }
             if tag == "strong" || tag == "b" { style.fontWeight = 700 }
@@ -141,6 +154,8 @@ enum UserAgentStyle {
         case "body":
             style.marginTop = .px(8); style.marginRight = .px(8)
             style.marginBottom = .px(8); style.marginLeft = .px(8)
+        case "pre":
+            style.whiteSpace = .pre
         default:
             break
         }

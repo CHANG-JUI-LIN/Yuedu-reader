@@ -2,81 +2,155 @@ import CoreText
 import Foundation
 import UIKit
 
+/// One unit of inline content. `text` arrives ALREADY whitespace-collapsed by
+/// `BoxTreeBuilder` (per `WhiteSpaceMode`); `sourceRange` is the run's span in
+/// the chapter `sourceText`; `atomic` non-nil means a replaced element (image).
 struct InlineRun {
     let text: String
     let style: ComputedStyle
+    let sourceRange: NSRange
+    let nodeID: Int
+    let linkTarget: String?
+    /// True for `<br>`: the text is "\n" and must survive all whitespace modes.
+    let isHardBreak: Bool
+    let atomic: AtomicInline?
+
+    init(
+        text: String,
+        style: ComputedStyle,
+        sourceRange: NSRange = NSRange(location: 0, length: 0),
+        nodeID: Int = -1,
+        linkTarget: String? = nil,
+        isHardBreak: Bool = false,
+        atomic: AtomicInline? = nil
+    ) {
+        self.text = text
+        self.style = style
+        self.sourceRange = sourceRange
+        self.nodeID = nodeID
+        self.linkTarget = linkTarget
+        self.isHardBreak = isHardBreak
+        self.atomic = atomic
+    }
 }
 
-/// Inline formatting: collapses whitespace, shapes text via CoreText
-/// (CoreTextLineBreaker), and stacks line boxes under the CSS line-height
-/// model. Only fonts/colors are attached for metering; no glyph drawing.
+/// Inline formatting: builds the attributed string from pre-collapsed runs,
+/// shapes text via CoreText (CoreTextLineBreaker), and stacks line boxes under
+/// the CSS line-height model. Runs carry source ranges; line-run slices keep
+/// them so fragments can trace back to the source text.
 enum InlineLayout {
 
-    /// Collapses each run's whitespace runs to single spaces, trims, and drops
-    /// empty runs. `\n` becomes a space (Phase 1: `<br>`/`white-space` support
-    /// is deferred).
-    static func collapseRuns(_ runs: [InlineRun]) -> [InlineRun] {
-        var out: [InlineRun] = []
-        for run in runs {
-            var text = run.text
-            text = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            text = text.trimmingCharacters(in: .whitespaces)
-            if text.isEmpty { continue }
-            out.append(InlineRun(text: text, style: run.style))
+    /// Shared whitespace collapse for one text node. `\n` (from `<br>` or
+    /// preserved newlines) is never collapsed away. Collapsing per CSS mode:
+    /// - normal / nowrap: all whitespace runs (incl. `\n`) → single space
+    /// - pre / preWrap: verbatim
+    /// - preLine: horizontal whitespace runs → single space, `\n` preserved
+    static func collapseText(_ text: String, mode: WhiteSpaceMode) -> String {
+        switch mode {
+        case .normal, .nowrap:
+            return text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        case .pre, .preWrap:
+            return text
+        case .preLine:
+            return text.replacingOccurrences(of: #"[ \t\r\f]+"#, with: " ", options: .regularExpression)
         }
-        return out
     }
 
-    static func layoutLines(runs: [InlineRun], maxWidth: CGFloat, rootFontSize: CGFloat, lineHeight: CGFloat?) -> [LayoutLine] {
-        let collapsed = collapseRuns(runs)
-        guard !collapsed.isEmpty else { return [] }
+    static func layoutLines(
+        runs: [InlineRun],
+        maxWidth: CGFloat,
+        rootFontSize: CGFloat,
+        lineHeight: CGFloat?,
+        writingMode: ReaderWritingMode = .horizontal,
+        sourceText: String
+    ) -> [LayoutLine] {
+        guard !runs.isEmpty else { return [] }
 
-        // Build the attributed string mirroring the collapsed runs.
+        // Build the attributed string mirroring the runs. Atomic runs become
+        // U+FFFC with a CTRunDelegate sized to the image so the line breaker
+        // treats them as atomic, unbreakable boxes.
         let attributed = NSMutableAttributedString()
-        for run in collapsed {
-            attributed.append(NSAttributedString(string: run.text, attributes: [
-                .font: font(for: run.style),
-                .foregroundColor: run.style.color ?? .black,
-            ]))
+        var runAttributedStart: [Int] = []   // attributed-string offset per run
+        var attributedCursor = 0
+        var delegateBoxes: [AtomicInlineBox] = []
+        for run in runs {
+            runAttributedStart.append(attributedCursor)
+            if let atomic = run.atomic {
+                let box = AtomicInlineBox(width: atomic.usedSize.width,
+                                          ascent: atomic.usedSize.height * 0.75,
+                                          descent: atomic.usedSize.height * 0.25)
+                delegateBoxes.append(box)
+                var callbacks = AtomicInlineBox.callbacks
+                let delegate = CTRunDelegateCreate(&callbacks, Unmanaged.passUnretained(box).toOpaque())
+                attributed.append(NSAttributedString(string: "\u{FFFC}", attributes: [
+                    kCTRunDelegateAttributeName as NSAttributedString.Key: delegate as Any,
+                    .font: font(for: run.style),
+                ]))
+            } else {
+                attributed.append(NSAttributedString(string: run.text, attributes: [
+                    .font: font(for: run.style),
+                    .foregroundColor: run.style.color ?? .black,
+                ]))
+            }
+            attributedCursor += (run.atomic != nil ? 1 : (run.text as NSString).length)
         }
 
-        let breaks = CoreTextLineBreaker().breakLines(attributed: attributed, maxWidth: maxWidth)
+        let effectiveMaxWidth = (runs.contains { $0.style.whiteSpace == .nowrap })
+            ? CGFloat.greatestFiniteMagnitude
+            : maxWidth
+        let breaks = CoreTextLineBreaker().breakLines(attributed: attributed, maxWidth: effectiveMaxWidth)
         var result: [LayoutLine] = []
         var yTop: CGFloat = 0
         for breakInfo in breaks {
             let lineRange = breakInfo.range
             let lineEnd = lineRange.location + lineRange.length
 
-            // Attribute runs intersecting this line's char range, by offset, not by search.
+            // Attribute runs intersecting this line's char range, by offset.
             var lineRuns: [LineRun] = []
             var xCursor: CGFloat = 0
-            var runCursor = 0
-            for run in collapsed {
-                let runStart = runCursor
-                let runEnd = runStart + (run.text as NSString).length
-                runCursor = runEnd
+            for (index, run) in runs.enumerated() {
+                let runStart = runAttributedStart[index]
+                let runLen = run.atomic != nil ? 1 : (run.text as NSString).length
+                let runEnd = runStart + runLen
                 let intersectStart = max(lineRange.location, runStart)
                 let intersectEnd = min(lineEnd, runEnd)
                 guard intersectEnd > intersectStart else { continue }
-                let sub = attributed.attributedSubstring(
-                    from: NSRange(location: intersectStart, length: intersectEnd - intersectStart)
-                )
-                let subLine = CTLineCreateWithAttributedString(sub)
-                let runWidth = CTLineGetTypographicBounds(subLine, nil, nil, nil)
+
+                // Source range of this slice: shift by the run's source offset.
+                let sliceLen = run.atomic != nil ? 0 : (intersectEnd - intersectStart)
+                let sourceOffset = run.sourceRange.location + max(0, intersectStart - runStart)
+                let sliceSource = NSRange(location: sourceOffset, length: sliceLen)
+
+                let width: CGFloat
+                if let atomic = run.atomic {
+                    width = atomic.usedSize.width
+                } else {
+                    let sub = attributed.attributedSubstring(
+                        from: NSRange(location: intersectStart, length: intersectEnd - intersectStart)
+                    )
+                    let subLine = CTLineCreateWithAttributedString(sub)
+                    width = CTLineGetTypographicBounds(subLine, nil, nil, nil)
+                }
+
                 lineRuns.append(LineRun(
-                    range: NSRange(location: intersectStart, length: intersectEnd - intersectStart),
+                    sourceRange: sliceSource,
                     x: xCursor,
-                    width: runWidth,
+                    width: width,
                     style: run.style,
-                    font: font(for: run.style)
+                    font: font(for: run.style),
+                    nodeID: run.nodeID,
+                    linkTarget: run.linkTarget,
+                    atomic: run.atomic
                 ))
-                xCursor += runWidth
+                xCursor += width
             }
 
-            // Line-height resolution: reader override (param) wins, then the
-            // run style's own line-height, then plain font metrics.
+            // Trim edge spaces from the first/last run ranges so concatenating
+            // visible fragments reproduces the rendered text exactly.
+            trimEdgeWhitespace(from: &lineRuns, sourceText: sourceText)
+
             let height = lineHeight
-                ?? collapsed.first?.style.lineHeight
+                ?? runs.first?.style.lineHeight
                 ?? (breakInfo.ascent + breakInfo.descent)
             let extraLeading = max(0, height - (breakInfo.ascent + breakInfo.descent))
             let baselineOffset = extraLeading / 2 + breakInfo.ascent
@@ -93,7 +167,51 @@ enum InlineLayout {
             ))
             yTop += height
         }
+        // The attributed string (and its delegates) go out of scope here; the
+        // delegate callbacks' dealloc releases each AtomicInlineBox.
+        _ = delegateBoxes
         return result
+    }
+
+    /// Strips leading/trailing spaces from a line's run ranges (CSS: collapsed
+    /// whitespace at line edges is not rendered). Widths are kept as measured —
+    /// browsers include the trailing space in hit areas.
+    private static func trimEdgeWhitespace(from runs: inout [LineRun], sourceText: String) {
+        func isSpace(_ index: Int) -> Bool {
+            let c = (sourceText as NSString).character(at: index)
+            return c == 0x20 || c == 0x09
+        }
+        if var first = runs.first {
+            var advance = 0
+            while advance < first.sourceRange.length, isSpace(first.sourceRange.location + advance) {
+                advance += 1
+            }
+            if advance > 0 {
+                first = LineRun(
+                    sourceRange: NSRange(location: first.sourceRange.location + advance,
+                                         length: first.sourceRange.length - advance),
+                    x: first.x, width: first.width, style: first.style, font: first.font,
+                    nodeID: first.nodeID, linkTarget: first.linkTarget, atomic: first.atomic
+                )
+                runs[0] = first
+            }
+        }
+        if runs.count > 1, var last = runs.last {
+            var tail = 0
+            while tail < last.sourceRange.length,
+                  isSpace(last.sourceRange.location + last.sourceRange.length - 1 - tail) {
+                tail += 1
+            }
+            if tail > 0 {
+                last = LineRun(
+                    sourceRange: NSRange(location: last.sourceRange.location,
+                                         length: last.sourceRange.length - tail),
+                    x: last.x, width: last.width, style: last.style, font: last.font,
+                    nodeID: last.nodeID, linkTarget: last.linkTarget, atomic: last.atomic
+                )
+                runs[runs.count - 1] = last
+            }
+        }
     }
 
     private static func alignmentOffset(alignment: NSTextAlignment, lineWidth: CGFloat, maxWidth: CGFloat) -> CGFloat {
@@ -126,4 +244,35 @@ enum InlineLayout {
         }
         return base
     }
+}
+
+/// Retained by the CTRunDelegate; freed by the delegate's dealloc callback.
+private final class AtomicInlineBox {
+    let width: CGFloat
+    let ascent: CGFloat
+    let descent: CGFloat
+    init(width: CGFloat, ascent: CGFloat, descent: CGFloat) {
+        self.width = width
+        self.ascent = ascent
+        self.descent = descent
+    }
+
+    static let callbacks: CTRunDelegateCallbacks = {
+        var callbacks = CTRunDelegateCallbacks(
+            version: kCTRunDelegateVersion1,
+            dealloc: { ptr in
+                _ = Unmanaged<AtomicInlineBox>.fromOpaque(ptr).takeUnretainedValue()
+            },
+            getAscent: { ptr in
+                Unmanaged<AtomicInlineBox>.fromOpaque(ptr).takeUnretainedValue().ascent
+            },
+            getDescent: { ptr in
+                Unmanaged<AtomicInlineBox>.fromOpaque(ptr).takeUnretainedValue().descent
+            },
+            getWidth: { ptr in
+                Unmanaged<AtomicInlineBox>.fromOpaque(ptr).takeUnretainedValue().width
+            }
+        )
+        return callbacks
+    }()
 }

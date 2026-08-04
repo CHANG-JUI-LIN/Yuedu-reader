@@ -257,10 +257,13 @@ struct InlineLayoutTests {
         style.lineHeight = 24
         style.textAlign = .left
         let runs = [
-            InlineRun(text: "The quick brown fox jumps over the lazy dog.", style: style),
-            InlineRun(text: " Padding makes layout robust.", style: style),
+            InlineRun(text: "The quick brown fox jumps over the lazy dog.", style: style,
+                      sourceRange: NSRange(location: 0, length: 45)),
+            InlineRun(text: " Padding makes layout robust.", style: style,
+                      sourceRange: NSRange(location: 45, length: 29)),
         ]
-        let lines = InlineLayout.layoutLines(runs: runs, maxWidth: 150, rootFontSize: 16, lineHeight: nil)
+        let lines = InlineLayout.layoutLines(runs: runs, maxWidth: 150, rootFontSize: 16,
+                                             lineHeight: nil, sourceText: "The quick brown fox jumps over the lazy dog. Padding makes layout robust.")
         #expect(lines.count >= 2)
         for line in lines {
             #expect(line.height == 24)
@@ -272,19 +275,24 @@ struct InlineLayoutTests {
     @Test func collapsesWhitespaceAcrossRuns() {
         var style = ComputedStyle(fontSize: 16, fontFamilies: ["PingFangSC-Regular"])
         style.lineHeight = 24
-        let collapsed = InlineLayout.collapseRuns([InlineRun(text: "Alpha   Beta\nGamma", style: style)])
-        #expect(collapsed.count == 1)
-        #expect(collapsed[0].text == "Alpha Beta Gamma")
-        let lines = InlineLayout.layoutLines(runs: collapsed, maxWidth: 400, rootFontSize: 16, lineHeight: nil)
-        let total = lines.flatMap(\.runs).map(\.range.length).reduce(0, +)
+        #expect(InlineLayout.collapseText("Alpha   Beta\nGamma", mode: .normal) == "Alpha Beta Gamma")
+        #expect(InlineLayout.collapseText("Alpha   Beta\nGamma", mode: .preLine) == "Alpha Beta\nGamma")
+        #expect(InlineLayout.collapseText("Alpha   Beta\nGamma", mode: .pre) == "Alpha   Beta\nGamma")
+        let collapsed = InlineLayout.collapseText("Alpha   Beta\nGamma", mode: .normal)
+        let runs = [InlineRun(text: collapsed, style: style,
+                              sourceRange: NSRange(location: 0, length: (collapsed as NSString).length))]
+        let lines = InlineLayout.layoutLines(runs: runs, maxWidth: 400, rootFontSize: 16,
+                                             lineHeight: nil, sourceText: collapsed)
+        let total = lines.flatMap(\.runs).map(\.sourceRange.length).reduce(0, +)
         #expect(total == 16)
     }
 }
 
 struct PageFragmentationTests {
     func lineBox(height: CGFloat, top: CGFloat, text: String, style: ComputedStyle) -> LayoutLine {
-        LayoutLine(runs: [LineRun(range: NSRange(location: 0, length: (text as NSString).length),
-                                 x: 0, width: 80, style: style, font: InlineLayout.font(for: style))],
+        LayoutLine(runs: [LineRun(sourceRange: NSRange(location: 0, length: (text as NSString).length),
+                                  x: 0, width: 80, style: style, font: InlineLayout.font(for: style),
+                                  nodeID: 1, linkTarget: nil, atomic: nil)],
                    height: height, ascent: height * 0.75, descent: height * 0.25,
                    top: top, baseline: top + height * 0.75, contentX: 0)
     }
@@ -342,19 +350,24 @@ struct DisplayListTests {
             index: 0,
             pageRect: CGRect(x: 0, y: 0, width: 300, height: 100),
             fragments: [
-                .fill(FillFragment(rect: CGRect(x: 10, y: 0, width: 280, height: 40), color: .red, cornerRadius: 0)),
-                .text(TextFragment(range: NSRange(location: 0, length: 4),
+                .fill(FillFragment(rect: CGRect(x: 10, y: 0, width: 280, height: 40), color: .red,
+                                   cornerRadius: 0, nodeID: 1, writingMode: .horizontal)),
+                .text(TextFragment(sourceRange: NSRange(location: 0, length: 5), nodeID: 2,
+                                   linkTarget: "http://example.com", writingMode: .horizontal,
                                    rect: CGRect(x: 10, y: 4, width: 60, height: 20),
                                    baselineY: 20, font: .systemFont(ofSize: 16), color: .black)),
-                .group([.fill(FillFragment(rect: CGRect(x: 5, y: 50, width: 100, height: 10), color: .blue, cornerRadius: 2))]),
+                .group([.fill(FillFragment(rect: CGRect(x: 5, y: 50, width: 100, height: 10), color: .blue,
+                                           cornerRadius: 2, nodeID: 3, writingMode: .horizontal))]),
             ]
         )
-        let list = DisplayListBuilder.build(for: page)
+        let list = DisplayListBuilder.build(for: page, sourceText: "Link!")
         #expect(list.items.count == 3)
         guard case .fill(let fill) = list.items[0] else { Issue.record("expected fill"); return }
         #expect(fill.color == .red)
         guard case .text(let text) = list.items[1] else { Issue.record("expected text"); return }
         #expect(text.rect == CGRect(x: 10, y: 4, width: 60, height: 20))
+        #expect(text.linkTarget == "http://example.com")
+        #expect(text.text == "Link!")
         guard case .fill(let groupedFill) = list.items[2] else { Issue.record("expected fill from group"); return }
         #expect(groupedFill.cornerRadius == 2)
     }
