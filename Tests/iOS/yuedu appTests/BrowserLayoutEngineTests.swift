@@ -280,3 +280,27 @@ struct InlineLayoutTests {
         #expect(total == 16)
     }
 }
+
+struct PageFragmentationTests {
+    func lineBox(height: CGFloat, top: CGFloat, text: String, style: ComputedStyle) -> LayoutLine {
+        LayoutLine(runs: [LineRun(range: NSRange(location: 0, length: (text as NSString).length),
+                                 x: 0, width: 80, style: style, font: InlineLayout.font(for: style))],
+                   height: height, ascent: height * 0.75, descent: height * 0.25,
+                   top: top, baseline: top + height * 0.75, contentX: 0)
+    }
+
+    @Test func splitsBlockAcrossPages() {
+        var style = ComputedStyle(fontSize: 17, fontFamilies: ["PingFangSC-Regular"])
+        style.color = .black
+        let lines = (0..<10).map { lineBox(height: 40, top: CGFloat($0) * 40, text: "L\($0) ", style: style) }
+        let block = BlockBox(style: style, boxType: .block, lines: lines)
+        _ = BlockLayout.layOut(root: block, containerWidth: 300)
+        let pages = PageFragmentation.fragment(box: block, pageSize: CGSize(width: 300, height: 100))
+        #expect(pages.count == 4)                      // 400pt content / 100pt pages
+        #expect(pages.map(\.fragments.count) == [3, 2, 3, 2])
+        for page in pages {
+            #expect(page.index >= 0)
+            #expect(!page.fragments.isEmpty)
+        }
+    }
+}
