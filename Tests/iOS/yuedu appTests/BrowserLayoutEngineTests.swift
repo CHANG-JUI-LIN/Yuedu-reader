@@ -250,3 +250,33 @@ struct CoreTextLineBreakerTests {
         #expect(lines.count == 2)
     }
 }
+
+struct InlineLayoutTests {
+    @Test func producesWrappedLineBoxes() {
+        var style = ComputedStyle(fontSize: 16, fontFamilies: ["PingFangSC-Regular"])
+        style.lineHeight = 24
+        style.textAlign = .left
+        let runs = [
+            InlineRun(text: "The quick brown fox jumps over the lazy dog.", style: style),
+            InlineRun(text: " Padding makes layout robust.", style: style),
+        ]
+        let lines = InlineLayout.layoutLines(runs: runs, maxWidth: 150, rootFontSize: 16, lineHeight: nil)
+        #expect(lines.count >= 2)
+        for line in lines {
+            #expect(line.height == 24)
+            #expect(line.baseline >= line.top)
+            #expect(line.baseline <= line.top + line.height)
+        }
+    }
+
+    @Test func collapsesWhitespaceAcrossRuns() {
+        var style = ComputedStyle(fontSize: 16, fontFamilies: ["PingFangSC-Regular"])
+        style.lineHeight = 24
+        let collapsed = InlineLayout.collapseRuns([InlineRun(text: "Alpha   Beta\nGamma", style: style)])
+        #expect(collapsed.count == 1)
+        #expect(collapsed[0].text == "Alpha Beta Gamma")
+        let lines = InlineLayout.layoutLines(runs: collapsed, maxWidth: 400, rootFontSize: 16, lineHeight: nil)
+        let total = lines.flatMap(\.runs).map(\.range.length).reduce(0, +)
+        #expect(total == 16)
+    }
+}
