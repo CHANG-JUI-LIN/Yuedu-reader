@@ -310,7 +310,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 sourceText: document.lastSourceText,
                 anchorOffsets: document.lastAnchorOffsets,
                 fontSize: settings.fontSize,
-                themeTextColor: settings.textColor,
+                themeTextColor: self.themeTextColor,
                 themeBackgroundColor: settings.backgroundColor
             )
             engineStatus[spineIndex] = "browser"
@@ -506,14 +506,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         themeTextColor = textColor
         themeBackgroundColor = backgroundColor
         // Browser fragment colors are baked at layout time; DisplayList builds
-        // substitute the new theme color where a fragment carried the old one.
-        for (spine, layout) in browserChapters {
-            browserChapters[spine] = BrowserChapterLayout(
-                spineIndex: spine, pages: layout.pages, sourceText: layout.sourceText,
-                anchorOffsets: layout.anchorOffsets, fontSize: layout.fontSize,
-                themeTextColor: textColor, themeBackgroundColor: backgroundColor
-            )
-        }
+        // substitute the new theme color where a fragment carried the layout's
+        // ORIGINAL theme color (layout.themeTextColor stays unchanged, exactly
+        // like the legacy engine's color-only relayout).
         onChapterReady?(nil)
     }
 
@@ -536,8 +531,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         switch choices[spine] ?? .browser {
         case .browser:
             guard let layout = browserChapters[spine] else { return nil }
-            let list = layout.displayList(forPage: local, themeTextColor: settings.textColor, oldThemeColor: layout.themeTextColor)
-            return DisplayListRenderer.render(list, size: renderSize, backgroundColor: settings.backgroundColor)
+            let list = layout.displayList(forPage: local, themeTextColor: themeTextColor, oldThemeColor: layout.themeTextColor)
+            return DisplayListRenderer.render(list, size: renderSize, backgroundColor: themeBackgroundColor)
         case .legacyFallback, .legacyEngineFailure:
             return delegate.renderSnapshot(forPage: delegatePageIndex(for: spine, localPage: local))
         }
@@ -554,13 +549,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                   layout.pages.indices.contains(local) else {
                 return PlaceholderPageViewController()
             }
-            let list = layout.displayList(forPage: local, themeTextColor: settings.textColor, oldThemeColor: layout.themeTextColor)
+            let list = layout.displayList(forPage: local, themeTextColor: themeTextColor, oldThemeColor: layout.themeTextColor)
             let offset = layout.pageSourceRanges[local].location
             let vc = BrowserLayoutPageViewController(
                 globalPageIndex: index,
                 readingPosition: CoreTextReadingPosition(spineIndex: spine, charOffset: offset),
                 displayList: list,
-                backgroundColor: settings.backgroundColor,
+                backgroundColor: themeBackgroundColor,
                 statusText: BrowserLayoutFeature.showDebugOverlay ? statusLabel(for: spine) : nil
             ) { [weak self] href in
                 self?.handleLinkTap(href, fromSpine: spine)
