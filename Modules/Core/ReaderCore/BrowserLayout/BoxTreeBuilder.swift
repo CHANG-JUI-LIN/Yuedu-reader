@@ -40,8 +40,6 @@ enum BoxTreeBuilder {
             for: node, config: config, sourceText: &sourceText,
             anchors: &anchors, imageLoader: imageLoader, boxCount: &boxCount
         )
-        // ~200 bytes per box (documented estimate; lifecycle metric).
-        MemoryTracker.record(.layoutBoxTree, bytes: Int64(boxCount) * 200)
         return box
     }
 
