@@ -380,6 +380,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private(set) var activeTurnSpeed: Float = 1.0
         private static let normalFlipDuration: CFAbsoluteTime = 0.28
         private static let maxBurstSpeed: Float = 3.0
+        private static let slideTransitionKey = "readerSlideTurn"
         fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
         private var pendingNavigation: PendingNavigation?
         weak var coverPageViewController: UIPageViewController?
@@ -1092,15 +1093,17 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ) {
             let targetViewController = displayViewController(at: targetPage)
             applyPlaybackHighlight(to: targetViewController)
-            // Rapid-tap speed-up (slide/curl): UIKit's setViewControllers(animated:)
-            // has no duration parameter, so scale the native transition via the
+            // Rapid-tap speed-up (curl): UIKit's setViewControllers(animated:) has no
+            // duration parameter, so the page-curl animation is scaled via the
             // container layer's timing. Set before the animation is added; reset to
             // 1× on settle so it never leaks into interactive swipes or later lone
             // taps. Chained catch-up turns re-apply activeTurnSpeed on their own call.
-            let scalesNativeTransition = animated && (pageTurnStyle == .slide || pageTurnStyle == .curl)
+            // Slide can't use this — see `runsTimedSlide` below.
+            let scalesNativeTransition = animated && pageTurnStyle == .curl
             if scalesNativeTransition {
                 pageViewController.view.layer.speed = activeTurnSpeed
             }
+            let runsTimedSlide = animated && pageTurnStyle == .slide
             let finishTransition: (UIViewController) -> Void = { shownViewController in
                 if scalesNativeTransition {
                     pageViewController.view.layer.speed = 1.0
@@ -1116,39 +1119,85 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 beginCurlTransitionIfNeeded()
             }
 
-            if let sessionCoordinator {
-                sessionCoordinator.performProgrammaticPageTransition(
-                    pageTurnStyle: pageTurnStyle,
+            func runTransition(
+                animated animatedFlag: Bool,
+                completion: @escaping (UIViewController) -> Void
+            ) {
+                let stack = self.transitionViewControllerStack(
+                    startingWith: targetViewController,
+                    animated: animatedFlag,
+                    visiblePage: visiblePage
+                )
+                if let sessionCoordinator = self.sessionCoordinator {
+                    sessionCoordinator.performProgrammaticPageTransition(
+                        pageTurnStyle: self.pageTurnStyle,
+                        on: pageViewController,
+                        targetViewController: targetViewController,
+                        targetViewControllers: stack,
+                        direction: direction,
+                        animated: animatedFlag,
+                        restoringDataSource: self,
+                        completion: completion
+                    )
+                    return
+                }
+                ProgrammaticPageTransitionPerformer(pageTurnStyle: self.pageTurnStyle).perform(
                     on: pageViewController,
                     targetViewController: targetViewController,
-                    targetViewControllers: transitionViewControllerStack(
-                        startingWith: targetViewController,
-                        animated: animated,
-                        visiblePage: visiblePage
-                    ),
+                    targetViewControllers: stack,
                     direction: direction,
-                    animated: animated,
-                    restoringDataSource: self
-                ) { settledViewController in
-                    finishTransition(settledViewController)
-                }
-                return
+                    animated: animatedFlag,
+                    restoringDataSource: self,
+                    completion: completion
+                )
             }
 
-            ProgrammaticPageTransitionPerformer(pageTurnStyle: pageTurnStyle).perform(
-                on: pageViewController,
-                targetViewController: targetViewController,
-                targetViewControllers: transitionViewControllerStack(
-                    startingWith: targetViewController,
-                    animated: animated,
-                    visiblePage: visiblePage
-                ),
-                direction: direction,
-                animated: animated,
-                restoringDataSource: self
-            ) { settledViewController in
-                finishTransition(settledViewController)
+            // Slide runs the transition as an explicit CATransition instead of the
+            // page view controller's own animation. `.scroll` style animates its
+            // content offset off a display link inside `_UIQueuingScrollView`, not
+            // through CoreAnimation, so the `layer.speed` scaling that accelerates a
+            // curl burst has no effect there — rapid taps kept playing full-length
+            // slides. A push transition is the same visual (both pages translate
+            // together) with a duration we own, so bursts speed up here too, and the
+            // page swap itself becomes non-animated (no _UIQueuingScrollView reverse
+            // -transition dance). Interactive swipes are untouched: this path only
+            // runs for tap / volume-key / queued turns.
+            guard runsTimedSlide else {
+                runTransition(animated: animated, completion: finishTransition)
+                return
             }
+            var settled: UIViewController?
+            CATransaction.begin()
+            CATransaction.setCompletionBlock {
+                finishTransition(settled ?? targetViewController)
+            }
+            pageViewController.view.layer.add(
+                slidePushTransition(direction: direction, speed: activeTurnSpeed),
+                forKey: Self.slideTransitionKey
+            )
+            runTransition(animated: false) { settled = $0 }
+            // Commit the post-swap layout inside the same transaction so the
+            // transition's "after" state is the new page, not a half-laid-out one.
+            pageViewController.view.layoutIfNeeded()
+            CATransaction.commit()
+        }
+
+        /// The push transition that stands in for `.scroll`'s built-in page animation
+        /// on programmatic turns, so `activeTurnSpeed` can shorten it. At 1× it runs
+        /// for `normalFlipDuration` — the same figure the tap-cadence maths calls the
+        /// natural flip rate — so a lone tap keeps the familiar pace.
+        private func slidePushTransition(
+            direction: UIPageViewController.NavigationDirection,
+            speed: Float
+        ) -> CATransition {
+            let transition = CATransition()
+            transition.type = .push
+            // `direction` already carries the RTL swap, so it maps straight to the
+            // edge the incoming page enters from.
+            transition.subtype = direction == .forward ? .fromRight : .fromLeft
+            transition.duration = Self.normalFlipDuration / Double(max(speed, 1))
+            transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            return transition
         }
 
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
