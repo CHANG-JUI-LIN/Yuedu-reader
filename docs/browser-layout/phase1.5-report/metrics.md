@@ -1,14 +1,14 @@
 # Browser Layout Phase 1.5 Report
 
 ## Per-stage timing (seconds)
-- cssCollect: 0.0007
-- cssParse: 0.0002
-- styleTree: 0.0003
-- boxTree: 0.0003
+- cssCollect: 0.0146
+- cssParse: 0.0011
+- styleTree: 0.0006
+- boxTree: 0.0013
 - layout: 0.0000
 - fragment: 0.0000
-- total: 0.0015
-- peak footprint delta: 0 bytes
+- total: 0.0176
+- peak footprint delta: 671744 bytes
 
 ## Source-range parity
 - ranges ordered (no loss/dup/reorder): true

@@ -13,6 +13,7 @@ struct BrowserLayoutReportGeneratorTests {
             .deletingLastPathComponent()   // yuedu appTests
             .deletingLastPathComponent()   // iOS
             .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // root
         let dir = root.appendingPathComponent("docs/browser-layout/phase1.5-report", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
