@@ -1,0 +1,17 @@
+{
+  "note": "Phase 2A A/B corpus. Paths are machine-local; the harness skips missing books. No book content is committed.",
+  "books": [
+    { "path": "/Users/zhangruilin/Desktop/Test document/EPUB Format/《全知读者视角01》sing N song(싱숑)著[Hooshaun制作].epub", "category": "novel" },
+    { "path": "/Users/zhangruilin/Desktop/Test document/EPUB Format/《诡秘之主4》作者：爱潜水的乌贼.epub", "category": "novel" },
+    { "path": "/Users/zhangruilin/Desktop/Test document/EPUB Format/《全职高手3》作者：蝴蝶蓝.epub", "category": "novel" },
+    { "path": "/Users/zhangruilin/Desktop/Test document/EPUB Format/《全能游戏设计师1》作者：冷陌 & 青衫取醉.epub", "category": "novel" },
+    { "path": "/Users/zhangruilin/Desktop/Test document/EPUB Format/壹▪洪武大帝.epub", "category": "novel" },
+    { "path": "/Users/zhangruilin/Desktop/Yuedu-browser-layout/docs/epub-regression/samples/block-image-before-paragraph.epub", "category": "images" },
+    { "path": "/Users/zhangruilin/Desktop/Yuedu-browser-layout/docs/epub-regression/samples/centered-percent-image.epub", "category": "images" },
+    { "path": "/Users/zhangruilin/Desktop/Yuedu-browser-layout/docs/epub-regression/samples/paragraph-border-background.epub", "category": "boxes" },
+    { "path": "/Users/zhangruilin/Desktop/Yuedu-browser-layout/docs/epub-regression/samples/hr-divider-width-alignment-margins.epub", "category": "boxes" },
+    { "path": "/Users/zhangruilin/Desktop/Yuedu-browser-layout/docs/epub-regression/samples/nav-xhtml-basic.epub", "category": "links" },
+    { "path": "/Users/zhangruilin/Desktop/Yuedu-browser-layout/docs/epub-regression/samples/toc-ncx-basic.epub", "category": "links" },
+    { "path": "/Users/zhangruilin/Desktop/Test document/EPUB Format/红楼梦脂评汇校本-繁体竖排版 (BookDNA经典复刻系列) (BookDNA典藏书系) (Traditional Chinese Edition) - 脂砚斋 & 曹雪芹 & 吴铭恩.epub", "category": "complex-reject" }
+  ]
+}
