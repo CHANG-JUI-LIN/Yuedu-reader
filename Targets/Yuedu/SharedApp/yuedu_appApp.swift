@@ -84,6 +84,9 @@ struct yuedu_appApp: App {
                         }
                         await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true)
                     }
+                    // Prime the WebView cookie mirror before the first source request
+                    // needs it, so no fetch pays a cold WebKit round trip.
+                    WebViewCookieMirror.shared.start()
                     // Finish any book-source imports the Share Extension queued
                     // (it can only stash the payload; the merge must happen here).
                     Task { await SharedImportQueueDrainer.shared.drain() }

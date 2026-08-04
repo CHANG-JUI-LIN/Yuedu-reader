@@ -10,7 +10,7 @@ struct NetworkSettingsView: View {
                 Section {
                     stepperRow(
                         title: localized("並發數"),
-                        description: localized("搜索/缓存/下载等网络请求并发数，建议8个"),
+                        description: localized("搜索/缓存/下载/校验等网络请求并发数，建议16个"),
                         value: $settings.searchConcurrency,
                         range: 1...30
                     )

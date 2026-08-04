@@ -128,7 +128,11 @@ struct BookSourceParsingPipeline {
         baseURL: String,
         source: BookSource
     ) -> Bool {
-        BookSourceSession.session(for: source).withBridge { bridge in
+        // Most sources declare no loginCheckJs; skipping the session lookup and its
+        // parse lock keeps them off the bridge entirely on the search hot path.
+        guard !source.loginCheckJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return false }
+        return BookSourceSession.session(for: source).withBridge { bridge in
             bridge.checkLoginRequired(html: html, baseURL: baseURL)
         }
     }

@@ -216,7 +216,16 @@ final class BookSourceHealthChecker: ObservableObject {
     /// Shared so a run keeps going after the user leaves the book-source screen (background check).
     static let shared = BookSourceHealthChecker()
 
-    @Published var items: [BookSourceCheckItem] = []
+    /// Deliberately NOT `@Published`. A run mutates this array on every stage
+    /// transition — five stages, two transitions each, now up to 16 sources in
+    /// flight — and publishing each one re-diffed the whole results list. Change
+    /// notifications go through `requestItemsPublication`, which coalesces them on
+    /// the same bounded cadence the search results list uses.
+    private(set) var items: [BookSourceCheckItem] = []
+
+    private var publicationGate = SearchResultPublicationGate(minimumInterval: 0.25)
+    private var publicationTask: Task<Void, Never>?
+
     @Published var isRunning = false
     /// One-line summary of the actions applied after the last completed run (disabled / deleted).
     @Published var lastSummary: String?
@@ -227,10 +236,18 @@ final class BookSourceHealthChecker: ObservableObject {
     /// set before `runAll()`.
     var policy = BookSourceCheckPolicy()
 
-    /// At most this many sources are probed at once, keeping timings meaningful.
-    private static let maxConcurrent = 6
+    /// How many sources are probed at once. Follows the user's 網路設定 → 並發數,
+    /// the same knob the search fan-out uses — Legado likewise drives both its
+    /// search and its 校验书源 from one `threadCount`. This used to be hard-wired to
+    /// 6 with no way to raise it, which is most of why validating a large source
+    /// list felt slower here than there.
+    private var maxConcurrent: Int {
+        NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
+    }
 
     private var cancelled = false
+    /// Measured response times awaiting a single batched write — see `flushRespondTimes`.
+    private var pendingRespondTimes: [UUID: Int64] = [:]
     private let fetcher = BookSourceFetcher.shared
 
     var finishedCount: Int { items.filter(\.isFinished).count }
@@ -239,6 +256,10 @@ final class BookSourceHealthChecker: ObservableObject {
         cancelled = false
         lastSummary = nil
         items = sources.map { BookSourceCheckItem(source: $0) }
+        publicationTask?.cancel()
+        publicationTask = nil
+        publicationGate = SearchResultPublicationGate(minimumInterval: 0.25)
+        requestItemsPublication(force: true)
     }
 
     func runAll() async {
@@ -247,10 +268,11 @@ final class BookSourceHealthChecker: ObservableObject {
         cancelled = false
         lastSummary = nil
 
+        let concurrency = maxConcurrent
         await withTaskGroup(of: Void.self) { group in
             var next = 0
             let total = items.count
-            while next < min(Self.maxConcurrent, total) {
+            while next < min(concurrency, total) {
                 let index = next
                 group.addTask { [weak self] in await self?.checkItem(at: index) }
                 next += 1
@@ -263,14 +285,20 @@ final class BookSourceHealthChecker: ObservableObject {
             }
         }
 
+        flushRespondTimes()
         if !cancelled { applyPolicy() }
         isRunning = false
         cancelled = false
+        // The run is over: land the final state immediately rather than waiting out
+        // the cadence.
+        requestItemsPublication(force: true)
     }
 
     func cancel() {
         cancelled = true
         isRunning = false
+        // Keep the measurements taken before the user stopped.
+        flushRespondTimes()
     }
 
     /// True when a *passing* source's total time exceeds the configured "too slow" threshold.
@@ -299,7 +327,7 @@ final class BookSourceHealthChecker: ObservableObject {
         }
 
         let toDisable = disableIds.subtracting(deleteIds)
-        for id in toDisable { store.setEnabled(id: id, enabled: false) }
+        store.setEnabled(ids: toDisable, enabled: false)
         let deleted = deleteIds.isEmpty ? 0 : store.delete(ids: deleteIds)
 
         var parts: [String] = []
@@ -310,11 +338,42 @@ final class BookSourceHealthChecker: ObservableObject {
 
     // MARK: - Per-source five-stage run
 
+    /// Coalesced `objectWillChange` for `items`, mirroring
+    /// `SearchAggregator.requestResultsPublication`: publish at most every
+    /// `minimumInterval`, with one trailing update so the final state always lands.
+    private func requestItemsPublication(force: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        switch publicationGate.request(now: now, force: force) {
+        case .publishNow:
+            publicationTask?.cancel()
+            publicationTask = nil
+            publicationGate.didPublish(at: now)
+            objectWillChange.send()
+
+        case .schedule(let delay):
+            guard publicationTask == nil else { return }
+            publicationTask = Task { [weak self] in
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(max(0, delay) * 1_000_000_000))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled, let self else { return }
+                self.publicationTask = nil
+                self.requestItemsPublication()
+            }
+
+        case .suppress:
+            break
+        }
+    }
+
     private func setStage(
         _ index: Int, _ stage: ValidationStage, _ status: StageStatus, _ summary: String = ""
     ) {
         guard items.indices.contains(index) else { return }
         items[index].stages[stage.rawValue] = StageOutcome(status: status, summary: summary)
+        requestItemsPublication()
     }
 
     /// Keep the *first* (earliest root-cause) failure category; later stages don't override it.
@@ -322,6 +381,7 @@ final class BookSourceHealthChecker: ObservableObject {
         guard items.indices.contains(index) else { return }
         if items[index].failureCategory == nil {
             items[index].failureCategory = category
+            requestItemsPublication()
         }
     }
 
@@ -336,10 +396,19 @@ final class BookSourceHealthChecker: ObservableObject {
         }
         // Legado (CheckSourceService.checkSource): respondTime doubles as the adaptive
         // request timeout — measured elapsed time on success, timeout+elapsed on failure.
-        let respondTime = items[index].overallPass
+        // Accumulated, not persisted here: writing per source re-encoded the whole
+        // source library to disk once per finished source (see `setRespondTimes`).
+        // Flushed when the run ends or is cancelled.
+        pendingRespondTimes[items[index].source.id] = items[index].overallPass
             ? elapsed
             : Int64(policy.timeoutSeconds) * 1000 + elapsed
-        BookSourceStore.shared.setRespondTime(id: items[index].source.id, ms: respondTime)
+        requestItemsPublication()
+    }
+
+    private func flushRespondTimes() {
+        guard !pendingRespondTimes.isEmpty else { return }
+        BookSourceStore.shared.setRespondTimes(pendingRespondTimes)
+        pendingRespondTimes.removeAll(keepingCapacity: true)
     }
 
     private enum ProbeResult<T> {

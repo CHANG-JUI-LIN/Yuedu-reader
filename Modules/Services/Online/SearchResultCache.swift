@@ -58,7 +58,17 @@ final class SearchResultCache {
         }
     }
 
-    private let queue = DispatchQueue(label: "com.yuedu.searchResultCache")
+    /// Writes only. There is deliberately NO lock or serial queue around reads:
+    /// every entry lives in its own file keyed by a content hash, and writes are
+    /// atomic (temp file + rename), so a concurrent reader sees either the old or
+    /// the new bytes, never a torn one. The previous `DispatchQueue.sync` protected
+    /// nothing that atomicity does not already give — but it did funnel every
+    /// source's cache I/O through one lane AND block a Swift cooperative-pool
+    /// thread while it waited, so a wide search fan-out could stall the pool before
+    /// its requests even went out.
+    private let writeQueue = DispatchQueue(
+        label: "com.yuedu.searchResultCache.write", qos: .utility
+    )
     private let directory: URL
 
     init(directory: URL? = nil) {
@@ -78,18 +88,16 @@ final class SearchResultCache {
         now: Date = Date()
     ) -> [OnlineBook]? {
         guard days > 0, let key = cacheKey(query: query, source: source) else { return nil }
-        return queue.sync {
-            guard let data = try? Data(contentsOf: fileURL(for: key)),
-                  let entry = try? JSONDecoder().decode(Entry.self, from: data)
-            else { return nil }
-            let maxAge = TimeInterval(days) * 86_400
-            guard now.timeIntervalSince(entry.timestamp) < maxAge else { return nil }
-            // Never serve an empty cached result. A transient 0 (request timed out,
-            // searched before logging in, server hiccup) must not get pinned for
-            // `days` — fall through to a live re-fetch instead of returning [].
-            guard !entry.books.isEmpty else { return nil }
-            return entry.books.map { $0.onlineBook(for: source) }
-        }
+        guard let data = try? Data(contentsOf: fileURL(for: key)),
+              let entry = try? JSONDecoder().decode(Entry.self, from: data)
+        else { return nil }
+        let maxAge = TimeInterval(days) * 86_400
+        guard now.timeIntervalSince(entry.timestamp) < maxAge else { return nil }
+        // Never serve an empty cached result. A transient 0 (request timed out,
+        // searched before logging in, server hiccup) must not get pinned for
+        // `days` — fall through to a live re-fetch instead of returning [].
+        guard !entry.books.isEmpty else { return nil }
+        return entry.books.map { $0.onlineBook(for: source) }
     }
 
     func store(
@@ -106,21 +114,28 @@ final class SearchResultCache {
             books: books.map { CachedBook($0, source: source) },
             timestamp: now
         )
-        queue.sync {
+        // Fire-and-forget: nothing waits on the cache being written, and encoding a
+        // 500-book aggregate result is heavy enough that doing it inline made the
+        // search path pay for the *next* search's speed-up. Losing an entry to an
+        // app kill just costs one re-fetch.
+        let url = fileURL(for: key)
+        writeQueue.async {
             guard let data = try? JSONEncoder().encode(entry) else { return }
-            try? data.write(to: fileURL(for: key), options: .atomic)
+            try? data.write(to: url, options: .atomic)
         }
     }
 
     func clear(query: String, source: BookSource) {
         guard let key = cacheKey(query: query, source: source) else { return }
-        queue.sync {
-            try? FileManager.default.removeItem(at: fileURL(for: key))
+        let url = fileURL(for: key)
+        writeQueue.sync {
+            try? FileManager.default.removeItem(at: url)
         }
     }
 
     func clearAll() {
-        queue.sync {
+        let directory = self.directory
+        writeQueue.sync {
             try? FileManager.default.removeItem(at: directory)
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }

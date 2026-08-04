@@ -4,6 +4,10 @@ import Foundation
 
 /// Maintains an independent semaphore per host to limit concurrent requests to
 /// the same site, preventing blocks and following polite crawling practices.
+///
+/// Per-source politeness is NOT this type's job — a source that needs throttling
+/// declares `concurrentRate`, which `SourceRateLimit` enforces. This is only the
+/// backstop that keeps one host from monopolising the connection pool.
 actor PerHostSemaphore {
     static let shared = PerHostSemaphore()
 
@@ -15,10 +19,15 @@ actor PerHostSemaphore {
     /// Acquires a lock for the given host, executes the body, then releases.
     /// - Parameters:
     ///   - host: Target domain (e.g. "www.example.com")
-    ///   - maxConcurrent: Maximum allowed concurrent requests (default 2)
+    ///   - maxConcurrent: Maximum allowed concurrent requests. Defaults to the
+    ///     session's own per-host connection limit (16, matching Legado's default
+    ///     threadCount) so this backstop never becomes the binding constraint. It
+    ///     used to default to 2, which silently throttled every request in the app
+    ///     — including sources that declared no `concurrentRate` at all, which
+    ///     Legado runs unthrottled.
     func withLock<T: Sendable>(
         host: String,
-        maxConcurrent: Int = 2,
+        maxConcurrent: Int = 16,
         body: @Sendable () async throws -> T
     ) async rethrows -> T {
         await acquire(host: host, maxConcurrent: maxConcurrent)

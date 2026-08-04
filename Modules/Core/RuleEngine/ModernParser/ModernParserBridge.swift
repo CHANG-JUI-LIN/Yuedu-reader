@@ -26,7 +26,33 @@ enum ModernParserBridgeError: LocalizedError {
 /// when switching sources.
 class ModernParserBridge {
 
-    private let jsEngine: JSCoreEngine
+    private let jsEngineLock = NSLock()
+    private var _jsEngine: JSCoreEngine?
+
+    /// The source's JS runtime, stood up on first actual use.
+    ///
+    /// Creating one costs a `JSContext` plus the polyfill scripts `configureContext`
+    /// evaluates into it. Most book sources are pure CSS/XPath and never run a line
+    /// of JS — `parseSearchResults` in particular touches nothing here — but the
+    /// bridge used to build the runtime eagerly in `init`, so every source in a
+    /// search fan-out paid for a JSContext it never used.
+    ///
+    /// Lock-protected rather than `lazy` because `BookSourceSession` hands the same
+    /// bridge to async callers without holding its own lock.
+    private var jsEngine: JSCoreEngine {
+        jsEngineLock.lock()
+        defer { jsEngineLock.unlock() }
+        if let existing = _jsEngine { return existing }
+        let t0 = ProcessInfo.processInfo.systemUptime
+        let engine = JSCoreEngine()
+        _jsEngine = engine
+        wireJSEngine(engine)
+        SourcePerfTrace.record(
+            "js.runtimeCreate", sourceRuleData.source.bookSourceName, since: t0
+        )
+        return engine
+    }
+
     private let loginManager: LoginManager
     private let runtimeStateStore: BookSourceRuntimeStateStore
     let sourceRuleData: BookSourceRuleData
@@ -40,11 +66,9 @@ class ModernParserBridge {
 
     init(source: BookSource) {
         self.sourceRuleData = BookSourceRuleData(source: source)
-        self.jsEngine = JSCoreEngine()
         self.loginManager = LoginManager.shared
         self.runtimeStateStore = BookSourceRuntimeStateStore.shared
-
-        wireJSEngine()
+        // No JSContext here on purpose — see `jsEngine`.
     }
 
     // MARK: - Last JS network exchange (diagnostics)
@@ -135,11 +159,14 @@ class ModernParserBridge {
 
     // MARK: - Wire JS-only state (source headers, variable storage, network)
 
-    private func wireJSEngine() {
-        jsEngine.bookSource = sourceRuleData.source
+    /// Installs every `java.*` / `source.*` handler on a freshly created runtime.
+    /// Takes the engine as a parameter rather than reading `self.jsEngine`: it runs
+    /// from inside the lazy accessor, which holds `jsEngineLock`.
+    private func wireJSEngine(_ engine: JSCoreEngine) {
+        engine.bookSource = sourceRuleData.source
         let sourceName = sourceRuleData.source.bookSourceName
 
-        jsEngine.errorHandler = { [weak self] msg, script in
+        engine.errorHandler = { [weak self] msg, script in
             self?.debugObserver?(.jsExecuted(
                 segmentIndex: -1, script: String(script.prefix(200)),
                 inputPreview: "", result: "ERROR: \(msg)"
@@ -157,14 +184,14 @@ class ModernParserBridge {
         // chapter rule toasts 「❌ 未登录，请先登录」/「⚠️请求失败3次: …」/「请尝试切换
         // 服务器」 from inside its retry loop. Nothing displays toasts during a
         // background parse, so log them; otherwise the source's own diagnosis is lost.
-        jsEngine.toastHandler = { msg in
+        engine.toastHandler = { msg in
             AppLogger.parse("⟐ source toast", context: [
                 "source": sourceName,
                 "msg": msg.replacingOccurrences(of: "\n", with: " ")
             ])
         }
 
-        jsEngine.getData = { [weak self] key in
+        engine.getData = { [weak self] key in
             guard let self else { return nil }
             let localValue = self.sourceRuleData.getVariable(key: key)
             let value = localValue.isEmpty
@@ -182,7 +209,7 @@ class ModernParserBridge {
             }
             return value
         }
-        jsEngine.putData = { [weak self] key, value in
+        engine.putData = { [weak self] key, value in
             guard let self else { return }
             self.sourceRuleData.putVariable(key: key, value: value)
             self.runtimeStateStore.setSourceValue(
@@ -203,21 +230,21 @@ class ModernParserBridge {
 
         let sourceUrl = sourceRuleData.source.bookSourceUrl
 
-        jsEngine.sourceBridge.getVariableHandler = { [weak self] in
+        engine.sourceBridge.getVariableHandler = { [weak self] in
             guard let self else { return "" }
             return self.runtimeStateStore.sourceVariableJSON(for: sourceUrl) ?? ""
         }
-        jsEngine.sourceBridge.setVariableHandler = { [weak self] jsonString in
+        engine.sourceBridge.setVariableHandler = { [weak self] jsonString in
             self?.runtimeStateStore.setSourceVariableJSON(jsonString, for: sourceUrl)
         }
-        jsEngine.sourceBridge.getKeyValueHandler = { [weak self] key in
+        engine.sourceBridge.getKeyValueHandler = { [weak self] key in
             self?.runtimeStateStore.sourceValue(for: sourceUrl, key: key)
         }
-        jsEngine.sourceBridge.putKeyValueHandler = { [weak self] key, value in
+        engine.sourceBridge.putKeyValueHandler = { [weak self] key, value in
             self?.runtimeStateStore.setSourceValue(value, for: sourceUrl, key: key)
         }
 
-        jsEngine.sourceBridge.getLoginInfoHandler = {
+        engine.sourceBridge.getLoginInfoHandler = {
             LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl).flatMap { info in
                 if let data = try? JSONSerialization.data(withJSONObject: info),
                    let json = String(data: data, encoding: .utf8) {
@@ -226,15 +253,15 @@ class ModernParserBridge {
                 return nil
             }
         }
-        jsEngine.sourceBridge.putLoginInfoHandler = { info in
+        engine.sourceBridge.putLoginInfoHandler = { info in
             guard let data = info.data(using: .utf8),
                   let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
             LoginManager.shared.storeLoginInfo(sourceUrl: sourceUrl, info: dict)
         }
-        jsEngine.sourceBridge.getLoginInfoMapHandler = {
+        engine.sourceBridge.getLoginInfoMapHandler = {
             LoginManager.shared.getLoginInfo(sourceUrl: sourceUrl) ?? [:]
         }
-        jsEngine.sourceBridge.removeLoginInfoHandler = {
+        engine.sourceBridge.removeLoginInfoHandler = {
             LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
         }
         // Legado stores whatever `putLoginHeader` was given verbatim and only sends
@@ -242,28 +269,28 @@ class ModernParserBridge {
         // api_key) is read back by the source's own JS. Do NOT invent a header name
         // for it — guessing `X-Novel-Token` overwrote the constant token the source's
         // `header` rule sends and the server answered `{"error":"访问被拒绝"}`.
-        jsEngine.sourceBridge.putLoginHeaderHandler = { header in
+        engine.sourceBridge.putLoginHeaderHandler = { header in
             LoginManager.shared.storeLoginHeader(sourceUrl: sourceUrl, raw: header)
         }
-        jsEngine.sourceBridge.getLoginHeaderHandler = {
+        engine.sourceBridge.getLoginHeaderHandler = {
             LoginManager.shared.getLoginHeader(sourceUrl: sourceUrl)
         }
-        jsEngine.sourceBridge.removeLoginHeaderHandler = {
+        engine.sourceBridge.removeLoginHeaderHandler = {
             LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
         }
-        jsEngine.sourceBridge.getHeaderMapHandler = { [weak self] in
+        engine.sourceBridge.getHeaderMapHandler = { [weak self] in
             var merged = self?.resolvedSourceHeaders() ?? [:]
             if let loginHeaders = LoginManager.shared.getLoginHeaderMap(sourceUrl: sourceUrl) {
                 merged.merge(loginHeaders) { _, new in new }
             }
             return merged
         }
-        jsEngine.sourceBridge.evalJSHandler = { [weak self] js in
+        engine.sourceBridge.evalJSHandler = { [weak self] js in
             self?.jsEngine.evaluate(js) ?? ""
         }
 
         // ── AnalyzeUrl handler for java.ajax() ──
-        jsEngine.analyzeUrlHandler = { [weak self] urlStr in
+        engine.analyzeUrlHandler = { [weak self] urlStr in
             guard let self else { return nil }
             let analyzeUrl = AnalyzeUrl(
                 ruleUrl: urlStr,
@@ -439,10 +466,10 @@ class ModernParserBridge {
         }
 
         // Evaluate jsLib if present, cache the hash to avoid re-evaluation
-        evaluateJsLibIfNeeded()
+        evaluateJsLibIfNeeded(on: engine)
 
         // setContent handler: JS calls java.setContent(html) → create engine, set content, wire back-refs
-        jsEngine.setContentHandler = { [weak self] content, baseUrl in
+        engine.setContentHandler = { [weak self] content, baseUrl in
             guard let self else { return }
             let engine = ModernRuleEngine()
             engine.source = self.sourceRuleData
@@ -469,7 +496,7 @@ class ModernParserBridge {
 
         // networkHandler runs on the jsEngine serial queue thread — blocking via
         // semaphore here is intentional and safe (dedicated thread, not the global pool).
-        jsEngine.networkHandler = { [weak self] request in
+        engine.networkHandler = { [weak self] request in
             let reviewSummaryCacheKey = self.map { "\(sourceUrl)#\($0.sourceRuleData.source.lastUpdateTime)" }
             let isReviewSummaryRequest = Self.isChapterReviewSummaryRequest(request)
             var ownsReviewRequest = false
@@ -1495,7 +1522,7 @@ class ModernParserBridge {
         onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
     ) async -> [OnlineBook] {
         let maxConcurrentSubsources = min(4, plan.sourceKeys.count)
-        let observer = debugObserver
+        let pool = AggregateBridgePool(source: source, observer: debugObserver)
         var allBooks: [OnlineBook] = []
 
         await withTaskGroup(of: [OnlineBook].self) { group in
@@ -1512,13 +1539,13 @@ class ModernParserBridge {
 
                 group.addTask {
                     guard !Task.isCancelled else { return [] }
-                    let bridge = ModernParserBridge(source: source)
-                    bridge.debugObserver = observer
-                    return (try? bridge.parseSearchResults(
-                        html: body,
-                        baseURL: baseURL,
-                        source: source
-                    )) ?? []
+                    return pool.withBridge { bridge in
+                        (try? bridge.parseSearchResults(
+                            html: body,
+                            baseURL: baseURL,
+                            source: source
+                        )) ?? []
+                    }
                 }
             }
 
@@ -1540,6 +1567,51 @@ class ModernParserBridge {
         }
 
         return allBooks
+    }
+
+    /// Lane-scoped parser bridges for an aggregate source's sub-source fan-out.
+    ///
+    /// Each sub-source parse needs a bridge no other *concurrent* parse is using —
+    /// a bridge carries per-call book/chapter context — but it does not need a
+    /// **fresh** one: the sub-source identity travels in the parsed body
+    /// (`params["sourcesKey"]`), not in bridge state. Building one per sub-source
+    /// meant a JSContext plus its shims and a `jsLib` re-evaluation for every entry,
+    /// which on-device measured 4–32 ms each; 光遇聚合 alone stood up 50+ of them in
+    /// a single search. The task group runs at most `maxConcurrentSubsources` tasks,
+    /// so the pool converges on that many bridges and reuses them for the rest.
+    private final class AggregateBridgePool: @unchecked Sendable {
+        private let source: BookSource
+        private let observer: ((RuleDebugEvent) -> Void)?
+        private let lock = NSLock()
+        private var idle: [ModernParserBridge] = []
+
+        init(source: BookSource, observer: ((RuleDebugEvent) -> Void)?) {
+            self.source = source
+            self.observer = observer
+        }
+
+        func withBridge<T>(_ body: (ModernParserBridge) -> T) -> T {
+            let bridge: ModernParserBridge
+            lock.lock()
+            if let reused = idle.popLast() {
+                lock.unlock()
+                bridge = reused
+            } else {
+                lock.unlock()
+                // Built outside the lock: construction can stand up a JSContext, and
+                // holding the lock through it would serialize the very lanes this
+                // pool exists to keep parallel.
+                let fresh = ModernParserBridge(source: source)
+                fresh.debugObserver = observer
+                bridge = fresh
+            }
+            defer {
+                lock.lock()
+                idle.append(bridge)
+                lock.unlock()
+            }
+            return body(bridge)
+        }
     }
 
     private static func aggregateSourceKey(from item: Any) -> String? {
@@ -2044,12 +2116,15 @@ class ModernParserBridge {
         html: String,
         baseURL: String
     ) -> Bool {
-        let engine = makeEngine()
-        engine.setContent(html, baseUrl: baseURL)
-
+        // Cheap exit first. This guard used to sit *after* the engine was built and
+        // the whole response was installed on it — work every search of every source
+        // paid, while the overwhelming majority declare no loginCheckJs at all.
         let js = sourceRuleData.source.loginCheckJs
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !js.isEmpty else { return false }
+
+        let engine = makeEngine()
+        engine.setContent(html, baseUrl: baseURL)
 
         let result = engine.getString(ruleStr: js)
         let lower = result.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2437,29 +2512,34 @@ class ModernParserBridge {
     /// Evaluate jsLib once per source, caching the hash so we don't re-evaluate
     /// on every request.  jsLib functions (e.g. `BaseUrl()`, `getVariable()`,
     /// `request()`) stay in the shared JSContext scope.
-    private func evaluateJsLibIfNeeded() {
+    /// - Parameter engineOverride: the runtime to evaluate into. `wireJSEngine` must
+    ///   pass its engine explicitly — it runs inside the `jsEngine` lazy accessor
+    ///   while `jsEngineLock` is held, and reading `self.jsEngine` there would
+    ///   re-enter a non-recursive lock. Every other caller leaves it nil.
+    private func evaluateJsLibIfNeeded(on engineOverride: JSCoreEngine? = nil) {
         let jsLib = sourceRuleData.source.jsLib
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !jsLib.isEmpty else { return }
+        let engine = engineOverride ?? jsEngine
 
         // If the JS engine was reset (timeout recovery), the new context has no
         // jsLib code — force re-evaluation.
-        if jsEngine.generation != evaluatedJsLibEngineGen {
+        if engine.generation != evaluatedJsLibEngineGen {
             evaluatedJsLibHash = nil
-            evaluatedJsLibEngineGen = jsEngine.generation
+            evaluatedJsLibEngineGen = engine.generation
         }
 
         let newHash = jsLib.md5Hash
         guard newHash != evaluatedJsLibHash else { return }
 
-        _ = jsEngine.evaluate(jsLib)
+        _ = engine.evaluate(jsLib)
         if sourceRuleData.source.exploreUrl.contains("_csrfToken") {
             NSLog(
                 "❖DISC TRACE❖ source=%@ stage=jsLib.evaluated jsLibLen=%d engineGen=%llu jsError=%@",
                 sourceRuleData.source.bookSourceName,
                 jsLib.count,
-                jsEngine.generation,
-                jsEngine.lastError ?? "none"
+                engine.generation,
+                engine.lastError ?? "none"
             )
         }
         evaluatedJsLibHash = newHash
