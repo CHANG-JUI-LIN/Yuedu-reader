@@ -30,3 +30,38 @@ struct CSSLengthResolverTests {
         #expect(CSSLengthResolver.resolve(.pt(72), emBase: 17, remBase: 17, percentBase: 400) == 96)
     }
 }
+
+struct ComputedStyleTests {
+    @Test func inheritedCopiesOnlyInheritedFields() {
+        let parent = ComputedStyle(
+            fontSize: 20, fontFamilies: ["Georgia"], fontWeight: 700, isItalic: true,
+            color: .red, textAlign: .center, lineHeight: 30
+        )
+        let child = parent.inherited(from: parent)
+        #expect(child.fontSize == 20)
+        #expect(child.fontFamilies == ["Georgia"])
+        #expect(child.fontWeight == 700)
+        #expect(child.isItalic)
+        #expect(child.color == .red)
+        #expect(child.textAlign == .center)
+        #expect(child.lineHeight == 30)
+        #expect(child.backgroundColor == nil)          // not inherited
+        #expect(child.marginTop == .px(0))             // box props reset
+        #expect(child.width == .auto)
+    }
+
+    @Test func uaDefaultsForTags() {
+        let p = UserAgentStyle.basis(for: "p")
+        #expect(p.display == .block)
+        #expect(p.marginTop == .em(1))
+        #expect(p.marginBottom == .em(1))
+        let span = UserAgentStyle.basis(for: "span")
+        #expect(span.display == .inline)
+        let head = UserAgentStyle.basis(for: "style")
+        #expect(head.display == .none)
+        #expect(head.isHidden)
+        let h1 = UserAgentStyle.basis(for: "h1")
+        #expect(h1.fontSize == 32)
+        #expect(h1.fontWeight == 700)
+    }
+}
