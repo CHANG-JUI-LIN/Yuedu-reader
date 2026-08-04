@@ -64,9 +64,16 @@ struct BrowserLayoutSnapshotTests {
             return
         }
         if !FileManager.default.fileExists(atPath: url.path) {
-            // Record mode: write the golden and fail so the CI knows it was new.
-            try png.write(to: url)
-            Issue.record("recorded new golden \(name) — re-run to verify")
+            // Missing goldens FAIL by default (CI must never auto-accept new
+            // goldens). Only YUEDU_RECORD_GOLDENS=1 writes the golden — and it
+            // still fails so the recorded file is consciously reviewed.
+            let recording = ProcessInfo.processInfo.environment["YUEDU_RECORD_GOLDENS"] == "1"
+            if recording {
+                try png.write(to: url)
+                Issue.record("recorded new golden \(name) — re-run without YUEDU_RECORD_GOLDENS to verify")
+            } else {
+                Issue.record("missing golden \(name) — set YUEDU_RECORD_GOLDENS=1 to record")
+            }
             return
         }
         let goldenData = try Data(contentsOf: url)

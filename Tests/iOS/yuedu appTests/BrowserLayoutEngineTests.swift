@@ -5,7 +5,8 @@ import UIKit
 
 struct BrowserLayoutFeatureTests {
     @Test func featureIsOffByDefault() {
-        #expect(BrowserLayoutFeature.isEnabled == false)
+        #expect(BrowserLayoutFeature.mode == .legacy)
+        #expect(!BrowserLayoutFeature.browserEnabled)
     }
 }
 
