@@ -52,7 +52,7 @@ struct JsoupDefaultExtractor: RuleExtractor {
 
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
         guard !rule.isEmpty else { return [] }
-        let doc = try JsoupDocumentCache.shared.document(
+        let doc = try JsoupDocumentCache.current.document(
             for: content.truncatedForSwiftSoup(), baseURL: baseURL)
         if shouldExtractValuesForList(rule: rule) {
             return try getStringList(from: doc, rule: rule, baseURL: baseURL)
@@ -66,7 +66,7 @@ struct JsoupDefaultExtractor: RuleExtractor {
 
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
         guard !rule.isEmpty else { return "" }
-        let doc = try JsoupDocumentCache.shared.document(
+        let doc = try JsoupDocumentCache.current.document(
             for: content.truncatedForSwiftSoup(), baseURL: baseURL)
         let results = try getStringList(from: doc, rule: rule, baseURL: baseURL)
         if results.isEmpty { return "" }
