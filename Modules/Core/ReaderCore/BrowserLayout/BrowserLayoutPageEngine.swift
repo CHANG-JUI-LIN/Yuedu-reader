@@ -423,11 +423,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     private func makeBrowserConfig() -> BrowserLayoutConfig {
+        // A/B font parity: mirror the legacy builder's base-font resolution
+        // (settings.fontPostScriptName when a user font is chosen; the CSS
+        // font-family rules then override per element on both engines).
         BrowserLayoutConfig(
             renderWidth: contentWidth,
             renderHeight: contentHeight,
             rootFontSize: settings.fontSize,
-            fontFamilies: [],
+            fontFamilies: settings.fontPostScriptName.map { [$0] } ?? [],
             textColor: themeTextColor,
             backgroundColor: themeBackgroundColor,
             contentInsets: settings.contentInsets,
@@ -703,6 +706,57 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 self.onLinkNavigate?(target)
             }
         }
+    }
+
+    /// Selection/annotation/TTS contract: input a UTF-16 range in the
+    /// chapter's sourceText, get per-page page-local rects (baseline-aligned
+    /// text fragments intersecting the range). Rects remain source-range
+    /// semantic across relayouts — the same range re-derives the same text.
+    func rects(forSpine spineIndex: Int, range: NSRange) -> [(page: Int, rects: [CGRect])] {
+        guard range.length > 0,
+              case .browser = choices[spineIndex] ?? .browser,
+              let layout = browserChapters[spineIndex] else {
+            // Fallback chapters delegate selection to the legacy engine's own
+            // mechanisms (out of scope for Phase 2B's browser contract).
+            return []
+        }
+        let ns = layout.sourceText as NSString
+        guard range.location >= 0, range.location + range.length <= ns.length else { return [] }
+        let rangeEnd = range.location + range.length
+
+        var result: [(page: Int, rects: [CGRect])] = []
+        for (pageIndex, page) in layout.pages.enumerated() {
+            var pageRects: [CGRect] = []
+            func walk(_ fragments: [Fragment]) {
+                for fragment in fragments {
+                    switch fragment {
+                    case .text(let t):
+                        guard t.sourceRange.length > 0 else { continue }
+                        let start = max(t.sourceRange.location, range.location)
+                        let end = min(t.sourceRange.location + t.sourceRange.length, rangeEnd)
+                        guard end > start else { continue }
+                        // Proportional rect for the selected substring of the
+                        // fragment (fragments are single lines/runs).
+                        let fraction = Double(end - start) / Double(t.sourceRange.length)
+                        let selectedWidth = CGFloat(fraction) * t.rect.width
+                        let xOffset = CGFloat(Double(start - t.sourceRange.location) / Double(t.sourceRange.length)) * t.rect.width
+                        pageRects.append(CGRect(
+                            x: t.rect.minX + xOffset,
+                            y: t.rect.minY,
+                            width: selectedWidth,
+                            height: t.rect.height
+                        ))
+                    case .group(let children): walk(children)
+                    default: break
+                    }
+                }
+            }
+            walk(page.fragments)
+            if !pageRects.isEmpty {
+                result.append((page: pageIndex, rects: pageRects))
+            }
+        }
+        return result
     }
 
     // MARK: - Internal helpers

@@ -1,16 +1,29 @@
 import UIKit
 
 /// Draws one page's DisplayList directly with CoreGraphics — no intermediate
-/// UIImage. Also performs link hit-testing from the fragment rects.
+/// UIImage. Also performs link hit-testing from the fragment rects and paints
+/// a selection/TTS highlight overlay.
 @MainActor
 final class BrowserLayoutPageView: UIView {
 
     var displayList: DisplayList = .empty
     var backgroundColorFill: UIColor = .white
     var onLinkTap: ((String) -> Void)?
+    var onLongPress: (() -> Void)?
+    /// Highlight rects (selection / TTS sentence) painted above the content.
+    var highlightRects: [CGRect] = []
+    var highlightColor: UIColor = UIColor.systemYellow.withAlphaComponent(0.35)
+    /// When a selection is active, taps deselect instead of following links.
+    var hasActiveSelection = false
+    var onDeselect: (() -> Void)?
 
     private lazy var tapRecognizer: UITapGestureRecognizer = {
         let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        return recognizer
+    }()
+    private lazy var longPressRecognizer: UILongPressGestureRecognizer = {
+        let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        recognizer.minimumPressDuration = 0.5
         return recognizer
     }()
 
@@ -18,6 +31,9 @@ final class BrowserLayoutPageView: UIView {
         super.init(frame: frame)
         isUserInteractionEnabled = true
         addGestureRecognizer(tapRecognizer)
+        addGestureRecognizer(longPressRecognizer)
+        // Long press wins over the tap recognizer when it fires.
+        tapRecognizer.require(toFail: longPressRecognizer)
     }
 
     required init?(coder: NSCoder) {
@@ -29,10 +45,40 @@ final class BrowserLayoutPageView: UIView {
         backgroundColorFill.setFill()
         context.fill(bounds)
         DisplayListDrawer.draw(displayList, in: context)
+        for highlight in highlightRects {
+            highlightColor.setFill()
+            context.fill(highlight.intersection(bounds))
+        }
+    }
+
+    /// The page-local rect of the character under a point (selection anchor).
+    func characterRect(at point: CGPoint) -> CGRect? {
+        for item in displayList.items {
+            guard case .text(let text) = item else { continue }
+            if text.rect.contains(point) {
+                return text.rect
+            }
+        }
+        return nil
+    }
+
+    @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+        guard recognizer.state == .began else { return }
+        onLongPress?()
     }
 
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
         let point = recognizer.location(in: self)
+        // Selection takes priority over links: a tap inside an active
+        // selection deselects.
+        if hasActiveSelection {
+            let inside = highlightRects.contains { $0.insetBy(dx: -8, dy: -8).contains(point) }
+            if inside {
+                onDeselect?()
+                return
+            }
+            // Tapping outside the selection can still follow links.
+        }
         guard let link = linkTarget(at: point) else { return }
         onLinkTap?(link)
     }
