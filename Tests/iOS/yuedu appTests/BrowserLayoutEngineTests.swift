@@ -1,3 +1,4 @@
+import SwiftSoup
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -63,5 +64,57 @@ struct ComputedStyleTests {
         let h1 = UserAgentStyle.basis(for: "h1")
         #expect(h1.fontSize == 32)
         #expect(h1.fontWeight == 700)
+    }
+}
+
+extension StyleTreeChild {
+    func elementNode() -> ComputedStyleNode {
+        guard case .element(let node) = self else { fatalError("not an element") }
+        return node
+    }
+    func rawText() -> String? {
+        if case .text(let s) = self { return s }
+        return nil
+    }
+}
+
+extension ComputedStyle {
+    func marginTopPx() -> CGFloat {
+        CSSLengthResolver.resolve(marginTop, emBase: fontSize, remBase: 17, percentBase: 400) ?? 0
+    }
+}
+
+struct ComputedStyleTreeTests {
+    func parseBody(_ html: String) async -> Element? {
+        try? await HTMLBuilderDOMParser().parse(
+            html: html,
+            collectStyles: { _ in [] },
+            stylesheetCache: nil
+        )?.body
+    }
+
+    @Test func buildsTreeWithInheritanceAndCascade() async throws {
+        let source = """
+        <html><head><style>p { color: blue; font-size: 18px }</style></head>
+        <body><p class="lead">Hello <strong>world</strong></p></body></html>
+        """
+        let body = try #require(await parseBody(source))
+        let builder = ComputedStyleTreeBuilder(
+            rules: CSSParser.parse(css: "p { color: blue; font-size: 18px }"),
+            config: BrowserLayoutConfig(rootFontSize: 17, textColor: .black, backgroundColor: .white)
+        )
+        let tree = builder.buildTree(body: body)
+        let p = tree.children[0].elementNode()
+        #expect(p.tag == "p")
+        #expect(p.style.color?.isEqual(UIColor.blue) == true)
+        #expect(p.style.fontSize == 18)
+        #expect(abs(p.style.marginTopPx() - 18) < 0.5)
+        let strong = try #require(p.children.compactMap { child in
+            if case .element(let node) = child { return node }
+            return nil
+        }.first)
+        #expect(strong.tag == "strong")
+        #expect(strong.style.fontWeight == 700)
+        #expect(strong.style.color?.isEqual(UIColor.blue) == true)
     }
 }
