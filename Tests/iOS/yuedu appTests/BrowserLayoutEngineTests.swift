@@ -221,3 +221,32 @@ extension BlockLayoutTests {
         #expect(child.frame.minY == 0)
     }
 }
+
+struct CoreTextLineBreakerTests {
+    @Test func breaksLongTextIntoMultipleLines() throws {
+        let paragraph = "This is a sentence that is long enough to wrap onto several lines when constrained to a narrow column width."
+        let attr = NSAttributedString(string: paragraph, attributes: [.font: UIFont.systemFont(ofSize: 16)])
+        let breaker = CoreTextLineBreaker()
+        let lines = breaker.breakLines(attributed: attr, maxWidth: 100)
+        #expect(lines.count >= 3)
+        #expect(lines.map(\.range.length).reduce(0, +) == attr.length)
+        for line in lines {
+            #expect(line.width <= 100.01)
+        }
+    }
+
+    @Test func singleLineWhenWideEnough() throws {
+        let paragraph = "Hello world"
+        let attr = NSAttributedString(string: paragraph, attributes: [.font: UIFont.systemFont(ofSize: 16)])
+        let lines = CoreTextLineBreaker().breakLines(attributed: attr, maxWidth: 400)
+        #expect(lines.count == 1)
+        #expect(lines[0].range.length == attr.length)
+    }
+
+    @Test func newlineForcesBreak() throws {
+        let paragraph = "Alpha\nBeta"
+        let attr = NSAttributedString(string: paragraph, attributes: [.font: UIFont.systemFont(ofSize: 16)])
+        let lines = CoreTextLineBreaker().breakLines(attributed: attr, maxWidth: 400)
+        #expect(lines.count == 2)
+    }
+}
