@@ -304,3 +304,27 @@ struct PageFragmentationTests {
         }
     }
 }
+
+struct DisplayListTests {
+    @Test func convertsFragmentsToItems() {
+        let page = PageFragments(
+            index: 0,
+            pageRect: CGRect(x: 0, y: 0, width: 300, height: 100),
+            fragments: [
+                .fill(FillFragment(rect: CGRect(x: 10, y: 0, width: 280, height: 40), color: .red, cornerRadius: 0)),
+                .text(TextFragment(range: NSRange(location: 0, length: 4),
+                                   rect: CGRect(x: 10, y: 4, width: 60, height: 20),
+                                   baselineY: 20, font: .systemFont(ofSize: 16), color: .black)),
+                .group([.fill(FillFragment(rect: CGRect(x: 5, y: 50, width: 100, height: 10), color: .blue, cornerRadius: 2))]),
+            ]
+        )
+        let list = DisplayListBuilder.build(for: page)
+        #expect(list.items.count == 3)
+        guard case .fill(let fill) = list.items[0] else { Issue.record("expected fill"); return }
+        #expect(fill.color == .red)
+        guard case .text(let text) = list.items[1] else { Issue.record("expected text"); return }
+        #expect(text.rect == CGRect(x: 10, y: 4, width: 60, height: 20))
+        guard case .fill(let groupedFill) = list.items[2] else { Issue.record("expected fill from group"); return }
+        #expect(groupedFill.cornerRadius == 2)
+    }
+}
