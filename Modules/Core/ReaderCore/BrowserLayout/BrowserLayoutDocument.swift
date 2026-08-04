@@ -58,59 +58,68 @@ final class BrowserLayoutDocument {
         return pages
     }
 
+    /// The shared pipeline: CSS → style tree → box tree → block layout.
+    /// Both batch pagination and `BrowserLayoutSession` consume this — one
+    /// implementation, no parallel paths.
+    func makeLayout(containerSize: CGSize) throws -> BrowserLayoutPipelineResult {
+        let fullCSS = cssTexts + extractInlineStyles(html)
+        let document = try SwiftSoup.parse(html)
+        guard let body = document.body() else {
+            throw BrowserLayoutError.emptyBody
+        }
+        let rules = fullCSS.flatMap { CSSParser.parse(css: $0, orderOffset: 0) }
+        let builder = ComputedStyleTreeBuilder(rules: rules, config: config)
+        let rootNode = builder.buildTree(body: body)
+        var sourceText = SourceTextBuilder()
+        var anchors: [String: Int] = [:]
+        let rootBox = BoxTreeBuilder.buildBlock(
+            for: rootNode, config: config,
+            sourceText: &sourceText, anchors: &anchors,
+            imageLoader: imageLoader
+        )
+        let contentWidth = max(1, containerSize.width - config.contentInsets.left - config.contentInsets.right)
+        let contentHeight = max(1, containerSize.height - config.contentInsets.top - config.contentInsets.bottom)
+        _ = BlockLayout.layOut(root: rootBox, containerWidth: contentWidth, rootFontSize: config.rootFontSize)
+        return BrowserLayoutPipelineResult(
+            rootBox: rootBox,
+            sourceText: sourceText.text,
+            anchorOffsets: anchors,
+            contentSize: CGSize(width: contentWidth, height: contentHeight)
+        )
+    }
+
+    struct BrowserLayoutPipelineResult {
+        let rootBox: BlockBox
+        let sourceText: String
+        let anchorOffsets: [String: Int]
+        let contentSize: CGSize
+    }
+
+    enum BrowserLayoutError: Error {
+        case emptyBody
+    }
+
     /// Runs the full pipeline and records per-stage timing + peak memory.
     func renderPagesAndMeasure(containerSize: CGSize) async throws -> (pages: [PageFragments], metrics: LayoutMetrics) {
         var metrics = LayoutMetrics()
         let startFootprint = MemoryStats.currentFootprint()
         var peakFootprint = startFootprint
 
-        let (fullCSS, document) = try metrics.time("cssCollect") {
-            let css = cssTexts + extractInlineStyles(html)
-            let doc = try SwiftSoup.parse(html)
-            return (css, doc)
-        }
-        guard let body = document.body() else {
-            lastSourceText = ""
-            lastAnchorOffsets = [:]
-            lastMetrics = metrics
-            return ([], metrics)
-        }
-
-        let rules = metrics.time("cssParse") {
-            fullCSS.flatMap { CSSParser.parse(css: $0, orderOffset: 0) }
-        }
-        let builder = ComputedStyleTreeBuilder(rules: rules, config: config)
-        let rootNode = metrics.time("styleTree") {
-            builder.buildTree(body: body)
-        }
-        var sourceText = SourceTextBuilder()
-        var anchors: [String: Int] = [:]
-        let rootBox = metrics.time("boxTree") {
-            BoxTreeBuilder.buildBlock(
-                for: rootNode, config: config,
-                sourceText: &sourceText, anchors: &anchors,
-                imageLoader: imageLoader
-            )
-        }
-        peakFootprint = max(peakFootprint, MemoryStats.currentFootprint())
-
-        let contentWidth = max(1, containerSize.width - config.contentInsets.left - config.contentInsets.right)
-        let contentHeight = max(1, containerSize.height - config.contentInsets.top - config.contentInsets.bottom)
-        metrics.time("layout") {
-            _ = BlockLayout.layOut(root: rootBox, containerWidth: contentWidth, rootFontSize: config.rootFontSize)
+        let pipeline = try metrics.time("pipeline") {
+            try makeLayout(containerSize: containerSize)
         }
         peakFootprint = max(peakFootprint, MemoryStats.currentFootprint())
 
         var pages: [PageFragments] = []
-        if !rootBox.lines.isEmpty || !rootBox.children.isEmpty {
+        if !pipeline.rootBox.lines.isEmpty || !pipeline.rootBox.children.isEmpty {
             pages = metrics.time("fragment") {
-                PageFragmentation.fragment(box: rootBox, pageSize: CGSize(width: contentWidth, height: contentHeight))
+                PageFragmentation.fragment(box: pipeline.rootBox, pageSize: pipeline.contentSize)
             }
         }
         peakFootprint = max(peakFootprint, MemoryStats.currentFootprint())
 
-        lastSourceText = sourceText.text
-        lastAnchorOffsets = anchors
+        lastSourceText = pipeline.sourceText
+        lastAnchorOffsets = pipeline.anchorOffsets
         metrics.peakFootprintDelta = peakFootprint - startFootprint
         lastMetrics = metrics
         return (pages, metrics)

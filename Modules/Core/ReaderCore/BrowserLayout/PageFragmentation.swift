@@ -45,214 +45,311 @@ struct PageFragments {
     let fragments: [Fragment]
 }
 
-/// Phase-1.5 page fragmentation: walks the laid-out block tree and pages every
-/// fragment by its ABSOLUTE Y coordinate. Blocks are split at line boundaries;
-/// atomic items (images) move wholesale to the next page when they do not fit.
-/// No orphan/widow rules yet. Fills do not split across pages (accepted Phase 1).
-enum PageFragmentation {
+/// Resumable page fragmentation. Walks the laid-out block tree with an
+/// EXPLICIT stack (boxes + per-box child/line/run indices) so the walk can be
+/// paused after every emitted fragment and resumed later — this is the single
+/// source of truth for BOTH batch pagination (`fragment(box:pageSize:)`) and
+/// incremental layout (`BrowserLayoutSession`): identical geometry by
+/// construction.
+struct PageWalker {
 
-    struct Fragmenter {
-        let pageHeight: CGFloat
-        let pageRect: CGRect
-        var currentIndex = 0
-        var pageItems: [Fragment] = []
-        var pages: [PageFragments] = []
+    enum Step {
+        case fill(FillFragment)
+        case text(TextFragment)
+        case image(ImageFragment)
+    }
 
-        var pageOriginY: CGFloat { CGFloat(currentIndex) * pageHeight }
+    private struct BoxFrame {
+        let box: BlockBox
+        let contentOrigin: CGPoint
+        let borderX: CGFloat
+        let borderY: CGFloat
+        var childIndex = 0
+        var lineIndex = 0
+        var runIndex = 0
+        var fillsEmitted = false
+    }
 
-        /// Pushes completed pages until `target` becomes the current page.
-        mutating func advanceToPage(_ target: Int) {
-            while target > currentIndex {
-                pages.append(PageFragments(index: currentIndex, pageRect: pageRect, fragments: pageItems))
-                currentIndex += 1
-                pageItems = []
+    let pageHeight: CGFloat
+    let pageRect: CGRect
+    let writingMode: ReaderWritingMode
+    private var stack: [BoxFrame] = []
+    private(set) var currentIndex = 0
+    private(set) var currentPage: [Fragment] = []
+    private(set) var completedPages: [PageFragments] = []
+
+    init(box: BlockBox, pageSize: CGSize, writingMode: ReaderWritingMode = .horizontal) {
+        self.pageHeight = max(1, pageSize.height)
+        self.pageRect = CGRect(origin: .zero, size: pageSize)
+        self.writingMode = writingMode
+        self.stack = [Self.makeFrame(box, contentOrigin: .zero)]
+    }
+
+    /// Emits the next fragment step in document order, or nil when the walk
+    /// is exhausted.
+    mutating func nextStep() -> Step? {
+        while !stack.isEmpty {
+            let index = stack.count - 1
+            if !stack[index].fillsEmitted {
+                stack[index].fillsEmitted = true
+                let frame = stack[index]
+                if let bg = frame.box.style.backgroundColor {
+                    return .fill(FillFragment(
+                        rect: CGRect(x: frame.borderX, y: frame.borderY,
+                                     width: frame.box.frame.width, height: frame.box.frame.height),
+                        color: bg,
+                        cornerRadius: frame.box.style.borderRadius,
+                        nodeID: -1,
+                        writingMode: writingMode
+                    ))
+                }
+                if frame.box.borders.top > 0 || frame.box.borders.bottom > 0
+                    || frame.box.borders.left > 0 || frame.box.borders.right > 0 {
+                    let borderW = max(frame.box.borders.top, frame.box.borders.bottom,
+                                      frame.box.borders.left, frame.box.borders.right)
+                    return .fill(FillFragment(
+                        rect: CGRect(x: frame.borderX, y: frame.borderY,
+                                     width: frame.box.frame.width, height: borderW),
+                        color: frame.box.style.borderColor ?? .black,
+                        cornerRadius: 0,
+                        nodeID: -1,
+                        writingMode: writingMode
+                    ))
+                }
+                continue
             }
-        }
-
-        mutating func placeText(_ frag: TextFragment) {
-            var target = max(0, Int(floor(frag.rect.minY / pageHeight)))
-            let pageLocalY = frag.rect.minY - CGFloat(target) * pageHeight
-            var adjustedY = pageLocalY
-            // Line boxes never split: a line that fits a page but not the
-            // remaining space moves wholesale to the next page (basic
-            // fragmentation; no orphan/widow control yet).
-            if frag.rect.height <= pageHeight, pageLocalY + frag.rect.height > pageHeight + 0.001 {
-                target += 1
-                adjustedY = 0
+            if stack[index].childIndex < stack[index].box.children.count {
+                let child = stack[index].box.children[stack[index].childIndex]
+                stack[index].childIndex += 1
+                let parent = stack[index]
+                let childOrigin = CGPoint(
+                    x: parent.contentOrigin.x + child.frame.minX + child.borders.left + child.padding.left,
+                    y: parent.contentOrigin.y + child.frame.minY + child.borders.top + child.padding.top
+                )
+                stack.append(Self.makeFrame(child, contentOrigin: childOrigin))
+                continue
             }
-            advanceToPage(target)
-            let dy = adjustedY - frag.rect.minY
-            pageItems.append(.text(TextFragment(
-                sourceRange: frag.sourceRange,
-                nodeID: frag.nodeID,
-                linkTarget: frag.linkTarget,
-                writingMode: frag.writingMode,
-                rect: frag.rect.offsetBy(dx: 0, dy: dy),
-                baselineY: frag.baselineY + dy,
-                font: frag.font,
-                color: frag.color
-            )))
-        }
-
-        mutating func placeFill(_ frag: FillFragment) {
-            let target = max(0, Int(floor(frag.rect.minY / pageHeight)))
-            advanceToPage(target)
-            let dy = -pageOriginY
-            pageItems.append(.fill(FillFragment(
-                rect: frag.rect.offsetBy(dx: 0, dy: dy),
-                color: frag.color,
-                cornerRadius: frag.cornerRadius,
-                nodeID: frag.nodeID,
-                writingMode: frag.writingMode
-            )))
-        }
-
-        mutating func placeImage(_ frag: ImageFragment) {
-            var target = max(0, Int(floor(frag.rect.minY / pageHeight)))
-            let pageLocalY = frag.rect.minY - CGFloat(target) * pageHeight
-            var adjustedY = pageLocalY
-            // Atomic items that fit a page but not the remaining space move
-            // wholesale to the next page (spec: "move wholesale to the next
-            // page when they do not fit").
-            if frag.rect.height <= pageHeight, pageLocalY + frag.rect.height > pageHeight + 0.001 {
-                target += 1
-                adjustedY = 0
+            if let attachment = stack[index].box.imageAttachment {
+                let frame = stack[index]
+                stack.removeLast()
+                let rect = CGRect(
+                    x: frame.contentOrigin.x,
+                    y: frame.contentOrigin.y,
+                    width: attachment.usedSize.width,
+                    height: attachment.usedSize.height
+                )
+                return .image(ImageFragment(
+                    source: attachment.source,
+                    image: attachment.image,
+                    sourceRange: NSRange(location: 0, length: 0),
+                    nodeID: -1,
+                    linkTarget: nil,
+                    writingMode: writingMode,
+                    rect: rect,
+                    alt: nil
+                ))
             }
-            advanceToPage(target)
-            let dy = adjustedY - frag.rect.minY
-            pageItems.append(.image(ImageFragment(
-                source: frag.source,
-                image: frag.image,
-                sourceRange: frag.sourceRange,
-                nodeID: frag.nodeID,
-                linkTarget: frag.linkTarget,
-                writingMode: frag.writingMode,
-                rect: frag.rect.offsetBy(dx: 0, dy: dy),
-                alt: frag.alt
-            )))
+            if stack[index].lineIndex < stack[index].box.lines.count {
+                let line = stack[index].box.lines[stack[index].lineIndex]
+                if stack[index].runIndex < line.runs.count {
+                    let run = line.runs[stack[index].runIndex]
+                    stack[index].runIndex += 1
+                    let frame = stack[index]
+                    if let atomic = run.atomic {
+                        let rect = CGRect(
+                            x: frame.contentOrigin.x + line.contentX + run.x,
+                            y: frame.contentOrigin.y + line.baseline - atomic.usedSize.height,
+                            width: atomic.usedSize.width,
+                            height: atomic.usedSize.height
+                        )
+                        return .image(ImageFragment(
+                            source: atomic.source,
+                            image: atomic.image,
+                            sourceRange: run.sourceRange,
+                            nodeID: run.nodeID,
+                            linkTarget: run.linkTarget,
+                            writingMode: writingMode,
+                            rect: rect,
+                            alt: nil
+                        ))
+                    }
+                    let rect = CGRect(
+                        x: frame.contentOrigin.x + line.contentX + run.x,
+                        y: frame.contentOrigin.y + line.top,
+                        width: run.width,
+                        height: line.height
+                    )
+                    return .text(TextFragment(
+                        sourceRange: run.sourceRange,
+                        nodeID: run.nodeID,
+                        linkTarget: run.linkTarget,
+                        writingMode: writingMode,
+                        rect: rect,
+                        baselineY: frame.contentOrigin.y + line.baseline,
+                        font: run.font,
+                        color: run.style.color ?? .black
+                    ))
+                }
+                stack[index].lineIndex += 1
+                stack[index].runIndex = 0
+                continue
+            }
+            stack.removeLast()
+        }
+        return nil
+    }
+
+    /// Feeds one step through the paging rules; returns a COMPLETED page when
+    /// the step crosses a page boundary (or nil otherwise).
+    mutating func place(_ step: Step) -> PageFragments? {
+        switch step {
+        case .fill(let frag):
+            return placeFill(frag)
+        case .text(let frag):
+            return placeText(frag)
+        case .image(let frag):
+            return placeImage(frag)
         }
     }
+
+    /// Walks until the next page completes. Returns the page, or nil when the
+    /// walk is exhausted (flushing the final partial page).
+    mutating func layoutNextPage() -> PageFragments? {
+        while let step = nextStep() {
+            if let page = place(step) { return page }
+        }
+        if !currentPage.isEmpty {
+            let page = PageFragments(index: currentIndex, pageRect: pageRect, fragments: currentPage)
+            completedPages.append(page)
+            currentPage = []
+            currentIndex += 1
+            return page
+        }
+        return nil
+    }
+
+    /// Source range of the last completed page (for offset-targeted layout).
+    func sourceRange(ofPage page: PageFragments, sourceText: String) -> NSRange {
+        let ns = sourceText as NSString
+        var minLocation = ns.length
+        var maxEnd = 0
+        func walk(_ fragments: [Fragment]) {
+            for fragment in fragments {
+                switch fragment {
+                case .text(let t):
+                    if t.sourceRange.length > 0 {
+                        minLocation = min(minLocation, t.sourceRange.location)
+                        maxEnd = max(maxEnd, t.sourceRange.location + t.sourceRange.length)
+                    }
+                case .group(let children): walk(children)
+                default: break
+                }
+            }
+        }
+        walk(page.fragments)
+        guard maxEnd > minLocation else { return NSRange(location: minLocation, length: 0) }
+        return NSRange(location: minLocation, length: maxEnd - minLocation)
+    }
+
+    // MARK: - Paging rules (single source of truth with the batch path)
+
+    private mutating func advanceToPage(_ target: Int) -> PageFragments? {
+        var flushed: PageFragments? = nil
+        while target > currentIndex {
+            let page = PageFragments(index: currentIndex, pageRect: pageRect, fragments: currentPage)
+            completedPages.append(page)
+            flushed = flushed ?? page
+            currentIndex += 1
+            currentPage = []
+        }
+        return flushed
+    }
+
+    private mutating func placeText(_ frag: TextFragment) -> PageFragments? {
+        var target = max(0, Int(floor(frag.rect.minY / pageHeight)))
+        let pageLocalY = frag.rect.minY - CGFloat(target) * pageHeight
+        var adjustedY = pageLocalY
+        // Line boxes never split: a line that fits a page but not the
+        // remaining space moves wholesale to the next page.
+        if frag.rect.height <= pageHeight, pageLocalY + frag.rect.height > pageHeight + 0.001 {
+            target += 1
+            adjustedY = 0
+        }
+        let flushed = advanceToPage(target)
+        let dy = adjustedY - frag.rect.minY
+        currentPage.append(.text(TextFragment(
+            sourceRange: frag.sourceRange,
+            nodeID: frag.nodeID,
+            linkTarget: frag.linkTarget,
+            writingMode: frag.writingMode,
+            rect: frag.rect.offsetBy(dx: 0, dy: dy),
+            baselineY: frag.baselineY + dy,
+            font: frag.font,
+            color: frag.color
+        )))
+        return flushed
+    }
+
+    private mutating func placeFill(_ frag: FillFragment) -> PageFragments? {
+        let target = max(0, Int(floor(frag.rect.minY / pageHeight)))
+        let flushed = advanceToPage(target)
+        let dy = -CGFloat(currentIndex) * pageHeight
+        currentPage.append(.fill(FillFragment(
+            rect: frag.rect.offsetBy(dx: 0, dy: dy),
+            color: frag.color,
+            cornerRadius: frag.cornerRadius,
+            nodeID: frag.nodeID,
+            writingMode: frag.writingMode
+        )))
+        return flushed
+    }
+
+    private mutating func placeImage(_ frag: ImageFragment) -> PageFragments? {
+        var target = max(0, Int(floor(frag.rect.minY / pageHeight)))
+        let pageLocalY = frag.rect.minY - CGFloat(target) * pageHeight
+        var adjustedY = pageLocalY
+        // Atomic items that fit a page but not the remaining space move
+        // wholesale to the next page.
+        if frag.rect.height <= pageHeight, pageLocalY + frag.rect.height > pageHeight + 0.001 {
+            target += 1
+            adjustedY = 0
+        }
+        let flushed = advanceToPage(target)
+        let dy = adjustedY - frag.rect.minY
+        currentPage.append(.image(ImageFragment(
+            source: frag.source,
+            image: frag.image,
+            sourceRange: frag.sourceRange,
+            nodeID: frag.nodeID,
+            linkTarget: frag.linkTarget,
+            writingMode: frag.writingMode,
+            rect: frag.rect.offsetBy(dx: 0, dy: dy),
+            alt: frag.alt
+        )))
+        return flushed
+    }
+
+    private static func makeFrame(_ box: BlockBox, contentOrigin: CGPoint) -> BoxFrame {
+        BoxFrame(
+            box: box,
+            contentOrigin: contentOrigin,
+            borderX: contentOrigin.x - box.borders.left - box.padding.left,
+            borderY: contentOrigin.y - box.borders.top - box.padding.top
+        )
+    }
+}
+
+/// Batch pagination: runs the walker to completion. Geometry is identical to
+/// incremental layout by construction (same walker).
+enum PageFragmentation {
 
     static func fragment(
         box: BlockBox,
         pageSize: CGSize,
         writingMode: ReaderWritingMode = .horizontal
     ) -> [PageFragments] {
-        var frag = Fragmenter(
-            pageHeight: max(1, pageSize.height),
-            pageRect: CGRect(origin: .zero, size: pageSize)
-        )
-        walk(box: box, contentOrigin: ContentOffset(x: 0, y: 0), fragmenter: &frag, writingMode: writingMode)
-        if !frag.pageItems.isEmpty {
-            frag.pages.append(PageFragments(index: frag.currentIndex, pageRect: frag.pageRect, fragments: frag.pageItems))
-        }
-        return frag.pages
-    }
-
-    private struct ContentOffset {
-        var x: CGFloat
-        var y: CGFloat
-    }
-
-    /// `contentOrigin` = absolute position of THIS box's content-box top-left.
-    private static func walk(
-        box: BlockBox,
-        contentOrigin: ContentOffset,
-        fragmenter: inout Fragmenter,
-        writingMode: ReaderWritingMode
-    ) {
-        // Border-box rect in absolute coordinates.
-        let borderX = contentOrigin.x - box.borders.left - box.padding.left
-        let borderY = contentOrigin.y - box.borders.top - box.padding.top
-
-        if let bg = box.style.backgroundColor {
-            fragmenter.placeFill(FillFragment(
-                rect: CGRect(x: borderX, y: borderY, width: box.frame.width, height: box.frame.height),
-                color: bg,
-                cornerRadius: box.style.borderRadius,
-                nodeID: -1,
-                writingMode: writingMode
-            ))
-        }
-        if box.borders.top > 0 || box.borders.bottom > 0 || box.borders.left > 0 || box.borders.right > 0 {
-            let borderW = max(box.borders.top, box.borders.bottom, box.borders.left, box.borders.right)
-            fragmenter.placeFill(FillFragment(
-                rect: CGRect(x: borderX, y: borderY, width: box.frame.width, height: borderW),
-                color: box.style.borderColor ?? .black,
-                cornerRadius: 0,
-                nodeID: -1,
-                writingMode: writingMode
-            ))
-        }
-
-        for child in box.children {
-            let childContent = ContentOffset(
-                x: contentOrigin.x + child.frame.minX + child.borders.left + child.padding.left,
-                y: contentOrigin.y + child.frame.minY + child.borders.top + child.padding.top
-            )
-            walk(box: child, contentOrigin: childContent, fragmenter: &fragmenter, writingMode: writingMode)
-        }
-
-        if let attachment = box.imageAttachment {
-            let rect = CGRect(
-                x: contentOrigin.x,
-                y: contentOrigin.y,
-                width: attachment.usedSize.width,
-                height: attachment.usedSize.height
-            )
-            fragmenter.placeImage(ImageFragment(
-                source: attachment.source,
-                image: attachment.image,
-                sourceRange: NSRange(location: 0, length: 0),
-                nodeID: -1,
-                linkTarget: nil,
-                writingMode: writingMode,
-                rect: rect,
-                alt: nil
-            ))
-            return
-        }
-
-        for line in box.lines {
-            let lineHeight = line.height
-            for run in line.runs {
-                if let atomic = run.atomic {
-                    // Inline replaced element: baseline-aligned bottom edge.
-                    let rect = CGRect(
-                        x: contentOrigin.x + line.contentX + run.x,
-                        y: contentOrigin.y + line.baseline - atomic.usedSize.height,
-                        width: atomic.usedSize.width,
-                        height: atomic.usedSize.height
-                    )
-                    fragmenter.placeImage(ImageFragment(
-                        source: atomic.source,
-                        image: atomic.image,
-                        sourceRange: run.sourceRange,
-                        nodeID: run.nodeID,
-                        linkTarget: run.linkTarget,
-                        writingMode: writingMode,
-                        rect: rect,
-                        alt: nil
-                    ))
-                    continue
-                }
-                let rect = CGRect(
-                    x: contentOrigin.x + line.contentX + run.x,
-                    y: contentOrigin.y + line.top,
-                    width: run.width,
-                    height: lineHeight
-                )
-                fragmenter.placeText(TextFragment(
-                    sourceRange: run.sourceRange,
-                    nodeID: run.nodeID,
-                    linkTarget: run.linkTarget,
-                    writingMode: writingMode,
-                    rect: rect,
-                    baselineY: contentOrigin.y + line.baseline,
-                    font: run.font,
-                    color: run.style.color ?? .black
-                ))
-            }
-        }
+        var walker = PageWalker(box: box, pageSize: pageSize, writingMode: writingMode)
+        while walker.layoutNextPage() != nil {}
+        return walker.completedPages
     }
 }
