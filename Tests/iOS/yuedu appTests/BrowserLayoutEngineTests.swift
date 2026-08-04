@@ -305,6 +305,37 @@ struct PageFragmentationTests {
     }
 }
 
+struct BrowserLayoutDocumentTests {
+    @Test func rendersSimpleChapterToPages() async throws {
+        let html = """
+        <html><head>
+        <style>p { margin: 0; line-height: 1.2 }</style>
+        </head><body>
+        <p>One line paragraph.</p>
+        </body></html>
+        """
+        let config = BrowserLayoutConfig(
+            renderWidth: 300, renderHeight: 400, rootFontSize: 17,
+            fontFamilies: ["PingFangSC-Regular"], textColor: .black, backgroundColor: .white
+        )
+        let doc = BrowserLayoutDocument(html: html, cssTexts: [], config: config)
+        let pages = try await doc.renderPages(containerSize: CGSize(width: 300, height: 400))
+        #expect(pages.count == 1)
+        let displayList = DisplayListBuilder.build(for: pages[0])
+        #expect(displayList.items.contains { item in
+            if case .text = item { return true }
+            return false
+        })
+        #expect(displayList.items.count >= 1)
+    }
+
+    @Test func emptyBodyYieldsNoPages() async throws {
+        let doc = BrowserLayoutDocument(html: "<html><body></body></html>", cssTexts: [], config: BrowserLayoutConfig())
+        let pages = try await doc.renderPages(containerSize: CGSize(width: 300, height: 400))
+        #expect(pages.isEmpty)
+    }
+}
+
 struct DisplayListTests {
     @Test func convertsFragmentsToItems() {
         let page = PageFragments(
