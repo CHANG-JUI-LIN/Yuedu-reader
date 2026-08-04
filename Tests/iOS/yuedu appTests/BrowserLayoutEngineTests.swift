@@ -182,10 +182,42 @@ struct BlockLayoutTests {
     @Test func contentHeightFromChildren() {
         var childS = style()
         childS.marginTop = .px(10); childS.marginBottom = .px(10)
-        var child = BlockBox(style: childS, boxType: .block)
-        _ = BlockLayout.layOut(root: child, containerWidth: 200) // empty: height auto = 0
+        let child = BlockBox(style: childS, boxType: .block,
+                             lines: [LayoutLine(runs: [], height: 40, ascent: 30, descent: 10,
+                                               top: 0, baseline: 30, contentX: 0)])
+        _ = BlockLayout.layOut(root: child, containerWidth: 200)
         let root = BlockBox(style: style(), boxType: .block, children: [child])
         _ = BlockLayout.layOut(root: root, containerWidth: 200)
-        #expect(root.contentSize.height == 20) // margins of empty child collapse into parent? see Task 6
+        #expect(child.frame.height == 40)          // border-box = content
+        #expect(root.contentSize.height == 40)     // child occupies 40; its top/bottom margins collapse out
+    }
+}
+
+extension BlockLayoutTests {
+    @Test func siblingMarginsCollapse() {
+        var s1 = style(); s1.marginTop = .px(10); s1.marginBottom = .px(30)
+        var s2 = style(); s2.marginTop = .px(20); s2.marginBottom = .px(5)
+        let childA = BlockBox(style: s1, boxType: .block)
+        let childB = BlockBox(style: s2, boxType: .block)
+        _ = BlockLayout.layOut(root: childA, containerWidth: 200)
+        _ = BlockLayout.layOut(root: childB, containerWidth: 200)
+        let root = BlockBox(style: style(), boxType: .block, children: [childA, childB])
+        _ = BlockLayout.layOut(root: root, containerWidth: 200)
+        // A bottom (30) and B top (20) collapse to 30; B starts 30 after A's bottom.
+        #expect(childB.frame.minY == childA.frame.maxY + 30)
+        #expect(childA.frame.maxY == 0)   // A has 0 content and its top margin collapsed into the box
+        #expect(childB.frame.minY == 30)
+    }
+
+    @Test func collapsedChildHeightInParent() {
+        var childS = style()
+        childS.marginTop = .px(10); childS.marginBottom = .px(10)
+        let child = BlockBox(style: childS, boxType: .block)
+        let root = BlockBox(style: style(), boxType: .block, children: [child])
+        _ = BlockLayout.layOut(root: root, containerWidth: 200)
+        // First-child top and last-child bottom margins collapse into the parent
+        // (no border/padding on the parent), so parent content height = 0.
+        #expect(root.contentSize.height == 0)
+        #expect(child.frame.minY == 0)
     }
 }

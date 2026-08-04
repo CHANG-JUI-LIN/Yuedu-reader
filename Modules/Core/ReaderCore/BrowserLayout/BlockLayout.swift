@@ -16,13 +16,33 @@ enum BlockLayout {
         box.frame = CGRect(x: 0, y: 0, width: sides.borderBoxWidth, height: 0)
 
         var cursorY: CGFloat = box.borders.top + box.padding.top
+        var previousBottomMargin: CGFloat? = nil
+        var previousChild: BlockBox? = nil
+
         for child in box.children {
             let childContentHeight = layOut(root: child, containerWidth: box.contentSize.width)
+            let collapsedTop: CGFloat
+            if let prev = previousBottomMargin {
+                collapsedTop = Margins.collapse(prev, child.margins.top)
+                child.frame.origin.y = max(cursorY, cursorY - prev + collapsedTop)
+            } else if box.borders.top == 0 && box.padding.top == 0 {
+                collapsedTop = child.margins.top   // folds into the box's own top margin
+                child.frame.origin.y = 0
+            } else {
+                collapsedTop = child.margins.top
+                child.frame.origin.y = cursorY
+            }
             child.frame.origin.x = child.margins.left
-            child.frame.origin.y = cursorY + child.margins.top
             let borderBoxH = child.borders.vertical + child.padding.vertical + childContentHeight
             child.frame.size = CGSize(width: child.borderBoxWidth, height: borderBoxH)
             cursorY = child.frame.maxY + child.margins.bottom
+            previousBottomMargin = child.margins.bottom
+            previousChild = child
+        }
+        if box.lines.isEmpty, let last = previousChild, box.borders.bottom == 0, box.padding.bottom == 0 {
+            // Last-child bottom margin collapses into the box's own bottom margin
+            // (i.e. the box's content height excludes the child's bottom margin).
+            cursorY -= last.margins.bottom
         }
         for line in box.lines { cursorY += line.height }
 
@@ -88,5 +108,11 @@ enum BlockLayout {
 
     private static func len(_ length: CSSLength, style: ComputedStyle, percent: CGFloat) -> CGFloat? {
         CSSLengthResolver.resolve(length, emBase: style.fontSize, remBase: style.fontSize, percentBase: percent)
+    }
+}
+
+enum Margins {
+    static func collapse(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+        max(a, b)
     }
 }
