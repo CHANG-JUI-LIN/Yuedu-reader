@@ -262,7 +262,8 @@ enum BoxTreeBuilder {
             maxWidth: config.renderWidth,
             rootFontSize: config.rootFontSize,
             lineHeight: style.lineHeight,
-            sourceText: sourceText.text
+            sourceText: sourceText.text,
+            fontResolver: config.fontResolver
         )
     }
 }

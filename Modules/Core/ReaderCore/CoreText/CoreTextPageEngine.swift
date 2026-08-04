@@ -100,7 +100,7 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
 }
 
 @MainActor
-final class CoreTextPageEngine: PageRenderingProvider {
+final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
 
     private(set) var totalPages: Int = 0
     private(set) var currentPage: Int = 0

@@ -259,6 +259,11 @@ final class EPUBPageRenderer: ObservableObject {
             if engine is FixedLayoutPageEngine {
                 return engine.pageIndex(for: position) != nil
             }
+            if let browserEngine = engine as? BrowserLayoutPageEngine {
+                // Browser chapters keep their layouts outside the legacy
+                // `layouts` dictionary.
+                return browserEngine.choice(for: position.spineIndex) != nil
+            }
             return engine.layouts[position.spineIndex] != nil
         }
     }
@@ -372,17 +377,32 @@ final class EPUBPageRenderer: ObservableObject {
         )
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
-        self.engine = newEngine
+        if BrowserLayoutFeature.browserEnabled,
+           session.epubWritingMode != .verticalRL,
+           session.layoutMode != .prePaginated {
+            // Debug A/B: browser chapters render with the browser engine,
+            // everything else falls back to the legacy engine inside the
+            // adapter. Release builds compile `browserEnabled` to false.
+            let resourceAdapter = EPUBBrowserLayoutResourceAdapter(session: session)
+            let browserEngine = BrowserLayoutPageEngine(
+                resource: resourceAdapter,
+                delegate: newEngine,
+                settings: settings
+            )
+            self.engine = browserEngine
+        } else {
+            self.engine = newEngine
+        }
         isCoreTextReady = false
 
         if effectiveSize.width > 0 {
             let startUptime = ProcessInfo.processInfo.systemUptime
             logProgress("load start bookId=\(bookIdentifier) renderSize=\(effectiveSize)")
             Task {
-                await newEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
+                await self.engine?.start(renderSize: effectiveSize, bookId: bookIdentifier)
                 self.isCoreTextReady = true
                 self.logProgress(
-                    "load ready bookId=\(bookIdentifier) totalPages=\(newEngine.totalPages) elapsedMs=\(self.elapsedMs(since: startUptime))"
+                    "load ready bookId=\(bookIdentifier) totalPages=\(self.engine?.totalPages ?? 0) elapsedMs=\(self.elapsedMs(since: startUptime))"
                 )
             }
         } else {

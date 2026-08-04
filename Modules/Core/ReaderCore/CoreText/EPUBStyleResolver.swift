@@ -91,8 +91,7 @@ final class EPUBStyleResolver {
     /// chapter actually references. Local publication resources are immutable, so failed URLs are
     /// negatively cached for the lifetime of this resolver.
     func registerFontFaces(requests: Set<ResolvedFontRequest>) async {
-        for request in requests.sorted(by: Self.fontRequestSort) {
-            let alias = Self.normalizeFontName(request.family)
+        for request in requests.sorted(by: Self.fontRequestSort) {            let alias = Self.normalizeFontName(request.family)
             guard !alias.isEmpty else { continue }
 
             let definitions = (pendingFontFaces[alias] ?? []).sorted {
@@ -181,6 +180,20 @@ final class EPUBStyleResolver {
                 break
             }
         }
+    }
+
+    /// Registers every pending `@font-face` family discovered so far (default
+    /// weight/italic requests). Used by the browser-layout adapter, which has no
+    /// AST to enumerate referenced fonts from — it registers everything and lets
+    /// `resolveRegisteredFont` pick the closest variant.
+    func registerAllPendingFontFaces() async {
+        let aliases = Array(pendingFontFaces.keys)
+        var requests = Set<ResolvedFontRequest>()
+        for alias in aliases {
+            requests.insert(ResolvedFontRequest(family: alias, weight: 400, italic: false))
+            requests.insert(ResolvedFontRequest(family: alias, weight: 700, italic: false))
+        }
+        await registerFontFaces(requests: requests)
     }
 
     func resolveRegisteredFont(

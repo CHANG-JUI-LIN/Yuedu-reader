@@ -43,7 +43,7 @@ enum StyleTreeChild {
 /// Reader-provided configuration that feeds computed styles: the root font size
 /// (rem base), the fallback text/background colors, and the config font family
 /// list. Layout stages read `renderWidth`/`renderHeight`/`contentInsets`.
-struct BrowserLayoutConfig: Equatable {
+struct BrowserLayoutConfig {
     var renderWidth: CGFloat = 320     // body containing-block width (reader content width)
     var renderHeight: CGFloat = 480    // page content height before page margins apply
     var rootFontSize: CGFloat = 17
@@ -52,6 +52,8 @@ struct BrowserLayoutConfig: Equatable {
     var backgroundColor: UIColor = .white
     var contentInsets: UIEdgeInsets = .zero   // page margins from reader settings
     var lineHeight: CGFloat? = nil     // reader line-height override (applied after author CSS)
+    /// CSS font-family resolver (embedded @font-face families). nil → UIFont(name:).
+    var fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)?
 }
 
 /// Turns the DOM `<body>` subtree + CSS rule list into a `ComputedStyleNode`

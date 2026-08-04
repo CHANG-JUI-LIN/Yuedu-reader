@@ -62,9 +62,14 @@ enum InlineLayout {
         rootFontSize: CGFloat,
         lineHeight: CGFloat?,
         writingMode: ReaderWritingMode = .horizontal,
-        sourceText: String
+        sourceText: String,
+        fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil
     ) -> [LayoutLine] {
         guard !runs.isEmpty else { return [] }
+
+        func resolveFont(_ style: ComputedStyle) -> UIFont {
+            font(for: style, resolver: fontResolver)
+        }
 
         // Build the attributed string mirroring the runs. Atomic runs become
         // U+FFFC with a CTRunDelegate sized to the image so the line breaker
@@ -84,11 +89,11 @@ enum InlineLayout {
                 let delegate = CTRunDelegateCreate(&callbacks, Unmanaged.passUnretained(box).toOpaque())
                 attributed.append(NSAttributedString(string: "\u{FFFC}", attributes: [
                     kCTRunDelegateAttributeName as NSAttributedString.Key: delegate as Any,
-                    .font: font(for: run.style),
+                    .font: resolveFont(run.style),
                 ]))
             } else {
                 attributed.append(NSAttributedString(string: run.text, attributes: [
-                    .font: font(for: run.style),
+                    .font: resolveFont(run.style),
                     .foregroundColor: run.style.color ?? .black,
                 ]))
             }
@@ -137,7 +142,7 @@ enum InlineLayout {
                     x: xCursor,
                     width: width,
                     style: run.style,
-                    font: font(for: run.style),
+                    font: resolveFont(run.style),
                     nodeID: run.nodeID,
                     linkTarget: run.linkTarget,
                     atomic: run.atomic
@@ -284,7 +289,11 @@ enum InlineLayout {
         }
     }
 
-    static func font(for style: ComputedStyle) -> UIFont {
+    static func font(for style: ComputedStyle, resolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil) -> UIFont {
+        if let resolver,
+           let resolved = resolver(style.fontFamilies, style.fontWeight, style.isItalic, style.fontSize) {
+            return resolved
+        }
         let family = style.fontFamilies.first ?? "PingFangSC-Regular"
         let base = UIFont(name: family, size: style.fontSize)
             ?? UIFont.systemFont(ofSize: style.fontSize)
