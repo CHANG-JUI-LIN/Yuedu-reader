@@ -27,6 +27,9 @@ final class BrowserLayoutSession {
     private(set) var anchorOffsets: [String: Int] = [:]
     private(set) var completedPages: [PageFragments] = []
     private(set) var isFinished = false
+    /// Lifecycle accounting: style-tree / box-tree sizes from the pipeline.
+    private(set) var pipelineNodeCount = 0
+    private(set) var pipelineBoxCount = 0
 
     init(
         html: String,
@@ -103,6 +106,8 @@ final class BrowserLayoutSession {
         ))
         sourceText = result.sourceText
         anchorOffsets = result.anchorOffsets
+        pipelineNodeCount = result.nodeCount
+        pipelineBoxCount = result.boxCount
         pipeline = result
         walker = PageWalker(box: result.rootBox, pageSize: result.contentSize)
     }

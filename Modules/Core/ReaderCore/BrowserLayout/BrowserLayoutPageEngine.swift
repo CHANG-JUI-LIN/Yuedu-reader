@@ -26,14 +26,25 @@ enum ChapterEngineChoice {
 /// source-offset → page mapping.
 struct BrowserChapterLayout {
     let spineIndex: Int
-    let pages: [PageFragments]
+    var pages: [PageFragments]
     let sourceText: String
     let anchorOffsets: [String: Int]
-    /// Page-local source ranges (into `sourceText`), built from fragments.
-    let pageSourceRanges: [NSRange]
+    /// Page-local source ranges (into `sourceText`), derived from the CURRENT
+    /// pages — computed so incremental completion (pages growing) stays
+    /// correct. Cheap: a few dozen pages × ~50 fragments.
+    var pageSourceRanges: [NSRange] {
+        Self.buildPageRanges(pages, sourceText: sourceText)
+    }
     let fontSize: CGFloat
     let themeTextColor: UIColor
     let themeBackgroundColor: UIColor
+    /// Lifecycle accounting: estimated retained bytes for this chapter's
+    /// style tree / box tree / fragments (released on chapter eviction).
+    var estimatedStyleBytes: Int64 = 0
+    var estimatedBoxBytes: Int64 = 0
+    var estimatedFragmentBytes: Int64 = 0
+    /// Bytes of built DisplayLists for this chapter (released on eviction).
+    var displayListBytes: Int64 = 0
 
     init(spineIndex: Int, pages: [PageFragments], sourceText: String, anchorOffsets: [String: Int],
          fontSize: CGFloat, themeTextColor: UIColor, themeBackgroundColor: UIColor) {
@@ -44,7 +55,6 @@ struct BrowserChapterLayout {
         self.fontSize = fontSize
         self.themeTextColor = themeTextColor
         self.themeBackgroundColor = themeBackgroundColor
-        self.pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText)
     }
 
     static func buildPageRanges(_ pages: [PageFragments], sourceText: String) -> [NSRange] {
@@ -137,6 +147,52 @@ struct BrowserChapterLayout {
         guard range.location >= 0, range.location + range.length <= ns.length else { return "" }
         return ns.substring(with: range)
     }
+
+    // MARK: - Lifecycle accounting
+
+    /// Records this chapter's estimated style-tree / box-tree bytes (per
+    /// chapter, so eviction can release them) and its current fragment bytes.
+    mutating func recordLifecycleBytes(nodeCount: Int, boxCount: Int) {
+        estimatedStyleBytes = Int64(nodeCount) * 120
+        estimatedBoxBytes = Int64(boxCount) * 200
+        refreshFragmentBytes()
+        MemoryTracker.record(.domStyleTree, bytes: estimatedStyleBytes)
+        MemoryTracker.record(.layoutBoxTree, bytes: estimatedBoxBytes)
+    }
+
+    /// Re-accounts fragment bytes after pages grew (incremental completion).
+    mutating func refreshFragmentBytes() {
+        let fragmentCount = pages.reduce(0) { total, page in
+            total + Self.countFragments(page.fragments)
+        }
+        let delta = Int64(fragmentCount) * 60 - estimatedFragmentBytes
+        if delta > 0 {
+            MemoryTracker.record(.fragmentTree, bytes: delta)
+        } else if delta < 0 {
+            MemoryTracker.release(.fragmentTree, bytes: -delta)
+        }
+        estimatedFragmentBytes = Int64(fragmentCount) * 60
+    }
+
+    func releaseLifecycleBytes() {
+        MemoryTracker.release(.domStyleTree, bytes: estimatedStyleBytes)
+        MemoryTracker.release(.layoutBoxTree, bytes: estimatedBoxBytes)
+        MemoryTracker.release(.fragmentTree, bytes: estimatedFragmentBytes)
+        if displayListBytes > 0 {
+            MemoryTracker.release(.displayList, bytes: displayListBytes)
+        }
+    }
+
+    private static func countFragments(_ fragments: [Fragment]) -> Int {
+        var count = 0
+        for fragment in fragments {
+            switch fragment {
+            case .text, .fill, .image: count += 1
+            case .group(let children): count += countFragments(children)
+            }
+        }
+        return count
+    }
 }
 
 /// Reader adapter for the browser-layout engine. Implements the FULL
@@ -175,6 +231,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     private var choices: [Int: ChapterEngineChoice] = [:]
     private var browserChapters: [Int: BrowserChapterLayout] = [:]
+    private var browserSessions: [Int: BrowserLayoutSession] = [:]
+    private var backgroundFinishTasks: [Int: Task<Void, Never>] = [:]
     private var spinePageOffsets: [Int] = []
     private var chapterPageCounts: [Int: Int] = [:]
     private var layoutGeneration = 0
@@ -184,6 +242,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// not block later work).
     private var textAnnotations: [CoreTextTextAnnotation] = []
     private var engineStatus: [Int: String] = [:]
+    /// Bounded DisplayList window cache: ±2 pages around the current page keep
+    /// their paint artifacts; farther pages rebuild on demand (DisplayLists
+    /// are cheap to rebuild from fragments).
+    private var displayListCache: [Int: DisplayList] = [:]
+    private var displayListCacheBytes: [Int: Int64] = [:]
 
     init(
         resource: any BrowserLayoutResourceProviding,
@@ -277,49 +340,100 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             let images = await resource.prefetchImages(forChapter: spineIndex, html: html)
             guard generation == layoutGeneration else { return }  // stale
 
-            let config = BrowserLayoutConfig(
-                renderWidth: contentWidth,
-                renderHeight: contentHeight,
-                rootFontSize: settings.fontSize,
-                fontFamilies: [],
-                textColor: themeTextColor,
-                backgroundColor: themeBackgroundColor,
-                contentInsets: settings.contentInsets,
-                lineHeight: settings.lineHeightMultiple,
-                fontResolver: resource.fontResolver()
-            )
-            let document = BrowserLayoutDocument(
+            let config = makeBrowserConfig()
+            let session = BrowserLayoutSession(
                 html: html, cssTexts: css, config: config,
-                imageLoader: { images[$0] }
+                imageLoader: { images[$0] }, generation: generation
             )
 
-            let result = try await withTimeout(nanos: chapterTimeoutNanos) {
-                try await document.renderPagesAndMeasure(containerSize: CGSize(width: self.contentWidth, height: self.contentHeight))
+            // FIRST PAGE: publish immediately — the rest of the chapter is NOT
+            // laid out yet.
+            let firstPage = try await withTimeout(nanos: chapterTimeoutNanos) {
+                try await session.layoutNextPage()
             }
             guard generation == layoutGeneration else { return }
-            let (pages, _) = result
-            if pages.isEmpty, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let firstPage else {
                 // A chapter with content that produced zero pages is an engine
                 // failure, not a capability issue.
                 await fallbackToLegacy(spineIndex, reason: "emptyLayout")
                 return
             }
-            browserChapters[spineIndex] = BrowserChapterLayout(
+            browserSessions[spineIndex] = session
+            var layout = BrowserChapterLayout(
                 spineIndex: spineIndex,
-                pages: pages,
-                sourceText: document.lastSourceText,
-                anchorOffsets: document.lastAnchorOffsets,
+                pages: [firstPage],
+                sourceText: session.sourceText,
+                anchorOffsets: session.anchorOffsets,
                 fontSize: settings.fontSize,
                 themeTextColor: self.themeTextColor,
-                themeBackgroundColor: settings.backgroundColor
+                themeBackgroundColor: themeBackgroundColor
             )
+            layout.recordLifecycleBytes(nodeCount: session.pipelineNodeCount, boxCount: session.pipelineBoxCount)
+            browserChapters[spineIndex] = layout
             engineStatus[spineIndex] = "browser"
+            rebuildOffsets()
+            onChapterReady?(spineIndex)
+
+            // REMAINING PAGES: generated after the first-page publish. The
+            // caller already rendered page 1 via onChapterReady; preload
+            // returns only when the chapter is complete (deterministic).
+            await finishBrowserChapter(spineIndex, generation: generation)
         } catch let error as EngineTimeoutError {
             await fallbackToLegacy(spineIndex, reason: "timeout")
             _ = error
         } catch {
             await fallbackToLegacy(spineIndex, reason: String(describing: error).prefix(80).description)
         }
+    }
+
+    /// Background completion of a chapter's remaining pages. On failure the
+    /// WHOLE chapter falls back to the legacy delegate (no mixed chapter).
+    private func finishBrowserChapter(_ spineIndex: Int, generation: Int) async {
+        guard let session = browserSessions[spineIndex] else { return }
+        do {
+            try await session.finish()
+        } catch {
+            guard layoutGeneration == generation else { return }
+            browserChapters.removeValue(forKey: spineIndex)?.releaseLifecycleBytes()
+            browserSessions.removeValue(forKey: spineIndex)
+            await fallbackToLegacy(spineIndex, reason: String(describing: error).prefix(80).description)
+            rebuildOffsets()
+            onChapterReady?(spineIndex)
+            return
+        }
+        guard layoutGeneration == generation, var layout = browserChapters[spineIndex] else { return }
+        layout.pages = session.completedPages
+        layout.refreshFragmentBytes()
+        browserChapters[spineIndex] = layout
+        browserSessions.removeValue(forKey: spineIndex)
+        rebuildOffsets()
+        onChapterReady?(spineIndex)
+    }
+
+    /// Extends a browser chapter's layout to cover `sourceOffset` on demand
+    /// (the caller may then resolve the offset to an exact page).
+    func extendLayout(spineIndex: Int, toSourceOffset offset: Int) async {
+        guard let session = browserSessions[spineIndex], !session.isFinished else { return }
+        try? await session.layout(untilSourceOffset: offset)
+        guard layoutGeneration == session.generation, var layout = browserChapters[spineIndex] else { return }
+        layout.pages = session.completedPages
+        layout.refreshFragmentBytes()
+        browserChapters[spineIndex] = layout
+        rebuildOffsets()
+    }
+
+    private func makeBrowserConfig() -> BrowserLayoutConfig {
+        BrowserLayoutConfig(
+            renderWidth: contentWidth,
+            renderHeight: contentHeight,
+            rootFontSize: settings.fontSize,
+            fontFamilies: [],
+            textColor: themeTextColor,
+            backgroundColor: themeBackgroundColor,
+            contentInsets: settings.contentInsets,
+            lineHeight: settings.lineHeightMultiple,
+            fontResolver: resource.fontResolver()
+        )
     }
 
     private func fallbackToLegacy(_ spineIndex: Int, reason: String) async {
@@ -333,8 +447,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         layoutGeneration += 1
         renderSize = newSize
         // Rebuild browser chapters from scratch (settings may have changed).
+        // Background finish tasks observe the bumped generation and drop.
         let browserSpines = Array(browserChapters.keys)
+        for layout in browserChapters.values { layout.releaseLifecycleBytes() }
         browserChapters.removeAll()
+        browserSessions.removeAll()
+        evictAllDisplayLists()
+        for task in backgroundFinishTasks.values { task.cancel() }
+        backgroundFinishTasks.removeAll()
         choices.removeAll()
         engineStatus.removeAll()
         await delegate.invalidateLayout(newSize: newSize)
@@ -363,10 +483,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         delegate.cancelPendingWork()
         for task in preloadTasks.values { task.cancel() }
         preloadTasks.removeAll()
+        for task in backgroundFinishTasks.values { task.cancel() }
+        backgroundFinishTasks.removeAll()
     }
 
     func notifyChapterDataChanged(at spineIndex: Int) async {
-        browserChapters.removeValue(forKey: spineIndex)
+        browserChapters.removeValue(forKey: spineIndex)?.releaseLifecycleBytes()
+        browserSessions.removeValue(forKey: spineIndex)
+        evictAllDisplayLists()
         choices.removeValue(forKey: spineIndex)
         await delegate.notifyChapterDataChanged(at: spineIndex)
         await preloadChapter(at: spineIndex)
@@ -549,7 +673,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                   layout.pages.indices.contains(local) else {
                 return PlaceholderPageViewController()
             }
-            let list = layout.displayList(forPage: local, themeTextColor: themeTextColor, oldThemeColor: layout.themeTextColor)
+            let list = cachedDisplayList(globalPage: index, spine: spine, local: local, layout: layout)
             let offset = layout.pageSourceRanges[local].location
             let vc = BrowserLayoutPageViewController(
                 globalPageIndex: index,
@@ -624,6 +748,40 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         spinePageOffsets = offsets
         chapterPageCounts = counts
         totalPages = running
+    }
+
+    // MARK: - DisplayList window cache
+
+    private func cachedDisplayList(globalPage: Int, spine: Int, local: Int, layout: BrowserChapterLayout) -> DisplayList {
+        if let cached = displayListCache[globalPage] { return cached }
+        let list = layout.displayList(forPage: local, themeTextColor: themeTextColor, oldThemeColor: layout.themeTextColor)
+        displayListCache[globalPage] = list
+        let bytes = Int64(list.items.count) * 96
+        displayListCacheBytes[globalPage] = bytes
+        if var stored = browserChapters[spine] {
+            stored.displayListBytes += bytes
+            browserChapters[spine] = stored
+        }
+        MemoryTracker.record(.displayList, bytes: bytes)
+        evictDisplayLists(around: globalPage)
+        return list
+    }
+
+    private func evictDisplayLists(around globalPage: Int) {
+        let window = 2
+        for (page, bytes) in displayListCacheBytes where abs(page - globalPage) > window {
+            displayListCache.removeValue(forKey: page)
+            displayListCacheBytes.removeValue(forKey: page)
+            MemoryTracker.release(.displayList, bytes: bytes)
+        }
+    }
+
+    private func evictAllDisplayLists() {
+        for bytes in displayListCacheBytes.values {
+            MemoryTracker.release(.displayList, bytes: bytes)
+        }
+        displayListCache.removeAll()
+        displayListCacheBytes.removeAll()
     }
 
     private func withTimeout<T>(nanos: UInt64, _ body: @escaping () async throws -> T) async throws -> T {

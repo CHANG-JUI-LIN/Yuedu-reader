@@ -202,6 +202,7 @@ struct PageWalker {
     /// Feeds one step through the paging rules; returns a COMPLETED page when
     /// the step crosses a page boundary (or nil otherwise).
     mutating func place(_ step: Step) -> PageFragments? {
+        MemoryTracker.record(.fragmentTree, bytes: 60)  // ~60B per fragment (estimate)
         switch step {
         case .fill(let frag):
             return placeFill(frag)

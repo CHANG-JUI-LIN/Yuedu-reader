@@ -97,6 +97,8 @@ final class ComputedStyleTreeBuilder {
             anchorID: linkAnchorID(of: body)
         )
         nextNodeID += 1
+        // ~120 bytes per style node (documented estimate; lifecycle metric).
+        MemoryTracker.record(.domStyleTree, bytes: Int64(nextNodeID) * 120)
         return root
     }
 

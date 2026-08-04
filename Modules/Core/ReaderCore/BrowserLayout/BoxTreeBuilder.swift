@@ -35,6 +35,25 @@ enum BoxTreeBuilder {
         anchors: inout [String: Int],
         imageLoader: (String) -> UIImage?
     ) -> BlockBox {
+        var boxCount = 0
+        let box = buildBlockInternal(
+            for: node, config: config, sourceText: &sourceText,
+            anchors: &anchors, imageLoader: imageLoader, boxCount: &boxCount
+        )
+        // ~200 bytes per box (documented estimate; lifecycle metric).
+        MemoryTracker.record(.layoutBoxTree, bytes: Int64(boxCount) * 200)
+        return box
+    }
+
+    private static func buildBlockInternal(
+        for node: ComputedStyleNode,
+        config: BrowserLayoutConfig,
+        sourceText: inout SourceTextBuilder,
+        anchors: inout [String: Int],
+        imageLoader: (String) -> UIImage?,
+        boxCount: inout Int
+    ) -> BlockBox {
+        boxCount += 1
         var kids: [BlockBox] = []
         var pendingInline: [InlineRun] = []
         // anchor IDs that will register at the first text run appended under them
@@ -73,9 +92,10 @@ enum BoxTreeBuilder {
                 } else if elementNode.style.display == .block {
                     flushGroup(&pendingInline, style: node.style, config: config,
                                sourceText: &sourceText, into: &kids)
-                    kids.append(buildBlock(
+                    kids.append(buildBlockInternal(
                         for: elementNode, config: config,
-                        sourceText: &sourceText, anchors: &anchors, imageLoader: imageLoader
+                        sourceText: &sourceText, anchors: &anchors, imageLoader: imageLoader,
+                        boxCount: &boxCount
                     ))
                 } else if elementNode.style.display == .none {
                     continue
@@ -265,5 +285,16 @@ enum BoxTreeBuilder {
             sourceText: sourceText.text,
             fontResolver: config.fontResolver
         )
+    }
+}
+
+extension BoxTreeBuilder {
+    /// Total block-box count in a tree (lifecycle accounting).
+    static func countBoxes(in box: BlockBox) -> Int {
+        var count = 1
+        for child in box.children {
+            count += countBoxes(in: child)
+        }
+        return count
     }
 }

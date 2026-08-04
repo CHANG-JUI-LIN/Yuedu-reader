@@ -23,6 +23,7 @@ final class CoreTextLineBreaker {
         let total = attributed.length
         var index = 0
         while charIndex < total {
+            MemoryTracker.record(.ctLineRun, bytes: 192)  // ~192B per CTLine (estimate)
             var count = CTTypesetterSuggestLineBreak(typesetter, charIndex, maxWidth)
 
             // CTTypesetter can suggest a break inside a grapheme cluster

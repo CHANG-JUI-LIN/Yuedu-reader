@@ -84,7 +84,9 @@ final class BrowserLayoutDocument {
             rootBox: rootBox,
             sourceText: sourceText.text,
             anchorOffsets: anchors,
-            contentSize: CGSize(width: contentWidth, height: contentHeight)
+            contentSize: CGSize(width: contentWidth, height: contentHeight),
+            nodeCount: rootNode.nodeID,
+            boxCount: BoxTreeBuilder.countBoxes(in: rootBox)
         )
     }
 
@@ -93,6 +95,10 @@ final class BrowserLayoutDocument {
         let sourceText: String
         let anchorOffsets: [String: Int]
         let contentSize: CGSize
+        /// Style-tree node count (lifecycle accounting).
+        let nodeCount: Int
+        /// Block-box count (lifecycle accounting).
+        let boxCount: Int
     }
 
     enum BrowserLayoutError: Error {
@@ -181,5 +187,65 @@ enum MemoryStats {
         }
         guard result == KERN_SUCCESS else { return 0 }
         return Int64(info.phys_footprint)
+    }
+}
+
+/// Per-artifact-type memory accounting for Phase 2B lifecycle verification.
+/// `record` adds retained bytes, `release` subtracts them — the live snapshot
+/// shows what is CURRENTLY retained per type (not just peaks). Estimates are
+/// documented approximations; the goal is proving no monotonic growth, not
+/// byte-exact accounting.
+enum MemoryTracker {
+    enum ArtifactType: String, CaseIterable {
+        case domStyleTree      // DOM + ComputedStyleNode
+        case layoutBoxTree
+        case fragmentTree
+        case ctLineRun         // CoreText line/run objects during shaping
+        case pageFragments
+        case displayList
+        case decodedImage
+        case snapshotBitmap
+    }
+
+    private static let lock = NSLock()
+    private static var retained: [ArtifactType: Int64] = [:]
+    private static var created: [ArtifactType: Int64] = [:]
+    private static var released: [ArtifactType: Int64] = [:]
+
+    static func record(_ type: ArtifactType, bytes: Int64) {
+        lock.lock()
+        retained[type, default: 0] += bytes
+        created[type, default: 0] += 1
+        lock.unlock()
+    }
+
+    static func release(_ type: ArtifactType, bytes: Int64) {
+        lock.lock()
+        retained[type, default: 0] = max(0, retained[type, default: 0] - bytes)
+        released[type, default: 0] += 1
+        lock.unlock()
+    }
+
+    static func reset() {
+        lock.lock()
+        retained.removeAll()
+        created.removeAll()
+        released.removeAll()
+        lock.unlock()
+    }
+
+    /// Current retained bytes per type.
+    static var snapshot: [ArtifactType: Int64] {
+        lock.lock()
+        defer { lock.unlock() }
+        return retained
+    }
+
+    static func summary() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return ArtifactType.allCases
+            .map { "\($0.rawValue): \(retained[$0] ?? 0)B (created \(created[$0] ?? 0), released \(released[$0] ?? 0))" }
+            .joined(separator: ", ")
     }
 }
