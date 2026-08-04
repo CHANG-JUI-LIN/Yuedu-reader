@@ -27,6 +27,11 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
 
     var chapterCount: Int { session.chapters.count }
 
+    /// Debug aid: how many CSS entries the manifest reading order declares.
+    func manifestCSSCount() -> Int {
+        resourceAdapter.cssResourceHrefs().count
+    }
+
     func chapterTitle(at index: Int) -> String {
         guard session.chapters.indices.contains(index) else { return "" }
         return session.chapters[index].title
@@ -49,19 +54,20 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
         let chapterHref = session.chapters[index].href
 
         var texts: [String] = []
-        // Linked stylesheets (publication-level, text/css reading order).
-        for href in resourceAdapter.cssResourceHrefs() {
-            guard let response = try? await resourceAdapter.response(for: resourceAdapter.resourceURL(for: href)),
-                  let css = String(data: response.data, encoding: .utf8) else { continue }
-            let processed = await styleResolver.processStylesheet(
-                css, cssHref: href, chapterHref: chapterHref
-            )
-            if !processed.isEmpty { texts.append(processed) }
-        }
-        // Inline <style> blocks.
+        // Linked stylesheets referenced from the chapter <head> — the SAME
+        // source the legacy pipeline uses (collectStyles). The manifest
+        // reading order alone misses most EPUB stylesheets.
+        var linkedHrefs = resourceAdapter.cssResourceHrefs()
         if let html = try? await chapterHTML(at: index),
            let doc = try? SwiftSoup.parse(html),
            let head = doc.head() {
+            for link in (try? head.select("link[rel=stylesheet]").array()) ?? [] {
+                let href = (try? link.attr("href")) ?? ""
+                if !href.isEmpty {
+                    let resolved = EPUBStyleResolver.resolveCSSHref(href, cssHref: "", chapterHref: chapterHref)
+                    if !linkedHrefs.contains(resolved) { linkedHrefs.append(resolved) }
+                }
+            }
             for styleTag in (try? head.select("style").array()) ?? [] {
                 let css = (try? styleTag.html()) ?? ""
                 if !css.isEmpty {
@@ -71,6 +77,14 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
                     if !processed.isEmpty { texts.append(processed) }
                 }
             }
+        }
+        for href in linkedHrefs {
+            guard let response = try? await resourceAdapter.response(for: resourceAdapter.resourceURL(for: href)),
+                  let css = String(data: response.data, encoding: .utf8) else { continue }
+            let processed = await styleResolver.processStylesheet(
+                css, cssHref: href, chapterHref: chapterHref
+            )
+            if !processed.isEmpty { texts.append(processed) }
         }
         await styleResolver.registerAllPendingFontFaces()
         cssTextCache[index] = texts
