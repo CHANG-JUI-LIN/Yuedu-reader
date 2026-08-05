@@ -103,27 +103,63 @@ final class RootTabIconStorageManager {
         guard allowedExtensions.contains(sourceExtension) else {
             throw RootTabIconStorageError.unsupportedImageFile
         }
-        guard let image = UIImage(contentsOfFile: fileURL.path), image.size.width > 0, image.size.height > 0 else {
+        guard let data = try? Data(contentsOf: fileURL) else {
+            throw RootTabIconStorageError.cannotReadImage
+        }
+        return try importIcon(
+            data: data,
+            fallbackExtension: sourceExtension,
+            originalFileName: fileURL.lastPathComponent,
+            tab: tab,
+            slot: slot
+        )
+    }
+
+    /// Import from raw bytes: a photo-library pick, or an icon restored out of a
+    /// customization bundle. `fallbackExtension` is empty for a Photos pick,
+    /// which has no file name to key the container off.
+    func importIcon(
+        data: Data,
+        fallbackExtension: String = "",
+        originalFileName: String,
+        tab: RootTabItem,
+        slot: RootTabIconSlot
+    ) throws -> RootTabIconAsset {
+        guard let image = UIImage(data: data), image.size.width > 0, image.size.height > 0 else {
+            throw RootTabIconStorageError.cannotReadImage
+        }
+        guard let output = ImportedImageNormalizer.normalize(
+            image: image,
+            data: data,
+            fallbackExtension: fallbackExtension,
+            allowedExtensions: allowedExtensions
+        ) else {
             throw RootTabIconStorageError.cannotReadImage
         }
 
         let directory = try iconsDirectoryURL()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let fileName = "\(tab.rawValue)-\(slot.rawValue)-\(UUID().uuidString).\(sourceExtension)"
+        let fileName = "\(tab.rawValue)-\(slot.rawValue)-\(UUID().uuidString).\(output.fileExtension)"
         let destination = directory.appendingPathComponent(fileName)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }
-        try fileManager.copyItem(at: fileURL, to: destination)
+        try output.data.write(to: destination, options: .atomic)
 
         return RootTabIconAsset(
             tabID: tab.rawValue,
             slotRawValue: slot.rawValue,
             fileName: fileName,
-            originalFileName: fileURL.lastPathComponent,
+            originalFileName: originalFileName,
             addedAt: Date()
         )
+    }
+
+    /// Bytes of a stored icon, for embedding into an export bundle.
+    func fileData(for asset: RootTabIconAsset) -> Data? {
+        guard let url = try? fileURL(for: asset) else { return nil }
+        return try? Data(contentsOf: url)
     }
 
     func delete(_ asset: RootTabIconAsset) {
@@ -281,9 +317,38 @@ extension GlobalSettings {
 
     @discardableResult
     func importRootTabIcon(from url: URL, tab: RootTabItem, slot: RootTabIconSlot) throws -> RootTabIconAsset {
-        let oldAsset = rootTabIconAsset(for: tab, slot: slot)
-        let asset = try RootTabIconStorageManager.shared.importIcon(fileURL: url, tab: tab, slot: slot)
-        if let oldAsset {
+        try adoptRootTabIcon(
+            RootTabIconStorageManager.shared.importIcon(fileURL: url, tab: tab, slot: slot),
+            tab: tab,
+            slot: slot
+        )
+    }
+
+    @discardableResult
+    func importRootTabIcon(
+        data: Data,
+        originalFileName: String,
+        tab: RootTabItem,
+        slot: RootTabIconSlot
+    ) throws -> RootTabIconAsset {
+        try adoptRootTabIcon(
+            RootTabIconStorageManager.shared.importIcon(
+                data: data,
+                originalFileName: originalFileName,
+                tab: tab,
+                slot: slot
+            ),
+            tab: tab,
+            slot: slot
+        )
+    }
+
+    private func adoptRootTabIcon(
+        _ asset: RootTabIconAsset,
+        tab: RootTabItem,
+        slot: RootTabIconSlot
+    ) -> RootTabIconAsset {
+        if let oldAsset = rootTabIconAsset(for: tab, slot: slot) {
             RootTabIconStorageManager.shared.delete(oldAsset)
         }
         rootTabIconAssets.removeAll { $0.tabID == tab.rawValue && $0.slotRawValue == slot.rawValue }

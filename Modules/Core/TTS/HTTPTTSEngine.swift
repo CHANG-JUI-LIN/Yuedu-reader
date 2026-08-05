@@ -7,6 +7,9 @@ import UIKit
 /// URL template supports placeholders: {{text}}, {{title}}, {{speakSpeed}}
 final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
+    /// Whether a failed download is one the listener is actually waiting to hear, as opposed
+    /// to a preload for a segment further ahead (which the normal preload path retries on its
+    /// own when playback reaches it).
     static func shouldStopAfterCurrentChunkFailure(
         isCurrentRequest: Bool,
         isPendingPlayback: Bool
@@ -14,12 +17,31 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         isCurrentRequest || isPendingPlayback
     }
 
+    /// Whether the session has to end, rather than skipping past a failed segment.
+    ///
+    /// One bad segment is not a broken source: a single unsynthesizable paragraph used to end
+    /// an hours-long listening session outright, which is what "鎖屏聽一會兒就斷" was. Skipping
+    /// forward keeps the audio going and still reports the segment through `onSegmentSkipped`.
+    /// A run of consecutive failures IS a broken source (bad key, provider down, rate limit),
+    /// and skipping through a whole chapter in silence would be the dishonest outcome — so the
+    /// run is bounded and the session then stops with the real error.
+    static func shouldEndSessionAfterSkips(consecutiveFailures: Int) -> Bool {
+        consecutiveFailures >= maxConsecutiveChunkFailures
+    }
+
+    static let maxConsecutiveChunkFailures = 3
+
     var isPlaying: Bool = false
     var onPageFinished: (() -> TTSNextUnitOutcome)?
     var onStop: (() -> Void)?
     var onError: ((Error) -> Void)?
+    var onSegmentSkipped: ((Error) -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
+
+    /// Segments given up on since the last one that played. Reset by any success, so this
+    /// counts an unbroken run, not a total.
+    private var consecutiveChunkFailures = 0
 
     /// Set while the host prepares the next chapter; the same keep-alive silence that covers
     /// chunk-download gaps carries the session through this longer wait.
@@ -399,6 +421,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
         let isPendingPlayback = pendingPlaybackIndex == index && currentIndex == index
         audioCache[index] = data
+        // The provider is answering again: the failure run is over.
+        consecutiveChunkFailures = 0
         ttsLog("[TTS][HTTPEngine] provider result success index=\(index) bytes=\(data.count)")
 
         if (priority == .current || isPendingPlayback),
@@ -426,23 +450,44 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
         let isPendingPlayback = pendingPlaybackIndex == index && currentIndex == index
         ttsLog("[TTS][HTTPEngine] provider request failed index=\(index) error=\(error.localizedDescription)")
-        if Self.shouldStopAfterCurrentChunkFailure(
+        guard Self.shouldStopAfterCurrentChunkFailure(
             isCurrentRequest: priority == .current,
             isPendingPlayback: isPendingPlayback
-        ) {
-            pendingPlaybackIndex = nil
+        ) else {
+            // A preload that failed for a segment further ahead: playback will request it
+            // again through `playChunk` when it gets there, so nothing is lost yet.
+            startPreloading(from: index + 1, token: token)
+            return
+        }
+
+        pendingPlaybackIndex = nil
+        skipOrFailCurrentChunk(index: index, token: token, error: error)
+    }
+
+    /// Move past a segment the provider could not deliver, or end the session once too many
+    /// in a row have failed. See `shouldEndSessionAfterSkips` for why both outcomes exist.
+    private func skipOrFailCurrentChunk(index: Int, token: UUID, error: Error) {
+        consecutiveChunkFailures += 1
+        guard !Self.shouldEndSessionAfterSkips(consecutiveFailures: consecutiveChunkFailures) else {
             failPlayback(
                 TTSPlaybackError.chunkUnavailable(index: index, underlying: error),
                 token: token
             )
-        } else {
-            startPreloading(from: index + 1, token: token)
+            return
         }
+
+        ttsLog("[TTS][HTTPEngine] skipping failed chunk index=\(index) consecutiveFailures=\(consecutiveChunkFailures)")
+        onSegmentSkipped?(TTSPlaybackError.chunkSkipped(index: index, underlying: error))
+        // `playChunk` past the last index ends the page, so a failing final segment hands over
+        // to the next chapter instead of killing the session.
+        playChunk(at: index + 1, token: token)
     }
 
-    /// A current chunk failure is terminal for this playback session. Skipping it silently
-    /// makes a network/provider problem look like missing book text and leaves the reader's
-    /// controls reporting "playing" without producing audio.
+    /// End the session with a visible error. Reached when the provider has failed on a run of
+    /// consecutive segments, or when the audio graph itself won't play — never for a single bad
+    /// segment, which `skipOrFailCurrentChunk` steps over. The alternative of skipping silently
+    /// makes a provider problem look like missing book text and leaves the reader's controls
+    /// reporting "playing" without producing audio.
     private func failPlayback(_ error: Error, token: UUID) {
         guard token == playbackToken else { return }
         ttsLog("[TTS][HTTPEngine] playback failed error=\(error.localizedDescription)")
@@ -484,15 +529,18 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             if !success {
                 failPlayback(TTSPlaybackError.playbackFailed(index: index), token: token)
             } else {
+                // A segment is actually being heard: any failure run is over.
+                consecutiveChunkFailures = 0
                 // Wall-clock length, so the Now Playing clock matches what is heard.
                 onPlaybackStarted?(player.effectiveDuration)
             }
         } catch {
+            // The bytes for this one segment are not decodable audio (a provider that answered
+            // with an error page, a truncated payload). Same class as a failed download: move
+            // on rather than ending the session.
             ttsLog("[TTS][HTTPEngine] player init failed index=\(index) error=\(error.localizedDescription)")
-            failPlayback(
-                TTSPlaybackError.chunkUnavailable(index: index, underlying: error),
-                token: token
-            )
+            audioCache[index] = nil
+            skipOrFailCurrentChunk(index: index, token: token, error: error)
         }
     }
 
@@ -629,6 +677,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         isPaused = false
         pendingPlaybackIndex = nil
         resumePlaybackTime = 0
+        consecutiveChunkFailures = 0
         isPlaying = false
         loadedPlayerIndex = nil
         audioPlayer?.clear()

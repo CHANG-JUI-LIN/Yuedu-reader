@@ -22,6 +22,7 @@ enum TTSNextUnitOutcome {
 
 enum TTSPlaybackError: LocalizedError {
     case chunkUnavailable(index: Int, underlying: Error)
+    case chunkSkipped(index: Int, underlying: Error)
     case playbackFailed(index: Int)
     case systemVoiceUnavailable
 
@@ -30,6 +31,12 @@ enum TTSPlaybackError: LocalizedError {
         case let .chunkUnavailable(index, underlying):
             return String(
                 format: localized("第 %d 段語音無法下載：%@"),
+                index + 1,
+                underlying.localizedDescription
+            )
+        case let .chunkSkipped(index, underlying):
+            return String(
+                format: localized("第 %d 段語音無法下載，已跳過：%@"),
                 index + 1,
                 underlying.localizedDescription
             )
@@ -54,7 +61,12 @@ protocol TTSPlayable: AnyObject {
     /// True between a `.waiting` outcome and the matching `supplyPendingUnit(_:)`.
     var isWaitingForNextUnit: Bool { get }
     var onStop: (() -> Void)? { get set }
+    /// Playback ended because of this error. Presented as a blocking alert.
     var onError: ((Error) -> Void)? { get set }
+    /// One segment was given up on, but narration continues with the next one. Reported so a
+    /// provider problem is never invisible, without tearing down a listening session that is
+    /// still producing audio.
+    var onSegmentSkipped: ((Error) -> Void)? { get set }
     var onPlaybackStarted: ((TimeInterval) -> Void)? { get set }
     var onSegmentChanged: ((Int, Int, String) -> Void)? { get set }
 

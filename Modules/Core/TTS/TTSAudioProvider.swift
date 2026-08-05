@@ -311,6 +311,14 @@ enum DirectChapterAudioResolver {
 enum TTSAudioProviderError: LocalizedError {
     case emptyTemplate
     case invalidURL
+    /// The source's `@js:` template ran but produced nothing — a JS exception, a `null`
+    /// return, or the engine's evaluation timeout. Kept distinct from `invalidURL` because
+    /// the two have completely different causes and only the message reaches the user: one
+    /// message for three branches made a report un-diagnosable.
+    case jsTemplateProducedNothing
+    /// The JS returned a string, but it could not be turned into a request (bad URL, or an
+    /// options blob that failed to parse). Carries the head of that string.
+    case jsResultNotRequestable(String)
     case emptyData
     case badStatus(Int)
     case responsePostProcessingFailed
@@ -321,6 +329,10 @@ enum TTSAudioProviderError: LocalizedError {
             return "TTS URL template is empty"
         case .invalidURL:
             return "TTS URL template produced an invalid URL"
+        case .jsTemplateProducedNothing:
+            return "TTS source script returned no URL"
+        case .jsResultNotRequestable(let head):
+            return "TTS source script returned an unusable URL: \(head)"
         case .emptyData:
             return "TTS provider returned empty audio data"
         case .badStatus(let status):
@@ -361,11 +373,13 @@ final class CustomHTTPProvider: TTSAudioProvider {
 
         var request: URLRequest
         if isJSTemplate(template) {
-            guard let r = buildJSRequest(template: template, text: text, title: title, rate: rate, source: activeSource) else {
-                ttsLog("[TTS][Provider] invalid js template=\(template)")
-                throw TTSAudioProviderError.invalidURL
-            }
-            request = r
+            request = try buildJSRequestOrThrow(
+                template: template,
+                text: text,
+                title: title,
+                rate: rate,
+                source: activeSource
+            )
         } else {
             guard let r = buildRequest(template: template, text: text, title: title, rate: rate) else {
                 ttsLog("[TTS][Provider] invalid url template=\(template)")
@@ -431,13 +445,13 @@ final class CustomHTTPProvider: TTSAudioProvider {
         return t.hasPrefix("@js:") || t.hasPrefix("<js>")
     }
 
-    private func buildJSRequest(
+    private func buildJSRequestOrThrow(
         template: String,
         text: String,
         title: String,
         rate: Float,
         source: ImportedTTSSource?
-    ) -> URLRequest? {
+    ) throws -> URLRequest {
         let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
         let jsCode: String
         if trimmed.hasPrefix("@js:") {
@@ -450,7 +464,8 @@ final class CustomHTTPProvider: TTSAudioProvider {
                 jsCode = String(trimmed[start...])
             }
         } else {
-            return nil
+            ttsLog("[TTS][Provider] invalid js template=\(template.prefix(120))")
+            throw TTSAudioProviderError.invalidURL
         }
 
         let sourceId = source?.id ?? ""
@@ -537,13 +552,17 @@ final class CustomHTTPProvider: TTSAudioProvider {
 
         guard let result = engine.evaluate(jsCode, result: nil, bindings: bindings)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !result.isEmpty else {
-            ttsLog("[TTS][Provider] JS evaluation returned empty result")
-            return nil
+            // The script itself produced nothing. `JSCoreEngine.evaluate` collapses a JS
+            // exception, a null return and its own 30s evaluation timeout into the same nil,
+            // so log the source and text size that reached it — that is what tells these apart
+            // in a device log.
+            ttsLog("[TTS][Provider] JS evaluation returned empty result source=\(source?.name ?? "-") textCount=\(text.count)")
+            throw TTSAudioProviderError.jsTemplateProducedNothing
         }
 
         guard let request = AnalyzeUrl(ruleUrl: result, speakText: text, speakSpeed: speed).toURLRequest() else {
             ttsLog("[TTS][Provider] AnalyzeUrl failed to parse JS result: \(result.prefix(200))")
-            return nil
+            throw TTSAudioProviderError.jsResultNotRequestable(String(result.prefix(80)))
         }
 
         // Apply login headers captured during JS evaluation

@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 
 enum ReaderQuickPageTurnOption: String, CaseIterable, Identifiable, Hashable {
     case slide
@@ -539,15 +538,7 @@ private struct ReaderCustomBackgroundOptionsView: View {
 
     @ObservedObject private var settings = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
-    @State private var showingImageImporter = false
     @State private var importAlert: ReaderCustomBackgroundImportAlert?
-
-    private static let imageContentTypes: [UTType] = [
-        UTType(filenameExtension: "webp") ?? .data,
-        UTType(filenameExtension: "jpg") ?? .jpeg,
-        UTType(filenameExtension: "jpeg") ?? .jpeg,
-        UTType(filenameExtension: "png") ?? .png,
-    ]
 
     var body: some View {
         List {
@@ -566,9 +557,10 @@ private struct ReaderCustomBackgroundOptionsView: View {
                 }
 
                 if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsBackgroundImageImport {
-                    Button {
-                        showingImageImporter = true
-                    } label: {
+                    ImageSourcePickerButton(
+                        accessibilityTitle: localized("導入圖片背景"),
+                        onPick: importBackgroundImage
+                    ) {
                         Label(localized("導入圖片背景"), systemImage: "photo")
                             .font(DSFont.body)
                             .foregroundStyle(DSColor.textPrimary)
@@ -587,12 +579,6 @@ private struct ReaderCustomBackgroundOptionsView: View {
         .background(DSColor.groupedBackground)
         .navigationTitle(localized("自定義閱讀背景"))
         .toolbarTitleDisplayMode(.inline)
-        .fileImporter(
-            isPresented: $showingImageImporter,
-            allowedContentTypes: Self.imageContentTypes,
-            allowsMultipleSelection: false,
-            onCompletion: importBackgroundImage
-        )
         .alert(item: $importAlert) { alert in
             Alert(
                 title: Text(localized("閱讀背景匯入失敗")),
@@ -602,16 +588,17 @@ private struct ReaderCustomBackgroundOptionsView: View {
         }
     }
 
-    private func importBackgroundImage(_ result: Result<[URL], Error>) {
+    private func importBackgroundImage(_ result: Result<PickedImageSource, PickedImageError>) {
         do {
-            guard let url = try result.get().first else { return }
-            let didStartAccessing = url.startAccessingSecurityScopedResource()
-            defer {
-                if didStartAccessing {
-                    url.stopAccessingSecurityScopedResource()
-                }
+            switch result {
+            case .success(.data(let data)):
+                try settings.importReaderCustomBackgroundImage(data: data)
+            case .success(.file(let url)):
+                try settings.importReaderCustomBackgroundImage(from: url)
+            case .failure(let error):
+                importAlert = ReaderCustomBackgroundImportAlert(message: localized(error.messageKey))
+                return
             }
-            try settings.importReaderCustomBackgroundImage(from: url)
             onImageImported()
         } catch let error as ReaderCustomBackgroundStorageError {
             importAlert = ReaderCustomBackgroundImportAlert(message: localized(error.messageKey))

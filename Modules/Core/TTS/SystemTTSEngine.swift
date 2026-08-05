@@ -23,6 +23,9 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     var onPageFinished: (() -> TTSNextUnitOutcome)?
     var onStop: (() -> Void)?
     var onError: ((Error) -> Void)?
+    /// The on-device synthesizer has no per-segment fetch that can fail on its own, so this
+    /// never fires here; it exists to satisfy `TTSPlayable`.
+    var onSegmentSkipped: ((Error) -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((Int, Int, String) -> Void)?
 

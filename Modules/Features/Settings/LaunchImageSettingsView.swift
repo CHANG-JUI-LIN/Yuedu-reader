@@ -1,22 +1,12 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 
 /// Pro settings page for the custom app launch splash: a master switch plus a
 /// light / dark image slot. Reached from 外觀主題 (gated at that entry point), so
 /// this page itself assumes access and only manages the images.
 struct LaunchImageSettingsView: View {
     @ObservedObject private var settings = GlobalSettings.shared
-    @State private var isImporting = false
-    @State private var importScheme: LaunchImageScheme = .light
     @State private var importAlert: LaunchImageImportAlert?
-
-    private static let imageContentTypes: [UTType] = [
-        UTType(filenameExtension: "webp") ?? .data,
-        UTType(filenameExtension: "jpg") ?? .jpeg,
-        UTType(filenameExtension: "jpeg") ?? .jpeg,
-        .png,
-    ]
 
     private var hasAnyLaunchImage: Bool {
         settings.launchImageFileName(for: .light) != nil
@@ -58,12 +48,6 @@ struct LaunchImageSettingsView: View {
         .navigationTitle(localized("啟動圖"))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .settings)
-        .fileImporter(
-            isPresented: $isImporting,
-            allowedContentTypes: Self.imageContentTypes,
-            allowsMultipleSelection: false,
-            onCompletion: handleImport
-        )
         .alert(item: $importAlert) { alert in
             Alert(
                 title: Text(localized("啟動圖匯入失敗")),
@@ -96,9 +80,12 @@ struct LaunchImageSettingsView: View {
             .padding(.vertical, DSSpacing.xs)
         }
 
-        Button {
-            beginImport(scheme)
-        } label: {
+        ImageSourcePickerButton(
+            accessibilityTitle: localized(
+                scheme == .dark ? "深色啟動圖" : "淺色啟動圖"
+            ),
+            onPick: { result in handlePick(result, for: scheme) }
+        ) {
             Label(
                 image == nil ? localized("選擇圖片") : localized("更換圖片"),
                 systemImage: "photo"
@@ -123,19 +110,19 @@ struct LaunchImageSettingsView: View {
         return image
     }
 
-    private func beginImport(_ scheme: LaunchImageScheme) {
-        importScheme = scheme
-        isImporting = true
-    }
-
-    private func handleImport(_ result: Result<[URL], Error>) {
+    private func handlePick(
+        _ result: Result<PickedImageSource, PickedImageError>,
+        for scheme: LaunchImageScheme
+    ) {
         do {
-            guard let url = try result.get().first else { return }
-            let didAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if didAccess { url.stopAccessingSecurityScopedResource() }
+            switch result {
+            case .success(.data(let data)):
+                try settings.importLaunchImage(data: data, for: scheme)
+            case .success(.file(let url)):
+                try settings.importLaunchImage(from: url, for: scheme)
+            case .failure(let error):
+                importAlert = LaunchImageImportAlert(message: localized(error.messageKey))
             }
-            try settings.importLaunchImage(from: url, for: importScheme)
         } catch let error as LaunchImageStorageError {
             importAlert = LaunchImageImportAlert(message: localized(error.messageKey))
         } catch {

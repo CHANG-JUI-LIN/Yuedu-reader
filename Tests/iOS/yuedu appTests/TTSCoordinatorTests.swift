@@ -26,6 +26,19 @@ struct TTSCoordinatorTests {
         )
     }
 
+    @Test func oneBadSegmentSkipsButARunOfThemEndsTheSession() {
+        // A single unsynthesizable paragraph must not end an hours-long listening session.
+        #expect(!HTTPTTSEngine.shouldEndSessionAfterSkips(consecutiveFailures: 1))
+        #expect(!HTTPTTSEngine.shouldEndSessionAfterSkips(consecutiveFailures: 2))
+        // A run of them is a broken source, and skipping the whole chapter in silence would
+        // hide it — the session ends with the real error instead.
+        #expect(
+            HTTPTTSEngine.shouldEndSessionAfterSkips(
+                consecutiveFailures: HTTPTTSEngine.maxConsecutiveChunkFailures
+            )
+        )
+    }
+
     // MARK: - CustomHTTPProvider.buildURL
 
     @Test func buildURL_replacesAllPlaceholders() {

@@ -59,6 +59,30 @@ struct TTSPanelView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let notice = tts.playbackNotice {
+                    Section {
+                        HStack(alignment: .top, spacing: DSSpacing.sm) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundColor(DSColor.textSecondary)
+                                .accessibilityHidden(true)
+                            Text(notice)
+                                .font(DSFont.caption)
+                                .foregroundColor(DSColor.textSecondary)
+                            Spacer(minLength: 0)
+                            Button {
+                                tts.dismissPlaybackNotice()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(DSColor.textSecondary)
+                                    .accessibilityHidden(true)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(localized("關閉提示"))
+                        }
+                    }
+                    .interfaceSectionSurface()
+                }
+
                 Section {
                     NavigationLink(destination: TTSSettingsView()) {
                         HStack {

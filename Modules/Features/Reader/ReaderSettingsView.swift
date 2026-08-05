@@ -47,9 +47,6 @@ struct ReaderSettingsView: View {
     private let defaultParagraphSpacingMultiplier: CGFloat = 0.8
     private let defaultPageMarginH: CGFloat = 24
     private let defaultPageMarginV: CGFloat = 16
-    private let defaultReaderTitleSize: CGFloat = 28
-    private let defaultReaderTitleTopSpacing: CGFloat = 10
-    private let defaultReaderTitleBottomSpacing: CGFloat = 20
 
     var body: some View {
         NavigationStack {
@@ -57,27 +54,39 @@ struct ReaderSettingsView: View {
                 previewPanel
                 Divider()
 
+                // Section order follows what a reader reaches for most: what the
+                // text looks like, how it is spaced, where it sits on the page,
+                // then the surrounding chrome and one-off utilities.
                 Form {
                     if supportsUserFont || supportsFontSize {
-                        textStyleSection
+                        textSection
                     }
 
-                    if showsReaderEditorSection {
-                        readerEditorSection
+                    if supportsSpacing {
+                        spacingSection
                     }
 
-                    if supportsSpacing || supportsLineHeight {
-                        layoutDetailsSection
+                    if supportsLineHeight {
+                        pageMarginSection
                     }
 
-                    if supportsPageDisplay {
-                        pageDisplaySection
+                    if showsPagingSection {
+                        pagingSection
+                    }
+
+                    if showsHeaderFooterSection {
+                        headerFooterSection
                     }
 
                     if premiumVisibility.showsReaderDecoration {
                         readerDecorationSection
                     }
-                    displaySection
+
+                    brightnessSection
+
+                    if premiumVisibility.showsLayoutPresetImport {
+                        layoutPresetSection
+                    }
                 }
             }
             .themedAppSurface(for: .settings)
@@ -182,50 +191,40 @@ struct ReaderSettingsView: View {
         premiumVisibility.showsCommentBubbleSettings(hasParagraphReviews: hasParagraphReviews)
     }
 
-    private var showsReaderEditorSection: Bool {
-        guard !settings.scrollMode else { return false }
-        return onOpenHeaderFooterEditor != nil
-            || (premiumVisibility.showsTouchZoneEditor && onOpenTouchZoneEditor != nil)
+    /// Paged-only chrome and gestures. Scroll mode has no page turns, no fixed
+    /// header/footer and no tap zones, so the whole section stands down there.
+    private var showsPagingSection: Bool {
+        !settings.scrollMode
     }
 
-    private var readerEditorSection: some View {
+    private var showsHeaderFooterSection: Bool {
+        !settings.scrollMode && onOpenHeaderFooterEditor != nil
+    }
+
+    private var pagingSection: some View {
         Section {
-            if let onOpenHeaderFooterEditor {
-                Button {
-                    dismiss()
-                    DispatchQueue.main.async { onOpenHeaderFooterEditor() }
-                } label: {
-                    Label(localized("頁首頁尾編輯"), systemImage: "rectangle.split.3x1")
-                }
-
-                ValueSliderRow(
-                    title: localized("正文頂部保留空間"),
-                    valueText: String(
-                        format: localized("ReaderOverlay.Format.Points"),
-                        Int(settings.readerOverlayLayout.contentReservations.top)
-                    ),
-                    value: overlayReservationBinding(\.top),
-                    range: 0...120,
-                    step: 1
+            if supportsPageDisplay {
+                SegmentedPickerRow(
+                    title: localized("頁面顯示"),
+                    selection: $settings.readerSpreadMode,
+                    items: ReaderSpreadMode.settingsCases,
+                    titleProvider: { mode in
+                        localized(spreadTitleKey(for: mode))
+                    }
                 )
-
-                ValueSliderRow(
-                    title: localized("正文底部保留空間"),
-                    valueText: String(
-                        format: localized("ReaderOverlay.Format.Points"),
-                        Int(settings.readerOverlayLayout.contentReservations.bottom)
-                    ),
-                    value: overlayReservationBinding(\.bottom),
-                    range: 0...120,
-                    step: 1
-                )
-
-                Button(role: .destructive) {
-                    showingOverlayResetConfirmation = true
-                } label: {
-                    Label(localized("重設頁首頁尾"), systemImage: "arrow.counterclockwise")
-                }
             }
+
+            ToggleRow(
+                title: localized("全局翻頁"),
+                subtitle: localized("開啟後，點畫面左右兩側都翻到下一頁；中間仍呼出選單"),
+                isOn: $settings.readerTapBothSidesNextPage
+            )
+
+            ToggleRow(
+                title: localized("上滑退出閱讀"),
+                subtitle: localized("向上滑動時浮現「✕」，滑過一半後鬆手即退出閱讀器"),
+                isOn: $settings.readerSwipeUpToExit
+            )
 
             if premiumVisibility.showsTouchZoneEditor,
                let onOpenTouchZoneEditor {
@@ -237,11 +236,46 @@ struct ReaderSettingsView: View {
                 }
             }
         } header: {
-            Text(localized("閱讀工具"))
-        } footer: {
-            if onOpenHeaderFooterEditor != nil {
-                Text(localized("只影響正文排版，不會移動頁首頁尾組件。"))
+            Text(localized("翻頁與手勢"))
+        }
+        .interfaceSectionSurface()
+    }
+
+    private var headerFooterSection: some View {
+        Section {
+            if let onOpenHeaderFooterEditor {
+                Button {
+                    dismiss()
+                    DispatchQueue.main.async { onOpenHeaderFooterEditor() }
+                } label: {
+                    Label(localized("頁首頁尾編輯"), systemImage: "rectangle.split.3x1")
+                }
+
+                Button(role: .destructive) {
+                    showingOverlayResetConfirmation = true
+                } label: {
+                    Label(localized("重設頁首頁尾"), systemImage: "arrow.counterclockwise")
+                }
             }
+        } header: {
+            Text(localized("頁首頁尾"))
+        } footer: {
+            Text(localized("組件的正文保留空間改在「頁面邊距」調整。"))
+        }
+        .interfaceSectionSurface()
+    }
+
+    private var layoutPresetSection: some View {
+        Section {
+            Button {
+                showingLayoutImporter = true
+            } label: {
+                Label(localized("匯入排版參數"), systemImage: "square.and.arrow.down")
+            }
+        } header: {
+            Text(localized("排版參數"))
+        } footer: {
+            Text(localized("匯入的檔案會覆蓋目前的字體大小、間距、頁面邊距與頁首頁尾配置。"))
         }
         .interfaceSectionSurface()
     }
@@ -277,18 +311,89 @@ struct ReaderSettingsView: View {
         }
     }
 
-    private var pageDisplaySection: some View {
+    /// All three body margins in one place. They used to live apart — the
+    /// horizontal one as 「頁面留白」 among the spacing sliders, the vertical pair as
+    /// 「正文頂部/底部保留空間」 under 閱讀工具 — which read as if 頁面留白 covered every
+    /// side. Same underlying values, one group, names that say which edge.
+    ///
+    /// Paged and scroll mode genuinely inset the body through different values:
+    /// paged reserves top/bottom via the overlay layout (that reservation *is* the
+    /// vertical margin there), scroll uses `pageMarginV` for both edges at once.
+    private var pageMarginSection: some View {
         Section {
-            SegmentedPickerRow(
-                title: localized("頁面顯示"),
-                selection: $settings.readerSpreadMode,
-                items: ReaderSpreadMode.settingsCases,
-                titleProvider: { mode in
-                    localized(spreadTitleKey(for: mode))
-                }
+            LayoutSliderRow(
+                title: localized("左右邊距"),
+                icon: .pageMarginHorizontal,
+                valueText: String(format: localized("ReaderOverlay.Format.Points"), Int(readerConfig.pageMarginH)),
+                value: $readerConfig.pageMarginH,
+                range: 0...50,
+                step: 1
+            )
+
+            if settings.scrollMode {
+                LayoutSliderRow(
+                    title: localized("上下邊距"),
+                    icon: .pageMarginVertical,
+                    valueText: String(format: localized("ReaderOverlay.Format.Points"), Int(readerConfig.pageMarginV)),
+                    value: $readerConfig.pageMarginV,
+                    range: 0...50,
+                    step: 1
+                )
+            } else {
+                LayoutSliderRow(
+                    title: localized("上邊距"),
+                    icon: .pageMarginTop,
+                    valueText: String(
+                        format: localized("ReaderOverlay.Format.Points"),
+                        Int(settings.readerOverlayLayout.contentReservations.top)
+                    ),
+                    value: overlayReservationBinding(\.top),
+                    range: 0...120,
+                    step: 1
+                )
+
+                LayoutSliderRow(
+                    title: localized("下邊距"),
+                    icon: .pageMarginBottom,
+                    valueText: String(
+                        format: localized("ReaderOverlay.Format.Points"),
+                        Int(settings.readerOverlayLayout.contentReservations.bottom)
+                    ),
+                    value: overlayReservationBinding(\.bottom),
+                    range: 0...120,
+                    step: 1
+                )
+            }
+
+            Button {
+                resetPageMargins()
+            } label: {
+                Label(localized("還原預設邊距"), systemImage: "arrow.counterclockwise")
+            }
+        } header: {
+            Text(localized("頁面邊距"))
+        } footer: {
+            Text(
+                settings.scrollMode
+                    ? localized("正文與畫面邊緣的距離。")
+                    : localized("正文與畫面邊緣的距離；上下邊距同時是頁首頁尾組件的容身空間，改動只影響正文排版，不會移動組件本身。")
             )
         }
         .interfaceSectionSurface()
+    }
+
+    private func resetPageMargins() {
+        readerConfig.pageMarginH = defaultPageMarginH
+        readerConfig.pageMarginV = defaultPageMarginV
+        var layout = settings.readerOverlayLayout
+        layout.contentReservations = ReaderOverlayLayout.default.contentReservations
+        guard settings.saveReaderOverlayLayout(layout) else {
+            layoutImportAlert = LayoutImportAlert(
+                titleKey: "無法儲存頁首頁尾設定",
+                message: localized("請稍後再試。")
+            )
+            return
+        }
     }
 
     private func spreadTitleKey(for mode: ReaderSpreadMode) -> String {
@@ -299,8 +404,8 @@ struct ReaderSettingsView: View {
         }
     }
 
-    private var textStyleSection: some View {
-        Section(header: Text(localized("文字"))) {
+    private var textSection: some View {
+        Section {
             if supportsUserFont {
                 fontSelector
             }
@@ -322,8 +427,58 @@ struct ReaderSettingsView: View {
                         .font(DSFont.body)
                 }
             }
+
+            ColorPicker(selection: readerTextColorBinding, supportsOpacity: false) {
+                HStack(spacing: 16) {
+                    SettingSymbolIcon(systemName: "paintpalette")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(localized("文字顏色"))
+                            .font(DSFont.body)
+                        Text(hasReaderTextColorOverride ? localized("自訂") : localized("跟隨主題"))
+                            .font(DSFont.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if hasReaderTextColorOverride {
+                Button {
+                    settings.setReaderTextColorOverride(nil, for: theme)
+                } label: {
+                    Label(localized("跟隨主題文字顏色"), systemImage: "arrow.counterclockwise")
+                }
+            }
+
+            if supportsLineHeight {
+                NavigationLink {
+                    ChapterTitleStyleSettingsView()
+                } label: {
+                    Label(localized("章節標題樣式"), systemImage: "textformat.size")
+                }
+            }
+        } header: {
+            Text(localized("文字"))
+        } footer: {
+            Text(String(format: localized("文字顏色只套用到目前的閱讀背景（%@）。"), theme.localizedTitle))
         }
         .interfaceSectionSurface()
+    }
+
+    private var hasReaderTextColorOverride: Bool {
+        settings.readerTextColorOverride(for: theme) != nil
+    }
+
+    /// Reads the color the reader is actually painting with, so opening the picker
+    /// starts from what is on screen rather than from a blank swatch. Writing one
+    /// stores an override for the *current* reading background only.
+    private var readerTextColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(uiColor: theme.uiTextColor) },
+            set: { newColor in
+                guard let rgbHex = UIColor(newColor).rgbHex else { return }
+                settings.setReaderTextColorOverride(rgbHex, for: theme)
+            }
+        )
     }
 
     /// Preview font that reflects the user-selected reader font in real time;
@@ -439,80 +594,43 @@ struct ReaderSettingsView: View {
         }
     }
 
-    private var layoutDetailsSection: some View {
-        Section(header: Text(localized("輔助使用與佈局選項"))) {
-            if premiumVisibility.showsLayoutPresetImport {
-                Button {
-                    showingLayoutImporter = true
-                } label: {
-                    Label(localized("匯入排版參數"), systemImage: "square.and.arrow.down")
-                }
-            }
-
-            if !settings.scrollMode {
-                ToggleRow(
-                    title: localized("全局翻頁"),
-                    subtitle: localized("開啟後，點畫面左右兩側都翻到下一頁；中間仍呼出選單"),
-                    isOn: $settings.readerTapBothSidesNextPage
-                )
-
-                ToggleRow(
-                    title: localized("上滑退出閱讀"),
-                    subtitle: localized("向上滑動時浮現「✕」，滑過一半後鬆手即退出閱讀器"),
-                    isOn: $settings.readerSwipeUpToExit
-                )
-            }
-
-            Toggle(localized("自訂"), isOn: customLayoutBinding)
+    private var spacingSection: some View {
+        Section {
+            Toggle(localized("自訂間距"), isOn: customLayoutBinding)
                 .font(DSFont.body)
 
             if customLayoutEnabled {
-                if supportsSpacing {
-                    LayoutSliderRow(
-                        title: localized("行距"),
-                        icon: .lineSpacing,
-                        valueText: String(format: "%.2f", readerConfig.lineHeightMultiple),
-                        value: $readerConfig.lineHeightMultiple,
-                        range: 1.0...2.4,
-                        step: 0.05
-                    )
+                LayoutSliderRow(
+                    title: localized("行距"),
+                    icon: .lineSpacing,
+                    valueText: String(format: "%.2f", readerConfig.lineHeightMultiple),
+                    value: $readerConfig.lineHeightMultiple,
+                    range: 1.0...2.4,
+                    step: 0.05
+                )
 
-                    LayoutSliderRow(
-                        title: localized("字距"),
-                        icon: .characterSpacing,
-                        valueText: "\(String(format: "%.1f", readerConfig.letterSpacing)) pt",
-                        value: $readerConfig.letterSpacing,
-                        range: 0...12,
-                        step: 0.5
-                    )
+                LayoutSliderRow(
+                    title: localized("字距"),
+                    icon: .characterSpacing,
+                    valueText: "\(String(format: "%.1f", readerConfig.letterSpacing)) pt",
+                    value: $readerConfig.letterSpacing,
+                    range: 0...12,
+                    step: 0.5
+                )
 
-                    LayoutSliderRow(
-                        title: localized("段距"),
-                        icon: .paragraphSpacing,
-                        valueText: String(format: "%.2f", readerConfig.paragraphSpacingMultiplier),
-                        value: $readerConfig.paragraphSpacingMultiplier,
-                        range: 0.3...1.2,
-                        step: 0.05
-                    )
-                }
-
-                if supportsLineHeight {
-                    LayoutSliderRow(
-                        title: localized("頁面留白"),
-                        icon: .pageMargin,
-                        valueText: "\(Int(readerConfig.pageMarginH))",
-                        value: $readerConfig.pageMarginH,
-                        range: 0...50,
-                        step: 1
-                    )
-
-                    NavigationLink {
-                        ChapterTitleStyleSettingsView()
-                    } label: {
-                        Label(localized("章節標題樣式"), systemImage: "textformat.size")
-                    }
-                }
+                LayoutSliderRow(
+                    title: localized("段距"),
+                    icon: .paragraphSpacing,
+                    valueText: String(format: "%.2f", readerConfig.paragraphSpacingMultiplier),
+                    value: $readerConfig.paragraphSpacingMultiplier,
+                    range: 0.3...1.2,
+                    step: 0.05
+                )
             }
+        } header: {
+            Text(localized("間距"))
+        } footer: {
+            Text(localized("關閉會還原行距、字距與段距的預設值。"))
         }
         .interfaceSectionSurface()
     }
@@ -548,38 +666,21 @@ struct ReaderSettingsView: View {
                             .tag(style)
                     }
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(localized("粗細"))
-                            .font(DSFont.body)
-                        Spacer()
-                        Text(String(format: "%.1f pt", settings.readerTextUnderlineThickness))
-                            .font(DSFont.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(
-                        value: readerTextUnderlineThicknessBinding,
-                        in: GlobalSettings.readerUnderlineThicknessRange,
-                        step: 0.1
-                    )
-                    .tint(readerTint)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(localized("偏移"))
-                            .font(DSFont.body)
-                        Spacer()
-                        Text(String(format: "%.1f pt", settings.readerTextUnderlineOffset))
-                            .font(DSFont.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(
-                        value: readerTextUnderlineOffsetBinding,
-                        in: GlobalSettings.readerUnderlineOffsetRange,
-                        step: 0.5
-                    )
-                    .tint(readerTint)
-                }
+                ValueSliderRow(
+                    title: localized("粗細"),
+                    valueText: String(format: "%.1f pt", settings.readerTextUnderlineThickness),
+                    value: readerTextUnderlineThicknessBinding,
+                    range: GlobalSettings.readerUnderlineThicknessRange,
+                    step: 0.1
+                )
+
+                ValueSliderRow(
+                    title: localized("偏移"),
+                    valueText: String(format: "%.1f pt", settings.readerTextUnderlineOffset),
+                    value: readerTextUnderlineOffsetBinding,
+                    range: GlobalSettings.readerUnderlineOffsetRange,
+                    step: 0.5
+                )
             }
 
             Toggle(isOn: dialogueHighlightBinding) {
@@ -627,8 +728,8 @@ struct ReaderSettingsView: View {
         .interfaceSectionSurface()
     }
 
-    private var displaySection: some View {
-        Section(header: Text(localized("亮度與顯示"))) {
+    private var brightnessSection: some View {
+        Section(header: Text(localized("亮度"))) {
             ToggleRow(
                 title: localized("跟隨系統亮度"),
                 subtitle: localized("建議保持開啟，閱讀時更自然"),
@@ -665,28 +766,19 @@ struct ReaderSettingsView: View {
         )
     }
 
+    /// Scoped to the three spacing metrics the 自訂間距 toggle actually governs.
+    /// Margins moved out to 頁面邊距 with their own reset, so a customised margin no
+    /// longer makes this toggle claim the spacing sliders are customised too.
     private var hasCustomLayoutOverrides: Bool {
         abs(readerConfig.lineHeightMultiple - defaultLineHeightMultiple) > 0.001 ||
             abs(readerConfig.letterSpacing - defaultLetterSpacing) > 0.001 ||
-            abs(readerConfig.paragraphSpacingMultiplier - defaultParagraphSpacingMultiplier) > 0.001 ||
-            abs(readerConfig.pageMarginH - defaultPageMarginH) > 0.001 ||
-            abs(readerConfig.pageMarginV - defaultPageMarginV) > 0.001 ||
-            settings.readerTitleVisible != true ||
-            abs(settings.readerTitleSize - defaultReaderTitleSize) > 0.001 ||
-            abs(settings.readerTitleTopSpacing - defaultReaderTitleTopSpacing) > 0.001 ||
-            abs(settings.readerTitleBottomSpacing - defaultReaderTitleBottomSpacing) > 0.001
+            abs(readerConfig.paragraphSpacingMultiplier - defaultParagraphSpacingMultiplier) > 0.001
     }
 
     private func resetLayoutDefaults() {
         readerConfig.lineHeightMultiple = defaultLineHeightMultiple
         readerConfig.letterSpacing = defaultLetterSpacing
         readerConfig.paragraphSpacingMultiplier = defaultParagraphSpacingMultiplier
-        readerConfig.pageMarginH = defaultPageMarginH
-        readerConfig.pageMarginV = defaultPageMarginV
-        settings.readerTitleVisible = true
-        settings.readerTitleSize = Double(defaultReaderTitleSize)
-        settings.readerTitleTopSpacing = Double(defaultReaderTitleTopSpacing)
-        settings.readerTitleBottomSpacing = Double(defaultReaderTitleBottomSpacing)
     }
 
     private var followSystemBrightnessBinding: Binding<Bool> {
@@ -703,13 +795,13 @@ struct ReaderSettingsView: View {
         )
     }
 
-    private var readerBrightnessBinding: Binding<CGFloat> {
+    private var readerBrightnessBinding: Binding<Double> {
         Binding(
-            get: { CGFloat(settings.readerBrightness) },
+            get: { settings.readerBrightness },
             set: { value in
-                settings.readerBrightness = Double(value)
+                settings.readerBrightness = value
                 if !settings.followSystemBrightness {
-                    UIScreen.main.brightness = value
+                    UIScreen.main.brightness = CGFloat(value)
                 }
             }
         )
@@ -942,7 +1034,10 @@ private enum LayoutMetricIconKind {
     case lineSpacing
     case characterSpacing
     case paragraphSpacing
-    case pageMargin
+    case pageMarginHorizontal
+    case pageMarginVertical
+    case pageMarginTop
+    case pageMarginBottom
     case footerBottom
     case footerTextGap
     case footerHorizontal
@@ -965,6 +1060,7 @@ private struct SettingRowHeader: View {
             Image(systemName: systemImage)
                 .font(DSFont.toolbarIcon)
                 .frame(width: 34, height: 26)
+                .accessibilityHidden(true)
             Text(title)
                 .font(DSFont.body)
                 .foregroundStyle(DSColor.textSecondary)
@@ -993,10 +1089,15 @@ private struct LayoutSliderRow: View {
                     .font(DSFont.body.monospacedDigit())
                     .foregroundStyle(DSColor.textSecondary)
             }
+            .accessibilityHidden(true)
 
+            // A Slider has no name of its own and announces a fraction of its
+            // range, so it carries the row's title and the value shown above it.
             Slider(value: $value, in: range, step: step)
                 .disabled(!isEnabled)
                 .opacity(isEnabled ? 1 : 0.45)
+                .accessibilityLabel(title)
+                .accessibilityValue(valueText)
         }
     }
 }
@@ -1008,6 +1109,7 @@ private struct LayoutMetricIcon: View {
         icon
             .frame(width: 34, height: 24)
             .foregroundStyle(DSColor.textPrimary)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -1036,16 +1138,14 @@ private struct LayoutMetricIcon: View {
                 iconLine(width: 22)
                 iconLine(width: 14)
             }
-        case .pageMargin:
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .stroke(lineWidth: 2)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(.secondary.opacity(0.35))
-                        .frame(width: 10)
-                        .padding(3)
-                }
-                .frame(width: 24, height: 24)
+        case .pageMarginHorizontal:
+            pageEdgeIcon(edges: [.leading, .trailing])
+        case .pageMarginVertical:
+            pageEdgeIcon(edges: [.top, .bottom])
+        case .pageMarginTop:
+            pageEdgeIcon(edges: [.top])
+        case .pageMarginBottom:
+            pageEdgeIcon(edges: [.bottom])
         case .footerBottom:
             VStack(spacing: 3) {
                 iconLine(width: 22)
@@ -1128,6 +1228,43 @@ private struct LayoutMetricIcon: View {
         Capsule()
             .frame(width: width, height: 2.5)
     }
+
+    /// A page outline with the margin being edited shaded in, so the 頁面邊距 rows
+    /// are told apart by which edge is highlighted.
+    private func pageEdgeIcon(edges: [Edge]) -> some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .stroke(lineWidth: 2)
+            .overlay {
+                ZStack {
+                    ForEach(edges, id: \.self) { edge in
+                        edgeBar(edge)
+                    }
+                }
+                .padding(3)
+            }
+            .frame(width: 24, height: 24)
+    }
+
+    private func edgeBar(_ edge: Edge) -> some View {
+        let isHorizontal = edge == .leading || edge == .trailing
+        let barThickness: CGFloat = 6
+        return Rectangle()
+            .fill(.secondary.opacity(0.35))
+            .frame(
+                width: isHorizontal ? barThickness : nil,
+                height: isHorizontal ? nil : barThickness
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: Self.alignment(for: edge))
+    }
+
+    private static func alignment(for edge: Edge) -> Alignment {
+        switch edge {
+        case .top: return .top
+        case .bottom: return .bottom
+        case .leading: return .leading
+        case .trailing: return .trailing
+        }
+    }
 }
 
 private struct StepperValueRow: View {
@@ -1161,15 +1298,16 @@ private struct SettingSymbolIcon: View {
             .font(DSFont.fixed(size: 22, weight: .regular))
             .frame(width: 34, height: 28)
             .foregroundStyle(DSColor.textPrimary)
+            .accessibilityHidden(true)
     }
 }
 
 private struct ValueSliderRow: View {
     let title: String
     let valueText: String
-    @Binding var value: CGFloat
-    let range: ClosedRange<CGFloat>
-    let step: CGFloat
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
     var isDisabled = false
 
     var body: some View {
@@ -1182,11 +1320,14 @@ private struct ValueSliderRow: View {
                     .font(DSFont.body.monospacedDigit())
                     .foregroundStyle(DSColor.textSecondary)
             }
+            .accessibilityHidden(true)
 
             Slider(value: $value, in: range, step: step)
                 .disabled(isDisabled)
                 .opacity(isDisabled ? 0.45 : 1)
                 .controlSize(.regular)
+                .accessibilityLabel(title)
+                .accessibilityValue(valueText)
         }
     }
 }

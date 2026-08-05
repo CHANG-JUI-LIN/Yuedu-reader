@@ -5,8 +5,6 @@ struct RootTabCustomizationView: View {
     @ObservedObject private var settings = GlobalSettings.shared
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @State private var showPaywall = false
-    @State private var showingIconImporter = false
-    @State private var iconImportTarget: RootTabIconImportTarget?
     @State private var iconImportError: RootTabIconImportError?
 
     private var canCustomize: Bool {
@@ -36,13 +34,6 @@ struct RootTabCustomizationView: View {
         .navigationTitle(localized("底部 Tab"))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .settings)
-        .fileImporter(
-            isPresented: $showingIconImporter,
-            allowedContentTypes: Self.iconContentTypes,
-            allowsMultipleSelection: false
-        ) { result in
-            handleIconImport(result)
-        }
         .alert(item: $iconImportError) { error in
             Alert(
                 title: Text(localized("圖標導入失敗")),
@@ -160,59 +151,24 @@ struct RootTabCustomizationView: View {
 
             Spacer(minLength: DSSpacing.md)
 
-            if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
-                HStack(spacing: DSSpacing.sm) {
-                    Button {
-                        iconImportTarget = RootTabIconImportTarget(tab: tab, slot: slot)
-                        showingIconImporter = true
-                    } label: {
-                        Label(localized("選擇圖片"), systemImage: "photo")
-                            .font(DSFont.subheadline)
-                    }
-                    .buttonStyle(.bordered)
-
-                    if asset != nil {
-                        Button(role: .destructive) {
-                            settings.deleteRootTabIcon(tab: tab, slot: slot)
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel(localized("移除圖片"))
-                    }
-                }
-                .disabled(!canCustomize)
-            } else {
-                Menu {
-                    Button {
-                        guard canCustomize else {
-                            showPaywall = true
-                            return
-                        }
-                        iconImportTarget = RootTabIconImportTarget(tab: tab, slot: slot)
-                        showingIconImporter = true
-                    } label: {
-                        Label(localized("選擇圖片"), systemImage: "photo")
-                    }
-
-                    if asset != nil {
-                        Button(role: .destructive) {
-                            guard canCustomize else {
-                                showPaywall = true
-                                return
-                            }
-                            settings.deleteRootTabIcon(tab: tab, slot: slot)
-                        } label: {
-                            Label(localized("移除圖片"), systemImage: "trash")
-                        }
-                    }
-                } label: {
-                    Label(localized("選擇圖片"), systemImage: "chevron.down")
-                        .font(DSFont.subheadline)
-                }
-                .buttonStyle(.bordered)
-                .disabled(!canCustomize)
+            ImageSourcePickerButton(
+                accessibilityTitle: "\(localized(tab.titleKey)) · \(localized(slot.titleKey))",
+                contentTypes: Self.iconContentTypes,
+                extraActions: asset == nil ? [] : [
+                    ImageSourcePickerAction(
+                        title: localized("移除圖片"),
+                        systemImage: "trash",
+                        isDestructive: true,
+                        action: { settings.deleteRootTabIcon(tab: tab, slot: slot) }
+                    )
+                ],
+                onPick: { result in handleIconPick(result, tab: tab, slot: slot) }
+            ) {
+                Label(localized("選擇圖片"), systemImage: "photo")
+                    .font(DSFont.subheadline)
             }
+            .buttonStyle(.bordered)
+            .disabled(!canCustomize)
         }
         .frame(minHeight: 52)
     }
@@ -300,22 +256,30 @@ struct RootTabCustomizationView: View {
         )
     }
 
-    private func handleIconImport(_ result: Result<[URL], Error>) {
+    private func handleIconPick(
+        _ result: Result<PickedImageSource, PickedImageError>,
+        tab: RootTabItem,
+        slot: RootTabIconSlot
+    ) {
+        guard canCustomize else {
+            showPaywall = true
+            return
+        }
         do {
-            guard canCustomize else {
-                showPaywall = true
-                return
+            switch result {
+            case .success(.data(let data)):
+                try settings.importRootTabIcon(
+                    data: data,
+                    // Photos gives no file name; the row shows this under the slot.
+                    originalFileName: localized("相簿圖片"),
+                    tab: tab,
+                    slot: slot
+                )
+            case .success(.file(let url)):
+                try settings.importRootTabIcon(from: url, tab: tab, slot: slot)
+            case .failure(let error):
+                iconImportError = RootTabIconImportError(message: localized(error.messageKey))
             }
-            guard let target = iconImportTarget,
-                  let url = try result.get().first else { return }
-            let shouldStopAccessing = url.startAccessingSecurityScopedResource()
-            defer {
-                if shouldStopAccessing {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            try settings.importRootTabIcon(from: url, tab: target.tab, slot: target.slot)
-            iconImportTarget = nil
         } catch {
             iconImportError = RootTabIconImportError(message: error.localizedDescription)
         }
@@ -325,12 +289,6 @@ struct RootTabCustomizationView: View {
         .image,
         UTType(filenameExtension: "webp") ?? .data,
     ]
-}
-
-private struct RootTabIconImportTarget: Identifiable {
-    var id: String { "\(tab.rawValue)-\(slot.rawValue)" }
-    let tab: RootTabItem
-    let slot: RootTabIconSlot
 }
 
 private struct RootTabIconImportError: Identifiable {

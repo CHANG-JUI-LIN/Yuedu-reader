@@ -1,14 +1,16 @@
-import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-struct AppearanceThemeView: View {
-    private enum LegacyBackgroundImageAction: Hashable {
-        case photos
-        case files
-    }
+/// One screen-level message alert, so the import-failure and import-summary
+/// paths share a presenter instead of competing for one.
+struct ThemeScreenAlert: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+}
 
+struct AppearanceThemeView: View {
     @ObservedObject private var settings = GlobalSettings.shared
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.colorScheme) private var colorScheme
@@ -16,37 +18,20 @@ struct AppearanceThemeView: View {
     @State private var showPaywall = false
     @State private var showCustomizer = false
     @State private var editingCustomThemeID: String?
-    @State private var customThemeToDelete: AppearanceThemePreset?
     @State private var showLaunchImageSettings = false
     @State private var showLaunchImagePaywall = false
 
     // 頁面背景 editor state.
     @State private var pageBackgroundScope: AppearancePageBackgroundScope = .global
-    @State private var backgroundImagePickScheme: ColorScheme = .light
-    @State private var showBackgroundPhotosPicker = false
-    @State private var backgroundPhotoItem: PhotosPickerItem?
-    @State private var isImportingBackgroundFile = false
-    @State private var showLegacyBackgroundImageChooser = false
-    @State private var legacyBackgroundImageSequence =
-        DismissalSequencedPresentation<LegacyBackgroundImageAction>()
     @State private var showSaveThemeAlert = false
     @State private var newThemeName = ""
-    @State private var themeExportDocument: AppearanceThemeExportDocument?
-    @State private var showThemeExporter = false
     @State private var showThemeImporter = false
     @State private var showResetPageBackgroundConfirm = false
-    @State private var pageBackgroundAlertMessage: String?
+    @State private var screenAlert: ThemeScreenAlert?
     /// Appearance slot the theme grid edits, once the user picks one by hand.
     /// nil means "whatever the device is showing", which is also the only
     /// behaviour available while 單獨設定深色主題 is off.
     @State private var themeSlot: ColorScheme?
-
-    private static let backgroundImageContentTypes: [UTType] = [
-        UTType(filenameExtension: "webp") ?? .data,
-        UTType(filenameExtension: "jpg") ?? .jpeg,
-        UTType(filenameExtension: "jpeg") ?? .jpeg,
-        .png,
-    ]
 
     /// Appearance the theme grid is editing: the slot picked above the grid when
     /// 單獨設定深色主題 is on, otherwise whatever the device is showing.
@@ -132,74 +117,22 @@ struct AppearanceThemeView: View {
             PaywallView(highlightedFeature: .launchScreen)
                 .environmentObject(subscriptionStore)
         }
+        // One alert modifier for the whole screen. Stacking several `.alert`s on
+        // the same view is how one of them silently stops presenting — they all
+        // compete for the same presenter.
         .alert(
-            localized("刪除此自訂主題？"),
+            screenAlert?.title ?? "",
             isPresented: Binding(
-                get: { customThemeToDelete != nil },
-                set: { if !$0 { customThemeToDelete = nil } }
+                get: { screenAlert != nil },
+                set: { if !$0 { screenAlert = nil } }
             ),
-            presenting: customThemeToDelete
-        ) { theme in
-            Button(localized("刪除"), role: .destructive) {
-                settings.deleteCustomAppearanceTheme(id: theme.id)
-                customThemeToDelete = nil
-            }
-            Button(localized("取消"), role: .cancel) {
-                customThemeToDelete = nil
-            }
-        } message: { theme in
-            Text(theme.localizedName)
-        }
-        .photosPicker(
-            isPresented: $showBackgroundPhotosPicker,
-            selection: $backgroundPhotoItem,
-            matching: .images
-        )
-        .sheet(
-            isPresented: $showLegacyBackgroundImageChooser,
-            onDismiss: presentLegacyBackgroundImageActionAfterChooserDismissal
-        ) {
-            DismissalSequencedActionChooser(
-                title: localized("選擇"),
-                actions: [
-                    DismissalSequencedAction(
-                        route: LegacyBackgroundImageAction.photos,
-                        title: localized("從相簿選擇"),
-                        systemImage: "photo.on.rectangle"
-                    ),
-                    DismissalSequencedAction(
-                        route: LegacyBackgroundImageAction.files,
-                        title: localized("從檔案選擇"),
-                        systemImage: "folder"
-                    ),
-                ],
-                onSelect: { route in
-                    legacyBackgroundImageSequence.select(route)
-                }
-            )
-        }
-        .onChange(of: backgroundPhotoItem) { _, item in
-            guard let item else { return }
-            importBackgroundPhoto(item)
-        }
-        .fileImporter(
-            isPresented: $isImportingBackgroundFile,
-            allowedContentTypes: Self.backgroundImageContentTypes,
-            allowsMultipleSelection: false,
-            onCompletion: handleBackgroundFileImport
-        )
-        .alert(
-            localized("匯入失敗"),
-            isPresented: Binding(
-                get: { pageBackgroundAlertMessage != nil },
-                set: { if !$0 { pageBackgroundAlertMessage = nil } }
-            )
-        ) {
+            presenting: screenAlert
+        ) { _ in
             Button(localized("確定"), role: .cancel) {
-                pageBackgroundAlertMessage = nil
+                screenAlert = nil
             }
-        } message: {
-            Text(pageBackgroundAlertMessage ?? "")
+        } message: { alert in
+            Text(alert.message)
         }
     }
 
@@ -441,6 +374,10 @@ struct AppearanceThemeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Plain buttons only. A `ShareLink` placed in here took the menu over —
+        // the tile's long-press showed the share item and the system's own
+        // suggestion, and 編輯 / 刪除 were never drawn, which is what made custom
+        // themes look undeletable. Per-theme export lives in the editor instead.
         .contextMenu {
             if preset.isCustom, !locked {
                 Button {
@@ -449,8 +386,20 @@ struct AppearanceThemeView: View {
                 } label: {
                     Label(localized("編輯"), systemImage: "slider.horizontal.3")
                 }
-                Button(role: .destructive) {
-                    customThemeToDelete = preset
+                // The confirmation is a nested menu rather than an alert: a modal
+                // raised from a context-menu action is launched while the menu's
+                // UIKit controller is dismissing, which iOS 17 can drop
+                // (Technotes/iOS17MenuModalPresentation.md). A submenu stays
+                // inside the one menu presentation and still takes two taps.
+                Menu {
+                    Button(role: .destructive) {
+                        settings.deleteCustomAppearanceTheme(id: preset.id)
+                    } label: {
+                        Label(
+                            String(format: localized("刪除「%@」"), preset.localizedName),
+                            systemImage: "trash"
+                        )
+                    }
                 } label: {
                     Label(localized("刪除"), systemImage: "trash")
                 }
@@ -796,71 +745,23 @@ struct AppearanceThemeView: View {
                     )
                     .accessibilityHidden(true)
             }
-            if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
-                HStack(spacing: DSSpacing.sm) {
-                    Button {
-                        backgroundImagePickScheme = scheme
-                        legacyBackgroundImageSequence.cancel()
-                        showLegacyBackgroundImageChooser = true
-                    } label: {
-                        Text(localized("選擇"))
-                            .font(DSFont.subheadline.weight(.medium))
-                            .foregroundStyle(DSColor.accent)
-                            .padding(.horizontal, DSSpacing.md)
-                            .padding(.vertical, DSSpacing.xs)
-                            .background(DSColor.accent.opacity(0.12), in: Capsule())
-                    }
-                    .accessibilityLabel(localized(titleKey))
-                    if fileName != nil {
-                        Button(role: .destructive) {
+            ImageSourcePickerButton(
+                accessibilityTitle: localized(titleKey),
+                extraActions: fileName == nil ? [] : [
+                    ImageSourcePickerAction(
+                        title: localized("移除背景圖"),
+                        systemImage: "trash",
+                        isDestructive: true,
+                        action: {
                             settings.clearPageBackgroundImage(
                                 scope: pageBackgroundScope,
                                 appearance: scheme
                             )
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundStyle(DSColor.destructive)
-                                .accessibilityHidden(true)
                         }
-                        .accessibilityLabel(localized("移除背景圖"))
-                    }
-                }
-            } else {
-                Menu {
-                    Button {
-                        backgroundImagePickScheme = scheme
-                        showBackgroundPhotosPicker = true
-                    } label: {
-                        Label(localized("從相簿選擇"), systemImage: "photo.on.rectangle")
-                    }
-                    Button {
-                        backgroundImagePickScheme = scheme
-                        isImportingBackgroundFile = true
-                    } label: {
-                        Label(localized("從檔案選擇"), systemImage: "folder")
-                    }
-                    if fileName != nil {
-                        Button(role: .destructive) {
-                            settings.clearPageBackgroundImage(scope: pageBackgroundScope, appearance: scheme)
-                        } label: {
-                            Label(localized("移除背景圖"), systemImage: "trash")
-                        }
-                    }
-                } label: {
-                    HStack(spacing: DSSpacing.xs) {
-                        Text(localized("選擇"))
-                        Image(systemName: "chevron.down")
-                            .font(DSFont.caption2.weight(.semibold))
-                            .accessibilityHidden(true)
-                    }
-                    .font(DSFont.subheadline.weight(.medium))
-                    .foregroundStyle(DSColor.accent)
-                    .padding(.horizontal, DSSpacing.md)
-                    .padding(.vertical, DSSpacing.xs)
-                    .background(DSColor.accent.opacity(0.12), in: Capsule())
-                }
-                .accessibilityLabel(localized(titleKey))
-            }
+                    )
+                ],
+                onPick: { result in handleBackgroundPick(result, for: scheme) }
+            )
         }
     }
 
@@ -903,18 +804,6 @@ struct AppearanceThemeView: View {
                 settings.updatePageBackgroundConfig(config, for: pageBackgroundScope)
             }
         )
-    }
-
-    private func presentLegacyBackgroundImageActionAfterChooserDismissal() {
-        guard let action = legacyBackgroundImageSequence.consumeAfterDismissal() else {
-            return
-        }
-        switch action {
-        case .photos:
-            showBackgroundPhotosPicker = true
-        case .files:
-            isImportingBackgroundFile = true
-        }
     }
 
     private func imageOpacityDisplayValue(scheme: ColorScheme) -> Double {
@@ -1000,20 +889,37 @@ struct AppearanceThemeView: View {
             Text(localized("將當前配色與頁面背景保存為自訂主題。"))
         }
 
-        themeActionRow(titleKey: "導出主題") {
-            themeExportDocument = AppearanceThemeExportDocument(
-                exportFile: settings.appearanceThemeExportFile(for: selectedTheme)
-            )
-            showThemeExporter = true
+        ShareLink(
+            item: exportPayload(for: selectedTheme),
+            preview: SharePreview(selectedTheme.localizedName)
+        ) {
+            HStack {
+                Text(localized("導出主題"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
         }
-        .fileExporter(
-            isPresented: $showThemeExporter,
-            document: themeExportDocument,
-            contentType: .json,
-            defaultFilename: "yuedu-theme-\(selectedTheme.localizedName)"
-        ) { _ in
-            themeExportDocument = nil
+        .accessibilityLabel(localized("導出主題"))
+
+        ShareLink(
+            item: fullCustomizationPayload,
+            preview: SharePreview(localized("導出全部自定義"))
+        ) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                Text(localized("導出全部自定義"))
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                Text(localized("包含主題、頁面背景圖、Tab 圖示、啟動圖與閱讀背景。"))
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .accessibilityLabel(localized("導出全部自定義"))
 
         themeActionRow(titleKey: "導入主題") {
             showThemeImporter = true
@@ -1039,6 +945,23 @@ struct AppearanceThemeView: View {
         } message: {
             Text(localized("將清除所有頁面（含各分頁）的背景顏色與背景圖設定。"))
         }
+    }
+
+    /// Cheap to build (colors + background file names), so it is safe to
+    /// construct in a menu row — see `AppearanceThemeExportPayload`.
+    private func exportPayload(for preset: AppearanceThemePreset) -> AppearanceThemeExportPayload {
+        AppearanceThemeExportPayload(
+            filename: AppearanceThemeExportPayload.filename(for: preset.localizedName),
+            themes: [settings.appearanceThemeExportSnapshot(for: preset)]
+        )
+    }
+
+    /// Cheap for the same reason: file names now, bytes at share time.
+    private var fullCustomizationPayload: AppearanceCustomizationExportPayload {
+        AppearanceCustomizationExportPayload(
+            filename: AppearanceCustomizationExportPayload.filename(for: localized("全部自定義")),
+            snapshot: settings.appearanceCustomizationSnapshot()
+        )
     }
 
     private func themeActionRow(titleKey: String, action: @escaping () -> Void) -> some View {
@@ -1078,41 +1001,24 @@ struct AppearanceThemeView: View {
 
     // MARK: - Background import handlers
 
-    private func importBackgroundPhoto(_ item: PhotosPickerItem) {
+    private func handleBackgroundPick(
+        _ result: Result<PickedImageSource, PickedImageError>,
+        for scheme: ColorScheme
+    ) {
         let scope = pageBackgroundScope
-        let scheme = backgroundImagePickScheme
-        Task { @MainActor in
-            defer { backgroundPhotoItem = nil }
-            guard let data = try? await item.loadTransferable(type: Data.self) else {
-                pageBackgroundAlertMessage = localized("無法讀取圖片。")
-                return
-            }
-            do {
-                try settings.importPageBackgroundImage(data: data, scope: scope, appearance: scheme)
-            } catch let error as AppearancePageBackgroundImageError {
-                pageBackgroundAlertMessage = localized(error.messageKey)
-            } catch {
-                pageBackgroundAlertMessage = localized("無法讀取圖片。")
-            }
-        }
-    }
-
-    private func handleBackgroundFileImport(_ result: Result<[URL], Error>) {
         do {
-            guard let url = try result.get().first else { return }
-            let didAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if didAccess { url.stopAccessingSecurityScopedResource() }
+            switch result {
+            case .success(.data(let data)):
+                try settings.importPageBackgroundImage(data: data, scope: scope, appearance: scheme)
+            case .success(.file(let url)):
+                try settings.importPageBackgroundImage(from: url, scope: scope, appearance: scheme)
+            case .failure(let error):
+                showImportFailure(localized(error.messageKey))
             }
-            try settings.importPageBackgroundImage(
-                from: url,
-                scope: pageBackgroundScope,
-                appearance: backgroundImagePickScheme
-            )
         } catch let error as AppearancePageBackgroundImageError {
-            pageBackgroundAlertMessage = localized(error.messageKey)
+            showImportFailure(localized(error.messageKey))
         } catch {
-            pageBackgroundAlertMessage = localized("無法讀取圖片。")
+            showImportFailure(localized("無法讀取圖片。"))
         }
     }
 
@@ -1124,12 +1030,20 @@ struct AppearanceThemeView: View {
                 if didAccess { url.stopAccessingSecurityScopedResource() }
             }
             let data = try Data(contentsOf: url)
-            try settings.importAppearanceTheme(from: data)
+            let summary = try settings.importAppearanceCustomization(from: data)
+            screenAlert = ThemeScreenAlert(
+                title: localized("導入主題"),
+                message: summary.localizedDescription
+            )
         } catch let error as AppearanceThemeImportError {
-            pageBackgroundAlertMessage = localized(error.messageKey)
+            showImportFailure(localized(error.messageKey))
         } catch {
-            pageBackgroundAlertMessage = localized("匯入主題失敗。")
+            showImportFailure(localized("匯入主題失敗。"))
         }
+    }
+
+    private func showImportFailure(_ message: String) {
+        screenAlert = ThemeScreenAlert(title: localized("匯入失敗"), message: message)
     }
 
     /// Free-user upsell row; hidden entirely once Pro is active.
@@ -1276,6 +1190,7 @@ private struct AppearanceThemeCustomizationView: View {
     /// Appearance being edited. Unlike the theme grid this is always explicit —
     /// a custom theme owns both palettes, so there is no "follow the device".
     @State private var editingScheme: ColorScheme
+    @State private var showDeleteConfirmation = false
 
     init(themeID: String, initialScheme: ColorScheme = .light) {
         self.themeID = themeID
@@ -1330,6 +1245,33 @@ private struct AppearanceThemeCustomizationView: View {
                     .frame(maxWidth: .infinity)
                     .listRowBackground(Color.clear)
                 }
+
+                // This theme's own actions. Export is a row rather than a
+                // long-press menu item because a `ShareLink` inside a context
+                // menu takes the whole menu over (see the theme grid).
+                Section {
+                    ShareLink(
+                        item: AppearanceThemeExportPayload(
+                            filename: AppearanceThemeExportPayload.filename(
+                                for: theme.wrappedValue.name
+                            ),
+                            themes: [theme.wrappedValue]
+                        ),
+                        preview: SharePreview(theme.wrappedValue.name)
+                    ) {
+                        Label(localized("導出主題"), systemImage: "square.and.arrow.up")
+                    }
+
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label(localized("刪除主題"), systemImage: "trash")
+                            .foregroundStyle(DSColor.destructive)
+                    }
+                } footer: {
+                    Text(localized("刪除後，使用此主題的外觀會回到預設。"))
+                }
+                .interfaceSectionSurface()
             } else {
                 Text(localized("找不到主題"))
                     .font(DSFont.body)
@@ -1352,6 +1294,21 @@ private struct AppearanceThemeCustomizationView: View {
                     dismiss()
                 }
             }
+        }
+        // Attached to the Form, not to the delete Section: confirming removes
+        // the theme, which removes that Section, and an alert torn down by its
+        // own action is a presentation that can be left half-dismissed.
+        .alert(
+            localized("刪除此自訂主題？"),
+            isPresented: $showDeleteConfirmation
+        ) {
+            Button(localized("刪除"), role: .destructive) {
+                settings.deleteCustomAppearanceTheme(id: themeID)
+                dismiss()
+            }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(themeBinding?.wrappedValue.name ?? "")
         }
     }
 
@@ -1483,27 +1440,6 @@ private struct AppearanceThemeCustomizationView: View {
 private enum PageBackgroundColorSlot {
     case primary
     case secondary
-}
-
-/// JSON wrapper handed to `fileExporter` for 導出主題.
-struct AppearanceThemeExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
-
-    let data: Data
-
-    init(exportFile: AppearanceThemeExportFile) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        data = (try? encoder.encode(exportFile)) ?? Data()
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        data = configuration.file.regularFileContents ?? Data()
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
-    }
 }
 
 #Preview {

@@ -51,6 +51,8 @@ struct ReaderPreferences: Codable, Equatable {
     var readerHeaderTopPadding: Double?
     var readerHeaderTextGap: Double?
     var readerHeaderFieldPositions: [String: String]?
+    /// Per-reading-background 文字顏色 (ReaderTheme raw value → RGB hex).
+    var readerTextColorOverrides: [String: UInt32]?
 
     static func current(settings: GlobalSettings = .shared) -> ReaderPreferences {
         ReaderPreferences(
@@ -70,7 +72,8 @@ struct ReaderPreferences: Codable, Equatable {
             readerHeaderVisible: settings.readerHeaderVisible,
             readerHeaderTopPadding: settings.readerHeaderTopPadding,
             readerHeaderTextGap: settings.readerHeaderTextGap,
-            readerHeaderFieldPositions: settings.readerHeaderFieldPositions
+            readerHeaderFieldPositions: settings.readerHeaderFieldPositions,
+            readerTextColorOverrides: settings.readerTextColorOverrides
         )
     }
 
@@ -103,6 +106,9 @@ struct ReaderPreferences: Codable, Equatable {
         }
         if let readerHeaderFieldPositions {
             settings.readerHeaderFieldPositions = readerHeaderFieldPositions
+        }
+        if let readerTextColorOverrides {
+            settings.readerTextColorOverrides = readerTextColorOverrides
         }
         ReaderConfig.shared.syncFromGlobalSettings()
     }

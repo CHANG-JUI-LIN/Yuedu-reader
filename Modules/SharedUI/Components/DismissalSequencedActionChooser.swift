@@ -5,17 +5,23 @@ struct DismissalSequencedAction<Route: Hashable>: Identifiable {
     let title: String
     let systemImage: String
     let isEnabled: Bool
+    /// Carries the destructive cue into this compatibility list. A `Menu` gets
+    /// it from `Button(role: .destructive)`; this list draws it itself so an
+    /// iOS 17 user isn't offered a delete that looks like every other row.
+    let isDestructive: Bool
 
     init(
         route: Route,
         title: String,
         systemImage: String,
-        isEnabled: Bool = true
+        isEnabled: Bool = true,
+        isDestructive: Bool = false
     ) {
         self.route = route
         self.title = title
         self.systemImage = systemImage
         self.isEnabled = isEnabled
+        self.isDestructive = isDestructive
     }
 
     var id: Route { route }
@@ -33,12 +39,14 @@ struct DismissalSequencedActionChooser<Route: Hashable>: View {
     var body: some View {
         NavigationStack {
             List(actions) { action in
-                Button {
+                Button(role: action.isDestructive ? .destructive : nil) {
                     onSelect(action.route)
                     dismiss()
                 } label: {
                     Label(action.title, systemImage: action.systemImage)
-                        .foregroundStyle(DSColor.textPrimary)
+                        .foregroundStyle(
+                            action.isDestructive ? DSColor.destructive : DSColor.textPrimary
+                        )
                 }
                 .disabled(!action.isEnabled)
             }

@@ -1,6 +1,5 @@
 import CloudKit
 import SwiftUI
-import PhotosUI
 import UIKit
 
 struct UserDetailView: View {
@@ -9,7 +8,6 @@ struct UserDetailView: View {
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @StateObject private var firestoreSync = FirestoreSyncManager.shared
     @State private var showLogin = false
-    @State private var selectedAvatarItem: PhotosPickerItem?
     @State private var avatarErrorMessage: String?
     @State private var showSignOutConfirmation = false
     @State private var isSigningOut = false
@@ -43,7 +41,10 @@ struct UserDetailView: View {
                     AccountAvatarView(size: 100)
 
                     if gs.isLoggedIn {
-                        PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
+                        ImageSourcePickerButton(
+                            accessibilityTitle: localized("修改頭像"),
+                            onPick: handleAvatarPick
+                        ) {
                             Label(localized("修改頭像"), systemImage: "photo")
                                 .font(DSFont.fixed(size: 13, weight: .semibold))
                         }
@@ -310,11 +311,6 @@ struct UserDetailView: View {
         } message: {
             Text(localized("這個名稱只會顯示在此裝置上。"))
         }
-        .onChange(of: selectedAvatarItem) { _, newItem in
-            Task {
-                await updateAvatar(from: newItem)
-            }
-        }
         .alert(localized("確認刪除帳號"), isPresented: $showDeletePasswordAlert) {
             SecureField(localized("請輸入密碼"), text: $deletePassword)
                 .textInputAutocapitalization(.never)
@@ -510,20 +506,37 @@ struct UserDetailView: View {
         }
     }
 
-    @MainActor
-    private func updateAvatar(from item: PhotosPickerItem?) async {
-        guard let item else { return }
-        do {
-            guard let data = try await item.loadTransferable(type: Data.self),
-                  let avatarData = normalizedAvatarData(from: data) else {
+    /// Both sources end up as raw bytes: the avatar is re-encoded to a 512pt
+    /// JPEG before it is stored or uploaded, so the source container never
+    /// reaches the profile.
+    private func handleAvatarPick(_ result: Result<PickedImageSource, PickedImageError>) {
+        switch result {
+        case .success(.data(let data)):
+            applyAvatar(data: data)
+        case .success(.file(let url)):
+            guard let data = try? Data(contentsOf: url) else {
                 avatarErrorMessage = localized("無法讀取頭像圖片")
                 return
             }
-            avatarErrorMessage = nil
-            gs.updateAccountAvatar(data: avatarData)
-            _ = try await firestoreSync.uploadAvatar(data: avatarData)
-        } catch {
-            avatarErrorMessage = error.localizedDescription
+            applyAvatar(data: data)
+        case .failure:
+            avatarErrorMessage = localized("無法讀取頭像圖片")
+        }
+    }
+
+    private func applyAvatar(data: Data) {
+        guard let avatarData = normalizedAvatarData(from: data) else {
+            avatarErrorMessage = localized("無法讀取頭像圖片")
+            return
+        }
+        avatarErrorMessage = nil
+        gs.updateAccountAvatar(data: avatarData)
+        Task { @MainActor in
+            do {
+                _ = try await firestoreSync.uploadAvatar(data: avatarData)
+            } catch {
+                avatarErrorMessage = error.localizedDescription
+            }
         }
     }
 

@@ -181,7 +181,13 @@ enum ReaderTheme: String, CaseIterable {
         }
     }
 
+    /// Resolution order: the reader's own 文字顏色 for this background (an explicit
+    /// user choice, so it outranks everything) → the bound appearance palette →
+    /// the background's built-in text color.
     var uiTextColor: UIColor {
+        if let rgbHex = GlobalSettings.shared.readerTextColorOverride(for: self) {
+            return AppearanceThemePreset.hex(rgbHex)
+        }
         if let preset = activeAppearancePreset { return preset.text }
         return intrinsicUITextColor
     }
@@ -525,6 +531,7 @@ class GlobalSettings: ObservableObject {
     private static let ttsHighlightBoxColorHexKey = "yd_tts_highlight_box_color_hex"
     private static let ttsHighlightBoxStyleKey = "yd_tts_highlight_box_style"
     private static let ttsKeepsScreenAwakeKey = "yd_tts_keeps_screen_awake"
+    private static let readerTextColorOverridesKey = "yd_reader_text_color_overrides"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
     private static let readerCustomBackgroundImageFileNameKey = "yd_reader_custom_background_image_file_name"
@@ -657,6 +664,19 @@ class GlobalSettings: ObservableObject {
     }
     @Published var pageMarginV: Double {
         didSet { UserDefaults.standard.set(pageMarginV, forKey: "yd_page_margin_v") }
+    }
+    /// Per-reading-background body text color. Key = `ReaderTheme.rawValue`,
+    /// value = RGB hex. A missing key means 跟隨主題: the background keeps the text
+    /// color it (or the bound appearance palette) already defines. Keyed per
+    /// background rather than global so a color chosen for 白天 can't follow the
+    /// reader into 黑色 and leave black text on a black page.
+    @Published var readerTextColorOverrides: [String: UInt32] {
+        didSet {
+            UserDefaults.standard.set(
+                readerTextColorOverrides.mapValues { Int($0) },
+                forKey: Self.readerTextColorOverridesKey
+            )
+        }
     }
     @Published var footerBottomPadding: Double {
         didSet { UserDefaults.standard.set(footerBottomPadding, forKey: "yd_footer_bottom_padding") }
@@ -1287,6 +1307,9 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_page_margin_h") as? Double) ?? 24.0
         pageMarginV =
             (UserDefaults.standard.object(forKey: "yd_page_margin_v") as? Double) ?? 16.0
+        readerTextColorOverrides =
+            (UserDefaults.standard.dictionary(forKey: Self.readerTextColorOverridesKey) as? [String: Int])?
+                .mapValues { UInt32(clamping: $0) } ?? [:]
         let loadedFooterBottomPadding =
             (UserDefaults.standard.object(forKey: "yd_footer_bottom_padding") as? Double)
             ?? Double(ReaderLayoutMetrics.defaultFooterBottomPadding)
@@ -2190,66 +2213,146 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - Theme export / import
 
-    /// Packages `preset`'s colors and the live page backgrounds (images embedded
-    /// as base64) into a shareable single-file theme.
-    func appearanceThemeExportFile(for preset: AppearanceThemePreset) -> AppearanceThemeExportFile {
-        var payloads: [String: AppearanceThemeExportFile.PageBackgroundPayload] = [:]
-        for (key, config) in appearancePageBackgrounds {
-            payloads[key] = AppearanceThemeExportFile.PageBackgroundPayload(
-                lightPrimaryHex: config.lightPrimaryHex,
-                lightSecondaryHex: config.lightSecondaryHex,
-                darkPrimaryHex: config.darkPrimaryHex,
-                darkSecondaryHex: config.darkSecondaryHex,
-                lightImage: exportImagePayload(config.lightImageFileName),
-                darkImage: exportImagePayload(config.darkImageFileName),
-                lightImageOpacity: config.lightImageOpacity,
-                darkImageOpacity: config.darkImageOpacity
-            )
+    /// The value snapshot an export is built from: colors plus the background
+    /// *file names*. Cheap — no image bytes are read here — so a share row can
+    /// build one and leave the base64 to `AppearanceThemeExportFile.init(customTheme:)`.
+    ///
+    /// Which backgrounds travel depends on what the preset is. A saved custom
+    /// theme owns a snapshot, and that snapshot is the theme — exporting the
+    /// live backgrounds instead would put whatever the user is currently
+    /// experimenting with into a file named after a different theme. A built-in
+    /// preset has no snapshot, so "this theme" can only mean the colors plus the
+    /// backgrounds in effect right now.
+    func appearanceThemeExportSnapshot(for preset: AppearanceThemePreset) -> AppearanceCustomTheme {
+        if let saved = customAppearanceThemes.first(where: { $0.id == preset.id }) {
+            return saved
         }
-        // Exports the theme's light colors plus, only if the user authored one,
-        // its dark palette. A derived dark version is left out so the importing
-        // install derives it with its own rules.
-        let dark = preset.authoredDarkColors?.stored
-        return AppearanceThemeExportFile(
-            format: AppearanceThemeExportFile.formatIdentifier,
-            version: 1,
-            name: preset.localizedName,
-            backgroundHex: preset.background.rgbHex ?? 0xF4F5F7,
-            textHex: preset.text.rgbHex ?? 0x333333,
-            barHex: preset.bar.rgbHex ?? 0xFFFFFF,
-            accentHex: preset.accent.rgbHex ?? 0x007AFF,
-            dialogueHex: preset.dialogue.rgbHex ?? 0xD8E9FB,
-            pageBackgrounds: payloads.isEmpty ? nil : payloads,
-            darkBackgroundHex: dark?.backgroundHex,
-            darkTextHex: dark?.textHex,
-            darkBarHex: dark?.barHex,
-            darkAccentHex: dark?.accentHex,
-            darkDialogueHex: dark?.dialogueHex
+        var snapshot = preset.customCopy(name: preset.localizedName)
+        snapshot.pageBackgrounds = appearancePageBackgrounds.isEmpty ? nil : appearancePageBackgrounds
+        return snapshot
+    }
+
+    /// The cheap value read a full-customization export is built from. Main
+    /// actor, no disk I/O — `AppearanceCustomizationBundle` does the reading.
+    func appearanceCustomizationSnapshot() -> AppearanceCustomizationSnapshot {
+        AppearanceCustomizationSnapshot(
+            themes: customAppearanceThemes,
+            pageBackgrounds: appearancePageBackgrounds,
+            tabIcons: rootTabIconAssets,
+            launchImageLightFileName: launchImageFileName(for: .light),
+            launchImageDarkFileName: launchImageFileName(for: .dark),
+            readerBackgroundMode: readerCustomBackgroundMode.rawValue,
+            readerBackgroundColorHex: readerCustomBackgroundColorHex,
+            readerBackgroundImageFileName: readerCustomBackgroundImageFileName
         )
     }
 
-    private func exportImagePayload(_ fileName: String?) -> AppearanceThemeExportFile.ImagePayload? {
-        guard let fileName, !fileName.isEmpty,
-              let data = AppearancePageBackgroundImageStore.shared.fileData(fileName: fileName) else {
-            return nil
-        }
-        return AppearanceThemeExportFile.ImagePayload(
-            fileExtension: (fileName as NSString).pathExtension,
-            base64: data.base64EncodedString()
-        )
-    }
-
-    /// Imports a theme file: creates a custom theme (with its page-background
-    /// snapshot), selects it, and applies the snapshot to the live settings.
+    /// Imports any appearance file the app writes: a full customization bundle,
+    /// a theme collection, a single theme, or a bare array of themes. One entry
+    /// point so 導入 can't grow a second parse route that behaves differently.
     @discardableResult
-    func importAppearanceTheme(from data: Data) throws -> AppearanceCustomTheme {
-        guard let file = try? JSONDecoder().decode(AppearanceThemeExportFile.self, from: data),
-              file.format == AppearanceThemeExportFile.formatIdentifier else {
+    func importAppearanceCustomization(from data: Data) throws -> AppearanceImportSummary {
+        if let bundle = try? JSONDecoder().decode(AppearanceCustomizationBundle.self, from: data),
+           bundle.format == AppearanceCustomizationBundle.formatIdentifier {
+            return importAppearanceCustomizationBundle(bundle)
+        }
+
+        let files = AppearanceThemeFileDecoder.themes(in: data)
+        guard !files.isEmpty else {
             throw AppearanceThemeImportError.invalidFile
         }
+        var summary = AppearanceImportSummary()
+        summary.themes = importThemeFiles(files)
+        return summary
+    }
 
-        var payloadConfigs: [String: AppearancePageBackgroundConfig] = [:]
-        for (key, payload) in file.pageBackgrounds ?? [:] {
+    /// Appends a custom theme per entry, then selects the last one and applies
+    /// its page-background snapshot — so a single-theme import behaves the way
+    /// it always has, and a pack import leaves you looking at one of them.
+    private func importThemeFiles(_ files: [AppearanceThemeExportFile]) -> Int {
+        var imported: [AppearanceCustomTheme] = []
+        for file in files {
+            let custom = customTheme(from: file)
+            customAppearanceThemes.append(custom)
+            imported.append(custom)
+        }
+        if let last = imported.last {
+            appearanceThemeID = last.id
+            applyPageBackgroundsFromCustomTheme(id: last.id)
+        }
+        return imported.count
+    }
+
+    private func importAppearanceCustomizationBundle(
+        _ bundle: AppearanceCustomizationBundle
+    ) -> AppearanceImportSummary {
+        var summary = AppearanceImportSummary()
+        summary.themes = importThemeFiles(bundle.themes)
+
+        // Applied after the themes: selecting an imported theme replaces the
+        // live page backgrounds with that theme's snapshot, so the bundle's own
+        // live backgrounds have to land last or they'd be overwritten.
+        if let payloads = bundle.pageBackgrounds {
+            let restored = pageBackgroundConfigs(from: payloads)
+            if !restored.isEmpty {
+                deletePageBackgroundFiles(in: appearancePageBackgrounds)
+                appearancePageBackgrounds = restored
+                summary.restoredPageBackgrounds = true
+            }
+        }
+
+        for icon in bundle.tabIcons ?? [] {
+            guard let tab = RootTabItem(rawValue: icon.tabID),
+                  let slot = RootTabIconSlot(rawValue: icon.slot),
+                  let data = Data(base64Encoded: icon.image.base64) else { continue }
+            if (try? importRootTabIcon(
+                data: data,
+                originalFileName: icon.originalFileName,
+                tab: tab,
+                slot: slot
+            )) != nil {
+                summary.tabIcons += 1
+            }
+        }
+
+        for (payload, scheme) in [
+            (bundle.launchImageLight, LaunchImageScheme.light),
+            (bundle.launchImageDark, LaunchImageScheme.dark),
+        ] {
+            guard let payload, let data = Data(base64Encoded: payload.base64) else { continue }
+            if (try? importLaunchImage(data: data, for: scheme)) != nil {
+                summary.launchImages += 1
+            }
+        }
+
+        if let reader = bundle.readerBackground,
+           let mode = ReaderCustomBackgroundMode(rawValue: reader.mode) {
+            if let base64 = reader.image?.base64,
+               let data = Data(base64Encoded: base64),
+               (try? importReaderCustomBackgroundImage(data: data)) != nil {
+                summary.restoredReaderBackground = true
+            }
+            if let colorHex = reader.colorHex {
+                readerCustomBackgroundColorHex = colorHex
+            }
+            // Set last: importing the image forces `.image`, which would
+            // override a bundle that was actually exported in color mode.
+            readerCustomBackgroundMode = mode
+            if mode == .color {
+                summary.restoredReaderBackground = true
+            }
+        }
+
+        return summary
+    }
+
+    /// Writes a bundle's background images back out to the image store and
+    /// rebuilds the configs that point at them.
+    private func pageBackgroundConfigs(
+        from payloads: [String: AppearanceThemeExportFile.PageBackgroundPayload]
+    ) -> [String: AppearancePageBackgroundConfig] {
+        var result: [String: AppearancePageBackgroundConfig] = [:]
+        for (key, payload) in payloads {
             guard AppearancePageBackgroundScope(rawValue: key) != nil else { continue }
             var config = AppearancePageBackgroundConfig(
                 lightPrimaryHex: payload.lightPrimaryHex,
@@ -2262,11 +2365,17 @@ class GlobalSettings: ObservableObject {
             config.lightImageOpacity = payload.lightImageOpacity
             config.darkImageOpacity = payload.darkImageOpacity
             if !config.isEmpty {
-                payloadConfigs[key] = config
+                result[key] = config
             }
         }
+        return result
+    }
 
-        let custom = AppearanceCustomTheme(
+    /// Materializes one exported theme: its colors, and its background images
+    /// written back out to the image store so the new theme owns real files.
+    private func customTheme(from file: AppearanceThemeExportFile) -> AppearanceCustomTheme {
+        let payloadConfigs = pageBackgroundConfigs(from: file.pageBackgrounds ?? [:])
+        return AppearanceCustomTheme(
             name: uniqueCustomThemeName(
                 base: file.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? localized("自訂主題")
@@ -2280,10 +2389,6 @@ class GlobalSettings: ObservableObject {
             pageBackgrounds: payloadConfigs.isEmpty ? nil : payloadConfigs,
             dark: file.darkColors
         )
-        customAppearanceThemes.append(custom)
-        appearanceThemeID = custom.id
-        applyPageBackgroundsFromCustomTheme(id: custom.id)
-        return custom
     }
 
     private func writeImportedThemeImage(
@@ -2291,6 +2396,23 @@ class GlobalSettings: ObservableObject {
     ) -> String? {
         guard let payload, let data = Data(base64Encoded: payload.base64) else { return nil }
         return try? AppearancePageBackgroundImageStore.shared.importImage(data: data)
+    }
+
+    /// The user's own body text color for one reading background, or nil for 跟隨主題.
+    func readerTextColorOverride(for theme: ReaderTheme) -> UInt32? {
+        readerTextColorOverrides[theme.rawValue]
+    }
+
+    /// Pass nil to go back to 跟隨主題 for that background.
+    func setReaderTextColorOverride(_ rgbHex: UInt32?, for theme: ReaderTheme) {
+        var overrides = readerTextColorOverrides
+        if let rgbHex {
+            overrides[theme.rawValue] = rgbHex
+        } else {
+            overrides.removeValue(forKey: theme.rawValue)
+        }
+        guard overrides != readerTextColorOverrides else { return }
+        readerTextColorOverrides = overrides
     }
 
     var readerCustomBackgroundImageURL: URL? {
@@ -2356,7 +2478,19 @@ class GlobalSettings: ObservableObject {
 
     @discardableResult
     func importReaderCustomBackgroundImage(from url: URL) throws -> String {
-        let fileName = try ReaderCustomBackgroundStorageManager.shared.importBackground(fileURL: url)
+        try adoptReaderCustomBackground(
+            fileName: ReaderCustomBackgroundStorageManager.shared.importBackground(fileURL: url)
+        )
+    }
+
+    @discardableResult
+    func importReaderCustomBackgroundImage(data: Data) throws -> String {
+        try adoptReaderCustomBackground(
+            fileName: ReaderCustomBackgroundStorageManager.shared.importBackground(data: data)
+        )
+    }
+
+    private func adoptReaderCustomBackground(fileName: String) -> String {
         readerCustomBackgroundImageFileName = fileName
         readerCustomBackgroundMode = .image
         readerFollowSystemTheme = false
@@ -2374,7 +2508,21 @@ class GlobalSettings: ObservableObject {
 
     @discardableResult
     func importLaunchImage(from url: URL, for scheme: LaunchImageScheme) throws -> String {
-        let fileName = try LaunchImageStorageManager.shared.importImage(fileURL: url, scheme: scheme)
+        try adoptLaunchImage(
+            fileName: LaunchImageStorageManager.shared.importImage(fileURL: url, scheme: scheme),
+            for: scheme
+        )
+    }
+
+    @discardableResult
+    func importLaunchImage(data: Data, for scheme: LaunchImageScheme) throws -> String {
+        try adoptLaunchImage(
+            fileName: LaunchImageStorageManager.shared.importImage(data: data, scheme: scheme),
+            for: scheme
+        )
+    }
+
+    private func adoptLaunchImage(fileName: String, for scheme: LaunchImageScheme) -> String {
         switch scheme {
         case .light:
             removeLaunchImageFile(launchImageLightFileName)
@@ -2620,21 +2768,43 @@ final class ReaderCustomBackgroundStorageManager {
         guard allowedExtensions.contains(sourceExtension) else {
             throw ReaderCustomBackgroundStorageError.unsupportedImageFile
         }
-        guard let image = UIImage(contentsOfFile: fileURL.path),
+        guard let data = try? Data(contentsOf: fileURL) else {
+            throw ReaderCustomBackgroundStorageError.cannotReadImage
+        }
+        return try store(data: data, fallbackExtension: sourceExtension)
+    }
+
+    /// Import from raw data (Photos picker). A photo-library pick has no file
+    /// name and is often HEIC, so the container is sniffed and re-encoded when
+    /// this store can't name it — see `ImportedImageNormalizer`.
+    func importBackground(data: Data) throws -> String {
+        try store(data: data, fallbackExtension: "")
+    }
+
+    private func store(data: Data, fallbackExtension: String) throws -> String {
+        guard let image = UIImage(data: data),
               image.size.width > 0,
               image.size.height > 0 else {
+            throw ReaderCustomBackgroundStorageError.cannotReadImage
+        }
+        guard let output = ImportedImageNormalizer.normalize(
+            image: image,
+            data: data,
+            fallbackExtension: fallbackExtension,
+            allowedExtensions: allowedExtensions
+        ) else {
             throw ReaderCustomBackgroundStorageError.cannotReadImage
         }
 
         let directory = try backgroundsDirectoryURL()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let fileName = "reader-background-\(UUID().uuidString).\(sourceExtension)"
+        let fileName = "reader-background-\(UUID().uuidString).\(output.fileExtension)"
         let destination = directory.appendingPathComponent(fileName)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }
-        try fileManager.copyItem(at: fileURL, to: destination)
+        try output.data.write(to: destination, options: .atomic)
         return fileName
     }
 
@@ -2692,21 +2862,47 @@ final class LaunchImageStorageManager {
         guard allowedExtensions.contains(sourceExtension) else {
             throw LaunchImageStorageError.unsupportedImageFile
         }
-        guard let image = UIImage(contentsOfFile: fileURL.path),
+        guard let data = try? Data(contentsOf: fileURL) else {
+            throw LaunchImageStorageError.cannotReadImage
+        }
+        return try store(data: data, fallbackExtension: sourceExtension, scheme: scheme)
+    }
+
+    /// Import from raw data (Photos picker). A photo-library pick has no file
+    /// name and is often HEIC, so the container is sniffed and re-encoded when
+    /// this store can't name it — see `ImportedImageNormalizer`.
+    func importImage(data: Data, scheme: LaunchImageScheme) throws -> String {
+        try store(data: data, fallbackExtension: "", scheme: scheme)
+    }
+
+    private func store(
+        data: Data,
+        fallbackExtension: String,
+        scheme: LaunchImageScheme
+    ) throws -> String {
+        guard let image = UIImage(data: data),
               image.size.width > 0,
               image.size.height > 0 else {
+            throw LaunchImageStorageError.cannotReadImage
+        }
+        guard let output = ImportedImageNormalizer.normalize(
+            image: image,
+            data: data,
+            fallbackExtension: fallbackExtension,
+            allowedExtensions: allowedExtensions
+        ) else {
             throw LaunchImageStorageError.cannotReadImage
         }
 
         let directory = try imagesDirectoryURL()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let fileName = "launch-\(scheme.rawValue)-\(UUID().uuidString).\(sourceExtension)"
+        let fileName = "launch-\(scheme.rawValue)-\(UUID().uuidString).\(output.fileExtension)"
         let destination = directory.appendingPathComponent(fileName)
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
         }
-        try fileManager.copyItem(at: fileURL, to: destination)
+        try output.data.write(to: destination, options: .atomic)
         return fileName
     }
 

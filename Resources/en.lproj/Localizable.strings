@@ -385,6 +385,8 @@
 "只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。" = "This only prevents auto-lock; pressing the power button still locks the device and narration continues.";
 "朗讀失敗：%@" = "Narration failed: %@";
 "第 %d 段語音無法下載：%@" = "Audio segment %d could not be downloaded: %@";
+"第 %d 段語音無法下載，已跳過：%@" = "Audio segment %d could not be downloaded, skipped: %@";
+"關閉提示" = "Dismiss notice";
 "第 %d 段語音無法播放" = "Audio segment %d could not be played";
 "系統語音無法播放，請到設定下載對應語音後重試" = "The system voice could not play. Download the matching voice in Settings and try again.";
 "語音朗讀設定" = "TTS Settings";
@@ -466,7 +468,6 @@
 "未來付費功能、訂閱、退款與 Apple 付款規則" = "Future paid features, subscriptions, refunds, and Apple payment rules";
 "關閉" = "Close";
 "雲端備份來自裝置「\\(c.remote.deviceName)」（\\(remoteDate)）。本裝置上次同步：\\(localDate)。請選擇要使用哪個版本。" = "The cloud backup came from device \"\\(c.remote.deviceName)\" (\\(remoteDate)). This device last synced at \\(localDate). Choose which version to use.";
-"頁面留白" = "Page Margin";
 "頁腳離底" = "Footer Bottom";
 "正文到頁腳" = "Text to Footer";
 "頁腳邊距" = "Footer Margin";
@@ -541,13 +542,31 @@
 "覆蓋翻頁" = "Cover";
 "仿真翻書" = "Page Curl";
 "無動畫" = "None";
-"亮度與顯示" = "Brightness and Display";
 "建議保持開啟，閱讀時更自然" = "Recommended for more natural reading.";
 "緊湊" = "Compact";
 "標準" = "Standard";
 "寬鬆" = "Loose";
 "自訂" = "Custom";
-"輔助使用與佈局選項" = "Accessibility and Layout Options";
+"間距" = "Spacing";
+"自訂間距" = "Custom Spacing";
+"關閉會還原行距、字距與段距的預設值。" = "Turning this off restores the default line, letter, and paragraph spacing.";
+"頁面邊距" = "Page Margins";
+"左右邊距" = "Side Margins";
+"上下邊距" = "Top and Bottom Margins";
+"上邊距" = "Top Margin";
+"下邊距" = "Bottom Margin";
+"還原預設邊距" = "Restore Default Margins";
+"正文與畫面邊緣的距離。" = "The gap between the text and the edge of the screen.";
+"正文與畫面邊緣的距離；上下邊距同時是頁首頁尾組件的容身空間，改動只影響正文排版，不會移動組件本身。" = "The gap between the text and the edge of the screen. The top and bottom margins also make room for the header and footer components — changing them only reflows the text and never moves the components themselves.";
+"翻頁與手勢" = "Page Turning and Gestures";
+"頁首頁尾" = "Header and Footer";
+"組件的正文保留空間改在「頁面邊距」調整。" = "The space these components reserve in the text is now set under Page Margins.";
+"排版參數" = "Layout Presets";
+"匯入的檔案會覆蓋目前的字體大小、間距、頁面邊距與頁首頁尾配置。" = "An imported file replaces your current font size, spacing, page margins, and header/footer setup.";
+"文字顏色" = "Text Color";
+"跟隨主題" = "Match Theme";
+"跟隨主題文字顏色" = "Use the Theme's Text Color";
+"文字顏色只套用到目前的閱讀背景（%@）。" = "The text color applies only to the current reading background (%@).";
 "全局翻頁" = "Global page turning";
 "開啟後，點畫面左右兩側都翻到下一頁；中間仍呼出選單" = "When on, tapping either side of the screen turns to the next page; the center still shows the menu";
 "上滑退出閱讀" = "Swipe Up to Close Reader";
@@ -1194,6 +1213,9 @@
 "薰衣紫" = "Wisteria Purple";
 "櫻語粉" = "Sakura Pink";
 "刪除此自訂主題？" = "Delete this custom theme?";
+"刪除主題" = "Delete Theme";
+"刪除「%@」" = "Delete \"%@\"";
+"刪除後，使用此主題的外觀會回到預設。" = "Any appearance using this theme returns to the default.";
 "自訂應用配色、閱讀配色與頁面背景需開通會員。" = "Customize app colors, reader colors, and page backgrounds with Pro.";
 "Apple Books" = "Apple Books";
 "內建氣泡" = "Built-in Bubble";
@@ -1304,9 +1326,6 @@
 "預估剩餘時間" = "Estimated Time Remaining";
 "自訂文字" = "Custom Text";
 "頁首頁尾編輯" = "Header & Footer Editor";
-"正文頂部保留空間" = "Top Text Reservation";
-"正文底部保留空間" = "Bottom Text Reservation";
-"只影響正文排版，不會移動頁首頁尾組件。" = "These settings reserve space for body text and do not move header or footer components.";
 "重設頁首頁尾" = "Reset Header & Footer";
 "重設頁首頁尾？" = "Reset Header & Footer?";
 "這會恢復預設組件、位置與正文保留空間。" = "This restores the default components, positions, and body text reservations.";
@@ -1463,6 +1482,9 @@
 "保存" = "Save";
 "導出主題" = "Export Theme";
 "導入主題" = "Import Theme";
+"導出全部自訂主題" = "Export All Custom Themes";
+"全部自訂主題" = "All Custom Themes";
+"已匯入 %d 個主題。" = "Imported %d theme(s).";
 "重置為默認" = "Reset to Default";
 "重置為默認？" = "Reset to default?";
 "將清除所有頁面（含各分頁）的背景顏色與背景圖設定。" = "This clears the background colors and images for every page, including per-tab settings.";
@@ -1790,3 +1812,16 @@
 "前往取消訂閱" = "Manage subscriptions";
 
 "顯示閱讀工具列" = "Show reading toolbar";
+
+/* 外觀自定義匯出／匯入 */
+"導出全部自定義" = "Export All Customization";
+"包含主題、頁面背景圖、Tab 圖示、啟動圖與閱讀背景。" = "Includes themes, page background images, tab icons, launch images and the reading background.";
+"全部自定義" = "All Customization";
+"相簿圖片" = "Photo Library Image";
+"%d 個主題" = "%d themes";
+"%d 個 Tab 圖示" = "%d tab icons";
+"%d 張啟動圖" = "%d launch images";
+"閱讀背景" = "reading background";
+"已匯入 %@。" = "Imported %@.";
+"、" = ", ";
+"這個檔案沒有可匯入的內容。" = "This file has nothing to import.";

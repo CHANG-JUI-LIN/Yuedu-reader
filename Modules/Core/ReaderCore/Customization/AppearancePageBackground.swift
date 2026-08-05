@@ -209,9 +209,11 @@ final class AppearancePageBackgroundImageStore {
         return try store(data: data, fallbackExtension: sourceExtension)
     }
 
-    /// Import from raw data (Photos picker), sniffing the container format.
+    /// Import from raw data (Photos picker). There is no file name to key the
+    /// container off, so the normalizer sniffs it and re-encodes anything this
+    /// store can't name — a photo-library pick is very often HEIC.
     func importImage(data: Data) throws -> String {
-        try store(data: data, fallbackExtension: "jpg")
+        try store(data: data, fallbackExtension: "")
     }
 
     func fileURL(fileName: String) throws -> URL {
@@ -261,42 +263,40 @@ final class AppearancePageBackgroundImageStore {
 
     // MARK: Internals
 
-    /// Validates, downsamples oversized images, and writes to disk. PNG data
-    /// stays PNG (keeps transparency); everything else is stored as JPEG.
+    /// Validates, downsamples oversized images, and writes to disk. Container
+    /// handling is shared with the other image stores (see
+    /// `ImportedImageNormalizer`); only the downsample step is specific here.
     private func store(data: Data, fallbackExtension: String) throws -> String {
         guard let image = UIImage(data: data), image.size.width > 0, image.size.height > 0 else {
             throw AppearancePageBackgroundImageError.cannotReadImage
         }
 
-        let isPNG = data.starts(with: [0x89, 0x50, 0x4E, 0x47])
-        let isJPEG = data.starts(with: [0xFF, 0xD8, 0xFF])
         let pixelWidth = image.size.width * image.scale
         let pixelHeight = image.size.height * image.scale
         let needsDownsample = max(pixelWidth, pixelHeight) > Self.maxPixelSize
 
-        let outputData: Data
-        let outputExtension: String
-        if !needsDownsample, isPNG || isJPEG || allowedExtensions.contains(fallbackExtension.lowercased()) {
-            // Already reasonable and in a supported container: keep bytes as-is.
-            outputData = data
-            outputExtension = isPNG ? "png" : (isJPEG ? "jpg" : fallbackExtension.lowercased())
+        let output: ImportedImageNormalizer.Output?
+        if needsDownsample {
+            output = ImportedImageNormalizer.encode(
+                resized: downsample(image, maxPixelSize: Self.maxPixelSize),
+                preservingPNG: ImportedImageNormalizer.isPNG(data)
+            )
         } else {
-            let resized = needsDownsample ? downsample(image, maxPixelSize: Self.maxPixelSize) : image
-            if isPNG, let png = resized.pngData() {
-                outputData = png
-                outputExtension = "png"
-            } else if let jpeg = resized.jpegData(compressionQuality: 0.9) {
-                outputData = jpeg
-                outputExtension = "jpg"
-            } else {
-                throw AppearancePageBackgroundImageError.cannotReadImage
-            }
+            output = ImportedImageNormalizer.normalize(
+                image: image,
+                data: data,
+                fallbackExtension: fallbackExtension,
+                allowedExtensions: allowedExtensions
+            )
+        }
+        guard let output else {
+            throw AppearancePageBackgroundImageError.cannotReadImage
         }
 
         let directory = try imagesDirectoryURL()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let fileName = "pagebg-\(UUID().uuidString).\(outputExtension)"
-        try outputData.write(to: directory.appendingPathComponent(fileName))
+        let fileName = "pagebg-\(UUID().uuidString).\(output.fileExtension)"
+        try output.data.write(to: directory.appendingPathComponent(fileName))
         return fileName
     }
 
@@ -382,6 +382,101 @@ struct AppearanceThemeExportFile: Codable {
             accentHex: darkAccentHex,
             dialogueHex: darkDialogueHex
         )
+    }
+}
+
+extension AppearanceThemeExportFile {
+    /// Builds the shareable file for one saved theme, reading the background
+    /// images off disk and embedding them as base64.
+    ///
+    /// Pure on purpose — it touches only the theme value and the image store, no
+    /// `GlobalSettings` — so `ShareLink` can defer this (megabytes, once images
+    /// are involved) into its transfer closure instead of running it every time
+    /// a menu row lays out.
+    init(customTheme theme: AppearanceCustomTheme) {
+        var payloads: [String: PageBackgroundPayload] = [:]
+        for (key, config) in theme.pageBackgrounds ?? [:] {
+            payloads[key] = PageBackgroundPayload(
+                lightPrimaryHex: config.lightPrimaryHex,
+                lightSecondaryHex: config.lightSecondaryHex,
+                darkPrimaryHex: config.darkPrimaryHex,
+                darkSecondaryHex: config.darkSecondaryHex,
+                lightImage: Self.imagePayload(config.lightImageFileName),
+                darkImage: Self.imagePayload(config.darkImageFileName),
+                lightImageOpacity: config.lightImageOpacity,
+                darkImageOpacity: config.darkImageOpacity
+            )
+        }
+        // Only a hand-authored dark palette travels; a derived one is left out
+        // so the importing install derives it with its own rules.
+        let dark = theme.dark
+        self.init(
+            format: Self.formatIdentifier,
+            version: 1,
+            name: theme.name,
+            backgroundHex: theme.backgroundHex,
+            textHex: theme.textHex,
+            barHex: theme.barHex,
+            accentHex: theme.accentHex,
+            dialogueHex: theme.dialogueHex,
+            pageBackgrounds: payloads.isEmpty ? nil : payloads,
+            darkBackgroundHex: dark?.backgroundHex,
+            darkTextHex: dark?.textHex,
+            darkBarHex: dark?.barHex,
+            darkAccentHex: dark?.accentHex,
+            darkDialogueHex: dark?.dialogueHex
+        )
+    }
+
+    private static func imagePayload(_ fileName: String?) -> ImagePayload? {
+        guard let fileName, !fileName.isEmpty,
+              let data = AppearancePageBackgroundImageStore.shared.fileData(fileName: fileName) else {
+            return nil
+        }
+        return ImagePayload(
+            fileExtension: (fileName as NSString).pathExtension,
+            base64: data.base64EncodedString()
+        )
+    }
+}
+
+/// Several themes in one file — what a shared theme pack arrives as. Kept as
+/// its own envelope (rather than always exporting an array) so a single-theme
+/// file stays readable on its own and older builds keep opening the files they
+/// already know. The app's own "export everything" writes the richer
+/// `AppearanceCustomizationBundle`, which this importer also accepts.
+struct AppearanceThemeCollectionFile: Codable {
+    static let formatIdentifier = "yuedu-appearance-theme-collection"
+
+    var format: String
+    var version: Int
+    var themes: [AppearanceThemeExportFile]
+
+    init(themes: [AppearanceThemeExportFile]) {
+        self.format = Self.formatIdentifier
+        self.version = 1
+        self.themes = themes
+    }
+}
+
+/// Decodes any shape the app exports or a user might hand it: one theme, a
+/// collection envelope, or a bare array of themes. One entry point so the
+/// importer can't grow a second, differently-behaved parse route.
+enum AppearanceThemeFileDecoder {
+    static func themes(in data: Data) -> [AppearanceThemeExportFile] {
+        let decoder = JSONDecoder()
+        if let single = try? decoder.decode(AppearanceThemeExportFile.self, from: data),
+           single.format == AppearanceThemeExportFile.formatIdentifier {
+            return [single]
+        }
+        if let collection = try? decoder.decode(AppearanceThemeCollectionFile.self, from: data),
+           collection.format == AppearanceThemeCollectionFile.formatIdentifier {
+            return collection.themes.filter { $0.format == AppearanceThemeExportFile.formatIdentifier }
+        }
+        if let array = try? decoder.decode([AppearanceThemeExportFile].self, from: data) {
+            return array.filter { $0.format == AppearanceThemeExportFile.formatIdentifier }
+        }
+        return []
     }
 }
 
