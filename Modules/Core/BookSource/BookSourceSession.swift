@@ -2,13 +2,16 @@ import Foundation
 
 /// One reusable parsing session per book source (Legado-style lifecycle).
 ///
-/// The expensive part of a parse is not rule extraction — it's standing up a
-/// `ModernParserBridge`: a fresh JSContext, a dozen shim scripts, and (worst)
-/// re-evaluating the source's `jsLib` on first JS use. The old pipeline built a
+/// For a source whose rules contain JS, the expensive part of a parse is not rule
+/// extraction — it's standing up the runtime: a fresh JSContext, a dozen shim
+/// scripts, and (worst) evaluating the source's `jsLib`. The old pipeline built a
 /// new bridge for EVERY call, so one 詳情頁 visit paid it for the info parse,
 /// the TOC parse, and again for every additional TOC page; every chapter fetch
 /// paid it once more. A session keeps ONE bridge per source and shares it
 /// across detail → TOC → next pages → chapters.
+///
+/// The bridge itself now defers that runtime until a rule actually evaluates JS
+/// (`ModernParserBridge.jsEngine`), so a pure CSS/XPath source costs nothing here.
 ///
 /// Concurrency: parse calls mutate bridge-level context (book/chapter bridges,
 /// runtime variables) before evaluating, so `withBridge` serializes callers
@@ -28,11 +31,10 @@ final class BookSourceSession {
 
     private init(source: BookSource) {
         self.source = source
-        let t0 = ProcessInfo.processInfo.systemUptime
+        // Cheap now: the bridge defers its JSContext until a rule actually runs JS,
+        // so the `js.runtimeCreate` span lives on that lazy accessor instead. A
+        // pure-CSS source should never emit one.
         self.bridge = ModernParserBridge(source: source)
-        SourcePerfTrace.record(
-            "js.runtimeCreate", source.bookSourceName, since: t0
-        )
     }
 
     /// Serialized bridge access for synchronous parse calls (the bridge sets
@@ -52,21 +54,35 @@ final class BookSourceSession {
 
     // MARK: - Per-source cache
 
+    private struct CacheEntry {
+        let session: BookSourceSession
+        var lastUsed: UInt64
+    }
+
     private static let cacheLock = NSLock()
-    private nonisolated(unsafe) static var cache: [String: BookSourceSession] = [:]
-    private static let cacheLimit = 8
+    private nonisolated(unsafe) static var cache: [String: CacheEntry] = [:]
+    private nonisolated(unsafe) static var accessClock: UInt64 = 0
+
+    /// Sessions kept alive. Bounded because a session can own a JSContext, but wide
+    /// enough to cover a fan-out's working set: source validation runs 6 sources at a
+    /// time and each walks five stages, so at the old limit of 8 the cache was over
+    /// capacity almost immediately.
+    private static let cacheLimit = 32
 
     static func session(for source: BookSource) -> BookSourceSession {
         let key = "\(source.bookSourceUrl)#\(source.lastUpdateTime)"
         cacheLock.lock()
         if let existing = cache[key] {
+            accessClock += 1
+            cache[key]?.lastUsed = accessClock
             cacheLock.unlock()
-            return existing
+            return existing.session
         }
         cacheLock.unlock()
 
-        // Construction is heavy (JSContext + shims) — never hold the global
-        // lock through it, or a 30-source search fan-out serializes on init.
+        // Construction is heavy (rule data +, on first JS use, a JSContext and its
+        // shims) — never hold the global lock through it, or a 30-source search
+        // fan-out serializes on init.
         let session = BookSourceSession(source: source)
 
         cacheLock.lock()
@@ -74,12 +90,19 @@ final class BookSourceSession {
         if let raced = cache[key] {
             // Another thread built the same source's session first; use theirs
             // so every caller converges on one bridge.
-            return raced
+            return raced.session
         }
-        if cache.count >= cacheLimit {
-            cache.removeAll(keepingCapacity: true)
+        // Evict the single least-recently-used entry. This used to `removeAll()`,
+        // which is pathological under fan-out: crossing the limit threw away every
+        // live session, so sources being actively parsed rebuilt their bridge
+        // mid-run and the cache never reached a steady state.
+        while cache.count >= cacheLimit {
+            guard let oldest = cache.min(by: { $0.value.lastUsed < $1.value.lastUsed })?.key
+            else { break }
+            cache.removeValue(forKey: oldest)
         }
-        cache[key] = session
+        accessClock += 1
+        cache[key] = CacheEntry(session: session, lastUsed: accessClock)
         return session
     }
 }

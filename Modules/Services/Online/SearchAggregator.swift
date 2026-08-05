@@ -45,6 +45,15 @@ final class SearchBook: Identifiable {
     let author: String
     private(set) var origins: [BookOrigin]
 
+    /// `normalize(name)`, derived once at construction.
+    ///
+    /// `normalize` runs an ICU `fullwidthToHalfwidth` transform plus three more
+    /// string allocations. The sort comparator and the dedup bucketing both used to
+    /// re-derive it per call — O(n log n) ICU transforms for every merged batch —
+    /// which at a few thousand book sources was the most expensive thing happening
+    /// on the main actor during a search.
+    let normalizedName: String
+
     /// Snapshots are index-aligned with `origins`. Production search batches build
     /// them off the main actor before constructing or mutating a `SearchBook`.
     private var originPresentations: [SearchOriginPresentation]
@@ -206,6 +215,7 @@ final class SearchBook: Identifiable {
         assert(preparedOrigins.count == origins.count)
         self.id = id
         self.name = name
+        self.normalizedName = Self.normalize(name)
         self.author = author
         self.origins = origins
         self.originPresentations = preparedOrigins.map(\.presentation)
@@ -226,6 +236,7 @@ final class SearchBook: Identifiable {
         assert(origins.count == presentations.count)
         self.id = id
         self.name = name
+        self.normalizedName = Self.normalize(name)
         self.author = author
         self.origins = origins
         self.originPresentations = presentations
@@ -276,6 +287,7 @@ final class SearchBook: Identifiable {
     ) {
         self.id = id
         self.name = name
+        self.normalizedName = Self.normalize(name)
         self.author = author
         self.origins = origins
         self.originPresentations = originPresentations
@@ -405,6 +417,8 @@ class SearchAggregator: ObservableObject {
     private var internalResults: [SearchBook] = []
     private var internalProgress = SearchProgress()
     private var internalHasMoreResults = false
+    /// Set by a merge, consumed by the next publication — see `mergeBatch`.
+    private var resultsNeedSort = false
 
     /// Single publication path (`internalResults` → `results`). The retained task
     /// provides one cancellable trailing update; the pure gate owns cadence and
@@ -480,6 +494,7 @@ class SearchAggregator: ObservableObject {
         )
         publicationMetrics = ResultPublicationMetrics()
         internalResults = []
+        resultsNeedSort = false
         internalProgress = SearchProgress(
             total: activeSources.count,
             skipped: skippedCount
@@ -604,6 +619,7 @@ class SearchAggregator: ObservableObject {
                         self.logPublicationSummary(reason: "autoPause")
                         self.isPaused = true
                         self.isSearching = false
+                        SourceHealthStore.shared.flush()
                         group.cancelAll()
                         return
                     }
@@ -618,6 +634,7 @@ class SearchAggregator: ObservableObject {
             self.updateHasMoreResults()
             self.requestResultsPublication(force: true, reason: "complete")
             self.isSearching = false
+            SourceHealthStore.shared.flush()
             self.logPublicationSummary(reason: "complete")
         }
     }
@@ -707,6 +724,7 @@ class SearchAggregator: ObservableObject {
             self.updateHasMoreResults()
             self.requestResultsPublication(force: true, reason: "loadMoreComplete")
             self.isSearching = false
+            SourceHealthStore.shared.flush()
             self.logPublicationSummary(reason: "loadMoreComplete")
         }
     }
@@ -722,6 +740,7 @@ class SearchAggregator: ObservableObject {
         requestResultsPublication(force: true, reason: "pause")
         isSearching = false
         isPaused = true
+        SourceHealthStore.shared.flush()
         logPublicationSummary(reason: "pause")
     }
 
@@ -738,6 +757,7 @@ class SearchAggregator: ObservableObject {
         searchTask?.cancel()
         requestResultsPublication(force: true, reason: "cancel")
         isSearching = false
+        SourceHealthStore.shared.flush()
         isPaused = false
         logPublicationSummary(reason: "cancel")
     }
@@ -806,6 +826,10 @@ class SearchAggregator: ObservableObject {
         }
 
         let now = ProcessInfo.processInfo.systemUptime
+        if resultsNeedSort {
+            resultsNeedSort = false
+            sortResults(query: Self.normalizedSearchQuery(currentQuery))
+        }
         let publishedResults = internalResults.map { $0.publicationSnapshot() }
         objectWillChange.send()
         results = publishedResults
@@ -979,7 +1003,13 @@ class SearchAggregator: ObservableObject {
             if processed % 200 == 0 { await Task.yield() }
         }
         guard mergedCount > 0, !Task.isCancelled else { return mergedCount }
-        sortResults(query: q)
+        // Sorting is deferred to publication. It used to run per merged batch — i.e.
+        // once per answering source — so a few thousand sources meant a few thousand
+        // full sorts of a list that only ever reaches the screen at the publication
+        // cadence. Ordering the same list ~2×/second produces identical output for a
+        // fraction of the work. Merging keeps `deduplicationMap` correct on its own;
+        // only a sort invalidates the indices, and `sortResults` rebuilds it.
+        resultsNeedSort = true
         publicationMetrics.mutations += mergedCount
         requestResultsPublication(force: false, reason: "batch")
         return mergedCount
@@ -1061,18 +1091,26 @@ class SearchAggregator: ObservableObject {
     private func sortResults(query: String) {
         let q = Self.normalizedSearchText(query)
 
-        internalResults.sort { a, b in
-            let aScore = matchScore(name: a.name, query: q)
-            let bScore = matchScore(name: b.name, query: q)
-
-            if aScore != bScore { return aScore > bScore }
-
+        // Decorate–sort–undecorate. A comparator body runs O(n log n) times, so
+        // anything derived inside it is recomputed tens of thousands of times per
+        // sort; `matchScore` used to normalize both names on every single
+        // comparison. Each input is now derived exactly once per book.
+        var decorated = internalResults.map { book in
+            (
+                score: Self.matchScore(normalizedName: book.normalizedName, query: q),
+                nameLength: book.name.count,
+                originCount: book.origins.count,
+                book: book
+            )
+        }
+        decorated.sort { a, b in
+            if a.score != b.score { return a.score > b.score }
             // Tie-breaker: shorter name is more precise
             // (e.g. a short precise name beats a long one with extra description)
-            if a.name.count != b.name.count { return a.name.count < b.name.count }
-
-            return a.origins.count > b.origins.count
+            if a.nameLength != b.nameLength { return a.nameLength < b.nameLength }
+            return a.originCount > b.originCount
         }
+        internalResults = decorated.map(\.book)
 
         rebuildDeduplicationMap()
     }
@@ -1082,14 +1120,18 @@ class SearchAggregator: ObservableObject {
     /// Simplified-Chinese sources search simplified Chinese; for traditional Chinese
     /// search, import traditional-Chinese sources.
     private func matchScore(name: String, query: String) -> Int {
-        let normalized = Self.normalizedSearchText(name)
+        Self.matchScore(normalizedName: Self.normalizedSearchText(name), query: query)
+    }
 
+    /// - Parameter normalizedName: already run through the same normalization the
+    ///   query gets (`SearchBook.normalizedName` for a merged result).
+    private static func matchScore(normalizedName: String, query: String) -> Int {
         guard !query.isEmpty else { return 0 }
 
-        if normalized == query { return 3 }
-        if normalized.hasPrefix(query) { return 2 }
-        if normalized.contains(query) { return 1 }
-        if query.contains(normalized) && !normalized.isEmpty { return 1 }
+        if normalizedName == query { return 3 }
+        if normalizedName.hasPrefix(query) { return 2 }
+        if normalizedName.contains(query) { return 1 }
+        if query.contains(normalizedName) && !normalizedName.isEmpty { return 1 }
         return 0
     }
 
@@ -1097,7 +1139,9 @@ class SearchAggregator: ObservableObject {
     private func rebuildDeduplicationMap() {
         deduplicationMap.removeAll(keepingCapacity: true)
         for (index, book) in internalResults.enumerated() {
-            deduplicationMap[SearchBook.nameKey(book.name), default: []].append(index)
+            // `normalizedName` is `SearchBook.nameKey(book.name)` pre-computed —
+            // same key, without an ICU transform per entry per rebuild.
+            deduplicationMap[book.normalizedName, default: []].append(index)
         }
     }
 }

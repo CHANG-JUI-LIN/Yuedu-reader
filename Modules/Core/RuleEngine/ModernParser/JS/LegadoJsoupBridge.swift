@@ -102,9 +102,13 @@ import SwiftSoup
         let base = (baseUri.isUndefined || baseUri.isNull) ? "" : (baseUri.toString() ?? "")
         let document: Document
         do {
-            // Shared parse path: same cache the rule engine uses, so a source that parses the
-            // same response twice does not pay for it twice.
-            document = try JsoupDocumentCache.shared.document(for: html, baseURL: base)
+            // Per-thread cache (see `JsoupDocumentCache`): source JS that parses the same
+            // response twice on the JS queue reuses one DOM, but the rule engine's
+            // extractors — running on a different thread — get their own. That separation
+            // is deliberate and load-bearing: SwiftSoup writes node state during reads, and
+            // this bridge racing an extractor over one shared Document is what crashed in
+            // `Attributes.getIgnoreCaseSlice`.
+            document = try JsoupDocumentCache.current.document(for: html, baseURL: base)
         } catch {
             AppLogger.parse("jsoup bridge parse failed", context: ["error": "\(error)"])
             document = Document(base)

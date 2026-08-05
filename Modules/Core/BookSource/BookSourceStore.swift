@@ -239,10 +239,27 @@ class BookSourceStore: ObservableObject {
     /// failure). Deliberately does NOT advance `lastUpdateTime`: an automated measurement
     /// shouldn't win the sync merge (same contract as `setEnabled`).
     func setRespondTime(id: UUID, ms: Int64) {
-        if let idx = sources.firstIndex(where: { $0.id == id }), sources[idx].respondTime != ms {
+        setRespondTimes([id: ms])
+    }
+
+    /// Bulk form used by the health checker, which finishes one source at a time but
+    /// has no reason to persist between them.
+    ///
+    /// The per-source form was quadratic in the worst case that matters: validating
+    /// a 3000-source pack ran a linear `firstIndex` scan, re-encoded and rewrote the
+    /// **entire** source file, and republished the whole `@Published` array — three
+    /// thousand times. One pass, one save.
+    func setRespondTimes(_ times: [UUID: Int64]) {
+        guard !times.isEmpty else { return }
+        var changed = false
+        for idx in sources.indices {
+            guard let ms = times[sources[idx].id], sources[idx].respondTime != ms else {
+                continue
+            }
             sources[idx].respondTime = ms
-            save()
+            changed = true
         }
+        if changed { save() }
     }
 
     /// Sets a source's enabled flag to an explicit value (no-op if already set). Used by the
@@ -250,10 +267,21 @@ class BookSourceStore: ObservableObject {
     /// Deliberately does NOT advance `lastUpdateTime`: an automated, possibly-transient disable
     /// shouldn't win the sync merge and propagate to other devices (unlike a user toggle above).
     func setEnabled(id: UUID, enabled: Bool) {
-        if let idx = sources.firstIndex(where: { $0.id == id }), sources[idx].enabled != enabled {
+        setEnabled(ids: [id], enabled: enabled)
+    }
+
+    /// Bulk form of the above, for the health checker's post-run 停用 policy. Same
+    /// contract — no `lastUpdateTime` bump — but one save instead of one per source,
+    /// which matters when a run disables hundreds of sources out of a large pack.
+    func setEnabled(ids: Set<UUID>, enabled: Bool) {
+        guard !ids.isEmpty else { return }
+        var changed = false
+        for idx in sources.indices
+        where ids.contains(sources[idx].id) && sources[idx].enabled != enabled {
             sources[idx].enabled = enabled
-            save()
+            changed = true
         }
+        if changed { save() }
     }
 
     /// Bulk enable/disable driven by the user (全部啟用／停用, 啟用選中, and the group menu).

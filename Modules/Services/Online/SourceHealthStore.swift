@@ -37,6 +37,7 @@ final class SourceHealthStore {
     private let defaultsKey = "yd_source_health_v1"
 
     private var map: [String: Health]
+    private var needsPersist = false
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: defaultsKey),
@@ -117,9 +118,27 @@ final class SourceHealthStore {
         guard !map.isEmpty else { return }
         map.removeAll()
         persist()
+        // User-initiated: make it durable now rather than at the next search's end.
+        flush()
     }
 
+    /// Coalesced write-back.
+    ///
+    /// Every `recordSuccess`/`recordFailure` used to JSON-encode the whole map and
+    /// hand it to `UserDefaults` — on the main actor, once per book source. A search
+    /// across a few thousand sources therefore did a few thousand full-map encodes
+    /// and defaults writes while results were streaming in. The map is a cache of
+    /// cooldown bookkeeping, so batching the write costs nothing: an entry lost to a
+    /// kill just means one dead source gets retried once more.
     private func persist() {
+        needsPersist = true
+    }
+
+    /// Write-back. Called when a search run reaches a resting point (finished,
+    /// paused, 載入更多 done) — never per source.
+    func flush() {
+        guard needsPersist else { return }
+        needsPersist = false
         if let data = try? JSONEncoder().encode(map) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
         }

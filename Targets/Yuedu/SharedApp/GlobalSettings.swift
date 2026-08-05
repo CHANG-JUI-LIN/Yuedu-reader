@@ -1595,8 +1595,10 @@ class GlobalSettings: ObservableObject {
             ?? Self.defaultBookshelfGridColumnCount
         )
 
+        // 16 matches Legado's default `threadCount`, which is what its search and
+        // its 校验书源 both run at. We sat at half that.
         searchConcurrency =
-            (UserDefaults.standard.object(forKey: "yd_search_concurrency") as? Int) ?? 8
+            (UserDefaults.standard.object(forKey: "yd_search_concurrency") as? Int) ?? 16
         searchAutoPauseCount =
             (UserDefaults.standard.object(forKey: "yd_search_auto_pause_count") as? Int) ?? 0
         searchCacheDays =

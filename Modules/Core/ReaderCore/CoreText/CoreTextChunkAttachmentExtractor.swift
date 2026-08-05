@@ -90,18 +90,13 @@ enum CoreTextChunkAttachmentExtractor {
                                 height: info.drawHeight
                             )
                         } else {
-                            let flush: CGFloat
-                            switch paragraphStyle?.alignment ?? .natural {
-                            case .center: flush = 0.5
-                            case .right:  flush = 1
-                            default:      flush = 0
-                            }
-                            let penOffset = CGFloat(
-                                CTLineGetPenOffsetForFlush(line, Double(flush), Double(chunkSize.width))
-                            )
+                            // `lineOrigin.x` already carries the paragraph's flush (see
+                            // CoreTextPaginator.extractImages); adding a pen offset on top of it
+                            // double-counted the alignment and misplaced inline images on centered
+                            // or right-aligned lines — the chapter title's 章名段评 bubble.
                             let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
                             rect = CGRect(
-                                x: lineOrigin.x + penOffset + textAdvance + info.paddingLeft,
+                                x: lineOrigin.x + textAdvance + info.paddingLeft,
                                 y: uiY,
                                 width: info.drawWidth,
                                 height: info.drawHeight
