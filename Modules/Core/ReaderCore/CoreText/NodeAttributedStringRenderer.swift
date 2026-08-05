@@ -142,6 +142,15 @@ struct NodeAttributedStringRenderer {
         let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
         relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)
+        // The converter flattens body children into top-level nodes, so each block's
+        // `renderBlock` collapse only sees its own children. Adjacent TOP-LEVEL blocks
+        // (e.g. a narration `<p>` beside a decorated thread `<div>`) never got a collapse
+        // pass: the container's collapsible margin stayed folded in its first child's
+        // `paragraphSpacingBefore` instead of collapsing with the preceding paragraph.
+        // Run one final collapse over the whole chapter (CSS margin-collapse semantics).
+        if !config.writingMode.isVertical {
+            collapseAdjacentParagraphSpacing(processed, honorStructuralInsets: true)
+        }
         normalizeCompactBlockSpacing(processed)
         if config.dialogueTextColor != nil || config.dialogueBoxColor != nil {
             DialogueHighlighter.apply(textColor: config.dialogueTextColor, boxColor: config.dialogueBoxColor, to: processed)

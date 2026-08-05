@@ -383,6 +383,7 @@ struct EPUBRenderingTests {
         let pages = HTMLTableRasterizer.renderPages(
             table: table,
             maxWidth: 240,
+            maxPageHeight: 200,
             baseFont: .systemFont(ofSize: 17),
             textColor: .black,
             backgroundColor: .white

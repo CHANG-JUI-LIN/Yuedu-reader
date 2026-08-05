@@ -22,6 +22,7 @@ struct Phase2BStaleLegacyReproTests {
         let pages = HTMLTableRasterizer.renderPages(
             table: table,
             maxWidth: 240,
+            maxPageHeight: 200,
             baseFont: .systemFont(ofSize: 17),
             textColor: .black,
             backgroundColor: .white
@@ -49,23 +50,54 @@ struct Phase2BStaleLegacyReproTests {
                 line-height: 1;
               }
               .tk p { margin: 0; font-size: .9em; text-indent: 0; }
+              div.ot {
+                border: 1px solid #000;
+                padding: 3px 7px;
+                margin: 3px auto 3px -7px;
+                display: inline-block;
+                border-radius: 0px 10px 10px;
+                background-color: #FFFF99;
+                float: left;
+              }
             </style>
           </head>
-          <body><div class="tk"><p>Bubble</p></div><p>After</p></body>
+          <body>
+            <p>就在这时，手机跳出了一条通知。</p>
+            <div class="tk">
+              <p>tls123</p>
+              <div class="ot"><p>谢谢你。</p></div>
+            </div>
+            <p>突如其来的讯息映入眼帘。</p>
+          </body>
         </html>
         """, config: config)
-        let nameStyle = result.attributedString.attribute(
-            HTMLAttributedStringBuilder.blockRenderStyleAttribute,
-            at: 0, effectiveRange: nil
-        )
-        // On this branch the thread's outer margin computes 21.0pt instead of
-        // the expected ≤ 5pt — a deterministic regression from the main-side
-        // margin-collapse fixes the branch base predates.
-        if let blockStyle = nameStyle as? HTMLAttributedStringBuilder.BlockRenderStyle {
-            #expect(blockStyle.paragraphSpacingBefore <= 5,
-                    "repro: paragraphSpacingBefore=\(blockStyle.paragraphSpacingBefore)")
-        } else {
-            Issue.record("no block style at 0")
+        let ns = result.attributedString.string as NSString
+        var paraDump: [String] = []
+        result.attributedString.enumerateAttribute(
+            .paragraphStyle, in: NSRange(location: 0, length: result.attributedString.length), options: []
+        ) { value, range, _ in
+            guard let style = value as? NSParagraphStyle else { return }
+            paraDump.append("[\(String(ns.substring(with: range).prefix(10)))] before=\(style.paragraphSpacingBefore) after=\(style.paragraphSpacing)")
+        }
+        let nameRange = ns.range(of: "tls123")
+        #expect(nameRange.location != NSNotFound)
+        var attrDump: [String] = []
+        for key in [HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+                    HTMLAttributedStringBuilder.containerBlockRenderIDAttribute] {
+            if let v = result.attributedString.attribute(
+                key, at: nameRange.location, longestEffectiveRange: nil, in: NSRange(location: 0, length: result.attributedString.length)
+            ) {
+                let brs = v as? HTMLAttributedStringBuilder.BlockRenderStyle
+                attrDump.append("\(key.rawValue)=\(brs.map { "padT=\($0.paddingTop) bT=\($0.borderTopWidth) psB=\($0.paragraphSpacingBefore)" } ?? String(describing: v))")
+            } else {
+                attrDump.append("\(key.rawValue)=nil")
+            }
+        }
+        if let nameStyle = result.attributedString.attribute(
+            .paragraphStyle, at: nameRange.location, effectiveRange: nil
+        ) as? NSParagraphStyle {
+            #expect(nameStyle.paragraphSpacingBefore <= 5,
+                    "repro paragraphs: \(paraDump.joined(separator: " | ")) || attrs: \(attrDump.joined(separator: " ; "))")
         }
     }
 }
