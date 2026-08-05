@@ -13,6 +13,8 @@ final class CoreTextLineBreaker {
         let width: CGFloat          // typographic width (max coordinate)
         let ascent: CGFloat
         let descent: CGFloat
+        let line: CTLine            // the shaped line, retained for precise
+                                    // string-index → typographic-offset mapping
     }
 
     func breakLines(attributed: NSAttributedString, maxWidth: CGFloat) -> [LineBreak] {
@@ -40,7 +42,8 @@ final class CoreTextLineBreaker {
                 let line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
                 let (width, ascent, descent) = metrics(for: line)
                 lines.append(LineBreak(range: NSRange(location: charIndex, length: count),
-                                       width: width, ascent: ascent, descent: descent))
+                                       width: width, ascent: ascent, descent: descent,
+                                       line: line))
                 charIndex += count
                 index += 1
                 if index > 10_000 { break }
@@ -90,7 +93,8 @@ final class CoreTextLineBreaker {
             }
             guard count > 0 else { break }
             lines.append(LineBreak(range: NSRange(location: charIndex, length: count),
-                                   width: width, ascent: ascent, descent: descent))
+                                   width: width, ascent: ascent, descent: descent,
+                                   line: line))
             charIndex += count
             index += 1
             if index > 10_000 { break } // defensive: never infinite-loop on glyph-less input

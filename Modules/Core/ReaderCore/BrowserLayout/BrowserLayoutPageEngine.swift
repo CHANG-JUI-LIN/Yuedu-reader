@@ -120,7 +120,7 @@ struct BrowserChapterLayout {
                     items.append(.text(DisplayTextItem(
                         sourceRange: t.sourceRange, nodeID: t.nodeID, linkTarget: t.linkTarget,
                         writingMode: t.writingMode, rect: t.rect, baselineY: t.baselineY,
-                        font: t.font, color: color, text: visible
+                        font: t.font, color: color, text: visible, ctLine: t.ctLine
                     )))
                 case .fill(let f):
                     items.append(.fill(DisplayFillItem(
@@ -231,6 +231,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     private var choices: [Int: ChapterEngineChoice] = [:]
     private var browserChapters: [Int: BrowserChapterLayout] = [:]
+
+    /// Test seam: current browser-mode chapter layout (precise-geometry
+    /// verification for selection rects).
+    var testChapterLayout: (spine: Int, layout: BrowserChapterLayout)? {
+        guard let (spine, layout) = browserChapters.first else { return nil }
+        return (spine, layout)
+    }
     private var browserSessions: [Int: BrowserLayoutSession] = [:]
     private var backgroundFinishTasks: [Int: Task<Void, Never>] = [:]
     private var spinePageOffsets: [Int] = []
@@ -735,8 +742,16 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                         let start = max(t.sourceRange.location, range.location)
                         let end = min(t.sourceRange.location + t.sourceRange.length, rangeEnd)
                         guard end > start else { continue }
-                        // Proportional rect for the selected substring of the
-                        // fragment (fragments are single lines/runs).
+                        if let line = t.ctLine,
+                           let rect = preciseRect(
+                               fragment: t, line: line,
+                               selection: NSRange(location: start, length: end - start)
+                           ) {
+                            pageRects.append(rect)
+                            continue
+                        }
+                        // Proportional fallback (no line artifact, or the
+                        // fragment's range was trimmed off the line's range).
                         let fraction = Double(end - start) / Double(t.sourceRange.length)
                         let selectedWidth = CGFloat(fraction) * t.rect.width
                         let xOffset = CGFloat(Double(start - t.sourceRange.location) / Double(t.sourceRange.length)) * t.rect.width
@@ -757,6 +772,50 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             }
         }
         return result
+    }
+
+    /// Precise selection rect for a sub-range of one text fragment, using the
+    /// fragment's shaped line: `CTLineGetOffsetForStringIndex` yields exact
+    /// typographic offsets (kerning, ligatures, RTL, emoji ZWJ clusters,
+    /// combining marks) instead of proportional width estimation.
+    ///
+    /// The fragment's `sourceRange` is a slice of the chapter source; the line's
+    /// own string range (in attributed space) is `CTLineGetStringRange(line)`.
+    /// They align for normal runs; when leading whitespace was trimmed the run's
+    /// range shifts, and this helper returns nil so callers fall back to
+    /// proportional rects (whitespace-only discrepancy).
+    private func preciseRect(
+        fragment t: TextFragment,
+        line: CTLine,
+        selection: NSRange
+    ) -> CGRect? {
+        let lineRange = CTLineGetStringRange(line)
+        guard lineRange.length > 0 else { return nil }
+        let lineStart = lineRange.location
+        let lineEnd = lineRange.location + lineRange.length
+
+        // The fragment's run within the line: its source range must sit inside
+        // the line's range for the line-space mapping to be exact. (Whitespace
+        // trims shift run ranges; those fall back to proportional.)
+        let fragStart = t.sourceRange.location
+        let fragEnd = t.sourceRange.location + t.sourceRange.length
+        guard fragStart >= lineStart, fragEnd <= lineEnd else { return nil }
+
+        let selStart = selection.location
+        let selEnd = selection.location + selection.length
+        let startInLine = max(selStart, lineStart) - lineStart
+        let endInLine = min(selEnd, lineEnd) - lineStart
+        guard endInLine > startInLine else { return nil }
+
+        let offsetStart = CTLineGetOffsetForStringIndex(line, startInLine, nil)
+        let offsetEnd = CTLineGetOffsetForStringIndex(line, endInLine, nil)
+
+        // Horizontal only for now: the fragment rect already encodes the run's
+        // baseline-aligned horizontal placement. Vertical mapping arrives with
+        // the vertical-rl writing mode (Phase 3B).
+        let x = t.rect.minX + offsetStart
+        let width = max(1, offsetEnd - offsetStart)
+        return CGRect(x: x, y: t.rect.minY, width: width, height: t.rect.height)
     }
 
     // MARK: - Internal helpers

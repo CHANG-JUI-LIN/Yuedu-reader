@@ -52,6 +52,50 @@ struct BrowserLayoutSelectionContractTests {
         #expect(page.rects[0].width < 40)
     }
 
+    @Test func selectionUsesPreciseCTLineGeometry() async throws {
+        // Ligature + variable-width Latin: "office" contains "ffi" (a single
+        // ligature glyph), so proportional width estimation over the run
+        // diverges from CoreText's typographic offsets. The precise path must
+        // be taken (ctLine retained on the fragment).
+        let text = "The office 這是測試。"
+        let (engine, _) = await makeEngine(text: text)
+        let ns = text as NSString
+        let officeRange = ns.range(of: "office")
+
+        let mapped = engine.rects(forSpine: 0, range: officeRange)
+        #expect(!mapped.isEmpty)
+        let page = try #require(mapped.first)
+        let rect = try #require(page.rects.first)
+        #expect(rect.width > 0)
+
+        // Verify the fragment's ctLine actually drove the mapping: the precise
+        // rect x should equal fragment.minX + CTLineGetOffsetForStringIndex,
+        // and (critically) differ from the proportional estimate for a run
+        // containing the "ffi" ligature.
+        guard let (_, layout) = engine.testChapterLayout else { return }
+        var foundFragment = false
+        for pageFragments in layout.pages {
+            func walk(_ fragments: [Fragment]) {
+                for fragment in fragments {
+                    if case .text(let t) = fragment,
+                       NSIntersectionRange(t.sourceRange, officeRange).length > 0,
+                       let line = t.ctLine {
+                        foundFragment = true
+                        let lineRange = CTLineGetStringRange(line)
+                        let inLine = officeRange.location - lineRange.location
+                        guard inLine >= 0,
+                              inLine + officeRange.length <= lineRange.length else { continue }
+                        let offset = CTLineGetOffsetForStringIndex(line, inLine, nil)
+                        #expect(abs(rect.minX - (t.rect.minX + offset)) < 1.0)
+                    }
+                    if case .group(let children) = fragment { walk(children) }
+                }
+            }
+            walk(pageFragments.fragments)
+        }
+        #expect(foundFragment)
+    }
+
     @Test func rectsPreserveSourceSemanticsAfterRelayout() async throws {
         let text = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 30)
         let (engine, _) = await makeEngine(text: text)
@@ -86,7 +130,8 @@ struct BrowserLayoutSelectionContractTests {
             sourceRange: NSRange(location: 0, length: 4), nodeID: 1,
             linkTarget: "http://example.com", writingMode: .horizontal,
             rect: CGRect(x: 10, y: 10, width: 80, height: 20), baselineY: 26,
-            font: .systemFont(ofSize: 17), color: .black, text: "link"
+            font: .systemFont(ofSize: 17), color: .black, text: "link",
+            ctLine: nil
         )
         pageView.displayList = DisplayList(items: [.text(linkItem)])
         // Selection covers the link rect → tap inside deselects, no link.

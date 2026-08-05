@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import UIKit
 
@@ -32,6 +33,10 @@ struct LayoutLine {
     let top: CGFloat                  // line-box top within the box's content box
     let baseline: CGFloat             // baseline Y within the box's content box
     let contentX: CGFloat             // left edge of the line content within the box's content box
+    /// The shaped line covering this line's full (untrimmed) range, retained
+    /// for precise string-index → typographic-offset mapping (kerning,
+    /// ligatures, RTL, emoji clusters). Nil when unavailable.
+    let ctLine: CTLine?
 }
 
 enum BlockBoxType {

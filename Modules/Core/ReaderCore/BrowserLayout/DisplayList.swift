@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import UIKit
 
@@ -19,6 +20,9 @@ struct DisplayTextItem {
     let color: UIColor
     /// The visible text slice (for rendering and hit-testing).
     let text: String
+    /// The shaped line this run belongs to (untrimmed line range), for
+    /// precise string-index → typographic-offset mapping.
+    let ctLine: CTLine?
 }
 
 struct DisplayFillItem {
@@ -72,7 +76,8 @@ enum DisplayListBuilder {
                     baselineY: t.baselineY,
                     font: t.font,
                     color: t.color,
-                    text: visible
+                    text: visible,
+                    ctLine: t.ctLine
                 )))
             case .fill(let f):
                 items.append(.fill(DisplayFillItem(

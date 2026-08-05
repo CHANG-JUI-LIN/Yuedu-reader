@@ -199,7 +199,8 @@ enum InlineLayout {
                 descent: breakInfo.descent,
                 top: yTop,
                 baseline: yTop + baselineOffset,
-                contentX: contentX
+                contentX: contentX,
+                ctLine: breakInfo.line
             ))
             yTop += height
         }

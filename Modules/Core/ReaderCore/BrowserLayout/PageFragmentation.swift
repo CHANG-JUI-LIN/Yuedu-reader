@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import UIKit
 
@@ -11,6 +12,9 @@ struct TextFragment {
     let baselineY: CGFloat
     let font: UIFont
     let color: UIColor
+    /// The shaped line this fragment's run belongs to (full, untrimmed line
+    /// range), for precise string-index → typographic-offset mapping.
+    let ctLine: CTLine?
 }
 
 struct FillFragment {
@@ -187,7 +191,8 @@ struct PageWalker {
                         rect: rect,
                         baselineY: frame.contentOrigin.y + line.baseline,
                         font: run.font,
-                        color: run.style.color ?? .black
+                        color: run.style.color ?? .black,
+                        ctLine: line.ctLine
                     ))
                 }
                 stack[index].lineIndex += 1
@@ -286,7 +291,8 @@ struct PageWalker {
             rect: frag.rect.offsetBy(dx: 0, dy: dy),
             baselineY: frag.baselineY + dy,
             font: frag.font,
-            color: frag.color
+            color: frag.color,
+            ctLine: frag.ctLine
         )))
         return flushed
     }

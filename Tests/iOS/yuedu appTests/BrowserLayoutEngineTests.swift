@@ -185,7 +185,7 @@ struct BlockLayoutTests {
         childS.marginTop = .px(10); childS.marginBottom = .px(10)
         let child = BlockBox(style: childS, boxType: .block,
                              lines: [LayoutLine(runs: [], height: 40, ascent: 30, descent: 10,
-                                               top: 0, baseline: 30, contentX: 0)])
+                                               top: 0, baseline: 30, contentX: 0, ctLine: nil)])
         _ = BlockLayout.layOut(root: child, containerWidth: 200)
         let root = BlockBox(style: style(), boxType: .block, children: [child])
         _ = BlockLayout.layOut(root: root, containerWidth: 200)
@@ -295,7 +295,7 @@ struct PageFragmentationTests {
                                   x: 0, width: 80, style: style, font: InlineLayout.font(for: style),
                                   nodeID: 1, linkTarget: nil, atomic: nil)],
                    height: height, ascent: height * 0.75, descent: height * 0.25,
-                   top: top, baseline: top + height * 0.75, contentX: 0)
+                   top: top, baseline: top + height * 0.75, contentX: 0, ctLine: nil)
     }
 
     @Test func splitsBlockAcrossPages() {
@@ -358,7 +358,8 @@ struct DisplayListTests {
                 .text(TextFragment(sourceRange: NSRange(location: 0, length: 5), nodeID: 2,
                                    linkTarget: "http://example.com", writingMode: .horizontal,
                                    rect: CGRect(x: 10, y: 4, width: 60, height: 20),
-                                   baselineY: 20, font: .systemFont(ofSize: 16), color: .black)),
+                                   baselineY: 20, font: .systemFont(ofSize: 16), color: .black,
+                                   ctLine: nil)),
                 .group([.fill(FillFragment(rect: CGRect(x: 5, y: 50, width: 100, height: 10), color: .blue,
                                            cornerRadius: 2, nodeID: 3, writingMode: .horizontal))]),
             ]
