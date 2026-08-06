@@ -92,4 +92,43 @@ struct BrowserLayoutImageTests {
         #expect(images[0].rect.minY == 0)
         #expect(images[0].rect.maxY <= 100.01)
     }
+
+    /// Regression: the inline-image CTRunDelegate's refCon (AtomicInlineBox)
+    /// must outlive the layout scope. The CTLine (retained on TextFragment)
+    /// keeps the delegate alive long after `layoutInline` returns; touching
+    /// the line must not hit a freed box (EXC_BAD_ACCESS in
+    /// getAscent/getWidth). passRetained + dealloc-takeRetainedValue pairs.
+    @Test func inlineImageCTLineDelegateSurvivesLayoutScope() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 20, height: 10), color: .red)
+        let html = """
+        <html><body><p>Before <img src="dot.png"> after</p></body></html>
+        """
+        // Run the layout and keep ONLY the produced pages/fragments — the
+        // layout's local box-holder array is released when layoutInline
+        // returns; the CTLine on the fragments is the only thing keeping the
+        // CTRunDelegate (and thus the box) alive.
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
+            html, imageLoader: loader(["dot.png": img])
+        )
+        // Every text fragment sharing a line with the inline image carries the
+        // SAME CTLine, which holds the CTRunDelegate for the \u{FFFC} image run.
+        let texts = BrowserLayoutTestSupport.allTextFragments(pages)
+        #expect(!texts.isEmpty)
+        var exercised = 0
+        for fragment in texts {
+            guard let line = fragment.ctLine else { continue }
+            // Force the delegate callbacks: typographic bounds visit every run
+            // (image run's getAscent/getDescent/getWidth). This crashed before
+            // the passRetained fix.
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            var leading: CGFloat = 0
+            let width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+            #expect(width >= 0)
+            #expect(ascent >= 0)
+            _ = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
+            exercised += 1
+        }
+        #expect(exercised > 0, "expected at least one CTLine to exercise")
+    }
 }

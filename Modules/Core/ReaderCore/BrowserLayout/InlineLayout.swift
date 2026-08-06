@@ -86,7 +86,13 @@ enum InlineLayout {
                                           descent: atomic.usedSize.height * 0.25)
                 delegateBoxes.append(box)
                 var callbacks = AtomicInlineBox.callbacks
-                let delegate = CTRunDelegateCreate(&callbacks, Unmanaged.passUnretained(box).toOpaque())
+                // passRetained: the CTRunDelegate OWNS the box. The CTLine
+                // (retained in LayoutLine.ctLine → TextFragment.ctLine) keeps
+                // the delegate alive long after this function returns, so the
+                // box must live as long as the delegate — passUnretained here
+                // left a dangling pointer once `delegateBoxes` released it
+                // (EXC_BAD_ACCESS in getAscent/getWidth/dealloc).
+                let delegate = CTRunDelegateCreate(&callbacks, Unmanaged.passRetained(box).toOpaque())
                 attributed.append(NSAttributedString(string: "\u{FFFC}", attributes: [
                     kCTRunDelegateAttributeName as NSAttributedString.Key: delegate as Any,
                     .font: resolveFont(run.style),
@@ -332,7 +338,9 @@ private final class AtomicInlineBox {
         var callbacks = CTRunDelegateCallbacks(
             version: kCTRunDelegateVersion1,
             dealloc: { ptr in
-                _ = Unmanaged<AtomicInlineBox>.fromOpaque(ptr).takeUnretainedValue()
+                // Balance the passRetained in layoutInline: the delegate owns
+                // the box and releases it here.
+                _ = Unmanaged<AtomicInlineBox>.fromOpaque(ptr).takeRetainedValue()
             },
             getAscent: { ptr in
                 Unmanaged<AtomicInlineBox>.fromOpaque(ptr).takeUnretainedValue().ascent
