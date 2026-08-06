@@ -170,6 +170,70 @@ struct BrowserLayoutProductionCorrectnessTests {
         #expect(fill.color.withAlphaComponent(1) != UIColor.clear, "rgba fill must be carried")
     }
 
+    /// Renders the card's DisplayList through the production renderer and
+    /// verifies pixels on all four edges (not just a top line).
+    @Test func roundedDottedCardRendersAllFourEdges() async throws {
+        let html = """
+        <html><head><style>
+          body { margin: 0; }
+          .card { margin: 5% auto 0; padding: 2em 0; width: 200px;
+                  background-color: rgba(255,255,255,0.7);
+                  border: dotted 1px #3a4431; border-radius: 8px; }
+        </style></head>
+        <body><div class="card"><p>卡</p></div></body></html>
+        """
+        let (pages, _) = try await Self.layout(html)
+        let page = try #require(pages.first)
+        let list = DisplayListBuilder.build(for: page, sourceText: "")
+        let image = DisplayListRenderer.render(list, size: Self.viewport, backgroundColor: .white)
+
+        // Find the card rect (page-local).
+        var cardRect: PageLocalRect? = nil
+        for item in list.items {
+            if case .fill(let f) = item, f.rect.width > 150, f.rect.width < 260, f.rect.height > 40 {
+                cardRect = f.rect
+            }
+        }
+        let rect = try #require(cardRect, "card not found").rawValue
+        guard let cg = image.cgImage, let data = cg.dataProvider?.data,
+              let ptr = CFDataGetBytePtr(data) else {
+            Issue.record("no image data"); return
+        }
+        let bpp = cg.bitsPerPixel / 8
+        let bpr = cg.bytesPerRow
+
+        // Sample a point just inside each edge (dark dotted green #3a4431).
+        func isDarkGreen(_ x: Int, _ y: Int) -> Bool {
+            let off = y * bpr + x * bpp
+            let r = CGFloat(ptr[off]) / 255
+            let g = CGFloat(ptr[off + 1]) / 255
+            let b = CGFloat(ptr[off + 2]) / 255
+            return r < 0.6 && g < 0.6 && b < 0.6 && g > r && g > b
+        }
+        let cx = Int(rect.midX)
+        let cy = Int(rect.midY)
+        // Dotted edges are discontinuous — scan the whole edge for ANY dark
+        // dot instead of sampling one point.
+        func edgeHasDot(xRange: ClosedRange<Int>, y: Int) -> Bool {
+            for x in xRange where isDarkGreen(x, y) { return true }
+            return false
+        }
+        func edgeHasDot(yRange: ClosedRange<Int>, x: Int) -> Bool {
+            for y in yRange where isDarkGreen(x, y) { return true }
+            return false
+        }
+        let top = edgeHasDot(xRange: cx-40...cx+40, y: Int(rect.minY) + 1)
+        let bottom = edgeHasDot(xRange: cx-40...cx+40, y: Int(rect.maxY) - 1)
+        // The 1pt stroke centers on the rect edge: left lands at pixel
+        // rect.minX (119), right at rect.maxX-1 (320). Scan the boundary.
+        let left = edgeHasDot(yRange: cy-40...cy+40, x: Int(rect.minX))
+        let right = edgeHasDot(yRange: cy-40...cy+40, x: Int(rect.maxX) - 1)
+        #expect(top, "top dotted edge not painted")
+        #expect(bottom, "bottom dotted edge not painted")
+        #expect(left, "left dotted edge not painted")
+        #expect(right, "right dotted edge not painted")
+    }
+
     // MARK: - C. Oversized images
 
     /// Three images: (1) fits the page, (2) taller than remaining space but
@@ -219,6 +283,7 @@ struct BrowserLayoutProductionCorrectnessTests {
         // No fragment may extend below the page content area.
         for page in pages {
             for frag in BrowserLayoutTestSupport.allImageFragments([page]) {
+                print("IMG page=\(page.index) src=\(frag.source) rect=\(frag.rect.rawValue)")
                 #expect(frag.rect.maxY <= Self.viewport.height + 0.5,
                         "image clipped below page: \(frag.rect)")
             }

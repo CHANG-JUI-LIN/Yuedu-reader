@@ -177,3 +177,16 @@ enum BorderStyle: Equatable {
         }
     }
 }
+
+/// How a replaced element (image) paginates when it does not fit the current
+/// page (Phase 2C).
+enum ReplacedElementPaginationPolicy {
+    /// Move the whole element to the next page when it fits there.
+    case moveToNextPage
+    /// Scale the element to fit the page (aspect preserved) when its intrinsic
+    /// size exceeds a whole page. Never split into fragments.
+    case scaleToFitPage
+    /// Allow overflow (no scaling/clipping handling).
+    case overflowVisible
+}
+

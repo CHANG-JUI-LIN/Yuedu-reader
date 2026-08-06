@@ -447,17 +447,43 @@ struct PageWalker {
         var target = max(0, Int(floor(step.rect.minY / pageHeight)))
         let pageLocalY = step.rect.minY - CGFloat(target) * pageHeight
         var adjustedDocY = step.rect.minY
-        // Atomic items that fit a page but not the remaining space move
-        // wholesale to the next page.
+        var adjustedDocRect = step.rect.rawValue
+
+        // Replaced-element pagination (Phase 2C):
+        // 1. Fits current page remainder → place.
+        // 2. Does not fit remainder but fits a full page → move whole to next.
+        // 3. Intrinsic size EXCEEDS a full page → scale to fit (aspect kept),
+        //    never split into fragments.
+        let contentWidth = max(1, pageRect.width - contentInsets.left - contentInsets.right)
         if step.rect.height <= pageHeight, pageLocalY + step.rect.height > pageHeight + 0.001 {
+            // Case 2: move to next page.
             target += 1
             adjustedDocY = CGFloat(target) * pageHeight
+            adjustedDocRect.origin.y = adjustedDocY
+        } else if step.rect.height > pageHeight || step.rect.width > contentWidth {
+            // Case 3: scale to fit the full page content area, aspect preserved.
+            let scale = min(
+                contentWidth / step.rect.width,
+                pageHeight / step.rect.height
+            )
+            let newW = max(1, step.rect.width * scale)
+            let newH = max(1, step.rect.height * scale)
+            // A scaled image that still doesn't fit the CURRENT page's
+            // remainder moves to its own page (top-aligned).
+            let pageBottom = CGFloat(target + 1) * pageHeight
+            if adjustedDocY + newH > pageBottom + 0.001 {
+                target += 1
+                adjustedDocY = CGFloat(target) * pageHeight
+            }
+            adjustedDocRect = CGRect(
+                x: step.rect.minX,
+                y: adjustedDocY,
+                width: newW,
+                height: newH
+            )
         }
         let flushed = advanceToPage(target)
-        let adjustedDoc = DocumentRect(rawValue: CGRect(
-            x: step.rect.minX, y: adjustedDocY,
-            width: step.rect.width, height: step.rect.height
-        ))
+        let adjustedDoc = DocumentRect(rawValue: adjustedDocRect)
         let canvas = canvasRect(forDocument: adjustedDoc, pageIndex: currentIndex)
         currentPage.append(.image(ImageFragment(
             source: step.source,

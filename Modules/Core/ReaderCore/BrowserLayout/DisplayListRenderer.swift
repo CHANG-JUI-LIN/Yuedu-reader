@@ -92,8 +92,9 @@ enum DisplayListDrawer {
             case .solid, .none:
                 context.setLineDash(phase: 0, lengths: [])
             case .dotted:
-                context.setLineJoin(.round)
-                context.setLineDash(phase: 0, lengths: [0.1, width * 2])
+                // Visible dots: a 1×-width solid dot with a 2.5× gap. A
+                // 0.1pt dash anti-aliased into near-invisible gray on device.
+                context.setLineDash(phase: 0, lengths: [width, width * 2.5])
                 context.setLineCap(.round)
             case .dashed:
                 context.setLineDash(phase: 0, lengths: [width * 3, width * 2])
