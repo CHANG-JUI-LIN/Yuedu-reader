@@ -1,3 +1,4 @@
+import CoreText
 import Testing
 import SwiftSoup
 import UIKit
@@ -193,6 +194,68 @@ struct BrowserLayoutRedChamberRegressionTests {
         return nil
     }
 
+    /// First-line geometry with the four concepts kept APART:
+    /// - `lineBoxRect`: the line box (content box of the line) in page-local
+    ///   UIKit coordinates — its top is NOT a baseline.
+    /// - `baselineY`: the baseline origin the engine actually placed the line
+    ///   at (TextFragment.baselineY, set by the walker from the line box's
+    ///   baseline), in page-local UIKit coordinates. NOT lineBoxRect.minY.
+    /// - `glyphInkBounds`: the glyph ink bounds from the REAL CTLine
+    ///   (CTLineGetBoundsWithOptions(.useGlyphPathBounds)), converted from
+    ///   CoreText baseline-relative coordinates to page-local UIKit.
+    /// - `ascent`/`descent`/`leading`: typographic bounds from the REAL CTLine
+    ///   (CTLineGetTypographicBounds). Ink bounds do NOT have to equal the
+    ///   ascent/descent box — never assert ink == line box.
+    struct LineGeometryDiagnostics {
+        let lineBoxRect: CGRect
+        let baselineY: CGFloat
+        let glyphInkBounds: CGRect
+        let ascent: CGFloat
+        let descent: CGFloat
+        let leading: CGFloat
+
+        var summary: String {
+            "lineBox=\(lineBoxRect) baselineY=\(baselineY) ink=\(glyphInkBounds) " +
+            "ascent=\(ascent) descent=\(descent) leading=\(leading)"
+        }
+    }
+
+    /// Extracts first-line diagnostics from the fragment's retained CTLine.
+    /// Returns nil when the fragment carries no CTLine (unshaped fallback).
+    static func lineDiagnostics(from fragment: TextFragment) -> LineGeometryDiagnostics? {
+        guard let line = fragment.ctLine else { return nil }
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+        let ink = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
+        // CoreText ink bounds are relative to the line's baseline origin with
+        // Y pointing UP; convert to page-local UIKit (Y down, origin = the
+        // fragment's line-box left edge which is where the line content starts
+        // for a left-aligned first line).
+        let inkRect = CGRect(
+            x: fragment.rect.minX + ink.minX,
+            y: fragment.baselineY - ink.maxY,
+            width: ink.width,
+            height: ink.height
+        )
+        return LineGeometryDiagnostics(
+            lineBoxRect: fragment.rect,
+            baselineY: fragment.baselineY,
+            glyphInkBounds: inkRect,
+            ascent: ascent,
+            descent: descent,
+            leading: leading
+        )
+    }
+
+    /// The first text fragment of the cover chapter (smallest rect.minY).
+    static func firstTextFragment(of rootBox: BlockBox) -> TextFragment? {
+        BrowserLayoutTestSupport.allTextFragments(
+            PageFragmentation.fragment(box: rootBox, pageSize: Self.contentRect.size)
+        ).min(by: { $0.rect.minY < $1.rect.minY })
+    }
+
     @Test("k1/k2 cover-page box geometry", .enabled(if: epubPath != nil))
     func coverPageBoxGeometry() async throws {
         let session = try await Self.session()
@@ -260,6 +323,64 @@ struct BrowserLayoutRedChamberRegressionTests {
             #expect(box.frame.width >= 0 && box.frame.height >= 0, "negative box size")
         }
         #expect(k1.frame.maxX <= Self.viewport.width + 0.5, "k1 box exceeds viewport")
+    }
+
+    /// First-line geometry on the cover chapter: distinguishes line-box top,
+    /// baseline, typographic bounds and glyph ink bounds — never conflates them.
+    ///
+    /// Assertions:
+    /// - lineBoxRect.minY == expectedContentTop (k1 margin-top + padding +
+    ///   k2 border + padding) — the LINE BOX top, not a baseline.
+    /// - browser-style half-leading baseline placement:
+    ///   baselineY == lineBoxRect.minY + halfLeading + ascent.
+    /// - basic containment: ink sits inside the line box; the baseline lies
+    ///   below the ink top and within descent of the ink bottom.
+    @Test("first-line geometry: line box / baseline / ink / metrics", .enabled(if: epubPath != nil))
+    func firstLineGeometry() async throws {
+        let session = try await Self.session()
+        let spine = try await Self.locateFirstChapter(session: session)
+        let (_, rootBox) = try await Self.buildBoxTree(spine: spine)
+
+        let k1 = try #require(Self.findK1(in: rootBox), "k1 box (width:15em) not found")
+        let k2 = try #require(Self.findK2(in: rootBox), "k2 box (padding:2.2em,border:1pt) not found")
+        let firstText = try #require(Self.firstTextFragment(of: rootBox), "no text fragments on cover")
+        let diag = try #require(Self.lineDiagnostics(from: firstText),
+                                "first fragment lost its CTLine (unshaped fallback)")
+
+        // Expected content top: k1 used margin-top + padding + k2 border + padding.
+        let expectedContentTop = k1.margins.top
+            + k1.padding.top
+            + k2.borders.top
+            + k2.padding.top
+        #expect(abs(diag.lineBoxRect.minY - expectedContentTop) < 1.0,
+                "line box top \(diag.lineBoxRect.minY) != \(expectedContentTop)")
+
+        // Browser-style half-leading: extraLeading split above/below the
+        // natural (ascent+descent) box, baseline sits at halfLeading + ascent
+        // below the line box top.
+        let naturalHeight = diag.ascent + diag.descent
+        let computedLineHeight = diag.lineBoxRect.height
+        let halfLeading = max(0, computedLineHeight - naturalHeight) / 2
+        let expectedBaseline = diag.lineBoxRect.minY + halfLeading + diag.ascent
+        #expect(abs(diag.baselineY - expectedBaseline) < 1.0,
+                "baseline \(diag.baselineY) != half-leading expected \(expectedBaseline)")
+
+        // Basic geometric relations (ink does NOT have to hug the line box).
+        #expect(diag.lineBoxRect.contains(diag.glyphInkBounds),
+                "ink \(diag.glyphInkBounds) outside line box \(diag.lineBoxRect)")
+        #expect(diag.baselineY > diag.glyphInkBounds.minY,
+                "baseline \(diag.baselineY) above ink top \(diag.glyphInkBounds.minY)")
+        #expect(diag.baselineY < diag.glyphInkBounds.maxY + diag.descent + 1,
+                "baseline \(diag.baselineY) not within descent of ink bottom \(diag.glyphInkBounds.maxY)")
+
+        // Full four-group output for any future diagnosis (spec: never mix
+        // line-box top / baseline / typographic bounds / glyph ink bounds).
+        print("GEOM firstLineBox.minY=\(diag.lineBoxRect.minY) maxY=\(diag.lineBoxRect.maxY)")
+        print("GEOM firstBaselineY=\(diag.baselineY)")
+        print("GEOM firstGlyphInkBounds=\(diag.glyphInkBounds)")
+        print("GEOM fontAscent=\(diag.ascent) fontDescent=\(diag.descent) fontLeading=\(diag.leading)")
+        print("GEOM computedLineHeight=\(diag.lineBoxRect.height) halfLeading=\(halfLeading)")
+        print("GEOM expectedContentTop=\(expectedContentTop) full=\(diag.summary)")
     }
 
     // MARK: - 4. Background image paint
