@@ -4,7 +4,7 @@ import UIKit
 /// UIImage. Also performs link hit-testing from the fragment rects and paints
 /// a selection/TTS highlight overlay.
 @MainActor
-final class BrowserLayoutPageView: UIView {
+final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
 
     var displayList: DisplayList = .empty
     var backgroundColorFill: UIColor = .white
@@ -110,10 +110,24 @@ final class BrowserLayoutPageView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = true
+        tapRecognizer.delegate = self
         addGestureRecognizer(tapRecognizer)
         addGestureRecognizer(longPressRecognizer)
         // Long press wins over the tap recognizer when it fires.
         tapRecognizer.require(toFail: longPressRecognizer)
+    }
+
+    /// The page's tap recognizer only RECEIVES touches that hit a link (or an
+    /// active selection). Any other tap is NOT received, so this recognizer
+    /// never blocks the reader's ancestor tap zones (page turn / panel toggle)
+    /// — mirror CoreTextPageView.gestureRecognizer(_:shouldReceive:).
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer === tapRecognizer else { return true }
+        let point = touch.location(in: self)
+        if hasActiveSelection {
+            return true  // selection handles/deselect need every tap
+        }
+        return linkTarget(at: point) != nil
     }
 
     required init?(coder: NSCoder) {

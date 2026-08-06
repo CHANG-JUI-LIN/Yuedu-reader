@@ -59,6 +59,25 @@ final class BrowserLayoutSession {
             return nil
         }
         BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) layoutNextPageCompleted spine=\(diagnosticSpine) gen=\(generation) page=\(page.index) fragments=\(page.fragments.count)")
+        #if DEBUG
+        // Image placement diagnostics (画册 regression): every image fragment's
+        // page-local rect + source on each page.
+        var imageLog: [String] = []
+        func walkImages(_ fragments: [Fragment]) {
+            for fragment in fragments {
+                switch fragment {
+                case .image(let i):
+                    imageLog.append("src=\(i.source) rect=\(BrowserLayoutDeviceDiagnostic.rect(i.rect.rawValue, space: "pageLocal"))")
+                case .group(let children): walkImages(children)
+                default: break
+                }
+            }
+        }
+        walkImages(page.fragments)
+        if !imageLog.isEmpty {
+            BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) pageImages spine=\(diagnosticSpine) page=\(page.index) \(imageLog.joined(separator: " | "))")
+        }
+        #endif
         // Inject the authored body background-image into EVERY page (same
         // path as `BrowserLayoutDocument.renderPagesAndMeasure` — one
         // implementation). The background covers the full canvas.
