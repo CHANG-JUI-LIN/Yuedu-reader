@@ -521,7 +521,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private func fallbackToLegacy(_ spineIndex: Int, reason: String) async {
         choices[spineIndex] = .legacyEngineFailure(reason)
         engineStatus[spineIndex] = "legacy: engineFailure \(reason)"
+        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacy spine=\(spineIndex) reason=\(reason)")
         await delegate.preloadChapter(at: spineIndex)
+        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacyDone spine=\(spineIndex) delegatePages=\(delegate.lastPageIndex(ofChapter: spineIndex).map(String.init) ?? "nil")")
     }
 
     func invalidateLayout(newSize: CGSize) async {
@@ -803,6 +805,52 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return vc
         case .legacyFallback, .legacyEngineFailure:
             return delegate.pageViewController(at: delegatePageIndex(for: spine, localPage: local))
+        }
+    }
+
+    /// Position-driven page view. For a chapter the browser engine has NOT
+    /// laid out yet, returns a titled placeholder AND kicks off the chapter
+    /// preload so `onChapterReady` can replace it — the same contract the
+    /// legacy engine follows. Without this, turning past a chapter boundary
+    /// left the reader stuck on a bare placeholder (could not turn pages).
+    func pageViewController(for position: CoreTextReadingPosition) -> UIViewController {
+        let spine = position.spineIndex
+        guard (0..<resource.chapterCount).contains(spine) else {
+            return pageViewController(at: 0)
+        }
+        // Already decided/laid out → normal path.
+        switch choices[spine] ?? .browser {
+        case .browser:
+            if let layout = browserChapters[spine], !layout.pages.isEmpty {
+                if let page = pageIndex(for: position) {
+                    return pageViewController(at: page)
+                }
+            }
+            // Not laid out yet: placeholder + preload.
+            let title = resource.chapterTitle(at: spine)
+            let estimated = estimatedGlobalPage(for: position) ?? 0
+            BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) pageVCPosition placeholder spine=\(spine) estimated=\(estimated) title=\(title)")
+            let placeholder = PlaceholderPageViewController(
+                chapterTitle: title,
+                globalPage: estimated,
+                readingPosition: position,
+                themeBackgroundColor: themeBackgroundColor,
+                themeTextColor: themeTextColor
+            )
+            Task { [weak self] in
+                guard let self else { return }
+                await self.preloadChapter(at: spine)
+                let stillBrowser: Bool
+                switch self.choices[spine] {
+                case .browser: stillBrowser = true
+                case .legacyFallback, .legacyEngineFailure, nil: stillBrowser = false
+                }
+                guard stillBrowser, self.browserChapters[spine] != nil else { return }
+                self.onChapterReady?(spine)
+            }
+            return placeholder
+        case .legacyFallback, .legacyEngineFailure:
+            return delegate.pageViewController(for: position)
         }
     }
 

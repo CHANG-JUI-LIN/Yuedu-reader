@@ -74,8 +74,6 @@
             ReferencedContainer = "container:Yuedu-Reader.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <CommandLineArguments>
-      </CommandLineArguments>
       <StoreKitConfigurationFileReference
          identifier = "../../Configuration/YueduPro.storekit">
       </StoreKitConfigurationFileReference>

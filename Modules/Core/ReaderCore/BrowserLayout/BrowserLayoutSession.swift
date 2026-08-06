@@ -58,6 +58,7 @@ final class BrowserLayoutSession {
             walker = nil
             return nil
         }
+        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) layoutNextPageCompleted spine=\(diagnosticSpine) gen=\(generation) page=\(page.index) fragments=\(page.fragments.count)")
         // Inject the authored body background-image into EVERY page (same
         // path as `BrowserLayoutDocument.renderPagesAndMeasure` — one
         // implementation). The background covers the full canvas.
@@ -263,7 +264,13 @@ final class BrowserLayoutSession {
             width: config.renderWidth + config.contentInsets.left + config.contentInsets.right,
             height: config.renderHeight + config.contentInsets.top + config.contentInsets.bottom
         )
+        #if DEBUG
+        BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE sessionEnsure start spine=\(diagnosticSpine) htmlLen=\(html.count) cssCount=\(cssTexts.count)")
+        #endif
         let result = try document.makeLayout(containerSize: canvasSize)
+        #if DEBUG
+        BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE sessionEnsure makeLayoutDone spine=\(diagnosticSpine) boxes=\(result.boxCount) content=\(result.contentSize)")
+        #endif
         sourceText = result.sourceText
         anchorOffsets = result.anchorOffsets
         pipelineNodeCount = result.nodeCount
@@ -274,7 +281,13 @@ final class BrowserLayoutSession {
             pageSize: canvasSize,
             contentInsets: config.contentInsets
         )
+        #if DEBUG
+        BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE sessionEnsure walkerCreated spine=\(diagnosticSpine) pageSize=\(canvasSize) rootLines=\(result.rootBox.lines.count) rootChildren=\(result.rootBox.children.count)")
+        #endif
         Self.logK1K2Layout(rootBox: result.rootBox, config: config, spine: diagnosticSpine, generation: generation)
+        #if DEBUG
+        BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE sessionEnsure complete spine=\(diagnosticSpine)")
+        #endif
     }
 
     /// DEBUG-only dump of the k1/k2 cover boxes' geometry in DOCUMENT

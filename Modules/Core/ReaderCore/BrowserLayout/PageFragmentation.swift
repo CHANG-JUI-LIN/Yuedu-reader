@@ -145,6 +145,10 @@ struct PageWalker {
     private(set) var currentIndex = 0
     private(set) var currentPage: [Fragment] = []
     private(set) var completedPages: [PageFragments] = []
+    /// Defensive step budget: a corrupted box tree must never hang pagination
+    /// forever. Each `nextStep` consumes one; exceeding the budget throws.
+    private var stepBudget = 0
+    static let maxWalkerSteps = 2_000_000
 
     init(
         box: BlockBox,
@@ -185,6 +189,16 @@ struct PageWalker {
     /// Emits the next fragment step in document order, or nil when the walk
     /// is exhausted.
     mutating func nextStep() -> Step? {
+        stepBudget += 1
+        if stepBudget > Self.maxWalkerSteps {
+            assertionFailure("PageWalker exceeded step budget \(Self.maxWalkerSteps) — corrupted box tree?")
+            return nil
+        }
+        #if DEBUG
+        if stepBudget % 100_000 == 0 {
+            BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE walkerProgress steps=\(stepBudget) stack=\(stack.count) page=\(currentIndex) fragments=\(currentPage.count) topTag=\(stack.last?.box.debugTag ?? "-")")
+        }
+        #endif
         while !stack.isEmpty {
             let index = stack.count - 1
             if !stack[index].fillsEmitted {
