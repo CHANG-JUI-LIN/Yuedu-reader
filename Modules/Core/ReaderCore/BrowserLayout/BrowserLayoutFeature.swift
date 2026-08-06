@@ -3,10 +3,18 @@ import Foundation
 /// Debug engine modes for the browser-layout engine. Release builds are
 /// compiled to `.legacy` — the mode cannot change at runtime in release.
 /// No user-facing setting exists; these are developer diagnostics only.
-enum EPUBLayoutEngineMode {
+enum EPUBLayoutEngineMode: CustomStringConvertible {
     case legacy
     case browserAuto
     case browserForced
+
+    var description: String {
+        switch self {
+        case .legacy: return "legacy"
+        case .browserAuto: return "browserAuto"
+        case .browserForced: return "browserForced"
+        }
+    }
 }
 
 /// Phase-2A feature gate for the browser-style box layout engine.

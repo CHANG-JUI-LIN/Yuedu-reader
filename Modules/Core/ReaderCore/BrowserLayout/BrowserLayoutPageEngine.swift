@@ -46,6 +46,8 @@ struct BrowserChapterLayout {
     var estimatedFragmentBytes: Int64 = 0
     /// Bytes of built DisplayLists for this chapter (released on eviction).
     var displayListBytes: Int64 = 0
+    /// DEBUG-only: layout generation for on-device diagnostics.
+    var diagnosticGeneration: Int = -1
 
     init(spineIndex: Int, pages: [PageFragments], sourceText: String, anchorOffsets: [String: Int],
          fontSize: CGFloat, themeTextColor: UIColor, themeBackgroundColor: UIColor) {
@@ -139,6 +141,24 @@ struct BrowserChapterLayout {
             }
         }
         collect(page.fragments)
+        #if DEBUG
+        // DEBUG-only: k1 fill/border commands as emitted (page-local).
+        var k1Fill: CGRect? = nil
+        var k2Border: CGRect? = nil
+        for item in items {
+            if case .fill(let f) = item {
+                if f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 { k1Fill = f.rect }
+                if f.rect.width > 200, f.rect.width < 320, f.rect.height <= 2 { k2Border = f.rect }
+            }
+        }
+        let k1Msg = k1Fill.map { BrowserLayoutDeviceDiagnostic.rect($0, space: "coordinate=pageLocal") } ?? "none"
+        let k2Msg = k2Border.map { BrowserLayoutDeviceDiagnostic.rect($0, space: "coordinate=pageLocal") } ?? "none"
+        BrowserLayoutDeviceDiagnostic.log(
+            .k1DisplayList(spine: spineIndex, generation: diagnosticGeneration),
+            spine: spineIndex, generation: diagnosticGeneration, page: localPage,
+            message: "stage=displayList node=k1 fillRect=\(k1Msg) borderRect=\(k2Msg)"
+        )
+        #endif
         return DisplayList(items: items)
     }
 
@@ -318,26 +338,63 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     private func decideEngine(for spineIndex: Int) async -> ChapterEngineChoice {
-        if let cached = choices[spineIndex] { return cached }
+        if let cached = choices[spineIndex] {
+            BrowserLayoutDeviceDiagnostic.log(
+                .engineDecision(spine: spineIndex, generation: layoutGeneration),
+                spine: spineIndex, generation: layoutGeneration,
+                message: "engineDecision cached=\(cached.debugLabel)"
+            )
+            return cached
+        }
         guard let html = try? await resource.chapterHTML(at: spineIndex) else {
+            BrowserLayoutDeviceDiagnostic.log(
+                .engineDecision(spine: spineIndex, generation: layoutGeneration),
+                spine: spineIndex, generation: layoutGeneration,
+                message: "actualEngine=legacy reason=chapterHTML-fetch-failed"
+            )
             return .legacyEngineFailure("chapterHTML")
         }
         let css = await resource.processedCSS(forChapter: spineIndex)
         let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: css)
+        let mode = BrowserLayoutFeature.mode
+        let decision: ChapterEngineChoice
         if scan.supported {
-            return .browser
-        }
-        if BrowserLayoutFeature.mode == .browserForced {
+            decision = .browser
+        } else if mode == .browserForced {
             // Forced mode: attempt the browser engine anyway; failures below
             // become engine failures, never silent capability fallbacks.
             engineStatus[spineIndex] = "forced (unsupported: \(scan.unsupportedFeatures.map(\.description).joined(separator: ",")))"
-            return .browser
+            decision = .browser
+        } else {
+            decision = .legacyFallback(scan.unsupportedFeatures)
         }
-        return .legacyFallback(scan.unsupportedFeatures)
+        let isBrowser: Bool
+        switch decision {
+        case .browser: isBrowser = true
+        case .legacyFallback, .legacyEngineFailure: isBrowser = false
+        }
+        BrowserLayoutDeviceDiagnostic.log(
+            .engineDecision(spine: spineIndex, generation: layoutGeneration),
+            spine: spineIndex, generation: layoutGeneration,
+            message: "engineDecision mode=\(mode) scanSupported=\(scan.supported) "
+                + "unsupported=\(scan.unsupportedFeatures.map(\.description)) choice=\(decision.debugLabel) "
+                + "actualEngine=\(isBrowser ? "browser" : "legacy")"
+        )
+        if case .legacyFallback(let reasons) = decision {
+            BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackReason=\(reasons.map(\.description).joined(separator: ",")) spine=\(spineIndex)")
+        }
+        return decision
     }
 
     private func layoutBrowserChapter(_ spineIndex: Int) async {
         let generation = layoutGeneration
+        let traceID = BrowserLayoutDeviceDiagnostic.newTraceID(for: spineIndex, generation: generation)
+        BrowserLayoutDeviceDiagnostic.log(
+            .chapterConfig(spine: spineIndex, generation: generation),
+            spine: spineIndex, generation: generation,
+            message: "chapterLayoutStart trace=\(traceID) engineCreated=BrowserLayoutPageEngine "
+                + "mode=\(BrowserLayoutFeature.mode)"
+        )
         do {
             let html = try await resource.chapterHTML(at: spineIndex)
             guard !html.isEmpty else {
@@ -354,6 +411,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 html: html, cssTexts: css, config: config,
                 imageLoader: { images[$0] }, generation: generation
             )
+            session.diagnosticSpine = spineIndex
 
             // FIRST PAGE: publish immediately — the rest of the chapter is NOT
             // laid out yet.
@@ -377,6 +435,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 themeTextColor: self.themeTextColor,
                 themeBackgroundColor: themeBackgroundColor
             )
+            layout.diagnosticGeneration = generation
             layout.recordLifecycleBytes(nodeCount: session.pipelineNodeCount, boxCount: session.pipelineBoxCount)
             browserChapters[spineIndex] = layout
             engineStatus[spineIndex] = "browser"
@@ -705,6 +764,31 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             ) { [weak self] href in
                 self?.handleLinkTap(href, fromSpine: spine)
             }
+            // DEBUG: expose coordinate truth on the REAL page view (overlay
+            // lines + superview chain + commit SHA). Never affects layout.
+            let k1Rect = Self.k1PageLocalRect(in: list)
+            let modeLabel: String
+            switch BrowserLayoutFeature.mode {
+            case .legacy: modeLabel = "legacy"
+            case .browserAuto: modeLabel = "browserAuto"
+            case .browserForced: modeLabel = "browserForced"
+            }
+            let spec = BrowserLayoutPageView.DebugSpec(
+                commitSHA: Self.currentCommitSHA,
+                engineMode: modeLabel,
+                k1ExpectedPageLocalTop: Self.k1ExpectedTop(contentWidth: contentWidth),
+                k1DisplayListTop: Self.k1DisplayListTop(in: list),
+                k1PageLocalRect: k1Rect,
+                traceID: BrowserLayoutDeviceDiagnostic.traceID(for: spine, generation: layoutGeneration),
+                spine: spine,
+                generation: layoutGeneration
+            )
+            vc.pageView.debugSpec = spec
+            BrowserLayoutDeviceDiagnostic.log(
+                .pageViewConfigure(spine: spine, generation: layoutGeneration),
+                spine: spine, generation: layoutGeneration, page: local,
+                message: "pageViewConfigure trace=\(spec.traceID) k1PageLocalRect=\(BrowserLayoutDeviceDiagnostic.rect(k1Rect, space: "coordinate=pageLocal"))"
+            )
             return vc
         case .legacyFallback, .legacyEngineFailure:
             return delegate.pageViewController(at: delegatePageIndex(for: spine, localPage: local))
@@ -931,6 +1015,51 @@ extension BrowserLayoutPageEngine {
     func statusLabel(for spineIndex: Int) -> String {
         if let status = engineStatus[spineIndex] { return status }
         return choices[spineIndex]?.debugLabel ?? "unknown"
+    }
+
+    /// Short commit SHA of the build (debug overlay label).
+    static var currentCommitSHA: String {
+        #if DEBUG
+        // Best-effort from the Info.plist build metadata; falls back to a
+        // compile-time marker when unavailable.
+        if let sha = Bundle.main.object(forInfoDictionaryKey: "GitCommitSHA") as? String, !sha.isEmpty {
+            return String(sha.prefix(7))
+        }
+        return "unknown"
+        #else
+        return "release"
+        #endif
+    }
+
+    /// Expected k1 border top in page-local coordinates: 25% of the body
+    /// containing-block width. The body content width is the engine's content
+    /// width (contentWidth), which the RedChamber CSS resolves to 358.68 for a
+    /// 390pt viewport — 25% → 89.67.
+    static func k1ExpectedTop(contentWidth: CGFloat) -> CGFloat {
+        contentWidth * 0.25
+    }
+
+    /// k1's actual top as painted by the DisplayList: the first large
+    /// non-body fill (15em cover box). Falls back to -1 when absent.
+    static func k1DisplayListTop(in list: DisplayList) -> CGFloat {
+        for item in list.items {
+            if case .fill(let f) = item,
+               f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 {
+                return f.rect.minY
+            }
+        }
+        return -1
+    }
+
+    /// k1's page-local rect from the DisplayList (for window conversion).
+    static func k1PageLocalRect(in list: DisplayList) -> CGRect {
+        for item in list.items {
+            if case .fill(let f) = item,
+               f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 {
+                return f.rect
+            }
+        }
+        return .null
     }
 }
 
