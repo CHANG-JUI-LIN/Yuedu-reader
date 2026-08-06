@@ -99,6 +99,43 @@ struct BrowserLayoutProductionCorrectnessTests {
         #expect(foundCanvasImage, "authored background-image missing from the page")
     }
 
+    /// The authored background must appear on EVERY page, not only page 0 —
+    /// a multi-page chapter keeps full-canvas coverage (attachment: fixed
+    /// semantics for paged EPUB).
+    @Test func rootBackgroundAppearsOnEveryPage() async throws {
+        let html = """
+        <html><head><style>
+          body { margin: 0; background-image: url(bg.png);
+                 background-size: cover; background-attachment: fixed; }
+          p { margin: 0 0 1em; }
+        </style></head>
+        <body>
+        \(String(repeating: "<p>重複段落內容以撐滿超過一頁。</p>", count: 60))
+        </body></html>
+        """
+        let bg = Self.checker(size: CGSize(width: 64, height: 64), color: .purple)
+        let (pages, _) = try await Self.layout(html, images: ["bg.png": bg])
+        #expect(pages.count >= 2, "fixture must span multiple pages")
+        for page in pages {
+            var canvasFill = false
+            func walk(_ fragments: [Fragment]) {
+                for fragment in fragments {
+                    switch fragment {
+                    case .fill(let f):
+                        if f.rect.width >= Self.viewport.width - 0.5,
+                           f.rect.height >= Self.viewport.height - 0.5 {
+                            canvasFill = true
+                        }
+                    case .group(let children): walk(children)
+                    default: break
+                    }
+                }
+            }
+            walk(page.fragments)
+            #expect(canvasFill, "page \(page.index) missing full-canvas background")
+        }
+    }
+
     // MARK: - B. Rounded dotted card
 
     /// k2-style card: rgba fill, dotted border, radius. The display list must
