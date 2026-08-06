@@ -123,6 +123,30 @@ final class BrowserLayoutPageView: UIView {
         fatalError("init(coder:) is not supported")
     }
 
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        // Mirror CoreTextPageView.configureTapPriority: the READER's tap zones
+        // live on UIPageViewController's view. This page's link tap must win
+        // when it matches a link, and FAIL (letting the reader's tap zones
+        // fire → toggle menu / page turn) when it does not. Without this, the
+        // page's recognizer consumed every tap and the reading panel could not
+        // be toggled.
+        configureTapPriority()
+    }
+
+    private func configureTapPriority() {
+        var current: UIView? = superview
+        while let view = current {
+            for recognizer in view.gestureRecognizers ?? [] {
+                guard recognizer !== tapRecognizer,
+                      recognizer is UITapGestureRecognizer
+                else { continue }
+                recognizer.require(toFail: tapRecognizer)
+            }
+            current = view.superview
+        }
+    }
+
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         let ctmBefore = BrowserLayoutDeviceDiagnostic.ctm(context)
