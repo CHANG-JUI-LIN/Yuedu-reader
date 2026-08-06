@@ -1005,7 +1005,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             let count: Int
             switch choices[spine] ?? .browser {
             case .browser:
-                count = browserChapters[spine]?.pages.count ?? 0
+                // Laid out → real page count. NOT laid out yet → estimate 1
+                // page (legacy-engine semantics) so spinePageOffsets stays
+                // contiguous and pageForward's `globalPage < totalPages-1`
+                // guard lets the reader cross INTO the chapter, triggering its
+                // preload via pageViewController(for:). A 0 here pins the
+                // reader at the last laid-out chapter with no way forward.
+                count = browserChapters[spine]?.pages.count ?? 1
             case .legacyFallback, .legacyEngineFailure:
                 count = max(0, delegate.lastPageIndex(ofChapter: spine).map { $0 - delegate.pageIndex(forSpine: spine, charOffset: 0) + 1 } ?? 0)
             }
