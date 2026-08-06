@@ -239,6 +239,76 @@ struct RedChamberProductionRenderingRegressionTests {
         print("PAINT-OK k1PaintedTop=\(drawnTop) expected=\(expectedK1BorderTop)")
     }
 
+    // MARK: - 1c. Real window: actual UIKit bounds + pixel scan
+
+    /// Drives the production DisplayList through a REAL UIWindow on the
+    /// simulator device (real bounds + safe area), draws, and scans the pixels
+    /// for the k1 fill's top edge — the true screen position.
+    @Test("real window paints k1 at computed margin-top (pixel scan)", .enabled(if: epubPath != nil))
+    func realWindowPixelScan() async throws {
+        let session = try await Self.session()
+        let spine = try await Self.locateFirstChapter(session: session)
+        let (_, layout, _, _) = try await Self.productionLayout(spine: spine)
+        let page = try #require(layout.pages.first)
+        let k1 = try #require(Self.k1Candidates(in: page).first, "no k1 fill")
+        let expectedK1BorderTop: CGFloat = 89.67
+
+        let list = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: layout.themeTextColor)
+        let vc = BrowserLayoutPageViewController(
+            globalPageIndex: 0, readingPosition: nil,
+            displayList: list, backgroundColor: .white, statusText: nil, onLinkTap: nil
+        )
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = vc
+        window.makeKeyAndVisible()
+        vc.view.setNeedsLayout()
+        vc.view.layoutIfNeeded()
+        // Force a draw pass into the layer tree.
+        vc.view.drawHierarchy(in: vc.view.bounds, afterScreenUpdates: true)
+        print("WINDOW bounds=\(window.bounds) safeArea=\(window.safeAreaInsets)")
+        print("WINDOW pageViewFrame=\(vc.view.frame) bounds=\(vc.view.bounds)")
+
+        // Render the pageView's layer to an image and scan for the k2 dark
+        // dotted border (the only non-white element) — its top = k1 fill top +
+        // k1 padding, proving where the box actually painted.
+        let renderer = UIGraphicsImageRenderer(size: vc.view.bounds.size)
+        let image = renderer.image { ctx in
+            vc.view.layer.render(in: ctx.cgContext)
+        }
+        let k2Top = Self.scanDarkBorderTop(image: image)
+        print("PIXEL k1FragmentTop=\(k1.rect.minY) k2ExpectedTop=\(k1.rect.minY + 6.8) scanned=\(String(describing: k2Top))")
+        if let scanned = k2Top {
+            let scale = image.scale
+            let scannedPt = CGFloat(scanned) / CGFloat(scale)
+            print("PIXEL scannedK2TopPt=\(scannedPt)")
+            #expect(abs(scannedPt - (k1.rect.minY + 6.8)) < 2,
+                    "window paints k2 border at \(scannedPt), expected \(k1.rect.minY + 6.8)")
+        }
+        window.isHidden = true
+    }
+
+    /// Scans for the first row containing the k2 dark-green dotted border
+    /// (#3a4431 ≈ 0.23,0.27,0.19) at the k1 center column.
+    static func scanDarkBorderTop(image: UIImage) -> Int? {
+        guard let cg = image.cgImage else { return nil }
+        let width = cg.width
+        let height = cg.height
+        guard let data = cg.dataProvider?.data, let ptr = CFDataGetBytePtr(data) else { return nil }
+        let bpp = cg.bitsPerPixel / 8
+        let bpr = cg.bytesPerRow
+        let x = width / 2
+        for y in 0..<height {
+            let off = y * bpr + x * bpp
+            let r = CGFloat(ptr[off]) / 255
+            let g = CGFloat(ptr[off + 1]) / 255
+            let b = CGFloat(ptr[off + 2]) / 255
+            if r < 0.6, g < 0.6, b < 0.6, g > r, g > b {
+                return y
+            }
+        }
+        return nil
+    }
+
     // MARK: - 2. Font-scale policy
 
     @Test("zy-fontsize-adjust fixed ignores user font size", .enabled(if: epubPath != nil))
