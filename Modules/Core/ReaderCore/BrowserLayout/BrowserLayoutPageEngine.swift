@@ -3,11 +3,36 @@ import SwiftSoup
 import UIKit
 import YueduCoreText
 
+/// Precise reason a chapter fell back to the legacy engine (Phase 2C).
+/// Never a bare string — distinguishes capability, content and resource
+/// causes so diagnostics can tell "unsupported" from "empty" from "failed".
+enum BrowserFallbackReason: Equatable {
+    case unsupportedSVG
+    case unsupportedLayoutProperty(String)
+    case imageOnlyDocument
+    case emptyRenderableContent
+    case resourceFailure(String)
+    case layoutFailure(String)
+    case timeout
+
+    var description: String {
+        switch self {
+        case .unsupportedSVG: return "unsupported-svg"
+        case .unsupportedLayoutProperty(let p): return "unsupported-layout(\(p))"
+        case .imageOnlyDocument: return "image-only-document"
+        case .emptyRenderableContent: return "empty-renderable-content"
+        case .resourceFailure(let r): return "resource-failure(\(r))"
+        case .layoutFailure(let f): return "layout-failure(\(f))"
+        case .timeout: return "timeout"
+        }
+    }
+}
+
 /// Per-chapter engine choice with structured reasons (never book content).
 enum ChapterEngineChoice {
     case browser
     case legacyFallback([UnsupportedFeature])
-    case legacyEngineFailure(String)
+    case legacyEngineFailure(BrowserFallbackReason)
 
     var isBrowser: Bool {
         if case .browser = self { return true }
@@ -18,7 +43,7 @@ enum ChapterEngineChoice {
         switch self {
         case .browser: return "browser"
         case .legacyFallback(let reasons): return "legacy: capability \(reasons.map(\.description).joined(separator: ","))"
-        case .legacyEngineFailure(let reason): return "legacy: engineFailure \(reason)"
+        case .legacyEngineFailure(let reason): return "legacy: engineFailure \(reason.description)"
         }
     }
 }
@@ -354,7 +379,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 spine: spineIndex, generation: layoutGeneration,
                 message: "actualEngine=legacy reason=chapterHTML-fetch-failed"
             )
-            return .legacyEngineFailure("chapterHTML")
+            return .legacyEngineFailure(.resourceFailure("chapterHTML"))
         }
         let css = await resource.processedCSS(forChapter: spineIndex)
         let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: css)
@@ -400,7 +425,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         do {
             let html = try await resource.chapterHTML(at: spineIndex)
             guard !html.isEmpty else {
-                await fallbackToLegacy(spineIndex, reason: "chapterHTML")
+                await fallbackToLegacy(spineIndex, reason: .resourceFailure("chapterHTML"))
                 return
             }
             let css = await resource.processedCSS(forChapter: spineIndex)
@@ -422,9 +447,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             }
             guard generation == layoutGeneration else { return }
             guard let firstPage else {
-                // A chapter with content that produced zero pages is an engine
-                // failure, not a capability issue.
-                await fallbackToLegacy(spineIndex, reason: "emptyLayout")
+                // A chapter that produced zero pages: distinguish an image-only
+                // document (DOM has <img> but no text rendered by us) from a
+                // truly empty document.
+                let hasImageMarkup = html.contains("<img") || html.contains("<svg")
+                await fallbackToLegacy(
+                    spineIndex,
+                    reason: hasImageMarkup ? .imageOnlyDocument : .emptyRenderableContent
+                )
                 return
             }
             browserSessions[spineIndex] = session
@@ -449,10 +479,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // returns only when the chapter is complete (deterministic).
             await finishBrowserChapter(spineIndex, generation: generation)
         } catch let error as EngineTimeoutError {
-            await fallbackToLegacy(spineIndex, reason: "timeout")
+            await fallbackToLegacy(spineIndex, reason: .timeout)
             _ = error
         } catch {
-            await fallbackToLegacy(spineIndex, reason: String(describing: error).prefix(80).description)
+            await fallbackToLegacy(spineIndex, reason: .layoutFailure(String(describing: error).prefix(80).description))
         }
     }
 
@@ -466,7 +496,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             guard layoutGeneration == generation else { return }
             browserChapters.removeValue(forKey: spineIndex)?.releaseLifecycleBytes()
             browserSessions.removeValue(forKey: spineIndex)
-            await fallbackToLegacy(spineIndex, reason: String(describing: error).prefix(80).description)
+            await fallbackToLegacy(spineIndex, reason: .layoutFailure(String(describing: error).prefix(80).description))
             rebuildOffsets()
             onChapterReady?(spineIndex)
             return
@@ -518,10 +548,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         return PublicationFontScalePolicy.resolve(bodyInlineStyle: inline)
     }
 
-    private func fallbackToLegacy(_ spineIndex: Int, reason: String) async {
+    private func fallbackToLegacy(_ spineIndex: Int, reason: BrowserFallbackReason) async {
         choices[spineIndex] = .legacyEngineFailure(reason)
-        engineStatus[spineIndex] = "legacy: engineFailure \(reason)"
-        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacy spine=\(spineIndex) reason=\(reason)")
+        engineStatus[spineIndex] = "legacy: engineFailure \(reason.description)"
+        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacy spine=\(spineIndex) reason=\(reason.description)")
         await delegate.preloadChapter(at: spineIndex)
         BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacyDone spine=\(spineIndex) delegatePages=\(delegate.lastPageIndex(ofChapter: spineIndex).map(String.init) ?? "nil")")
     }
