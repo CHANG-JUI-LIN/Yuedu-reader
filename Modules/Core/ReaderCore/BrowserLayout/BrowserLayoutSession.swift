@@ -115,7 +115,7 @@ final class BrowserLayoutSession {
         var svgRects: [String] = []
         func walkSVG(_ box: BlockBox) {
             if box.debugTag == "svg" || box.debugTag == "img" {
-                svgRects.append("\(box.debugTag) frame=\(BrowserLayoutDeviceDiagnostic.rect(box.frame.rect, space: "parentLocal")) content=\(box.contentSize) attachment=\(box.imageAttachment != nil)")
+                svgRects.append("\(box.debugTag) frame=\(BrowserLayoutDeviceDiagnostic.rect(box.frame.rawValue, space: "parentLocal")) content=\(box.contentSize) attachment=\(box.imageAttachment != nil)")
             }
             for child in box.children { walkSVG(child) }
         }
@@ -152,7 +152,7 @@ final class BrowserLayoutSession {
             for fragment in fragments {
                 switch fragment {
                 case .fill(let f):
-                    if f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 { k1Fill = f.rect.rect }
+                    if f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 { k1Fill = f.rect.rawValue }
                 case .group(let children): walk(children)
                 default: break
                 }
@@ -185,13 +185,13 @@ final class BrowserLayoutSession {
             width: config.renderWidth + config.contentInsets.left + config.contentInsets.right,
             height: config.renderHeight + config.contentInsets.top + config.contentInsets.bottom
         )
-        let canvas = PageRect(rect: CGRect(origin: .zero, size: canvasSize))
+        let canvas = PageLocalRect(rawValue: CGRect(origin: .zero, size: canvasSize))
         let backgroundColor = background.color ?? config.backgroundColor
 
         var fragments: [Fragment] = []
         fragments.append(.fill(FillFragment(
             rect: canvas,
-            documentRect: DocumentRect(rect: CGRect(origin: .zero, size: canvasSize)),
+            documentRect: DocumentRect(rawValue: CGRect(origin: .zero, size: canvasSize)),
             color: backgroundColor,
             cornerRadius: 0,
             borderTop: .zero, borderBottom: .zero, borderLeft: .zero, borderRight: .zero,
@@ -212,8 +212,8 @@ final class BrowserLayoutSession {
                 nodeID: -1,
                 linkTarget: nil,
                 writingMode: config.writingMode,
-                rect: PageRect(rect: rect),
-                documentRect: DocumentRect(rect: rect),
+                rect: PageLocalRect(rawValue: rect),
+                documentRect: DocumentRect(rawValue: rect),
                 alt: nil
             )))
         }
@@ -326,21 +326,21 @@ final class BrowserLayoutSession {
         }
         // Document-coordinate boxes (relative to root content origin).
         func marginRect(_ box: BlockBox) -> CGRect {
-            let f = box.frame.rect
+            let f = box.frame.rawValue
             return CGRect(x: f.minX - box.margins.left,
                           y: f.minY - box.margins.top,
                           width: f.width + box.margins.left + box.margins.right,
                           height: f.height + box.margins.top + box.margins.bottom)
         }
         func paddingRect(_ box: BlockBox) -> CGRect {
-            let f = box.frame.rect
+            let f = box.frame.rawValue
             return CGRect(x: f.minX + box.borders.left,
                           y: f.minY + box.borders.top,
                           width: f.width - box.borders.horizontal,
                           height: f.height - box.borders.vertical)
         }
         func contentRect(_ box: BlockBox) -> CGRect {
-            let f = box.frame.rect
+            let f = box.frame.rawValue
             return CGRect(x: f.minX + box.borders.left + box.padding.left,
                           y: f.minY + box.borders.top + box.padding.top,
                           width: box.contentSize.width,
@@ -353,10 +353,10 @@ final class BrowserLayoutSession {
             + "contentWidth=\(String(format: "%.2f", k1.contentSize.width)) "
             + "rootFontSize=\(config.rootFontSize) bodyContentRect=\(BrowserLayoutDeviceDiagnostic.rect(CGRect(origin: .zero, size: rootBox.contentSize), space: D))"
         let k1Rects = "k1 marginRect=\(BrowserLayoutDeviceDiagnostic.rect(marginRect(k1), space: D)) "
-            + "borderRect=\(BrowserLayoutDeviceDiagnostic.rect(k1.frame.rect, space: D)) "
+            + "borderRect=\(BrowserLayoutDeviceDiagnostic.rect(k1.frame.rawValue, space: D)) "
             + "paddingRect=\(BrowserLayoutDeviceDiagnostic.rect(paddingRect(k1), space: D)) "
             + "contentRect=\(BrowserLayoutDeviceDiagnostic.rect(contentRect(k1), space: D))"
-        let k2Rects = "k2 borderRect=\(BrowserLayoutDeviceDiagnostic.rect(k2.frame.rect, space: D)) "
+        let k2Rects = "k2 borderRect=\(BrowserLayoutDeviceDiagnostic.rect(k2.frame.rawValue, space: D)) "
             + "contentRect=\(BrowserLayoutDeviceDiagnostic.rect(contentRect(k2), space: D)) "
             + "specified padding=\(k2.style.paddingTop) border=\(k2.style.borderTopWidth)"
         let lineInfo: String

@@ -16,7 +16,7 @@ struct DisplayTextItem {
     let nodeID: Int
     let linkTarget: String?
     let writingMode: ReaderWritingMode
-    let rect: PageRect
+    let rect: PageLocalRect
     let baselineY: CGFloat
     let font: UIFont
     let color: UIColor
@@ -31,7 +31,7 @@ struct DisplayTextItem {
 /// Phase 2C: one fill item carries the COMPLETE paint representation —
 /// dotted/dashed borders render all four sides, never a lone top line.
 struct DisplayFillItem {
-    let rect: PageRect
+    let rect: PageLocalRect
     let color: UIColor
     let cornerRadius: CGFloat
     let borderTop: BorderEdge
@@ -53,7 +53,7 @@ struct DisplayImageItem {
     let nodeID: Int
     let linkTarget: String?
     let writingMode: ReaderWritingMode
-    let rect: PageRect
+    let rect: PageLocalRect
     let alt: String?
 }
 

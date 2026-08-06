@@ -11,8 +11,8 @@ struct TextFragment {
     let nodeID: Int
     let linkTarget: String?
     let writingMode: ReaderWritingMode
-    /// Page canvas-local rect (Phase 2C contract: `PageRect`).
-    let rect: PageRect
+    /// Page canvas-local rect (Phase 2C contract: `PageLocalRect`).
+    let rect: PageLocalRect
     /// Document-absolute rect (for cross-page selection mapping).
     let documentRect: DocumentRect
     let baselineY: CGFloat
@@ -27,7 +27,7 @@ struct TextFragment {
 /// ONE fill fragment carrying its full paint representation (background fill
 /// + four edges + radius) — never a lone top line.
 struct FillFragment {
-    let rect: PageRect
+    let rect: PageLocalRect
     let documentRect: DocumentRect
     let color: UIColor
     let cornerRadius: CGFloat
@@ -47,7 +47,7 @@ struct ImageFragment {
     let nodeID: Int
     let linkTarget: String?
     let writingMode: ReaderWritingMode
-    let rect: PageRect
+    let rect: PageLocalRect
     let documentRect: DocumentRect
     let alt: String?
 }
@@ -62,7 +62,7 @@ indirect enum Fragment {
 struct PageFragments {
     let index: Int
     /// The page canvas rect = the actual page viewport (Phase 2C).
-    let pageRect: PageRect
+    let pageRect: PageLocalRect
     let fragments: [Fragment]
 }
 
@@ -137,7 +137,7 @@ struct PageWalker {
     /// Page block extent in DOCUMENT space (the content flow page height).
     let pageHeight: CGFloat
     /// The page canvas rect (full viewport).
-    let pageRect: PageRect
+    let pageRect: PageLocalRect
     /// Reader page margins: content sits inside these within the canvas.
     let contentInsets: UIEdgeInsets
     let writingMode: ReaderWritingMode
@@ -160,7 +160,7 @@ struct PageWalker {
         // bounds. pageHeight (the paging stride in document space) is the
         // content flow height inside the canvas.
         self.pageHeight = max(1, pageSize.height - contentInsets.top - contentInsets.bottom)
-        self.pageRect = PageRect(rect: CGRect(origin: .zero, size: pageSize))
+        self.pageRect = PageLocalRect(rawValue: CGRect(origin: .zero, size: pageSize))
         self.contentInsets = contentInsets
         self.writingMode = writingMode
         // The root box's own block-start margin (which carries any folded
@@ -177,8 +177,8 @@ struct PageWalker {
     /// Maps a document-absolute rect to page canvas-local coordinates for page
     /// `pageIndex`: subtract the page block offset, add the content insets so
     /// content lands inside the viewport margins.
-    func canvasRect(forDocument doc: DocumentRect, pageIndex: Int) -> PageRect {
-        PageRect(rect: CGRect(
+    func canvasRect(forDocument doc: DocumentRect, pageIndex: Int) -> PageLocalRect {
+        PageLocalRect(rawValue: CGRect(
             x: doc.minX + contentInsets.left,
             y: doc.minY - CGFloat(pageIndex) * pageHeight + contentInsets.top,
             width: doc.width,
@@ -204,7 +204,7 @@ struct PageWalker {
             if !stack[index].fillsEmitted {
                 stack[index].fillsEmitted = true
                 let frame = stack[index]
-                let boxRect = DocumentRect(rect: CGRect(
+                let boxRect = DocumentRect(rawValue: CGRect(
                     x: frame.borderX, y: frame.borderY,
                     width: frame.box.frame.width, height: frame.box.frame.height
                 ))
@@ -254,7 +254,7 @@ struct PageWalker {
             if let attachment = stack[index].box.imageAttachment {
                 let frame = stack[index]
                 stack.removeLast()
-                let rect = DocumentRect(rect: CGRect(
+                let rect = DocumentRect(rawValue: CGRect(
                     x: frame.contentOrigin.x,
                     y: frame.contentOrigin.y,
                     width: attachment.usedSize.width,
@@ -278,7 +278,7 @@ struct PageWalker {
                     stack[index].runIndex += 1
                     let frame = stack[index]
                     if let atomic = run.atomic {
-                        let rect = DocumentRect(rect: CGRect(
+                        let rect = DocumentRect(rawValue: CGRect(
                             x: frame.contentOrigin.x + line.contentX + run.x,
                             y: frame.contentOrigin.y + line.baseline - atomic.usedSize.height,
                             width: atomic.usedSize.width,
@@ -295,7 +295,7 @@ struct PageWalker {
                             alt: nil
                         ))
                     }
-                    let rect = DocumentRect(rect: CGRect(
+                    let rect = DocumentRect(rawValue: CGRect(
                         x: frame.contentOrigin.x + line.contentX + run.x,
                         y: frame.contentOrigin.y + line.top,
                         width: run.width,
@@ -404,7 +404,7 @@ struct PageWalker {
             adjustedDocY = CGFloat(target) * pageHeight
         }
         let flushed = advanceToPage(target)
-        let adjustedDoc = DocumentRect(rect: CGRect(
+        let adjustedDoc = DocumentRect(rawValue: CGRect(
             x: step.rect.minX, y: adjustedDocY,
             width: step.rect.width, height: step.rect.height
         ))
@@ -454,7 +454,7 @@ struct PageWalker {
             adjustedDocY = CGFloat(target) * pageHeight
         }
         let flushed = advanceToPage(target)
-        let adjustedDoc = DocumentRect(rect: CGRect(
+        let adjustedDoc = DocumentRect(rawValue: CGRect(
             x: step.rect.minX, y: adjustedDocY,
             width: step.rect.width, height: step.rect.height
         ))

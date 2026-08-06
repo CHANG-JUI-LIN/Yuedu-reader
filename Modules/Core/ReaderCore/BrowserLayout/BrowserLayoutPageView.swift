@@ -236,7 +236,7 @@ final class BrowserLayoutPageView: UIView {
         for item in displayList.items {
             guard case .text(let text) = item else { continue }
             if text.rect.contains(point) {
-                return text.rect.rect
+                return text.rect.rawValue
             }
         }
         return nil
@@ -269,7 +269,7 @@ final class BrowserLayoutPageView: UIView {
         var best: (href: String, distance: CGFloat)? = nil
         for item in displayList.items {
             guard case .text(let text) = item, let href = text.linkTarget else { continue }
-            let expanded = text.rect.rect.insetBy(dx: -4, dy: -4)
+            let expanded = text.rect.rawValue.insetBy(dx: -4, dy: -4)
             let distance: CGFloat
             if expanded.contains(point) {
                 distance = 0

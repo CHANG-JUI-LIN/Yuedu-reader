@@ -42,10 +42,10 @@ enum DisplayListDrawer {
                 drawText(t)
             case .image(let i):
                 if let image = i.image {
-                    image.draw(in: i.rect.rect)
+                    image.draw(in: i.rect.rawValue)
                 } else {
                     UIColor.lightGray.setFill()
-                    context.fill(i.rect.rect)
+                    context.fill(i.rect.rawValue)
                 }
             }
         }
@@ -53,7 +53,7 @@ enum DisplayListDrawer {
 
     /// One bordered box: background (clipped to radius) + four border edges.
     private static func drawFill(_ item: DisplayFillItem, in context: CGContext) {
-        let rect = item.rect.rect
+        let rect = item.rect.rawValue
         guard !rect.isEmpty else { return }
         let radius = min(item.cornerRadius, rect.width / 2, rect.height / 2)
 

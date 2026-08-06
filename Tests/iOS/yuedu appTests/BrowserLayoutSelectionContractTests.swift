@@ -31,7 +31,7 @@ struct BrowserLayoutSelectionContractTests {
         return (engine, resource.chapters[0].html)
     }
 
-    @Test func rangeMapsToPageRectsWithExactText() async throws {
+    @Test func rangeMapsToPageLocalRectsWithExactText() async throws {
         let text = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 20)
         let (engine, _) = await makeEngine(text: text)
 
@@ -129,7 +129,7 @@ struct BrowserLayoutSelectionContractTests {
         let linkItem = DisplayTextItem(
             sourceRange: NSRange(location: 0, length: 4), nodeID: 1,
             linkTarget: "http://example.com", writingMode: .horizontal,
-            rect: PageRect(rect: CGRect(x: 10, y: 10, width: 80, height: 20)), baselineY: 26,
+            rect: PageLocalRect(rawValue: CGRect(x: 10, y: 10, width: 80, height: 20)), baselineY: 26,
             font: .systemFont(ofSize: 17), color: .black, text: "link",
             ctLine: nil
         )

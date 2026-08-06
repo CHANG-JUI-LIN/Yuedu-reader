@@ -240,7 +240,7 @@ struct BrowserLayoutRedChamberRegressionTests {
             height: ink.height
         )
         return LineGeometryDiagnostics(
-            lineBoxRect: fragment.rect.rect,
+            lineBoxRect: fragment.rect.rawValue,
             baselineY: fragment.baselineY,
             glyphInkBounds: inkRect,
             ascent: ascent,
@@ -430,14 +430,14 @@ struct BrowserLayoutRedChamberRegressionTests {
             case .fill(let f):
                 if f.rect.width >= Self.contentRect.width * 0.99,
                    f.rect.height >= Self.contentRect.height * 0.99 {
-                    found = f.rect.rect
+                    found = f.rect.rawValue
                 }
             case .image(let i):
                 // The authored background source may resolve to a normalized
                 // path; match any full-viewport image command.
                 if i.rect.width >= Self.viewport.width * 0.99,
                    i.rect.height >= Self.viewport.height * 0.99 {
-                    found = i.rect.rect
+                    found = i.rect.rawValue
                 }
             default: break
             }

@@ -30,7 +30,7 @@ enum BlockLayout {
         box.borders = sides.borders
         box.contentSize.width = sides.contentWidth
         // Frame is physical; its width is the inline-axis extent of the box.
-        box.frame = LocalRect(rect: CGRect(x: 0, y: 0, width: sides.borderBoxWidth, height: 0))
+        box.frame = ParentLocalRect(rawValue: CGRect(x: 0, y: 0, width: sides.borderBoxWidth, height: 0))
 
         var cursorBlock: CGFloat = 0   // content-box-relative, along block axis
         var previousBlockEndMargin: CGFloat? = nil
@@ -80,7 +80,7 @@ enum BlockLayout {
             let inlineExtent = child.borderBoxWidth
             switch writingMode {
             case .horizontal:
-                child.frame = LocalRect(rect: CGRect(
+                child.frame = ParentLocalRect(rawValue: CGRect(
                     x: child.logicalInlineOrigin,
                     y: child.logicalBlockOrigin,
                     width: inlineExtent,
@@ -93,7 +93,7 @@ enum BlockLayout {
                 let parentContentBlockExtent = box.contentSize.width
                 let blockPosFromRight = child.logicalBlockOrigin
                 let x = parentContentBlockExtent - blockPosFromRight - borderBoxBlockExtent
-                child.frame = LocalRect(rect: CGRect(
+                child.frame = ParentLocalRect(rawValue: CGRect(
                     x: x,
                     y: child.logicalInlineOrigin,
                     width: borderBoxBlockExtent,
@@ -129,10 +129,10 @@ enum BlockLayout {
             // for vertical-rl the inline extent — the mapper decides.
             box.contentSize.height = fixed
         }
-        box.frame = LocalRect(rect: CGRect(
-            x: box.frame.rect.minX,
-            y: box.frame.rect.minY,
-            width: box.frame.rect.width,
+        box.frame = ParentLocalRect(rawValue: CGRect(
+            x: box.frame.rawValue.minX,
+            y: box.frame.rawValue.minY,
+            width: box.frame.rawValue.width,
             height: LogicalGeometry.blockAxisExtent(box.borders, mode: writingMode)
                 + LogicalGeometry.blockAxisExtent(box.padding, mode: writingMode)
                 + box.contentSize.height

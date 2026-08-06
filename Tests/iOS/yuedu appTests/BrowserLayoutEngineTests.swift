@@ -135,8 +135,8 @@ struct BlockLayoutTests {
         let childB = BlockBox(style: style(), boxType: .block)
         let root = BlockBox(style: style(), boxType: .block, children: [childA, childB])
         _ = BlockLayout.layOut(root: root, containerWidth: 200)
-        #expect(childA.frame.rect == CGRect(x: 0, y: 0, width: 200, height: 0))
-        #expect(childB.frame.rect == CGRect(x: 0, y: 0, width: 200, height: 0))
+        #expect(childA.frame.rawValue == CGRect(x: 0, y: 0, width: 200, height: 0))
+        #expect(childB.frame.rawValue == CGRect(x: 0, y: 0, width: 200, height: 0))
         #expect(root.contentSize.height == 0)
     }
 
@@ -351,22 +351,22 @@ struct DisplayListTests {
     @Test func convertsFragmentsToItems() {
         let page = PageFragments(
             index: 0,
-            pageRect: PageRect(rect: CGRect(x: 0, y: 0, width: 300, height: 100)),
+            pageRect: PageLocalRect(rawValue: CGRect(x: 0, y: 0, width: 300, height: 100)),
             fragments: [
-                .fill(FillFragment(rect: PageRect(rect: CGRect(x: 10, y: 0, width: 280, height: 40)),
-                                   documentRect: DocumentRect(rect: CGRect(x: 10, y: 0, width: 280, height: 40)),
+                .fill(FillFragment(rect: PageLocalRect(rawValue: CGRect(x: 10, y: 0, width: 280, height: 40)),
+                                   documentRect: DocumentRect(rawValue: CGRect(x: 10, y: 0, width: 280, height: 40)),
                                    color: .red,
                                    cornerRadius: 0,
                                    borderTop: .zero, borderBottom: .zero, borderLeft: .zero, borderRight: .zero,
                                    nodeID: 1, writingMode: .horizontal)),
                 .text(TextFragment(sourceRange: NSRange(location: 0, length: 5), nodeID: 2,
                                    linkTarget: "http://example.com", writingMode: .horizontal,
-                                   rect: PageRect(rect: CGRect(x: 10, y: 4, width: 60, height: 20)),
-                                   documentRect: DocumentRect(rect: CGRect(x: 10, y: 4, width: 60, height: 20)),
+                                   rect: PageLocalRect(rawValue: CGRect(x: 10, y: 4, width: 60, height: 20)),
+                                   documentRect: DocumentRect(rawValue: CGRect(x: 10, y: 4, width: 60, height: 20)),
                                    baselineY: 20, font: .systemFont(ofSize: 16), color: .black,
                                    ctLine: nil)),
-                .group([.fill(FillFragment(rect: PageRect(rect: CGRect(x: 5, y: 50, width: 100, height: 10)),
-                                           documentRect: DocumentRect(rect: CGRect(x: 5, y: 50, width: 100, height: 10)),
+                .group([.fill(FillFragment(rect: PageLocalRect(rawValue: CGRect(x: 5, y: 50, width: 100, height: 10)),
+                                           documentRect: DocumentRect(rawValue: CGRect(x: 5, y: 50, width: 100, height: 10)),
                                            color: .blue,
                                            cornerRadius: 2,
                                            borderTop: .zero, borderBottom: .zero, borderLeft: .zero, borderRight: .zero,
@@ -378,7 +378,7 @@ struct DisplayListTests {
         guard case .fill(let fill) = list.items[0] else { Issue.record("expected fill"); return }
         #expect(fill.color == .red)
         guard case .text(let text) = list.items[1] else { Issue.record("expected text"); return }
-        #expect(text.rect.rect == CGRect(x: 10, y: 4, width: 60, height: 20))
+        #expect(text.rect.rawValue == CGRect(x: 10, y: 4, width: 60, height: 20))
         #expect(text.linkTarget == "http://example.com")
         #expect(text.text == "Link!")
         guard case .fill(let groupedFill) = list.items[2] else { Issue.record("expected fill from group"); return }

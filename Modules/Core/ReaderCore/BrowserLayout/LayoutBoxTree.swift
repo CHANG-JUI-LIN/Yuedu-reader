@@ -55,7 +55,7 @@ final class BlockBox {
     /// Non-nil when this box IS a replaced element (block-level image).
     var imageAttachment: AtomicInline? = nil
     /// Border-box rect in PARENT content-local coordinates (Phase 2C contract).
-    var frame: LocalRect = .zero
+    var frame: ParentLocalRect = .zero
     var contentSize = CGSize.zero
     var margins = EdgeSizes.zero
     var padding = EdgeSizes.zero

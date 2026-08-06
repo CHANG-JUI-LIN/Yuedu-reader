@@ -145,16 +145,16 @@ struct BrowserChapterLayout {
         collect(page.fragments)
         #if DEBUG
         // DEBUG-only: k1 fill/border commands as emitted (page-local).
-        var k1Fill: PageRect? = nil
-        var k2Border: PageRect? = nil
+        var k1Fill: PageLocalRect? = nil
+        var k2Border: PageLocalRect? = nil
         for item in items {
             if case .fill(let f) = item {
                 if f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 { k1Fill = f.rect }
                 if f.rect.width > 200, f.rect.width < 320, f.rect.height <= 2 { k2Border = f.rect }
             }
         }
-        let k1Msg = k1Fill.map { BrowserLayoutDeviceDiagnostic.rect($0.rect, space: "coordinate=pageLocal") } ?? "none"
-        let k2Msg = k2Border.map { BrowserLayoutDeviceDiagnostic.rect($0.rect, space: "coordinate=pageLocal") } ?? "none"
+        let k1Msg = k1Fill.map { BrowserLayoutDeviceDiagnostic.rect($0.rawValue, space: "coordinate=pageLocal") } ?? "none"
+        let k2Msg = k2Border.map { BrowserLayoutDeviceDiagnostic.rect($0.rawValue, space: "coordinate=pageLocal") } ?? "none"
         BrowserLayoutDeviceDiagnostic.log(
             .k1DisplayList(spine: spineIndex, generation: diagnosticGeneration),
             spine: spineIndex, generation: diagnosticGeneration, page: localPage,
@@ -1121,7 +1121,7 @@ extension BrowserLayoutPageEngine {
         for item in list.items {
             if case .fill(let f) = item,
                f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 {
-                return f.rect.rect
+                return f.rect.rawValue
             }
         }
         return .null
@@ -1135,7 +1135,7 @@ extension BrowserLayoutPageEngine {
             if case .fill(let f) = item,
                f.rect.width > 300, f.rect.height > 100 {
                 if best == nil || f.rect.width > best!.width {
-                    best = f.rect.rect
+                    best = f.rect.rawValue
                 }
             }
         }
@@ -1146,7 +1146,7 @@ extension BrowserLayoutPageEngine {
     static func firstLineBoxRect(in list: DisplayList) -> CGRect? {
         for item in list.items {
             if case .text(let t) = item {
-                return t.rect.rect
+                return t.rect.rawValue
             }
         }
         return nil

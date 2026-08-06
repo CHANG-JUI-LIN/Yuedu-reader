@@ -181,7 +181,7 @@ enum BrowserLayoutDeviceDiagnostic {
             let tag = box.debugTag.isEmpty ? "(anonymous)" : box.debugTag
             let classPart = box.debugClasses.isEmpty ? "" : ".\(box.debugClasses.joined(separator: "."))"
             let idPart = box.debugID.map { "#\($0)" } ?? ""
-            let parentLocal = "coordinate=parentLocal borderRect=\(rect(box.frame.rect, space: "parentLocal"))"
+            let parentLocal = "coordinate=parentLocal borderRect=\(rect(box.frame.rawValue, space: "parentLocal"))"
             let doc = "document borderRect=\(rect(CGRect(x: origin.x, y: origin.y, width: box.frame.width, height: box.frame.height), space: "document"))"
             let specified = "spec margin=[t:\(box.style.marginTop) r:\(box.style.marginRight) b:\(box.style.marginBottom) l:\(box.style.marginLeft)] pad=[t:\(box.style.paddingTop) r:\(box.style.paddingRight) b:\(box.style.paddingBottom) l:\(box.style.paddingLeft)]"
             let resolved = "resolved margin=[t:\(String(format: "%.2f", box.margins.top)) b:\(String(format: "%.2f", box.margins.bottom)) l:\(String(format: "%.2f", box.margins.left)) r:\(String(format: "%.2f", box.margins.right))] pad=[t:\(String(format: "%.2f", box.padding.top)) b:\(String(format: "%.2f", box.padding.bottom))]"
@@ -202,9 +202,9 @@ enum BrowserLayoutDeviceDiagnostic {
         summary("\(prefix) trace=\(traceID) firstRunCss \(css)")
 
         if let frag = firstFragment {
-            let pageLocal = "pageLocal fragmentRect=\(rect(frag.rect.rect, space: "pageLocal"))"
+            let pageLocal = "pageLocal fragmentRect=\(rect(frag.rect.rawValue, space: "pageLocal"))"
             let baseline = "baselineY=\(String(format: "%.2f", frag.baselineY))"
-            let doc = "document fragmentRect=\(rect(frag.documentRect.rect, space: "document"))"
+            let doc = "document fragmentRect=\(rect(frag.documentRect.rawValue, space: "document"))"
             var glyph = "none"
             if let line = frag.ctLine {
                 let ink = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])

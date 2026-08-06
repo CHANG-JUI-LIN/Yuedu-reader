@@ -203,13 +203,13 @@ final class BrowserLayoutDocument {
         // The background-color fills the canvas; the image draws over it.
         let background = Self.bodyBackground(rootBox: pipeline.rootBox)
         if background.color != nil || background.image != nil {
-            let canvas = PageRect(rect: CGRect(origin: .zero, size: containerSize))
+            let canvas = PageLocalRect(rawValue: CGRect(origin: .zero, size: containerSize))
             let backgroundColor = background.color ?? config.backgroundColor
             for (index, page) in pages.enumerated() {
                 var fragments: [Fragment] = []
                 fragments.append(.fill(FillFragment(
                     rect: canvas,
-                    documentRect: DocumentRect(rect: CGRect(origin: .zero, size: containerSize)),
+                    documentRect: DocumentRect(rawValue: CGRect(origin: .zero, size: containerSize)),
                     color: backgroundColor,
                     cornerRadius: 0,
                     borderTop: .zero, borderBottom: .zero, borderLeft: .zero, borderRight: .zero,
@@ -230,8 +230,8 @@ final class BrowserLayoutDocument {
                         nodeID: -1,
                         linkTarget: nil,
                         writingMode: config.writingMode,
-                        rect: PageRect(rect: rect),
-                        documentRect: DocumentRect(rect: rect),
+                        rect: PageLocalRect(rawValue: rect),
+                        documentRect: DocumentRect(rawValue: rect),
                         alt: nil
                     )))
                 }
