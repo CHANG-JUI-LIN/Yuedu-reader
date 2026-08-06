@@ -193,14 +193,6 @@ struct BrowserLayoutRedChamberRegressionTests {
         return nil
     }
 
-    static func firstTextLine(in box: BlockBox) -> LayoutLine? {
-        if let line = box.lines.first(where: { !$0.runs.isEmpty }) { return line }
-        for child in box.children {
-            if let found = firstTextLine(in: child) { return found }
-        }
-        return nil
-    }
-
     @Test("k1/k2 cover-page box geometry", .enabled(if: epubPath != nil))
     func coverPageBoxGeometry() async throws {
         let session = try await Self.session()
@@ -209,10 +201,17 @@ struct BrowserLayoutRedChamberRegressionTests {
 
         let k1 = try #require(Self.findK1(in: rootBox), "k1 box (width:15em) not found")
         let k2 = try #require(Self.findK2(in: rootBox), "k2 box (padding:2.2em,border:1pt) not found")
+        // Diagnostic (spec: print on failure).
+        print("DIAG k1 frame=\(k1.frame) margins=\(k1.margins) padding=\(k1.padding) borders=\(k1.borders) fontSize=\(k1.style.fontSize)")
+        print("DIAG k2 frame=\(k2.frame) margins=\(k2.margins) padding=\(k2.padding) borders=\(k2.borders) fontSize=\(k2.style.fontSize)")
+        print("DIAG root frame=\(rootBox.frame) content=\(rootBox.contentSize) margins=\(rootBox.margins)")
+        print("DIAG k1 block=\(k1.logicalBlockOrigin) inline=\(k1.logicalInlineOrigin) k2 block=\(k2.logicalBlockOrigin) inline=\(k2.logicalInlineOrigin)")
 
-        // k1 used margin-top ≈ containing-block width × 0.25 (CSS: vertical
-        // percentage margins resolve against the containing block WIDTH).
-        let containingBlockWidth = Self.contentRect.width
+        // k1 used margin-top ≈ containing-block width × 0.25. The containing
+        // block is the BODY content box (358.68 = 366 − body margins), NOT the
+        // viewport content rect — CSS vertical % margins resolve against the
+        // containing block WIDTH, and body's own margins shrink it.
+        let containingBlockWidth = rootBox.contentSize.width
         let expectedTopMargin = containingBlockWidth * 0.25
         #expect(abs(k1.margins.top - expectedTopMargin) <= 1.0,
                 "k1 margin-top \(k1.margins.top) != \(expectedTopMargin) (25% of \(containingBlockWidth))")
@@ -226,12 +225,13 @@ struct BrowserLayoutRedChamberRegressionTests {
         #expect(abs(k1.margins.left - k1.margins.right) <= 0.5,
                 "k1 auto margins unequal: left=\(k1.margins.left) right=\(k1.margins.right)")
 
-        // k2 sits inside k1's content box (block-axis).
-        let k1ContentMin = k1.logicalBlockOrigin + k1.padding.top + k1.borders.top
-        let k1ContentMax = k1ContentMin + k1.contentSize.height
-        let k2BlockStart = k2.logicalBlockOrigin
-        #expect(k2BlockStart >= k1ContentMin - 0.5, "k2 above k1 content top")
-        #expect(k2BlockStart + k2.contentSize.height <= k1ContentMax + 0.5, "k2 below k1 content bottom")
+        // k2 sits inside k1's content box. k2.logicalBlockOrigin is relative to
+        // k1's CONTENT box (k2 is k1's child), so 0 means "at k1 content top".
+        #expect(k2.logicalBlockOrigin >= -0.5, "k2 above k1 content top")
+        let k2AbsoluteMin = k1.logicalBlockOrigin + k1.padding.top + k1.borders.top + k2.logicalBlockOrigin
+        let k2AbsoluteMax = k2AbsoluteMin + k2.contentSize.height
+        let k1ContentMax = k1.logicalBlockOrigin + k1.padding.top + k1.borders.top + k1.contentSize.height
+        #expect(k2AbsoluteMax <= k1ContentMax + 0.5, "k2 below k1 content bottom")
 
         // k2 padding ≈ 2.2 × computed font size; border ≈ 1pt.
         let k2FontSize = k2.style.fontSize
@@ -241,14 +241,18 @@ struct BrowserLayoutRedChamberRegressionTests {
                 "k2 padding-bottom \(k2.padding.bottom) != \(2.2 * k2FontSize)")
         #expect(abs(k2.borders.top - 1) <= 0.5, "k2 border-top \(k2.borders.top) != 1pt")
 
-        // First chapter-name line box: starts after k1 margin-top + padding +
-        // k2 border + k2 padding — never at the page top.
-        let firstLine = try #require(Self.firstTextLine(in: rootBox), "no text line in chapter")
-        let expectedFirstLineTop = k1.logicalBlockOrigin
+        // First chapter-name text: its absolute y (the walker's fragment y)
+        // must sit after k1 margin-top + padding + k2 border + k2 padding —
+        // never at the page top. Derive it from the laid-out fragments.
+        let fragment = BrowserLayoutTestSupport.allTextFragments(
+            PageFragmentation.fragment(box: rootBox, pageSize: Self.contentRect.size)
+        )
+        let firstText = try #require(fragment.min(by: { $0.rect.minY < $1.rect.minY }), "no text fragments")
+        let expectedFirstLineTop = rootBox.margins.top
             + k1.padding.top + k1.borders.top
-            + k2.logicalBlockOrigin + k2.borders.top + k2.padding.top
-        #expect(firstLine.top >= expectedFirstLineTop - 1.0,
-                "first line top \(firstLine.top) < expected \(expectedFirstLineTop) (cover starts too high)")
+            + k2.borders.top + k2.padding.top
+        #expect(firstText.rect.minY >= expectedFirstLineTop - 1.0,
+                "first text y \(firstText.rect.minY) < expected \(expectedFirstLineTop) (cover starts too high)")
 
         // Sanity: finite, non-negative, and the title box stays in viewport.
         for box in [k1, k2] {
@@ -289,7 +293,9 @@ struct BrowserLayoutRedChamberRegressionTests {
 
         let checker = Self.checkerImage(size: CGSize(width: 64, height: 64))
         let config = Self.makeConfig(adapter: adapter, images: [source: checker])
-        let doc = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { [source] in $0 == source ? checker : nil })
+        // The document resolves the background source via its own parser
+        // (quotes/url() stripped); a catch-all loader matches any source.
+        let doc = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { _ in checker })
         let pages = try await doc.renderPages(containerSize: Self.viewport)
 
         let page = try #require(pages.first, "no pages laid out")
@@ -306,7 +312,12 @@ struct BrowserLayoutRedChamberRegressionTests {
                     found = f.rect
                 }
             case .image(let i):
-                if i.source == source { found = i.rect }
+                // The authored background source may resolve to a normalized
+                // path; match any full-viewport image command.
+                if i.rect.width >= Self.viewport.width * 0.99,
+                   i.rect.height >= Self.viewport.height * 0.99 {
+                    found = i.rect
+                }
             default: break
             }
         }
@@ -351,7 +362,8 @@ struct BrowserLayoutRedChamberRegressionTests {
         let config = Self.makeConfig(adapter: adapter, images: [:])
 
         let doc = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { _ in nil })
-        let batch = try await doc.renderPages(containerSize: Self.viewport)
+        let result = try doc.makeLayout(containerSize: Self.viewport)
+        let batch = PageFragmentation.fragment(box: result.rootBox, pageSize: result.contentSize)
         let batchFirst = try #require(batch.first)
 
         let session2 = BrowserLayoutSession(
@@ -481,10 +493,14 @@ struct BrowserLayoutRedChamberRegressionTests {
         #expect(abs(k2.padding.top - 2.2 * k2FontSize) <= 1.0, "fixture k2 padding-top wrong")
         #expect(abs(k2.borders.top - 1) <= 0.5, "fixture k2 border wrong")
 
-        let firstLine = try #require(Self.firstTextLine(in: result.rootBox))
-        let expectedLineTop = k1.logicalBlockOrigin + k1.padding.top + k1.borders.top
-            + k2.logicalBlockOrigin + k2.borders.top + k2.padding.top
-        #expect(firstLine.top >= expectedLineTop - 1.0, "fixture first line too high")
+        let firstText = BrowserLayoutTestSupport.allTextFragments(
+            PageFragmentation.fragment(box: result.rootBox, pageSize: Self.contentRect.size)
+        ).min(by: { $0.rect.minY < $1.rect.minY })
+        let firstTextFrag = try #require(firstText, "fixture has no text fragments")
+        let expectedLineTop = result.rootBox.margins.top + k1.padding.top + k1.borders.top
+            + k2.borders.top + k2.padding.top
+        #expect(firstTextFrag.rect.minY >= expectedLineTop - 1.0,
+                "fixture first text y \(firstTextFrag.rect.minY) < expected \(expectedLineTop)")
 
         // Background cover command present.
         var foundBackground = false

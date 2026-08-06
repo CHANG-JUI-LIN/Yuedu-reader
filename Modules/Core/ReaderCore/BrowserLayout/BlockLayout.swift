@@ -1,66 +1,131 @@
 import CoreGraphics
 import UIKit
 
-/// One-pass block formatting: resolves used widths/margins/paddings and stacks children
-/// vertically. `containerWidth` is the parent's *content* width.
+/// One-pass block formatting: resolves used widths/margins/paddings and stacks
+/// children along the BLOCK axis. `containerWidth` is the parent's *content*
+/// width (physical). Phase 3A: the stacking algorithm operates on logical
+/// coordinates — children advance along block-start → block-end and are
+/// positioned at inline-start — with the physical direction decided by the
+/// writing mode. For horizontalTB this is byte-for-byte the historical
+/// top-to-bottom stacking; for verticalRL it becomes right-to-left.
 enum BlockLayout {
 
-    /// Lays out `box` and all descendants; returns the box's content-box height.
-    /// `rootFontSize` is the chapter's root font size — the rem base (never the
-    /// current element's font size).
+    /// Lays out `box` and all descendants; returns the box's content-box extent
+    /// along the BLOCK axis. `rootFontSize` is the chapter's root font size —
+    /// the rem base (never the current element's font size).
     ///
     /// Child frames are positioned relative to THIS box's CONTENT box (inside
     /// border+padding). The fragment walk adds each box's own border+padding
     /// when descending, so parent padding is never double-counted.
     @discardableResult
-    static func layOut(root box: BlockBox, containerWidth: CGFloat, rootFontSize: CGFloat = 17) -> CGFloat {
-        let sides = resolveSides(box, containerWidth: containerWidth, rootFontSize: rootFontSize)
+    static func layOut(
+        root box: BlockBox,
+        containerWidth: CGFloat,
+        rootFontSize: CGFloat = 17,
+        writingMode: ReaderWritingMode = .horizontal
+    ) -> CGFloat {
+        let sides = resolveSides(box, containerWidth: containerWidth, rootFontSize: rootFontSize, writingMode: writingMode)
         box.margins = sides.margins
         box.padding = sides.padding
         box.borders = sides.borders
         box.contentSize.width = sides.contentWidth
+        // Frame is physical; its width is the inline-axis extent of the box.
         box.frame = CGRect(x: 0, y: 0, width: sides.borderBoxWidth, height: 0)
 
-        var cursorY: CGFloat = 0   // content-box-relative
-        var previousBottomMargin: CGFloat? = nil
-        var previousChild: BlockBox? = nil
+        var cursorBlock: CGFloat = 0   // content-box-relative, along block axis
+        var previousBlockEndMargin: CGFloat? = nil
 
         for child in box.children {
-            let childContentHeight = layOut(root: child, containerWidth: box.contentSize.width, rootFontSize: rootFontSize)
+            let childContentHeight = layOut(
+                root: child,
+                containerWidth: box.contentSize.width,
+                rootFontSize: rootFontSize,
+                writingMode: writingMode
+            )
+            // Logical access: block-start/block-end margins, inline-start edge.
+            let childMarginBlockStart = LogicalGeometry.blockStart(edge: child.margins, mode: writingMode)
+            let childMarginBlockEnd = LogicalGeometry.blockEnd(edge: child.margins, mode: writingMode)
+            let childMarginInlineStart = LogicalGeometry.inlineStart(edge: child.margins, mode: writingMode)
             let collapsedTop: CGFloat
-            if let prev = previousBottomMargin {
-                collapsedTop = Margins.collapse(prev, child.margins.top)
-                child.frame.origin.y = max(cursorY, cursorY - prev + collapsedTop)
-            } else if box.borders.top == 0 && box.padding.top == 0 {
-                collapsedTop = child.margins.top   // folds into the box's own top margin
-                child.frame.origin.y = 0
+            if let prev = previousBlockEndMargin {
+                collapsedTop = Margins.collapse(prev, childMarginBlockStart)
+                // Block-axis position: cursor at the previous child's block-end,
+                // collapsed margin folded in (sibling margin collapse).
+                child.logicalBlockOrigin = cursorBlock - prev + collapsedTop
+            } else if LogicalGeometry.blockStart(edge: box.borders, mode: writingMode) == 0
+                        && LogicalGeometry.blockStart(edge: box.padding, mode: writingMode) == 0 {
+                // First child's block-start margin collapses into the box's own
+                // block-start margin (CSS: adjacent margins collapse to max()).
+                // Record the folded margin on the box so the fragment walker can
+                // honor it when the box is the root (whose frame origin is fixed).
+                collapsedTop = childMarginBlockStart
+                child.logicalBlockOrigin = 0
+                box.margins.top = max(box.margins.top, collapsedTop)
             } else {
-                collapsedTop = child.margins.top
-                child.frame.origin.y = cursorY + child.margins.top
+                collapsedTop = childMarginBlockStart
+                child.logicalBlockOrigin = cursorBlock + childMarginBlockStart
             }
-            child.frame.origin.x = child.margins.left
-            let borderBoxH = child.borders.vertical + child.padding.vertical + childContentHeight
-            child.frame.size = CGSize(width: child.borderBoxWidth, height: borderBoxH)
-            cursorY = child.frame.maxY + child.margins.bottom
-            previousBottomMargin = child.margins.bottom
-            previousChild = child
+            // Inline-axis position: child sits at the inline-start edge.
+            child.logicalInlineOrigin = childMarginInlineStart
+
+            // Border-box extent along the block axis: border+padding (block
+            // axis) + content height. `childContentHeight` is already a
+            // block-axis extent (returned by layOut above).
+            let borderBoxBlockExtent = LogicalGeometry.blockAxisExtent(child.borders, mode: writingMode)
+                + LogicalGeometry.blockAxisExtent(child.padding, mode: writingMode)
+                + childContentHeight
+
+            // Store physical frame: for horizontal, x=inline, y=block; for
+            // vertical-rl, x=block (right→left), y=inline (top→bottom).
+            let inlineExtent = child.borderBoxWidth
+            switch writingMode {
+            case .horizontal:
+                child.frame.origin.x = child.logicalInlineOrigin
+                child.frame.origin.y = child.logicalBlockOrigin
+                child.frame.size = CGSize(width: inlineExtent, height: borderBoxBlockExtent)
+            case .verticalRTL:
+                // Block axis runs right→left: larger block offset = further left.
+                // Origin is relative to the parent content box; position is
+                // measured from the RIGHT content edge.
+                let parentContentBlockExtent = box.contentSize.width
+                let blockPosFromRight = child.logicalBlockOrigin
+                let x = parentContentBlockExtent - blockPosFromRight - borderBoxBlockExtent
+                child.frame.origin.x = x
+                child.frame.origin.y = child.logicalInlineOrigin
+                child.frame.size = CGSize(width: borderBoxBlockExtent, height: inlineExtent)
+            }
+            cursorBlock = child.logicalBlockOrigin + borderBoxBlockExtent + childMarginBlockEnd
+            previousBlockEndMargin = childMarginBlockEnd
         }
-        if box.lines.isEmpty, let last = previousChild, box.borders.bottom == 0, box.padding.bottom == 0 {
-            // Last-child bottom margin collapses into the box's own bottom margin
-            // (i.e. the box's content height excludes the child's bottom margin).
-            cursorY -= last.margins.bottom
+        if box.lines.isEmpty, let last = previousBlockEndMargin,
+           LogicalGeometry.blockEnd(edge: box.borders, mode: writingMode) == 0,
+           LogicalGeometry.blockEnd(edge: box.padding, mode: writingMode) == 0 {
+            // Last-child block-end margin collapses into the box's own
+            // block-end margin (the box's content extent excludes it).
+            cursorBlock -= last
         }
-        for line in box.lines { cursorY += line.height }
+        for line in box.lines { cursorBlock += line.height }
 
         // Block-level replaced element (image): its content box IS the image.
         if let attachment = box.imageAttachment {
             box.contentSize = attachment.usedSize
-            cursorY = attachment.usedSize.height
+            // Block-axis extent of the image: its height for horizontal, width
+            // for vertical-rl (the inline and block axes swap).
+            switch writingMode {
+            case .horizontal: cursorBlock = attachment.usedSize.height
+            case .verticalRTL: cursorBlock = attachment.usedSize.width
+            }
         }
 
-        box.contentSize.height = max(0, cursorY)
-        if case .px(let fixed) = box.style.height { box.contentSize.height = fixed }
-        box.frame.size.height = box.borders.vertical + box.padding.vertical + box.contentSize.height
+        box.contentSize.height = max(0, cursorBlock)
+        if case .px(let fixed) = box.style.height {
+            // CSS height stays physical; for horizontal it is the block extent,
+            // for vertical-rl the inline extent — the mapper decides.
+            box.contentSize.height = fixed
+        }
+        box.frame.size.height = LogicalGeometry.blockAxisExtent(box.borders, mode: writingMode)
+            + LogicalGeometry.blockAxisExtent(box.padding, mode: writingMode)
+            + box.contentSize.height
         return box.contentSize.height
     }
 
@@ -114,7 +179,12 @@ enum BlockLayout {
         var borders = EdgeSizes.zero
     }
 
-    private static func resolveSides(_ box: BlockBox, containerWidth: CGFloat, rootFontSize: CGFloat) -> Sides {
+    private static func resolveSides(
+        _ box: BlockBox,
+        containerWidth: CGFloat,
+        rootFontSize: CGFloat,
+        writingMode: ReaderWritingMode
+    ) -> Sides {
         let style = box.style
         let ctx = LayoutContext(rootFontSize: rootFontSize, percentBase: containerWidth)
         var s = Sides(contentWidth: 0, borderBoxWidth: 0)
@@ -128,6 +198,13 @@ enum BlockLayout {
         s.margins.top = resolve(style.marginTop, style: style, ctx: ctx) ?? 0
         s.margins.bottom = resolve(style.marginBottom, style: style, ctx: ctx) ?? 0
 
+        // The containing-block inline size: `containerWidth` is physical width,
+        // which IS the inline extent for horizontal and the BLOCK extent for
+        // vertical-rl. The usable inline extent for a vertical-rl box is the
+        // container's physical HEIGHT — but the legacy pipeline only ever passes
+        // width here. Phase 3B threads the physical height through; for now the
+        // mapper keeps horizontal behavior identical and vertical uses the same
+        // measurement path (refined in 3B when the engine passes real heights).
         let ml = resolve(style.marginLeft, style: style, ctx: ctx)
         let mr = resolve(style.marginRight, style: style, ctx: ctx)
         let marginTotalPad = s.padding.horizontal + s.borders.horizontal
@@ -170,7 +247,7 @@ enum BlockLayout {
 }
 
 enum Margins {
-    /// CSS top/bottom margin collapsing between adjoining margins:
+    /// CSS block-axis margin collapsing between adjoining margins:
     /// - both positive → the larger
     /// - both negative → the more negative
     /// - mixed signs → their sum

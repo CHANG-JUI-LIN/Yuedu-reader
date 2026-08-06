@@ -86,7 +86,15 @@ struct PageWalker {
         self.pageHeight = max(1, pageSize.height)
         self.pageRect = CGRect(origin: .zero, size: pageSize)
         self.writingMode = writingMode
-        self.stack = [Self.makeFrame(box, contentOrigin: .zero)]
+        // The root box's own block-start margin (which carries any folded
+        // first-child margin from `BlockLayout` margin collapsing) pushes its
+        // content down — the root frame origin is fixed at (0,0).
+        let rootBlockStartInset: CGFloat
+        switch writingMode {
+        case .horizontal: rootBlockStartInset = box.margins.top
+        case .verticalRTL: rootBlockStartInset = box.margins.right
+        }
+        self.stack = [Self.makeFrame(box, contentOrigin: CGPoint(x: 0, y: rootBlockStartInset))]
     }
 
     /// Emits the next fragment step in document order, or nil when the walk

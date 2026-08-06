@@ -59,6 +59,12 @@ final class BlockBox {
     var margins = EdgeSizes.zero
     var padding = EdgeSizes.zero
     var borders = EdgeSizes.zero
+    /// Logical block-axis origin within the parent's content box (Phase 3A).
+    /// For horizontal this equals frame.minY; for vertical-rl it is the
+    /// distance from the parent's block-start (right edge).
+    var logicalBlockOrigin: CGFloat = 0
+    /// Logical inline-axis origin within the parent's content box (Phase 3A).
+    var logicalInlineOrigin: CGFloat = 0
 
     init(style: ComputedStyle, boxType: BlockBoxType = .block, children: [BlockBox] = [], lines: [LayoutLine] = []) {
         self.style = style

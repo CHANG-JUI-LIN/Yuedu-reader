@@ -54,6 +54,9 @@ struct BrowserLayoutConfig {
     var lineHeight: CGFloat? = nil     // reader line-height override (applied after author CSS)
     /// CSS font-family resolver (embedded @font-face families). nil → UIFont(name:).
     var fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)?
+    /// Document writing mode. Phase 3A defaults to horizontal; the engine
+    /// injects vertical-rl in Phase 3B after the capability scan accepts it.
+    var writingMode: ReaderWritingMode = .horizontal
 }
 
 /// Turns the DOM `<body>` subtree + CSS rule list into a `ComputedStyleNode`
@@ -228,6 +231,30 @@ enum ComputedStylePropertyApplier {
             if let c = parseColor(value) { style.color = c }
         case "background-color":
             if let c = parseColor(value) { style.backgroundColor = c }
+        case "background-image":
+            if let source = parseBackgroundImageSource(value) {
+                var bg = style.backgroundImage ?? BackgroundImageStyle(source: source)
+                bg.source = source
+                style.backgroundImage = bg
+            }
+        case "background-size":
+            guard var bg = style.backgroundImage else { break }
+            bg.size = parseBackgroundSize(value)
+            style.backgroundImage = bg
+        case "background-position":
+            guard var bg = style.backgroundImage else { break }
+            let pos = parseBackgroundPosition(value)
+            bg.positionX = pos.x
+            bg.positionY = pos.y
+            style.backgroundImage = bg
+        case "background-repeat":
+            guard var bg = style.backgroundImage else { break }
+            bg.repeatMode = value.contains("no-repeat") ? .noRepeat : .repeat
+            style.backgroundImage = bg
+        case "background-attachment":
+            guard var bg = style.backgroundImage else { break }
+            bg.attachment = value.contains("fixed") ? .fixed : .scroll
+            style.backgroundImage = bg
         case "font-size":
             if let px = resolveFontSize(value, parentSize: ctx.parent.fontSize, root: ctx.rootFontSize) {
                 style.fontSize = px
@@ -288,7 +315,21 @@ enum ComputedStylePropertyApplier {
             }
         case "border-color": style.borderColor = parseColor(value)
         case "border-radius": style.borderRadius = numericWidth(value) ?? 0
-        case "background": if let c = parseColor(shorthandBackgroundColor(value)) { style.backgroundColor = c }
+        case "background":
+            if let c = parseColor(shorthandBackgroundColor(value)) { style.backgroundColor = c }
+            if let source = parseBackgroundImageSource(value) {
+                var bg = style.backgroundImage ?? BackgroundImageStyle(source: source)
+                bg.source = source
+                if value.contains("no-repeat") { bg.repeatMode = .noRepeat }
+                if value.contains("cover") { bg.size = .cover }
+                else if value.contains("contain") { bg.size = .contain }
+                if value.contains("fixed") { bg.attachment = .fixed }
+                if value.contains("center") {
+                    bg.positionX = .keyword(0.5)
+                    bg.positionY = .keyword(0.5)
+                }
+                style.backgroundImage = bg
+            }
         default:
             break // unimplemented properties are ignored (Phase 1)
         }
@@ -346,6 +387,61 @@ enum ComputedStylePropertyApplier {
             .map(String.init)
             .first { $0.hasPrefix("#") || $0.hasPrefix("rgb") || $0.hasPrefix("hsl") }
             ?? ""
+    }
+
+    /// Extracts `url(...)` from a background declaration; returns the raw source
+    /// (quotes stripped). nil when no url() is present.
+    fileprivate static func parseBackgroundImageSource(_ value: String) -> String? {
+        guard let range = value.range(of: "url(") else { return nil }
+        let rest = value[range.upperBound...]
+        guard let close = rest.firstIndex(of: ")") else { return nil }
+        var source = String(rest[..<close]).trimmingCharacters(in: .whitespacesAndNewlines)
+        source = source.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        return source.isEmpty ? nil : source
+    }
+
+    fileprivate static func parseBackgroundSize(_ value: String) -> BackgroundImageStyle.BackgroundSize {
+        let v = value.lowercased()
+        if v.contains("cover") { return .cover }
+        if v.contains("contain") { return .contain }
+        return .auto
+    }
+
+    /// Two-keyword position (x y). Keywords map to slack fractions; the layout
+    /// resolves them against the container/slack at paint time.
+    fileprivate static func parseBackgroundPosition(_ value: String) -> (x: BackgroundImageStyle.BackgroundPosition, y: BackgroundImageStyle.BackgroundPosition) {
+        let parts = value.lowercased().split(separator: " ").map(String.init)
+        func keywordFraction(_ s: String) -> CGFloat? {
+            switch s {
+            case "left", "top": return 0
+            case "center": return 0.5
+            case "right", "bottom": return 1
+            default: return nil
+            }
+        }
+        // Default: 0% 0% (top-left).
+        var x: BackgroundImageStyle.BackgroundPosition = .percent(0)
+        var y: BackgroundImageStyle.BackgroundPosition = .percent(0)
+        for part in parts {
+            if part.hasSuffix("%"), let v = Double(part.dropLast()) {
+                let frac = CGFloat(v) / 100
+                if case .percent = x { x = .percent(frac); continue }
+                if case .percent = y { y = .percent(frac) }
+                continue
+            }
+            if let f = keywordFraction(part) {
+                if f == 0 || f == 0.5 || f == 1 {
+                    // First keyword → x (left/center/right); second → y.
+                    if part == "left" || part == "right" || part == "center" {
+                        if case .percent(0) = x { x = .keyword(f) } else { y = .keyword(f) }
+                    } else {
+                        // top/bottom always land on y.
+                        y = .keyword(f)
+                    }
+                }
+            }
+        }
+        return (x, y)
     }
 
     fileprivate static func resolveFontSize(_ raw: String, parentSize: CGFloat, root: CGFloat) -> CGFloat? {

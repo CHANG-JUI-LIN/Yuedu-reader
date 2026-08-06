@@ -79,7 +79,12 @@ final class BrowserLayoutDocument {
         )
         let contentWidth = max(1, containerSize.width - config.contentInsets.left - config.contentInsets.right)
         let contentHeight = max(1, containerSize.height - config.contentInsets.top - config.contentInsets.bottom)
-        _ = BlockLayout.layOut(root: rootBox, containerWidth: contentWidth, rootFontSize: config.rootFontSize)
+        _ = BlockLayout.layOut(
+            root: rootBox,
+            containerWidth: contentWidth,
+            rootFontSize: config.rootFontSize,
+            writingMode: config.writingMode
+        )
         return BrowserLayoutPipelineResult(
             rootBox: rootBox,
             sourceText: sourceText.text,
@@ -105,6 +110,57 @@ final class BrowserLayoutDocument {
         case emptyBody
     }
 
+    /// The root box's authored background-image style, if any.
+    static func bodyBackgroundImage(rootBox: BlockBox) -> BackgroundImageStyle? {
+        rootBox.style.backgroundImage
+    }
+
+    /// Resolves the physical rect of a cover/contain background image inside a
+    /// container, honoring `background-position` (center → symmetric crop).
+    /// `imageSize` is the intrinsic bitmap size; `container` the content rect.
+    static func coverRect(
+        for imageSize: CGSize,
+        container: CGSize,
+        positionX: BackgroundImageStyle.BackgroundPosition,
+        positionY: BackgroundImageStyle.BackgroundPosition,
+        mode: BackgroundImageStyle.BackgroundSize = .cover
+    ) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0, container.width > 0, container.height > 0 else {
+            return CGRect(origin: .zero, size: container)
+        }
+        var drawW: CGFloat
+        var drawH: CGFloat
+        switch mode {
+        case .cover:
+            // Scale so the image fully COVERS the container; the larger axis
+            // overflows and is cropped (symmetrically per position).
+            let scale = max(container.width / imageSize.width, container.height / imageSize.height)
+            drawW = imageSize.width * scale
+            drawH = imageSize.height * scale
+        case .contain:
+            let scale = min(container.width / imageSize.width, container.height / imageSize.height)
+            drawW = imageSize.width * scale
+            drawH = imageSize.height * scale
+        case .auto:
+            drawW = imageSize.width
+            drawH = imageSize.height
+        }
+
+        let slackX = max(0, container.width - drawW)
+        let slackY = max(0, container.height - drawH)
+        let offsetX = positionFraction(positionX) * slackX
+        let offsetY = positionFraction(positionY) * slackY
+        return CGRect(x: offsetX, y: offsetY, width: drawW, height: drawH)
+    }
+
+    private static func positionFraction(_ position: BackgroundImageStyle.BackgroundPosition) -> CGFloat {
+        switch position {
+        case .percent(let f): return min(max(f, 0), 1)
+        case .keyword(let f): return min(max(f, 0), 1)
+        case .length(let v): return v
+        }
+    }
+
     /// Runs the full pipeline and records per-stage timing + peak memory.
     func renderPagesAndMeasure(containerSize: CGSize) async throws -> (pages: [PageFragments], metrics: LayoutMetrics) {
         var metrics = LayoutMetrics()
@@ -121,6 +177,40 @@ final class BrowserLayoutDocument {
             pages = metrics.time("fragment") {
                 PageFragmentation.fragment(box: pipeline.rootBox, pageSize: pipeline.contentSize)
             }
+        }
+        // Authored body background-image (paint-only): resolved through the
+        // same imageLoader as <img>; injected as a full-viewport image fragment
+        // at the front of page 0 (cover/center semantics resolved below). The
+        // fragment is per-page (not a whole-chapter bitmap) and never replaces
+        // the reader theme — it draws ON TOP of the theme fill.
+        if let background = Self.bodyBackgroundImage(rootBox: pipeline.rootBox),
+           let image = imageLoader(background.source),
+           var firstPage = pages.first {
+            // The background covers the FULL page (content + page margins),
+            // matching CSS `background: fixed` on body.
+            let container = CGSize(
+                width: containerSize.width,
+                height: containerSize.height
+            )
+            let rect = Self.coverRect(
+                for: image.size,
+                container: container,
+                positionX: background.positionX,
+                positionY: background.positionY
+            )
+            var fragments = firstPage.fragments
+            fragments.insert(.image(ImageFragment(
+                source: background.source,
+                image: image,
+                sourceRange: NSRange(location: 0, length: 0),
+                nodeID: -1,
+                linkTarget: nil,
+                writingMode: config.writingMode,
+                rect: rect,
+                alt: nil
+            )), at: 0)
+            firstPage = PageFragments(index: firstPage.index, pageRect: firstPage.pageRect, fragments: fragments)
+            pages[0] = firstPage
         }
         peakFootprint = max(peakFootprint, MemoryStats.currentFootprint())
 

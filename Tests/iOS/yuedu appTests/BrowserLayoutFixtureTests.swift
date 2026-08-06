@@ -30,13 +30,15 @@ struct BrowserLayoutFixtureTests {
         //   240 - 136 = 104 → inner border-box starts at 16+2+12+104 = 134.
         // Text line sits inside inner content: x = 134 + 8(padding) = 142.
         // Y: outer's margin-top 20 collapses with the body's top margin (body
-        // has no border/padding) → outer sits at the page top; line top =
-        // 2(border) + 12(padding) + 8(padding) = 22.
+        // has no border/padding) into the BODY's block-start margin (max(8,20)
+        // = 20) — the folded margin now pushes the content down (the walker
+        // honors the root block-start margin). Line top =
+        // 20(margin) + 2(border) + 12(padding) + 8(padding) = 42.
         let textFragments = BrowserLayoutTestSupport.allTextFragments(pages)
         #expect(textFragments.count == 1)
         let line = try #require(textFragments.first)
         #expect(line.rect.minX == 142)
-        #expect(line.rect.minY == 22)
+        #expect(line.rect.minY == 42)
         // inner content width 120 → the line is laid out within it.
         #expect(line.rect.width <= 120.01)
     }
@@ -51,8 +53,10 @@ struct BrowserLayoutFixtureTests {
         """
         let (pages, _) = try await BrowserLayoutTestSupport.layout(html)
         let line = try #require(BrowserLayoutTestSupport.allTextFragments(pages).first)
-        // parent padding 10 → child margin 20 does not collapse → line top = 10 + 20 = 30.
-        #expect(line.rect.minY == 30)
+        // Parent padding 10 → child margin 20 does not collapse out of the
+        // parent; the UA body margin (8) now applies (root block-start margin
+        // honored by the walker). Line top = 8 + 10 + 20 = 38.
+        #expect(line.rect.minY == 38)
     }
 
     @Test func positiveNegativeSiblingMarginCollapse() async throws {

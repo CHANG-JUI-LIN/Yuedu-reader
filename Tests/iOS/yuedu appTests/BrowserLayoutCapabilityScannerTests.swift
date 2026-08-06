@@ -53,15 +53,20 @@ struct BrowserLayoutCapabilityScannerTests {
     @Test func rejectsFlexGrid() {
         let css = ["body { display: flex }"]
         #expect(scan("<html><body></body></html>", css).unsupportedFeatures.contains(.unknownBlockDisplay))
+        // A rule must MATCH a real element to reject (DOM-aware scanning:
+        // unmatched rules in a shared stylesheet must not reject a chapter).
         let css2 = [".x { grid-template-columns: 1fr }"]
-        #expect(scan("<html><body></body></html>", css2).unsupportedFeatures.contains(.flexGrid))
+        #expect(scan("<html><body><div class=\"x\">y</div></body></html>", css2).unsupportedFeatures.contains(.flexGrid))
+        #expect(!scan("<html><body></body></html>", css2).supported || scan("<html><body></body></html>", css2).unsupportedFeatures.isEmpty)
     }
 
     @Test func rejectsPositioned() {
         let css = [".x { position: absolute }"]
-        #expect(scan("<html><body></body></html>", css).unsupportedFeatures.contains(.positioned))
+        #expect(scan("<html><body><div class=\"x\">y</div></body></html>", css).unsupportedFeatures.contains(.positioned))
         let inline = "<html><body><p style=\"position: fixed\">x</p></body></html>"
         #expect(scan(inline).unsupportedFeatures.contains(.positioned))
+        // Unmatched rule on an empty body does NOT reject (shared-stylesheet case).
+        #expect(scan("<html><body></body></html>", css).unsupportedFeatures.isEmpty)
     }
 
     @Test func rejectsRubyAndMathMLAndScript() {

@@ -56,8 +56,41 @@ final class BrowserLayoutSession {
             walker = nil
             return nil
         }
+        // Inject the authored body background-image into page 0 (same path as
+        // `BrowserLayoutDocument.renderPagesAndMeasure` — one implementation).
+        if page.index == 0, let withBackground = injectBodyBackground(into: page) {
+            completedPages.append(withBackground)
+            return withBackground
+        }
         completedPages.append(page)
         return page
+    }
+
+    /// Prepends the root box's background-image fragment to page 0 when the
+    /// chapter declares one (cover/center resolved against the content rect).
+    private func injectBodyBackground(into page: PageFragments) -> PageFragments? {
+        guard let rootBox = pipeline?.rootBox,
+              let background = BrowserLayoutDocument.bodyBackgroundImage(rootBox: rootBox),
+              let image = imageLoader(background.source) else { return nil }
+        let rect = BrowserLayoutDocument.coverRect(
+            for: image.size,
+            container: CGSize(width: config.renderWidth + config.contentInsets.left + config.contentInsets.right,
+                              height: config.renderHeight + config.contentInsets.top + config.contentInsets.bottom),
+            positionX: background.positionX,
+            positionY: background.positionY
+        )
+        var fragments = page.fragments
+        fragments.insert(.image(ImageFragment(
+            source: background.source,
+            image: image,
+            sourceRange: NSRange(location: 0, length: 0),
+            nodeID: -1,
+            linkTarget: nil,
+            writingMode: config.writingMode,
+            rect: rect,
+            alt: nil
+        )), at: 0)
+        return PageFragments(index: page.index, pageRect: page.pageRect, fragments: fragments)
     }
 
     /// Lays out pages until the page CONTAINING `sourceOffset` (in the

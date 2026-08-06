@@ -22,6 +22,46 @@ enum WhiteSpaceMode: Equatable {
     case preLine
 }
 
+/// A resolved `background-image` with its sizing/positioning keywords.
+/// Paint-only: presence never affects layout, so it never triggers a
+/// capability rejection. The image source is resolved by the caller
+/// (document imageLoader) into an actual bitmap at render time.
+struct BackgroundImageStyle: Equatable {
+    /// The raw `url(...)` source as authored.
+    var source: String
+    /// `background-size`: cover | contain | explicit size. nil = auto.
+    var size: BackgroundSize = .auto
+    /// `background-position` keywords (x, y). Default: 0% 0% (top-left).
+    var positionX: BackgroundPosition = .percent(0)
+    var positionY: BackgroundPosition = .percent(0)
+    /// `background-repeat`: repeat | no-repeat. Default repeat.
+    var repeatMode: BackgroundRepeatMode = .repeat
+    /// `background-attachment`: scroll | fixed. Default scroll.
+    var attachment: BackgroundAttachment = .scroll
+
+    enum BackgroundSize: Equatable {
+        case auto
+        case cover
+        case contain
+    }
+
+    enum BackgroundPosition: Equatable {
+        case percent(CGFloat)     // 0…1
+        case keyword(CGFloat)     // resolved offset as fraction of slack (0…1)
+        case length(CGFloat)      // absolute offset
+    }
+
+    enum BackgroundRepeatMode: Equatable {
+        case `repeat`
+        case noRepeat
+    }
+
+    enum BackgroundAttachment: Equatable {
+        case scroll
+        case fixed
+    }
+}
+
 /// Computed style: the result of cascading + inheritance. Box-model measures
 /// are stored as `CSSLength` (specified values); the layout stage resolves
 /// percentages/auto against the containing block into *used* values.
@@ -36,6 +76,9 @@ struct ComputedStyle: Equatable {
     var isItalic: Bool
     var color: UIColor?
     var backgroundColor: UIColor?
+    /// Authored `background-image` (paint-only; resolved to a bitmap by the
+    /// document imageLoader). nil = none.
+    var backgroundImage: BackgroundImageStyle? = nil
     var textAlign: NSTextAlignment = .natural
     var lineHeight: CGFloat?            // nil = normal (ascent/descent)
     var whiteSpace: WhiteSpaceMode = .normal

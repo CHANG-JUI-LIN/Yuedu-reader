@@ -44,38 +44,48 @@ struct BrowserLayoutCapabilityResult: Equatable {
     static let supported = BrowserLayoutCapabilityResult(supported: true, unsupportedFeatures: [])
 }
 
-/// Conservative capability scanner. Runs BEFORE any browser-engine layout and
+/// DOM-aware capability scanner. Runs BEFORE any browser-engine layout and
 /// decides, per chapter, whether the browser engine can render it correctly.
 ///
 /// Phase 2A accepts: horizontal reflowable EPUB, block/inline, the supported
 /// box model, supported white-space, plain text, links, anchors, basic images.
 ///
-/// Anything that could change LAYOUT and is not implemented falls back the
-/// WHOLE chapter to the legacy engine. Paint-only unsupported properties
-/// (background-image, text-shadow, …) do not affect layout and are allowed.
+/// A shared stylesheet may declare unsupported features (float, ruby, calc…)
+/// for OTHER chapters. The scanner therefore judges capability from what
+/// actually APPLIES to this chapter's DOM:
+///   - CSS rules are matched against the real DOM elements; only declarations
+///     of MATCHED selectors are considered (unmatched rules are ignored).
+///   - element inline `style` attributes are checked directly.
+///   - DOM-level markers (script, MathML, ruby, table, svg) are checked on the
+///     actual markup.
+///   - paint-only unsupported properties (background-image, text-shadow,
+///     border-radius, background-attachment…) do NOT affect layout and are
+///     allowed — they are paint degradation at worst, never a layout rejection.
 enum BrowserLayoutCapabilityScanner {
 
-    private static let verticalWritingModePatterns: [(String, String)] = [
-        ("-epub-writing-mode", #"-epub-writing-mode\s*:\s*vertical-(rl|lr)"#),
-        ("-webkit-writing-mode", #"-webkit-writing-mode\s*:\s*vertical-(rl|lr)"#),
-        ("writing-mode", #"(^|[;\s{])writing-mode\s*:\s*vertical-(rl|lr)"#),
-    ]
+    /// A matched declaration that would change layout and is not implemented.
+    /// Carries the matched element's tag/class and the property for diagnosis
+    /// (never book content).
+    struct UnsupportedDeclaration: CustomStringConvertible {
+        let feature: UnsupportedFeature
+        let selector: String
+        let tag: String
+        let classes: [String]
+        let property: String
+
+        var description: String {
+            "\(feature.description) via '\(selector)' on <\(tag)>\(classes.isEmpty ? "" : ".\(classes.joined(separator: "."))") property \(property)"
+        }
+    }
 
     static func scan(html: String, cssTexts: [String]) -> BrowserLayoutCapabilityResult {
         var reasons: [UnsupportedFeature] = []
+        var unsupportedDeclarations: [UnsupportedDeclaration] = []
 
+        // @media anywhere in the stylesheet affects layout for every chapter
+        // that links it (the media query is not re-evaluated per element).
         for css in cssTexts {
             if cssContainsMediaQuery(css) { reasons.append(.mediaQueries) }
-            if cssContainsCalcOrModernFunctions(css) { reasons.append(.calcOrModernFunctions) }
-            for (_, pattern) in verticalWritingModePatterns {
-                if regexMatch(pattern, in: css) {
-                    reasons.append(.verticalWritingMode)
-                    break
-                }
-            }
-            for reason in cssLayoutFeatures(in: css) where !reasons.contains(reason) {
-                reasons.append(reason)
-            }
         }
 
         // DOM-level checks (script, MathML, SVG semantics, table/float/flex in markup).
@@ -98,10 +108,50 @@ enum BrowserLayoutCapabilityScanner {
             if hasAny("svg") {
                 reasons.append(.unsupportedSVG)
             }
+
+            // CSS rules: match selectors against the real DOM. Only declarations
+            // from selectors that match at least one element are judged.
+            let elements = (try? doc.getAllElements().array()) ?? []
+            for css in cssTexts {
+                var matchedAnyUnsupported = false
+                for rule in CSSParser.parse(css: css, orderOffset: 0) {
+                    let matchedElements = elements.filter { element in
+                        guard rule.selector.matches(element: element, parent: element.parent()) else { return false }
+                        return true
+                    }
+                    guard !matchedElements.isEmpty else { continue }  // unmatched rule → ignore
+
+                    for (property, value) in rule.declarations {
+                        if let feature = layoutAffectingDeclaration(key: property, value: value) {
+                            reasons.append(feature)
+                            if !matchedAnyUnsupported, let first = matchedElements.first {
+                                unsupportedDeclarations.append(UnsupportedDeclaration(
+                                    feature: feature, selector: rule.selector.debugDescription,
+                                    tag: (try? first.tagName()) ?? "", classes: ((try? first.classNames().map { $0 }) ?? []),
+                                    property: property
+                                ))
+                                matchedAnyUnsupported = true
+                            }
+                        }
+                    }
+                    for (property, value) in rule.importantDeclarations {
+                        if let feature = layoutAffectingDeclaration(key: property, value: value) {
+                            reasons.append(feature)
+                        }
+                    }
+                }
+            }
+
+            // Element inline style attributes — always apply to this chapter.
             for element in (try? doc.select("[style]").array()) ?? [] {
                 let inline = (try? element.attr("style")) ?? ""
                 let decl = CSSParser.parseDeclarationBlock(inline)
-                for (key, value) in decl.merged {
+                for (key, value) in decl.normal {
+                    if let reason = layoutAffectingDeclaration(key: key, value: value) {
+                        reasons.append(reason)
+                    }
+                }
+                for (key, value) in decl.important {
                     if let reason = layoutAffectingDeclaration(key: key, value: value) {
                         reasons.append(reason)
                     }
@@ -115,7 +165,7 @@ enum BrowserLayoutCapabilityScanner {
         )
     }
 
-    // MARK: - CSS text scanning
+    // MARK: - CSS text scanning (media queries only)
 
     private static func cssContainsMediaQuery(_ css: String) -> Bool {
         // Strip comments first so a commented-out @media cannot trigger.
@@ -123,34 +173,11 @@ enum BrowserLayoutCapabilityScanner {
         return regexMatch(#"@media\b"#, in: cleaned)
     }
 
-    private static func cssContainsCalcOrModernFunctions(_ css: String) -> Bool {
-        regexMatch(#"calc\s*\(|min\s*\(|max\s*\(|clamp\s*\("#, in: css)
-    }
-
-    /// Layout-affecting CSS features inside the stylesheet text.
-    private static func cssLayoutFeatures(in css: String) -> [UnsupportedFeature] {
-        var reasons: [UnsupportedFeature] = []
-        let cleaned = css.replacingOccurrences(of: #"(?s)/\*.*?(?:\*/|\z)"#, with: "", options: .regularExpression)
-
-        // Property-level rejections (any declaration with these property names).
-        let layoutProperties: [(String, UnsupportedFeature)] = [
-            (#"float\s*:"#, .float),
-            (#"position\s*:\s*(absolute|fixed|sticky)"#, .positioned),
-            (#"ruby-align\s*:|ruby-position\s*:"#, .ruby),
-            (#"display\s*:\s*(table|inline-table|flex|inline-flex|grid|inline-grid)"#, .unknownBlockDisplay),
-            (#"flex\s*:|flex-direction\s*:|flex-wrap\s*:|flex-basis\s*:|flex-grow\s*:|flex-shrink\s*:|justify-content\s*:|align-items\s*:|grid-template|gap\s*:"#, .flexGrid),
-        ]
-        for (pattern, reason) in layoutProperties {
-            if regexMatch(pattern, in: cleaned) { reasons.append(reason) }
-        }
-
-        // Selector-level: generated content changes layout — not implemented.
-        if regexMatch(#"::before|::after|\bcontent\s*:"#, in: cleaned) {
-            reasons.append(.unparseableLayoutCSS)
-        }
-        return reasons
-    }
-
+    /// Layout-affecting CSS declarations. Paint-only properties
+    /// (background-image, background-size, background-position,
+    /// background-attachment, border-radius, text-shadow, …) are NOT layout
+    /// features — they are paint degradation at worst and must never reject a
+    /// chapter.
     private static func layoutAffectingDeclaration(key: String, value: String) -> UnsupportedFeature? {
         let k = key.lowercased()
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -161,10 +188,20 @@ enum BrowserLayoutCapabilityScanner {
         if k == "display" && (v.contains("table") || v.contains("flex") || v.contains("grid")) {
             return .unknownBlockDisplay
         }
+        if k == "flex" || k == "flex-direction" || k == "flex-wrap" || k == "flex-basis"
+            || k == "flex-grow" || k == "flex-shrink" || k == "justify-content"
+            || k == "align-items" || k.hasPrefix("grid-") || k == "gap" {
+            return .flexGrid
+        }
         if v.contains("calc(") || v.contains("min(") || v.contains("max(") || v.contains("clamp(") {
             return .calcOrModernFunctions
         }
         if k == "ruby-align" || k == "ruby-position" { return .ruby }
+        if k == "writing-mode"
+            || k == "-webkit-writing-mode"
+            || k == "-epub-writing-mode" {
+            if v.contains("vertical") { return .verticalWritingMode }
+        }
         return nil
     }
 
@@ -176,5 +213,11 @@ enum BrowserLayoutCapabilityScanner {
     private static func dedupe(_ reasons: [UnsupportedFeature]) -> [UnsupportedFeature] {
         var seen = Set<UnsupportedFeature>()
         return reasons.filter { seen.insert($0).inserted }
+    }
+}
+
+extension CSSSelector {
+    var debugDescription: String {
+        "selector"
     }
 }
