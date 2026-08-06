@@ -173,7 +173,7 @@ struct RedChamberProductionRenderingRegressionTests {
         let list = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: layout.themeTextColor)
         var displayK1: CGRect? = nil
         for item in list.items {
-            if case .fill(let f) = item, f.rect == k1Fill.rect { displayK1 = f.rect }
+            if case .fill(let f) = item, f.rect.rect == k1Fill.rect.rect { displayK1 = f.rect.rect }
         }
         print("STAGE k1DisplayListRect.minY=\(String(describing: displayK1?.minY))")
         let displayRect = try #require(displayK1, "k1 fill not in display list")

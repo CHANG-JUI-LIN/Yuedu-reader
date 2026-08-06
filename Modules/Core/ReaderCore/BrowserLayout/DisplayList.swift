@@ -3,6 +3,8 @@ import CoreText
 import Foundation
 import UIKit
 
+/// Display items carry PAGE CANVAS-local rects (Phase 2C contract).
+/// The canvas equals the actual page viewport.
 enum DisplayItem {
     case text(DisplayTextItem)
     case fill(DisplayFillItem)
@@ -14,7 +16,7 @@ struct DisplayTextItem {
     let nodeID: Int
     let linkTarget: String?
     let writingMode: ReaderWritingMode
-    let rect: CGRect
+    let rect: PageRect
     let baselineY: CGFloat
     let font: UIFont
     let color: UIColor
@@ -25,12 +27,23 @@ struct DisplayTextItem {
     let ctLine: CTLine?
 }
 
+/// A bordered box: background fill + full four-edge border + radius.
+/// Phase 2C: one fill item carries the COMPLETE paint representation —
+/// dotted/dashed borders render all four sides, never a lone top line.
 struct DisplayFillItem {
-    let rect: CGRect
+    let rect: PageRect
     let color: UIColor
     let cornerRadius: CGFloat
+    let borderTop: BorderEdge
+    let borderBottom: BorderEdge
+    let borderLeft: BorderEdge
+    let borderRight: BorderEdge
     let nodeID: Int
     let writingMode: ReaderWritingMode
+
+    var hasVisibleBorder: Bool {
+        borderTop.isVisible || borderBottom.isVisible || borderLeft.isVisible || borderRight.isVisible
+    }
 }
 
 struct DisplayImageItem {
@@ -40,7 +53,7 @@ struct DisplayImageItem {
     let nodeID: Int
     let linkTarget: String?
     let writingMode: ReaderWritingMode
-    let rect: CGRect
+    let rect: PageRect
     let alt: String?
 }
 
@@ -50,8 +63,7 @@ struct DisplayList {
 }
 
 /// Flattens a page's fragment tree (groups are recursive) into a flat draw list.
-/// Coordinates are page-local already. This is the boundary a future draw phase
-/// renders with UIKit/CoreGraphics.
+/// Coordinates are page canvas-local already.
 enum DisplayListBuilder {
 
     /// Builds a display list for one page. `sourceText` supplies the visible
@@ -82,6 +94,8 @@ enum DisplayListBuilder {
             case .fill(let f):
                 items.append(.fill(DisplayFillItem(
                     rect: f.rect, color: f.color, cornerRadius: f.cornerRadius,
+                    borderTop: f.borderTop, borderBottom: f.borderBottom,
+                    borderLeft: f.borderLeft, borderRight: f.borderRight,
                     nodeID: f.nodeID, writingMode: f.writingMode
                 )))
             case .image(let i):

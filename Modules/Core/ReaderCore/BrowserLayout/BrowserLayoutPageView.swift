@@ -34,6 +34,13 @@ final class BrowserLayoutPageView: UIView {
         /// spine + generation for diagnostic keys.
         let spine: Int
         let generation: Int
+        /// Generic geometry overlay (Phase 2C): page content rect (red),
+        /// body border rect (blue), first block rect (green), first line box
+        /// (yellow) — all PAGE CANVAS-local.
+        var pageContentRect: CGRect?
+        var bodyBorderRect: CGRect?
+        var firstBlockRect: CGRect?
+        var firstLineBoxRect: CGRect?
     }
     var debugSpec: DebugSpec?
 
@@ -149,6 +156,11 @@ final class BrowserLayoutPageView: UIView {
     /// - red:   k1 expected page-local top (89.67)
     /// - blue:  k1 top found in the DisplayList (the actual draw position)
     /// - yellow: the same expected top converted to window coordinates
+    /// Plus generic geometry boxes (Phase 2C):
+    /// - red frame: page content rect
+    /// - blue frame: body border rect
+    /// - green frame: first block rect
+    /// - yellow frame: first line box
     /// Left-top label: commit SHA + engine mode + this view's frame/bounds.
     private func drawDebugOverlay(in context: CGContext) {
         guard let spec = debugSpec else { return }
@@ -171,6 +183,16 @@ final class BrowserLayoutPageView: UIView {
             let windowPoint = convert(CGPoint(x: 0, y: spec.k1ExpectedPageLocalTop), to: window)
             line(atY: windowPoint.y, color: .systemYellow)
         }
+        // Generic geometry frames (Phase 2C).
+        func frameRect(_ r: CGRect, color: UIColor, width: CGFloat = 1.5) {
+            color.setStroke()
+            context.setLineWidth(width)
+            context.stroke(r)
+        }
+        if let r = spec.pageContentRect { frameRect(r, color: .systemRed, width: 2) }
+        if let r = spec.bodyBorderRect { frameRect(r, color: .systemBlue) }
+        if let r = spec.firstBlockRect { frameRect(r, color: .systemGreen) }
+        if let r = spec.firstLineBoxRect { frameRect(r, color: .systemYellow) }
         // Label block.
         let label = "[\(spec.commitSHA)] \(spec.engineMode)\n"
             + "view.frame=\(frame) bounds=\(bounds) transform=\(transform.a),\(transform.d)\n"
@@ -190,7 +212,7 @@ final class BrowserLayoutPageView: UIView {
         for item in displayList.items {
             guard case .text(let text) = item else { continue }
             if text.rect.contains(point) {
-                return text.rect
+                return text.rect.rect
             }
         }
         return nil
@@ -223,7 +245,7 @@ final class BrowserLayoutPageView: UIView {
         var best: (href: String, distance: CGFloat)? = nil
         for item in displayList.items {
             guard case .text(let text) = item, let href = text.linkTarget else { continue }
-            let expanded = text.rect.insetBy(dx: -4, dy: -4)
+            let expanded = text.rect.rect.insetBy(dx: -4, dy: -4)
             let distance: CGFloat
             if expanded.contains(point) {
                 distance = 0

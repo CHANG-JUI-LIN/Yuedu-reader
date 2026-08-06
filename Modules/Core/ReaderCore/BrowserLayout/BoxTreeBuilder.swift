@@ -40,7 +40,16 @@ enum BoxTreeBuilder {
             for: node, config: config, sourceText: &sourceText,
             anchors: &anchors, imageLoader: imageLoader, boxCount: &boxCount
         )
+        Self.linkParents(box)
         return box
+    }
+
+    /// DEBUG-only: links each box to its parent for ancestry diagnostics.
+    static func linkParents(_ box: BlockBox) {
+        for child in box.children {
+            child.parentBox = box
+            linkParents(child)
+        }
     }
 
     private static func buildBlockInternal(
@@ -82,6 +91,7 @@ enum BoxTreeBuilder {
                         let attachment = makeBlockImage(for: elementNode, config: config, imageLoader: imageLoader)
                         let box = BlockBox(style: elementNode.style, boxType: .block)
                         box.imageAttachment = attachment
+                        Self.attachDebugIdentity(box, node: elementNode)
                         kids.append(box)
                     } else {
                         appendImageRun(elementNode, to: &pendingInline, sourceText: &sourceText,
@@ -108,6 +118,7 @@ enum BoxTreeBuilder {
         }
 
         let box = BlockBox(style: node.style, boxType: .block, children: kids)
+        Self.attachDebugIdentity(box, node: node)
         if !pendingInline.isEmpty {
             if let lines = layoutRuns(pendingInline, style: node.style, config: config, sourceText: &sourceText) {
                 box.lines = lines
@@ -294,5 +305,16 @@ extension BoxTreeBuilder {
             count += countBoxes(in: child)
         }
         return count
+    }
+
+    /// Copies DOM identity (tag/class/id/nodeID) onto a box for diagnostics.
+    /// Layout never reads these.
+    static func attachDebugIdentity(_ box: BlockBox, node: ComputedStyleNode) {
+        box.debugTag = node.tag
+        box.debugNodeID = node.nodeID
+        box.debugID = node.anchorID
+        if let element = node.element {
+            box.debugClasses = (try? element.classNames().map { $0 }) ?? []
+        }
     }
 }

@@ -40,6 +40,11 @@ struct BrowserLayoutCapabilityScannerTests {
         #expect(!scan("<html><body></body></html>", css).supported)
     }
 
+    @Test func rejectsInlineFloat() {
+        let html = "<html><body><div style=\"float: left\">x</div></body></html>"
+        #expect(scan(html).unsupportedFeatures.contains(.float))
+    }
+
     @Test func rejectsFloat() {
         let css = [".x { float: left }"]
         #expect(scan("<html><body><div class=\"x\">y</div></body></html>", css).unsupportedFeatures.contains(.float))

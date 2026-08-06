@@ -30,7 +30,7 @@ enum BlockLayout {
         box.borders = sides.borders
         box.contentSize.width = sides.contentWidth
         // Frame is physical; its width is the inline-axis extent of the box.
-        box.frame = CGRect(x: 0, y: 0, width: sides.borderBoxWidth, height: 0)
+        box.frame = LocalRect(rect: CGRect(x: 0, y: 0, width: sides.borderBoxWidth, height: 0))
 
         var cursorBlock: CGFloat = 0   // content-box-relative, along block axis
         var previousBlockEndMargin: CGFloat? = nil
@@ -80,9 +80,12 @@ enum BlockLayout {
             let inlineExtent = child.borderBoxWidth
             switch writingMode {
             case .horizontal:
-                child.frame.origin.x = child.logicalInlineOrigin
-                child.frame.origin.y = child.logicalBlockOrigin
-                child.frame.size = CGSize(width: inlineExtent, height: borderBoxBlockExtent)
+                child.frame = LocalRect(rect: CGRect(
+                    x: child.logicalInlineOrigin,
+                    y: child.logicalBlockOrigin,
+                    width: inlineExtent,
+                    height: borderBoxBlockExtent
+                ))
             case .verticalRTL:
                 // Block axis runs right→left: larger block offset = further left.
                 // Origin is relative to the parent content box; position is
@@ -90,9 +93,12 @@ enum BlockLayout {
                 let parentContentBlockExtent = box.contentSize.width
                 let blockPosFromRight = child.logicalBlockOrigin
                 let x = parentContentBlockExtent - blockPosFromRight - borderBoxBlockExtent
-                child.frame.origin.x = x
-                child.frame.origin.y = child.logicalInlineOrigin
-                child.frame.size = CGSize(width: borderBoxBlockExtent, height: inlineExtent)
+                child.frame = LocalRect(rect: CGRect(
+                    x: x,
+                    y: child.logicalInlineOrigin,
+                    width: borderBoxBlockExtent,
+                    height: inlineExtent
+                ))
             }
             cursorBlock = child.logicalBlockOrigin + borderBoxBlockExtent + childMarginBlockEnd
             previousBlockEndMargin = childMarginBlockEnd
@@ -123,9 +129,14 @@ enum BlockLayout {
             // for vertical-rl the inline extent — the mapper decides.
             box.contentSize.height = fixed
         }
-        box.frame.size.height = LogicalGeometry.blockAxisExtent(box.borders, mode: writingMode)
-            + LogicalGeometry.blockAxisExtent(box.padding, mode: writingMode)
-            + box.contentSize.height
+        box.frame = LocalRect(rect: CGRect(
+            x: box.frame.rect.minX,
+            y: box.frame.rect.minY,
+            width: box.frame.rect.width,
+            height: LogicalGeometry.blockAxisExtent(box.borders, mode: writingMode)
+                + LogicalGeometry.blockAxisExtent(box.padding, mode: writingMode)
+                + box.contentSize.height
+        ))
         return box.contentSize.height
     }
 

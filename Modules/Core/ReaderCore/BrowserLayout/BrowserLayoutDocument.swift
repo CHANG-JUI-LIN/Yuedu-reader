@@ -111,8 +111,22 @@ final class BrowserLayoutDocument {
     }
 
     /// The root box's authored background-image style, if any.
-    static func bodyBackgroundImage(rootBox: BlockBox) -> BackgroundImageStyle? {
-        rootBox.style.backgroundImage
+    /// The root box's authored background (color + image style), if any.
+    /// html/body background propagates to the page CANVAS, not the content
+    /// bounds (Phase 2C).
+    struct RootBackground {
+        var color: UIColor?
+        var image: BackgroundImageStyle?
+    }
+
+    static func bodyBackground(rootBox: BlockBox) -> RootBackground {
+        // The root box IS html/body: its own background-color and
+        // background-image. The reader theme color (config) is NOT authored
+        // and must not be treated as the page background source.
+        RootBackground(
+            color: rootBox.style.backgroundColor,
+            image: rootBox.style.backgroundImage
+        )
     }
 
     /// Resolves the physical rect of a cover/contain background image inside a
@@ -175,42 +189,55 @@ final class BrowserLayoutDocument {
         var pages: [PageFragments] = []
         if !pipeline.rootBox.lines.isEmpty || !pipeline.rootBox.children.isEmpty {
             pages = metrics.time("fragment") {
-                PageFragmentation.fragment(box: pipeline.rootBox, pageSize: pipeline.contentSize)
+                PageFragmentation.fragment(
+                    box: pipeline.rootBox,
+                    pageSize: containerSize,
+                    contentInsets: config.contentInsets
+                )
             }
         }
-        // Authored body background-image (paint-only): resolved through the
-        // same imageLoader as <img>; injected as a full-viewport image fragment
-        // at the front of page 0 (cover/center semantics resolved below). The
-        // fragment is per-page (not a whole-chapter bitmap) and never replaces
-        // the reader theme — it draws ON TOP of the theme fill.
-        if let background = Self.bodyBackgroundImage(rootBox: pipeline.rootBox),
-           let image = imageLoader(background.source),
-           var firstPage = pages.first {
-            // The background covers the FULL page (content + page margins),
-            // matching CSS `background: fixed` on body.
-            let container = CGSize(
-                width: containerSize.width,
-                height: containerSize.height
-            )
-            let rect = Self.coverRect(
-                for: image.size,
-                container: container,
-                positionX: background.positionX,
-                positionY: background.positionY
-            )
-            var fragments = firstPage.fragments
-            fragments.insert(.image(ImageFragment(
-                source: background.source,
-                image: image,
-                sourceRange: NSRange(location: 0, length: 0),
-                nodeID: -1,
-                linkTarget: nil,
-                writingMode: config.writingMode,
-                rect: rect,
-                alt: nil
-            )), at: 0)
-            firstPage = PageFragments(index: firstPage.index, pageRect: firstPage.pageRect, fragments: fragments)
-            pages[0] = firstPage
+        // Authored html/body background (paint-only): resolved through the
+        // same imageLoader as <img>; injected as a FULL-CANVAS fragment at the
+        // FRONT of EVERY page (cover/center semantics resolved below). The
+        // canvas equals the actual page viewport — never the content bounds.
+        // The background-color fills the canvas; the image draws over it.
+        let background = Self.bodyBackground(rootBox: pipeline.rootBox)
+        if background.color != nil || background.image != nil {
+            let canvas = PageRect(rect: CGRect(origin: .zero, size: containerSize))
+            let backgroundColor = background.color ?? config.backgroundColor
+            for (index, page) in pages.enumerated() {
+                var fragments: [Fragment] = []
+                fragments.append(.fill(FillFragment(
+                    rect: canvas,
+                    documentRect: DocumentRect(rect: CGRect(origin: .zero, size: containerSize)),
+                    color: backgroundColor,
+                    cornerRadius: 0,
+                    borderTop: .zero, borderBottom: .zero, borderLeft: .zero, borderRight: .zero,
+                    nodeID: -1,
+                    writingMode: config.writingMode
+                )))
+                if let bg = background.image, let image = imageLoader(bg.source) {
+                    let rect = Self.coverRect(
+                        for: image.size,
+                        container: containerSize,
+                        positionX: bg.positionX,
+                        positionY: bg.positionY
+                    )
+                    fragments.append(.image(ImageFragment(
+                        source: bg.source,
+                        image: image,
+                        sourceRange: NSRange(location: 0, length: 0),
+                        nodeID: -1,
+                        linkTarget: nil,
+                        writingMode: config.writingMode,
+                        rect: PageRect(rect: rect),
+                        documentRect: DocumentRect(rect: rect),
+                        alt: nil
+                    )))
+                }
+                fragments.append(contentsOf: page.fragments)
+                pages[index] = PageFragments(index: page.index, pageRect: page.pageRect, fragments: fragments)
+            }
         }
         peakFootprint = max(peakFootprint, MemoryStats.currentFootprint())
 

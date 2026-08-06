@@ -240,7 +240,7 @@ struct BrowserLayoutRedChamberRegressionTests {
             height: ink.height
         )
         return LineGeometryDiagnostics(
-            lineBoxRect: fragment.rect,
+            lineBoxRect: fragment.rect.rect,
             baselineY: fragment.baselineY,
             glyphInkBounds: inkRect,
             ascent: ascent,
@@ -430,14 +430,14 @@ struct BrowserLayoutRedChamberRegressionTests {
             case .fill(let f):
                 if f.rect.width >= Self.contentRect.width * 0.99,
                    f.rect.height >= Self.contentRect.height * 0.99 {
-                    found = f.rect
+                    found = f.rect.rect
                 }
             case .image(let i):
                 // The authored background source may resolve to a normalized
                 // path; match any full-viewport image command.
                 if i.rect.width >= Self.viewport.width * 0.99,
                    i.rect.height >= Self.viewport.height * 0.99 {
-                    found = i.rect
+                    found = i.rect.rect
                 }
             default: break
             }
@@ -483,8 +483,9 @@ struct BrowserLayoutRedChamberRegressionTests {
         let config = Self.makeConfig(adapter: adapter, images: [:])
 
         let doc = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { _ in nil })
-        let result = try doc.makeLayout(containerSize: Self.viewport)
-        let batch = PageFragmentation.fragment(box: result.rootBox, pageSize: result.contentSize)
+        // Batch path: the SAME canvas contract as the session (full viewport +
+        // content insets + background injection).
+        let batch = try await doc.renderPages(containerSize: Self.viewport)
         let batchFirst = try #require(batch.first)
 
         // The session builds its own pipeline; a fresh adapter avoids any

@@ -58,16 +58,89 @@ final class BrowserLayoutSession {
             walker = nil
             return nil
         }
-        // Inject the authored body background-image into page 0 (same path as
-        // `BrowserLayoutDocument.renderPagesAndMeasure` — one implementation).
-        if page.index == 0, let withBackground = injectBodyBackground(into: page) {
-            Self.logK1Fragment(page: withBackground, spine: diagnosticSpine, generation: generation)
-            completedPages.append(withBackground)
-            return withBackground
+        // Inject the authored body background-image into EVERY page (same
+        // path as `BrowserLayoutDocument.renderPagesAndMeasure` — one
+        // implementation). The background covers the full canvas.
+        let finalPage: PageFragments
+        if let withBackground = injectBodyBackground(into: page) {
+            finalPage = withBackground
+        } else {
+            finalPage = page
         }
-        Self.logK1Fragment(page: page, spine: diagnosticSpine, generation: generation)
-        completedPages.append(page)
-        return page
+        if page.index == 0 {
+            Self.logFirstPageDiagnostics(
+                page: finalPage,
+                rootBox: pipeline?.rootBox,
+                sourceText: sourceText,
+                config: config,
+                spine: diagnosticSpine,
+                generation: generation
+            )
+        }
+        Self.logK1Fragment(page: finalPage, spine: diagnosticSpine, generation: generation)
+        completedPages.append(finalPage)
+        return finalPage
+    }
+
+    /// DEBUG-only: generic first-visible-line ancestry + page metrics for ANY
+    /// chapter (works for plain body pages, not just the k1 cover).
+    private static func logFirstPageDiagnostics(
+        page: PageFragments,
+        rootBox: BlockBox?,
+        sourceText: String,
+        config: BrowserLayoutConfig,
+        spine: Int,
+        generation: Int
+    ) {
+        #if DEBUG
+        guard let rootBox else { return }
+        let traceID = BrowserLayoutDeviceDiagnostic.traceID(for: spine, generation: generation)
+        let firstText = Self.firstTextFragment(in: page)
+        let canvasSize = CGSize(
+            width: config.renderWidth + config.contentInsets.left + config.contentInsets.right,
+            height: config.renderHeight + config.contentInsets.top + config.contentInsets.bottom
+        )
+        BrowserLayoutDeviceDiagnostic.logFirstVisibleLineAncestry(
+            rootBox: rootBox,
+            sourceText: sourceText,
+            firstFragment: firstText,
+            canvasSize: canvasSize,
+            contentInsets: config.contentInsets,
+            spine: spine,
+            generation: generation,
+            traceID: traceID
+        )
+        // SVG / replaced elements in this chapter (for unsupported-svg pages).
+        var svgRects: [String] = []
+        func walkSVG(_ box: BlockBox) {
+            if box.debugTag == "svg" || box.debugTag == "img" {
+                svgRects.append("\(box.debugTag) frame=\(BrowserLayoutDeviceDiagnostic.rect(box.frame.rect, space: "parentLocal")) content=\(box.contentSize) attachment=\(box.imageAttachment != nil)")
+            }
+            for child in box.children { walkSVG(child) }
+        }
+        walkSVG(rootBox)
+        if !svgRects.isEmpty {
+            BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) trace=\(traceID) replacedElements \(svgRects.joined(separator: " | "))")
+        }
+        #endif
+    }
+
+    private static func firstTextFragment(in page: PageFragments) -> TextFragment? {
+        var result: TextFragment? = nil
+        func walk(_ fragments: [Fragment]) {
+            for fragment in fragments {
+                switch fragment {
+                case .text(let t):
+                    if result == nil || t.sourceRange.location < result!.sourceRange.location {
+                        result = t
+                    }
+                case .group(let children): walk(children)
+                default: break
+                }
+            }
+        }
+        walk(page.fragments)
+        return result
     }
 
     /// DEBUG-only: k1's page-local fragment rect (as the walker placed it).
@@ -78,7 +151,7 @@ final class BrowserLayoutSession {
             for fragment in fragments {
                 switch fragment {
                 case .fill(let f):
-                    if f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 { k1Fill = f.rect }
+                    if f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 { k1Fill = f.rect.rect }
                 case .group(let children): walk(children)
                 default: break
                 }
@@ -99,30 +172,51 @@ final class BrowserLayoutSession {
         #endif
     }
 
-    /// Prepends the root box's background-image fragment to page 0 when the
-    /// chapter declares one (cover/center resolved against the content rect).
+    /// Prepends the root box's background (color + image) as FULL-CANVAS
+    /// fragments at the front of EVERY page (Phase 2C: the canvas is the
+    /// actual page viewport, never the content bounds).
     private func injectBodyBackground(into page: PageFragments) -> PageFragments? {
-        guard let rootBox = pipeline?.rootBox,
-              let background = BrowserLayoutDocument.bodyBackgroundImage(rootBox: rootBox),
-              let image = imageLoader(background.source) else { return nil }
-        let rect = BrowserLayoutDocument.coverRect(
-            for: image.size,
-            container: CGSize(width: config.renderWidth + config.contentInsets.left + config.contentInsets.right,
-                              height: config.renderHeight + config.contentInsets.top + config.contentInsets.bottom),
-            positionX: background.positionX,
-            positionY: background.positionY
+        guard let rootBox = pipeline?.rootBox else { return nil }
+        let background = BrowserLayoutDocument.bodyBackground(rootBox: rootBox)
+        guard background.color != nil || background.image != nil else { return nil }
+
+        let canvasSize = CGSize(
+            width: config.renderWidth + config.contentInsets.left + config.contentInsets.right,
+            height: config.renderHeight + config.contentInsets.top + config.contentInsets.bottom
         )
-        var fragments = page.fragments
-        fragments.insert(.image(ImageFragment(
-            source: background.source,
-            image: image,
-            sourceRange: NSRange(location: 0, length: 0),
+        let canvas = PageRect(rect: CGRect(origin: .zero, size: canvasSize))
+        let backgroundColor = background.color ?? config.backgroundColor
+
+        var fragments: [Fragment] = []
+        fragments.append(.fill(FillFragment(
+            rect: canvas,
+            documentRect: DocumentRect(rect: CGRect(origin: .zero, size: canvasSize)),
+            color: backgroundColor,
+            cornerRadius: 0,
+            borderTop: .zero, borderBottom: .zero, borderLeft: .zero, borderRight: .zero,
             nodeID: -1,
-            linkTarget: nil,
-            writingMode: config.writingMode,
-            rect: rect,
-            alt: nil
-        )), at: 0)
+            writingMode: config.writingMode
+        )))
+        if let bg = background.image, let image = imageLoader(bg.source) {
+            let rect = BrowserLayoutDocument.coverRect(
+                for: image.size,
+                container: canvasSize,
+                positionX: bg.positionX,
+                positionY: bg.positionY
+            )
+            fragments.append(.image(ImageFragment(
+                source: bg.source,
+                image: image,
+                sourceRange: NSRange(location: 0, length: 0),
+                nodeID: -1,
+                linkTarget: nil,
+                writingMode: config.writingMode,
+                rect: PageRect(rect: rect),
+                documentRect: DocumentRect(rect: rect),
+                alt: nil
+            )))
+        }
+        fragments.append(contentsOf: page.fragments)
         return PageFragments(index: page.index, pageRect: page.pageRect, fragments: fragments)
     }
 
@@ -164,18 +258,22 @@ final class BrowserLayoutSession {
         let document = BrowserLayoutDocument(
             html: html, cssTexts: cssTexts, config: config, imageLoader: imageLoader
         )
-        // containerSize mirrors the config's render area (the caller keeps
-        // contentInsets in config).
-        let result = try document.makeLayout(containerSize: CGSize(
+        // The page canvas IS the full viewport (render area + content insets).
+        let canvasSize = CGSize(
             width: config.renderWidth + config.contentInsets.left + config.contentInsets.right,
             height: config.renderHeight + config.contentInsets.top + config.contentInsets.bottom
-        ))
+        )
+        let result = try document.makeLayout(containerSize: canvasSize)
         sourceText = result.sourceText
         anchorOffsets = result.anchorOffsets
         pipelineNodeCount = result.nodeCount
         pipelineBoxCount = result.boxCount
         pipeline = result
-        walker = PageWalker(box: result.rootBox, pageSize: result.contentSize)
+        walker = PageWalker(
+            box: result.rootBox,
+            pageSize: canvasSize,
+            contentInsets: config.contentInsets
+        )
         Self.logK1K2Layout(rootBox: result.rootBox, config: config, spine: diagnosticSpine, generation: generation)
     }
 
@@ -215,22 +313,25 @@ final class BrowserLayoutSession {
         }
         // Document-coordinate boxes (relative to root content origin).
         func marginRect(_ box: BlockBox) -> CGRect {
-            CGRect(x: box.frame.minX - box.margins.left,
-                   y: box.frame.minY - box.margins.top,
-                   width: box.frame.width + box.margins.left + box.margins.right,
-                   height: box.frame.height + box.margins.top + box.margins.bottom)
+            let f = box.frame.rect
+            return CGRect(x: f.minX - box.margins.left,
+                          y: f.minY - box.margins.top,
+                          width: f.width + box.margins.left + box.margins.right,
+                          height: f.height + box.margins.top + box.margins.bottom)
         }
         func paddingRect(_ box: BlockBox) -> CGRect {
-            CGRect(x: box.frame.minX + box.borders.left,
-                   y: box.frame.minY + box.borders.top,
-                   width: box.frame.width - box.borders.horizontal,
-                   height: box.frame.height - box.borders.vertical)
+            let f = box.frame.rect
+            return CGRect(x: f.minX + box.borders.left,
+                          y: f.minY + box.borders.top,
+                          width: f.width - box.borders.horizontal,
+                          height: f.height - box.borders.vertical)
         }
         func contentRect(_ box: BlockBox) -> CGRect {
-            CGRect(x: box.frame.minX + box.borders.left + box.padding.left,
-                   y: box.frame.minY + box.borders.top + box.padding.top,
-                   width: box.contentSize.width,
-                   height: box.contentSize.height)
+            let f = box.frame.rect
+            return CGRect(x: f.minX + box.borders.left + box.padding.left,
+                          y: f.minY + box.borders.top + box.padding.top,
+                          width: box.contentSize.width,
+                          height: box.contentSize.height)
         }
         let D = "coordinate=document"
         let k1CSS = "k1 specified margin-top=\(k1.style.marginTop) left=\(k1.style.marginLeft) right=\(k1.style.marginRight) "
@@ -239,15 +340,15 @@ final class BrowserLayoutSession {
             + "contentWidth=\(String(format: "%.2f", k1.contentSize.width)) "
             + "rootFontSize=\(config.rootFontSize) bodyContentRect=\(BrowserLayoutDeviceDiagnostic.rect(CGRect(origin: .zero, size: rootBox.contentSize), space: D))"
         let k1Rects = "k1 marginRect=\(BrowserLayoutDeviceDiagnostic.rect(marginRect(k1), space: D)) "
-            + "borderRect=\(BrowserLayoutDeviceDiagnostic.rect(k1.frame, space: D)) "
+            + "borderRect=\(BrowserLayoutDeviceDiagnostic.rect(k1.frame.rect, space: D)) "
             + "paddingRect=\(BrowserLayoutDeviceDiagnostic.rect(paddingRect(k1), space: D)) "
             + "contentRect=\(BrowserLayoutDeviceDiagnostic.rect(contentRect(k1), space: D))"
-        let k2Rects = "k2 borderRect=\(BrowserLayoutDeviceDiagnostic.rect(k2.frame, space: D)) "
+        let k2Rects = "k2 borderRect=\(BrowserLayoutDeviceDiagnostic.rect(k2.frame.rect, space: D)) "
             + "contentRect=\(BrowserLayoutDeviceDiagnostic.rect(contentRect(k2), space: D)) "
             + "specified padding=\(k2.style.paddingTop) border=\(k2.style.borderTopWidth)"
         let lineInfo: String
         if let line = firstTextLine(rootBox) {
-            lineInfo = "firstLineBox top=\(String(format: "%.2f", line.top)) baseline=\(String(format: "%.2f", line.baseline)) height=\(String(format: "%.2f", line.height)) \(D)"
+            lineInfo = "firstLineBox top=\(String(format: "%.2f", line.top)) baseline=\(String(format: "%.2f", line.baseline)) height=\(String(format: "%.2f", line.height)) coordinate=boxContentLocal"
         } else {
             lineInfo = "firstLineBox=none"
         }

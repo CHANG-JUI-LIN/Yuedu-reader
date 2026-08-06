@@ -128,6 +128,8 @@ struct BrowserChapterLayout {
                 case .fill(let f):
                     items.append(.fill(DisplayFillItem(
                         rect: f.rect, color: f.color, cornerRadius: f.cornerRadius,
+                        borderTop: f.borderTop, borderBottom: f.borderBottom,
+                        borderLeft: f.borderLeft, borderRight: f.borderRight,
                         nodeID: f.nodeID, writingMode: f.writingMode
                     )))
                 case .image(let i):
@@ -143,16 +145,16 @@ struct BrowserChapterLayout {
         collect(page.fragments)
         #if DEBUG
         // DEBUG-only: k1 fill/border commands as emitted (page-local).
-        var k1Fill: CGRect? = nil
-        var k2Border: CGRect? = nil
+        var k1Fill: PageRect? = nil
+        var k2Border: PageRect? = nil
         for item in items {
             if case .fill(let f) = item {
                 if f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 { k1Fill = f.rect }
                 if f.rect.width > 200, f.rect.width < 320, f.rect.height <= 2 { k2Border = f.rect }
             }
         }
-        let k1Msg = k1Fill.map { BrowserLayoutDeviceDiagnostic.rect($0, space: "coordinate=pageLocal") } ?? "none"
-        let k2Msg = k2Border.map { BrowserLayoutDeviceDiagnostic.rect($0, space: "coordinate=pageLocal") } ?? "none"
+        let k1Msg = k1Fill.map { BrowserLayoutDeviceDiagnostic.rect($0.rect, space: "coordinate=pageLocal") } ?? "none"
+        let k2Msg = k2Border.map { BrowserLayoutDeviceDiagnostic.rect($0.rect, space: "coordinate=pageLocal") } ?? "none"
         BrowserLayoutDeviceDiagnostic.log(
             .k1DisplayList(spine: spineIndex, generation: diagnosticGeneration),
             spine: spineIndex, generation: diagnosticGeneration, page: localPage,
@@ -781,7 +783,16 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 k1PageLocalRect: k1Rect,
                 traceID: BrowserLayoutDeviceDiagnostic.traceID(for: spine, generation: layoutGeneration),
                 spine: spine,
-                generation: layoutGeneration
+                generation: layoutGeneration,
+                pageContentRect: CGRect(
+                    x: settings.contentInsets.left,
+                    y: settings.contentInsets.top,
+                    width: max(0, renderSize.width - settings.contentInsets.left - settings.contentInsets.right),
+                    height: max(0, renderSize.height - settings.contentInsets.top - settings.contentInsets.bottom)
+                ),
+                bodyBorderRect: Self.genericBodyRect(in: list),
+                firstBlockRect: nil,
+                firstLineBoxRect: Self.firstLineBoxRect(in: list)
             )
             vc.pageView.debugSpec = spec
             BrowserLayoutDeviceDiagnostic.log(
@@ -1056,10 +1067,35 @@ extension BrowserLayoutPageEngine {
         for item in list.items {
             if case .fill(let f) = item,
                f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 {
-                return f.rect
+                return f.rect.rect
             }
         }
         return .null
+    }
+
+    /// The largest full-width fill in the page (body background / page-level
+    /// fill) — the body border rect approximation for the overlay.
+    static func genericBodyRect(in list: DisplayList) -> CGRect? {
+        var best: CGRect? = nil
+        for item in list.items {
+            if case .fill(let f) = item,
+               f.rect.width > 300, f.rect.height > 100 {
+                if best == nil || f.rect.width > best!.width {
+                    best = f.rect.rect
+                }
+            }
+        }
+        return best
+    }
+
+    /// The first text fragment's rect (first line box) for the overlay.
+    static func firstLineBoxRect(in list: DisplayList) -> CGRect? {
+        for item in list.items {
+            if case .text(let t) = item {
+                return t.rect.rect
+            }
+        }
+        return nil
     }
 }
 

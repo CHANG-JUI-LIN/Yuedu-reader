@@ -54,7 +54,8 @@ final class BlockBox {
     var lines: [LayoutLine]
     /// Non-nil when this box IS a replaced element (block-level image).
     var imageAttachment: AtomicInline? = nil
-    var frame = CGRect.zero
+    /// Border-box rect in PARENT content-local coordinates (Phase 2C contract).
+    var frame: LocalRect = .zero
     var contentSize = CGSize.zero
     var margins = EdgeSizes.zero
     var padding = EdgeSizes.zero
@@ -65,6 +66,16 @@ final class BlockBox {
     var logicalBlockOrigin: CGFloat = 0
     /// Logical inline-axis origin within the parent's content box (Phase 3A).
     var logicalInlineOrigin: CGFloat = 0
+    /// DOM identity for diagnostics (tag/class/id). Layout never reads these.
+    var debugTag: String = ""
+    var debugClasses: [String] = []
+    var debugID: String?
+    /// Debug-only: the owning style-node id (fragment nodeID correlation).
+    var debugNodeID: Int = -1
+    /// Debug-only: weak parent link for ancestry walks (never used by layout).
+    weak var parentBox: BlockBox?
+    /// Debug-only: cached document-absolute origin (set by diagnostics).
+    var documentOrigin: CGPoint = .zero
 
     init(style: ComputedStyle, boxType: BlockBoxType = .block, children: [BlockBox] = [], lines: [LayoutLine] = []) {
         self.style = style

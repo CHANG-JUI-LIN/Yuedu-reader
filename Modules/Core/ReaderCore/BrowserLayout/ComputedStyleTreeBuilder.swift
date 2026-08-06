@@ -311,16 +311,28 @@ enum ComputedStylePropertyApplier {
         case "border-left-width": style.borderLeftWidth = numericWidth(value) ?? style.borderLeftWidth
         case "border-width": applyBorderWidthShorthand(value, to: &style)
         case "border":
-            // `border: <width> <style> <color>` shorthand. Phase 1.5: width +
-            // color applied; border-style parsed but ignored (solid assumed).
+            // `border: <width> <style> <color>` shorthand. Width + color + style.
             for part in value.split(separator: " ").map(String.init) {
                 if let w = numericWidth(part) {
                     style.borderTopWidth = w; style.borderRightWidth = w
                     style.borderBottomWidth = w; style.borderLeftWidth = w
                 } else if let c = parseColor(part) {
                     style.borderColor = c
+                } else if BorderStyle.from(cssRaw: part) != .solid || isBorderStyleKeyword(part) {
+                    let s = BorderStyle.from(cssRaw: part)
+                    style.borderTopStyle = s; style.borderRightStyle = s
+                    style.borderBottomStyle = s; style.borderLeftStyle = s
                 }
             }
+        case "border-top": applyBorderSideShorthand(part: value, style: &style, side: "top")
+        case "border-right": applyBorderSideShorthand(part: value, style: &style, side: "right")
+        case "border-bottom": applyBorderSideShorthand(part: value, style: &style, side: "bottom")
+        case "border-left": applyBorderSideShorthand(part: value, style: &style, side: "left")
+        case "border-style": applyBorderStyleShorthand(value, to: &style)
+        case "border-top-style": style.borderTopStyle = BorderStyle.from(cssRaw: value)
+        case "border-right-style": style.borderRightStyle = BorderStyle.from(cssRaw: value)
+        case "border-bottom-style": style.borderBottomStyle = BorderStyle.from(cssRaw: value)
+        case "border-left-style": style.borderLeftStyle = BorderStyle.from(cssRaw: value)
         case "border-color": style.borderColor = parseColor(value)
         case "border-radius": style.borderRadius = numericWidth(value) ?? 0
         case "background":
@@ -395,6 +407,53 @@ enum ComputedStylePropertyApplier {
             .map(String.init)
             .first { $0.hasPrefix("#") || $0.hasPrefix("rgb") || $0.hasPrefix("hsl") }
             ?? ""
+    }
+
+    /// True for border-style keywords so `border: 1px dotted #3a4431` can
+    /// distinguish the style word from width/color tokens.
+    fileprivate static func isBorderStyleKeyword(_ part: String) -> Bool {
+        switch part.lowercased() {
+        case "solid", "dotted", "dashed", "double", "none", "hidden", "groove", "ridge", "inset", "outset":
+            return true
+        default:
+            return false
+        }
+    }
+
+    fileprivate static func applyBorderStyleShorthand(_ value: String, to style: inout ComputedStyle) {
+        let styles = value.split(separator: " ").map(String.init).map { BorderStyle.from(cssRaw: $0) }
+        guard !styles.isEmpty else { return }
+        func s(_ i: Int) -> BorderStyle { styles[min(i, styles.count - 1)] }
+        switch styles.count {
+        case 1: style.borderTopStyle = s(0); style.borderRightStyle = s(0); style.borderBottomStyle = s(0); style.borderLeftStyle = s(0)
+        case 2: style.borderTopStyle = s(0); style.borderRightStyle = s(1); style.borderBottomStyle = s(0); style.borderLeftStyle = s(1)
+        case 3: style.borderTopStyle = s(0); style.borderRightStyle = s(1); style.borderBottomStyle = s(2); style.borderLeftStyle = s(1)
+        default: style.borderTopStyle = s(0); style.borderRightStyle = s(1); style.borderBottomStyle = s(2); style.borderLeftStyle = s(3)
+        }
+    }
+
+    /// `border-top: <width> <style> <color>` side shorthand.
+    fileprivate static func applyBorderSideShorthand(part value: String, style: inout ComputedStyle, side: String) {
+        for part in value.split(separator: " ").map(String.init) {
+            if let w = numericWidth(part) {
+                switch side {
+                case "top": style.borderTopWidth = w
+                case "right": style.borderRightWidth = w
+                case "bottom": style.borderBottomWidth = w
+                default: style.borderLeftWidth = w
+                }
+            } else if let c = parseColor(part) {
+                style.borderColor = c
+            } else if isBorderStyleKeyword(part) {
+                let s = BorderStyle.from(cssRaw: part)
+                switch side {
+                case "top": style.borderTopStyle = s
+                case "right": style.borderRightStyle = s
+                case "bottom": style.borderBottomStyle = s
+                default: style.borderLeftStyle = s
+                }
+            }
+        }
     }
 
     /// Extracts `url(...)` from a background declaration; returns the raw source

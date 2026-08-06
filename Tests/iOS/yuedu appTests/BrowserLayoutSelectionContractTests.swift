@@ -129,7 +129,7 @@ struct BrowserLayoutSelectionContractTests {
         let linkItem = DisplayTextItem(
             sourceRange: NSRange(location: 0, length: 4), nodeID: 1,
             linkTarget: "http://example.com", writingMode: .horizontal,
-            rect: CGRect(x: 10, y: 10, width: 80, height: 20), baselineY: 26,
+            rect: PageRect(rect: CGRect(x: 10, y: 10, width: 80, height: 20)), baselineY: 26,
             font: .systemFont(ofSize: 17), color: .black, text: "link",
             ctLine: nil
         )

@@ -99,6 +99,11 @@ struct ComputedStyle: Equatable {
     var borderRightWidth: CGFloat = 0
     var borderBottomWidth: CGFloat = 0
     var borderLeftWidth: CGFloat = 0
+    /// Per-side border styles (Phase 2C: dotted/dashed must render).
+    var borderTopStyle: BorderStyle = .solid
+    var borderRightStyle: BorderStyle = .solid
+    var borderBottomStyle: BorderStyle = .solid
+    var borderLeftStyle: BorderStyle = .solid
     var borderColor: UIColor?
     var borderRadius: CGFloat = 0
     var configParagraphSpacing: CGFloat = 0

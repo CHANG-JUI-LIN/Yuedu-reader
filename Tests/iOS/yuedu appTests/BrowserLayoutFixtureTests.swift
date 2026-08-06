@@ -150,7 +150,7 @@ struct BrowserLayoutFixtureTests {
         for fragment in linked {
             let center = CGPoint(x: fragment.rect.midX, y: fragment.rect.midY)
             #expect(fragment.rect.contains(center))
-            #expect(fragment.rect.intersects(fragment.rect))
+            #expect(fragment.rect.rect.intersects(fragment.rect.rect))
         }
     }
 }
