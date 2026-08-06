@@ -810,8 +810,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             let spec = BrowserLayoutPageView.DebugSpec(
                 commitSHA: Self.currentCommitSHA,
                 engineMode: modeLabel,
-                k1ExpectedPageLocalTop: Self.k1ExpectedTop(contentWidth: contentWidth),
-                k1DisplayListTop: Self.k1DisplayListTop(in: list),
+                fallbackReason: engineStatus[spine].flatMap { $0.hasPrefix("legacy") ? $0 : nil },
                 k1PageLocalRect: k1Rect,
                 traceID: BrowserLayoutDeviceDiagnostic.traceID(for: spine, generation: layoutGeneration),
                 spine: spine,
@@ -823,7 +822,6 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                     height: max(0, renderSize.height - settings.contentInsets.top - settings.contentInsets.bottom)
                 ),
                 bodyBorderRect: Self.genericBodyRect(in: list),
-                firstBlockRect: nil,
                 firstLineBoxRect: Self.firstLineBoxRect(in: list)
             )
             vc.pageView.debugSpec = spec

@@ -23,10 +23,9 @@ final class BrowserLayoutPageView: UIView {
     struct DebugSpec {
         let commitSHA: String
         let engineMode: String
-        /// k1 expected page-local top (89.67 for the RedChamber cover).
-        let k1ExpectedPageLocalTop: CGFloat
-        /// k1 actual top found in the DisplayList (blue line).
-        let k1DisplayListTop: CGFloat
+        /// BrowserFallbackReason.description when this page is a forced
+        /// unsupported render (browserForced); nil for supported pages.
+        let fallbackReason: String?
         /// k1 page-local rect (for window conversion in didMoveToWindow).
         let k1PageLocalRect: CGRect
         /// traceID shared with the layout stage.
@@ -34,12 +33,10 @@ final class BrowserLayoutPageView: UIView {
         /// spine + generation for diagnostic keys.
         let spine: Int
         let generation: Int
-        /// Generic geometry overlay (Phase 2C): page content rect (red),
-        /// body border rect (blue), first block rect (green), first line box
-        /// (yellow) — all PAGE CANVAS-local.
+        /// Generic geometry overlay (Phase 2C): page content rect,
+        /// body border rect, first line box — all PAGE CANVAS-local.
         var pageContentRect: CGRect?
         var bodyBorderRect: CGRect?
-        var firstBlockRect: CGRect?
         var firstLineBoxRect: CGRect?
     }
     var debugSpec: DebugSpec?
@@ -188,26 +185,9 @@ final class BrowserLayoutPageView: UIView {
     /// Left-top label: commit SHA + engine mode + this view's frame/bounds.
     private func drawDebugOverlay(in context: CGContext) {
         guard let spec = debugSpec else { return }
-        let lineWidth: CGFloat = 2
-        func line(atY y: CGFloat, color: UIColor) {
-            color.setStroke()
-            context.setLineWidth(lineWidth)
-            context.beginPath()
-            context.move(to: CGPoint(x: 0, y: y))
-            context.addLine(to: CGPoint(x: bounds.width, y: y))
-            context.strokePath()
-        }
-        // Red: expected page-local top.
-        line(atY: spec.k1ExpectedPageLocalTop, color: .systemRed)
-        // Blue: actual DisplayList k1 top.
-        line(atY: spec.k1DisplayListTop, color: .systemBlue)
-        // Yellow: window-converted expected top (via convert to window then back
-        // to this view's local coords — this shows host-hierarchy shifts).
-        if let window {
-            let windowPoint = convert(CGPoint(x: 0, y: spec.k1ExpectedPageLocalTop), to: window)
-            line(atY: windowPoint.y, color: .systemYellow)
-        }
-        // Generic geometry frames (Phase 2C).
+        // Generic geometry frames (Phase 2C): page content rect (red),
+        // body border rect (blue), first line box (yellow) — all compared in
+        // the SAME (page-local) space.
         func frameRect(_ r: CGRect, color: UIColor, width: CGFloat = 1.5) {
             color.setStroke()
             context.setLineWidth(width)
@@ -215,13 +195,13 @@ final class BrowserLayoutPageView: UIView {
         }
         if let r = spec.pageContentRect { frameRect(r, color: .systemRed, width: 2) }
         if let r = spec.bodyBorderRect { frameRect(r, color: .systemBlue) }
-        if let r = spec.firstBlockRect { frameRect(r, color: .systemGreen) }
         if let r = spec.firstLineBoxRect { frameRect(r, color: .systemYellow) }
-        // Label block.
-        let label = "[\(spec.commitSHA)] \(spec.engineMode)\n"
-            + "view.frame=\(frame) bounds=\(bounds) transform=\(transform.a),\(transform.d)\n"
-            + "safeArea=\(safeAreaInsets) ctxScale=\(context.ctm.a),\(context.ctm.d)\n"
-            + "red(expected)=\(spec.k1ExpectedPageLocalTop) blue(displayList)=\(spec.k1DisplayListTop)"
+        // Label block: commit SHA, actual engine, fallback reason (UNSUPPORTED
+        // FORCED for forced unsupported renders), page content rect.
+        let forcedNote = spec.fallbackReason.map { " UNSUPPORTED FORCED:\($0)" } ?? ""
+        let label = "[\(spec.commitSHA)] \(spec.engineMode)\(forcedNote)\n"
+            + "pageContent=\(spec.pageContentRect.map { String(format: "(%.0f,%.0f,%.0f,%.0f)", $0.minX, $0.minY, $0.width, $0.height) } ?? "-")\n"
+            + "view.frame=\(frame) safeArea=\(safeAreaInsets)"
         let font = UIFont.monospacedSystemFont(ofSize: 9, weight: .medium)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
