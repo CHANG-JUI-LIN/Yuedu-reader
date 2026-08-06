@@ -366,8 +366,12 @@ struct BrowserLayoutRedChamberRegressionTests {
         let batch = PageFragmentation.fragment(box: result.rootBox, pageSize: result.contentSize)
         let batchFirst = try #require(batch.first)
 
+        // The session builds its own pipeline; a fresh adapter avoids any
+        // shared font-registration state between the two paths.
+        let freshAdapter = EPUBBrowserLayoutResourceAdapter(session: session)
+        let freshCSS = await freshAdapter.processedCSS(forChapter: spine)
         let session2 = BrowserLayoutSession(
-            html: html, cssTexts: css, config: config, imageLoader: { _ in nil }, generation: 1
+            html: html, cssTexts: freshCSS, config: config, imageLoader: { _ in nil }, generation: 1
         )
         let incrementalFirst = try await session2.layoutNextPage()
         let incr = try #require(incrementalFirst)

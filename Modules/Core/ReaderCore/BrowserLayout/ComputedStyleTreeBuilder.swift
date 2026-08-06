@@ -208,7 +208,15 @@ private extension ComputedStyle {
 
 private extension ComputedStyleTreeBuilder {
     func cascadeApply(_ declarations: [String: String], to style: inout ComputedStyle, ctx: ApplyContext) {
-        for (key, value) in declarations {
+        // `line-height` percentages resolve against the element's COMPUTED
+        // font-size, and `font-size` in the same block is always computed
+        // first per CSS. Dictionary iteration order is not guaranteed, so
+        // apply font-size explicitly before everything else — otherwise
+        // line-height flips between runs (27.1pt vs 33.3pt on 145%).
+        if let fontSize = declarations["font-size"] {
+            ComputedStylePropertyApplier.apply(key: "font-size", value: fontSize, to: &style, ctx: ctx)
+        }
+        for (key, value) in declarations where key != "font-size" {
             ComputedStylePropertyApplier.apply(key: key, value: value, to: &style, ctx: ctx)
         }
     }
