@@ -522,6 +522,12 @@ enum ComputedStylePropertyApplier {
             guard comps.count == 3 else { return nil }
             return UIColor(red: comps[0]/255, green: comps[1]/255, blue: comps[2]/255, alpha: 1)
         }
+        if raw.hasPrefix("rgba(") {
+            let inner = raw.dropFirst(5).dropLast()
+            let comps = inner.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard comps.count == 4 else { return nil }
+            return UIColor(red: comps[0]/255, green: comps[1]/255, blue: comps[2]/255, alpha: comps[3])
+        }
         switch raw {
         case "black": return .black
         case "white": return .white

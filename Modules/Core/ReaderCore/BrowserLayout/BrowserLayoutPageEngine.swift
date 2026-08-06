@@ -1,4 +1,5 @@
 import Foundation
+import SwiftSoup
 import UIKit
 import YueduCoreText
 
@@ -347,7 +348,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             let images = await resource.prefetchImages(forChapter: spineIndex, html: html)
             guard generation == layoutGeneration else { return }  // stale
 
-            let config = makeBrowserConfig()
+            let fontPolicy = Self.fontScalePolicy(for: html)
+            let config = makeBrowserConfig(fontScalePolicy: fontPolicy)
             let session = BrowserLayoutSession(
                 html: html, cssTexts: css, config: config,
                 imageLoader: { images[$0] }, generation: generation
@@ -429,14 +431,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         rebuildOffsets()
     }
 
-    private func makeBrowserConfig() -> BrowserLayoutConfig {
+    private func makeBrowserConfig(fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable) -> BrowserLayoutConfig {
         // A/B font parity: mirror the legacy builder's base-font resolution
         // (settings.fontPostScriptName when a user font is chosen; the CSS
         // font-family rules then override per element on both engines).
         BrowserLayoutConfig(
             renderWidth: contentWidth,
             renderHeight: contentHeight,
-            rootFontSize: settings.fontSize,
+            rootFontSize: fontScalePolicy.rootFontSize(userSetting: settings.fontSize),
             fontFamilies: settings.fontPostScriptName.map { [$0] } ?? [],
             textColor: themeTextColor,
             backgroundColor: themeBackgroundColor,
@@ -444,6 +446,15 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             lineHeight: settings.lineHeightMultiple,
             fontResolver: resource.fontResolver()
         )
+    }
+
+    /// Chapter font-scale policy from the body inline style
+    /// (`zy-fontsize-adjust: fixed` → fixed; otherwise reader-adjustable).
+    static func fontScalePolicy(for html: String) -> PublicationFontScalePolicy {
+        guard let doc = try? SwiftSoup.parse(html),
+              let body = doc.body() else { return .readerAdjustable }
+        let inline = (try? body.attr("style")) ?? ""
+        return PublicationFontScalePolicy.resolve(bodyInlineStyle: inline)
     }
 
     private func fallbackToLegacy(_ spineIndex: Int, reason: String) async {
