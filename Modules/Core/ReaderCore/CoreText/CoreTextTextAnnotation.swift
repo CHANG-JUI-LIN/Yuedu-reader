@@ -102,6 +102,9 @@ struct CoreTextReplaceSelectionRequest {
 extension Notification.Name {
     static let coreTextUnderlineSelectionRequested = Notification.Name("coreTextUnderlineSelectionRequested")
     static let coreTextReplaceSelectionRequested = Notification.Name("coreTextReplaceSelectionRequested")
+    /// DEBUG: `-open-book <titleSubstring>` launch arg — bookshelf opens the
+    /// first matching book (userInfo["title"]).
+    static let debugOpenBookRequested = Notification.Name("debugOpenBookRequested")
 }
 
 // MARK: - Annotation Edit Result

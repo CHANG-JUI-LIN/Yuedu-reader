@@ -163,4 +163,81 @@ struct BrowserLayoutImageTests {
         }
         #expect(exercised > 0, "expected at least one CTLine to exercise")
     }
+
+    /// Real 画册 DOM fragment (from the 金陵十二钗 chapter): gallery →
+    /// gallery-cell (inline img + maintitle paragraph) → sibling cell. The
+    /// image is a 9:16 portrait (intrinsic 900×1600) sized by `width: 90%` of
+    /// the body content — 352.8×627.2 on a 392pt content. Two 627.2pt cells
+    /// cannot share a page; the second must move to the next page.
+    @Test func realGalleryDOMNoOverlapPerPage() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 900, height: 1600), color: .magenta)
+        let html = """
+        <html><head><style>
+        div.duokan-image-gallery-cell img { margin: 0.35em 0; width: 90%; }
+        p.duokan-image-maintitle { margin: 1em 0 0; font-size: 0.9em; }
+        div.duokan-image-gallery { margin: 0.5em auto; width: 90%; text-align: center; }
+        </style></head><body>
+        <div class="duokan-image-gallery">
+          <div class="duokan-image-gallery-cell"><img src="p1.jpg"/><p class="duokan-image-maintitle">剧照1</p></div>
+          <div class="duokan-image-gallery-cell"><img src="p2.jpg"/><p class="duokan-image-maintitle">剧照2</p></div>
+          <div class="duokan-image-gallery-cell"><img src="p3.jpg"/><p class="duokan-image-maintitle">剧照3</p></div>
+        </div>
+        </body></html>
+        """
+        let (pages, doc) = try await BrowserLayoutTestSupport.layout(
+            html, width: 392, height: 842,
+            imageLoader: { ["p1.jpg": img, "p2.jpg": img, "p3.jpg": img][$0] }
+        )
+        let images = BrowserLayoutTestSupport.allImageFragments(pages)
+        #expect(images.count == 3)
+        // Each image keeps its authored size (90% of 392 → 352.8 wide).
+        for image in images {
+            #expect(abs(image.rect.width - 352.8) < 0.5)
+            #expect(abs(image.rect.height - 627.2) < 1.0)
+        }
+        // Horizontal placement: gallery is 90% auto-centered; the image equals
+        // the cell width (90% of body), so its left edge sits AT the cell
+        // origin — NOT double-centered (previous bug: line maxWidth used the
+        // body width → extra ~19.6 slack). Tolerance covers the body-margin
+        // percentBase rounding (~0.8pt).
+        let first = try #require(images.first)
+        #expect(abs(first.rect.minX - 19.6) < 1.5)
+        // Critical: no two images overlap on the same page. Images are page-
+        // local; compare within each page via documentRect.
+        for page in pages {
+            let pageImages = page.fragments.compactMap { frag -> ImageFragment? in
+                if case .image(let i) = frag { return i }
+                return nil
+            }
+            for pair in zip(pageImages, pageImages.dropFirst()) {
+                let a = pair.0.documentRect.rawValue
+                let b = pair.1.documentRect.rawValue
+                #expect(b.minY >= a.maxY - 0.01,
+                        "images overlap on page \(page.index): a=\(a) b=\(b)")
+            }
+        }
+        // Cell 1 image is the first page's only big image (its bottom + caption
+        // may exceed the page, so cell 2 starts on the next page).
+        #expect(first.rect.minY >= 0)
+        #expect(first.rect.maxY <= 842.01)
+    }
+
+    /// 章名 text-align:center inside a fixed-width box (k1): the line's
+    /// maxWidth must be the BOX width, not the body width — otherwise the
+    /// centered line drifts right by half the box-margin slack.
+    @Test func chapterTitleCentersWithinFixedWidthBox() async throws {
+        let html = """
+        <html><head><style>
+        div.k1 { width: 255px; text-align: center; }
+        </style></head><body>
+        <div class="k1"><p>第一回</p></div>
+        </body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(html, width: 392, height: 842)
+        let texts = BrowserLayoutTestSupport.allTextFragments(pages)
+        let first = try #require(texts.first)
+        // Text (3 CJK chars ≈ 63pt at 21pt) centered in the 255pt box:
+        // the box itself sits at x=0 (no margin) — left edge ≈ (255-63)/2.
+        #expect(abs(first.rect.minX - (255 - first.rect.width) / 2) < 2.0)
+    }
 }

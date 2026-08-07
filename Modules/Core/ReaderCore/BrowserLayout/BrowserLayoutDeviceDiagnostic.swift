@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import UIKit
 
 /// On-device coordinate diagnostics for the browser-layout engine.
@@ -73,16 +74,24 @@ enum BrowserLayoutDeviceDiagnostic {
         let tid = traceID(for: spine, generation: generation)
         let thread = Thread.isMainThread ? "main" : "bg"
         let pagePart = page >= 0 ? " page=\(page)" : ""
-        print("\(prefix) trace=\(tid) gen=\(generation) spine=\(spine)\(pagePart) thread=\(thread) \(message)")
+        Self.logger.log("\(prefix) trace=\(tid) gen=\(generation) spine=\(spine)\(pagePart) thread=\(thread) \(message)")
         #endif
     }
 
     /// Unthrottled one-liner (summary for non-target pages).
     static func summary(_ message: String) {
         #if DEBUG
-        print("\(prefix) \(message)")
+        Self.logger.log("\(prefix) \(message)")
         #endif
     }
+
+    /// os_log destination: visible in Xcode Console, `log stream` and
+    /// `simctl spawn log show` on simulator AND device — the previous `print`
+    /// only reached an attached Xcode console.
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "yuedu",
+        category: "browser-layout-device"
+    )
 
     /// Format a CGRect with its coordinate space, so a bare rect is never
     /// logged without context.

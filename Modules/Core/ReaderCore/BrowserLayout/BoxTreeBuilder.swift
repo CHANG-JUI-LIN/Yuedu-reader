@@ -37,8 +37,9 @@ enum BoxTreeBuilder {
     ) -> BlockBox {
         var boxCount = 0
         let box = buildBlockInternal(
-            for: node, config: config, sourceText: &sourceText,
-            anchors: &anchors, imageLoader: imageLoader, boxCount: &boxCount
+            for: node, config: config, containerWidth: config.renderWidth,
+            sourceText: &sourceText, anchors: &anchors,
+            imageLoader: imageLoader, boxCount: &boxCount
         )
         Self.linkParents(box)
         return box
@@ -55,6 +56,7 @@ enum BoxTreeBuilder {
     private static func buildBlockInternal(
         for node: ComputedStyleNode,
         config: BrowserLayoutConfig,
+        containerWidth: CGFloat,
         sourceText: inout SourceTextBuilder,
         anchors: inout [String: Int],
         imageLoader: (String) -> UIImage?,
@@ -87,8 +89,9 @@ enum BoxTreeBuilder {
                 } else if elementNode.tag == "img" {
                     if elementNode.style.display == .block {
                         flushGroup(&pendingInline, style: node.style, config: config,
+                                   containerWidth: containerWidth,
                                    sourceText: &sourceText, into: &kids)
-                        let attachment = makeBlockImage(for: elementNode, config: config, imageLoader: imageLoader)
+                        let attachment = makeBlockImage(for: elementNode, config: config, containerWidth: containerWidth, imageLoader: imageLoader)
                         let box = BlockBox(style: elementNode.style, boxType: .block)
                         box.imageAttachment = attachment
                         Self.attachDebugIdentity(box, node: elementNode)
@@ -99,9 +102,14 @@ enum BoxTreeBuilder {
                     }
                 } else if elementNode.style.display == .block {
                     flushGroup(&pendingInline, style: node.style, config: config,
+                               containerWidth: containerWidth,
                                sourceText: &sourceText, into: &kids)
+                    let childContainer = Self.childContainerWidth(
+                        of: elementNode, parentWidth: containerWidth, config: config
+                    )
                     kids.append(buildBlockInternal(
                         for: elementNode, config: config,
+                        containerWidth: childContainer,
                         sourceText: &sourceText, anchors: &anchors, imageLoader: imageLoader,
                         boxCount: &boxCount
                     ))
@@ -120,11 +128,28 @@ enum BoxTreeBuilder {
         let box = BlockBox(style: node.style, boxType: .block, children: kids)
         Self.attachDebugIdentity(box, node: node)
         if !pendingInline.isEmpty {
-            if let lines = layoutRuns(pendingInline, style: node.style, config: config, sourceText: &sourceText) {
+            if let lines = layoutRuns(pendingInline, style: node.style, config: config,
+                                      containerWidth: containerWidth, sourceText: &sourceText) {
                 box.lines = lines
             }
         }
         return box
+    }
+
+    /// The containing-block inline size for THIS node's children: the node's
+    /// resolved width when non-auto, else the parent width. Percent widths
+    /// resolve against the parent width (CSS 2.1 §10.3).
+    private static func childContainerWidth(
+        of node: ComputedStyleNode,
+        parentWidth: CGFloat,
+        config: BrowserLayoutConfig
+    ) -> CGFloat {
+        let ctx = LayoutContext(rootFontSize: config.rootFontSize, percentBase: parentWidth)
+        let resolved = CSSLengthResolver.resolve(node.style.width, emBase: node.style.fontSize, remBase: config.rootFontSize, percentBase: parentWidth)
+        guard case .auto = node.style.width, resolved == nil else {
+            return min(max(resolved ?? parentWidth, 0), parentWidth)
+        }
+        return parentWidth
     }
 
     // MARK: - Inline gathering
@@ -218,6 +243,13 @@ enum BoxTreeBuilder {
         let src = (node.element.flatMap { try? $0.attr("src") }) ?? ""
         let image = imageLoader(src)
         let intrinsic = image?.size ?? .zero
+        // NOTE: the image's containing block for % widths stays the BODY
+        // content width (config.renderWidth) — the 画册 CSS sizes images with
+        // `width: 90%` against the body, and the reader contract treats that
+        // 352.8pt image as the reference size. The PARAGRAPH's line-box
+        // maxWidth (passed to layoutRuns) is the narrower containing box, so
+        // centering resolves against the actual cell width — the image equals
+        // the cell width and centers at the cell origin.
         let usedSize = BlockLayout.resolveReplacedSize(
             intrinsic: intrinsic,
             style: node.style,
@@ -236,6 +268,7 @@ enum BoxTreeBuilder {
     private static func makeBlockImage(
         for node: ComputedStyleNode,
         config: BrowserLayoutConfig,
+        containerWidth: CGFloat,
         imageLoader: (String) -> UIImage?
     ) -> AtomicInline? {
         let src = (node.element.flatMap { try? $0.attr("src") }) ?? ""
@@ -257,10 +290,12 @@ enum BoxTreeBuilder {
         _ runs: inout [InlineRun],
         style: ComputedStyle,
         config: BrowserLayoutConfig,
+        containerWidth: CGFloat,
         sourceText: inout SourceTextBuilder,
         into kids: inout [BlockBox]
     ) {
-        guard let lines = layoutRuns(runs, style: style, config: config, sourceText: &sourceText) else {
+        guard let lines = layoutRuns(runs, style: style, config: config,
+                                     containerWidth: containerWidth, sourceText: &sourceText) else {
             runs = []
             return
         }
@@ -276,6 +311,7 @@ enum BoxTreeBuilder {
         _ runs: [InlineRun],
         style: ComputedStyle,
         config: BrowserLayoutConfig,
+        containerWidth: CGFloat,
         sourceText: inout SourceTextBuilder
     ) -> [LayoutLine]? {
         var visible = runs
@@ -288,7 +324,7 @@ enum BoxTreeBuilder {
         guard !visible.isEmpty else { return nil }
         return InlineLayout.layoutLines(
             runs: visible,
-            maxWidth: config.renderWidth,
+            maxWidth: containerWidth,
             rootFontSize: config.rootFontSize,
             lineHeight: style.lineHeight,
             sourceText: sourceText.text,

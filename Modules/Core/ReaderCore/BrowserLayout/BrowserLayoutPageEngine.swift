@@ -338,6 +338,19 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         self.renderSize = renderSize
         await delegate.start(renderSize: renderSize, bookId: bookId)
         await preloadChapter(at: 0)
+        #if DEBUG
+        // Diagnostics hook: `-warmup-chapters <N>` preloads chapters 0..<N at
+        // launch so a run covers gallery/album chapters without manual page
+        // turns (debug-only).
+        let args = ProcessInfo.processInfo.arguments
+        if let idx = args.firstIndex(of: "-warmup-chapters"),
+           args.indices.contains(idx + 1),
+           let n = Int(args[idx + 1]) {
+            for spine in 1..<min(n, resource.chapterCount) {
+                await preloadChapter(at: spine)
+            }
+        }
+        #endif
     }
 
     func preloadChapter(at spineIndex: Int) async {
@@ -404,8 +417,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             .engineDecision(spine: spineIndex, generation: layoutGeneration),
             spine: spineIndex, generation: layoutGeneration,
             message: "engineDecision mode=\(mode) scanSupported=\(scan.supported) "
-                + "unsupported=\(scan.unsupportedFeatures.map(\.description)) choice=\(decision.debugLabel) "
-                + "actualEngine=\(isBrowser ? "browser" : "legacy")"
+                + "unsupported=\(scan.unsupportedFeatures.map(\.description)) "
+                + "selectedEngine=\(decision.debugLabel) effectiveEngine=\(isBrowser ? "browser" : "legacy") "
+                + "fallbackReason=\(isBrowser ? "none" : scan.unsupportedFeatures.map(\.description).joined(separator: ","))"
         )
         if case .legacyFallback(let reasons) = decision {
             BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackReason=\(reasons.map(\.description).joined(separator: ",")) spine=\(spineIndex)")
@@ -549,11 +563,26 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     private func fallbackToLegacy(_ spineIndex: Int, reason: BrowserFallbackReason) async {
+        // browserForced (DEBUG diagnostics): NEVER silently fall back. The
+        // browser engine's own output — possibly an empty/unsupported page —
+        // stays active so the overlay can show FORCED UNSUPPORTED. This keeps
+        // the device log unambiguous about which renderer actually drew the
+        // page; only browserAuto may hand a chapter to the legacy engine.
+        if BrowserLayoutFeature.mode == .browserForced {
+            engineStatus[spineIndex] = "forced-unsupported: \(reason.description)"
+            BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) forcedNoFallback spine=\(spineIndex) reason=\(reason.description) effectiveEngine=browser")
+            return
+        }
         choices[spineIndex] = .legacyEngineFailure(reason)
         engineStatus[spineIndex] = "legacy: engineFailure \(reason.description)"
         BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacy spine=\(spineIndex) reason=\(reason.description)")
         await delegate.preloadChapter(at: spineIndex)
-        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacyDone spine=\(spineIndex) delegatePages=\(delegate.lastPageIndex(ofChapter: spineIndex).map(String.init) ?? "nil")")
+        // lastPageIndex(ofChapter:) returns a GLOBAL page index (spine offset +
+        // local count); the chapter-local count is what matters for offsets —
+        // log it explicitly so the device log is unambiguous.
+        let localCount = delegate.lastPageIndex(ofChapter: spineIndex)
+            .map { $0 - delegate.pageIndex(forSpine: spineIndex, charOffset: 0) + 1 }
+        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacyDone spine=\(spineIndex) delegatePages=\(localCount.map(String.init) ?? "nil") (chapter-local)")
     }
 
     func invalidateLayout(newSize: CGSize) async {
@@ -810,7 +839,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             let spec = BrowserLayoutPageView.DebugSpec(
                 commitSHA: Self.currentCommitSHA,
                 engineMode: modeLabel,
-                fallbackReason: engineStatus[spine].flatMap { $0.hasPrefix("legacy") ? $0 : nil },
+                fallbackReason: engineStatus[spine].flatMap {
+                    $0.hasPrefix("legacy") ? $0 : ($0.hasPrefix("forced-unsupported") ? "FORCED UNSUPPORTED" : nil)
+                },
                 k1PageLocalRect: k1Rect,
                 traceID: BrowserLayoutDeviceDiagnostic.traceID(for: spine, generation: layoutGeneration),
                 spine: spine,

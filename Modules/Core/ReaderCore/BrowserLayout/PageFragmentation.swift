@@ -284,6 +284,24 @@ struct PageWalker {
                             width: atomic.usedSize.width,
                             height: atomic.usedSize.height
                         ))
+                        #if DEBUG
+                        // Gallery pagination diagnostics (画册 regression): the
+                        // real DOM chain — documentY, line box, containing box
+                        // frame, sibling offset, before pagination.
+                        let cell = stack[index]
+                        let walkLine = "\(BrowserLayoutDeviceDiagnostic.prefix) galleryImageWalk "
+                            + "docY=\(String(format: "%.2f", rect.minY)) "
+                            + "lineH=\(String(format: "%.2f", line.height)) "
+                            + "lineTop=\(String(format: "%.2f", line.top)) "
+                            + "contentX=\(String(format: "%.2f", line.contentX)) "
+                            + "runX=\(String(format: "%.2f", run.x)) "
+                            + "cellFrame=\(BrowserLayoutDeviceDiagnostic.rect(cell.box.frame.rawValue, space: "parentLocal")) "
+                            + "cellContentOrigin=\(cell.contentOrigin.x), \(cell.contentOrigin.y) "
+                            + "parentFrame=\(stack.count > 1 ? BrowserLayoutDeviceDiagnostic.rect(stack[stack.count-2].box.frame.rawValue, space: "parentLocal") : "none") "
+                            + "atomicSize=\(atomic.usedSize.width)x\(atomic.usedSize.height)"
+                        BrowserLayoutDeviceDiagnostic.summary(walkLine)
+                        FileHandle.standardError.write((walkLine + "\n").data(using: .utf8)!)
+                        #endif
                         return .image(StepImage(
                             source: atomic.source,
                             image: atomic.image,
@@ -490,6 +508,17 @@ struct PageWalker {
                 height: newH
             )
         }
+        #if DEBUG
+        BrowserLayoutDeviceDiagnostic.summary(
+            "\(BrowserLayoutDeviceDiagnostic.prefix) galleryImagePlace "
+            + "origDocY=\(String(format: "%.2f", step.rect.minY)) "
+            + "adjustedDocY=\(String(format: "%.2f", adjustedDocY)) "
+            + "assignedPage=\(target) "
+            + "imageH=\(String(format: "%.2f", step.rect.height)) "
+            + "pageH=\(String(format: "%.2f", pageHeight)) "
+            + "contentW=\(String(format: "%.2f", max(1, pageRect.width - contentInsets.left - contentInsets.right)))"
+        )
+        #endif
         let flushed = advanceToPage(target)
         let adjustedDoc = DocumentRect(rawValue: adjustedDocRect)
         let canvas = canvasRect(forDocument: adjustedDoc, pageIndex: currentIndex)

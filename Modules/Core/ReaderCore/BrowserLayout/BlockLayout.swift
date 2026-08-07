@@ -110,12 +110,19 @@ enum BlockLayout {
             // block-end margin (the box's content extent excludes it).
             cursorBlock -= last
         }
+        // A line box may start ABOVE the block's content top (a tall inline
+        // image's top strip overflows upward by its descent). The block's
+        // content extent must therefore cover [minLineTop, lineBottom] — i.e.
+        // flow position = last line-box bottom, PLUS the negative top offset
+        // of the highest line box (CSS 2.1 §10.8: the line box is sized to
+        // contain its inline boxes; a block containing such a line must not
+        // report a content height smaller than the image).
+        var minLineTop: CGFloat = 0
         for line in box.lines {
-            // Flow resumes at the line-box BOTTOM (top + height), not at
-            // height — a line box pushed up by a tall inline image (top < 0
-            // relative to the flow) would otherwise leave a gap above it.
-            cursorBlock = line.top + line.height
+            cursorBlock = max(cursorBlock, line.top + line.height)
+            minLineTop = min(minLineTop, line.top)
         }
+        if minLineTop < 0 { cursorBlock -= minLineTop }
 
         // Block-level replaced element (image): its content box IS the image.
         if let attachment = box.imageAttachment {
