@@ -192,6 +192,62 @@ final class BookSourceDebugEngine: ObservableObject {
         }
     }
 
+    /// 一鍵全流程 (調試源): runs search → book detail → TOC → first chapter content
+    /// back to back, mirroring Legado's `BookSourceDebugActivity` auto-chain, and logs
+    /// every stage (including the parser's raw-data events) in one stream.
+    func runFullPipeline(keyword: String) async {
+        guard !keyword.trimmingCharacters(in: .whitespaces).isEmpty else {
+            appendLog(.warning, step: "全流程", summary: "關鍵字不能為空")
+            return
+        }
+        logs.removeAll()
+        isRunning = true
+        defer {
+            isRunning = false
+            bridge.debugObserver = nil
+        }
+
+        attachObserver(stage: "流程")
+        let t0 = Date()
+        appendLog(.info, step: "搜索", summary: "關鍵字: \(keyword)，頁碼: 1")
+        do {
+            let books = try await bridge.searchBooks(keyword: keyword, page: 1)
+            if books.isEmpty {
+                appendLog(.warning, step: "搜索結果", summary: "無結果，流程中止")
+                return
+            }
+            appendLog(.success, step: "搜索結果", summary: "共 \(books.count) 本書，取第一本")
+            let book = books[0]
+            appendLog(.pipeline, step: "流程", summary: "→ 詳情頁: \(book.bookUrl)")
+
+            let info = try await bridge.getBookInfo(url: book.bookUrl)
+            appendLog(.success, step: "書籍詳情", summary: "《\(info.name)》 \(info.author)")
+            appendLog(.pipeline, step: "流程", summary: "→ 目錄頁: \(info.tocUrl)")
+
+            let chapters = try await bridge.getChapterList(url: info.tocUrl)
+            if chapters.isEmpty {
+                appendLog(.warning, step: "目錄結果", summary: "無章節，流程中止")
+                return
+            }
+            appendLog(.success, step: "目錄結果", summary: "共 \(chapters.count) 章，取第一章")
+            let first = chapters[0]
+            appendLog(.pipeline, step: "流程", summary: "→ 正文: \(first.title)")
+
+            let content = try await bridge.getContent(url: first.url)
+            if content.isEmpty {
+                appendLog(.warning, step: "正文結果", summary: "空內容，流程中止")
+            } else {
+                appendLog(.success, step: "正文結果",
+                          summary: "\(content.count) 字符",
+                          detail: String(content.prefix(500)))
+            }
+            let elapsed = String(format: "%.2fs", Date().timeIntervalSince(t0))
+            appendLog(.success, step: "全流程", summary: "完成（\(elapsed)）")
+        } catch {
+            appendLog(.error, step: "全流程失敗", summary: error.localizedDescription)
+        }
+    }
+
     func clear() {
         logs.removeAll()
     }

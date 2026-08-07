@@ -336,6 +336,47 @@ class BookSourceStore: ObservableObject {
         sources.filter { $0.enabled }
     }
 
+    /// 按域名分組 (Legado's menu action): rewrites every source's `bookSourceGroup`
+    /// to the host of its `bookSourceUrl`, so imported packs sort themselves by site.
+    /// Group membership is source content, so this advances the sync clock (same
+    /// contract as `setGroup`). Returns how many sources changed group.
+    @discardableResult
+    func groupByDomain() -> Int {
+        let now = Self.currentMillis()
+        var changed = 0
+        for idx in sources.indices {
+            let domain = Self.domain(of: sources[idx].bookSourceUrl)
+            guard sources[idx].bookSourceGroup != domain else { continue }
+            sources[idx].bookSourceGroup = domain
+            sources[idx].lastUpdateTime = now
+            changed += 1
+        }
+        if changed > 0 { save() }
+        return changed
+    }
+
+    /// The domain used by 按域名分組: the URL host when one exists; for non-URL rules
+    /// (`@js:`, relative paths, …) the authority-ish segment after `://`; otherwise
+    /// 無域名 (Legado's 无域名 fallback for URLs without a scheme).
+    static func domain(of url: String) -> String {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        if let host = URLComponents(string: trimmed)?.host, !host.isEmpty {
+            return host
+        }
+        if let schemeRange = trimmed.range(of: "://") {
+            let afterScheme = trimmed[schemeRange.upperBound...]
+            if let slash = afterScheme.firstIndex(of: "/") {
+                return String(afterScheme[..<slash])
+            }
+            if let colon = afterScheme.firstIndex(of: ":") {
+                return String(afterScheme[..<colon])
+            }
+            return String(afterScheme)
+        }
+        return "無域名"
+    }
+
     // MARK: Import (Legado Compatible)
 
     /// Import from raw Data, using the file extension to choose the right parser.
@@ -363,42 +404,47 @@ class BookSourceStore: ObservableObject {
         guard let data = json.data(using: .utf8) else {
             throw ImportError.invalidData
         }
+        if let imported = Self.parseSources(json) {
+            return try importSources(imported)
+        }
+        // Produce useful diagnostic messages
         let decoder = JSONDecoder()
-        var imported: [BookSource] = []
+        let detail: String
+        do {
+            _ = try decoder.decode([BookSource].self, from: data)
+            detail = ""
+        } catch let DecodingError.typeMismatch(type, ctx) {
+            detail = "Type mismatch: expected \(type), path: \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+        } catch let DecodingError.keyNotFound(key, ctx) {
+            detail = "Missing key: \(key.stringValue), path: \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+        } catch let DecodingError.dataCorrupted(ctx) {
+            detail = "Data corrupted: \(ctx.debugDescription)"
+        } catch {
+            detail = error.localizedDescription
+        }
+        throw ImportError.parseErrorDetail(detail)
+    }
 
-        // Try array format [...]
+    /// Parses Legado book-source JSON (single `{}`, array `[]`, or `{"bookSources":[...]}`
+    /// backup format) WITHOUT touching the store. Returns nil when nothing decodes.
+    /// Single parse path shared by 本地導入 / 粘貼源 / deep links — importers should
+    /// never re-implement their own decoder.
+    static func parseSources(_ json: String) -> [BookSource]? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        let decoder = JSONDecoder()
         if let arr = try? decoder.decode([BookSource].self, from: data) {
-            imported = arr
+            return arr
         }
-        // Try single object {...}
-        else if let single = try? decoder.decode(BookSource.self, from: data) {
-            imported = [single]
+        if let single = try? decoder.decode(BookSource.self, from: data) {
+            return [single]
         }
-        // Try Legado App backup format (bookSources field)
-        else if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let raw = dict["bookSources"] {
-            let subData = try JSONSerialization.data(withJSONObject: raw)
-            imported = (try? decoder.decode([BookSource].self, from: subData)) ?? []
+        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let raw = dict["bookSources"],
+           let subData = try? JSONSerialization.data(withJSONObject: raw),
+           let arr = try? decoder.decode([BookSource].self, from: subData) {
+            return arr
         }
-        else {
-            // Produce useful diagnostic messages
-            let detail: String
-            do {
-                _ = try decoder.decode([BookSource].self, from: data)
-                detail = ""
-            } catch let DecodingError.typeMismatch(type, ctx) {
-                detail = "Type mismatch: expected \(type), path: \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
-            } catch let DecodingError.keyNotFound(key, ctx) {
-                detail = "Missing key: \(key.stringValue), path: \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
-            } catch let DecodingError.dataCorrupted(ctx) {
-                detail = "Data corrupted: \(ctx.debugDescription)"
-            } catch {
-                detail = error.localizedDescription
-            }
-            throw ImportError.parseErrorDetail(detail)
-        }
-
-        return try importSources(imported)
+        return nil
     }
 
     // MARK: Private: Merge Book Sources

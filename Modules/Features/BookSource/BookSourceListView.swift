@@ -41,6 +41,7 @@ struct BookSourceListView: View {
     @State private var showCheckOptions = false
     @State private var pendingCheckSources: [BookSource] = []
     @State private var pendingStartPolicy: BookSourceCheckPolicy? = nil
+    @State private var showGroupByDomainConfirm = false
     // Shared instance so a check keeps running in the background after this screen is dismissed.
     @ObservedObject private var healthChecker = BookSourceHealthChecker.shared
     @State private var checkToast: String? = nil
@@ -291,6 +292,17 @@ struct BookSourceListView: View {
                         } label: {
                             Label(localized("書源驗證"), systemImage: "stethoscope")
                         }
+                        Divider()
+                        Button {
+                            showGroupByDomainConfirm = true
+                        } label: {
+                            Label(localized("按域名分組"), systemImage: "globe")
+                        }
+                        Button {
+                            pasteFromClipboard()
+                        } label: {
+                            Label(localized("粘貼源"), systemImage: "doc.on.clipboard")
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -403,6 +415,21 @@ struct BookSourceListView: View {
             }
             .sheet(isPresented: $showSourceCheck) {
                 BookSourceCheckView(checker: healthChecker)
+            }
+            .alert(
+                localized("按域名分組"),
+                isPresented: $showGroupByDomainConfirm
+            ) {
+                Button(localized("取消"), role: .cancel) {}
+                Button(localized("確定")) {
+                    let changed = store.groupByDomain()
+                    withAnimation {
+                        importSuccess =
+                            localized("已按域名分組") + " \(changed) " + localized("個書源")
+                    }
+                }
+            } message: {
+                Text(localized("按域名分組將覆蓋現有分組，確定繼續？"))
             }
             .alert(localized("確認刪除"), isPresented: $showDeleteConfirm) {
                 Button(localized("取消"), role: .cancel) {}
@@ -1614,6 +1641,28 @@ struct BookSourceListView: View {
                 doImport(text)
             }
         }.resume()
+    }
+
+    /// 粘貼源: imports the clipboard's book-source JSON (or fetches it when the
+    /// clipboard holds a URL), through the same single import path as 本地導入.
+    private func pasteFromClipboard() {
+        guard let text = UIPasteboard.general.string,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            withAnimation { importError = localized("剪貼簿為空") }
+            return
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            importURLString = trimmed
+            doNetworkImport()
+            return
+        }
+        do {
+            let count = try store.importFromJSON(trimmed)
+            withAnimation { importSuccess = localized("成功匯入") + " \(count) " + localized("個書源") }
+        } catch {
+            withAnimation { importError = error.localizedDescription }
+        }
     }
 
     // MARK: - Utilities

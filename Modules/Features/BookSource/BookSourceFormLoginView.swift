@@ -20,6 +20,7 @@ struct BookSourceFormLoginView: View {
     // as Legado so the first render never presents an empty form as if it were ready.
     @State private var isLoading = true
     @State private var showFanqieLogin = false
+    @State private var showLog = false
     @State private var canRetryLoginUi = false
     /// What a menu button's run reported when the source itself said nothing.
     /// Alert only, never the inline error Section: that Section sits below the whole
@@ -36,8 +37,11 @@ struct BookSourceFormLoginView: View {
 
     var body: some View {
         NavigationStack {
+            // Form with the original SwiftUI row components (TextField/SecureField
+            // trailing rows, Picker, Toggle, Button), laid out stacked full-width —
+            // Legado's login dialog starts the fields directly, without a section header.
             Form {
-                Section(header: Text(localized("請填入登入資訊"))) {
+                Section {
                     ForEach(fields) { field in
                         switch field.type {
                         case .text:
@@ -59,16 +63,7 @@ struct BookSourceFormLoginView: View {
                         case .select:
                             selectRow(field: field)
                         case .toggle:
-                            if let chars = LoginToggleChars(options: field.options) {
-                                Toggle(isOn: toggleBinding(for: field, chars: chars)) {
-                                    Text(field.name).foregroundColor(DSColor.textSecondary)
-                                }
-                                .tint(DSColor.accent)
-                            } else {
-                                // `chars` that isn't a two-state pair can't be a switch —
-                                // show the choices instead of guessing which one means on.
-                                selectRow(field: field)
-                            }
+                            toggleRow(field: field)
                         case .button:
                             Button(field.name) {
                                 handleButton(field: field)
@@ -90,10 +85,9 @@ struct BookSourceFormLoginView: View {
                     }
                     .interfaceSectionSurface()
                 }
-
             }
             .disabled(isLoading)
-            .navigationTitle(source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName)
+            .navigationTitle(loginTitle)
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
             .toolbar {
@@ -129,9 +123,35 @@ struct BookSourceFormLoginView: View {
                         .accessibilityLabel(localized("完成"))
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            showLoginHeader()
+                        } label: {
+                            Label(localized("查看登录头"), systemImage: "key.horizontal")
+                        }
+                        Button {
+                            deleteLoginHeader()
+                        } label: {
+                            Label(localized("删除登录头"), systemImage: "trash")
+                        }
+                        Divider()
+                        Button {
+                            showLog = true
+                        } label: {
+                            Label(localized("日志"), systemImage: "doc.text")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel(localized("更多"))
+                }
             }
         }
         .onAppear { loadUI() }
+        .sheet(isPresented: $showLog) {
+            BookSourceDebugView()
+        }
         .alert(
             menuAlert?.title ?? "",
             isPresented: Binding(
@@ -163,6 +183,12 @@ struct BookSourceFormLoginView: View {
         }
     }
 
+    /// Legado's `login_source` title format: 「登入：源名稱」.
+    private var loginTitle: String {
+        let name = source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName
+        return String(format: localized("登入：%@"), name)
+    }
+
     // MARK: - Rows
 
     @ViewBuilder
@@ -186,6 +212,40 @@ struct BookSourceFormLoginView: View {
                 .tint(DSColor.accent)
             }
         }
+    }
+
+    @ViewBuilder
+    private func toggleRow(field: LoginUIField) -> some View {
+        if let chars = LoginToggleChars(options: field.options) {
+            Toggle(isOn: toggleBinding(for: field, chars: chars)) {
+                Text(field.name).foregroundColor(DSColor.textSecondary)
+            }
+            .tint(DSColor.accent)
+        } else {
+            // `chars` that isn't a two-state pair can't be a switch —
+            // show the choices instead of guessing which one means on.
+            selectRow(field: field)
+        }
+    }
+
+    // MARK: - 更多 menu (Legado menu_show_login_header / menu_del_login_header / menu_log)
+
+    private func showLoginHeader() {
+        let header = LoginManager.shared.getLoginHeader(sourceUrl: source.bookSourceUrl)
+        menuAlert = MenuActionAlert(
+            title: localized("登录头"),
+            detail: header?.isEmpty != false
+                ? localized("未設置登录头")
+                : header ?? localized("未設置登录头")
+        )
+    }
+
+    private func deleteLoginHeader() {
+        LoginManager.shared.removeLoginHeader(sourceUrl: source.bookSourceUrl)
+        menuAlert = MenuActionAlert(
+            title: localized("完成"),
+            detail: localized("已刪除登录头")
+        )
     }
 
     // MARK: - Setup
@@ -903,7 +963,6 @@ struct LoginUIField: Identifiable {
     let action: String?
     let options: [String]
     let defaultValue: String?
-
     enum FieldType: String { case text, password, select, button, toggle }
 
     static func parse(from json: String) -> [LoginUIField] {

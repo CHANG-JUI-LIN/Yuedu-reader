@@ -1252,6 +1252,11 @@ class GlobalSettings: ObservableObject {
     @Published var bookSourceListGrouped: Bool {
         didSet { UserDefaults.standard.set(bookSourceListGrouped, forKey: "yd_booksource_list_grouped") }
     }
+    /// 儲存書源時是否自動補全簡寫規則（Legado 的「自動補全」選單項）。Off by default,
+    /// matching Legado: only authors who opt in get `a` completed to `a@text` etc.
+    @Published var bookSourceAutoComplete: Bool {
+        didSet { UserDefaults.standard.set(bookSourceAutoComplete, forKey: "yd_booksource_auto_complete") }
+    }
 
     /// The currently active TTS source, derived from matching `httpTtsUrlTemplate` against imported sources.
     var activeTTSSource: ImportedTTSSource? {
@@ -1639,6 +1644,8 @@ class GlobalSettings: ObservableObject {
         sourceDisclaimerAccepted = UserDefaults.standard.bool(forKey: "yd_source_disclaimer_accepted")
         bookSourceListGrouped =
             (UserDefaults.standard.object(forKey: "yd_booksource_list_grouped") as? Bool) ?? true
+        bookSourceAutoComplete =
+            (UserDefaults.standard.object(forKey: "yd_booksource_auto_complete") as? Bool) ?? false
     }
 
     func selectCommentBubbleBuiltinStyle() {

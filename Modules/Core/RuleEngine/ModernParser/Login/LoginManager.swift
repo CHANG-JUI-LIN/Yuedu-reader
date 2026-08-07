@@ -543,6 +543,18 @@ final class LoginManager {
         markLoginInfoChanged(sourceUrl: sourceUrl)
     }
 
+    /// Removes only the stored login header payload for a source, keeping the
+    /// credentials (Legado `source.removeLoginHeader()` — the 删除登录头 menu item).
+    func removeLoginHeader(sourceUrl: String) {
+        queue.sync(flags: .barrier) {
+            headerCache.removeValue(forKey: sourceUrl)
+            defaults.removeObject(
+                forKey: LoginManager.loginHeaderPrefix + sourceUrl
+            )
+        }
+        markLoginInfoChanged(sourceUrl: sourceUrl)
+    }
+
     /// Apply stored login headers to a URLRequest.
     func applyLoginHeaders(to request: inout URLRequest, sourceUrl: String) {
         let headers = getLoginHeaders(sourceUrl: sourceUrl)

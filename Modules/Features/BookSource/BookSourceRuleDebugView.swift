@@ -21,6 +21,7 @@ struct BookSourceRuleDebugView: View {
         case detail  = "詳情"
         case toc     = "目錄"
         case content = "正文"
+        case fullPipeline = "全流程"
         var id: String { rawValue }
     }
 
@@ -46,12 +47,17 @@ struct BookSourceRuleDebugView: View {
 
                 // Input area
                 VStack(spacing: 8) {
-                    if selectedTab == .search {
+                    if selectedTab == .search || selectedTab == .fullPipeline {
                         HStack {
-                            TextField(localized("搜索關鍵字"), text: $keyword)
-                                .textFieldStyle(.roundedBorder)
-                            Stepper("P\(page)", value: $page, in: 1...999)
-                                .fixedSize()
+                            TextField(
+                                selectedTab == .fullPipeline ? localized("全流程：輸入關鍵字，依序跑搜索→詳情→目錄→正文") : localized("搜索關鍵字"),
+                                text: $keyword
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            if selectedTab == .search {
+                                Stepper("P\(page)", value: $page, in: 1...999)
+                                    .fixedSize()
+                            }
                         }
                     } else {
                         TextField(localized("URL"), text: $inputURL)
@@ -134,6 +140,7 @@ struct BookSourceRuleDebugView: View {
         case .detail:  await engine.runBookInfo(url: inputURL)
         case .toc:     await engine.runTOC(url: inputURL)
         case .content: await engine.runContent(url: inputURL)
+        case .fullPipeline: await engine.runFullPipeline(keyword: keyword)
         }
     }
 }

@@ -20,21 +20,19 @@ struct BookSourceLoginWebView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HStack(spacing: 8) {
-                    Image(systemName: "key.fill")
-                        .foregroundColor(DSColor.accent)
-                    Text(localized("請在下方完成登入。登入成功後點「完成」，Cookie 將自動儲存供書源使用。"))
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.textSecondary)
-                    Spacer()
-                }
-                .padding()
-                .background(DSColor.accent.opacity(0.06))
-
                 BookSourceLoginWebViewRepresentable(source: source, bridge: bridge)
                     .edgesIgnoringSafeArea(.bottom)
+                    .overlay(alignment: .top) {
+                        // md3's `LinearProgressIndicator` — visible while the page loads.
+                        if bridge.progress > 0 && bridge.progress < 1 {
+                            ProgressView(value: bridge.progress)
+                                .progressViewStyle(.linear)
+                                .tint(DSColor.accent)
+                                .transition(.opacity)
+                        }
+                    }
             }
-            .navigationTitle(localized("Cookie 驗證登入"))
+            .navigationTitle(loginTitle)
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -62,16 +60,25 @@ struct BookSourceLoginWebView: View {
             }
         }
     }
+
+    /// Same 「登入：源名稱」 title format as the form login sheet.
+    private var loginTitle: String {
+        let name = source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName
+        return String(format: localized("登入：%@"), name)
+    }
 }
 
 // MARK: - LoginWebBridge
 
 /// Reference-type bridge that lets the SwiftUI "Done" button trigger the WKWebView's
-/// cookie extraction inside the UIKit Coordinator.
+/// cookie extraction inside the UIKit Coordinator, and publishes the page-load
+/// progress for the top linear indicator (md3's LinearProgressIndicator).
 final class LoginWebBridge: ObservableObject {
     /// Set by the Coordinator after the WKWebView is created.
     /// Calling it triggers a full cookie sync and then invokes `completion`.
     var syncCookiesAndDismiss: ((@escaping () -> Void) -> Void)?
+    /// 0…1 while the page loads; 1 (hidden) once loaded.
+    @Published var progress: Double = 0
 }
 
 // MARK: - UIViewRepresentable
@@ -98,6 +105,7 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
 
         // Give the Coordinator a weak reference so the bridge closure can reach it
         context.coordinator.webView = wv
+        context.coordinator.observeProgress(publishingTo: bridge)
 
         // Wire the "Done" button to the Coordinator's authoritative sync
         let coordinator = context.coordinator
@@ -149,13 +157,32 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         weak var webView: WKWebView?
         /// Strongly held: `WKWebView.uiDelegate` is weak.
         let uiDelegate = SourceWebUIDelegate()
+        private var progressObservation: NSKeyValueObservation?
+        private weak var progressBridge: LoginWebBridge?
 
         init(source: BookSource) { self.source = source }
+
+        /// KVO on `estimatedProgress` → publishes into the SwiftUI bridge for the
+        /// top linear loading indicator (md3's LinearProgressIndicator).
+        func observeProgress(publishingTo bridge: LoginWebBridge) {
+            progressBridge = bridge
+            guard let webView else { return }
+            progressObservation = webView.observe(\.estimatedProgress, options: [.new]) { [weak bridge] wv, _ in
+                Task { @MainActor in
+                    bridge?.progress = wv.estimatedProgress
+                }
+            }
+        }
 
         /// Intermediate sync on each page load — catches non-Cloudflare cookies early.
         /// The definitive sync always happens when the user taps "Done".
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            Task { @MainActor in progressBridge?.progress = 1 }
             syncCookies(from: webView, completion: nil)
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            Task { @MainActor in progressBridge?.progress = 0 }
         }
 
         /// Pull all WKWebView cookies (including async-set Cloudflare `cf_clearance`)
