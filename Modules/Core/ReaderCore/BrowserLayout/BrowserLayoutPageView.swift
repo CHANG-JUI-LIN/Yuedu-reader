@@ -9,6 +9,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     var displayList: DisplayList = .empty
     var backgroundColorFill: UIColor = .white
     var onLinkTap: ((String) -> Void)?
+    var onImageTap: ((DisplayImageItem) -> Void)?
     var onLongPress: (() -> Void)?
     /// Highlight rects (selection / TTS sentence) painted above the content.
     var highlightRects: [CGRect] = []
@@ -127,12 +128,16 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         if hasActiveSelection {
             return true  // selection handles/deselect need every tap
         }
-        return linkTarget(at: point) != nil
+        // Taps on links AND on images are owned by this page view (mirror
+        // CoreTextPageView.shouldHandleTap, which also returns true for image
+        // attachments). Anything else falls through to the reader's zones.
+        return linkTarget(at: point) != nil || imageTarget(at: point) != nil
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
+
 
     override func didMoveToSuperview() {
         super.didMoveToSuperview()
@@ -253,8 +258,24 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
             }
             // Tapping outside the selection can still follow links.
         }
-        guard let link = linkTarget(at: point) else { return }
-        onLinkTap?(link)
+        if let link = linkTarget(at: point) {
+            onLinkTap?(link)
+            return
+        }
+        if let image = imageTarget(at: point) {
+            onImageTap?(image)
+        }
+    }
+
+    /// The image fragment whose page-local rect contains the point.
+    func imageTarget(at point: CGPoint) -> DisplayImageItem? {
+        for item in displayList.items {
+            guard case .image(let image) = item else { continue }
+            if image.rect.contains(point) {
+                return image
+            }
+        }
+        return nil
     }
 
     /// Nearest link hit region for a tap point (within the fragment rect or a
@@ -327,6 +348,24 @@ final class BrowserLayoutPageViewController: UIViewController,
         fatalError("init(coder:) is not supported")
     }
 
+    /// Full-screen zoomable preview for a tapped image fragment — reuses the
+    /// legacy CoreTextImagePreviewController so there is a single image
+    /// preview implementation.
+    private func presentImagePreview(_ item: DisplayImageItem) {
+        let attachment = CoreTextPaginator.RenderedAttachment(
+            rect: item.rect.rawValue,
+            image: item.image ?? UIImage(),
+            opacity: 1,
+            sourceHref: item.source,
+            alt: item.alt,
+            linkHref: item.linkTarget,
+            originalSize: item.image?.size
+        )
+        let controller = CoreTextImagePreviewController(attachment: attachment)
+        controller.modalPresentationStyle = .fullScreen
+        present(controller, animated: true)
+    }
+
     override func loadView() {
         view = pageView
     }
@@ -334,5 +373,8 @@ final class BrowserLayoutPageViewController: UIViewController,
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = pageView.backgroundColorFill
+        pageView.onImageTap = { [weak self] item in
+            self?.presentImagePreview(item)
+        }
     }
 }
