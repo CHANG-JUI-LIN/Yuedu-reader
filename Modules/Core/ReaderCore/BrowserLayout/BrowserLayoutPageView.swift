@@ -378,3 +378,62 @@ final class BrowserLayoutPageViewController: UIViewController,
         }
     }
 }
+
+/// Terminal diagnostic page VC for `browserForced` chapters the browser engine
+/// cannot render (unsupported / image-only / empty / failed / timeout). A REAL
+/// page owned by the browser engine — `effectiveEngine=browser`, NEVER a legacy
+/// fallback, and never a placeholder that could re-ensure layout. The reader
+/// treats it as one page and can turn past it into the next chapter.
+@MainActor
+final class BrowserForcedDiagnosticViewController: UIViewController,
+    PageIndexProviding,
+    CoreTextReadingPositionProviding {
+    let globalPageIndex: Int
+    let coreTextReadingPosition: CoreTextReadingPosition?
+    private let diagnosticPage: BrowserForcedDiagnosticPage
+    private let backgroundColorFill: UIColor
+
+    init(
+        globalPageIndex: Int,
+        readingPosition: CoreTextReadingPosition?,
+        diagnosticPage: BrowserForcedDiagnosticPage,
+        backgroundColor: UIColor,
+        showOverlay: Bool
+    ) {
+        self.globalPageIndex = globalPageIndex
+        self.coreTextReadingPosition = readingPosition
+        self.diagnosticPage = diagnosticPage
+        self.backgroundColorFill = backgroundColor
+        super.init(nibName: nil, bundle: nil)
+        if showOverlay {
+            let label = UILabel()
+            let reason = diagnosticPage.reason.description
+            let features = diagnosticPage.unsupportedFeatures.isEmpty
+                ? ""
+                : " / unsupported=\(diagnosticPage.unsupportedFeatures.map(\.description).joined(separator: ","))"
+            label.text = "FORCED UNSUPPORTED\nreason=\(reason)\(features)\nspine=\(diagnosticPage.spineIndex)"
+            label.font = .systemFont(ofSize: 12, weight: .semibold)
+            label.textColor = .systemRed
+            label.textAlignment = .center
+            label.numberOfLines = 0
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.accessibilityIdentifier = "reader_forced_diagnostic_page"
+            view.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+                label.leadingAnchor.constraint(lessThanOrEqualTo: view.leadingAnchor, constant: 16),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -16),
+            ])
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = backgroundColorFill
+    }
+}

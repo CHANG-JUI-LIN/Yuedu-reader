@@ -274,4 +274,77 @@ struct BrowserLayoutPageEngineTests {
         let restored = engine.pageIndex(for: position)
         #expect(restored == page)
     }
+
+    /// THE LIVELOCK REGRESSION: an image-only / zero-page chapter under
+    /// browserForced MUST publish a terminal diagnostic page (1 page, browser
+    /// engine, never re-ensured). Position queries must not start a second
+    /// session, and the reader must be able to turn past the diagnostic.
+    @Test func browserForcedImageOnlyChapterPublishesDiagnosticPage() async throws {
+        let oldMode = BrowserLayoutFeature.mode
+        let oldOverlay = BrowserLayoutFeature.showDebugOverlay
+        BrowserLayoutFeature.mode = .browserForced
+        BrowserLayoutFeature.showDebugOverlay = true
+        defer {
+            BrowserLayoutFeature.mode = oldMode
+            BrowserLayoutFeature.showDebugOverlay = oldOverlay
+        }
+
+        // A chapter that lays out ZERO pages (SVG-only body). The legacy
+        // delegate would render the title placeholder; forced mode must NOT
+        // delegate — it publishes the browser engine's diagnostic page.
+        let emptyCover = MockBrowserLayoutResource.Chapter(
+            title: "cover",
+            href: "c0.xhtml",
+            html: "<html><body><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\"><rect width=\"100\" height=\"100\"/></svg></body></html>",
+            css: []
+        )
+        let nextChapter = MockBrowserLayoutResource.Chapter(
+            title: "ch1", href: "c1.xhtml",
+            html: "<html><body><p>Real chapter text to keep the reader moving.</p></body></html>",
+            css: []
+        )
+        let resource = MockBrowserLayoutResource(chapters: [emptyCover, nextChapter])
+        let builder = MockAttributedStringBuilder(texts: ["cover", "next1"])
+        let store = CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("bl-rg-\(UUID().uuidString)"))
+        let settings = makeSettings()
+        let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
+        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
+        await engine.start(renderSize: CGSize(width: 390, height: 844), bookId: "rg")
+
+        // Choice stays BROWSER — the browser engine owns the diagnostic page.
+        #expect(engine.choice(for: 0)?.isBrowser == true)
+        // State is a TERMINAL unsupported diagnostic (image-only document).
+        let state = engine.testChapterLayoutStates[0]
+        guard case .unsupportedDiagnostic(let page) = state else {
+            Issue.record("expected unsupportedDiagnostic state, got \(String(describing: state))")
+            return
+        }
+        #expect(page.reason == .imageOnlyDocument)
+        #expect(page.spineIndex == 0)
+        #expect(page.unsupportedFeatures.contains(.unsupportedSVG))
+        // The diagnostic counts as exactly ONE page so the reader can turn past.
+        #expect(engine.totalPages >= 1)
+
+        // pageViewController(at:)/(for:) returns the DIAGNOSTIC page VC — never
+        // a placeholder that re-triggers ensure.
+        let atVC = engine.pageViewController(at: 0)
+        #expect(atVC is BrowserForcedDiagnosticViewController)
+        let positionVC = engine.pageViewController(for: .chapterStart(0))
+        #expect(positionVC is BrowserForcedDiagnosticViewController)
+
+        // Session-ensure seal: exactly ONE (generation, spine) session; 100
+        // position queries must not start another (the livelock loops forever
+        // when placeholders keep re-ensuring).
+        #expect(engine.testSessionEnsureCounts["0:0"] == 1)
+        for _ in 0..<100 {
+            _ = engine.pageViewController(for: .chapterStart(0))
+        }
+        #expect(engine.testSessionEnsureCounts["0:0"] == 1, "100 position queries must not re-ensure the session")
+        #expect(engine.totalPages >= 1)
+
+        // Reader can still move to chapter 1: preload proceeds normally.
+        await engine.preloadChapter(at: 1)
+        #expect(engine.choice(for: 1)?.isBrowser == true)
+        #expect(engine.totalPages >= 2, "reader can turn past the diagnostic cover into chapter one")
+    }
 }

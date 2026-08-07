@@ -20,8 +20,10 @@ struct SVGCoverFixtureTests {
     struct TimeoutError: Error {}
 
     /// Engine-level: an empty (SVG-only) first chapter under browserForced must
-    /// fall back to legacy so the reader still has a page to show and turn.
-    @Test func emptyCoverFallsBackAndReaderCanNavigate() async throws {
+    /// NOT fall back to legacy and must NOT livelock — the browser engine
+    /// publishes a TERMINAL diagnostic page (exactly 1 page, effectiveEngine
+    /// stays browser), and position queries never re-ensure the session.
+    @Test func emptyCoverPublishesDiagnosticAndNeverRelayouts() async throws {
         let oldMode = BrowserLayoutFeature.mode
         BrowserLayoutFeature.mode = .browserForced
         defer { BrowserLayoutFeature.mode = oldMode }
@@ -49,26 +51,82 @@ struct SVGCoverFixtureTests {
         let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
         await engine.start(renderSize: CGSize(width: 390, height: 844), bookId: "t")
 
-        // Spine 0 (empty SVG) must fall back: choice is legacy failure, and the
-        // reader has >= 1 page to show.
-        if case .browser = engine.choice(for: 0) {
-            Issue.record("empty cover should fall back to legacy under forced mode")
+        // Spine 0 (empty SVG): the BROWSER engine owns the outcome — choice is
+        // browser (never legacy), state is a terminal unsupported diagnostic,
+        // and the diagnostic chapter counts as exactly ONE page.
+        #expect(engine.choice(for: 0)?.isBrowser == true, "forced mode must never fall back to legacy")
+        let state = engine.testChapterLayoutStates[0]
+        guard case .unsupportedDiagnostic(let page) = state else {
+            Issue.record("expected unsupportedDiagnostic state, got \(String(describing: state))")
+            return
         }
-        print("NAV totalPages=\(engine.totalPages) choice0=\(String(describing: engine.choice(for: 0))) choice1=\(String(describing: engine.choice(for: 1)))")
+        #expect(page.reason == .imageOnlyDocument)
         #expect(engine.totalPages >= 1)
 
-        // The reader turns past the cover: pageViewController(for:) must NOT
-        // return nil for the unloaded chapter 1 — it returns a titled
-        // placeholder and kicks off the preload (so onChapterReady replaces it).
-        let positionVC = engine.pageViewController(for: .chapterStart(1))
-        #expect(positionVC is PlaceholderPageViewController, "unloaded chapter must yield a placeholder, not nil")
-        // Give the async preload a beat, then the chapter must be laid out.
+        // The diagnostic page is a REAL browser page VC — not a placeholder
+        // (which would re-trigger ensure) and not a legacy page.
+        let atIndexVC = engine.pageViewController(at: 0)
+        #expect(atIndexVC is BrowserForcedDiagnosticViewController)
+        let positionVC = engine.pageViewController(for: .chapterStart(0))
+        #expect(positionVC is BrowserForcedDiagnosticViewController)
+
+        // Session-ensure seal: exactly ONE session for (generation 0, spine 0),
+        // and 100 position queries must not create more (the livelock).
+        #expect(engine.testSessionEnsureCounts["0:0"] == 1, "sessionEnsure must run exactly once")
+        for _ in 0..<100 {
+            _ = engine.pageViewController(for: .chapterStart(0))
+        }
+        #expect(engine.testSessionEnsureCounts["0:0"] == 1, "position queries must not re-ensure the session")
+        #expect(engine.totalPages >= 1)
+
+        // The reader turns past the diagnostic cover: chapter 1 still preloads
+        // normally and the reader can reach it.
+        let positionVC1 = engine.pageViewController(for: .chapterStart(1))
+        #expect(positionVC1 is PlaceholderPageViewController, "unloaded chapter must yield a placeholder, not nil")
         for _ in 0..<20 {
             if engine.choice(for: 1) != nil { break }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         print("NAV2 choice1=\(String(describing: engine.choice(for: 1))) totalPages=\(engine.totalPages)")
         #expect(engine.totalPages >= 2, "preload must complete so the reader can turn to chapter one")
+    }
+
+    /// browserAuto keeps the legacy fallback: the same SVG-only cover falls
+    /// back to the delegate engine (the forced-mode diagnostic must NOT leak
+    /// into auto mode).
+    @Test func autoModeSVGCoverFallsBackToLegacy() async throws {
+        let oldMode = BrowserLayoutFeature.mode
+        BrowserLayoutFeature.mode = .browserAuto
+        defer { BrowserLayoutFeature.mode = oldMode }
+
+        let chapter = MockBrowserLayoutResource.Chapter(
+            title: "cover", href: "c0.xhtml",
+            html: "<html><body><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\"><rect width=\"100\" height=\"100\"/></svg></body></html>",
+            css: []
+        )
+        let resource = MockBrowserLayoutResource(chapters: [chapter])
+        let builder = MockAttributedStringBuilder(texts: ["cover"])
+        let store = CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("rc-\(UUID().uuidString)"))
+        let settings = ReaderRenderSettings(
+            theme: "paper", textColor: .black, backgroundColor: .white,
+            fontSize: 17, lineHeightMultiple: 1.4, lineSpacing: 0, paragraphSpacing: 6,
+            letterSpacing: 0, marginH: 12, marginV: 12, footerHeight: 24,
+            contentInsets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        )
+        let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
+        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
+        await engine.start(renderSize: CGSize(width: 390, height: 844), bookId: "t")
+
+        // Auto mode: capability fallback to legacy — the SVG cover renders from
+        // the delegate with >= 1 page, and NO diagnostic state is published.
+        if case .browser = engine.choice(for: 0) {
+            Issue.record("browserAuto must fall back to legacy for unsupported SVG")
+        }
+        #expect(delegate.layouts[0] != nil)
+        #expect(engine.totalPages >= 1)
+        #expect(engine.testChapterLayoutStates[0] == nil, "auto mode must not publish forced diagnostics")
+        let vc = engine.pageViewController(at: 0)
+        #expect(vc is CoreTextPageViewController, "auto-mode fallback page comes from the legacy engine")
     }
 
     /// Real EPUB spine=0 (unsupported-svg cover): does layoutNextPage hang?
