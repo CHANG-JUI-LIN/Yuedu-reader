@@ -112,11 +112,29 @@ final class CoreTextPageEngine: PageRenderingProvider {
     private let chapterSnapshots: NSCache<NSNumber, UIImage> = {
         let cache = NSCache<NSNumber, UIImage>()
         let physicalMemory = ProcessInfo.processInfo.physicalMemory
-        // Control snapshot cache cost: ~5% of physical memory, clamped to 64MB–256MB.
-        let budget = min(max(physicalMemory / 20, 64 * 1024 * 1024), 256 * 1024 * 1024)
-        cache.totalCostLimit = Int(budget)
+        // Device-tiered snapshot budget. The old floor of 64MB was too high for
+        // low-memory devices (<4GB): a 3x screen snapshot is ~10-12MB, so 64MB
+        // already meant 5-6 images. Snapshots back cross-chapter curl/cover
+        // animation handoff — never zero them out, only size them per tier.
+        //   <4GB  (XR/11/SE2):  16MB, 4 images  = current chapter ±1 first/last pages
+        //   4-6GB:             32MB, 6 images
+        //   ≥6GB  (incl. iPad): ~5% clamped to 64-128MB, 12 images
+        var budget = 64 * 1024 * 1024
+        var countLimit = 12
+        if physicalMemory < 4 * 1024 * 1024 * 1024 {
+            budget = 16 * 1024 * 1024
+            countLimit = 4
+        } else if physicalMemory < 6 * 1024 * 1024 * 1024 {
+            budget = 32 * 1024 * 1024
+            countLimit = 6
+        } else {
+            let fivePercent = Int(physicalMemory / 20)
+            budget = min(max(fivePercent, 64 * 1024 * 1024), 128 * 1024 * 1024)
+            countLimit = 12
+        }
+        cache.totalCostLimit = budget
         // Keep a modest countLimit to avoid flooding the cache with many low-cost snapshots.
-        cache.countLimit = 12
+        cache.countLimit = countLimit
         return cache
     }()
     private var spinePageOffsets: [Int] = []
@@ -175,9 +193,12 @@ final class CoreTextPageEngine: PageRenderingProvider {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
+                MemoryFootprint.log("warning-before")
                 self?.chapterSnapshots.removeAllObjects()
+                self?._layouts.trim(keeping: 0)
                 self?.cancelPreloadTasks()
                 self?.chapterDocumentStore.invalidateAll()
+                MemoryFootprint.log("warning-after")
             }
         }
 

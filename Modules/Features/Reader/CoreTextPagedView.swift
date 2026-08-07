@@ -217,7 +217,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         //    version; stale re-renders with the same command are no-ops.
         if let command = pageTurnCommand, command.version != context.coordinator.lastExecutedTurnVersion {
             context.coordinator.lastExecutedTurnVersion = command.version
-            let target = max(0, min(command.target, max(engine.totalPages - 1, 0)))
+            // Resolve the command's absolute position against the CURRENT
+            // pagination. A page index only exists inside the layout that
+            // produced it; a chapter boundary layout landing between issue and
+            // execution renumbers every page after it, so the raw index would
+            // land on content the user never asked for (the "jumped one page
+            // too far" bug family). The position keeps the intent anchored to
+            // content; the raw index is the fallback while the target chapter
+            // has no layout yet (pageIndex(for:) returns nil).
+            let resolvedTarget = command.targetPosition.flatMap { engine.pageIndex(for: $0) }
+            let target = max(0, min(resolvedTarget ?? command.target, max(engine.totalPages - 1, 0)))
             guard target != visible.globalPageIndex else { return }
             // Rapid-tap speed-up: register cadence now, before the cover / slide /
             // curl branches read activeTurnSpeed.

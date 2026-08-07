@@ -10,7 +10,7 @@ final class LayoutCache<Value> {
 
     var count: Int { storage.count }
 
-    init(capacity: Int = 8) {
+    init(capacity: Int = 5) {
         self.capacity = capacity
     }
 
@@ -55,6 +55,14 @@ final class LayoutCache<Value> {
     private func evictOne() {
         guard let farthest = storage.keys.max(by: { distance($0) < distance($1) }) else { return }
         storage[farthest] = nil
+    }
+
+    /// Keeps only chapters within `radius` of the current chapter; drops the rest.
+    /// Used under memory pressure — a layout rebuild on return is cheaper than
+    /// dying in the background. No-op when there is nothing to drop.
+    func trim(keeping radius: Int) {
+        guard storage.count > (radius * 2 + 1) else { return }
+        storage = storage.filter { abs($0.key - currentChapter) <= radius }
     }
 
     private func distance(_ key: Int) -> Int {

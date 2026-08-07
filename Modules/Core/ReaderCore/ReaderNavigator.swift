@@ -18,8 +18,19 @@ enum PageDirection {
 /// transitions — the mechanism behind the oscillation bug family. The binding is
 /// display output only; commands and the Navigator-owned external target are the
 /// only inputs that move pages.
+///
+/// `target` is the global page index the intent was computed against at issue
+/// time; `targetPosition` is the same intent as an absolute reading position
+/// `(spineIndex, charOffset)`. The executor prefers the position and re-resolves
+/// it against whatever pagination is live when the turn executes — a global
+/// page index is only meaningful for the pagination that produced it, and a
+/// chapter boundary layout landing between issue and execution renumbers every
+/// page after it (the "jumped one page too far" bug family). The position keeps
+/// the intent anchored to content; `target` remains the fallback while the
+/// target chapter has no layout yet.
 struct ReaderPageTurnCommand: Equatable {
     let target: Int
+    let targetPosition: CoreTextReadingPosition?
     let animated: Bool
     let version: UInt
 }

@@ -229,15 +229,34 @@ extension ReaderView {
     /// written immediately — as display state and as the accumulation baseline for
     /// rapid-tap bursts — but the executor no longer treats binding drift as an
     /// instruction, so this write can never trigger a correction transition.
+    ///
+    /// The command carries the turn's absolute position (`(spineIndex, charOffset)`)
+    /// alongside the page index it was computed against. Page indices only exist
+    /// inside one pagination; resolving the turn against live layout at execution
+    /// time keeps it anchored to content across renumbering (CLAUDE.md: positions
+    /// are (spineIndex, charOffset), never a global page index).
     func issuePageTurn(to targetPage: Int) {
         guard readerHeaderFooterEditorModel == nil else { return }
         currentPage = targetPage
         pageTurnVersion &+= 1
         pageTurnCommand = ReaderPageTurnCommand(
             target: targetPage,
+            targetPosition: resolvedTargetPosition(forPage: targetPage),
             animated: effectivePageTurnStyle != .none,
             version: pageTurnVersion
         )
+    }
+
+    /// Resolves a page index to its absolute position. `nil` when the engine
+    /// isn't ready or the chapter has no layout yet — the executor then falls
+    /// back to the raw page index, matching the pre-position behavior while a
+    /// chapter is still paginating.
+    private func resolvedTargetPosition(forPage page: Int) -> CoreTextReadingPosition? {
+        guard let engine = epubRenderer.engine else { return nil }
+        let clamped = max(0, min(page, max(engine.totalPages - 1, 0)))
+        let (spineIndex, charOffset) = engine.charOffset(forPage: clamped)
+        guard engine.layouts[spineIndex] != nil else { return nil }
+        return CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset)
     }
 
 }

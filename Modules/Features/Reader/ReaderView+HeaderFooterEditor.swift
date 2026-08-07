@@ -75,6 +75,7 @@ extension ReaderView {
         pageTurnVersion &+= 1
         pageTurnCommand = ReaderPageTurnCommand(
             target: currentPage,
+            targetPosition: CoreTextReadingPosition.chapterStart(currentChapterIndex),
             animated: false,
             version: pageTurnVersion
         )
