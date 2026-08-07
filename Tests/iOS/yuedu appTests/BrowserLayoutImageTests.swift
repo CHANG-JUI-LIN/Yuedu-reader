@@ -98,6 +98,38 @@ struct BrowserLayoutImageTests {
     /// keeps the delegate alive long after `layoutInline` returns; touching
     /// the line must not hit a freed box (EXC_BAD_ACCESS in
     /// getAscent/getWidth). passRetained + dealloc-takeRetainedValue pairs.
+    /// Regression (画册残片): an inline image taller than the CSS line-height
+    /// must EXPAND the line box (CSS 2.1 §10.8 — atomic inline boxes size the
+    /// line box), not be squeezed into line-height. Before the fix the line
+    /// height took line-height verbatim, so stacked gallery cells advanced by
+    /// ~line-height while each 627pt image painted from its own y → all
+    /// images overlapped and only top strips were visible.
+    @Test func inlineTallImageExpandsLineBoxNotClamped() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 352, height: 627), color: .cyan)
+        let html = """
+        <html><head><style>
+          body { line-height: 23.4px; font-size: 18.9px; }
+          .cell img { width: 80%; }
+        </style></head><body>
+        <div class="cell"><img src="tall.png"></div>
+        <div class="cell"><img src="tall.png"></div>
+        <div class="cell"><img src="tall.png"></div>
+        </body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(html, imageLoader: loader(["tall.png": img]))
+        let images = BrowserLayoutTestSupport.allImageFragments(pages)
+        #expect(images.count == 3)
+        #expect(pages.count == 3)  // each 400pt image owns a full 400pt page
+        for image in images {
+            // No top strip cut: the whole image sits inside its page.
+            #expect(image.rect.minY >= 0)
+            #expect(image.rect.maxY <= 400.01)
+            // Scaled to fit the page (627 > 400 → 400 tall, aspect kept).
+            #expect(abs(image.rect.height - 400) < 0.1)
+            #expect(abs(image.rect.width - 224.561) < 0.1)
+        }
+    }
+
     @Test func inlineImageCTLineDelegateSurvivesLayoutScope() async throws {
         let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 20, height: 10), color: .red)
         let html = """

@@ -191,11 +191,27 @@ enum InlineLayout {
                 trimLineTrailingWhitespace(from: &lineRuns, sourceText: sourceText)
             }
 
-            let height = lineHeight
-                ?? runs.first?.style.lineHeight
-                ?? (breakInfo.ascent + breakInfo.descent)
-            let extraLeading = max(0, height - (breakInfo.ascent + breakInfo.descent))
+            // CSS line-height sets the MINIMUM line-box height, but atomic
+            // inline boxes (inline images) expand the line box to their own
+            // content extent — a 627pt image must not be squeezed into a
+            // 23pt line. See CSS 2.1 §10.8 line-box construction.
+            let cssHeight = lineHeight ?? runs.first?.style.lineHeight
+            let contentHeight = breakInfo.ascent + breakInfo.descent
+            let height = max(cssHeight ?? contentHeight, contentHeight)
+            let extraLeading = max(0, height - contentHeight)
             let baselineOffset = extraLeading / 2 + breakInfo.ascent
+            // CSS 2.1 line-box construction: the line box top is the top of the
+            // HIGHEST inline box. An atomic inline box (image) whose bottom
+            // sits on the baseline extends ABOVE the text top by its descent —
+            // e.g. a 427.5pt image (ascent 320.6 / descent 106.9) pushes the
+            // line box top 106.9pt above the text line top. Without this the
+            // image's top strip overflowed into the previous line/page.
+            // NOTE: AtomicInlineBox splits the image height 75/25 ascent/descent
+            // (matching the CTRunDelegate), so the descent here is height*0.25.
+            let maxAtomicDescent = lineRuns
+                .compactMap { $0.atomic?.usedSize.height }
+                .max() ?? 0
+            let top = yTop + min(0, extraLeading / 2 - maxAtomicDescent * 0.25)
             let contentX = alignmentOffset(alignment: lineRuns.first?.style.textAlign ?? .natural,
                                            lineWidth: breakInfo.width, maxWidth: maxWidth)
             result.append(LayoutLine(
@@ -203,7 +219,7 @@ enum InlineLayout {
                 height: height,
                 ascent: breakInfo.ascent,
                 descent: breakInfo.descent,
-                top: yTop,
+                top: top,
                 baseline: yTop + baselineOffset,
                 contentX: contentX,
                 ctLine: breakInfo.line

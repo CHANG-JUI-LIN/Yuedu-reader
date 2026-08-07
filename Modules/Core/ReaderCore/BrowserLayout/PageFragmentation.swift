@@ -455,6 +455,14 @@ struct PageWalker {
         // 3. Intrinsic size EXCEEDS a full page → scale to fit (aspect kept),
         //    never split into fragments.
         let contentWidth = max(1, pageRect.width - contentInsets.left - contentInsets.right)
+        // A line box pushed above the page top (tall inline image whose top
+        // strip overflows) must move to the TOP of page 0 — the image's top
+        // must never be cut off by the viewport edge.
+        if step.rect.minY < 0 {
+            target = 0
+            adjustedDocY = 0
+            adjustedDocRect.origin.y = 0
+        }
         if step.rect.height <= pageHeight, pageLocalY + step.rect.height > pageHeight + 0.001 {
             // Case 2: move to next page.
             target += 1

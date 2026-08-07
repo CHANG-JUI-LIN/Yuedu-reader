@@ -158,10 +158,11 @@ struct RedChamberProductionRenderingRegressionTests {
         // Stage B: expected k1 border top = 25% of the BODY content width
         // (CSS: vertical % margin resolves against the containing block WIDTH).
         // The unit suite measured body content = 358.68 (366 − 3.66×2 body
-        // margins) → expected 89.67. This suite asserts the PRODUCTION chain
-        // preserves that exact value all the way to the paint rect.
-        let expectedK1BorderTop: CGFloat = 89.67
-        print("STAGE expectedK1BorderTop=89.67 (25% of body content 358.68)")
+        // margins) → expected 89.67 DOCUMENT-relative. Page-local canvas
+        // coordinates are viewport-based (Phase 2C: canvas = page viewport +
+        // contentInsets), so the fragment's minY includes contentInsets.top.
+        let expectedK1BorderTop: CGFloat = 89.67 + Self.settings.contentInsets.top
+        print("STAGE expectedK1BorderTop=\(expectedK1BorderTop) (89.67 doc + \(Self.settings.contentInsets.top) insets)")
 
         // Stage C: k1 fragment rect in the PageFragment (page-local).
         let k1Fills = Self.k1Candidates(in: page)
@@ -207,7 +208,7 @@ struct RedChamberProductionRenderingRegressionTests {
         let (_, layout, _, _) = try await Self.productionLayout(spine: spine)
         let page = try #require(layout.pages.first)
         let k1 = try #require(Self.k1Candidates(in: page).first, "no k1 fill")
-        let expectedK1BorderTop: CGFloat = 89.67
+        let expectedK1BorderTop: CGFloat = 89.67 + Self.settings.contentInsets.top
 
         let list = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: layout.themeTextColor)
 
@@ -251,7 +252,7 @@ struct RedChamberProductionRenderingRegressionTests {
         let (_, layout, _, _) = try await Self.productionLayout(spine: spine)
         let page = try #require(layout.pages.first)
         let k1 = try #require(Self.k1Candidates(in: page).first, "no k1 fill")
-        let expectedK1BorderTop: CGFloat = 89.67
+        let expectedK1BorderTop: CGFloat = 89.67 + Self.settings.contentInsets.top
 
         let list = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: layout.themeTextColor)
         let vc = BrowserLayoutPageViewController(

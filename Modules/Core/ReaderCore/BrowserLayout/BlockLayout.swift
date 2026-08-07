@@ -110,7 +110,12 @@ enum BlockLayout {
             // block-end margin (the box's content extent excludes it).
             cursorBlock -= last
         }
-        for line in box.lines { cursorBlock += line.height }
+        for line in box.lines {
+            // Flow resumes at the line-box BOTTOM (top + height), not at
+            // height — a line box pushed up by a tall inline image (top < 0
+            // relative to the flow) would otherwise leave a gap above it.
+            cursorBlock = line.top + line.height
+        }
 
         // Block-level replaced element (image): its content box IS the image.
         if let attachment = box.imageAttachment {
