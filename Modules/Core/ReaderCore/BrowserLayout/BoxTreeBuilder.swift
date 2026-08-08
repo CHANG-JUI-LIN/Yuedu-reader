@@ -86,6 +86,10 @@ enum BoxTreeBuilder {
                         sourceRange: range, nodeID: elementNode.nodeID,
                         linkTarget: elementNode.linkTarget, isHardBreak: true
                     ))
+                } else if let element = elementNode.element,
+                          let svgSource = Self.svgWrappedImageSource(element) {
+                    appendSVGImageRun(elementNode, source: svgSource, to: &pendingInline,
+                                      sourceText: &sourceText, config: config, imageLoader: imageLoader)
                 } else if elementNode.tag == "img" {
                     if elementNode.style.display == .block {
                         flushGroup(&pendingInline, style: node.style, config: config,
@@ -180,6 +184,10 @@ enum BoxTreeBuilder {
                         sourceRange: range, nodeID: elementNode.nodeID,
                         linkTarget: elementNode.linkTarget, isHardBreak: true
                     ))
+                } else if let element = elementNode.element,
+                          let svgSource = Self.svgWrappedImageSource(element) {
+                    appendSVGImageRun(elementNode, source: svgSource, to: &runs,
+                                      sourceText: &sourceText, config: config, imageLoader: imageLoader)
                 } else if elementNode.tag == "img" {
                     appendImageRun(elementNode, to: &runs, sourceText: &sourceText,
                                    config: config, imageLoader: imageLoader)
@@ -230,6 +238,54 @@ enum BoxTreeBuilder {
         runs.append(InlineRun(
             text: collapsed, style: style,
             sourceRange: range, nodeID: nodeID, linkTarget: link
+        ))
+    }
+
+    /// The EPUB cover idiom: `<svg viewBox="0 0 1000 1333" width="100%"
+    /// height="100%"><image xlink:href="cover.jpg"/></svg>` — an SVG element
+    /// used purely as a wrapper around one raster image. Returns the image
+    /// source, or nil when the SVG carries any real vector content.
+    ///
+    /// This is NOT general SVG support: a single `<image>` and nothing else to
+    /// draw. `BrowserLayoutCapabilityScanner` calls the SAME predicate, so the
+    /// scanner and the box tree can never disagree about which SVGs are
+    /// renderable.
+    static func svgWrappedImageSource(_ element: Element) -> String? {
+        guard (try? element.tagName())?.lowercased() == "svg" else { return nil }
+        guard let images = try? element.select("image").array(), images.count == 1,
+              let image = images.first else { return nil }
+        let drawable = (try? element.select(
+            "path, rect, circle, ellipse, line, polyline, polygon, text, textPath, use, g, symbol, marker, pattern, mask, foreignObject"
+        ).array()) ?? []
+        guard drawable.isEmpty else { return nil }
+        for attribute in ["xlink:href", "href"] {
+            if let href = try? image.attr(attribute), !href.isEmpty { return href }
+        }
+        return nil
+    }
+
+    /// Emits an SVG-wrapped cover image as a replaced element. Sized like an
+    /// `<img>` under `max-width: 100%`: the intrinsic bitmap, scaled down to
+    /// the container when it is wider. The SVG's own `width="100%"` is an
+    /// attribute rather than CSS, so the clamp is applied explicitly here.
+    private static func appendSVGImageRun(
+        _ node: ComputedStyleNode,
+        source: String,
+        to runs: inout [InlineRun],
+        sourceText: inout SourceTextBuilder,
+        config: BrowserLayoutConfig,
+        imageLoader: (String) -> UIImage?
+    ) {
+        guard let image = imageLoader(source) else { return }
+        let intrinsic = image.size
+        guard intrinsic.width > 0, intrinsic.height > 0 else { return }
+        let scale = min(1, config.renderWidth / intrinsic.width)
+        let usedSize = CGSize(width: intrinsic.width * scale, height: intrinsic.height * scale)
+        runs.append(InlineRun(
+            text: "\u{FFFC}", style: node.style,
+            sourceRange: NSRange(location: sourceText.currentOffset, length: 0),
+            nodeID: node.nodeID, linkTarget: node.linkTarget,
+            atomic: AtomicInline(source: source, image: image, usedSize: usedSize)
         ))
     }
 

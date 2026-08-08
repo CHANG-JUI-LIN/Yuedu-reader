@@ -212,9 +212,11 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
             context.setLineWidth(width)
             context.stroke(r)
         }
-        if let r = spec.pageContentRect { frameRect(r, color: .systemRed, width: 2) }
+        // The page-content (red) and first-line-box (yellow) frames were
+        // scaffolding for the Phase 2C geometry work and are gone; they covered
+        // the actual page. The body border box stays — it is the only one that
+        // outlines authored content rather than the viewport.
         if let r = spec.bodyBorderRect { frameRect(r, color: .systemBlue) }
-        if let r = spec.firstLineBoxRect { frameRect(r, color: .systemYellow) }
         // Label block: commit SHA, actual engine, fallback reason (UNSUPPORTED
         // FORCED for forced unsupported renders), page content rect.
         let forcedNote = spec.fallbackReason.map { " UNSUPPORTED FORCED:\($0)" } ?? ""

@@ -280,6 +280,73 @@ struct BrowserLayoutImageTests {
         }
     }
 
+    /// spine 0 of 红楼梦: the standard EPUB cover — an `<svg>` used purely to
+    /// wrap one raster image. It rendered as FORCED UNSUPPORTED
+    /// (`image-only-document / unsupported-svg`) because `<image xlink:href>`
+    /// is not `<img src>`, so no box was built and the chapter produced zero
+    /// pages. The capability scanner must accept this shape too, using the same
+    /// predicate as the box tree.
+    @Test func svgWrappedCoverRendersAsImageAndScannerAcceptsIt() async throws {
+        let cover = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 1000, height: 1333), color: .brown)
+        let html = """
+        <html><head><title>Cover</title></head><body>
+        <h1 style="display:none" title="红楼梦"></h1>
+        <div style="text-align: center; padding: 0pt; margin: 0pt;">
+          <svg xmlns="http://www.w3.org/2000/svg" height="100%" preserveAspectRatio="xMidYMid meet"
+               version="1.1" viewBox="0 0 1000 1333" width="100%"
+               xmlns:xlink="http://www.w3.org/1999/xlink">
+            <image width="1000" height="1333" xlink:href="../Images/cover.jpg"/>
+          </svg>
+        </div>
+        </body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
+            html, width: 366, height: 844,
+            imageLoader: loader(["../Images/cover.jpg": cover])
+        )
+        let images = BrowserLayoutTestSupport.allImageFragments(pages)
+        #expect(images.count == 1, "SVG-wrapped cover produced no image fragment")
+        let coverFragment = try #require(images.first)
+        // max-width: 100% — 1000pt wide clamps to the 366pt container, aspect kept.
+        #expect(abs(coverFragment.rect.width - 366) < 0.5)
+        #expect(abs(coverFragment.rect.height - 366 * 1333 / 1000) < 1.0)
+
+        let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: [])
+        #expect(scan.supported, "scanner rejected an image-only SVG cover: \(scan.unsupportedFeatures.map(\.description))")
+
+        // Real vector content stays unsupported — this is not general SVG support.
+        let vector = "<html><body><svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\"/></svg></body></html>"
+        let vectorScan = BrowserLayoutCapabilityScanner.scan(html: vector, cssTexts: [])
+        #expect(!vectorScan.supported, "a real vector SVG must still be rejected")
+    }
+
+    /// spine 1/2/3 of 红楼梦 (and 36+ `qmp*` chapters): a full-screen page whose
+    /// entire content is the body's background-image, with only `<p>&#160;</p>`
+    /// in the flow. It reported `empty-renderable-content` because U+00A0 was
+    /// collapsed away as whitespace, leaving zero runs → zero lines → zero
+    /// pages, so the background had no page to paint on. NBSP is not
+    /// collapsible white space (CSS Text §4.1).
+    @Test func nbspOnlyBackgroundPageStillProducesAPage() async throws {
+        let html = """
+        <html><head><style>
+        body.qmp0 { background-size: cover; background-repeat: no-repeat;
+                    background-position: center; background-image: url('../Images/bg.jpg'); }
+        </style></head>
+        <body class="qmp0">
+        <h2 style="display:none" title="制作说明"></h2>
+        <p>&#160;</p>
+        </body></html>
+        """
+        let bg = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 750, height: 1334), color: .darkGray)
+        let (pages, doc) = try await BrowserLayoutTestSupport.layout(
+            html, width: 366, height: 844, imageLoader: { _ in bg }
+        )
+        #expect(!pages.isEmpty, "background-image-only chapter produced zero pages")
+        // The NBSP survives collapsing, so the paragraph is real content.
+        #expect(!BrowserLayoutTestSupport.allTextFragments(pages).isEmpty)
+        #expect(BrowserLayoutTestSupport.visibleText(pages, sourceText: doc.lastSourceText).contains("\u{00A0}"))
+    }
+
     @Test func inlineImageCTLineDelegateSurvivesLayoutScope() async throws {
         let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 20, height: 10), color: .red)
         let html = """

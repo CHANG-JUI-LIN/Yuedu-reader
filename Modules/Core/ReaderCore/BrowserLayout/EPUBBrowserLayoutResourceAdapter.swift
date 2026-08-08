@@ -104,6 +104,12 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
             let src = (try? img.attr("src")) ?? ""
             if !src.isEmpty { sources.insert(src) }
         }
+        // The EPUB cover idiom `<svg><image xlink:href="cover.jpg"/></svg>`
+        // carries no <img>, so without this the box tree asks for a source that
+        // was never fetched and the cover renders as an empty chapter.
+        for svg in (try? doc.select("svg").array()) ?? [] {
+            if let href = BoxTreeBuilder.svgWrappedImageSource(svg) { sources.insert(href) }
+        }
         for src in sources {
             let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
             guard let response = try? await resourceAdapter.response(for: resourceAdapter.resourceURL(for: resolved)),

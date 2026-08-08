@@ -105,7 +105,11 @@ enum BrowserLayoutCapabilityScanner {
             if hasAny("table, thead, tbody, tr, td, th, colgroup") {
                 reasons.append(.table)
             }
-            if hasAny("svg") {
+            // An SVG used purely to wrap one raster image (the standard EPUB
+            // cover) is renderable — only real vector content is unsupported.
+            // Same predicate as the box tree, so the two cannot disagree.
+            let svgs = (try? doc.select("svg").array()) ?? []
+            if svgs.contains(where: { BoxTreeBuilder.svgWrappedImageSource($0) == nil }) {
                 reasons.append(.unsupportedSVG)
             }
 

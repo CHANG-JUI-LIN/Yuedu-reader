@@ -48,7 +48,14 @@ enum InlineLayout {
     static func collapseText(_ text: String, mode: WhiteSpaceMode) -> String {
         switch mode {
         case .normal, .nowrap:
-            return text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            // CSS Text §4.1 — ONLY space, tab, line feed, carriage return and
+            // form feed are collapsible. `\s` is wrong here: ICU expands it to
+            // \p{Z}, which swallows U+00A0 NO-BREAK SPACE. A page whose only
+            // content is `<p>&#160;</p>` (the 掌阅 full-screen background-image
+            // page: 36+ chapters in 红楼梦) then produced zero runs, zero lines
+            // and zero pages, so its body background-image never got a page to
+            // paint on and the chapter was reported empty-renderable-content.
+            return text.replacingOccurrences(of: #"[ \t\n\r\f]+"#, with: " ", options: .regularExpression)
         case .pre, .preWrap:
             return text
         case .preLine:
