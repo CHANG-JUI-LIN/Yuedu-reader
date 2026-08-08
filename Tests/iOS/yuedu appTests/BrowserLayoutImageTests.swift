@@ -119,7 +119,16 @@ struct BrowserLayoutImageTests {
         let (pages, _) = try await BrowserLayoutTestSupport.layout(html, imageLoader: loader(["tall.png": img]))
         let images = BrowserLayoutTestSupport.allImageFragments(pages)
         #expect(images.count == 3)
-        #expect(pages.count == 3)  // each 400pt image owns a full 400pt page
+        // Each 400pt image owns a full 400pt page, and page 0 holds only the
+        // document's leading margin: this fixture never resets `body`, so the
+        // default 8pt `margin-top` applies, and page 0 is the FLOW START — not
+        // a break — so CSS Fragmentation §4.2 retains that margin. 400pt of
+        // image cannot fit the remaining 392pt, so the first image takes page 1.
+        // (This asserted 3 before, which only held because a `minY < 0` clamp
+        // was silently relocating the image to y=0 while the flow believed it
+        // sat 106.9pt lower.)
+        #expect(pages.count == 4)
+        #expect(BrowserLayoutTestSupport.allTextFragments([pages[0]]).isEmpty)
         for image in images {
             // No top strip cut: the whole image sits inside its page.
             #expect(image.rect.minY >= 0)
@@ -127,6 +136,147 @@ struct BrowserLayoutImageTests {
             // Scaled to fit the page (627 > 400 → 400 tall, aspect kept).
             #expect(abs(image.rect.height - 400) < 0.1)
             #expect(abs(image.rect.width - 224.561) < 0.1)
+        }
+    }
+
+    /// Regression (图片残页): an inline image must occupy EXACTLY the block-flow
+    /// space reserved for it — its top must never be above the preceding
+    /// content's bottom.
+    ///
+    /// Why the existing tall-image tests missed this: they all used an image
+    /// TALLER than the page, which takes `placeImage` case 3 (scale to fit) and
+    /// rewrites the rect to the page top — normalizing the y away. On a real
+    /// 842pt page a 627.2pt gallery image is SHORTER than the page, so it takes
+    /// case 1/2 and the authored y survives to the screen.
+    ///
+    /// The defect: `AtomicInlineBox` gave the image a 75/25 ascent/descent
+    /// split, so the image hung `height × 0.25` BELOW the baseline while the
+    /// walker painted it at `baseline − height` — i.e. `height × 0.25` above
+    /// its own line box top. A 400pt image was drawn 100pt too high, over
+    /// whatever sat above it. Page height here is 2000 so nothing paginates or
+    /// scales: this measures pure document geometry.
+    @Test func inlineImageNeverPaintsAbovePrecedingContent() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 200, height: 400), color: .magenta)
+        let html = """
+        <html><body>
+        <p>前段文字佔住圖片上方的流位置。</p>
+        <div><img src="tall.png"></div>
+        </body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
+            html, width: 300, height: 2000, imageLoader: loader(["tall.png": img])
+        )
+        let images = BrowserLayoutTestSupport.allImageFragments(pages)
+        let texts = BrowserLayoutTestSupport.allTextFragments(pages)
+        let image = try #require(images.first)
+        let textBottom = try #require(texts.map(\.rect.maxY).max())
+        // Not scaled (400 < 2000) and not repositioned by pagination: this is
+        // the authored geometry.
+        #expect(abs(image.rect.height - 400) < 0.01)
+        #expect(image.rect.minY >= textBottom - 0.5,
+                "image top \(image.rect.minY) is ABOVE preceding text bottom \(textBottom) — painted over it")
+    }
+
+    /// Regression (图片残页, real 画册 DOM at real device metrics): 392×842 page,
+    /// gallery cells whose 627.2pt image is SHORTER than the page. Each image
+    /// must stay below the previous cell's caption instead of painting over it,
+    /// and no image may overlap any text on its page.
+    @Test func galleryImageDoesNotPaintOverPreviousCaption() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 1080, height: 1920), color: .cyan)
+        let html = """
+        <html><head><style>
+        div.duokan-image-gallery { margin: 0.5em auto; width: 90%; text-align: center; }
+        div.duokan-image-gallery-cell img { margin: 0.35em 0; width: 90%; }
+        p.duokan-image-maintitle { margin: 1em 0 0; font-size: 0.9em; line-height: 1.25em; }
+        </style></head><body>
+        <div class="duokan-image-gallery">
+          <div class="duokan-image-gallery-cell">
+            <img alt="z1" src="a.jpg"/>
+            <p class="duokan-image-maintitle">贾探春</p>
+          </div>
+          <div class="duokan-image-gallery-cell">
+            <img alt="z1" src="b.jpg"/>
+            <p class="duokan-image-maintitle">史湘云</p>
+          </div>
+        </div>
+        </body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
+            html, width: 392, height: 842, imageLoader: loader(["a.jpg": img, "b.jpg": img])
+        )
+        let images = BrowserLayoutTestSupport.allImageFragments(pages)
+        #expect(images.count == 2)
+        // 90% of 392 → 352.8 wide, 9:16 → 627.2 tall. Shorter than the 842pt
+        // page, so `placeImage` must NOT scale it.
+        for image in images {
+            #expect(abs(image.rect.height - 627.2) < 1.0,
+                    "image height \(image.rect.height) — expected the authored 627.2 (unscaled)")
+        }
+        // Both captions must survive: an image painted over one would still be
+        // in the fragment list, so assert geometric non-overlap per page.
+        for page in pages {
+            var pageImages: [ImageFragment] = []
+            var pageTexts: [TextFragment] = []
+            for fragment in page.fragments {
+                switch fragment {
+                case .image(let i): pageImages.append(i)
+                case .text(let t): pageTexts.append(t)
+                default: break
+                }
+            }
+            for image in pageImages {
+                for text in pageTexts {
+                    let overlapsVertically = image.rect.minY < text.rect.maxY - 0.5
+                        && text.rect.minY < image.rect.maxY - 0.5
+                    let overlapsHorizontally = image.rect.minX < text.rect.maxX - 0.5
+                        && text.rect.minX < image.rect.maxX - 0.5
+                    #expect(!(overlapsVertically && overlapsHorizontally),
+                            "page \(page.index): image \(image.rect.rawValue) paints over text \(text.rect.rawValue)")
+                }
+            }
+        }
+    }
+
+    /// CSS Fragmentation §4.2 as a GENERAL rule — text only, no images, so it
+    /// pins the margin behaviour independently of replaced-element pagination:
+    ///
+    /// - page 0 is the flow start, NOT a break → the document's leading margin
+    ///   is retained;
+    /// - every later page was entered by an unforced break → the block-start
+    ///   margin adjoining that break is discarded, so no page opens with a
+    ///   leftover margin band.
+    ///
+    /// The distinguishing case is a paragraph that FITS the new page's
+    /// remainder and therefore is never snapped by the straddle path: paragraph
+    /// 3 lands at document y 118 with a 24pt margin above it, i.e. 18pt below
+    /// the page-1 top. Before the rule it painted at y 18.
+    @Test func unforcedBreakDiscardsAdjoiningMarginFlowStartKeepsIt() async throws {
+        let paragraphs = (1...40).map { "<p>段落\($0)</p>" }.joined()
+        let html = """
+        <html><head><style>
+          body { margin: 30px 0 0; }
+          p { margin: 24px 0 0; font-size: 16px; line-height: 20px; }
+        </style></head><body>\(paragraphs)</body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(html, width: 300, height: 100)
+        #expect(pages.count > 2)
+
+        func topText(_ page: PageFragments) -> CGFloat? {
+            page.fragments.compactMap { fragment -> CGFloat? in
+                if case .text(let t) = fragment { return t.rect.minY }
+                return nil
+            }.min()
+        }
+
+        // Flow start keeps the leading margin (body 30pt collapsed with the
+        // first paragraph's 24pt → 30pt).
+        let first = try #require(topText(pages[0]))
+        #expect(abs(first - 30) < 1.0, "flow-start margin not retained: \(first)")
+
+        // No later page opens with a margin band.
+        for page in pages.dropFirst() {
+            guard let top = topText(page) else { continue }
+            #expect(top < 1.0, "page \(page.index) opens with a \(top)pt margin band")
         }
     }
 

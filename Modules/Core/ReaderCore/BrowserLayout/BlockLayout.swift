@@ -110,13 +110,12 @@ enum BlockLayout {
             // block-end margin (the box's content extent excludes it).
             cursorBlock -= last
         }
-        // A line box may start ABOVE the block's content top (a tall inline
-        // image's top strip overflows upward by its descent). The block's
-        // content extent must therefore cover [minLineTop, lineBottom] — i.e.
-        // flow position = last line-box bottom, PLUS the negative top offset
-        // of the highest line box (CSS 2.1 §10.8: the line box is sized to
-        // contain its inline boxes; a block containing such a line must not
-        // report a content height smaller than the image).
+        // The block's content extent covers every line box it owns. A negative
+        // `line.top` (a line box starting above the content top) no longer
+        // arises from tall inline images — those sit on the baseline, so
+        // `InlineLayout` gives them `top == yTop` — but the clamp stays as the
+        // general CSS 2.1 §10.8 guard: whatever raises a line box above the
+        // content top must still be covered by the block's height.
         var minLineTop: CGFloat = 0
         for line in box.lines {
             cursorBlock = max(cursorBlock, line.top + line.height)

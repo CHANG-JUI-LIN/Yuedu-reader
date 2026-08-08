@@ -81,9 +81,18 @@ enum InlineLayout {
         for run in runs {
             runAttributedStart.append(attributedCursor)
             if let atomic = run.atomic {
+                // CSS 2.1 §10.8.1: an inline replaced element with
+                // `vertical-align: baseline` sits with its BOTTOM margin edge ON
+                // the baseline — ascent = its full height, descent = 0.
+                // A previous 75/25 ascent/descent split made the image hang
+                // height×0.25 BELOW the baseline; because the page walker paints
+                // an atomic run at `baseline − height`, the image landed
+                // height×0.25 ABOVE its own line box, i.e. above the flow
+                // position reserved for it. A 627.2pt 画册 image was drawn
+                // 156.8pt too high, over whatever preceded it (图片残页).
                 let box = AtomicInlineBox(width: atomic.usedSize.width,
-                                          ascent: atomic.usedSize.height * 0.75,
-                                          descent: atomic.usedSize.height * 0.25)
+                                          ascent: atomic.usedSize.height,
+                                          descent: 0)
                 delegateBoxes.append(box)
                 var callbacks = AtomicInlineBox.callbacks
                 // passRetained: the CTRunDelegate OWNS the box. The CTLine
@@ -200,18 +209,14 @@ enum InlineLayout {
             let height = max(cssHeight ?? contentHeight, contentHeight)
             let extraLeading = max(0, height - contentHeight)
             let baselineOffset = extraLeading / 2 + breakInfo.ascent
-            // CSS 2.1 line-box construction: the line box top is the top of the
-            // HIGHEST inline box. An atomic inline box (image) whose bottom
-            // sits on the baseline extends ABOVE the text top by its descent —
-            // e.g. a 427.5pt image (ascent 320.6 / descent 106.9) pushes the
-            // line box top 106.9pt above the text line top. Without this the
-            // image's top strip overflowed into the previous line/page.
-            // NOTE: AtomicInlineBox splits the image height 75/25 ascent/descent
-            // (matching the CTRunDelegate), so the descent here is height*0.25.
-            let maxAtomicDescent = lineRuns
-                .compactMap { $0.atomic?.usedSize.height }
-                .max() ?? 0
-            let top = yTop + min(0, extraLeading / 2 - maxAtomicDescent * 0.25)
+            // The line box top IS the flow position. Every inline box — atomic
+            // ones included — is contained by its line box (CSS 2.1 §10.8), so
+            // none can begin above `yTop`. An image sits on the baseline
+            // (ascent = height, descent = 0), putting its top at
+            // `yTop + extraLeading/2`: inside the line box by construction.
+            // This previously subtracted height×0.25 to chase the 75/25
+            // delegate split; both halves of that hack are gone.
+            let top = yTop
             let contentX = alignmentOffset(alignment: lineRuns.first?.style.textAlign ?? .natural,
                                            lineWidth: breakInfo.width, maxWidth: maxWidth)
             result.append(LayoutLine(

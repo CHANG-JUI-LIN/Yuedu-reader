@@ -145,6 +145,48 @@ struct PageWalker {
     private(set) var currentIndex = 0
     private(set) var currentPage: [Fragment] = []
     private(set) var completedPages: [PageFragments] = []
+    /// Accumulated block-axis displacement for content not yet placed.
+    ///
+    /// Pagination relocates a fragment that would straddle a page boundary to
+    /// the next page top, and scales a replaced element that exceeds a whole
+    /// page. Both change how much block space the fragment actually consumes,
+    /// so everything AFTER it in document order must move by the same amount —
+    /// otherwise the relocated fragment paints over its own following content
+    /// (a 627.2pt gallery image landing on the caption of its own cell) or
+    /// leaves a blank page behind (flow reserved 627.2pt, page consumed 400pt).
+    /// One shift for every step kind: never a per-kind nudge.
+    private var flowShift: CGFloat = 0
+
+    /// How the in-progress fragmentainer was entered — the input to the CSS
+    /// Fragmentation §4.2 margin rule.
+    ///
+    /// - `flowStart`: the first page. Not a break, so its leading margin is
+    ///   retained (a body `margin-top` still shows above the first line).
+    /// - `unforcedBreak`: pagination ran out of room. The block-start margin
+    ///   adjoining the break is discarded.
+    /// - `forcedBreak`: an author break (`break-before`/`page-break-before`).
+    ///   The margin AFTER the break is retained.
+    ///
+    /// The engine does not parse `break-before`/`break-after` yet, so nothing
+    /// produces `forcedBreak` today. The case is modeled rather than assumed so
+    /// that adding forced breaks cannot silently start eating their margins.
+    private enum FragmentainerEntry {
+        case flowStart
+        case unforcedBreak
+        case forcedBreak
+    }
+    private var pageEntry: FragmentainerEntry = .flowStart
+
+    /// Block-start margin adjoining the next content to be placed: the sum of
+    /// the block-start margins of the boxes entered since the last emitted
+    /// fragment, seeded with the root's own (collapsed) block-start margin.
+    ///
+    /// Only margins are accumulated — border and padding are deliberately
+    /// excluded, because only margins are discardable at a break. Where a
+    /// sibling margin collapsed to the PREVIOUS box's larger block-end margin,
+    /// this under-counts, which is the safe direction: it can leave a gap but
+    /// never eats a box's border or padding.
+    private var adjoiningBlockStartMargin: CGFloat
     /// Defensive step budget: a corrupted box tree must never hang pagination
     /// forever. Each `nextStep` consumes one; exceeding the budget throws.
     private var stepBudget = 0
@@ -171,6 +213,9 @@ struct PageWalker {
         case .horizontal: rootBlockStartInset = box.margins.top
         case .verticalRTL: rootBlockStartInset = box.margins.right
         }
+        // The root's block-start margin is the margin adjoining the first
+        // content; page 0 is `flowStart`, so it is retained there.
+        self.adjoiningBlockStartMargin = rootBlockStartInset
         self.stack = [Self.makeFrame(box, contentOrigin: CGPoint(x: 0, y: rootBlockStartInset))]
     }
 
@@ -248,6 +293,11 @@ struct PageWalker {
                     x: parent.contentOrigin.x + child.frame.minX + child.borders.left + child.padding.left,
                     y: parent.contentOrigin.y + child.frame.minY + child.borders.top + child.padding.top
                 )
+                // Entering a box contributes its block-start margin to the
+                // margin adjoining the next content. Reset by `place`, so this
+                // only ever accumulates across boxes entered back-to-back with
+                // nothing emitted between them.
+                adjoiningBlockStartMargin += LogicalGeometry.blockStart(edge: child.margins, mode: writingMode)
                 stack.append(Self.makeFrame(child, contentOrigin: childOrigin))
                 continue
             }
@@ -399,6 +449,24 @@ struct PageWalker {
 
     // MARK: - Paging rules (single source of truth with the batch path)
 
+    /// True when the in-progress page already carries visible content (text or
+    /// an image). Box backgrounds/borders alone do not count: a body-background
+    /// fill spans the whole page and would otherwise make every page look
+    /// occupied.
+    private var currentPageHasInk: Bool {
+        func hasInk(_ fragments: [Fragment]) -> Bool {
+            for fragment in fragments {
+                switch fragment {
+                case .text, .image: return true
+                case .fill: continue
+                case .group(let children): if hasInk(children) { return true }
+                }
+            }
+            return false
+        }
+        return hasInk(currentPage)
+    }
+
     private mutating func advanceToPage(_ target: Int) -> PageFragments? {
         var flushed: PageFragments? = nil
         while target > currentIndex {
@@ -407,21 +475,58 @@ struct PageWalker {
             flushed = flushed ?? page
             currentIndex += 1
             currentPage = []
+            // Pagination itself ran out of room: an UNFORCED break. Author
+            // breaks would set `.forcedBreak` instead, and the engine does not
+            // parse them yet.
+            pageEntry = .unforcedBreak
         }
         return flushed
     }
 
+    /// CSS Fragmentation §4.2 — discards the block-start margin adjoining an
+    /// UNFORCED fragmentainer break, returning the possibly-raised block
+    /// position. Applies to every step kind; call once per placed step, after
+    /// `advanceToPage`, so the entry kind and ink state describe the page the
+    /// content actually lands on.
+    ///
+    /// Deliberately narrow, per the three conditions the rule depends on:
+    /// - only `unforcedBreak` — `flowStart` keeps the document's leading margin
+    ///   and `forcedBreak` keeps the margin the author put after the break;
+    /// - only while the page carries no ink, so a page with content on it can
+    ///   never have a later margin swallowed;
+    /// - bounded by the margin itself AND by the distance to the fragmentainer
+    ///   top, so border/padding are never eaten and content never rises above
+    ///   the page top.
+    private mutating func discardMarginAdjoiningBreak(_ blockStart: CGFloat, target: Int) -> CGFloat {
+        let margin = adjoiningBlockStartMargin
+        adjoiningBlockStartMargin = 0
+        guard case .unforcedBreak = pageEntry else { return blockStart }
+        guard target == currentIndex, !currentPageHasInk else { return blockStart }
+        let pageTop = CGFloat(target) * pageHeight
+        let discard = min(margin, blockStart - pageTop)
+        guard discard > 0 else { return blockStart }
+        // The discarded margin is removed from the flow, so later content moves
+        // up with it — same mechanism as any other displacement.
+        flowShift -= discard
+        return blockStart - discard
+    }
+
     private mutating func placeText(_ step: StepText) -> PageFragments? {
-        var target = max(0, Int(floor(step.rect.minY / pageHeight)))
-        let pageLocalY = step.rect.minY - CGFloat(target) * pageHeight
-        var adjustedDocY = step.rect.minY
+        let shiftedY = step.rect.minY + flowShift
+        var target = max(0, Int(floor(shiftedY / pageHeight)))
+        let pageLocalY = shiftedY - CGFloat(target) * pageHeight
+        var adjustedDocY = shiftedY
         // Line boxes never split: a line that fits a page but not the
-        // remaining space moves wholesale to the next page.
+        // remaining space moves wholesale to the next page, carrying every
+        // later line with it (flowShift) so the pushed line cannot overlap the
+        // line that used to follow it.
         if step.rect.height <= pageHeight, pageLocalY + step.rect.height > pageHeight + 0.001 {
             target += 1
             adjustedDocY = CGFloat(target) * pageHeight
+            flowShift += adjustedDocY - shiftedY
         }
         let flushed = advanceToPage(target)
+        adjustedDocY = discardMarginAdjoiningBreak(adjustedDocY, target: target)
         let adjustedDoc = DocumentRect(rawValue: CGRect(
             x: step.rect.minX, y: adjustedDocY,
             width: step.rect.width, height: step.rect.height
@@ -443,9 +548,12 @@ struct PageWalker {
     }
 
     private mutating func placeFill(_ step: StepFill) -> PageFragments? {
-        let target = max(0, Int(floor(step.rect.minY / pageHeight)))
+        var shiftedRect = step.rect.rawValue
+        shiftedRect.origin.y += flowShift
+        let target = max(0, Int(floor(shiftedRect.minY / pageHeight)))
         let flushed = advanceToPage(target)
-        let canvas = canvasRect(forDocument: step.rect, pageIndex: currentIndex)
+        shiftedRect.origin.y = discardMarginAdjoiningBreak(shiftedRect.minY, target: target)
+        let canvas = canvasRect(forDocument: DocumentRect(rawValue: shiftedRect), pageIndex: currentIndex)
         currentPage.append(.fill(FillFragment(
             rect: canvas,
             documentRect: step.rect,
@@ -462,29 +570,26 @@ struct PageWalker {
     }
 
     private mutating func placeImage(_ step: StepImage) -> PageFragments? {
-        var target = max(0, Int(floor(step.rect.minY / pageHeight)))
-        let pageLocalY = step.rect.minY - CGFloat(target) * pageHeight
-        var adjustedDocY = step.rect.minY
+        let shiftedY = step.rect.minY + flowShift
+        var target = max(0, Int(floor(shiftedY / pageHeight)))
+        let pageLocalY = shiftedY - CGFloat(target) * pageHeight
+        var adjustedDocY = shiftedY
         var adjustedDocRect = step.rect.rawValue
+        adjustedDocRect.origin.y = shiftedY
 
         // Replaced-element pagination (Phase 2C):
         // 1. Fits current page remainder → place.
         // 2. Does not fit remainder but fits a full page → move whole to next.
         // 3. Intrinsic size EXCEEDS a full page → scale to fit (aspect kept),
         //    never split into fragments.
+        // Cases 2 and 3 change the block space the image consumes, so both feed
+        // `flowShift` — the following content moves with the image.
         let contentWidth = max(1, pageRect.width - contentInsets.left - contentInsets.right)
-        // A line box pushed above the page top (tall inline image whose top
-        // strip overflows) must move to the TOP of page 0 — the image's top
-        // must never be cut off by the viewport edge.
-        if step.rect.minY < 0 {
-            target = 0
-            adjustedDocY = 0
-            adjustedDocRect.origin.y = 0
-        }
         if step.rect.height <= pageHeight, pageLocalY + step.rect.height > pageHeight + 0.001 {
             // Case 2: move to next page.
             target += 1
             adjustedDocY = CGFloat(target) * pageHeight
+            flowShift += adjustedDocY - shiftedY
             adjustedDocRect.origin.y = adjustedDocY
         } else if step.rect.height > pageHeight || step.rect.width > contentWidth {
             // Case 3: scale to fit the full page content area, aspect preserved.
@@ -494,12 +599,18 @@ struct PageWalker {
             )
             let newW = max(1, step.rect.width * scale)
             let newH = max(1, step.rect.height * scale)
+            // Block layout reserved the UNSCALED height; the page consumes only
+            // `newH`. Pull the following content up by the difference, or the
+            // leftover band becomes an empty page.
+            flowShift -= step.rect.height - newH
             // A scaled image that still doesn't fit the CURRENT page's
             // remainder moves to its own page (top-aligned).
             let pageBottom = CGFloat(target + 1) * pageHeight
             if adjustedDocY + newH > pageBottom + 0.001 {
                 target += 1
-                adjustedDocY = CGFloat(target) * pageHeight
+                let movedY = CGFloat(target) * pageHeight
+                flowShift += movedY - adjustedDocY
+                adjustedDocY = movedY
             }
             adjustedDocRect = CGRect(
                 x: step.rect.minX,
@@ -514,12 +625,14 @@ struct PageWalker {
             + "origDocY=\(String(format: "%.2f", step.rect.minY)) "
             + "adjustedDocY=\(String(format: "%.2f", adjustedDocY)) "
             + "assignedPage=\(target) "
+            + "flowShift=\(String(format: "%.2f", flowShift)) "
             + "imageH=\(String(format: "%.2f", step.rect.height)) "
             + "pageH=\(String(format: "%.2f", pageHeight)) "
             + "contentW=\(String(format: "%.2f", max(1, pageRect.width - contentInsets.left - contentInsets.right)))"
         )
         #endif
         let flushed = advanceToPage(target)
+        adjustedDocRect.origin.y = discardMarginAdjoiningBreak(adjustedDocY, target: target)
         let adjustedDoc = DocumentRect(rawValue: adjustedDocRect)
         let canvas = canvasRect(forDocument: adjustedDoc, pageIndex: currentIndex)
         currentPage.append(.image(ImageFragment(
