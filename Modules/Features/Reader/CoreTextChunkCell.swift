@@ -111,9 +111,13 @@ final class CoreTextChunkDrawView: UIView {
         // Phase 1: Block decorations in UIKit coordinates (backgrounds, borders)
         CoreTextPageView.drawBlockRenderables(
             chunk.blockRenderables,
+            writingMode: chunk.writingMode,
             in: ctx,
             boundsHeight: bounds.height
         )
+
+        let suppressedRanges = chunk.blockRenderables
+            .flatMap { $0.suppressesSourceText ? $0.sourceRanges : [] }
 
         // Phase 2: Text — flip to CoreText coordinates for drawing
         ctx.saveGState()
@@ -122,19 +126,22 @@ final class CoreTextChunkDrawView: UIView {
         ctx.scaleBy(x: 1.0, y: -1.0)
 
         if chunk.writingMode.isVertical {
-            CoreTextDialogueBox.drawVertical(
+            RegexHighlightDecorationRenderer.drawVertical(
                 frame: frame,
-                attrStr: chunk.attributedString,
+                attributedString: chunk.attributedString,
                 contentOffset: .zero,
                 layoutHeight: bounds.height,
                 writingMode: chunk.writingMode,
+                suppressedRanges: suppressedRanges,
+                context: ctx
+            )
+            CoreTextPageView.drawVerticalFrame(
+                frame,
+                contentOffset: .zero,
+                suppressedRanges: suppressedRanges,
                 in: ctx
             )
-            CTFrameDraw(frame, ctx)
         } else {
-            let suppressedRanges = chunk.blockRenderables
-                .flatMap { $0.attributedText != nil ? $0.sourceRanges : [] }
-
             CoreTextHorizontalLineDrawer.drawLines(
                 of: frame,
                 contentWidth: bounds.width,

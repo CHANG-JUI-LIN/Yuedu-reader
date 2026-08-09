@@ -22,6 +22,9 @@ struct ChapterTitleStyleSettingsView: View {
     @State private var previewIsDark = false
     @State private var showingImporter = false
     @State private var showingExporter = false
+    @State private var showingDesigner = false
+    @State private var designerDraft = ChapterTitleDesign.default
+    @State private var exportData = Data()
     @State private var savePresetName = ""
     @State private var showingSavePresetDialog = false
     @State private var presetPendingDeletion: ChapterTitleStylePreset?
@@ -45,7 +48,7 @@ struct ChapterTitleStyleSettingsView: View {
             actionSection
         }
         .navigationTitle(localized("章節標題樣式"))
-        .toolbarTitleDisplayMode(.inline    )
+        .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .settings)
         .onDisappear {
             // ReaderView observes the immutable render-settings snapshot and
@@ -59,11 +62,16 @@ struct ChapterTitleStyleSettingsView: View {
         )
         .fileExporter(
             isPresented: $showingExporter,
-            document: ChapterTitleStyleDocument(style: style),
-            contentType: .json,
+            document: ChapterTitleStylePackageDocument(data: exportData),
+            contentType: .yueduReaderStyle,
             defaultFilename: localized("章節標題樣式"),
             onCompletion: handleExport
         )
+        .fullScreenCover(isPresented: $showingDesigner) {
+            ChapterTitleDesignerView(initial: designerDraft) { design in
+                updateStyle { $0.design = design }
+            }
+        }
         .alert(localized("樣式名稱"), isPresented: $showingSavePresetDialog) {
             TextField(localized("樣式名稱"), text: $savePresetName)
             Button(localized("取消"), role: .cancel) { savePresetName = "" }
@@ -99,6 +107,11 @@ struct ChapterTitleStyleSettingsView: View {
         Section {
             Toggle(localized("高級 CSS 樣式"), isOn: binding(\ChapterTitleStyle.advancedCSSEnabled))
                 .font(DSFont.body)
+            if style.advancedCSSEnabled {
+                Button(action: openDesigner) {
+                    Label(localized("編輯設計"), systemImage: "slider.horizontal.3")
+                }
+            }
         } footer: {
             Text(localized("開啟後使用 HTML/CSS 模板渲染章節標題，支持自定義排版和樣式。"))
         }
@@ -150,24 +163,11 @@ struct ChapterTitleStyleSettingsView: View {
         return Button {
             applyStyle(preset.style)
         } label: {
-            HStack(spacing: DSSpacing.md) {
-                Image(systemName: Self.presetIconName(for: preset))
-                    .font(DSFont.body)
-                    .foregroundStyle(isSelected ? DSColor.accent : DSColor.textSecondary)
-                    .frame(width: DSSpacing.xl)
-                Text(displayName)
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textPrimary)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(DSFont.body)
-                        .foregroundStyle(DSColor.accent)
-                }
-            }
-            .contentShape(Rectangle())
+            Label(
+                displayName,
+                systemImage: isSelected ? "checkmark.circle.fill" : Self.presetIconName(for: preset)
+            )
         }
-        .buttonStyle(.plain)
         .accessibilityLabel(displayName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -296,12 +296,7 @@ struct ChapterTitleStyleSettingsView: View {
                 }
             }
         } label: {
-            HStack {
-                Text(title).font(DSFont.body).foregroundStyle(DSColor.textPrimary)
-                Spacer()
-                Text(fontDisplayName(current)).font(DSFont.body).foregroundStyle(DSColor.textSecondary)
-                Image(systemName: "chevron.up.chevron.down").font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
-            }
+            LabeledContent(title, value: fontDisplayName(current))
         }
     }
 
@@ -321,7 +316,7 @@ struct ChapterTitleStyleSettingsView: View {
                 Label(localized("從檔案匯入樣式"), systemImage: "tray.and.arrow.down")
             }
             Button {
-                showingExporter = true
+                prepareExport()
             } label: {
                 Label(localized("匯出樣式檔案"), systemImage: "square.and.arrow.up")
             }
@@ -375,14 +370,50 @@ struct ChapterTitleStyleSettingsView: View {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             let data = try Data(contentsOf: url)
-            guard let decoded = try? JSONDecoder().decode(ChapterTitleStyle.self, from: data) else {
-                importAlert = TitleStyleAlert(titleKey: "匯入失敗", message: localized("檔案不是有效的章節標題樣式。"))
-                return
-            }
-            applyStyle(decoded)
-            importAlert = TitleStyleAlert(titleKey: "匯入成功", message: localized("已套用匯入的章節標題樣式。"))
+            let isPackage = url.pathExtension.lowercased() == "yuedustyle"
+            Task { await importStyle(data: data, isPackage: isPackage) }
         } catch {
             importAlert = TitleStyleAlert(titleKey: "匯入失敗", message: error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func importStyle(data: Data, isPackage: Bool) async {
+        do {
+            let decoded: ChapterTitleStyle
+            if isPackage {
+                let payload = try await ReaderStylePackage.import(data, assetStore: .shared)
+                guard payload.kind == .chapterTitle else {
+                    throw ReaderStylePackageError.malformedManifest
+                }
+                decoded = try payload.decode(ChapterTitleStyle.self)
+            } else {
+                decoded = try ReaderStylePackage.decodeLegacyChapterTitleJSON(data)
+            }
+            applyStyle(decoded)
+            importAlert = TitleStyleAlert(
+                titleKey: "匯入成功",
+                message: localized("已套用匯入的章節標題樣式。")
+            )
+        } catch {
+            importAlert = TitleStyleAlert(titleKey: "匯入失敗", message: error.localizedDescription)
+        }
+    }
+
+    private func prepareExport() {
+        let style = style
+        Task { @MainActor in
+            do {
+                let payload = try ReaderStylePackagePayload.encode(
+                    style,
+                    kind: .chapterTitle,
+                    assetIDs: style.design?.assetIDs ?? []
+                )
+                exportData = try await ReaderStylePackage.export(payload, assetStore: .shared)
+                showingExporter = true
+            } catch {
+                importAlert = TitleStyleAlert(titleKey: "操作失敗", message: error.localizedDescription)
+            }
         }
     }
 
@@ -394,6 +425,7 @@ struct ChapterTitleStyleSettingsView: View {
 
     // MARK: - Helpers
 
+    @ViewBuilder
     private func sliderRow(
         _ title: String,
         value: Binding<CGFloat>,
@@ -402,18 +434,12 @@ struct ChapterTitleStyleSettingsView: View {
         unit: String,
         format: String = "%.0f"
     ) -> some View {
-        VStack(alignment: .leading, spacing: DSSpacing.xs) {
-            HStack {
-                Text(title).font(DSFont.body)
-                Spacer()
-                Text("\(String(format: format, value.wrappedValue)) \(unit)")
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textSecondary)
-            }
-            Slider(value: value, in: range, step: step)
-                .disabled(!style.visible)
-        }
-        .padding(.vertical, DSSpacing.xs)
+        let formatted = "\(String(format: format, value.wrappedValue)) \(unit)"
+        LabeledContent(title, value: formatted)
+        Slider(value: value, in: range, step: step)
+            .disabled(!style.visible)
+            .accessibilityLabel(title)
+            .accessibilityValue(formatted)
     }
 
     private func fontDisplayName(_ postScript: String?) -> String {
@@ -423,7 +449,37 @@ struct ChapterTitleStyleSettingsView: View {
         return font.displayName
     }
 
-    private static let styleContentTypes: [UTType] = [.json, .plainText, .data]
+    private func openDesigner() {
+        do {
+            designerDraft = try ChapterTitleDesignerEntryDesign.resolve(style)
+            showingDesigner = true
+        } catch {
+            importAlert = TitleStyleAlert(
+                titleKey: "操作失敗",
+                message: String(describing: error)
+            )
+        }
+    }
+
+    private static let styleContentTypes: [UTType] = [.yueduReaderStyle, .json, .plainText, .data]
+}
+
+enum ChapterTitleDesignerEntryDesign {
+    static func resolve(_ style: ChapterTitleStyle) throws -> ChapterTitleDesign {
+        if let design = style.design {
+            guard design.layers.isEmpty, let legacySource = design.legacySource else {
+                return design
+            }
+            return try ChapterTitleHTMLCodec.migrateLegacySource(legacySource)
+        }
+
+        return try ChapterTitleHTMLCodec.migrateLegacySource(
+            ChapterTitleLegacySource(
+                light: style.lightTemplate,
+                dark: style.darkTemplate
+            )
+        )
+    }
 }
 
 // MARK: - Live preview (real CoreText pipeline)
@@ -451,7 +507,7 @@ private struct ChapterTitlePreviewCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if let rendered, rendered.length > 0 {
                 ChapterTitleCoreTextPreview(attributed: rendered)
             } else if rendered != nil {
@@ -642,26 +698,36 @@ private struct TitleStyleAlert: Identifiable {
     let message: String
 }
 
-private struct ChapterTitleStyleDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
-    static var writableContentTypes: [UTType] { [.json] }
+private struct ChapterTitleStylePackageDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.yueduReaderStyle] }
+    static var writableContentTypes: [UTType] { [.yueduReaderStyle] }
 
-    var style: ChapterTitleStyle
+    var data: Data
 
-    init(style: ChapterTitleStyle) {
-        self.style = style
+    init(data: Data) {
+        self.data = data
     }
 
     init(configuration: ReadConfiguration) throws {
-        let data = configuration.file.regularFileContents ?? Data()
-        style = (try? JSONDecoder().decode(ChapterTitleStyle.self, from: data)) ?? .default
+        data = configuration.file.regularFileContents ?? Data()
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = (try? encoder.encode(style)) ?? Data("{}".utf8)
         return FileWrapper(regularFileWithContents: data)
+    }
+}
+
+private extension ChapterTitleDesign {
+    var assetIDs: [UUID] {
+        var values: [UUID] = []
+        for layer in layers {
+            if case let .image(id) = layer.content { values.append(id) }
+            for style in [layer.lightStyle, layer.darkStyle] {
+                if let id = style.imagePresentation?.assetID { values.append(id) }
+                if let id = style.ruleStyle.decoration.backgroundImage?.assetID { values.append(id) }
+            }
+        }
+        return Array(Set(values))
     }
 }
 

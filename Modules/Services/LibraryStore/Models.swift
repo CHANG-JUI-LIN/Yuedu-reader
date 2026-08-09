@@ -659,14 +659,12 @@ struct ReaderRenderSettings: Equatable {
     /// layout invalidation can distinguish a new imported image without retaining
     /// UIKit image objects in persisted render settings.
     var readerBackgroundImageURL: URL? = nil
-    /// Tint color for the "對話文字高亮" decoration (nil = disabled). When set, quoted
-    /// dialogue is recolored with this color as the attributed string is built.
-    /// Kept in render settings so a change re-triggers pagination via the dedup check.
-    var dialogueHighlightColor: UIColor? = nil
-    /// Fill color for the "對話底色框" decoration (nil = disabled). When set, quoted dialogue is
-    /// marked with `DialogueHighlighter.boxColorAttribute` and the horizontal line drawer fills a
-    /// rounded box behind it. Kept in render settings so a change re-triggers pagination.
-    var dialogueBoxColor: UIColor? = nil
+    /// Immutable regex rules used by every attributed-string build path.
+    var regexHighlightConfiguration: RegexHighlightConfiguration = .disabled
+    /// Selects the light/dark rule style without consulting mutable UI state.
+    var readerStyleAppearance: ReaderStyleAppearance = .light
+    /// Invalidates draw-only image decoration snapshots after asset mutations.
+    var readerStyleAssetRevision: UInt64 = 0
 }
 
 enum ReaderWritingMode: String, CaseIterable, Codable {

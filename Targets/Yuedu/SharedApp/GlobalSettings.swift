@@ -206,15 +206,6 @@ enum ReaderTheme: String, CaseIterable {
         return Self.weChatAccent
     }
 
-    /// Text tint for the "對話文字高亮" reading decoration. Returns the theme accent
-    /// nudged slightly toward the body text color, so long dialogue passages stay soft
-    /// yet clearly distinct. Readable on every theme (the accent always has contrast
-    /// against its own background). Returns `nil` when the decoration is disabled.
-    func dialogueHighlightColor(enabled: Bool) -> UIColor? {
-        guard enabled else { return nil }
-        return AppearanceThemePreset.mix(uiAccentColor, uiTextColor, 0.15)
-    }
-
     var barColor: Color {
         Color(uiColor: uiBarColor)
     }
@@ -524,6 +515,8 @@ class GlobalSettings: ObservableObject {
     private static let readerDialogueBoxKey = "yd_reader_dialogue_box"
     private static let readerDialogueBoxColorHexKey = "yd_reader_dialogue_box_color_hex"
     private static let readerDialogueBoxStyleKey = "yd_reader_dialogue_box_style"
+    private static let regexHighlightConfigurationKey = "yd_regex_highlight_configuration_v1"
+    private var readerStyleAssetRevisionCancellable: AnyCancellable?
     // TTS playback highlight — independent from the reader dialogue decoration.
     private static let ttsHighlightEnabledKey = "yd_tts_highlight_enabled"
     private static let ttsHighlightColorHexKey = "yd_tts_highlight_color_hex"
@@ -819,6 +812,20 @@ class GlobalSettings: ObservableObject {
             UserDefaults.standard.set(readerDialogueBoxStyleRaw, forKey: Self.readerDialogueBoxStyleKey)
         }
     }
+    /// Versioned regex rules replacing the legacy single dialogue-highlight style.
+    /// The legacy properties above remain persisted for old appearance payloads,
+    /// while this configuration is the source of truth for the new rule editor.
+    @Published var regexHighlightConfiguration: RegexHighlightConfiguration {
+        didSet {
+            let sanitized = regexHighlightConfiguration.sanitized()
+            if sanitized != regexHighlightConfiguration {
+                regexHighlightConfiguration = sanitized
+                return
+            }
+            Self.saveRegexHighlightConfiguration(sanitized)
+        }
+    }
+    @Published private(set) var readerStyleAssetRevision: UInt64 = 0
 
     // MARK: - TTS playback highlight (independent from reader dialogue decoration)
     @Published var ttsHighlightEnabled: Bool {
@@ -1428,7 +1435,10 @@ class GlobalSettings: ObservableObject {
             ?? Self.defaultReaderUnderlineThickness
         readerTextUnderlineOffset = (UserDefaults.standard.object(forKey: Self.readerTextUnderlineOffsetKey) as? Double)
             ?? Self.defaultReaderUnderlineOffset
-        readerDialogueHighlightEnabled = UserDefaults.standard.bool(forKey: Self.readerDialogueHighlightKey)
+        let loadedDialogueHighlightEnabled = UserDefaults.standard.bool(
+            forKey: Self.readerDialogueHighlightKey
+        )
+        readerDialogueHighlightEnabled = loadedDialogueHighlightEnabled
         readerDialogueHighlightColorHex = UInt32(clamping:
             (UserDefaults.standard.object(forKey: Self.readerDialogueHighlightColorHexKey) as? Int)
                 ?? Int(Self.defaultReaderDialogueHighlightColorHex)
@@ -1441,6 +1451,9 @@ class GlobalSettings: ObservableObject {
         readerDialogueBoxStyleRaw =
             (UserDefaults.standard.object(forKey: Self.readerDialogueBoxStyleKey) as? Int)
             ?? Self.defaultReaderDialogueBoxStyle
+        regexHighlightConfiguration = Self.loadRegexHighlightConfiguration(
+            oldGlobalEnabled: loadedDialogueHighlightEnabled
+        )
 
         // TTS playback highlight
         if UserDefaults.standard.object(forKey: Self.ttsHighlightEnabledKey) == nil {
@@ -1646,6 +1659,24 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_booksource_list_grouped") as? Bool) ?? true
         bookSourceAutoComplete =
             (UserDefaults.standard.object(forKey: "yd_booksource_auto_complete") as? Bool) ?? false
+
+        readerStyleAssetRevisionCancellable = NotificationCenter.default.publisher(
+            for: .readerStyleAssetsDidChange
+        )
+        .compactMap { notification in
+            (notification.userInfo?[ReaderStyleAssetStore.revisionUserInfoKey] as? NSNumber)?
+                .uint64Value
+        }
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] revision in
+            guard let self else { return }
+            self.readerStyleAssetRevision = max(self.readerStyleAssetRevision, revision)
+        }
+        Task { @MainActor [weak self] in
+            let revision = await ReaderStyleAssetStore.shared.revision
+            guard let self else { return }
+            self.readerStyleAssetRevision = max(self.readerStyleAssetRevision, revision)
+        }
     }
 
     func selectCommentBubbleBuiltinStyle() {
@@ -1793,6 +1824,39 @@ class GlobalSettings: ObservableObject {
     private static func saveChapterTitleCustomPresets(_ presets: [ChapterTitleStylePreset]) {
         let encoded = (try? JSONEncoder().encode(presets)) ?? Data("[]".utf8)
         UserDefaults.standard.set(encoded, forKey: chapterTitleCustomPresetsKey)
+    }
+
+    // MARK: - Regex Highlight Configuration
+
+    private static func loadRegexHighlightConfiguration(
+        oldGlobalEnabled: Bool
+    ) -> RegexHighlightConfiguration {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: regexHighlightConfigurationKey),
+           let decoded = try? JSONDecoder().decode(RegexHighlightConfiguration.self, from: data) {
+            let sanitized = decoded.sanitized()
+            if sanitized != decoded {
+                saveRegexHighlightConfiguration(sanitized)
+            }
+            return sanitized
+        }
+
+        // One-time migration intentionally carries only the legacy global switch.
+        // Old dialogue colors and box settings must not leak into the approved
+        // five-rule defaults. Persist immediately so subsequent launches never
+        // repeat the migration or observe later edits to the legacy keys.
+        let migrated = RegexHighlightMigration.makeInitialConfiguration(
+            oldGlobalEnabled: oldGlobalEnabled
+        )
+        saveRegexHighlightConfiguration(migrated)
+        return migrated
+    }
+
+    private static func saveRegexHighlightConfiguration(
+        _ configuration: RegexHighlightConfiguration
+    ) {
+        guard let data = try? JSONEncoder().encode(configuration.sanitized()) else { return }
+        UserDefaults.standard.set(data, forKey: regexHighlightConfigurationKey)
     }
 
     /// Add or replace a user preset (matched by id).
@@ -2242,7 +2306,13 @@ class GlobalSettings: ObservableObject {
     /// The cheap value read a full-customization export is built from. Main
     /// actor, no disk I/O — `AppearanceCustomizationBundle` does the reading.
     func appearanceCustomizationSnapshot() -> AppearanceCustomizationSnapshot {
-        AppearanceCustomizationSnapshot(
+        let regexAssetIDs = Set(regexHighlightConfiguration.evaluationRules.flatMap { rule in
+            [
+                rule.lightStyle.decoration.backgroundImage?.assetID,
+                rule.darkStyle.decoration.backgroundImage?.assetID,
+            ].compactMap { $0 }
+        })
+        return AppearanceCustomizationSnapshot(
             themes: customAppearanceThemes,
             pageBackgrounds: appearancePageBackgrounds,
             tabIcons: rootTabIconAssets,
@@ -2250,7 +2320,9 @@ class GlobalSettings: ObservableObject {
             launchImageDarkFileName: launchImageFileName(for: .dark),
             readerBackgroundMode: readerCustomBackgroundMode.rawValue,
             readerBackgroundColorHex: readerCustomBackgroundColorHex,
-            readerBackgroundImageFileName: readerCustomBackgroundImageFileName
+            readerBackgroundImageFileName: readerCustomBackgroundImageFileName,
+            regexHighlightConfiguration: regexHighlightConfiguration,
+            readerStyleAssetIDs: Array(regexAssetIDs)
         )
     }
 
@@ -2271,6 +2343,25 @@ class GlobalSettings: ObservableObject {
         var summary = AppearanceImportSummary()
         summary.themes = importThemeFiles(files)
         return summary
+    }
+
+    /// Imports the package form used by full-customization sharing. JSON stays
+    /// supported by the synchronous entry point above for backward compatibility.
+    @discardableResult
+    func importAppearanceCustomizationPackage(from data: Data) async throws -> AppearanceImportSummary {
+        if let legacyResult = try? importAppearanceCustomization(from: data) {
+            return legacyResult
+        }
+        let payload = try await ReaderStylePackage.import(
+            data,
+            assetStore: .shared,
+            expectedKind: .appearance
+        )
+        let bundle = try payload.decode(AppearanceCustomizationBundle.self)
+        guard bundle.format == AppearanceCustomizationBundle.formatIdentifier else {
+            throw AppearanceThemeImportError.invalidFile
+        }
+        return importAppearanceCustomizationBundle(bundle)
     }
 
     /// Appends a custom theme per entry, then selects the last one and applies
@@ -2295,6 +2386,9 @@ class GlobalSettings: ObservableObject {
     ) -> AppearanceImportSummary {
         var summary = AppearanceImportSummary()
         summary.themes = importThemeFiles(bundle.themes)
+        if let configuration = bundle.regexHighlightConfiguration {
+            regexHighlightConfiguration = configuration.sanitized()
+        }
 
         // Applied after the themes: selecting an imported theme replaces the
         // live page backgrounds with that theme's snapshot, so the bundle's own

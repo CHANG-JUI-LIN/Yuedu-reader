@@ -349,6 +349,82 @@ struct ReaderOverlaySnapEngineTests {
         #expect(result == bodyFrame)
     }
 
+    @Test("normalized adapter snaps and returns a normalized frame")
+    func normalizedAdapterRoundTrip() {
+        let normalizedCanvas = CGRect(x: 20, y: 40, width: 200, height: 100)
+        let normalizedBody = CGRect(x: 40, y: 60, width: 160, height: 60)
+        var session = ReaderOverlaySnapSession()
+
+        let result = ReaderOverlaySnapEngine.resolve(
+            proposedFrame: ReaderStyleNormalizedRect(x: 0.105, y: 0.4, width: 0.1, height: 0.2),
+            canvas: normalizedCanvas,
+            bodyFrame: normalizedBody,
+            peers: [],
+            session: &session
+        )
+
+        #expect(result.frame == ReaderStyleNormalizedRect(x: 0.1, y: 0.4, width: 0.1, height: 0.2))
+        #expect(result.guides == [.vertical(x: 40)])
+    }
+
+    @Test("normalized peer frames use the same point-space alignment candidates")
+    func normalizedPeersSnapLikePointPeers() {
+        let normalizedCanvas = CGRect(x: 20, y: 40, width: 200, height: 100)
+        let peerID = fixtureUUID(9)
+        var session = ReaderOverlaySnapSession()
+
+        let result = ReaderOverlaySnapEngine.resolve(
+            proposedFrame: ReaderStyleNormalizedRect(x: 0.505, y: 0.205, width: 0.1, height: 0.1),
+            canvas: normalizedCanvas,
+            bodyFrame: .null,
+            peers: [
+                ReaderStyleNormalizedPeerFrame(
+                    id: peerID,
+                    frame: ReaderStyleNormalizedRect(x: 0.5, y: 0.2, width: 0.2, height: 0.2)
+                )
+            ],
+            session: &session
+        )
+
+        #expect(result.frame == ReaderStyleNormalizedRect(x: 0.5, y: 0.2, width: 0.1, height: 0.1))
+        #expect(result.guides == [.vertical(x: 120), .horizontal(y: 60)])
+    }
+
+    @Test("normalized adapter preserves the existing hysteresis session")
+    func normalizedAdapterPreservesHysteresis() {
+        let normalizedCanvas = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let normalizedBody = CGRect(x: 10, y: 20, width: 80, height: 60)
+        var session = ReaderOverlaySnapSession()
+
+        let acquired = ReaderOverlaySnapEngine.resolve(
+            proposedFrame: ReaderStyleNormalizedRect(x: 0.11, y: 0.4, width: 0.1, height: 0.1),
+            canvas: normalizedCanvas,
+            bodyFrame: normalizedBody,
+            peers: [],
+            session: &session
+        )
+        let retained = ReaderOverlaySnapEngine.resolve(
+            proposedFrame: ReaderStyleNormalizedRect(x: 0.15, y: 0.4, width: 0.1, height: 0.1),
+            canvas: normalizedCanvas,
+            bodyFrame: normalizedBody,
+            peers: [],
+            session: &session
+        )
+        let released = ReaderOverlaySnapEngine.resolve(
+            proposedFrame: ReaderStyleNormalizedRect(x: 0.18, y: 0.4, width: 0.1, height: 0.1),
+            canvas: normalizedCanvas,
+            bodyFrame: normalizedBody,
+            peers: [],
+            session: &session
+        )
+
+        #expect(acquired.frame.x == 0.1)
+        #expect(retained.frame.x == 0.1)
+        #expect(retained.guides == [.vertical(x: 10)])
+        #expect(released.frame.x == 0.18)
+        #expect(released.guides.isEmpty)
+    }
+
     private func resolve(
         proposedCenter: CGPoint,
         componentSize: CGSize,
@@ -369,5 +445,27 @@ struct ReaderOverlaySnapEngineTests {
 
     private func fixtureUUID(_ value: Int) -> UUID {
         UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", value))!
+    }
+}
+
+@Suite("Reader style normalized geometry")
+struct ReaderStyleNormalizedGeometryTests {
+    @Test("normalized rect round trips through a resized canvas")
+    func normalizedRectRoundTrip() {
+        let value = ReaderStyleNormalizedRect(x: 0.1, y: 0.2, width: 0.5, height: 0.3)
+        let canvas = CGRect(x: 20, y: 40, width: 320, height: 180)
+
+        let rect = value.denormalized(in: canvas)
+        let roundTrip = ReaderStyleNormalizedRect(rect: rect, in: canvas)
+
+        #expect(roundTrip == value)
+        #expect(rect == CGRect(x: 52, y: 76, width: 160, height: 54))
+    }
+
+    @Test("rotation clamps to one signed turn")
+    func rotationNormalization() {
+        #expect(ReaderStyleRotation(degrees: 540).degrees == 180)
+        #expect(ReaderStyleRotation(degrees: -540).degrees == -180)
+        #expect(ReaderStyleRotation(degrees: .nan).degrees == 0)
     }
 }

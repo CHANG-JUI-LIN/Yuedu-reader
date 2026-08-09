@@ -43,8 +43,9 @@ struct ReaderRenderSettingsSnapshotTests {
         #expect(paged.isBold == false)
         #expect(paged.chapterTitleStyle == .default)
         #expect(paged.readerBackgroundImageURL == nil)
-        #expect(paged.dialogueHighlightColor == nil)
-        #expect(paged.dialogueBoxColor == nil)
+        #expect(paged.regexHighlightConfiguration == .disabled)
+        #expect(paged.readerStyleAppearance == .dark)
+        #expect(paged.readerStyleAssetRevision == 7)
 
         #expect(paged.theme == scroll.theme)
         #expect(paged.textColor == scroll.textColor)
@@ -60,8 +61,9 @@ struct ReaderRenderSettingsSnapshotTests {
         #expect(paged.isBold == scroll.isBold)
         #expect(paged.chapterTitleStyle == scroll.chapterTitleStyle)
         #expect(paged.readerBackgroundImageURL == scroll.readerBackgroundImageURL)
-        #expect(paged.dialogueHighlightColor == scroll.dialogueHighlightColor)
-        #expect(paged.dialogueBoxColor == scroll.dialogueBoxColor)
+        #expect(paged.regexHighlightConfiguration == scroll.regexHighlightConfiguration)
+        #expect(paged.readerStyleAppearance == scroll.readerStyleAppearance)
+        #expect(paged.readerStyleAssetRevision == scroll.readerStyleAssetRevision)
         #expect(paged.contentInsets == pagedInsets)
         #expect(paged.marginV == 16)
         #expect(paged.footerHeight == 22)
@@ -114,8 +116,9 @@ struct ReaderRenderSettingsSnapshotTests {
             isBold: false,
             chapterTitleStyle: .default,
             readerBackgroundImageURL: nil,
-            dialogueHighlightColor: nil,
-            dialogueBoxColor: nil
+            regexHighlightConfiguration: .disabled,
+            readerStyleAppearance: .dark,
+            readerStyleAssetRevision: 7
         )
     }
 }

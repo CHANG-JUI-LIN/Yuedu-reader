@@ -4,16 +4,8 @@ import UIKit
 extension ReaderView {
 
     // MARK: - Loading & Page Building
-    var resolvedDialogueHighlightColor: UIColor? {
-        GlobalSettings.shared.readerDialogueHighlightEnabled
-            ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueHighlightColorHex)
-            : nil
-    }
-
-    var resolvedDialogueBoxColor: UIColor? {
-        (GlobalSettings.shared.readerDialogueHighlightEnabled && GlobalSettings.shared.readerDialogueBoxEnabled)
-            ? GlobalSettings.uiColor(rgbHex: GlobalSettings.shared.readerDialogueBoxColorHex)
-            : nil
+    var activeReaderStyleAppearance: ReaderStyleAppearance {
+        readerTheme == .night ? .dark : .light
     }
 
     var activeReaderDisplayMode: ReaderDisplayMode {
@@ -36,12 +28,7 @@ extension ReaderView {
             readerTextUnderlineDecorationColorHex: settings.readerTextUnderlineDecorationColorHex,
             readerTextUnderlineStyle: settings.readerTextUnderlineStyle,
             readerTextUnderlineThickness: settings.readerTextUnderlineThickness,
-            readerTextUnderlineOffset: settings.readerTextUnderlineOffset,
-            readerDialogueHighlightEnabled: settings.readerDialogueHighlightEnabled,
-            readerDialogueHighlightColorHex: settings.readerDialogueHighlightColorHex,
-            readerDialogueBoxEnabled: settings.readerDialogueBoxEnabled,
-            readerDialogueBoxColorHex: settings.readerDialogueBoxColorHex,
-            readerDialogueBoxStyleRaw: settings.readerDialogueBoxStyleRaw
+            readerTextUnderlineOffset: settings.readerTextUnderlineOffset
         )
     }
 
@@ -61,8 +48,9 @@ extension ReaderView {
             isBold: readerConfig.readerFontBold,
             chapterTitleStyle: readerConfig.chapterTitleStyle,
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
-            dialogueHighlightColor: resolvedDialogueHighlightColor,
-            dialogueBoxColor: resolvedDialogueBoxColor
+            regexHighlightConfiguration: settings.regexHighlightConfiguration,
+            readerStyleAppearance: activeReaderStyleAppearance,
+            readerStyleAssetRevision: settings.readerStyleAssetRevision
         )
 
         let surface: ReaderRenderSurface
@@ -511,6 +499,10 @@ extension ReaderView {
             viewportSize: viewportSize ?? currentReaderRenderSize
         )
         Task { @MainActor in
+            await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
+                configuration: resolvedSettings.regexHighlightConfiguration,
+                appearance: resolvedSettings.readerStyleAppearance
+            )
             let result = await epubRenderer.refresh(request)
             if case let .failed(transactionID, failure) = result {
                 AppLogger.render(

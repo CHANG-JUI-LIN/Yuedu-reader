@@ -124,6 +124,9 @@ struct ChapterTitleStyle: Codable, Equatable, Sendable {
     var lightTemplate: String
     /// HTML/CSS template for dark appearance.
     var darkTemplate: String
+    /// Versioned visual-design source. Advanced template-only values decode into
+    /// `legacySource` until they are atomically converted by the HTML codec.
+    var design: ChapterTitleDesign? = nil
 
     static let sizeRange: ClosedRange<CGFloat> = 14...40
     static let topSpacingRange: ClosedRange<CGFloat> = 0...100
@@ -169,6 +172,7 @@ struct ChapterTitleStyle: Codable, Equatable, Sendable {
             to: ChapterTitleStyle.numberRelativeSizeRange,
             fallback: 0.55
         )
+        copy.design = design?.sanitized()
         return copy
     }
 
@@ -181,6 +185,97 @@ struct ChapterTitleStyle: Codable, Equatable, Sendable {
     /// `nil` means "use the reader's selected font (or system font)".
     func numberFontName() -> String? { followsBodyFont ? nil : numberFontPostScript }
     func nameFontName() -> String? { followsBodyFont ? nil : nameFontPostScript }
+}
+
+extension ChapterTitleStyle {
+    private enum CodingKeys: String, CodingKey {
+        case visible
+        case size
+        case topSpacing
+        case bottomSpacing
+        case weight
+        case alignment
+        case followsBodyFont
+        case splitEnabled
+        case numberRelativeSize
+        case numberFontPostScript
+        case nameFontPostScript
+        case advancedCSSEnabled
+        case lightTemplate
+        case darkTemplate
+        case design
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.default
+        let advancedCSSEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .advancedCSSEnabled
+        ) ?? defaults.advancedCSSEnabled
+        let lightTemplate = try container.decodeIfPresent(
+            String.self,
+            forKey: .lightTemplate
+        ) ?? defaults.lightTemplate
+        let darkTemplate = try container.decodeIfPresent(
+            String.self,
+            forKey: .darkTemplate
+        ) ?? defaults.darkTemplate
+        var design = try container.decodeIfPresent(
+            ChapterTitleDesign.self,
+            forKey: .design
+        )
+
+        if advancedCSSEnabled, design == nil {
+            design = ChapterTitleDesign(
+                layers: [],
+                legacySource: ChapterTitleLegacySource(
+                    light: lightTemplate,
+                    dark: darkTemplate
+                )
+            )
+        }
+
+        self = ChapterTitleStyle(
+            visible: try container.decodeIfPresent(Bool.self, forKey: .visible) ?? defaults.visible,
+            size: try container.decodeIfPresent(CGFloat.self, forKey: .size) ?? defaults.size,
+            topSpacing: try container.decodeIfPresent(CGFloat.self, forKey: .topSpacing) ?? defaults.topSpacing,
+            bottomSpacing: try container.decodeIfPresent(CGFloat.self, forKey: .bottomSpacing) ?? defaults.bottomSpacing,
+            weight: try container.decodeIfPresent(ChapterTitleWeight.self, forKey: .weight) ?? defaults.weight,
+            alignment: try container.decodeIfPresent(ChapterTitleAlignment.self, forKey: .alignment)
+                ?? defaults.alignment,
+            followsBodyFont: try container.decodeIfPresent(Bool.self, forKey: .followsBodyFont)
+                ?? defaults.followsBodyFont,
+            splitEnabled: try container.decodeIfPresent(Bool.self, forKey: .splitEnabled) ?? defaults.splitEnabled,
+            numberRelativeSize: try container.decodeIfPresent(CGFloat.self, forKey: .numberRelativeSize)
+                ?? defaults.numberRelativeSize,
+            numberFontPostScript: try container.decodeIfPresent(String.self, forKey: .numberFontPostScript),
+            nameFontPostScript: try container.decodeIfPresent(String.self, forKey: .nameFontPostScript),
+            advancedCSSEnabled: advancedCSSEnabled,
+            lightTemplate: lightTemplate,
+            darkTemplate: darkTemplate,
+            design: design
+        ).sanitized()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(visible, forKey: .visible)
+        try container.encode(size, forKey: .size)
+        try container.encode(topSpacing, forKey: .topSpacing)
+        try container.encode(bottomSpacing, forKey: .bottomSpacing)
+        try container.encode(weight, forKey: .weight)
+        try container.encode(alignment, forKey: .alignment)
+        try container.encode(followsBodyFont, forKey: .followsBodyFont)
+        try container.encode(splitEnabled, forKey: .splitEnabled)
+        try container.encode(numberRelativeSize, forKey: .numberRelativeSize)
+        try container.encodeIfPresent(numberFontPostScript, forKey: .numberFontPostScript)
+        try container.encodeIfPresent(nameFontPostScript, forKey: .nameFontPostScript)
+        try container.encode(advancedCSSEnabled, forKey: .advancedCSSEnabled)
+        try container.encode(lightTemplate, forKey: .lightTemplate)
+        try container.encode(darkTemplate, forKey: .darkTemplate)
+        try container.encodeIfPresent(design, forKey: .design)
+    }
 }
 
 extension ChapterTitleStyle {

@@ -10,6 +10,41 @@ import UIKit
 @Suite("Appearance customization bundle", .serialized)
 struct AppearanceCustomizationBundleTests {
 
+    @Test("new appearance bundle carries regex configuration and asset references")
+    func regexConfigurationRoundTrip() throws {
+        let assetID = readerStyleFixtureUUID(121)
+        var rule = RegexHighlightRule.custom(name: "Picture", pattern: "x")
+        rule.lightStyle.decoration.backgroundImage = .init(assetID: assetID)
+        let configuration = RegexHighlightConfiguration(
+            isEnabled: true,
+            rules: RegexHighlightRule.builtIns,
+            customRules: [rule]
+        )
+        let bundle = AppearanceCustomizationBundle(
+            snapshot: AppearanceCustomizationSnapshot(
+                regexHighlightConfiguration: configuration,
+                readerStyleAssetIDs: [assetID]
+            )
+        )
+
+        let decoded = try JSONDecoder().decode(
+            AppearanceCustomizationBundle.self,
+            from: JSONEncoder().encode(bundle)
+        )
+
+        #expect(decoded.regexHighlightConfiguration == configuration)
+        #expect(decoded.readerStyleAssetIDs == [assetID])
+    }
+
+    @Test("legacy dialogue-only bundle decodes without synthesizing regex rules")
+    func legacyBundleCompatibility() throws {
+        let legacy = Data(#"{"dialogueHex":16711680}"#.utf8)
+        let decoded = try JSONDecoder().decode(AppearanceCustomizationBundle.self, from: legacy)
+
+        #expect(decoded.regexHighlightConfiguration == nil)
+        #expect(decoded.legacyDialogueHex == 0xFF0000)
+    }
+
     private func pngData(_ color: UIColor, side: CGFloat = 8) -> Data {
         let size = CGSize(width: side, height: side)
         let image = UIGraphicsImageRenderer(size: size).image { context in
@@ -33,11 +68,15 @@ struct AppearanceCustomizationBundleTests {
         let savedBackgrounds = settings.appearancePageBackgrounds
         let savedIcons = settings.rootTabIconAssets
         let savedMode = settings.readerCustomBackgroundMode
+        settings.clearLaunchImage(for: .light)
+        settings.clearLaunchImage(for: .dark)
         defer {
             settings.customAppearanceThemes = savedThemes
             settings.appearancePageBackgrounds = savedBackgrounds
             settings.rootTabIconAssets = savedIcons
             settings.readerCustomBackgroundMode = savedMode
+            settings.clearLaunchImage(for: .light)
+            settings.clearLaunchImage(for: .dark)
         }
 
         try settings.importPageBackgroundImage(
@@ -71,10 +110,14 @@ struct AppearanceCustomizationBundleTests {
         let savedThemes = settings.customAppearanceThemes
         let savedBackgrounds = settings.appearancePageBackgrounds
         let savedIcons = settings.rootTabIconAssets
+        settings.clearLaunchImage(for: .light)
+        settings.clearLaunchImage(for: .dark)
         defer {
             settings.customAppearanceThemes = savedThemes
             settings.appearancePageBackgrounds = savedBackgrounds
             settings.rootTabIconAssets = savedIcons
+            settings.clearLaunchImage(for: .light)
+            settings.clearLaunchImage(for: .dark)
         }
 
         let tab = RootTabItem.allCases[0]

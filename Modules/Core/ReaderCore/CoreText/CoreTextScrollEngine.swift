@@ -218,8 +218,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             isBold: renderSettings.isBold,
             chapterTitleStyle: renderSettings.chapterTitleStyle,
             readerBackgroundImageURL: renderSettings.readerBackgroundImageURL,
-            dialogueHighlightColor: renderSettings.dialogueHighlightColor,
-            dialogueBoxColor: renderSettings.dialogueBoxColor
+            regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
+            readerStyleAppearance: renderSettings.readerStyleAppearance,
+            readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
         )
     }
 

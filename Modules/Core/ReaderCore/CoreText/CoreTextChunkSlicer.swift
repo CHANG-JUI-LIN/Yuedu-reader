@@ -167,7 +167,8 @@ enum CoreTextChunkSlicer {
                 frame: frameBuild.frame,
                 chunkSize: chunkSize,
                 attributedString: attrStr,
-                charRange: actualRange
+                charRange: actualRange,
+                writingMode: writingMode
             )
 
             chunks.append(CoreTextChunk(
@@ -258,6 +259,13 @@ enum CoreTextChunkSlicer {
                 chunkSize: chunkSize,
                 attributedString: attrStr
             )
+            let titleRenderables = extractBlockRenderables(
+                frame: finalFrame,
+                chunkSize: chunkSize,
+                attributedString: attrStr,
+                charRange: actualRange,
+                writingMode: writingMode
+            )
             chunks.append(CoreTextChunk(
                 chapterIndex: chapterIndex,
                 charRange: actualRange,
@@ -266,7 +274,7 @@ enum CoreTextChunkSlicer {
                 attributedString: attrStr,
                 frame: finalFrame,
                 writingMode: writingMode,
-                blockRenderables: [],
+                blockRenderables: titleRenderables,
                 inlineAnnotations: annotations,
                 pageBackgroundColor: pageBackgroundColor,
                 pageBackgroundImage: pageBackgroundImage
@@ -443,13 +451,25 @@ enum CoreTextChunkSlicer {
         frame: CTFrame,
         chunkSize: CGSize,
         attributedString attrStr: NSAttributedString,
-        charRange: CFRange
+        charRange: CFRange,
+        writingMode: ReaderWritingMode = .horizontal
     ) -> [CoreTextPaginator.RenderedBlockRenderable] {
         let lines = CTFrameGetLines(frame) as! [CTLine]
         guard !lines.isEmpty else { return [] }
 
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        let titleRenderables = CoreTextPaginator.extractChapterTitleRenderables(
+            frame: frame,
+            frameRange: charRange,
+            lineOrigins: origins,
+            contentPathRect: CGRect(origin: .zero, size: chunkSize),
+            renderSize: chunkSize,
+            attributedString: attrStr,
+            writingMode: writingMode
+        )
+        guard !writingMode.isVertical else { return titleRenderables }
 
         let chunkNSRange = NSRange(location: charRange.location, length: charRange.length)
         let contentHeight = chunkSize.height
@@ -508,7 +528,7 @@ enum CoreTextChunkSlicer {
         }
 
         var groups = Array(spanGroupsByID.values)
-        guard !groups.isEmpty else { return [] }
+        guard !groups.isEmpty else { return titleRenderables }
 
         // ── Union line rects into decoration groups ──
         for (lineIdx, line) in lines.enumerated() {
@@ -574,11 +594,11 @@ enum CoreTextChunkSlicer {
             return CoreTextPaginator.RenderedBlockRenderable(
                 rect: group.rect,
                 style: group.style,
-                attributedText: text,
+                content: .htmlBlock(attributedText: text),
                 sourceRanges: text != nil ? group.ranges : [],
                 imageAttachment: imageAttachment
             )
-        }
+        } + titleRenderables
     }
 
     /// Extracts a block-image attachment from style + ranges (mirrors CoreTextPaginator.makeBlockImageAttachment).

@@ -68,19 +68,78 @@ struct ReaderDocumentStyleFingerprint: Equatable {
     let readerTextUnderlineStyle: ReaderTextUnderlineStyle
     let readerTextUnderlineThickness: Double
     let readerTextUnderlineOffset: Double
-    let readerDialogueHighlightEnabled: Bool
-    let readerDialogueHighlightColorHex: UInt32
-    let readerDialogueBoxEnabled: Bool
-    let readerDialogueBoxColorHex: UInt32
-    let readerDialogueBoxStyleRaw: Int
+}
+
+enum RegexHighlightRefreshKind: Equatable, Sendable {
+    case redraw
+    case relayout
+}
+
+enum RegexHighlightRefreshPolicy {
+    private struct ActiveRuleSignature: Equatable {
+        let id: String
+        let pattern: String
+        let options: RegexHighlightOptions
+    }
+
+    private struct TypographySignature: Equatable {
+        let fontPostScriptName: String?
+        let fontSize: Double?
+        let fontWeight: Int?
+        let italic: Bool?
+        let letterSpacing: Double?
+        let lineHeight: Double?
+    }
+
+    static func classify(
+        from old: RegexHighlightConfiguration,
+        to new: RegexHighlightConfiguration
+    ) -> RegexHighlightRefreshKind {
+        guard old.version == new.version, old.isEnabled == new.isEnabled else {
+            return .relayout
+        }
+
+        let oldEnabled = old.isEnabled ? old.evaluationRules.filter(\.isEnabled) : []
+        let newEnabled = new.isEnabled ? new.evaluationRules.filter(\.isEnabled) : []
+        let oldRules = oldEnabled.map {
+            ActiveRuleSignature(id: $0.id, pattern: $0.pattern, options: $0.options)
+        }
+        let newRules = newEnabled.map {
+            ActiveRuleSignature(id: $0.id, pattern: $0.pattern, options: $0.options)
+        }
+        guard oldRules == newRules else { return .relayout }
+
+        for (oldRule, newRule) in zip(oldEnabled, newEnabled) {
+            if typography(oldRule.lightStyle.text) != typography(newRule.lightStyle.text)
+                || typography(oldRule.darkStyle.text) != typography(newRule.darkStyle.text) {
+                return .relayout
+            }
+        }
+        return .redraw
+    }
+
+    private static func typography(_ style: ReaderStyleTextStyle) -> TypographySignature {
+        TypographySignature(
+            fontPostScriptName: style.fontPostScriptName,
+            fontSize: style.fontSize,
+            fontWeight: style.fontWeight,
+            italic: style.italic,
+            letterSpacing: style.letterSpacing,
+            lineHeight: style.lineHeight
+        )
+    }
 }
 
 extension ReaderRenderSettings {
     /// Classifies a settings snapshot without making the SwiftUI layer know
     /// which fields affect pagination and which only recolor an existing page.
-    /// Dialogue colors are intentionally omitted: those are attributed-content
-    /// inputs and are routed by `ReaderDocumentStyleFingerprint`.
     func refreshIntent(comparedTo old: ReaderRenderSettings) -> ReaderRenderRefreshIntent? {
+        let regexRefresh = regexHighlightConfiguration == old.regexHighlightConfiguration
+            ? nil
+            : RegexHighlightRefreshPolicy.classify(
+                from: old.regexHighlightConfiguration,
+                to: regexHighlightConfiguration
+            )
         let layoutChanged =
             fontSize != old.fontSize
             || lineHeightMultiple != old.lineHeightMultiple
@@ -95,6 +154,7 @@ extension ReaderRenderSettings {
             || fontPostScriptName != old.fontPostScriptName
             || isBold != old.isBold
             || chapterTitleStyle != old.chapterTitleStyle
+            || regexRefresh == .relayout
 
         if layoutChanged { return .layout }
 
@@ -103,6 +163,9 @@ extension ReaderRenderSettings {
             || textColor != old.textColor
             || backgroundColor != old.backgroundColor
             || readerBackgroundImageURL != old.readerBackgroundImageURL
+            || readerStyleAppearance != old.readerStyleAppearance
+            || readerStyleAssetRevision != old.readerStyleAssetRevision
+            || regexRefresh == .redraw
 
         return appearanceChanged ? .appearance : nil
     }

@@ -15,11 +15,17 @@ struct AppearanceCustomizationExportPayload: Transferable {
     let snapshot: AppearanceCustomizationSnapshot
 
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(exportedContentType: .json) { payload in
+        FileRepresentation(exportedContentType: .yueduReaderStyle) { payload in
             let bundle = AppearanceCustomizationBundle(snapshot: payload.snapshot)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            let data = try encoder.encode(bundle)
+            let stylePayload = try ReaderStylePackagePayload.encode(
+                bundle,
+                kind: .appearance,
+                assetIDs: payload.snapshot.readerStyleAssetIDs
+            )
+            let data = try await ReaderStylePackage.export(
+                stylePayload,
+                assetStore: .shared
+            )
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent(payload.filename)
             try data.write(to: url, options: .atomic)
@@ -34,6 +40,6 @@ struct AppearanceCustomizationExportPayload: Transferable {
             .joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let base = cleaned.isEmpty ? "appearance" : String(cleaned.prefix(60))
-        return "yuedu-appearance-\(base).json"
+        return "yuedu-appearance-\(base).yuedustyle"
     }
 }

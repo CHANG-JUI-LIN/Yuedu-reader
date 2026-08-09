@@ -16,6 +16,18 @@ struct ReaderOverlaySnapResult: Equatable, Sendable {
     let guides: [ReaderOverlayGuide]
 }
 
+struct ReaderStyleNormalizedPeerFrame: Equatable, Sendable {
+    let id: UUID
+    let frame: ReaderStyleNormalizedRect
+}
+
+struct ReaderStyleNormalizedSnapResult: Equatable, Sendable {
+    let frame: ReaderStyleNormalizedRect
+    /// Guide coordinates remain in canvas points so the designer can draw them
+    /// without a second denormalization pass.
+    let guides: [ReaderOverlayGuide]
+}
+
 struct ReaderOverlaySnapSession: Equatable, Sendable {
     fileprivate var xLatch: ReaderOverlaySnapLatch?
     fileprivate var yLatch: ReaderOverlaySnapLatch?
@@ -62,6 +74,43 @@ enum ReaderOverlayBodyFramePolicy {
 enum ReaderOverlaySnapEngine {
     static let defaultAcquireDistance: CGFloat = 3
     static let defaultReleaseDistance: CGFloat = 6
+
+    /// Chapter-title adapter for the normalized persisted geometry. All target
+    /// selection, tie-breaking and hysteresis stay in the point-based resolver
+    /// below; this overload only performs the two coordinate conversions.
+    static func resolve(
+        proposedFrame: ReaderStyleNormalizedRect,
+        canvas: CGRect,
+        bodyFrame: CGRect,
+        peers: [ReaderStyleNormalizedPeerFrame],
+        session: inout ReaderOverlaySnapSession,
+        acquireDistance: CGFloat = defaultAcquireDistance,
+        releaseDistance: CGFloat = defaultReleaseDistance
+    ) -> ReaderStyleNormalizedSnapResult {
+        let componentFrame = proposedFrame.denormalized(in: canvas)
+        let result = resolve(
+            proposedCenter: CGPoint(x: componentFrame.midX, y: componentFrame.midY),
+            componentSize: componentFrame.size,
+            canvas: canvas,
+            bodyFrame: bodyFrame,
+            peers: peers.map {
+                ReaderOverlayPeerFrame(id: $0.id, frame: $0.frame.denormalized(in: canvas))
+            },
+            session: &session,
+            acquireDistance: acquireDistance,
+            releaseDistance: releaseDistance
+        )
+        let resolvedFrame = CGRect(
+            x: result.center.x - componentFrame.width / 2,
+            y: result.center.y - componentFrame.height / 2,
+            width: componentFrame.width,
+            height: componentFrame.height
+        )
+        return ReaderStyleNormalizedSnapResult(
+            frame: ReaderStyleNormalizedRect(rect: resolvedFrame, in: canvas),
+            guides: result.guides
+        )
+    }
 
     static func resolve(
         proposedCenter: CGPoint,

@@ -39,15 +39,70 @@ enum DialogueHighlighter {
     /// - `textColor` → `.foregroundColor` (the "對話文字高亮" tint), painted natively by CoreText.
     /// - `boxColor` → `boxColorAttribute` (the "對話底色框"), custom-drawn behind the glyphs.
     /// Either color may be nil to skip that layer.
+    ///
+    /// Compatibility wrapper: Task 14 migrates the remaining render call sites
+    /// to `RegexHighlightEngine.apply`, then this legacy entry point can be deleted.
     static func apply(textColor: UIColor?, boxColor: UIColor?, to attr: NSMutableAttributedString) {
         guard textColor != nil || boxColor != nil else { return }
-        for range in dialogueRanges(in: attr.string as NSString) {
+
+        let fullRange = NSRange(location: 0, length: attr.length)
+        if fullRange.length > 0 {
+            attr.removeAttribute(boxColorAttribute, range: fullRange)
+        }
+
+        let style = ReaderStyleRuleStyle(
+            text: ReaderStyleTextStyle(colorHex: textColor.flatMap(rgbHex)),
+            decoration: ReaderStyleDecorationStyle(
+                backgroundColorHex: boxColor.flatMap(rgbHex)
+            )
+        )
+        let rule = RegexHighlightRule(
+            id: "legacy.dialogue",
+            name: "Legacy dialogue",
+            pattern: #"(?:“[^”\n]*(?:”|$)|‘[^’\n]*(?:’|$)|「[^」\n]*(?:」|$)|『[^』\n]*(?:』|$))"#,
+            isEnabled: true,
+            isBuiltIn: false,
+            options: [.doesNotCrossParagraph],
+            lightStyle: style,
+            darkStyle: style
+        )
+        let configuration = RegexHighlightConfiguration(
+            isEnabled: true,
+            rules: [],
+            customRules: [rule]
+        )
+
+        do {
+            let result = try RegexHighlightEngine.apply(
+                configuration: configuration,
+                appearance: .light,
+                to: attr
+            )
+            // The structured engine stores portable RGB values. This legacy API
+            // accepted dynamic UIColor instances, so restore the exact caller
+            // value on its computed ranges to preserve the compatibility contract.
             if let textColor {
-                attr.addAttribute(.foregroundColor, value: textColor, range: range)
+                for segment in result.segments {
+                    attr.addAttribute(
+                        .foregroundColor,
+                        value: textColor,
+                        range: segment.range
+                    )
+                }
             }
             if let boxColor {
-                attr.addAttribute(boxColorAttribute, value: boxColor, range: range)
+                for segment in result.segments {
+                    attr.addAttribute(
+                        boxColorAttribute,
+                        value: boxColor,
+                        range: segment.range
+                    )
+                }
             }
+        } catch {
+            // This wrapper owns a compile-time constant pattern, so an error
+            // means a programmer regression rather than malformed book input.
+            AppLogger.render("DialogueHighlighter compatibility regex failed: \(error)")
         }
     }
 
@@ -89,5 +144,19 @@ enum DialogueHighlighter {
             ranges.append(NSRange(location: spanStart, length: length - spanStart))
         }
         return ranges
+    }
+
+    private static func rgbHex(_ color: UIColor) -> UInt32? {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return nil
+        }
+        let byte: (CGFloat) -> UInt32 = {
+            UInt32((min(max($0, 0), 1) * 255).rounded())
+        }
+        return (byte(red) << 16) | (byte(green) << 8) | byte(blue)
     }
 }

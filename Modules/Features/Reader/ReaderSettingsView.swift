@@ -683,46 +683,13 @@ struct ReaderSettingsView: View {
                 )
             }
 
-            Toggle(isOn: dialogueHighlightBinding) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(localized("對話文字高亮"))
-                        .font(DSFont.body)
-                    Text(localized("使用自訂顏色標示引號內的對話文字。"))
-                        .font(DSFont.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if settings.readerDialogueHighlightEnabled {
-                ColorPicker(
-                    localized("高亮顏色"),
-                    selection: readerDialogueHighlightColorBinding,
-                    supportsOpacity: false
+            NavigationLink {
+                RegexHighlightSettingsView(
+                    configuration: settings.regexHighlightConfiguration,
+                    onChange: { settings.regexHighlightConfiguration = $0 }
                 )
-
-                Toggle(isOn: dialogueBoxBinding) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(localized("對話底色框"))
-                            .font(DSFont.body)
-                        Text(localized("為引號內的對話加上底色方塊。"))
-                            .font(DSFont.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if settings.readerDialogueBoxEnabled {
-                    Picker(localized("樣式"), selection: dialogueBoxStyleBinding) {
-                        Text(localized("純色塊")).tag(0)
-                        Text(localized("漸層膠囊")).tag(1)
-                    }
-                    .pickerStyle(.segmented)
-
-                    ColorPicker(
-                        localized("底色框顏色"),
-                        selection: readerDialogueBoxColorBinding,
-                        supportsOpacity: false
-                    )
-                }
+            } label: {
+                Label(localized("正則高亮"), systemImage: "text.magnifyingglass")
             }
         }
         .interfaceSectionSurface()
@@ -816,15 +783,6 @@ struct ReaderSettingsView: View {
         )
     }
 
-    private var dialogueHighlightBinding: Binding<Bool> {
-        Binding(
-            get: { settings.readerDialogueHighlightEnabled },
-            set: { enabled in
-                settings.readerDialogueHighlightEnabled = enabled
-            }
-        )
-    }
-
     private var readerTextUnderlineDecorationColorBinding: Binding<Color> {
         Binding(
             get: {
@@ -861,46 +819,6 @@ struct ReaderSettingsView: View {
             set: { value in
                 settings.readerTextUnderlineOffset = value
             }
-        )
-    }
-
-    private var readerDialogueHighlightColorBinding: Binding<Color> {
-        Binding(
-            get: {
-                Color(uiColor: GlobalSettings.uiColor(rgbHex: settings.readerDialogueHighlightColorHex))
-            },
-            set: {
-                settings.readerDialogueHighlightColorHex =
-                    UIColor($0).rgbHex ?? GlobalSettings.defaultReaderDialogueHighlightColorHex
-            }
-        )
-    }
-
-    private var dialogueBoxBinding: Binding<Bool> {
-        Binding(
-            get: { settings.readerDialogueBoxEnabled },
-            set: { enabled in
-                settings.readerDialogueBoxEnabled = enabled
-            }
-        )
-    }
-
-    private var readerDialogueBoxColorBinding: Binding<Color> {
-        Binding(
-            get: {
-                Color(uiColor: GlobalSettings.uiColor(rgbHex: settings.readerDialogueBoxColorHex))
-            },
-            set: {
-                settings.readerDialogueBoxColorHex =
-                    UIColor($0).rgbHex ?? GlobalSettings.defaultReaderDialogueBoxColorHex
-            }
-        )
-    }
-
-    private var dialogueBoxStyleBinding: Binding<Int> {
-        Binding(
-            get: { settings.readerDialogueBoxStyleRaw },
-            set: { settings.readerDialogueBoxStyleRaw = $0 }
         )
     }
 

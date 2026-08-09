@@ -25,12 +25,9 @@ struct NodeAttributedStringRenderer {
         let letterSpacing: CGFloat
         let textColor: UIColor
         let backgroundColor: UIColor
-        /// When non-nil, quoted dialogue is recolored with this tint (the "對話文字高亮"
-        /// reading decoration). Applied as a `.foregroundColor` override on the final string.
-        let dialogueTextColor: UIColor?
-        /// When non-nil, quoted dialogue is marked with `DialogueHighlighter.boxColorAttribute`
-        /// so `CoreTextHorizontalLineDrawer` fills a rounded box behind it (the "對話底色框").
-        let dialogueBoxColor: UIColor?
+        let regexHighlightConfiguration: RegexHighlightConfiguration
+        let readerStyleAppearance: ReaderStyleAppearance
+        let readerStyleAssetRevision: UInt64
         // Chapter title (prepended <h1> by normalizedChapterHTML) — driven by the
         // reader's "顯示標題 / 標題大小 / 上距 / 下距" settings, not the generic
         // heading scale, so those settings actually control the in-content title.
@@ -83,8 +80,9 @@ struct NodeAttributedStringRenderer {
             self.letterSpacing = settings.letterSpacing
             self.textColor = textColor ?? settings.textColor
             self.backgroundColor = settings.backgroundColor
-            self.dialogueTextColor = settings.dialogueHighlightColor
-            self.dialogueBoxColor = settings.dialogueBoxColor
+            self.regexHighlightConfiguration = settings.regexHighlightConfiguration
+            self.readerStyleAppearance = settings.readerStyleAppearance
+            self.readerStyleAssetRevision = settings.readerStyleAssetRevision
             // EPUB <h1> path: size/spacing/visibility always apply. Font and
             // weight apply only when the user explicitly picked a title font
             // (跟隨閱讀字體 off) — otherwise the publisher's own heading CSS wins,
@@ -143,10 +141,40 @@ struct NodeAttributedStringRenderer {
         relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)
         normalizeCompactBlockSpacing(processed)
-        if config.dialogueTextColor != nil || config.dialogueBoxColor != nil {
-            DialogueHighlighter.apply(textColor: config.dialogueTextColor, boxColor: config.dialogueBoxColor, to: processed)
+        if config.regexHighlightConfiguration.isEnabled {
+            await prewarmRegexHighlightAssets()
+            do {
+                let result = try RegexHighlightEngine.apply(
+                    configuration: config.regexHighlightConfiguration,
+                    appearance: config.readerStyleAppearance,
+                    assetRevision: config.readerStyleAssetRevision,
+                    to: processed
+                )
+                logRegexDiagnostics(result.diagnostics)
+            } catch {
+                AppLogger.render(
+                    "regex highlight apply failed in node renderer",
+                    context: ["error": String(describing: error)]
+                )
+            }
         }
         return processed
+    }
+
+    private func prewarmRegexHighlightAssets() async {
+        await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
+            configuration: config.regexHighlightConfiguration,
+            appearance: config.readerStyleAppearance
+        )
+    }
+
+    private func logRegexDiagnostics(_ diagnostics: [RegexHighlightDiagnostic]) {
+        for diagnostic in diagnostics {
+            AppLogger.render(
+                "regex highlight diagnostic in node renderer",
+                context: ["diagnostic": String(describing: diagnostic)]
+            )
+        }
     }
 
     /// A blank line whose height equals the chapter title's 上距. Prepended

@@ -1012,29 +1012,3 @@ struct LoginUIField: Identifiable {
 }
 
 // MARK: - Preview
-
-#Preview("書源登入表單") {
-    // Shaped after 同人小说网's menu: text/password rows, a `select` of 模板,
-    // the `toggle` switches its jsLib reads back through `qdToggle()`, and buttons.
-    let loginUi = """
-    [
-      {"name":"邀请码","type":"text"},
-      {"name":"◎ 气泡二","type":"password"},
-      {"name":"◎ 模板","type":"select","chars":["起点","样式一","样式二"],"default":"起点"},
-      {"name":"段评开关","type":"toggle","chars":["🔳","✅"],"default":"🔳",
-       "action":"commentRefreshTip()"},
-      {"name":"章名段评","type":"toggle","chars":["🔳","✅"],"default":"🔳",
-       "action":"commentRefreshTip()"},
-      {"name":"账号管理","type":"button","action":"_login()"}
-    ]
-    """
-    let source: BookSource = {
-        var s = BookSource(
-            bookSourceUrl: "https://m.qidian.com#preview",
-            bookSourceName: "起點限免（同人小說網）"
-        )
-        s.loginUi = loginUi
-        return s
-    }()
-    BookSourceFormLoginView(source: source, onDismiss: {})
-}

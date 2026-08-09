@@ -437,7 +437,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         }
 
         // Phase 1: CG geometry operations (background colors, borders) — coordinate-system independent
-        drawBlockRenderables(layout.blockRenderables[pageIndex] ?? [], in: ctx, boundsHeight: layoutSize.height)
+        let pageBlockRenderables = layout.blockRenderables[pageIndex] ?? []
+        drawBlockRenderables(
+            pageBlockRenderables,
+            writingMode: layout.writingMode,
+            in: ctx,
+            boundsHeight: layoutSize.height
+        )
 
         ctx.textMatrix = .identity
         ctx.translateBy(x: 0, y: layoutSize.height)
@@ -452,23 +458,29 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         let frame = Self.frameForRendering(layout: layout, pageIndex: pageIndex)
 
         // Collect ranges that will be redrawn by drawBlockRenderableText so drawLines can skip them.
-        let suppressedRanges = (layout.blockRenderables[pageIndex] ?? [])
-            .flatMap { $0.attributedText != nil ? $0.sourceRanges : [] }
+        let suppressedRanges = pageBlockRenderables
+            .flatMap { $0.suppressesSourceText ? $0.sourceRanges : [] }
         // ── Phase 2: text rendering ──────────────────────────────────────
         // Vertical (vertical-rl): CTFrameDraw handles glyph rotation
         // and right-to-left column progression automatically.
         // Horizontal: line-by-line drawing with CJK justification,
         // paragraph gap distribution, and HR divider lines.
         if layout.writingMode.isVertical {
-            CoreTextDialogueBox.drawVertical(
+            RegexHighlightDecorationRenderer.drawVertical(
                 frame: frame,
-                attrStr: layout.attributedString,
+                attributedString: layout.attributedString,
                 contentOffset: CGPoint(x: contentPathRect.minX, y: contentPathRect.minY),
                 layoutHeight: layoutSize.height,
                 writingMode: layout.writingMode,
+                suppressedRanges: suppressedRanges,
+                context: ctx
+            )
+            drawVerticalFrame(
+                frame,
+                contentOffset: CGPoint(x: contentPathRect.minX, y: contentPathRect.minY),
+                suppressedRanges: suppressedRanges,
                 in: ctx
             )
-            drawVerticalFrame(frame, in: ctx)
         } else {
             drawHorizontalFrame(
                 frame,
@@ -506,22 +518,23 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         }
 
         // 3d. Block images (decorative images with blockRenderStyle, e.g. watermarks)
-        for item in layout.blockRenderables[pageIndex] ?? [] {
+        for item in pageBlockRenderables {
             if let attachment = item.imageAttachment {
                 attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
         }
 
         // 3e. Explicit block text (page/card-level geometry text, independent of the main text frame)
-        for item in layout.blockRenderables[pageIndex] ?? [] {
+        for item in pageBlockRenderables {
             guard let text = item.attributedText else { continue }
+            let style = item.style
             drawBlockRenderableText(
                 text,
                 in: item.rect,
-                paddingTop: item.style.paddingTop,
-                paddingLeft: item.style.paddingLeft,
-                paddingBottom: item.style.paddingBottom,
-                paddingRight: item.style.paddingRight,
+                paddingTop: style.paddingTop,
+                paddingLeft: style.paddingLeft,
+                paddingBottom: style.paddingBottom,
+                paddingRight: style.paddingRight,
                 boundsHeight: layoutSize.height,
                 context: ctx
             )
@@ -668,8 +681,31 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     /// Draw a CTFrame in vertical-rl mode.
     /// CoreText handles glyph rotation and RTL column progression internally.
-    private nonisolated static func drawVerticalFrame(_ frame: CTFrame, in ctx: CGContext) {
-        CTFrameDraw(frame, ctx)
+    nonisolated static func drawVerticalFrame(
+        _ frame: CTFrame,
+        contentOffset: CGPoint,
+        suppressedRanges: [NSRange],
+        in ctx: CGContext
+    ) {
+        guard !suppressedRanges.isEmpty else {
+            CTFrameDraw(frame, ctx)
+            return
+        }
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        for (index, line) in lines.enumerated() {
+            let range = CTLineGetStringRange(line)
+            let nsRange = NSRange(location: range.location, length: max(0, range.length))
+            guard !suppressedRanges.contains(where: {
+                NSIntersectionRange($0, nsRange).length > 0
+            }) else { continue }
+            ctx.textPosition = CGPoint(
+                x: contentOffset.x + origins[index].x,
+                y: contentOffset.y + origins[index].y
+            )
+            CTLineDraw(line, ctx)
+        }
     }
 
     // MARK: - Phase 2b: Horizontal text rendering
@@ -703,12 +739,22 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     nonisolated static func drawBlockRenderables(
         _ renderables: [CoreTextPaginator.RenderedBlockRenderable],
+        writingMode: ReaderWritingMode = .horizontal,
         in ctx: CGContext,
         boundsHeight: CGFloat
     ) {
         for item in renderables {
-            ctx.saveGState()
+            if let plan = item.chapterTitlePlan {
+                ChapterTitleCanvasPainter.draw(
+                    plan,
+                    in: item.rect,
+                    writingMode: writingMode,
+                    context: ctx
+                )
+                continue
+            }
             let s = item.style
+            ctx.saveGState()
             let borderRect = CGRect(
                 x: item.rect.minX - s.borderLeftWidth - s.paddingLeft,
                 y: item.rect.minY - s.borderTopWidth - s.paddingTop,
@@ -844,12 +890,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     // Calculates the starting x and width for border rendering based on style.width and textAlign
     private nonisolated static func borderXAndWidth(for item: CoreTextPaginator.RenderedBlockRenderable, borderRect: CGRect? = nil) -> (CGFloat, CGFloat) {
         let rect = borderRect ?? item.rect
-        guard let constrainedWidth = item.style.width else {
+        let style = item.style
+        guard let constrainedWidth = style.width else {
             return (rect.minX, rect.width)
         }
         let bw = min(constrainedWidth, rect.width)
         let bx: CGFloat
-        switch item.style.textAlign {
+        switch style.textAlign {
         case .center:
             bx = rect.minX + max(0, (rect.width - bw) / 2)
         case .right:

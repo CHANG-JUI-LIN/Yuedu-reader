@@ -7,6 +7,35 @@ import YueduCoreTextTypography
 
 @Suite("CoreText writing mode", .serialized)
 struct CoreTextWritingModeTests {
+    @Test("vertical chapter title canvas starts at the rightmost column")
+    func verticalChapterTitleCanvasStartsAtBlockStart() {
+        let container = CGRect(x: 24, y: 40, width: 280, height: 420)
+        let rect = ChapterTitleCanvasGeometry.resolve(
+            canvasSize: CGSize(width: 280, height: 112),
+            container: container,
+            writingMode: .verticalRTL
+        )
+
+        #expect(rect.size == CGSize(width: 112, height: 280))
+        #expect(rect.maxX == container.maxX)
+        #expect(rect.minY == container.minY)
+    }
+
+    @Test("vertical regex decoration keeps block and inline padding axes distinct")
+    func verticalRegexDecorationPaddingAxes() {
+        let glyphRect = CGRect(x: 80, y: 120, width: 16, height: 44)
+        let rect = RegexHighlightDecorationGeometry.expandedRect(
+            glyphRect: glyphRect,
+            padding: ReaderStyleEdges(top: 2, leading: 4, bottom: 6, trailing: 8),
+            writingMode: .verticalRTL
+        )
+
+        #expect(rect.minX == glyphRect.minX - 6)
+        #expect(rect.minY == glyphRect.minY - 4)
+        #expect(rect.width == glyphRect.width + 8)
+        #expect(rect.height == glyphRect.height + 12)
+    }
+
     @Test("horizontal zero bottom reservation reaches the content edge after a cached layout")
     func zeroBottomReservationReachesContentEdge() async {
         let font = UIFont.systemFont(ofSize: 18)

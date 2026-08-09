@@ -7,6 +7,32 @@ final class CoreTextPaginator {
     static func debugVerticalLog(_ message: @autoclosure () -> String, verbose: Bool = false) {
     }
 
+    private static let chapterTitlePlaceholderBlockStyle =
+        HTMLAttributedStringBuilder.BlockRenderStyle(
+            backgroundFillColor: nil,
+            borderTopWidth: 0,
+            borderBottomWidth: 0,
+            borderLeftWidth: 0,
+            borderRightWidth: 0,
+            borderTopColor: nil,
+            borderBottomColor: nil,
+            borderLeftColor: nil,
+            borderRightColor: nil,
+            width: nil,
+            height: nil,
+            textAlign: .natural,
+            isHorizontallyCentered: false,
+            paragraphSpacingBefore: 0,
+            visualOffsetBefore: 0,
+            paddingTop: 0,
+            paddingLeft: 0,
+            paddingBottom: 0,
+            paddingRight: 0,
+            blockImage: nil,
+            borderRadius: 0,
+            avoidsPageBreakInside: false
+        )
+
     struct RenderedAttachment {
         struct LinkTarget {
             let href: String
@@ -94,13 +120,49 @@ final class CoreTextPaginator {
     }
 
     struct RenderedBlockRenderable {
+        enum Content: Equatable, @unchecked Sendable {
+            case htmlBlock(attributedText: NSAttributedString?)
+            case chapterTitle(ChapterTitleRenderPlan)
+
+            static func == (lhs: Content, rhs: Content) -> Bool {
+                switch (lhs, rhs) {
+                case let (.htmlBlock(lhsText), .htmlBlock(rhsText)):
+                    switch (lhsText, rhsText) {
+                    case (nil, nil): return true
+                    case let (lhsText?, rhsText?): return lhsText.isEqual(to: rhsText)
+                    default: return false
+                    }
+                case let (.chapterTitle(lhsPlan), .chapterTitle(rhsPlan)):
+                    return lhsPlan == rhsPlan
+                default:
+                    return false
+                }
+            }
+        }
+
         let rect: CGRect
         let style: HTMLAttributedStringBuilder.BlockRenderStyle
-        let attributedText: NSAttributedString?
-        /// String ranges whose text is drawn by drawBlockRenderableText (not by CTFrame drawLines).
-        /// Non-empty only when attributedText != nil (usesExplicitGeometry = true).
+        let content: Content
+        /// Source ranges replaced by explicit block text or a chapter-title canvas.
         let sourceRanges: [NSRange]
         let imageAttachment: RenderedAttachment?
+
+        var attributedText: NSAttributedString? {
+            guard case let .htmlBlock(attributedText) = content else { return nil }
+            return attributedText
+        }
+
+        var chapterTitlePlan: ChapterTitleRenderPlan? {
+            guard case let .chapterTitle(plan) = content else { return nil }
+            return plan
+        }
+
+        var suppressesSourceText: Bool {
+            switch content {
+            case let .htmlBlock(attributedText): return attributedText != nil
+            case .chapterTitle: return true
+            }
+        }
     }
 
     struct RenderedInlineAnnotation {
@@ -175,15 +237,17 @@ final class CoreTextPaginator {
         func withUpdatedColors(
             textColor: UIColor,
             backgroundColor: UIColor,
-            dialogueColor: UIColor? = nil,
-            dialogueBoxColor: UIColor? = nil
+            regexHighlightConfiguration: RegexHighlightConfiguration = .disabled,
+            readerStyleAppearance: ReaderStyleAppearance = .light,
+            readerStyleAssetRevision: UInt64 = 0
         ) -> ChapterLayout {
             withUpdatedAppearance(
                 textColor: textColor,
                 backgroundColor: backgroundColor,
                 readerBackgroundImage: readerBackgroundImage,
-                dialogueColor: dialogueColor,
-                dialogueBoxColor: dialogueBoxColor
+                regexHighlightConfiguration: regexHighlightConfiguration,
+                readerStyleAppearance: readerStyleAppearance,
+                readerStyleAssetRevision: readerStyleAssetRevision
             )
         }
 
@@ -194,13 +258,28 @@ final class CoreTextPaginator {
             textColor: UIColor,
             backgroundColor: UIColor,
             readerBackgroundImage: UIImage?,
-            dialogueColor: UIColor? = nil,
-            dialogueBoxColor: UIColor? = nil
+            regexHighlightConfiguration: RegexHighlightConfiguration = .disabled,
+            readerStyleAppearance: ReaderStyleAppearance = .light,
+            readerStyleAssetRevision: UInt64 = 0
         ) -> ChapterLayout {
             guard attributedString.length > 0 else { return self }
             let updated = NSMutableAttributedString(attributedString: attributedString)
             let fullRange = NSRange(location: 0, length: updated.length)
             let oldBackgroundColor = self.backgroundColor
+
+            do {
+                _ = try RegexHighlightEngine.apply(
+                    configuration: .disabled,
+                    appearance: readerStyleAppearance,
+                    assetRevision: readerStyleAssetRevision,
+                    to: updated
+                )
+            } catch {
+                AppLogger.render(
+                    "regex highlight restore failed during appearance update",
+                    context: ["error": String(describing: error)]
+                )
+            }
 
             // ── Foreground color: apply theme color globally, then restore CSS-specified colors ──
             updated.addAttribute(.foregroundColor, value: textColor, range: fullRange)
@@ -214,17 +293,10 @@ final class CoreTextPaginator {
                 }
             }
 
-            // Re-tint quoted dialogue after the global recolor. The theme-swap path recolors an
-            // already-paginated layout without re-running the renderer, so the "對話文字高亮"
-            // decoration (applied at build time) would otherwise be wiped by the reset above.
-            if dialogueColor != nil || dialogueBoxColor != nil {
-                DialogueHighlighter.apply(textColor: dialogueColor, boxColor: dialogueBoxColor, to: updated)
-            }
-
             // ── Background color ──
             // A run's `.backgroundColor` is not painted by this pipeline — CoreText's CTLineDraw /
             // CTFrameDraw ignore it, and inline backgrounds here are all custom-drawn
-            // (blockBackgroundColorAttribute / inlineBorderBoxAttribute / DialogueHighlighter's box).
+            // (blockBackgroundColorAttribute / inlineBorderBoxAttribute / regex decoration).
             // The page fill alone carries the theme color, so no per-run theme background is applied.
             // This only clears stale theme-colored `.backgroundColor` left on runs by an earlier
             // approach; distinct (CSS-authored) inline backgrounds keep their colors.
@@ -252,18 +324,60 @@ final class CoreTextPaginator {
                 }
             }
 
+            do {
+                let result = try RegexHighlightEngine.apply(
+                    configuration: regexHighlightConfiguration,
+                    appearance: readerStyleAppearance,
+                    assetRevision: readerStyleAssetRevision,
+                    to: updated
+                )
+                for diagnostic in result.diagnostics {
+                    AppLogger.render(
+                        "regex highlight diagnostic during appearance update",
+                        context: ["diagnostic": String(describing: diagnostic)]
+                    )
+                }
+            } catch {
+                AppLogger.render(
+                    "regex highlight reapply failed during appearance update",
+                    context: ["error": String(describing: error)]
+                )
+            }
+
             let recoloredBlockRenderables = blockRenderables.mapValues { renderables in
                 renderables.map { item in
+                    guard case let .htmlBlock(sourceText) = item.content else {
+                        return item
+                    }
+                    let style = item.style
+                    let recoloredAttributedText = item.attributedText.map { source in
+                        recoloredRegexRenderableText(
+                            source,
+                            textColor: textColor,
+                            configuration: regexHighlightConfiguration,
+                            appearance: readerStyleAppearance,
+                            assetRevision: readerStyleAssetRevision
+                        )
+                    }
                     guard item.imageAttachment != nil,
-                          let fillColor = item.style.backgroundFillColor,
+                          let fillColor = style.backgroundFillColor,
                           CoreTextPaginator.colorsApproximatelyEqual(fillColor, oldBackgroundColor)
                     else {
-                        return item
+                        guard recoloredAttributedText != nil else { return item }
+                        return RenderedBlockRenderable(
+                            rect: item.rect,
+                            style: style,
+                            content: .htmlBlock(attributedText: recoloredAttributedText),
+                            sourceRanges: item.sourceRanges,
+                            imageAttachment: item.imageAttachment
+                        )
                     }
                     return RenderedBlockRenderable(
                         rect: item.rect,
-                        style: item.style.withBackgroundFillColor(backgroundColor),
-                        attributedText: item.attributedText,
+                        style: style.withBackgroundFillColor(backgroundColor),
+                        content: .htmlBlock(
+                            attributedText: recoloredAttributedText ?? sourceText
+                        ),
                         sourceRanges: item.sourceRanges,
                         imageAttachment: item.imageAttachment
                     )
@@ -310,6 +424,60 @@ final class CoreTextPaginator {
                 isPartial: isPartial,
                 estimatedPageCount: estimatedPageCount
             )
+        }
+
+        private func recoloredRegexRenderableText(
+            _ source: NSAttributedString,
+            textColor: UIColor,
+            configuration: RegexHighlightConfiguration,
+            appearance: ReaderStyleAppearance,
+            assetRevision: UInt64
+        ) -> NSAttributedString {
+            let updated = NSMutableAttributedString(attributedString: source)
+            let fullRange = NSRange(location: 0, length: updated.length)
+            do {
+                _ = try RegexHighlightEngine.apply(
+                    configuration: .disabled,
+                    appearance: appearance,
+                    assetRevision: assetRevision,
+                    to: updated
+                )
+            } catch {
+                AppLogger.render(
+                    "regex highlight block restore failed during appearance update",
+                    context: ["error": String(describing: error)]
+                )
+            }
+            updated.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+            updated.enumerateAttribute(
+                HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute,
+                in: fullRange,
+                options: []
+            ) { value, range, _ in
+                if let cssColor = value as? UIColor {
+                    updated.addAttribute(.foregroundColor, value: cssColor, range: range)
+                }
+            }
+            do {
+                let result = try RegexHighlightEngine.apply(
+                    configuration: configuration,
+                    appearance: appearance,
+                    assetRevision: assetRevision,
+                    to: updated
+                )
+                for diagnostic in result.diagnostics {
+                    AppLogger.render(
+                        "regex highlight block diagnostic during appearance update",
+                        context: ["diagnostic": String(describing: diagnostic)]
+                    )
+                }
+            } catch {
+                AppLogger.render(
+                    "regex highlight block reapply failed during appearance update",
+                    context: ["error": String(describing: error)]
+                )
+            }
+            return updated
         }
     }
 
@@ -2172,6 +2340,16 @@ final class CoreTextPaginator {
             let lines = CTFrameGetLines(frame) as! [CTLine]
             guard !lines.isEmpty else { return }
 
+            let titleRenderables = extractChapterTitleRenderables(
+                frame: frame,
+                frameRange: range,
+                lineOrigins: artifact.lineOrigins,
+                contentPathRect: contentPathRect,
+                renderSize: renderSize,
+                attributedString: attrStr,
+                writingMode: writingMode
+            )
+
             let origins = artifact.lineOrigins
 
             struct DecorationGroup {
@@ -2249,8 +2427,6 @@ final class CoreTextPaginator {
                     layer: $0.layer
                 )
             }
-            guard !groups.isEmpty else { return }
-
             for groupIndex in groups.indices {
                 // Container decorations wrap already-flowed children; their Y must come from line origins.
                 guard !groups[groupIndex].isContainer else { continue }
@@ -2403,7 +2579,7 @@ final class CoreTextPaginator {
                 }
             }
 
-            let renderables = groups
+            let htmlRenderables = groups
                 .filter { !$0.rect.isNull }
                 .sorted { lhs, rhs in
                     if lhs.layer != rhs.layer { return lhs.layer > rhs.layer }
@@ -2427,7 +2603,7 @@ final class CoreTextPaginator {
                     return RenderedBlockRenderable(
                         rect: renderRect,
                         style: group.style,
-                        attributedText: text,
+                        content: .htmlBlock(attributedText: text),
                         sourceRanges: text != nil ? group.ranges : [],
                         imageAttachment: makeBlockImageAttachment(
                             rect: renderRect,
@@ -2438,12 +2614,148 @@ final class CoreTextPaginator {
                         )
                     )
                 }
+            let renderables = htmlRenderables + titleRenderables
             if !renderables.isEmpty {
-                pageRenderables[pageIdx] = renderables
+                pageRenderables[pageIdx] = renderables.sorted { lhs, rhs in
+                    if lhs.rect.minY != rhs.rect.minY { return lhs.rect.minY < rhs.rect.minY }
+                    return lhs.rect.minX < rhs.rect.minX
+                }
             }
         } } // end autoreleasepool + for pageIdx
 
         return pageRenderables
+    }
+
+    struct ChapterTitleRenderableExtraction {
+        let renderables: [RenderedBlockRenderable]
+        let suppressedRanges: [NSRange]
+    }
+
+    static func extractChapterTitleRenderablesForTesting(
+        attributedString: NSAttributedString,
+        frameSize: CGSize,
+        writingMode: ReaderWritingMode = .horizontal
+    ) -> ChapterTitleRenderableExtraction {
+        guard attributedString.length > 0,
+              frameSize.width > 0,
+              frameSize.height > 0 else {
+            return ChapterTitleRenderableExtraction(renderables: [], suppressedRanges: [])
+        }
+        let framesetter = CTFramesetterCreateWithAttributedString(
+            attributedString as CFAttributedString
+        )
+        let frame = makeFrame(
+            framesetter: framesetter,
+            range: CFRange(location: 0, length: attributedString.length),
+            path: CGPath(rect: CGRect(origin: .zero, size: frameSize), transform: nil),
+            writingMode: writingMode
+        )
+        var origins = [CGPoint](
+            repeating: .zero,
+            count: (CTFrameGetLines(frame) as! [CTLine]).count
+        )
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, origins.count), &origins)
+        let renderables = extractChapterTitleRenderables(
+            frame: frame,
+            frameRange: CFRange(location: 0, length: attributedString.length),
+            lineOrigins: origins,
+            contentPathRect: CGRect(origin: .zero, size: frameSize),
+            renderSize: frameSize,
+            attributedString: attributedString,
+            writingMode: writingMode
+        )
+        return ChapterTitleRenderableExtraction(
+            renderables: renderables,
+            suppressedRanges: renderables.flatMap(\.sourceRanges)
+        )
+    }
+
+    static func extractChapterTitleRenderables(
+        frame: CTFrame,
+        frameRange: CFRange,
+        lineOrigins: [CGPoint]? = nil,
+        contentPathRect: CGRect,
+        renderSize: CGSize,
+        attributedString: NSAttributedString,
+        writingMode: ReaderWritingMode
+    ) -> [RenderedBlockRenderable] {
+        let boundedFrameRange = NSIntersectionRange(
+            NSRange(location: frameRange.location, length: frameRange.length),
+            NSRange(location: 0, length: attributedString.length)
+        )
+        guard boundedFrameRange.length > 0 else { return [] }
+
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return [] }
+        var origins = lineOrigins ?? [CGPoint](repeating: .zero, count: lines.count)
+        if lineOrigins == nil {
+            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        }
+
+        var renderables: [RenderedBlockRenderable] = []
+        attributedString.enumerateAttribute(
+            ChapterTitleAttributedBuilder.designRenderPlanAttribute,
+            in: boundedFrameRange,
+            options: []
+        ) { value, effectiveRange, _ in
+            guard let plan = value as? ChapterTitleRenderPlan else { return }
+            let sourceRange = NSIntersectionRange(effectiveRange, boundedFrameRange)
+            guard sourceRange.length > 0,
+                  let lineIndex = lines.firstIndex(where: { line in
+                      let lineRange = CTLineGetStringRange(line)
+                      return NSIntersectionRange(
+                          sourceRange,
+                          NSRange(location: lineRange.location, length: lineRange.length)
+                      ).length > 0
+                  }) else { return }
+
+            let line = lines[lineIndex]
+            let origin = origins[lineIndex]
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+            let logicalCanvasSize = writingMode.isVertical
+                ? CGSize(width: plan.canvasSize.height, height: plan.canvasSize.width)
+                : plan.canvasSize
+            let container: CGRect
+            if writingMode.isVertical {
+                let top = renderSize.height - (contentPathRect.minY + origin.y)
+                let bottom = renderSize.height - contentPathRect.minY
+                container = CGRect(
+                    x: contentPathRect.minX,
+                    y: top,
+                    width: contentPathRect.width,
+                    height: max(1, bottom - top)
+                )
+            } else {
+                let top = renderSize.height
+                    - (contentPathRect.minY + origin.y + ascent)
+                let bottom = renderSize.height - contentPathRect.minY
+                container = CGRect(
+                    x: contentPathRect.minX,
+                    y: top,
+                    width: contentPathRect.width,
+                    height: max(
+                        plan.canvasSize.height,
+                        max(bottom - top, ascent + descent)
+                    )
+                )
+            }
+            let rect = ChapterTitleCanvasGeometry.resolve(
+                canvasSize: logicalCanvasSize,
+                container: container,
+                writingMode: writingMode
+            )
+            guard !rect.isEmpty else { return }
+            renderables.append(RenderedBlockRenderable(
+                rect: rect,
+                style: chapterTitlePlaceholderBlockStyle,
+                content: .chapterTitle(plan),
+                sourceRanges: [sourceRange],
+                imageAttachment: nil
+            ))
+        }
+        return renderables
     }
 
     private static func blockDecorationRect(

@@ -839,8 +839,9 @@ _layouts[spineIndex] = nil
                     textColor: themeTextColor,
                     backgroundColor: themeBackgroundColor,
                     readerBackgroundImage: currentReaderBackgroundImage(),
-                    dialogueColor: renderSettings.dialogueHighlightColor,
-                    dialogueBoxColor: renderSettings.dialogueBoxColor
+                    regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
+                    readerStyleAppearance: renderSettings.readerStyleAppearance,
+                    readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
                 )
                 _layouts[spineIndex] = firstPageLayout
                 generateSnapshot(for: spineIndex)
@@ -897,8 +898,9 @@ _layouts[spineIndex] = nil
             textColor: themeTextColor,
             backgroundColor: themeBackgroundColor,
             readerBackgroundImage: currentReaderBackgroundImage(),
-            dialogueColor: renderSettings.dialogueHighlightColor,
-            dialogueBoxColor: renderSettings.dialogueBoxColor
+            regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
+            readerStyleAppearance: renderSettings.readerStyleAppearance,
+            readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
         )
         AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         generateSnapshot(for: spineIndex)
@@ -1047,8 +1049,9 @@ _layouts.removeAll()
                 textColor: textColor,
                 backgroundColor: backgroundColor,
                 readerBackgroundImage: readerBackgroundImage,
-                dialogueColor: renderSettings.dialogueHighlightColor,
-                dialogueBoxColor: renderSettings.dialogueBoxColor
+                regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
+                readerStyleAppearance: renderSettings.readerStyleAppearance,
+                readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
             )
         }
         chapterSnapshots.removeAllObjects()

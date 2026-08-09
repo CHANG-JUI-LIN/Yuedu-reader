@@ -51,7 +51,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .customFonts: return "字體導入"
         case .touchZoneEditor: return "翻頁區塊編輯"
-        case .dialogueHighlight: return "對話高亮"
+        case .dialogueHighlight: return "正則高亮"
         case .layoutPresetImport: return "排版參數導入"
         case .readerBackgroundImport: return "閱讀背景導入"
         case .bottomBarCustomization: return "底部導覽列自訂"
@@ -66,7 +66,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .customFonts: return "匯入並切換自訂字體"
         case .touchZoneEditor: return "自訂 3×3 翻頁點擊區塊"
-        case .dialogueHighlight: return "自動高亮引號對話與角色台詞"
+        case .dialogueHighlight: return "使用自訂正則、文字樣式與背景效果標示閱讀內容"
         case .layoutPresetImport: return "匯入排版參數 preset 一鍵套用"
         case .readerBackgroundImport: return "匯入圖片作為閱讀背景"
         case .bottomBarCustomization: return "自訂底部 Tab 頁面、大小與圖標"

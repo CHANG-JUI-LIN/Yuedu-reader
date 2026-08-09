@@ -6,9 +6,12 @@ import UIKit
 /// behave identically on both. The EPUB `<h1>` path does NOT use this — it keeps
 /// its own CSS-driven heading rendering.
 enum ChapterTitleAttributedBuilder {
+    static let designRenderPlanAttribute = NSAttributedString.Key("YDChapterTitleRenderPlan")
+
     /// Appends the title (nothing if hidden/empty; one or two lines otherwise).
-    /// When the style enables advanced CSS, the title is rendered from the
-    /// user's HTML/CSS template through the shared IR engine instead.
+    /// When advanced styling is enabled, a structured design is compiled into
+    /// a CoreText render-plan marker. Only unmigrated `legacySource` values use
+    /// the former HTML/CSS IR path.
     /// - Parameters:
     ///   - title: raw chapter title (e.g. "第一章 初入江湖").
     ///   - style: the resolved chapter-title style.
@@ -36,36 +39,76 @@ enum ChapterTitleAttributedBuilder {
         guard !trimmed.isEmpty else { return }
 
         if style.advancedCSSEnabled {
-            let t0 = CFAbsoluteTimeGetCurrent()
-            let rendered = await renderAdvancedCSS(
-                rawTitle: trimmed,
-                style: style,
-                settings: settings,
-                renderWidth: renderWidth,
-                themeTextColor: themeTextColor,
-                themeBackgroundColor: themeBackgroundColor
-            )
-            AppLogger.render(
-                "⟐ title.css render ms=\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))"
-                    + " ok=\(rendered != nil) len=\(rendered?.length ?? 0)"
-            )
-            if let rendered {
+            guard let design = style.design else {
+                AppLogger.render("chapterTitle structured design missing; title block omitted")
+                return
+            }
+
+            if design.layers.isEmpty, let legacySource = design.legacySource {
+                // Compatibility path for settings decoded before the structured
+                // HTML codec migrated `legacySource`. Delete this branch once
+                // decode/import always persists at least one converted layer.
+                // A migrated design may retain its source for audit/export;
+                // non-empty layers remain the authoritative render model.
+                let template = themeBackgroundColor.yd_isDark
+                    ? legacySource.dark
+                    : legacySource.light
+                let t0 = CFAbsoluteTimeGetCurrent()
+                let rendered = await renderLegacyAdvancedCSS(
+                    rawTitle: trimmed,
+                    template: template,
+                    style: style,
+                    settings: settings,
+                    renderWidth: renderWidth,
+                    themeTextColor: themeTextColor,
+                    themeBackgroundColor: themeBackgroundColor
+                )
+                AppLogger.render(
+                    "⟐ title.css.legacy render ms=\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))"
+                        + " ok=\(rendered != nil) len=\(rendered?.length ?? 0)"
+                )
+                guard let rendered else {
+                    AppLogger.render("chapterTitle legacySource render failed; title block omitted")
+                    return
+                }
                 let titleBlock = NSMutableAttributedString(attributedString: rendered)
                 applyBottomSpacing(style.bottomSpacing, to: titleBlock)
-                // The first paragraph cannot carry visible space above itself in CoreText,
-                // so top spacing still needs a spacer. Bottom spacing belongs on the last
-                // visible title paragraph; a trailing blank paragraph is not stable across
-                // HTML block normalization and chapter/body concatenation.
                 if style.topSpacing > 0 {
                     attr.append(spacerLine(height: style.topSpacing))
                 }
                 attr.append(titleBlock)
                 return
             }
-            // Fallback: the template is user-authored/imported HTML we cannot
-            // validate upfront; if it parses to nothing, fall through to the
-            // plain layout so the chapter still shows a title. Can be removed
-            // once the template editor validates on save/import.
+
+            let t0 = CFAbsoluteTimeGetCurrent()
+            do {
+                let titleBlock = try await compileDesignBlock(
+                    title: trimmed,
+                    design: design,
+                    appearance: themeBackgroundColor.yd_isDark ? .dark : .light,
+                    writingMode: settings.writingMode,
+                    renderWidth: renderWidth,
+                    bottomSpacing: style.bottomSpacing,
+                    assetStore: .shared
+                )
+                if style.topSpacing > 0 {
+                    attr.append(spacerLine(height: style.topSpacing))
+                }
+                attr.append(titleBlock)
+                AppLogger.render(
+                    "⟐ title.design compile ms=\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))"
+                        + " ok=true len=\(titleBlock.length)"
+                )
+                return
+            } catch {
+                // Rendering never guesses a second representation. The same
+                // throwing helper is used by editor/apply validation so this
+                // error can be surfaced before the design becomes active.
+                AppLogger.render(
+                    "chapterTitle structured design compile failed; title block omitted error=\(error)"
+                )
+                return
+            }
         }
 
         appendPlainLines(
@@ -75,6 +118,47 @@ enum ChapterTitleAttributedBuilder {
             letterSpacing: letterSpacing,
             to: attr
         )
+    }
+
+    /// Validates and compiles a structured title into the transparent source
+    /// marker consumed by the paginator. Editor/apply code calls this throwing
+    /// API directly; the legacy non-throwing builder entry point logs and omits
+    /// an invalid block instead of silently degrading to a different layout.
+    static func compileDesignBlock(
+        title: String,
+        design: ChapterTitleDesign,
+        appearance: ReaderStyleAppearance,
+        writingMode: ReaderWritingMode,
+        renderWidth: CGFloat,
+        bottomSpacing: CGFloat,
+        assetStore: ReaderStyleAssetStore
+    ) async throws -> NSAttributedString {
+        let plan = try await ChapterTitleDesignRenderer.compile(
+            title: title,
+            design: design,
+            appearance: appearance,
+            writingMode: writingMode,
+            renderWidth: renderWidth,
+            assetStore: assetStore
+        )
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = plan.canvasSize.height
+        paragraph.maximumLineHeight = plan.canvasSize.height
+        paragraph.paragraphSpacing = max(bottomSpacing, 0)
+        let marker = NSMutableAttributedString(
+            string: title + "\n",
+            attributes: [
+                .font: UIFont.systemFont(ofSize: 1),
+                .foregroundColor: UIColor.clear,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        marker.addAttribute(
+            designRenderPlanAttribute,
+            value: plan,
+            range: NSRange(location: 0, length: marker.length)
+        )
+        return marker
     }
 
     /// Adds reader-controlled body separation to the template's final visible paragraph while
@@ -216,8 +300,9 @@ enum ChapterTitleAttributedBuilder {
     /// it through the same IR pipeline as online HTML chapters (HTML → styled
     /// AST → RenderableNode → attributed string), so template CSS behaves
     /// exactly like book content. Returns nil when the template yields nothing.
-    private static func renderAdvancedCSS(
+    private static func renderLegacyAdvancedCSS(
         rawTitle: String,
+        template: String,
         style: ChapterTitleStyle,
         settings: ReaderRenderSettings,
         renderWidth: CGFloat,
@@ -225,7 +310,6 @@ enum ChapterTitleAttributedBuilder {
         themeBackgroundColor: UIColor
     ) async -> NSAttributedString? {
         let (number, name) = ChapterTitleSplitter.split(rawTitle)
-        let template = themeBackgroundColor.yd_isDark ? style.darkTemplate : style.lightTemplate
         let html = template
             .replacingOccurrences(of: "{number}", with: ReaderHTMLUtilities.escapeHTML(number ?? ""))
             .replacingOccurrences(of: "{name}", with: ReaderHTMLUtilities.escapeHTML(name))

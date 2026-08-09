@@ -96,6 +96,16 @@ struct AppearanceThemeView: View {
         .toolbarTitleDisplayMode(.inline)
         .tint(activeTheme.isClassic ? nil : activeTheme.accentColor)
         .preferredColorScheme(previewedAppearance)
+        // The 淺色／深色 slot picker must repaint this screen as the edited
+        // appearance so theme picks can be judged where they will live. In
+        // practice `.preferredColorScheme` alone does not flip the environment
+        // `colorScheme` on pushed List destinations (iOS 18/26 flakiness), and
+        // `setAppearanceTheme` guards `slot == activeAppearance` — with the
+        // environment still reading the device scheme, every dark-slot pick
+        // returned before repainting (the "深色分頁點主題不變色" bug). Overriding
+        // the environment value directly is the reliable path; `AudiobookView`
+        // uses the same technique for its scoped dark page.
+        .environment(\.colorScheme, editingScheme)
         .sheet(isPresented: $showPaywall) {
             PaywallView()
                 .environmentObject(subscriptionStore)
@@ -353,7 +363,11 @@ struct AppearanceThemeView: View {
             settings.setAppearanceTheme(
                 preset,
                 for: editingScheme,
-                activeAppearance: colorScheme
+                // The screen is repainted as `editingScheme` by the environment
+                // override above, so that is the appearance actually on screen —
+                // not the device scheme, whose trait sync with the override is
+                // not guaranteed to have happened by the time this tap runs.
+                activeAppearance: editingScheme
             )
         } label: {
             VStack(spacing: DSSpacing.sm) {
@@ -926,7 +940,7 @@ struct AppearanceThemeView: View {
         }
         .fileImporter(
             isPresented: $showThemeImporter,
-            allowedContentTypes: [.json],
+            allowedContentTypes: [.json, .yueduReaderStyle],
             allowsMultipleSelection: false,
             onCompletion: handleThemeImport
         )
@@ -1030,11 +1044,19 @@ struct AppearanceThemeView: View {
                 if didAccess { url.stopAccessingSecurityScopedResource() }
             }
             let data = try Data(contentsOf: url)
-            let summary = try settings.importAppearanceCustomization(from: data)
-            screenAlert = ThemeScreenAlert(
-                title: localized("導入主題"),
-                message: summary.localizedDescription
-            )
+            Task { @MainActor in
+                do {
+                    let summary = try await settings.importAppearanceCustomizationPackage(from: data)
+                    screenAlert = ThemeScreenAlert(
+                        title: localized("導入主題"),
+                        message: summary.localizedDescription
+                    )
+                } catch let error as AppearanceThemeImportError {
+                    showImportFailure(localized(error.messageKey))
+                } catch {
+                    showImportFailure(localized("匯入主題失敗。"))
+                }
+            }
         } catch let error as AppearanceThemeImportError {
             showImportFailure(localized(error.messageKey))
         } catch {
@@ -1284,7 +1306,11 @@ private struct AppearanceThemeCustomizationView: View {
         .background(DSColor.groupedBackground)
         // Same rule as the theme grid: the appearance being edited is the
         // appearance shown, so the colors can be judged where they will live.
+        // `.preferredColorScheme` alone leaves the environment reading the
+        // device scheme on pushed destinations; overriding the environment
+        // value is what actually repaints the Form (see the theme grid).
         .preferredColorScheme(editingScheme)
+        .environment(\.colorScheme, editingScheme)
         .animation(DSAnimation.standard, value: editingScheme)
         .navigationTitle(localized("主題自定義"))
         .toolbarTitleDisplayMode(.inline)

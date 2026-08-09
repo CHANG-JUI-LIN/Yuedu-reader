@@ -136,12 +136,30 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
             )
         }
 
-        if settings.dialogueHighlightColor != nil || settings.dialogueBoxColor != nil {
-            DialogueHighlighter.apply(
-                textColor: settings.dialogueHighlightColor,
-                boxColor: settings.dialogueBoxColor,
-                to: attrStr
+        if settings.regexHighlightConfiguration.isEnabled {
+            await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
+                configuration: settings.regexHighlightConfiguration,
+                appearance: settings.readerStyleAppearance
             )
+            do {
+                let result = try RegexHighlightEngine.apply(
+                    configuration: settings.regexHighlightConfiguration,
+                    appearance: settings.readerStyleAppearance,
+                    assetRevision: settings.readerStyleAssetRevision,
+                    to: attrStr
+                )
+                for diagnostic in result.diagnostics {
+                    AppLogger.render(
+                        "regex highlight diagnostic in TXT renderer",
+                        context: ["diagnostic": String(describing: diagnostic)]
+                    )
+                }
+            } catch {
+                AppLogger.render(
+                    "regex highlight apply failed in TXT renderer",
+                    context: ["error": String(describing: error)]
+                )
+            }
         }
 
         return AttributedChapterBuildResult(

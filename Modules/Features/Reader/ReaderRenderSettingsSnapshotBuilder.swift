@@ -15,8 +15,9 @@ struct ReaderRenderSettingsSnapshotInput {
     let isBold: Bool
     var chapterTitleStyle: ChapterTitleStyle
     let readerBackgroundImageURL: URL?
-    let dialogueHighlightColor: UIColor?
-    let dialogueBoxColor: UIColor?
+    let regexHighlightConfiguration: RegexHighlightConfiguration
+    let readerStyleAppearance: ReaderStyleAppearance
+    let readerStyleAssetRevision: UInt64
 }
 
 enum ReaderRenderSurface {
@@ -58,8 +59,9 @@ enum ReaderRenderSettingsSnapshotBuilder {
             isBold: input.isBold,
             chapterTitleStyle: input.chapterTitleStyle,
             readerBackgroundImageURL: input.readerBackgroundImageURL,
-            dialogueHighlightColor: input.dialogueHighlightColor,
-            dialogueBoxColor: input.dialogueBoxColor
+            regexHighlightConfiguration: input.regexHighlightConfiguration,
+            readerStyleAppearance: input.readerStyleAppearance,
+            readerStyleAssetRevision: input.readerStyleAssetRevision
         )
     }
 }

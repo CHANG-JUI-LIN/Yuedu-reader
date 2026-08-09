@@ -416,17 +416,29 @@ final class BookSourceHealthChecker: ObservableObject {
         case failure(FailureCategory, String)
     }
 
-    private struct CheckTimeoutError: Error {}
+    private struct CheckTimeoutError: Error, Sendable {}
 
-    /// Whole-source timeout matching Legado `CheckSource.timeout` (default 180 s).
-    private func withOverallTimeout<T>(
-        seconds: Int, _ operation: @escaping @Sendable () async throws -> T
+    /// A single check request exceeded the source's adaptive timeout — Legado treats
+    /// this as a site failure (网站失效 group), not the whole-source 校驗超時.
+    private struct StageTimeoutError: Error, LocalizedError, Sendable {
+        var errorDescription: String? { localized("請求超時") }
+    }
+
+    /// One timeout primitive for both bounds:
+    /// - the whole-source timeout (CheckTimeoutError → 校驗超時), and
+    /// - the Legado-style adaptive per-stage request bound (StageTimeoutError →
+    ///   請求超時), where each probe's request dies at the source's measured
+    ///   `respondTime` instead of waiting out the URLSession 15/30 s defaults.
+    private func withTimeout<T, E: Error & Sendable>(
+        seconds: TimeInterval,
+        throwing error: E,
+        _ operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask { try await operation() }
             group.addTask {
                 try await Task.sleep(for: .seconds(seconds))
-                throw CheckTimeoutError()
+                throw error
             }
             let result = try await group.next()!
             group.cancelAll()
@@ -434,12 +446,27 @@ final class BookSourceHealthChecker: ObservableObject {
         }
     }
 
+    /// Legado's adaptive per-request timeout: the source's measured `respondTime`
+    /// (elapsed on the last successful check — typically 1–3 s), so a dead source
+    /// is declared dead in about one respondTime instead of after the URLSession
+    /// defaults. Floored at 2 s (URLSession's minimum sensible idle timeout below
+    /// which a slow-but-alive server false-positives) and capped at 60 s — Legado's
+    /// OkHttp callTimeout ceiling — so a never-checked source (default 180 s)
+    /// keeps today's behavior.
+    private func adaptiveTimeout(for source: BookSource) -> TimeInterval {
+        let ms = max(2_000, min(source.respondTime, 60_000))
+        return TimeInterval(ms) / 1000.0
+    }
+
     private func checkItem(at index: Int) async {
         guard items.indices.contains(index), !cancelled else { return }
         let t0 = CFAbsoluteTimeGetCurrent()
 
         do {
-            try await withOverallTimeout(seconds: policy.timeoutSeconds) {
+            try await withTimeout(
+                seconds: TimeInterval(policy.timeoutSeconds),
+                throwing: CheckTimeoutError()
+            ) {
                 try await self.runStages(at: index)
             }
         } catch is CheckTimeoutError {
@@ -639,7 +666,12 @@ final class BookSourceHealthChecker: ObservableObject {
             return .failure(.ruleMissing, localized("搜索鏈接規則為空"))
         }
         do {
-            let books = try await fetcher.search(query: keyword, in: source)
+            let books = try await withTimeout(
+                seconds: adaptiveTimeout(for: source),
+                throwing: StageTimeoutError()
+            ) { [self] in
+                try await fetcher.search(query: keyword, in: source)
+            }
             guard let book = books.first(where: {
                 !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }) else {
@@ -664,13 +696,21 @@ final class BookSourceHealthChecker: ObservableObject {
     }
 
     /// Legado probes only the *first* discover section (`exploreKinds().firstOrNull`).
+    /// `discoverItems` parses the exploreUrl rule locally (no request); the single
+    /// network request is `discoverBooks` — same one-request cost as Legado's
+    /// `exploreBookAwait`.
     private func probeDiscovery(_ source: BookSource) async -> ProbeResult<OnlineBook> {
         do {
             let sections = contentSections(await fetcher.discoverItems(page: 1, in: source))
             guard let section = sections.first else {
                 return .failure(.ruleMissing, localized("發現規則為空"))
             }
-            let books = try await fetcher.discoverBooks(from: section, page: 1, in: source)
+            let books = try await withTimeout(
+                seconds: adaptiveTimeout(for: source),
+                throwing: StageTimeoutError()
+            ) { [self] in
+                try await fetcher.discoverBooks(from: section, page: 1, in: source)
+            }
             guard let book = books.first(where: {
                 !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }) else {
@@ -689,7 +729,12 @@ final class BookSourceHealthChecker: ObservableObject {
             return .success(book, localized("詳情已含目錄地址"))
         }
         do {
-            let info = try await fetcher.fetchBookInfo(url: book.bookUrl, source: source)
+            let info = try await withTimeout(
+                seconds: adaptiveTimeout(for: source),
+                throwing: StageTimeoutError()
+            ) { [self] in
+                try await fetcher.fetchBookInfo(url: book.bookUrl, source: source)
+            }
             let name = info.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return .failure(.ruleMissing, localized("詳情為空")) }
             return .success(info, "《\(name)》")
@@ -701,7 +746,12 @@ final class BookSourceHealthChecker: ObservableObject {
     /// Returns the first loadable (non-volume-separator) chapter of the TOC.
     private func probeTOC(book: OnlineBook, source: BookSource) async -> ProbeResult<OnlineChapterRef> {
         do {
-            let chapters = try await fetcher.fetchTOC(tocUrl: book.tocUrl, source: source)
+            let chapters = try await withTimeout(
+                seconds: adaptiveTimeout(for: source),
+                throwing: StageTimeoutError()
+            ) { [self] in
+                try await fetcher.fetchTOC(tocUrl: book.tocUrl, source: source)
+            }
             guard let first = chapters.first(where: {
                 !$0.shouldRenderAsVolumeSeparator && $0.hasLoadableContentURL
             }) else {
@@ -717,7 +767,12 @@ final class BookSourceHealthChecker: ObservableObject {
         chapter: OnlineChapterRef, source: BookSource
     ) async -> ProbeResult<Int> {
         do {
-            let text = try await fetcher.fetchChapter(ref: chapter, bookId: UUID(), source: source)
+            let text = try await withTimeout(
+                seconds: adaptiveTimeout(for: source),
+                throwing: StageTimeoutError()
+            ) { [self] in
+                try await fetcher.fetchChapter(ref: chapter, bookId: UUID(), source: source)
+            }
             let count = text.trimmingCharacters(in: .whitespacesAndNewlines).count
             guard count > 0 else { return .failure(.contentEmpty, localized("正文失效")) }
             return .success(count, "\(localized("抓取")) \(count) \(localized("字"))")

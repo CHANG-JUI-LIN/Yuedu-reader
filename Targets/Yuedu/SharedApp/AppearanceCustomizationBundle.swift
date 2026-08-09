@@ -10,7 +10,7 @@ import Foundation
 /// reading background — stranded on one device, which is the gap this closes.
 /// Lives in the app target rather than ReaderCore because it composes app-level
 /// stores (tab icons, launch images) that ReaderCore has no business knowing.
-struct AppearanceCustomizationBundle: Codable {
+struct AppearanceCustomizationBundle: Codable, @unchecked Sendable {
     typealias ImagePayload = AppearanceThemeExportFile.ImagePayload
     typealias PageBackgroundPayload = AppearanceThemeExportFile.PageBackgroundPayload
 
@@ -40,6 +40,13 @@ struct AppearanceCustomizationBundle: Codable {
     var launchImageLight: ImagePayload?
     var launchImageDark: ImagePayload?
     var readerBackground: ReaderBackground?
+    /// Optional to keep every v1 JSON bundle decodable. Style assets themselves
+    /// travel in the surrounding `ReaderStylePackage` archive.
+    var regexHighlightConfiguration: RegexHighlightConfiguration?
+    var readerStyleAssetIDs: [UUID]?
+    /// Old theme JSON used `dialogueHex`. It is retained only as audit input;
+    /// importing it must not manufacture a sixth regex rule.
+    var legacyDialogueHex: UInt32?
 
     init(snapshot: AppearanceCustomizationSnapshot) {
         format = Self.formatIdentifier
@@ -87,6 +94,67 @@ struct AppearanceCustomizationBundle: Codable {
                 image: Self.readerBackgroundImage(snapshot.readerBackgroundImageFileName)
             )
         }
+
+        regexHighlightConfiguration = snapshot.regexHighlightConfiguration
+        readerStyleAssetIDs = snapshot.readerStyleAssetIDs.isEmpty
+            ? nil
+            : snapshot.readerStyleAssetIDs.sorted { $0.uuidString < $1.uuidString }
+        legacyDialogueHex = nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case format
+        case version
+        case themes
+        case pageBackgrounds
+        case tabIcons
+        case launchImageLight
+        case launchImageDark
+        case readerBackground
+        case regexHighlightConfiguration
+        case readerStyleAssetIDs
+        case legacyDialogueHex
+        case dialogueHex
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        format = try container.decodeIfPresent(String.self, forKey: .format) ?? ""
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
+        themes = try container.decodeIfPresent([AppearanceThemeExportFile].self, forKey: .themes) ?? []
+        pageBackgrounds = try container.decodeIfPresent(
+            [String: PageBackgroundPayload].self,
+            forKey: .pageBackgrounds
+        )
+        tabIcons = try container.decodeIfPresent([TabIcon].self, forKey: .tabIcons)
+        launchImageLight = try container.decodeIfPresent(ImagePayload.self, forKey: .launchImageLight)
+        launchImageDark = try container.decodeIfPresent(ImagePayload.self, forKey: .launchImageDark)
+        readerBackground = try container.decodeIfPresent(ReaderBackground.self, forKey: .readerBackground)
+        regexHighlightConfiguration = try container.decodeIfPresent(
+            RegexHighlightConfiguration.self,
+            forKey: .regexHighlightConfiguration
+        )
+        readerStyleAssetIDs = try container.decodeIfPresent([UUID].self, forKey: .readerStyleAssetIDs)
+        legacyDialogueHex = try container.decodeIfPresent(UInt32.self, forKey: .legacyDialogueHex)
+            ?? container.decodeIfPresent(UInt32.self, forKey: .dialogueHex)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(format, forKey: .format)
+        try container.encode(version, forKey: .version)
+        try container.encode(themes, forKey: .themes)
+        try container.encodeIfPresent(pageBackgrounds, forKey: .pageBackgrounds)
+        try container.encodeIfPresent(tabIcons, forKey: .tabIcons)
+        try container.encodeIfPresent(launchImageLight, forKey: .launchImageLight)
+        try container.encodeIfPresent(launchImageDark, forKey: .launchImageDark)
+        try container.encodeIfPresent(readerBackground, forKey: .readerBackground)
+        try container.encodeIfPresent(
+            regexHighlightConfiguration,
+            forKey: .regexHighlightConfiguration
+        )
+        try container.encodeIfPresent(readerStyleAssetIDs, forKey: .readerStyleAssetIDs)
+        try container.encodeIfPresent(legacyDialogueHex, forKey: .legacyDialogueHex)
     }
 
     // MARK: - Reading the stored bytes
@@ -141,6 +209,8 @@ struct AppearanceCustomizationSnapshot {
     var readerBackgroundMode: String = ReaderCustomBackgroundMode.none.rawValue
     var readerBackgroundColorHex: UInt32?
     var readerBackgroundImageFileName: String?
+    var regexHighlightConfiguration: RegexHighlightConfiguration?
+    var readerStyleAssetIDs: [UUID] = []
 
     var isEmpty: Bool {
         themes.isEmpty
@@ -149,6 +219,8 @@ struct AppearanceCustomizationSnapshot {
             && launchImageLightFileName == nil
             && launchImageDarkFileName == nil
             && readerBackgroundMode == ReaderCustomBackgroundMode.none.rawValue
+            && regexHighlightConfiguration == nil
+            && readerStyleAssetIDs.isEmpty
     }
 }
 
