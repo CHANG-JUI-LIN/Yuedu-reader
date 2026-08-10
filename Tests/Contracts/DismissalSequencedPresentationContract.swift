@@ -26,6 +26,16 @@ private enum DismissalSequencedPresentationContract {
                 osMajorVersion: 18
             )
         )
+        precondition(
+            ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter(
+                osMajorVersion: 17
+            )
+        )
+        precondition(
+            !ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter(
+                osMajorVersion: 18
+            )
+        )
 
         var sequence = DismissalSequencedPresentation<ContractRoute>()
         sequence.select(.network)

@@ -41,6 +41,26 @@ enum BookSourceManagementPresentationPolicy {
     }
 }
 
+/// Reader settings is itself presented as a sheet. On iOS 17, asking that
+/// sheet to present a document picker can be dropped even when the import
+/// control is a direct button. Dismiss reader settings first, then let the
+/// reader's first-level presenter open the picker from the sheet's real
+/// `onDismiss` callback. Delete this policy when the deployment target reaches
+/// iOS 18.
+enum ReaderSettingsPresentationPolicy {
+    static func requiresFirstLevelFontImporter(
+        osMajorVersion: Int
+    ) -> Bool {
+        osMajorVersion < 18
+    }
+
+    static var requiresFirstLevelFontImporter: Bool {
+        requiresFirstLevelFontImporter(
+            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        )
+    }
+}
+
 /// Retains a menu choice until the compatibility chooser's real `onDismiss`
 /// callback fires. This deliberately models a presentation boundary instead of
 /// guessing UIKit's dismissal duration with `asyncAfter` or `Task.sleep`.

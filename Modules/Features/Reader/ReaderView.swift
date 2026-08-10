@@ -5,6 +5,15 @@ import YueduCoreText
 
 let uiFeedbackDuration: Double = 0.25
 
+private enum ReaderSettingsDeferredPresentationRoute {
+    case fontImporter
+}
+
+private struct ReaderFontImportPresentationError: Identifiable {
+    let id = UUID()
+    let message: String
+}
+
 // MARK: - Main Reader View
 struct ReaderView: View {
     let bookId: UUID
@@ -57,6 +66,10 @@ struct ReaderView: View {
     @State var showBars = false
     @State var appleBooksActivePanel: AppleBooksReaderControlPanel?
     @State var showSettings = false
+    @State private var readerSettingsDeferredPresentation =
+        DismissalSequencedPresentation<ReaderSettingsDeferredPresentationRoute>()
+    @State private var showReaderFontImporter = false
+    @State private var readerFontImportError: ReaderFontImportPresentationError?
     @State var showQuickThemePanel = false
     @State var showReaderSearch = false
     @State var showTOC = false
@@ -1848,7 +1861,7 @@ struct ReaderView: View {
         )
         let presentationLayers = AnyView(
             settingsObservationLayers
-                .sheet(isPresented: $showSettings) {
+                .sheet(isPresented: $showSettings, onDismiss: presentDeferredReaderSettingsRoute) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderSettingsView(
                     fontSize: Binding(
@@ -1863,6 +1876,7 @@ struct ReaderView: View {
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     isVerticalWritingMode: effectiveWritingMode.isVertical,
                     hasParagraphReviews: currentBookHasParagraphReviews,
+                    onOpenFontImporter: requestFirstLevelReaderFontImporter,
                     onOpenHeaderFooterEditor: {
                         guard !effectiveScrollMode else { return }
                         presentReaderHeaderFooterEditor()
@@ -2077,6 +2091,19 @@ struct ReaderView: View {
         )
         return AnyView(
             presentationLayers
+                .fileImporter(
+                    isPresented: $showReaderFontImporter,
+                    allowedContentTypes: ReaderSettingsView.fontContentTypes,
+                    allowsMultipleSelection: false,
+                    onCompletion: handleReaderFontImport
+                )
+                .alert(item: $readerFontImportError) { error in
+                    Alert(
+                        title: Text(localized("字體匯入失敗")),
+                        message: Text(error.message),
+                        dismissButton: .default(Text(localized("確定")))
+                    )
+                }
                 .onChanged(of: showChangeSourceSheet) { show in
             if show {
                 loadOtherOrigins()
@@ -2110,6 +2137,42 @@ struct ReaderView: View {
             applyInitialProgressIfNeeded()
         }
         )
+    }
+
+    private func requestFirstLevelReaderFontImporter() {
+        guard ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter else {
+            showReaderFontImporter = true
+            return
+        }
+        readerSettingsDeferredPresentation.select(.fontImporter)
+        showSettings = false
+    }
+
+    private func presentDeferredReaderSettingsRoute() {
+        guard let route = readerSettingsDeferredPresentation.consumeAfterDismissal() else {
+            return
+        }
+        switch route {
+        case .fontImporter:
+            showReaderFontImporter = true
+        }
+    }
+
+    private func handleReaderFontImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let shouldStopAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if shouldStopAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            try settings.importReaderFont(from: url)
+        } catch {
+            readerFontImportError = ReaderFontImportPresentationError(
+                message: error.localizedDescription
+            )
+        }
     }
 
     func handleTouchAction(_ action: TouchAction) {

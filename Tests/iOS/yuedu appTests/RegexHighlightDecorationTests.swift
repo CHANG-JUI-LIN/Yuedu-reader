@@ -1,5 +1,7 @@
 import CoreGraphics
+import CoreText
 import Testing
+import UIKit
 @testable import yuedu_app
 
 @Suite("Regex highlight decoration")
@@ -87,5 +89,140 @@ struct RegexHighlightDecorationTests {
         )
 
         #expect(rect == CGRect(x: 13, y: 20, width: 34, height: 12))
+    }
+
+    // MARK: - Line index space
+
+    /// `CoreTextHorizontalLineDrawer` draws justified lines through a CTLine it rebuilt from the
+    /// line's own attributed substring, so that line indexes characters from 0 while decoration
+    /// runs carry absolute indices. Passing the absolute indices through unshifted clamped them to
+    /// the line's end: every highlight past the first line lost its background entirely.
+    @Test("a line rebuilt from its own substring anchors decorations to the right glyphs")
+    func rebuiltLineRebasesDecorationIndices() {
+        let sample = DecorationLineSample()
+        let line = CTLineCreateWithAttributedString(
+            sample.attributed.attributedSubstring(from: sample.lineRange)
+        )
+
+        let fragments = RegexHighlightDecorationRenderer.horizontalFragments(
+            line: line,
+            origin: .zero,
+            attributedString: sample.attributed,
+            range: sample.lineRange
+        )
+
+        let expected = sample.expectedSpan(in: line, lineIndexOrigin: 0)
+        #expect(fragments.count == 1)
+        #expect(abs((fragments.first?.rect.minX ?? .nan) - expected.minX) < 0.5)
+        #expect(abs((fragments.first?.rect.width ?? .nan) - expected.width) < 0.5)
+        // The old behaviour ran the box from a wrong start all the way to the line's end.
+        #expect((fragments.first?.rect.maxX ?? .nan) < sample.lineWidth(of: line) - 0.5)
+    }
+
+    @Test("a line keeping absolute string indices is unaffected by the rebasing")
+    func absoluteLineKeepsDecorationIndices() {
+        let sample = DecorationLineSample()
+        let typesetter = CTTypesetterCreateWithAttributedString(sample.attributed)
+        let line = CTTypesetterCreateLine(
+            typesetter,
+            CFRange(location: sample.lineRange.location, length: sample.lineRange.length)
+        )
+
+        let fragments = RegexHighlightDecorationRenderer.horizontalFragments(
+            line: line,
+            origin: .zero,
+            attributedString: sample.attributed,
+            range: sample.lineRange
+        )
+
+        let expected = sample.expectedSpan(in: line, lineIndexOrigin: sample.lineRange.location)
+        #expect(fragments.count == 1)
+        #expect(abs((fragments.first?.rect.minX ?? .nan) - expected.minX) < 0.5)
+        #expect(abs((fragments.first?.rect.width ?? .nan) - expected.width) < 0.5)
+    }
+
+    @Test("a highlight running past the line end stops at the line's last glyph")
+    func decorationClampsToLineEnd() {
+        let sample = DecorationLineSample(highlightRunsPastLineEnd: true)
+        let line = CTLineCreateWithAttributedString(
+            sample.attributed.attributedSubstring(from: sample.lineRange)
+        )
+
+        let fragments = RegexHighlightDecorationRenderer.horizontalFragments(
+            line: line,
+            origin: .zero,
+            attributedString: sample.attributed,
+            range: sample.lineRange
+        )
+
+        let expectedStart = CGFloat(
+            CTLineGetOffsetForStringIndex(
+                line,
+                sample.highlightRange.location - sample.lineRange.location,
+                nil
+            )
+        )
+        #expect(fragments.count == 1)
+        #expect(abs((fragments.first?.rect.minX ?? .nan) - expectedStart) < 0.5)
+        #expect(abs((fragments.first?.rect.maxX ?? .nan) - sample.lineWidth(of: line)) < 0.5)
+    }
+}
+
+/// Two paragraphs where the highlighted quote sits in the SECOND one, so an unshifted absolute
+/// index cannot accidentally land on the right glyph.
+private struct DecorationLineSample {
+    let attributed: NSAttributedString
+    let lineRange: NSRange
+    let highlightRange: NSRange
+
+    init(highlightRunsPastLineEnd: Bool = false) {
+        let firstParagraph = "前段文字。\n"
+        let secondParagraph = "他說“對話文字”然後離開。"
+        let text = firstParagraph + secondParagraph
+        let mutable = NSMutableAttributedString(
+            string: text,
+            attributes: [.font: UIFont.systemFont(ofSize: 16)]
+        )
+        let nsText = text as NSString
+        let quoted = nsText.range(of: "“對話文字”")
+        let highlight = highlightRunsPastLineEnd
+            ? NSRange(
+                location: quoted.location,
+                length: nsText.length - quoted.location
+            )
+            : quoted
+        mutable.addAttribute(
+            RegexHighlightDecoration.attributeKey,
+            value: RegexHighlightDecoration(
+                style: ReaderStyleDecorationStyle(backgroundColorHex: 0x8E1B3A),
+                assetRevision: 0
+            ),
+            range: highlight
+        )
+
+        attributed = mutable
+        let lineStart = (firstParagraph as NSString).length
+        // The drawn line covers the second paragraph only; on the "runs past" variant the
+        // highlight deliberately extends beyond it.
+        let lineLength = highlightRunsPastLineEnd
+            ? (secondParagraph as NSString).length - 3
+            : (secondParagraph as NSString).length
+        lineRange = NSRange(location: lineStart, length: lineLength)
+        highlightRange = highlight
+    }
+
+    func expectedSpan(in line: CTLine, lineIndexOrigin: Int) -> (minX: CGFloat, width: CGFloat) {
+        let shift = lineIndexOrigin - lineRange.location
+        let start = CGFloat(
+            CTLineGetOffsetForStringIndex(line, highlightRange.location + shift, nil)
+        )
+        let end = CGFloat(
+            CTLineGetOffsetForStringIndex(line, NSMaxRange(highlightRange) + shift, nil)
+        )
+        return (min(start, end), abs(end - start))
+    }
+
+    func lineWidth(of line: CTLine) -> CGFloat {
+        CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     }
 }

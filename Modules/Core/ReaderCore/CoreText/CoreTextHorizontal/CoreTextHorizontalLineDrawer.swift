@@ -199,8 +199,12 @@ enum CoreTextHorizontalLineDrawer {
         guard width > 2 else { return }
 
         let nsString = attrStr.string as NSString
+        // A justified line is rebuilt from its own attributed substring and therefore reports a
+        // string range starting at 0 — only `lineStart` locates it inside `attrStr`. Reading
+        // `CTLineGetStringRange(line).location` here inspected the chapter's opening characters
+        // instead of this line's, so blank lines never took the whitespace early-out.
         let lineRange = CTLineGetStringRange(line)
-        let nsRange = NSRange(location: max(0, lineRange.location), length: max(0, lineRange.length))
+        let nsRange = NSRange(location: lineStart, length: max(0, lineRange.length))
         guard nsRange.location < stringLength else { return }
         let boundedRange = NSIntersectionRange(nsRange, NSRange(location: 0, length: stringLength))
         guard boundedRange.length > 0,

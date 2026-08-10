@@ -10,6 +10,7 @@ struct ReaderSettingsView: View {
     var allowsUserSelectedReaderFont = false
     var isVerticalWritingMode = false
     var hasParagraphReviews = false
+    var onOpenFontImporter: () -> Void
     var onOpenHeaderFooterEditor: (() -> Void)?
     var onOpenTouchZoneEditor: (() -> Void)?
 
@@ -561,7 +562,7 @@ struct ReaderSettingsView: View {
                     }
                 }
 
-                if !MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+                if !ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter {
                     Divider()
                     Button {
                         showingFontImporter = true
@@ -583,9 +584,9 @@ struct ReaderSettingsView: View {
             }
             .buttonStyle(.plain)
 
-            if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            if ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter {
                 Button {
-                    showingFontImporter = true
+                    onOpenFontImporter()
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -832,7 +833,7 @@ struct ReaderSettingsView: View {
         settings.readerBrightness = Double(UIScreen.main.brightness)
     }
 
-    private static let fontContentTypes: [UTType] = [
+    static let fontContentTypes: [UTType] = [
         .font,
         UTType(filenameExtension: "ttf") ?? .data,
         UTType(filenameExtension: "otf") ?? .data,
@@ -1305,6 +1306,7 @@ private struct LayoutImportAlert: Identifiable {
         fontSize: .constant(18),
         theme: .constant(.sepia),
         capabilities: .reflowableText,
-        allowsUserSelectedReaderFont: true
+        allowsUserSelectedReaderFont: true,
+        onOpenFontImporter: {}
     )
 }

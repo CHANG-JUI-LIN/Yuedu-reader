@@ -4,7 +4,7 @@ import UIKit
 /// Paints immutable regex-highlight decorations before CoreText draws their glyphs.
 /// Image lookup is cache-only: drawing never performs file I/O or image decoding.
 enum RegexHighlightDecorationRenderer {
-    private struct Fragment {
+    struct Fragment {
         let range: NSRange
         let rect: CGRect
         let decoration: RegexHighlightDecoration
@@ -17,11 +17,41 @@ enum RegexHighlightDecorationRenderer {
         range: NSRange,
         context: CGContext
     ) {
+        let fragments = horizontalFragments(
+            line: line,
+            origin: origin,
+            attributedString: attributedString,
+            range: range
+        )
+        guard !fragments.isEmpty else { return }
+        paint(fragments: fragments, writingMode: .horizontal, context: context)
+    }
+
+    /// Builds the decoration rects for one drawn line.
+    ///
+    /// `line` is the line as it will actually be drawn, which is not always the CTFrame's own line:
+    /// `CoreTextHorizontalLineDrawer` rebuilds every justified line from that line's attributed
+    /// substring, and a line built that way indexes its characters from 0 — while `range` and the
+    /// decoration attribute runs are absolute indices into `attributedString`. Feeding absolute
+    /// indices to such a line clamps them to its end, which collapses the fragment to zero width
+    /// (highlight silently loses its background) or anchors it at the wrong character. Every index
+    /// is therefore rebased into the line's own index space before it reaches CoreText.
+    static func horizontalFragments(
+        line: CTLine,
+        origin: CGPoint,
+        attributedString: NSAttributedString,
+        range: NSRange
+    ) -> [Fragment] {
         let boundedRange = NSIntersectionRange(
             range,
             NSRange(location: 0, length: attributedString.length)
         )
-        guard boundedRange.length > 0 else { return }
+        guard boundedRange.length > 0 else { return [] }
+
+        let lineStringRange = CTLineGetStringRange(line)
+        let lineLowerBound = lineStringRange.location
+        let lineUpperBound = lineStringRange.location + max(0, lineStringRange.length)
+        let indexShift = lineLowerBound - boundedRange.location
 
         var lineAscent: CGFloat = 0
         var lineDescent: CGFloat = 0
@@ -36,12 +66,20 @@ enum RegexHighlightDecorationRenderer {
             guard let decoration = value as? RegexHighlightDecoration,
                   highlightedRange.length > 0 else { return }
 
-            let startOffset = CGFloat(
-                CTLineGetOffsetForStringIndex(line, highlightedRange.location, nil)
+            let startIndex = clamped(
+                highlightedRange.location + indexShift,
+                lowerBound: lineLowerBound,
+                upperBound: lineUpperBound
             )
-            let endOffset = CGFloat(
-                CTLineGetOffsetForStringIndex(line, NSMaxRange(highlightedRange), nil)
+            let endIndex = clamped(
+                NSMaxRange(highlightedRange) + indexShift,
+                lowerBound: lineLowerBound,
+                upperBound: lineUpperBound
             )
+            guard endIndex > startIndex else { return }
+
+            let startOffset = CGFloat(CTLineGetOffsetForStringIndex(line, startIndex, nil))
+            let endOffset = CGFloat(CTLineGetOffsetForStringIndex(line, endIndex, nil))
             guard startOffset.isFinite, endOffset.isFinite,
                   abs(endOffset - startOffset) > 0.25 else { return }
 
@@ -86,10 +124,10 @@ enum RegexHighlightDecorationRenderer {
             )
         }
 
-        guard !fragments.isEmpty else { return }
+        guard !fragments.isEmpty else { return [] }
         fragments.sort { $0.range.location < $1.range.location }
         let orderedFragments = fragments
-        fragments = orderedFragments.enumerated().map { index, fragment in
+        return orderedFragments.enumerated().map { index, fragment in
             let previousIsAdjacent = index > 0
                 && NSMaxRange(orderedFragments[index - 1].range) == fragment.range.location
             let nextIsAdjacent = index + 1 < orderedFragments.count
@@ -103,8 +141,10 @@ enum RegexHighlightDecorationRenderer {
             )
             return Fragment(range: fragment.range, rect: rect, decoration: fragment.decoration)
         }
+    }
 
-        paint(fragments: fragments, writingMode: .horizontal, context: context)
+    private static func clamped(_ index: Int, lowerBound: Int, upperBound: Int) -> Int {
+        min(max(index, lowerBound), upperBound)
     }
 
     static func drawVertical(

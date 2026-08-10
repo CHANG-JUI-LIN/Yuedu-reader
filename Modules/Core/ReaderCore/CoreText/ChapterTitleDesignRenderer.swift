@@ -519,19 +519,51 @@ enum ChapterTitleCanvasPainter {
             return
         }
 
-        let framesetter = CTFramesetterCreateWithAttributedString(
-            attributedText as CFAttributedString
-        )
         let coreTextRect = CGRect(
             x: rect.minX,
             y: canvasHeight - rect.maxY,
             width: rect.width,
             height: rect.height
         )
+        guard coreTextRect.width > 0, coreTextRect.height > 0 else { return }
+
+        let framesetter = CTFramesetterCreateWithAttributedString(
+            attributedText as CFAttributedString
+        )
+        let range = CFRange(location: 0, length: attributedText.length)
+
+        // Horizontal text is drawn with `NSAttributedString.draw(with:)`, which OVERFLOWS its rect
+        // rather than clipping — a layer box shorter than its own font still shows the title, so
+        // designs are routinely saved that way. Rotated for vertical writing, that box height
+        // becomes the column width, and `CTFramesetterCreateFrame` does clip: one point too narrow
+        // and it returns zero columns, blanking the title entirely (measured threshold = exactly
+        // the font size). Widen the layout path to what CoreText actually needs.
+        //
+        // The extra width is split evenly around the box instead of being taken off one side, so
+        // an overflowing title stays centred on the box the designer shows — an off-centre title
+        // reads as a positioning bug rather than as "this box is too narrow". A box that is
+        // already wide enough is left completely alone (columns keep starting at its right edge),
+        // and `rect` itself is never modified, so backgrounds and borders keep authored geometry.
+        let frameAttributes = CoreTextPaginator.frameAttributes(for: writingMode)
+        let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            range,
+            frameAttributes.isEmpty ? nil : frameAttributes as CFDictionary,
+            CGSize(width: .greatestFiniteMagnitude, height: coreTextRect.height),
+            nil
+        )
+        var layoutRect = coreTextRect
+        if suggested.width.isFinite, suggested.width > layoutRect.width {
+            layoutRect = layoutRect.insetBy(
+                dx: -(suggested.width - layoutRect.width) / 2,
+                dy: 0
+            )
+        }
+
         let frame = CoreTextPaginator.makeFrame(
             framesetter: framesetter,
-            range: CFRange(location: 0, length: attributedText.length),
-            path: CGPath(rect: coreTextRect, transform: nil),
+            range: range,
+            path: CGPath(rect: layoutRect, transform: nil),
             writingMode: writingMode
         )
         context.saveGState()

@@ -85,4 +85,59 @@ struct RegexHighlightConfigurationTests {
         #expect(configuration.version == RegexHighlightConfiguration.currentVersion)
         #expect(configuration.rules.map(\.id) == RegexHighlightRule.builtIns.map(\.id))
     }
+
+    @Test("version one invisible default gradients migrate before reader rendering")
+    func legacyGradientMigration() throws {
+        var rule = RegexHighlightRule.custom(name: "Dialogue", pattern: "dialogue")
+        rule.lightStyle.decoration.backgroundGradient = ReaderStyleGradient(
+            angleDegrees: 90,
+            stops: [
+                .init(colorHex: 0xFFFFFF, location: 0),
+                .init(colorHex: 0xD8E8FF, location: 1),
+            ]
+        )
+        rule.darkStyle.decoration.backgroundGradient = ReaderStyleGradient(
+            angleDegrees: 90,
+            stops: [
+                .init(colorHex: 0x1C1C1E, location: 0),
+                .init(colorHex: 0x3A4658, location: 1),
+            ]
+        )
+        let stored = RegexHighlightConfiguration(
+            version: 1,
+            isEnabled: true,
+            rules: RegexHighlightRule.builtIns,
+            customRules: [rule]
+        )
+
+        let migrated = stored.sanitized()
+        let migratedRule = try #require(migrated.customRules.first)
+
+        #expect(migrated.version == 2)
+        #expect(migratedRule.lightStyle.decoration.backgroundGradient?.stops.first?.colorHex == 0xFFE1C7)
+        #expect(migratedRule.darkStyle.decoration.backgroundGradient?.stops.first?.colorHex == 0x5A321C)
+    }
+
+    @Test("current configurations preserve an intentionally selected legacy color pair")
+    func currentGradientIsNotMigrated() throws {
+        var rule = RegexHighlightRule.custom(name: "Dialogue", pattern: "dialogue")
+        let intentionalGradient = ReaderStyleGradient(
+            angleDegrees: 90,
+            stops: [
+                .init(colorHex: 0xFFFFFF, location: 0),
+                .init(colorHex: 0xD8E8FF, location: 1),
+            ]
+        )
+        rule.lightStyle.decoration.backgroundGradient = intentionalGradient
+        let stored = RegexHighlightConfiguration(
+            version: RegexHighlightConfiguration.currentVersion,
+            isEnabled: true,
+            rules: RegexHighlightRule.builtIns,
+            customRules: [rule]
+        )
+
+        let sanitizedRule = try #require(stored.sanitized().customRules.first)
+
+        #expect(sanitizedRule.lightStyle.decoration.backgroundGradient == intentionalGradient)
+    }
 }

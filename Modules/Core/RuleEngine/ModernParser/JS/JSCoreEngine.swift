@@ -44,6 +44,9 @@ class JSCoreEngine {
     /// Last JavaScript error message (nil if no error on last evaluation).
     private(set) var lastError: String?
 
+    /// Human-readable pipeline stage included in structured compatibility errors.
+    private(set) var executionStage = "javascript"
+
     // MARK: - Delegates
 
     /// Retrieve a stored variable by key (wired to RuleDataInterface).
@@ -57,7 +60,7 @@ class JSCoreEngine {
     }
 
     /// Handle network requests originating from `java.ajax` / `java.connect`.
-    var networkHandler: ((URLRequest) -> String?)? {
+    var networkHandler: ((URLRequest) -> LegadoHTTPResult?)? {
         didSet { bridge.networkHandler = networkHandler }
     }
 
@@ -306,12 +309,46 @@ class JSCoreEngine {
     func resetJSNetworkMs() { bridge.resetNetworkMs() }
     func takeJSNetworkMs() -> Double { bridge.takeNetworkMs() }
 
+    /// Executes a nested evaluation under a precise pipeline stage. The JS queue is
+    /// re-entrant, so callers can wrap existing evaluation APIs without a second path.
+    func withExecutionStage<T>(_ stage: String, _ work: () -> T) -> T {
+        onJSQueue {
+            let previous = executionStage
+            executionStage = stage
+            updateRuntimeErrorContext()
+            defer {
+                executionStage = previous
+                updateRuntimeErrorContext()
+            }
+            return work()
+        }
+    }
+
+    private func updateRuntimeErrorContext() {
+        context.setObject([
+            "stage": executionStage,
+            "sourceName": bookSource?.bookSourceName ?? "?",
+            "sourceId": Self.redactedSourceIdentifier(bookSource?.bookSourceUrl),
+        ], forKeyedSubscript: "__yueduLegadoErrorContext" as NSString)
+    }
+
+    private static func redactedSourceIdentifier(_ rawValue: String?) -> String {
+        guard let rawValue, !rawValue.isEmpty else { return "?" }
+        guard var components = URLComponents(string: rawValue), components.host != nil else {
+            return String(rawValue.prefix(160))
+        }
+        components.query = nil
+        components.fragment = nil
+        return String((components.string ?? rawValue).prefix(160))
+    }
+
     /// Evaluate JavaScript code and return the result as a string.
     /// Returns `nil` on JS error, timeout, or if the result is `undefined`/`null`.
     func evaluate(_ script: String) -> String? {
         switch onJSQueueWithTimeout({ [self] () -> String? in
             lastError = nil
-            guard let value = context.evaluateScript(script) else { return nil }
+            let prepared = Self.prepareSourceJS(script)
+            guard let value = context.evaluateScript(prepared) else { return nil }
             return extractString(from: value)
         }) {
         case .completed(let r): return r
@@ -344,49 +381,10 @@ class JSCoreEngine {
         }
     }
 
-    /// Legado rule JS sometimes both reads the injected `result` global AND later
-    /// redeclares it with `let result = …` / `const result = …` in the same scope —
-    /// e.g. 起点's chapterList reads `result` (the page body) up top, then builds the
-    /// filtered chapter list into `let result = []`. Under JavaScriptCore's ES6 rules
-    /// the `let` hoists into a Temporal Dead Zone, so the *earlier* read throws
-    /// "Cannot access 'result' before initialization" and the whole rule aborts
-    /// (symptom: empty TOC/content). Rhino (Legado on Android) has no TDZ here.
-    /// Rewriting the redeclaration to `var result` hoists without a TDZ and reuses the
-    /// injected global — verified to make 起点's 453-chapter TOC parse. Only the exact
-    /// `result` identifier is touched (not `resultList`, etc.).
-    private static let resultRedeclPattern = try! NSRegularExpression(
-        pattern: #"\b(?:let|const)(\s+result\b)"#
-    )
-    private static func neutralizeResultRedeclaration(_ script: String) -> String {
-        guard script.contains("result") else { return script }
-        let range = NSRange(script.startIndex..., in: script)
-        return resultRedeclPattern.stringByReplacingMatches(
-            in: script, range: range, withTemplate: "var$1"
-        )
-    }
-
-    /// JavaScriptCore (iOS) rejects an arrow function whose sole parameter is an array-destructuring
-    /// pattern written WITHOUT wrapping parens — `list.map([a,b]=>…)` — throwing
-    /// "SyntaxError: Unexpected token '=>'", which aborts the WHOLE script (symptom: empty 发现页 /
-    /// search for 番茄-family sources). Rhino (Legado on Android) accepts the bare form, so sources
-    /// authored there ship it. Re-insert the required parens: `[a,b]=>` → `([a,b])=>`. Only a flat
-    /// `[…]` (no nested brackets/newlines) sitting in argument position (`(`/`,` before it) and
-    /// immediately followed by `=>` is matched, so real array literals are untouched; idempotent.
-    private static let destructuringArrowPattern = try! NSRegularExpression(
-        pattern: #"([(,]\s*)\[([^\[\]\n]+)\](\s*=>)"#
-    )
-    private static func neutralizeDestructuringArrowParams(_ script: String) -> String {
-        guard script.contains("=>") else { return script }
-        let range = NSRange(script.startIndex..., in: script)
-        return destructuringArrowPattern.stringByReplacingMatches(
-            in: script, range: range, withTemplate: "$1([$2])$3"
-        )
-    }
-
     /// Normalizes Android/Rhino-isms that JavaScriptCore rejects, so source rule JS authored for
     /// Legado-on-Android compiles on iOS. Applied to every rule-JS evaluation path.
     private static func prepareSourceJS(_ script: String) -> String {
-        neutralizeDestructuringArrowParams(neutralizeResultRedeclaration(script))
+        LegadoRhinoNormalizer.normalize(script).source
     }
 
     /// Detect a `return` that belongs to the rule snippet itself. Returns inside
@@ -705,15 +703,42 @@ class JSCoreEngine {
             }
         """)
 
-        // setResult() exposes JSON-string content to JS as an object so rules can do
-        // `result.field` after a `$.data` step. But just as many Legado sources call
-        // `JSON.parse(result)` expecting a string (e.g. 七猫/书旗 chapterList:
-        // `JSON.parse(result).data.lists`). Native JSON.parse would stringify the object
-        // to "[object Object]" and throw, killing the whole rule. Make JSON.parse return
-        // an already-parsed object as-is; normal string parsing is unaffected.
+        // Legado/Rhino exposes a JSON response dynamically: source JS can read
+        // `result.field`, while `String(result)` / `result.toString()` still yield
+        // the original JSON text. A plain JavaScriptCore object loses that second
+        // half of the contract and becomes "[object Object]". Build the parsed value
+        // inside JS so arrays keep their native methods, then attach non-enumerable
+        // primitive conversion hooks that preserve the exact response string.
+        // JSON.stringify remains structural because the hooks are non-enumerable.
         ctx.evaluateScript("""
             (function () {
                 var __nativeParse = JSON.parse;
+                Object.defineProperty(this, '__yueduWrapJSONResult', {
+                    enumerable: false,
+                    configurable: false,
+                    writable: false,
+                    value: function (raw) {
+                        var parsed = __nativeParse(raw);
+                        if (parsed === null || typeof parsed !== 'object') return parsed;
+                        var asString = function () { return raw; };
+                        if (!Object.prototype.hasOwnProperty.call(parsed, 'toString')) {
+                            Object.defineProperty(parsed, 'toString', {
+                                value: asString, enumerable: false, configurable: true
+                            });
+                        }
+                        if (!Object.prototype.hasOwnProperty.call(parsed, 'valueOf')) {
+                            Object.defineProperty(parsed, 'valueOf', {
+                                value: asString, enumerable: false, configurable: true
+                            });
+                        }
+                        if (typeof Symbol !== 'undefined' && Symbol.toPrimitive) {
+                            Object.defineProperty(parsed, Symbol.toPrimitive, {
+                                value: asString, enumerable: false, configurable: true
+                            });
+                        }
+                        return parsed;
+                    }
+                });
                 JSON.parse = function (value, reviver) {
                     if (value !== null && typeof value === 'object') { return value; }
                     return __nativeParse(value, reviver);
@@ -825,243 +850,9 @@ class JSCoreEngine {
         // a JSExport-backed object wins over its prototype).
         Self.installJavaGetOverload(in: ctx)
 
-        // Java crypto interop shim (Rhino `Packages.*` / `JavaImporter`).
-        // Some Legado sources decrypt chapter content with RAW Java crypto, e.g.:
-        //   var ji = new JavaImporter(); ji.importPackage(Packages.javax.crypto, ...);
-        //   with (ji) { Cipher.getInstance("AES/CBC/PKCS5Padding").doFinal(...) }
-        // None of that exists in JavaScriptCore. This shim provides just enough of the
-        // `javax.crypto` / `java.util` surface (Cipher, SecretKeySpec, IvParameterSpec,
-        // Base64, Arrays) backed by the native `java.aes*Hex` bridge, plus a tolerant
-        // `Packages` proxy so merely importing an unsupported package never throws.
-        ctx.evaluateScript("""
-            (function () {
-                function bytesToHex(bytes) {
-                    var s = '';
-                    for (var i = 0; i < bytes.length; i++) {
-                        var h = (bytes[i] & 0xff).toString(16);
-                        if (h.length < 2) h = '0' + h;
-                        s += h;
-                    }
-                    return s;
-                }
-                var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-                function b64ToBytes(str) {
-                    str = String(str).replace(/[^A-Za-z0-9+/]/g, ''); // drop '=' padding + whitespace
-                    var bytes = [], i = 0;
-                    while (i < str.length) {
-                        var n = str.length - i; // chars left in this (possibly partial) quartet
-                        var e1 = B64.indexOf(str.charAt(i));
-                        var e2 = (n > 1) ? B64.indexOf(str.charAt(i + 1)) : -1;
-                        var e3 = (n > 2) ? B64.indexOf(str.charAt(i + 2)) : -1;
-                        var e4 = (n > 3) ? B64.indexOf(str.charAt(i + 3)) : -1;
-                        if (e2 >= 0) bytes.push(((e1 << 2) | (e2 >> 4)) & 0xff);
-                        if (e3 >= 0) bytes.push((((e2 & 15) << 4) | (e3 >> 2)) & 0xff);
-                        if (e4 >= 0) bytes.push((((e3 & 3) << 6) | e4) & 0xff);
-                        i += 4;
-                    }
-                    return bytes;
-                }
-                if (typeof String.prototype.getBytes !== 'function') {
-                    Object.defineProperty(String.prototype, 'getBytes', {
-                        value: function () {
-                            var s = String(this), bytes = [];
-                            for (var i = 0; i < s.length; i++) {
-                                var c = s.charCodeAt(i);
-                                if (c < 0x80) { bytes.push(c); }
-                                else if (c < 0x800) { bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f)); }
-                                else if (c >= 0xd800 && c <= 0xdbff) {
-                                    var c2 = s.charCodeAt(++i);
-                                    var cp = 0x10000 + (((c & 0x3ff) << 10) | (c2 & 0x3ff));
-                                    bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
-                                } else { bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f)); }
-                            }
-                            return bytes;
-                        }, enumerable: false, configurable: true, writable: true
-                    });
-                }
-                function toByteArray(x) {
-                    if (x == null) return [];
-                    if (typeof x === 'string') return x.getBytes();
-                    if (x.__bytes) return x.__bytes;
-                    return x;
-                }
-                function SecretKeySpec(keyBytes, alg) { return { __bytes: toByteArray(keyBytes), __alg: alg }; }
-                function IvParameterSpec(ivBytes) { return { __bytes: toByteArray(ivBytes) }; }
-                var Cipher = {
-                    getInstance: function (transformation) {
-                        return {
-                            __t: transformation, __mode: 0, __key: null, __iv: null,
-                            init: function (mode, key, iv) {
-                                this.__mode = mode;
-                                this.__key = key && (key.__bytes || key);
-                                this.__iv = iv && (iv.__bytes || iv);
-                            },
-                            doFinal: function (dataBytes) {
-                                var keyHex = bytesToHex(this.__key || []);
-                                var ivHex = bytesToHex(this.__iv || []);
-                                var dataHex = bytesToHex(toByteArray(dataBytes));
-                                var outHex = (this.__mode === 1)
-                                    ? java.aesEncryptHex(this.__t, keyHex, ivHex, dataHex)
-                                    : java.aesDecryptHex(this.__t, keyHex, ivHex, dataHex);
-                                return java.hexDecodeToString(outHex);
-                            }
-                        };
-                    }
-                };
-                function bytesToB64(bytes) {
-                    var out = '', i = 0;
-                    for (; i + 2 < bytes.length; i += 3) {
-                        var n = ((bytes[i] & 0xff) << 16) | ((bytes[i + 1] & 0xff) << 8) | (bytes[i + 2] & 0xff);
-                        out += B64.charAt((n >> 18) & 63) + B64.charAt((n >> 12) & 63) + B64.charAt((n >> 6) & 63) + B64.charAt(n & 63);
-                    }
-                    var rem = bytes.length - i;
-                    if (rem === 1) {
-                        var n1 = (bytes[i] & 0xff) << 16;
-                        out += B64.charAt((n1 >> 18) & 63) + B64.charAt((n1 >> 12) & 63) + '==';
-                    } else if (rem === 2) {
-                        var n2 = ((bytes[i] & 0xff) << 16) | ((bytes[i + 1] & 0xff) << 8);
-                        out += B64.charAt((n2 >> 18) & 63) + B64.charAt((n2 >> 12) & 63) + B64.charAt((n2 >> 6) & 63) + '=';
-                    }
-                    return out;
-                }
-                function hexToByteArray(hex) {
-                    var out = [];
-                    for (var i = 0; i + 1 < hex.length; i += 2) { out.push(parseInt(hex.substr(i, 2), 16)); }
-                    return out;
-                }
-                // hutool SymmetricCrypto shim (Legado `java.createSymmetricCrypto`),
-                // backed by the native java.aes*Hex bridge (which handles the AES and
-                // DES families — 书山聚合 decrypts chapter text with DES/CBC/PKCS5Padding).
-                // Used by imageDecode / coverDecodeJs and content-decryption sources.
-                java.createSymmetricCrypto = function (transformation, key, iv) {
-                    var t = String(transformation || 'AES');
-                    if (t.indexOf('/') < 0) { t = t + '/ECB/PKCS5Padding'; }
-                    var keyHex = bytesToHex(toByteArray(key));
-                    var ivHex = (iv == null) ? '' : bytesToHex(toByteArray(iv));
-                    function dataToHex(data) {
-                        if (data == null) return '';
-                        if (typeof data === 'string') {
-                            var s = data.replace(/\\s+/g, '');
-                            if (/^[0-9A-Fa-f]+$/.test(s) && s.length % 2 === 0) return s.toLowerCase();
-                            if (/^[A-Za-z0-9+/]+={0,2}$/.test(s)) return bytesToHex(b64ToBytes(s));
-                            return bytesToHex(String(data).getBytes());
-                        }
-                        return bytesToHex(toByteArray(data));
-                    }
-                    return {
-                        decrypt: function (data) { return hexToByteArray(java.aesDecryptHex(t, keyHex, ivHex, dataToHex(data))); },
-                        decryptStr: function (data) { return java.hexDecodeToString(java.aesDecryptHex(t, keyHex, ivHex, dataToHex(data))); },
-                        encrypt: function (data) { return hexToByteArray(java.aesEncryptHex(t, keyHex, ivHex, dataToHex(data))); },
-                        encryptBase64: function (data) { return bytesToB64(hexToByteArray(java.aesEncryptHex(t, keyHex, ivHex, dataToHex(data)))); },
-                        encryptHex: function (data) { return java.aesEncryptHex(t, keyHex, ivHex, dataToHex(data)); }
-                    };
-                };
-                // Legado compat.js helpers: aesBase64Decode / aesBase64DecodeToString.
-                // Convenience functions that combine Base64 decode + AES decrypt.
-                // Comic sources like 全免漫画 (kaimanhua.com) call these directly on
-                // chapter content that is Base64-encoded AES ciphertext.
-                // Signature: (base64Data, keyStr, transformation, ivStr)
-                // keyStr / ivStr are plain strings -> getBytes() -> hex for native bridge.
-                java.aesBase64Decode = function (base64Str, keyStr, transformation, ivStr) {
-                    var dataBytes = b64ToBytes(String(base64Str || ''));
-                    var keyHex = bytesToHex(String(keyStr || '').getBytes());
-                    var ivHex = (ivStr == null) ? '' : bytesToHex(String(ivStr).getBytes());
-                    var outHex = java.aesDecryptHex(String(transformation || 'AES'), keyHex, ivHex, bytesToHex(dataBytes));
-                    return hexToByteArray(outHex);
-                };
-                java.aesBase64DecodeToString = function (base64Str, keyStr, transformation, ivStr) {
-                    var dataBytes = b64ToBytes(String(base64Str || ''));
-                    var keyHex = bytesToHex(String(keyStr || '').getBytes());
-                    var ivHex = (ivStr == null) ? '' : bytesToHex(String(ivStr).getBytes());
-                    var outHex = java.aesDecryptHex(String(transformation || 'AES'), keyHex, ivHex, bytesToHex(dataBytes));
-                    return java.hexDecodeToString(outHex);
-                };
-                var Base64 = {
-                    getDecoder: function () { return { decode: function (s) { return b64ToBytes(s); } }; },
-                    getEncoder: function () { return { encodeToString: function (bytes) { return bytesToB64(bytes); } }; }
-                };
-                var Arrays = { copyOfRange: function (arr, from, to) { return Array.prototype.slice.call(arr, from, to); } };
-                // `Packages.java.lang.System.nanoTime()` — sources use it as a cache
-                // buster inside the 段评 bubble's click payload. The generic namespace
-                // proxy answers calls with `undefined`, which stringified into
-                // `createSvg(bid,cid,pid,count,undefined)`; `imageDecode`'s
-                // `\\d+,\\d+\\)` pattern then never matched, so the bubble's memory flag
-                // was never cleared and tapping it stopped opening the comments.
-                var System = {
-                    nanoTime: function () { return Date.now() * 1000000; },
-                    currentTimeMillis: function () { return Date.now(); }
-                };
-                // Hutool, imported by 番茄-family sources to sign their API requests:
-                //   javaImport.importPackage(Packages.cn.hutool.crypto.digest, …)
-                //   md5 = (str) => DigestUtil.md5Hex(str);  rStr = (str) => StrUtil.reverse(str)
-                // Unknown packages import nothing, so `DigestUtil` was undefined and the
-                // whole `xGorgon` signature threw — the discover item's `@js:` URL then
-                // evaluated to "" and surfaced as "Invalid URL: @js:…". `md5Encode` is
-                // lowercase 32-hex, same as `md5Hex`. Only the GET path of xGorgon needs
-                // these; its POST path still wants real OkHttp, which is out of scope.
-                var DigestUtil = {
-                    md5Hex: function (s) { return java.md5Encode(String(s)); }
-                };
-                var StrUtil = {
-                    reverse: function (s) { return String(s).split('').reverse().join(''); }
-                };
-                var HutoolBase64 = {
-                    encode: function (s) { return java.base64Encode(String(s)); },
-                    decode: function (s) { return java.base64Decode(String(s)); }
-                };
-                var members = {
-                    'javax.crypto': { Cipher: Cipher },
-                    'javax.crypto.spec': { SecretKeySpec: SecretKeySpec, IvParameterSpec: IvParameterSpec },
-                    'java.util': { Base64: Base64, Arrays: Arrays },
-                    'java.lang': { System: System },
-                    'cn.hutool.crypto.digest': { DigestUtil: DigestUtil },
-                    'cn.hutool.core.util': { StrUtil: StrUtil },
-                    'cn.hutool.core.codec': { Base64: HutoolBase64 }
-                };
-                function makeNamespace(path) {
-                    var mem = members[path] || {};
-                    var target = function () {};
-                    target.__members = mem;
-                    for (var k in mem) { target[k] = mem[k]; }
-                    return new Proxy(target, {
-                        get: function (t, prop) {
-                            if (typeof prop !== 'string') { return t[prop]; }
-                            if (prop === '__members') { return mem; }
-                            if (prop in t) { return t[prop]; }
-                            return makeNamespace(path ? path + '.' + prop : prop);
-                        },
-                        apply: function () { return undefined; },
-                        // `new Packages.java.util.HashMap()` etc. — source login/menu JS builds
-                        // Java collections to hand back through java.upLoginData(map). Return a
-                        // usable map/list instead of a bare {} (which has no .put → would throw).
-                        construct: function (t, args) {
-                            var name = path.split('.').pop();
-                            if (name === 'HashMap' || name === 'LinkedHashMap' ||
-                                name === 'TreeMap' || name === 'Hashtable' || name === 'Properties') {
-                                return (typeof __yueduJavaMap === 'function') ? __yueduJavaMap({}) : {};
-                            }
-                            if (name === 'ArrayList' || name === 'LinkedList' || name === 'Vector') {
-                                return [];
-                            }
-                            return {};
-                        }
-                    });
-                }
-                this.Packages = makeNamespace('');
-                function JavaImporter() {
-                    var self = {};
-                    self.importPackage = function () {
-                        for (var i = 0; i < arguments.length; i++) {
-                            var mem = arguments[i] && arguments[i].__members;
-                            if (mem) { for (var k in mem) { self[k] = mem[k]; } }
-                        }
-                    };
-                    self.importClass = self.importPackage;
-                    return self;
-                }
-                this.JavaImporter = JavaImporter;
-            })();
-        """)
+        // Install the authoritative registry-backed Java/Android contract.
+        LegadoJavaInteropRuntime.install(in: ctx)
+        updateRuntimeErrorContext()
 
         // org.jsoup.Jsoup polyfill.
         // Legado Android uses Rhino with full Java interop, so book sources can call
@@ -1289,8 +1080,11 @@ class JSCoreEngine {
             return
         }
         if let string = result as? String,
-           let jsonObject = Self.jsonObjectIfPossible(from: string) {
-            context.setObject(jsonObject, forKeyedSubscript: "result" as NSString)
+           Self.jsonObjectIfPossible(from: string) != nil,
+           let wrapper = context.objectForKeyedSubscript("__yueduWrapJSONResult"),
+           let wrapped = wrapper.call(withArguments: [string]),
+           !wrapped.isUndefined {
+            context.setObject(wrapped, forKeyedSubscript: "result" as NSString)
             return
         }
         context.setObject(result, forKeyedSubscript: "result" as NSString)

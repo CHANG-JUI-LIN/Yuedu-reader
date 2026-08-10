@@ -453,7 +453,7 @@ struct RegexHighlightRuleEditorView: View {
     }
 
     private var defaultGradient: ReaderStyleGradient {
-        RegexHighlightEditorDefaults.gradient(for: appearance)
+        RegexHighlightGradientDefaults.visible(for: appearance)
     }
 
     private var gradientAngleBinding: Binding<Double> {
@@ -664,24 +664,6 @@ struct RegexHighlightRuleEditorView: View {
 
     private var defaultTextHex: UInt32 { appearance == .light ? 0x1C1C1E : 0xF2F2F7 }
     private var defaultBackgroundHex: UInt32 { appearance == .light ? 0xFFFFFF : 0x1C1C1E }
-}
-
-enum RegexHighlightEditorDefaults {
-    static func gradient(for appearance: ReaderStyleAppearance) -> ReaderStyleGradient {
-        ReaderStyleGradient(
-            angleDegrees: 90,
-            stops: [
-                ReaderStyleGradientStop(
-                    colorHex: appearance == .light ? 0xFFE1C7 : 0x5A321C,
-                    location: 0
-                ),
-                ReaderStyleGradientStop(
-                    colorHex: appearance == .light ? 0xD8E8FF : 0x3A4658,
-                    location: 1
-                ),
-            ]
-        )
-    }
 }
 
 private struct RegexHighlightLivePreview: UIViewRepresentable {

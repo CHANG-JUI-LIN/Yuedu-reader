@@ -10,6 +10,57 @@ extension Notification.Name {
     static let bookSourceRequestedSearch = Notification.Name("bookSourceRequestedSearch")
 }
 
+/// Complete response payload captured from the same request that produced the body.
+/// Response-shaped JavaScript APIs retain this metadata; string-shaped APIs consume
+/// only `body` without issuing a second request.
+struct LegadoHTTPResult {
+    let requestURL: URL
+    let finalURL: URL
+    let statusCode: Int
+    let statusMessage: String
+    let headers: [String: String]
+    let cookies: [String: String]
+    let body: String
+
+    static func bodyOnly(request: URLRequest, body: String) -> LegadoHTTPResult {
+        let url = request.url ?? URL(string: "about:blank")!
+        return LegadoHTTPResult(
+            requestURL: url,
+            finalURL: url,
+            statusCode: 200,
+            statusMessage: HTTPURLResponse.localizedString(forStatusCode: 200).capitalized,
+            headers: [:],
+            cookies: [:],
+            body: body
+        )
+    }
+
+    static func make(request: URLRequest, data: Data?, response: URLResponse?) -> LegadoHTTPResult {
+        let http = response as? HTTPURLResponse
+        let requestURL = request.url ?? URL(string: "about:blank")!
+        let finalURL = response?.url ?? requestURL
+        var headers: [String: String] = [:]
+        http?.allHeaderFields.forEach { key, value in headers[String(describing: key)] = String(describing: value) }
+        let cookieObjects = HTTPCookie.cookies(withResponseHeaderFields: headers, for: finalURL)
+        // A response may legally set the same cookie name for different paths.
+        // Avoid Dictionary(uniqueKeysWithValues:) trapping at the JS boundary;
+        // Legado's name-keyed Map likewise exposes one value per name.
+        let cookies = cookieObjects.reduce(into: [String: String]()) { values, cookie in
+            values[cookie.name] = cookie.value
+        }
+        let code = http?.statusCode ?? (data == nil ? 0 : 200)
+        return LegadoHTTPResult(
+            requestURL: requestURL,
+            finalURL: finalURL,
+            statusCode: code,
+            statusMessage: code == 0 ? "" : HTTPURLResponse.localizedString(forStatusCode: code).capitalized,
+            headers: headers,
+            cookies: cookies,
+            body: data.map { LegadoJSBridge.decodeData($0, response: response) } ?? ""
+        )
+    }
+}
+
 // MARK: - JSExport Protocol
 
 /// Protocol for Legado's `java.*` bridge functions.
@@ -178,7 +229,7 @@ extension Notification.Name {
     var putData: ((String, String) -> Void)?
 
     /// Delegate for network requests.
-    var networkHandler: ((URLRequest) -> String?)?
+    var networkHandler: ((URLRequest) -> LegadoHTTPResult?)?
 
     /// Called when JS invokes `java.startBrowser(url, title)` or `java.startBrowserAwait(url, title, ...)`.
     /// Receives (url, title, completion). Completion receives the page body (nil if no body captured).
@@ -365,7 +416,7 @@ extension Notification.Name {
         // bubbles silently never injected (review.php fetched fine, just unused). Wrap each
         // body in LegadoStrResponse so `.body()` works.
         let throttle = DispatchSemaphore(value: 16) // match Legado threadCount (16); paired with requestSession httpMaximumConnectionsPerHost=16
-        var results = Array(repeating: "", count: urlArray.count)
+        var results = Array<LegadoHTTPResult?>(repeating: nil, count: urlArray.count)
         let resultsLock = NSLock()
         let group = DispatchGroup()
 
@@ -384,10 +435,11 @@ extension Notification.Name {
             group.enter()
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let itemStart = Date()
-                let body = self?.performRequest(urlStr) ?? ""
+                let response = self?.performRequestResult(urlStr)
+                let body = response?.body ?? ""
                 let itemMs = Int(Date().timeIntervalSince(itemStart) * 1000)
                 resultsLock.lock()
-                results[index] = body
+                results[index] = response
                 resultsLock.unlock()
                 if index < 16 || Self.shouldLogReviewNetwork(urlStr) {
                     AppLogger.parse("⟐ ajaxAll item", context: [
@@ -416,12 +468,13 @@ extension Notification.Name {
         AppLogger.parse("⟐ ajaxAll done", context: [
             "ms": _ms,
             "timedOut": waited == .timedOut,
-            "empty": results.filter { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count,
-            "lens": results.map { $0.count }
+            "empty": results.filter { ($0?.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count,
+            "lens": results.map { $0?.body.count ?? 0 }
         ])
         // Wrap into StrResponse objects so JS `.body()` works (Legado contract).
-        return zip(urlArray, results).map { url, body in
-            LegadoStrResponse(url: url.components(separatedBy: ",{").first ?? url, body: body)
+        return zip(urlArray, results).map { url, result in
+            if let result { return LegadoStrResponse(result: result) }
+            return LegadoStrResponse(url: url.components(separatedBy: ",{").first ?? url, body: "")
         }
     }
 
@@ -568,29 +621,15 @@ extension Notification.Name {
     /// routes the two-argument call here and leaves the one-argument variable getter
     /// above alone.
     ///
-    /// Routed through `performRequest` with Legado URL options rather than building a
-    /// request here: that is the path that attaches the cookie jar, and 同人小说网's
-    /// 段评 fetch (`m.qidian.com/majax/chapterReview/reviewSummary`) is rejected unless
-    /// the `_csrfToken` cookie matches the one the rule put in the query string.
+    /// This uses a typed request path so the response URL, status, headers, and
+    /// cookies survive alongside the body.
     func httpGet(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse {
         let started = Date()
-        let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
-        var requestUrl = trimmed
-        // Only when a handler can parse them — otherwise the options would reach
-        // `URL(string:)` verbatim and fail, which is worse than losing per-call headers.
-        if analyzeUrlHandler != nil {
-            var options: [String: Any] = ["method": "GET"]
-            let headerMap = headers.isUndefined || headers.isNull
-                ? [:] : Self.headerDict(from: headers)
-            if !headerMap.isEmpty { options["headers"] = headerMap }
-            if let data = try? JSONSerialization.data(withJSONObject: options),
-               let json = String(data: data, encoding: .utf8) {
-                requestUrl = "\(trimmed),\(json)"
-            }
-        }
-        let body = performRequest(requestUrl)
+        let headerMap = headers.isUndefined || headers.isNull
+            ? [:] : Self.headerDict(from: headers)
+        let response = performGet(urlStr, headers: headerMap)
         recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
-        return LegadoStrResponse(url: trimmed, body: body)
+        return LegadoStrResponse(result: response)
     }
 
     // MARK: Rule Evaluation (placeholder)
@@ -1233,6 +1272,50 @@ extension Notification.Name {
         return fmt.string(from: date)
     }
 
+    /// Typed GET path for Rhino's `java.get(url, headers)` overload.
+    ///
+    /// Do not encode the headers as AnalyzeUrl options here: that path returns only
+    /// a transformed body string, which discards the metadata required by Legado's
+    /// `StrResponse` contract.
+    private func performGet(_ urlStr: String, headers: [String: String]) -> LegadoHTTPResult {
+        let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackURL = URL(string: "about:blank")!
+        guard let url = URL(string: trimmed) else {
+            AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmed.prefix(200))])
+            return .bodyOnly(request: URLRequest(url: fallbackURL), body: "")
+        }
+
+        let timeoutSeconds = max(15, requestTimeoutSeconds)
+        var request = URLRequest(
+            url: url,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: timeoutSeconds
+        )
+        request.httpMethod = "GET"
+        request.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
+            forHTTPHeaderField: "User-Agent"
+        )
+        sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+
+        if let handler = networkHandler {
+            return handler(request) ?? .bodyOnly(request: request, body: "")
+        }
+
+        var responseResult: LegadoHTTPResult?
+        let semaphore = DispatchSemaphore(value: 0)
+        let task = Self.requestSession.dataTask(with: request) { data, response, _ in
+            defer { semaphore.signal() }
+            responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
+        }
+        task.resume()
+        if semaphore.wait(timeout: .now() + timeoutSeconds) == .timedOut {
+            task.cancel()
+        }
+        return responseResult ?? .bodyOnly(request: request, body: "")
+    }
+
     /// Synchronous HTTP POST used by `java.post`. Blocks the calling (JS serial queue) thread.
     private func performPost(_ urlStr: String, body: String, headers: [String: String]) -> LegadoStrResponse {
         guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -1253,26 +1336,37 @@ extension Notification.Name {
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         }
 
-        var responseBody = ""
+        if let handler = networkHandler {
+            return LegadoStrResponse(
+                result: handler(request) ?? .bodyOnly(request: request, body: "")
+            )
+        }
+
+        var responseResult: LegadoHTTPResult?
         let semaphore = DispatchSemaphore(value: 0)
         let task = Self.requestSession.dataTask(with: request) { data, response, _ in
             defer { semaphore.signal() }
-            guard let data = data else { return }
-            responseBody = Self.decodeData(data, response: response)
+            responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
         }
         task.resume()
         _ = semaphore.wait(timeout: .now() + timeoutSeconds)
-        return LegadoStrResponse(url: urlStr, body: responseBody)
+        return LegadoStrResponse(result: responseResult ?? .bodyOnly(request: request, body: ""))
     }
 
     private func performRequest(_ urlStr: String) -> String {
+        performRequestResult(urlStr).body
+    }
+
+    private func performRequestResult(_ urlStr: String) -> LegadoHTTPResult {
         // Route through AnalyzeUrl handler if available and URL looks like a Legado URL
         let trimmedUrl = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseURL = URL(string: trimmedUrl.components(separatedBy: ",{").first ?? trimmedUrl)
+            ?? URL(string: "about:blank")!
         if let analyzeHandler = analyzeUrlHandler,
            trimmedUrl.hasPrefix("data:")
             || trimmedUrl.contains(",{")
             || trimmedUrl.contains("{\"method\"") {
-            return analyzeHandler(urlStr) ?? ""
+            return .bodyOnly(request: URLRequest(url: baseURL), body: analyzeHandler(urlStr) ?? "")
         }
 
         // Delegate to external handler if provided
@@ -1283,17 +1377,17 @@ extension Notification.Name {
                 // URLs by string concatenation, so unencoded CJK / spaces / stray
                 // template leftovers land here.
                 AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmedUrl.prefix(200))])
-                return ""
+                return .bodyOnly(request: URLRequest(url: baseURL), body: "")
             }
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeoutSeconds)
             sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-            return handler(request) ?? ""
+            return handler(request) ?? .bodyOnly(request: request, body: "")
         }
 
         // Fallback: synchronous URLSession request with charset-aware decoding
         guard let url = URL(string: trimmedUrl) else {
             AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmedUrl.prefix(200))])
-            return ""
+            return .bodyOnly(request: URLRequest(url: baseURL), body: "")
         }
 
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeoutSeconds)
@@ -1306,7 +1400,7 @@ extension Notification.Name {
         // Apply book source headers (may override User-Agent)
         sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
-        var responseBody = ""
+        var responseResult: LegadoHTTPResult?
         // Use a long timeout: if a CF handler is registered, the user may need to solve CAPTCHA.
         let timeoutSeconds: Double = cloudflareChallengeHandler != nil ? 120 : requestTimeoutSeconds
         let semaphore = DispatchSemaphore(value: 0)
@@ -1324,7 +1418,7 @@ extension Notification.Name {
                     print("[JSBridge] ⚠️ CF detected for \(urlStr) — no handler, returning empty")
                     #endif
                 } else {
-                    responseBody = body
+                    responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
                 }
                 semaphore.signal()
                 return
@@ -1342,14 +1436,14 @@ extension Notification.Name {
             Self.requestSession.dataTask(with: request) { retryData, retryResp, _ in
                 defer { retrySem.signal() }
                 guard let retryData else { return }
-                responseBody = Self.decodeData(retryData, response: retryResp)
+                responseResult = LegadoHTTPResult.make(request: request, data: retryData, response: retryResp)
             }.resume()
             _ = retrySem.wait(timeout: .now() + 15)
             semaphore.signal()
         }
         task.resume()
         _ = semaphore.wait(timeout: .now() + timeoutSeconds)
-        return responseBody
+        return responseResult ?? .bodyOnly(request: request, body: "")
     }
 
     /// Charset-aware string decoding: honours HTTP Content-Type charset before falling back to UTF-8.
@@ -1404,28 +1498,104 @@ extension Notification.Name {
     }
 }
 
-// MARK: - StrResponse (Legado startBrowserAwait return type)
+// MARK: - Java collection and connection response contracts
+
+@objc protocol LegadoJavaMapExport: JSExport {
+    func get(_ key: String) -> String?
+    func put(_ key: String, _ value: String) -> String?
+    func containsKey(_ key: String) -> Bool
+    func keySet() -> [String]
+    func size() -> Int
+    func isEmpty() -> Bool
+    func stableString() -> String
+    func toString() -> String
+}
+
+/// Small Java Map-shaped object used at the JS boundary. Header lookup is
+/// case-insensitive; cookie lookup remains case-sensitive like `java.net.HttpCookie`.
+@objc class LegadoJavaMap: NSObject, LegadoJavaMapExport {
+    private var values: [String: String]
+    private let caseInsensitive: Bool
+
+    init(_ values: [String: String], caseInsensitive: Bool = false) {
+        self.values = values
+        self.caseInsensitive = caseInsensitive
+        super.init()
+    }
+
+    func get(_ key: String) -> String? {
+        if let exact = values[key] { return exact }
+        guard caseInsensitive else { return nil }
+        return values.first { $0.key.caseInsensitiveCompare(key) == .orderedSame }?.value
+    }
+
+    func put(_ key: String, _ value: String) -> String? {
+        let previous = get(key)
+        if caseInsensitive,
+           let existing = values.keys.first(where: { $0.caseInsensitiveCompare(key) == .orderedSame }) {
+            values[existing] = value
+        } else {
+            values[key] = value
+        }
+        return previous
+    }
+
+    func containsKey(_ key: String) -> Bool { get(key) != nil }
+    func keySet() -> [String] { values.keys.sorted() }
+    func size() -> Int { values.count }
+    func isEmpty() -> Bool { values.isEmpty }
+    func stableString() -> String {
+        "{" + keySet().map { "\($0)=\(values[$0] ?? "")" }.joined(separator: ", ") + "}"
+    }
+    func toString() -> String { stableString() }
+    override var description: String { stableString() }
+}
 
 /// JS-callable response object returned by `java.startBrowserAwait()`.
 /// Mirrors Legado's `StrResponse(url, body)`.
 @objc protocol LegadoStrResponseExport: JSExport {
     func body() -> String
+    func cookies() -> LegadoJavaMap
+    func headers() -> LegadoJavaMap
+    func statusCode() -> Int
+    func statusMessage() -> String
+    func urlString() -> String
+    func isSuccessful() -> Bool
     var url: String { get }
 }
 
 @objc class LegadoStrResponse: NSObject, LegadoStrResponseExport {
     @objc let url: String
-    private let responseBody: String
+    private let result: LegadoHTTPResult
 
     init(url: String, body: String) {
+        let parsedURL = URL(string: url) ?? URL(string: "about:blank")!
+        self.result = LegadoHTTPResult(
+            requestURL: parsedURL,
+            finalURL: parsedURL,
+            statusCode: 200,
+            statusMessage: "OK",
+            headers: [:],
+            cookies: [:],
+            body: body
+        )
         self.url = url
-        self.responseBody = body
         super.init()
     }
 
-    func body() -> String {
-        return responseBody
+    init(result: LegadoHTTPResult) {
+        self.result = result
+        self.url = result.finalURL.absoluteString
+        super.init()
     }
+
+    func body() -> String { result.body }
+    func cookies() -> LegadoJavaMap { LegadoJavaMap(result.cookies) }
+    func headers() -> LegadoJavaMap { LegadoJavaMap(result.headers, caseInsensitive: true) }
+    func statusCode() -> Int { result.statusCode }
+    func statusMessage() -> String { result.statusMessage }
+    func urlString() -> String { url }
+    func isSuccessful() -> Bool { (200..<300).contains(result.statusCode) }
 }
 
 // MARK: - Browser Await Completion

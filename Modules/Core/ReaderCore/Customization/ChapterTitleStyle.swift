@@ -160,8 +160,16 @@ struct ChapterTitleStyle: Codable, Equatable, Sendable {
         darkTemplate: ChapterTitleStyle.defaultDarkTemplate
     )
 
-    /// Clamp every numeric field into its valid range. Applied on decode and on
-    /// preset/import apply so a malformed file can't poison layout.
+    /// Clamp every numeric field into its valid range, and promote a template-only style into the
+    /// `design` the renderer actually reads. Applied on decode and on preset/import/toggle apply
+    /// so a malformed file can't poison layout.
+    ///
+    /// The promotion is not cosmetic: `ChapterTitleAttributedBuilder` consults `design` and
+    /// nothing else, so a style with advanced CSS on and `design == nil` appends no title at all —
+    /// in the reader, not just in previews. Decoding used to be the only place that bridged the
+    /// two, which left every style that never round-trips through a decoder silently blank: all
+    /// six code-defined built-in presets, and the moment 高級 CSS 樣式 is switched on. Every write
+    /// path already funnels through `sanitized()`, so it is the one place this can't be missed.
     func sanitized() -> ChapterTitleStyle {
         var copy = self
         copy.size = ChapterTitleStyle.clamp(size, to: ChapterTitleStyle.sizeRange, fallback: 28)
@@ -172,7 +180,16 @@ struct ChapterTitleStyle: Codable, Equatable, Sendable {
             to: ChapterTitleStyle.numberRelativeSizeRange,
             fallback: 0.55
         )
-        copy.design = design?.sanitized()
+        if copy.advancedCSSEnabled, copy.design == nil {
+            copy.design = ChapterTitleDesign(
+                layers: [],
+                legacySource: ChapterTitleLegacySource(
+                    light: copy.lightTemplate,
+                    dark: copy.darkTemplate
+                )
+            )
+        }
+        copy.design = copy.design?.sanitized()
         return copy
     }
 
@@ -221,20 +238,10 @@ extension ChapterTitleStyle {
             String.self,
             forKey: .darkTemplate
         ) ?? defaults.darkTemplate
-        var design = try container.decodeIfPresent(
+        let design = try container.decodeIfPresent(
             ChapterTitleDesign.self,
             forKey: .design
         )
-
-        if advancedCSSEnabled, design == nil {
-            design = ChapterTitleDesign(
-                layers: [],
-                legacySource: ChapterTitleLegacySource(
-                    light: lightTemplate,
-                    dark: darkTemplate
-                )
-            )
-        }
 
         self = ChapterTitleStyle(
             visible: try container.decodeIfPresent(Bool.self, forKey: .visible) ?? defaults.visible,
@@ -431,6 +438,11 @@ extension ChapterTitleStylePreset {
         style.advancedCSSEnabled = true
         style.lightTemplate = light
         style.darkTemplate = dark
-        return ChapterTitleStylePreset(id: id, name: name, style: style, isBuiltin: true)
+        return ChapterTitleStylePreset(
+            id: id,
+            name: name,
+            style: style.sanitized(),
+            isBuiltin: true
+        )
     }
 }

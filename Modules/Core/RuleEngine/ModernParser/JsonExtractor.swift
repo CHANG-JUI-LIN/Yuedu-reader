@@ -728,7 +728,12 @@ struct JsonExtractor: RuleExtractor {
         if r.lowercased().hasPrefix("@json:") {
             r = String(r.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        if r.hasPrefix(".") {
+        // Legado accepts a rootless leading-dot filter as a recursive search.
+        // Prefixing it with only `$` produces `$.[?(...)]`, which filters the
+        // root value and can never reach arrays nested below response envelopes.
+        if r.hasPrefix(".[?(") {
+            r = "$.." + String(r.dropFirst())
+        } else if r.hasPrefix(".") {
             r = "$" + r
         } else if !r.isEmpty, !r.hasPrefix("$") {
             r = "$." + r

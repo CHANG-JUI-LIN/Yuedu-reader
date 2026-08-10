@@ -2340,6 +2340,26 @@ struct JSCoreEngineTests {
         #expect(result == "HELLO")
     }
 
+    @Test("JSON result keeps raw string coercion and parsed field access")
+    func jsonResultKeepsRawStringCoercionAndParsedFieldAccess() {
+        let engine = JSCoreEngine()
+        let raw = #"{"data":{"books":[{"name":"榜單作品"}]}}"#
+
+        let result = engine.evaluate(
+            "JSON.stringify({raw:String(result),name:result.data.books[0].name,array:Array.isArray(result.data.books),json:JSON.stringify(result)})",
+            result: raw
+        )
+        let data = try? JSONSerialization.jsonObject(
+            with: Data((result ?? "").utf8),
+            options: .fragmentsAllowed
+        ) as? [String: Any]
+
+        #expect(data?["raw"] as? String == raw)
+        #expect(data?["name"] as? String == "榜單作品")
+        #expect(data?["array"] as? Bool == true)
+        #expect(data?["json"] as? String == raw)
+    }
+
     @Test("result variable with nil")
     func resultVariableNil() {
         let engine = JSCoreEngine()
@@ -3168,7 +3188,15 @@ struct ModernParserBridgeExploreTests {
         engine.networkHandler = { _ in
             networkStarted.signal()
             _ = releaseNetwork.wait(timeout: .now() + 2)
-            return "{}"
+            return LegadoHTTPResult(
+                requestURL: URL(string: "https://example.com/blocked")!,
+                finalURL: URL(string: "https://example.com/blocked")!,
+                statusCode: 200,
+                statusMessage: "OK",
+                headers: [:],
+                cookies: [:],
+                body: "{}"
+            )
         }
 
         let evaluationDone = DispatchGroup()

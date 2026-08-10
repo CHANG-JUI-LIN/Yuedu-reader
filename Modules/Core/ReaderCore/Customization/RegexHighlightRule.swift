@@ -1,7 +1,7 @@
 import Foundation
 
 struct RegexHighlightConfiguration: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int
     var isEnabled: Bool
@@ -31,8 +31,15 @@ struct RegexHighlightConfiguration: Codable, Equatable, Sendable {
     )
 
     func sanitized() -> RegexHighlightConfiguration {
+        let shouldMigrateLegacyGradientDefaults = version < 2
+        let sourceRules = shouldMigrateLegacyGradientDefaults
+            ? rules.map { $0.migratingLegacyGradientDefaults() }
+            : rules
+        let sourceCustomRules = shouldMigrateLegacyGradientDefaults
+            ? customRules.map { $0.migratingLegacyGradientDefaults() }
+            : customRules
         let storedBuiltIns = Dictionary(
-            rules.map { ($0.id, $0) },
+            sourceRules.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
         let builtIns = RegexHighlightRule.builtIns.map { canonical in
@@ -41,7 +48,7 @@ struct RegexHighlightConfiguration: Codable, Equatable, Sendable {
         }
 
         var occupiedIDs = Set(builtIns.map(\.id))
-        let custom = customRules.map { rule -> RegexHighlightRule in
+        let custom = sourceCustomRules.map { rule -> RegexHighlightRule in
             var sanitized = rule.sanitizedAsCustom()
             while occupiedIDs.contains(sanitized.id) {
                 sanitized.id = UUID().uuidString
@@ -72,6 +79,42 @@ struct RegexHighlightConfiguration: Codable, Equatable, Sendable {
         rules = try container.decodeIfPresent([RegexHighlightRule].self, forKey: .rules)
             ?? RegexHighlightRule.builtIns
         customRules = try container.decodeIfPresent([RegexHighlightRule].self, forKey: .customRules) ?? []
+    }
+}
+
+enum RegexHighlightGradientDefaults {
+    static func visible(for appearance: ReaderStyleAppearance) -> ReaderStyleGradient {
+        ReaderStyleGradient(
+            angleDegrees: 90,
+            stops: [
+                ReaderStyleGradientStop(
+                    colorHex: appearance == .light ? 0xFFE1C7 : 0x5A321C,
+                    location: 0
+                ),
+                ReaderStyleGradientStop(
+                    colorHex: appearance == .light ? 0xD8E8FF : 0x3A4658,
+                    location: 1
+                ),
+            ]
+        )
+    }
+
+    fileprivate static func legacyInvisible(
+        for appearance: ReaderStyleAppearance
+    ) -> ReaderStyleGradient {
+        ReaderStyleGradient(
+            angleDegrees: 90,
+            stops: [
+                ReaderStyleGradientStop(
+                    colorHex: appearance == .light ? 0xFFFFFF : 0x1C1C1E,
+                    location: 0
+                ),
+                ReaderStyleGradientStop(
+                    colorHex: appearance == .light ? 0xD8E8FF : 0x3A4658,
+                    location: 1
+                ),
+            ]
+        )
     }
 }
 
@@ -197,6 +240,13 @@ struct RegexHighlightRule: Codable, Equatable, Identifiable, Sendable {
         return result
     }
 
+    fileprivate func migratingLegacyGradientDefaults() -> RegexHighlightRule {
+        var result = self
+        result.lightStyle = lightStyle.migratingLegacyGradientDefault(for: .light)
+        result.darkStyle = darkStyle.migratingLegacyGradientDefault(for: .dark)
+        return result
+    }
+
     private static func builtIn(
         id: String,
         name: String,
@@ -258,6 +308,22 @@ struct RegexHighlightRule: Codable, Equatable, Identifiable, Sendable {
         lightStyle = try container.decodeIfPresent(ReaderStyleRuleStyle.self, forKey: .lightStyle) ?? .init()
         darkStyle = try container.decodeIfPresent(ReaderStyleRuleStyle.self, forKey: .darkStyle) ?? .init()
         self = sanitizedAsCustom()
+    }
+}
+
+private extension ReaderStyleRuleStyle {
+    func migratingLegacyGradientDefault(
+        for appearance: ReaderStyleAppearance
+    ) -> ReaderStyleRuleStyle {
+        guard decoration.backgroundGradient == RegexHighlightGradientDefaults.legacyInvisible(
+            for: appearance
+        ) else {
+            return self
+        }
+
+        var result = self
+        result.decoration.backgroundGradient = RegexHighlightGradientDefaults.visible(for: appearance)
+        return result
     }
 }
 

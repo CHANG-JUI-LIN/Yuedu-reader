@@ -71,6 +71,16 @@ class ModernParserBridge {
         // No JSContext here on purpose — see `jsEngine`.
     }
 
+    /// Deterministic fixture injection for source-JS HTTP calls. Production keeps
+    /// the handler installed by `wireJSEngine`; tests may replace it without adding
+    /// another loader or parser path.
+    var sourceScriptNetworkHandler: ((URLRequest) -> LegadoHTTPResult?)? {
+        get { jsEngine.networkHandler }
+        set { jsEngine.networkHandler = newValue }
+    }
+
+    var lastSourceScriptError: String? { jsEngine.lastError }
+
     // MARK: - Last JS network exchange (diagnostics)
 
     /// What the rule's own JS last fetched. Recorded on every `java.ajax`, dumped
@@ -516,7 +526,7 @@ class ModernParserBridge {
                         since: ProcessInfo.processInfo.systemUptime,
                         thresholdMs: 0
                     )
-                    return cached
+                    return LegadoHTTPResult.bodyOnly(request: request, body: cached)
                 case .inFlight:
                     if let cached = ReviewSummaryResponseCache.shared.waitForRequest(
                         sourceKey: reviewSummaryCacheKey,
@@ -529,7 +539,7 @@ class ModernParserBridge {
                             since: ProcessInfo.processInfo.systemUptime,
                             thresholdMs: 0
                         )
-                        return cached
+                        return LegadoHTTPResult.bodyOnly(request: request, body: cached)
                     }
                     // Shared request failed or timed out — fall through to this call's own
                     // request rather than returning null to the source JS. See the same
@@ -541,6 +551,7 @@ class ModernParserBridge {
             let semaphore = DispatchSemaphore(value: 0)
             var result: String?
             var statusCode: Int?
+            var responseResult: LegadoHTTPResult?
             var transportError: Error?
             // Pool at 16/host: this handler is ALWAYS set for the online reader, so plain 段評
             // ajaxAll requests land here — URLSession.shared would re-cap them at 6/host (why the
@@ -548,6 +559,7 @@ class ModernParserBridge {
             let task = LegadoJSBridge.requestSession.dataTask(with: request) { data, response, error in
                 statusCode = (response as? HTTPURLResponse)?.statusCode
                 transportError = error
+                responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
                 if let data {
                     result = LegadoJSBridge.decodeData(data, response: response)
                 }
@@ -600,7 +612,7 @@ class ModernParserBridge {
                     requestURL: requestURL
                 )
             }
-            return result
+            return responseResult
         }
     }
 
@@ -781,7 +793,9 @@ class ModernParserBridge {
         let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         evaluateJsLibIfNeeded()
-        return jsEngine.evaluate(trimmed, bindings: bindings)
+        return jsEngine.withExecutionStage("sourceScript") {
+            jsEngine.evaluate(trimmed, bindings: bindings)
+        }
     }
 
     /// Presents URLs that source JS opens via `java.showBrowser` / `java.startBrowser`.
@@ -2532,7 +2546,9 @@ class ModernParserBridge {
         let newHash = jsLib.md5Hash
         guard newHash != evaluatedJsLibHash else { return }
 
-        _ = engine.evaluate(jsLib)
+        _ = engine.withExecutionStage("jsLib") {
+            engine.evaluate(jsLib)
+        }
         if sourceRuleData.source.exploreUrl.contains("_csrfToken") {
             NSLog(
                 "❖DISC TRACE❖ source=%@ stage=jsLib.evaluated jsLibLen=%d engineGen=%llu jsError=%@",

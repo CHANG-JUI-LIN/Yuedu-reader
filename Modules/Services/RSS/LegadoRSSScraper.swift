@@ -322,11 +322,9 @@ enum LegadoRSSScraper {
     private static func wireNetworkHandler(_ jsEngine: JSCoreEngine) {
         jsEngine.networkHandler = { request in
             let semaphore = DispatchSemaphore(value: 0)
-            var result: String?
+            var result: LegadoHTTPResult?
             let task = URLSession.shared.dataTask(with: request) { data, response, _ in
-                if let data {
-                    result = LegadoJSBridge.decodeData(data, response: response)
-                }
+                result = LegadoHTTPResult.make(request: request, data: data, response: response)
                 semaphore.signal()
             }
             task.resume()

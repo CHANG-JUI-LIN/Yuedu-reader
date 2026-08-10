@@ -22,6 +22,7 @@ import JavaScriptCore
     func removeLoginInfo()
     func putLoginHeader(_ header: String)
     func getLoginHeader() -> String?
+    func getLoginHeaderMap() -> JSValue
     func removeLoginHeader()
     func getHeaderMap() -> JSValue
     func login() -> String
@@ -315,6 +316,16 @@ import JavaScriptCore
 
     func getLoginHeader() -> String? {
         return getLoginHeaderHandler?()
+    }
+
+    func getLoginHeaderMap() -> JSValue {
+        guard let raw = getLoginHeaderHandler?(),
+              let data = raw.data(using: .utf8),
+              let map = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            let context = JSContext.current() ?? JSContext()!
+            return JSValue(nullIn: context)
+        }
+        return Self.javaMapValue(map)
     }
 
     func removeLoginHeader() {

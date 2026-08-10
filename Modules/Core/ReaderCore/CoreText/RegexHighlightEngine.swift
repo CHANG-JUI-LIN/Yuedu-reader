@@ -1,3 +1,4 @@
+import CoreText
 import Foundation
 import UIKit
 
@@ -427,35 +428,74 @@ enum RegexHighlightEngine {
         from publisherFont: UIFont,
         style: ReaderStyleTextStyle
     ) -> UIFont {
-        let size = CGFloat(style.fontSize ?? Double(publisherFont.pointSize))
+        let size = max(CGFloat(style.fontSize ?? Double(publisherFont.pointSize)), 0.01)
         var font = style.fontPostScriptName.flatMap { UIFont(name: $0, size: size) }
             ?? publisherFont.withSize(size)
-        var descriptor = font.fontDescriptor
-        var symbolicTraits = descriptor.symbolicTraits
 
-        if let italic = style.italic {
-            if italic {
-                symbolicTraits.insert(.traitItalic)
-            } else {
-                symbolicTraits.remove(.traitItalic)
-            }
-        }
+        // Weight and italic are resolved in two passes, weight first. Asking CoreText for both at
+        // once makes it match the pair or nothing: a CJK family has no italic face anywhere, so the
+        // unsatisfiable italic dropped the weight along with it — which is why 字重 also looked dead
+        // whenever 斜體 was on.
         if let fontWeight = style.fontWeight {
-            let weight = uiFontWeight(from: fontWeight)
-            if weight.rawValue >= UIFont.Weight.semibold.rawValue {
-                symbolicTraits.insert(.traitBold)
-            } else {
-                symbolicTraits.remove(.traitBold)
-            }
-            descriptor = descriptor.addingAttributes([
-                .traits: [UIFontDescriptor.TraitKey.weight: weight],
-            ])
+            font = applyingWeight(uiFontWeight(from: fontWeight), to: font, size: size)
         }
-        if let traitDescriptor = descriptor.withSymbolicTraits(symbolicTraits) {
-            descriptor = traitDescriptor
+        if let italic = style.italic {
+            font = applyingItalic(italic, to: font, size: size)
         }
-        font = UIFont(descriptor: descriptor, size: max(size, 0.01))
         return font
+    }
+
+    private static func applyingWeight(
+        _ weight: UIFont.Weight,
+        to font: UIFont,
+        size: CGFloat
+    ) -> UIFont {
+        var traits = font.fontDescriptor.symbolicTraits
+        if weight.rawValue >= UIFont.Weight.semibold.rawValue {
+            traits.insert(.traitBold)
+        } else {
+            traits.remove(.traitBold)
+        }
+        var descriptor = font.fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: weight],
+        ])
+        if let withTraits = descriptor.withSymbolicTraits(traits) {
+            descriptor = withTraits
+        }
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    /// CJK families ship no italic face, and CoreText answers an unsatisfiable italic request by
+    /// silently handing back the upright font — the reason 斜體 did nothing on a Chinese book.
+    /// Fall back to the same synthesized slant the EPUB/HTML path already uses for upright-only
+    /// embedded fonts; glyph advances are unchanged by the shear, so pagination does not move.
+    private static func applyingItalic(
+        _ italic: Bool,
+        to font: UIFont,
+        size: CGFloat
+    ) -> UIFont {
+        var traits = font.fontDescriptor.symbolicTraits
+        guard italic else {
+            traits.remove(.traitItalic)
+            let descriptor = font.fontDescriptor.withSymbolicTraits(traits) ?? font.fontDescriptor
+            // An identity matrix is required to undo a *synthesized* slant: the shear lives in the
+            // descriptor, so re-creating the font without one keeps rendering it italic.
+            var identity = CGAffineTransform.identity
+            return CTFontCreateWithFontDescriptor(
+                descriptor as CTFontDescriptor,
+                size,
+                &identity
+            ) as UIFont
+        }
+
+        traits.insert(.traitItalic)
+        if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
+            let candidate = UIFont(descriptor: descriptor, size: size)
+            if candidate.fontDescriptor.symbolicTraits.contains(.traitItalic) {
+                return candidate
+            }
+        }
+        return HTMLAttributedStringBuilder.synthesizedObliqueFont(from: font)
     }
 
     private static func uiFontWeight(from cssWeight: Int) -> UIFont.Weight {

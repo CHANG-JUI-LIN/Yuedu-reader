@@ -104,8 +104,8 @@ struct RegexHighlightRuleEditorModelTests {
 
     @Test("default gradients remain visible across their full range")
     func visibleDefaultGradient() {
-        let light = RegexHighlightEditorDefaults.gradient(for: .light)
-        let dark = RegexHighlightEditorDefaults.gradient(for: .dark)
+        let light = RegexHighlightGradientDefaults.visible(for: .light)
+        let dark = RegexHighlightGradientDefaults.visible(for: .dark)
 
         #expect(light.stops.first?.colorHex != 0xFFFFFF)
         #expect(dark.stops.first?.colorHex != 0x1C1C1E)

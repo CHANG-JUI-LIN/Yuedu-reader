@@ -29,6 +29,20 @@ struct DismissalSequencedPresentationTests {
         )
     }
 
+    @Test("iOS 17 presents reader font import from the reader level")
+    func iOS17UsesFirstLevelReaderFontImporter() {
+        #expect(
+            ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter(
+                osMajorVersion: 17
+            )
+        )
+        #expect(
+            !ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter(
+                osMajorVersion: 18
+            )
+        )
+    }
+
     @Test("selected route stays pending until the chooser dismisses")
     func routeActivatesOnlyAfterDismissal() {
         var sequence = DismissalSequencedPresentation<Route>()
