@@ -2161,7 +2161,7 @@ final class CoreTextPageViewController: UIViewController {
 
 extension CoreTextPageViewController: PageIndexProviding {}
 
-private final class CoreTextImagePreviewController: UIViewController, UIScrollViewDelegate {
+final class CoreTextImagePreviewController: UIViewController, UIScrollViewDelegate {
     private let attachment: CoreTextPaginator.RenderedAttachment
     private let scrollView = UIScrollView()
     private let imageView = UIImageView()

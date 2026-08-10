@@ -2478,7 +2478,12 @@ struct CSSRule {
     let selector: CSSSelector
     let declarations: [String: String]
     let importantDeclarations: [String: String]
+    /// Property names in source order. Apply declarations by walking this —
+    /// never by iterating `declarations`, whose order Swift randomizes per
+    /// process (see `DeclarationBlock.order`).
+    let declarationOrder: [String]
     let specificity: Int
+    /// This rule's position among all rules in the stylesheet.
     let order: Int
 }
 
@@ -2663,6 +2668,7 @@ enum CSSParser {
                     selector: selector,
                     declarations: declarations.normal,
                     importantDeclarations: declarations.important,
+                    declarationOrder: declarations.order,
                     specificity: specificity(of: selector),
                     order: orderOffset + index
                 )
@@ -2703,6 +2709,7 @@ enum CSSParser {
                     selector: selector,
                     declarations: declarations.normal,
                     importantDeclarations: declarations.important,
+                    declarationOrder: declarations.order,
                     specificity: specificity(of: selector),
                     order: orderOffset + index
                 )
@@ -2719,6 +2726,18 @@ enum CSSParser {
     struct DeclarationBlock {
         let normal: [String: String]
         let important: [String: String]
+        /// Property names in SOURCE order — the order they must be applied in.
+        ///
+        /// A dictionary cannot carry this: Swift randomizes `Dictionary`
+        /// iteration per process, so applying declarations by iterating the
+        /// dictionary made the cascade depend on the hash seed. Two shorthands
+        /// touching one property (`border: 4px` then `border-width: 4px 0px`)
+        /// resolved to whichever the seed happened to visit last, so identical
+        /// input rendered differently between runs.
+        ///
+        /// A property that appears more than once is listed at its LAST
+        /// position, which is where the surviving value was declared.
+        let order: [String]
 
         var merged: [String: String] {
             normal.merging(important) { _, importantValue in importantValue }
@@ -2729,10 +2748,45 @@ enum CSSParser {
         parseDeclarationBlock(css).merged
     }
 
+    /// Splits a declaration block on `;` at PAREN DEPTH ZERO, outside quotes.
+    ///
+    /// A plain `split(separator: ";")` breaks any declaration whose value
+    /// legally contains a semicolon. The common one is a data URI —
+    /// `background-image: url(data:image/png;base64,…)` split into
+    /// `url(data:image/png` (no closing paren, so the source parsed to nil) plus
+    /// a junk `base64,…` fragment, and the image silently never painted.
+    /// Quoted strings can carry `;` as well.
+    private static func splitDeclarations(_ css: String) -> [Substring] {
+        var out: [Substring] = []
+        var depth = 0
+        var quote: Character?
+        var start = css.startIndex
+        var i = css.startIndex
+        while i < css.endIndex {
+            let c = css[i]
+            if let q = quote {
+                if c == q { quote = nil }
+            } else if c == "\"" || c == "'" {
+                quote = c
+            } else if c == "(" {
+                depth += 1
+            } else if c == ")" {
+                depth = max(0, depth - 1)
+            } else if c == ";", depth == 0 {
+                if start < i { out.append(css[start..<i]) }
+                start = css.index(after: i)
+            }
+            i = css.index(after: i)
+        }
+        if start < css.endIndex { out.append(css[start...]) }
+        return out
+    }
+
     static func parseDeclarationBlock(_ css: String) -> DeclarationBlock {
         var normal: [String: String] = [:]
         var important: [String: String] = [:]
-        for segment in css.split(separator: ";", omittingEmptySubsequences: true) {
+        var order: [String] = []
+        for segment in splitDeclarations(css) {
             let parts = segment.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true)
             guard parts.count == 2 else { continue }
             let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -2750,10 +2804,18 @@ enum CSSParser {
                     normal.removeValue(forKey: key)
                 } else if important[key] == nil {
                     normal[key] = value
+                } else {
+                    // An `!important` earlier in the block already won this
+                    // property; the later normal declaration is dead and must
+                    // not move the property's position.
+                    continue
                 }
+                // Re-declaring moves the property to its last position.
+                if let existing = order.firstIndex(of: key) { order.remove(at: existing) }
+                order.append(key)
             }
         }
-        return DeclarationBlock(normal: normal, important: important)
+        return DeclarationBlock(normal: normal, important: important, order: order)
     }
 
     /// Splits a complex selector into components joined by descendant (whitespace) and child (`>`)

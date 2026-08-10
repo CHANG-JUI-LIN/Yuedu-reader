@@ -318,6 +318,7 @@
 				460D36572F51C5B8006E774C /* Resources */,
 				5FFE0D9ED24A85A7ACED161A /* Embed Foundation Extensions */,
 				46C7A511D5F0480000000001 /* Crashlytics Upload Symbols */,
+				46C7A512D5F0480000000002 /* Inject Git Commit SHA */,
 			);
 			buildRules = (
 			);
@@ -564,6 +565,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [ \"${CONFIGURATION}\" != \"Debug\" ]; then\n  \"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\nfi\n";
+		};
+		46C7A512D5F0480000000002 /* Inject Git Commit SHA */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Inject Git Commit SHA";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${CONFIGURATION}\" = \"Debug\" ]; then\n  GIT_SHA=$(git -C \"$SRCROOT\" rev-parse --short HEAD 2>/dev/null || echo unknown)\n  for PLIST in \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\" \"$BUILT_PRODUCTS_DIR/$INFOPLIST_FOLDER_PATH/Info.plist\"; do\n    if [ -f \"$PLIST\" ]; then\n      /usr/libexec/PlistBuddy -c \"Set :GitCommitSHA $GIT_SHA\" \"$PLIST\" 2>/dev/null || true\n    fi\n  done\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

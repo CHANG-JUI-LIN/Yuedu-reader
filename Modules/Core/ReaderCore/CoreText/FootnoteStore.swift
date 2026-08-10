@@ -16,8 +16,16 @@ enum FootnoteStore {
     static func index(body: HTMLAttributedStringBuilder.ElementNode, spineIndex: Int) {
         var map: [String: String] = [:]
         collect(node: body, into: &map)
+        index(notes: map, spineIndex: spineIndex)
+    }
+
+    /// Records an already-collected `noteID → text` map. The browser-layout
+    /// engine builds its own tree (`ComputedStyleNode`, not `ElementNode`), so
+    /// it collects the notes while parsing and publishes them here — same store,
+    /// same popup, one convention for both engines.
+    static func index(notes: [String: String], spineIndex: Int) {
         lock.lock()
-        bySpine[spineIndex] = map.isEmpty ? nil : map
+        bySpine[spineIndex] = notes.isEmpty ? nil : notes
         lock.unlock()
     }
 

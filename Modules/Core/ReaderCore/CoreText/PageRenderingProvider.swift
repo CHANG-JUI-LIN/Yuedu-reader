@@ -88,6 +88,15 @@ protocol InternalLinkResolving: AnyObject {
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int?
 }
 
+/// Engines that surface link taps / footnote taps to the reader. The reader
+/// binds these callbacks through this protocol (cast at CoreTextPagedView),
+/// so non-CoreText engines (browser-layout) can drive link navigation too.
+@MainActor
+protocol LinkNavigationProviding: AnyObject {
+    var onLinkNavigate: ((Int) -> Void)? { get set }
+    var onFootnoteTap: ((String) -> Void)? { get set }
+}
+
 @MainActor
 protocol ThemeUpdatable: AnyObject {
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor)

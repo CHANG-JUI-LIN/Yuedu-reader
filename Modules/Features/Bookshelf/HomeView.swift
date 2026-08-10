@@ -109,6 +109,24 @@ struct HomeView: View {
     /// `readerCoordinator` push path instead.
     @State private var modalReaderBookId: UUID? = nil
 
+    #if DEBUG
+    /// DEBUG: `-open-book <titleSubstring>` opens the first shelf book whose
+    /// title contains the substring. Runs once from onAppear (after the shelf
+    /// is mounted) — a launch-arg hook for diagnostics, never in Release.
+    @State private var didHandleDebugOpenBook = false
+
+    private func handleDebugOpenBookIfNeeded() {
+        guard !didHandleDebugOpenBook else { return }
+        didHandleDebugOpenBook = true
+        let args = ProcessInfo.processInfo.arguments
+        guard let idx = args.firstIndex(of: "-open-book"),
+              args.indices.contains(idx + 1) else { return }
+        let needle = args[idx + 1]
+        guard let book = store.books.first(where: { $0.title.contains(needle) }) else { return }
+        openBook(book, sourceGeometry: nil)
+    }
+    #endif
+
     private func openBook(_ book: ReadingBook, sourceGeometry: ReaderCardGeometry?) {
         AppLogger.info("⟐ openBook tap bookID=\(book.id) title=\(book.title) pipelineKind=\(book.resolvedPipelineKind) useCard=\(BookCardNavigationGate.shouldUseCardTransition(for: book)) hasGeometry=\(sourceGeometry != nil)")
         if BookCardNavigationGate.shouldUseCardTransition(for: book) {
@@ -479,6 +497,11 @@ struct HomeView: View {
             .background {
                 ReaderEdgeSwipeEnabler(navigator: readerCoordinator)
                     .frame(width: 0, height: 0)
+                    #if DEBUG
+                    .onAppear {
+                        handleDebugOpenBookIfNeeded()
+                    }
+                    #endif
             }
         }
         // Non-migrated reader kinds (audiobook / manga / fixed-page) keep the

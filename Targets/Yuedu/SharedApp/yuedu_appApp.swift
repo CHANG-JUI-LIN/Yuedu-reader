@@ -9,12 +9,68 @@ struct yuedu_appApp: App {
     @StateObject private var bookSourceDeepLinkHandler = BookSourceDeepLinkHandler()
     @Environment(\.scenePhase) private var scenePhase
 
+    #if DEBUG
+    /// UI-test hook: imports the Documents-relative EPUB named by
+    /// `-auto-import-epub` once (idempotent — skips when already on the shelf).
+    @MainActor
+    private static func runAutoImportIfNeeded(bookStore: BookStore) async {
+        guard let filename = autoImportFilename else { return }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            print("AUTO-IMPORT file missing: \(url.path)")
+            return
+        }
+        // Skip if already imported (same filename) to keep the shelf stable.
+        let exists = bookStore.books.contains { $0.contentFilename == filename }
+            || bookStore.books.contains { $0.title.contains("红楼梦") }
+        if exists { return }
+        do {
+            let book = try await bookStore.importEpub(url: url)
+            print("AUTO-IMPORT ok: \(book.title)")
+        } catch {
+            print("AUTO-IMPORT failed: \(error)")
+        }
+    }
+
+    nonisolated private static var autoImportFilename: String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let idx = args.firstIndex(of: "-auto-import-epub"),
+              args.indices.contains(idx + 1) else { return nil }
+        return args[idx + 1]
+    }
+    #endif
+
     init() {
         // First statement on purpose: this relocates books_meta.json, book_sources.json,
         // covers and the caches out of the now user-visible Documents directory, and
         // every store below reads from the new locations. A launch that touched a store
         // before this ran would come up with an empty shelf.
         StorageMigration.runIfNeeded()
+        #if DEBUG
+        // Debug-only engine selection via launch arguments (UI tests / driver):
+        //   -browser-mode browserForced | browserAuto | legacy
+        //   -browser-overlay 1        (show engine badge + geometry overlay)
+        let args = ProcessInfo.processInfo.arguments
+        if let idx = args.firstIndex(of: "-browser-mode"), args.indices.contains(idx + 1) {
+            switch args[idx + 1] {
+            case "browserForced": BrowserLayoutFeature.mode = .browserForced
+            case "browserAuto": BrowserLayoutFeature.mode = .browserAuto
+            default: BrowserLayoutFeature.mode = .legacy
+            }
+        }
+        if args.contains("-browser-overlay") { BrowserLayoutFeature.showDebugOverlay = true }
+        // UI-test automation: `-auto-import-epub <filename>` (relative to
+        // Documents) imports the book once at launch (see runAutoImportIfNeeded).
+        _ = args.contains("-auto-import-epub")
+        // Launch banner: confirms the running binary + engine mode + flags.
+        BrowserLayoutDeviceDiagnostic.log(
+            .launch, spine: -1, generation: -1,
+            message: "app commit=\(BrowserLayoutDeviceDiagnostic.commitSHA) build=\(BrowserLayoutDeviceDiagnostic.buildDate) "
+                + "mode=\(BrowserLayoutFeature.mode) overlay=\(BrowserLayoutFeature.showDebugOverlay) "
+                + "browserEnabled=\(BrowserLayoutFeature.browserEnabled)"
+        )
+        #endif
         UserFontStorageManager.shared.registerAllOnLaunch()
         GlobalSettings.shared.validateGlobalFontSelection()
         // Must run before any source JS does: a source reads its cached device id
@@ -43,6 +99,11 @@ struct yuedu_appApp: App {
                 .environmentObject(bookStore)
                 .environmentObject(subscriptionStore)
                 .environment(\.appDependencies, .live)
+                #if DEBUG
+                .task {
+                    await Self.runAutoImportIfNeeded(bookStore: bookStore)
+                }
+                #endif
                 .onOpenURL { incomingURL in
                     // Google Sign-In OAuth callback: hand off first so a Google
                     // sign-in round-trip completes. `handle(_:)` returns false
