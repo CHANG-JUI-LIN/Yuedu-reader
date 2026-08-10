@@ -46,16 +46,34 @@ final class SubscriptionStore: ObservableObject {
         #endif
     }()
 
-    /// Resolves and persists the running environment from `AppTransaction`. Safe
-    /// to call repeatedly; it touches `AppTransaction` only until it succeeds once.
+    /// Resolves the running environment from `AppTransaction` and persists it.
+    ///
+    /// This used to skip the read entirely once a value was stored, on the
+    /// assumption that "the value cannot change for an installed build". It can:
+    /// a TestFlight install replaced by the App Store build keeps the same bundle
+    /// identifier and therefore the same UserDefaults, so `.sandbox` stayed
+    /// remembered and the App Store build believed it was running in TestFlight
+    /// forever. That single stale value disabled all three entitlement paths at
+    /// once for a paying customer — the account path read `sandboxIsProActive`
+    /// (false), the keychain/CloudKit slots resolved to the `.sandbox` suffix
+    /// (empty), and `SubscriptionEntitlementFilter` rejected her Production
+    /// transaction, which also made "Restore Purchases" find nothing.
+    ///
+    /// So the stored value is an OFFLINE FALLBACK, never a reason to skip the
+    /// read. Apple is asked on every launch and its answer wins.
     private func resolveRunningEnvironment() async {
-        guard SubscriptionRuntimeEnvironment.current == nil else { return }
         do {
             let result = try await AppTransaction.shared
             guard case .verified(let appTransaction) = result else { return }
-            SubscriptionRuntimeEnvironment.remember(appTransaction.environment)
+            let resolved = appTransaction.environment
+            if let previous = SubscriptionRuntimeEnvironment.current, previous != resolved {
+                Self.subscriptionLog.notice(
+                    "Running environment CHANGED \(previous.rawValue, privacy: .public) -> \(resolved.rawValue, privacy: .public); entitlement slots move with it"
+                )
+            }
+            SubscriptionRuntimeEnvironment.remember(resolved)
             Self.subscriptionLog.notice(
-                "Running environment resolved: \(appTransaction.environment.rawValue, privacy: .public)"
+                "Running environment resolved: \(resolved.rawValue, privacy: .public)"
             )
         } catch {
             // Left unresolved rather than guessed. Unresolved means StoreKit's own

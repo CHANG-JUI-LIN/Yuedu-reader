@@ -24,9 +24,15 @@ struct BrowserLayoutPerfTests {
         let doc = BrowserLayoutDocument(html: html, cssTexts: [], config: config)
         let (pages, metrics) = try await doc.renderPagesAndMeasure(containerSize: CGSize(width: 390, height: 800))
         #expect(!pages.isEmpty)
+        // `#expect` records and continues, so a force-unwrap after a nil check
+        // traps and takes the whole test process down with every test that
+        // had not run yet. Bind instead: a missing stage fails this test only.
         for stage in ["cssCollect", "cssParse", "styleTree", "boxTree", "layout", "fragment"] {
-            #expect(metrics.stages[stage] != nil, "missing stage \(stage)")
-            #expect(metrics.stages[stage]! >= 0)
+            guard let elapsed = metrics.stages[stage] else {
+                Issue.record("missing stage \(stage); recorded: \(metrics.stages.keys.sorted())")
+                continue
+            }
+            #expect(elapsed >= 0)
         }
         #expect(metrics.peakFootprintDelta >= 0)
         #expect(metrics.total > 0)

@@ -66,13 +66,17 @@ struct BrowserLayoutMemoryLifecycleTests {
         _ = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: .black)
 
         let retainedWhileAlive = MemoryTracker.snapshot
-        #expect((retainedWhileAlive[.pageFragments] ?? 0) > 0)
+        // `.fragmentTree` is what `recordLifecycleBytes` actually accounts.
+        // This asserted `.pageFragments`, a category nothing ever records, so it
+        // read 0 and the test could only fail — while the release half of it
+        // passed vacuously for the same reason.
+        #expect((retainedWhileAlive[.fragmentTree] ?? 0) > 0)
         #expect((retainedWhileAlive[.layoutBoxTree] ?? 0) > 0)
 
         // Eviction releases everything.
         layout.releaseLifecycleBytes()
         let afterRelease = MemoryTracker.snapshot
-        #expect((afterRelease[.pageFragments] ?? 0) == 0)
+        #expect((afterRelease[.fragmentTree] ?? 0) == 0)
         #expect((afterRelease[.layoutBoxTree] ?? 0) == 0)
         #expect((afterRelease[.domStyleTree] ?? 0) == 0)
     }
@@ -104,7 +108,9 @@ struct BrowserLayoutMemoryLifecycleTests {
         // Eviction releases the chapter (all fragment/box bytes).
         layout.releaseLifecycleBytes()
         let snapshot = MemoryTracker.snapshot
-        #expect((snapshot[.pageFragments] ?? 0) == 0)
+        // `.fragmentTree`, not the never-recorded `.pageFragments` — that read 0
+        // whatever the engine did, so this assertion never tested anything.
+        #expect((snapshot[.fragmentTree] ?? 0) == 0)
         // Rebuild after eviction produces identical output.
         let rebuilt = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: .black)
         #expect(rebuilt.items.count == firstList.items.count)

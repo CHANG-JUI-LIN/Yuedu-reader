@@ -37,7 +37,13 @@ struct BrowserLayoutSnapshotTests {
 
         // Geometry assertions alongside the snapshot.
         let line = try #require(BrowserLayoutTestSupport.allTextFragments(pages).first)
-        #expect(line.rect.minY == 22)
+        // 20 (.outer margin) + 2 (.outer border) + 12 (.outer padding)
+        //  + 8 (.inner padding) = 42.
+        // This asserted 22 while `.outer`'s 20px margin was being dropped —
+        // the golden encoded that bug. Do not "fix" a failure here by taking
+        // whatever the renderer currently produces: derive the value from the
+        // box model first, as above.
+        #expect(line.rect.minY == 42)
 
         let list = DisplayListBuilder.build(for: pages[0], sourceText: doc.lastSourceText)
         let image = DisplayListRenderer.render(list, size: CGSize(width: 300, height: 200))

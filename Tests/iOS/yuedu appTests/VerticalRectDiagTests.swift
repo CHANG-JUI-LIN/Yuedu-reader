@@ -9,7 +9,7 @@ import UIKit
 @Suite("VerticalRectDiag", .serialized)
 struct VerticalRectDiagTests {
 
-    @Test("render vertical page with highlight")
+    @Test("render vertical page with highlight", .disabled("debug dump: writes /tmp artifacts for a human to read and asserts nothing. Enable manually when you need the dump; it must not run in the suite, where a bad fixture aborts the whole test process."))
     func renderVerticalPageWithHighlight() async throws {
         let font = UIFont.systemFont(ofSize: 22)
         let p1 = NSMutableParagraphStyle()

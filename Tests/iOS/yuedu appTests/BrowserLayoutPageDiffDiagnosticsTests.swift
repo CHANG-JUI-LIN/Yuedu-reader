@@ -8,7 +8,8 @@ import UIKit
 @MainActor
 struct BrowserLayoutPageDiffDiagnosticsTests {
 
-    @Test func diagnoseQuanzhiPageCountDiff() async throws {
+    @Test(.disabled("debug dump: writes /tmp artifacts for a human to read and asserts nothing. Enable manually when you need the dump; it must not run in the suite, where a bad fixture aborts the whole test process."))
+    func diagnoseQuanzhiPageCountDiff() async throws {
         let path = "/Users/zhangruilin/Desktop/Test document/EPUB Format/《全知读者视角01》sing N song(싱숑)著[Hooshaun制作].epub"
         guard FileManager.default.fileExists(atPath: path) else {
             print("DIFF: book missing")

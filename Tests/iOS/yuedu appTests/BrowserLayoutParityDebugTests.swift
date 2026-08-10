@@ -7,7 +7,8 @@ import UIKit
 @MainActor
 struct BrowserLayoutParityDebugTests {
 
-    @Test func debugRemainingParityFailures() async throws {
+    @Test(.disabled("debug dump: writes /tmp artifacts for a human to read and asserts nothing. Enable manually when you need the dump; it must not run in the suite, where a bad fixture aborts the whole test process."))
+    func debugRemainingParityFailures() async throws {
         let paths = [
             "/Users/zhangruilin/Desktop/Yuedu-browser-layout/docs/epub-regression/samples/paragraph-border-background.epub",
             "/Users/zhangruilin/Desktop/Yuedu-browser-layout/docs/epub-regression/samples/block-image-before-paragraph.epub",

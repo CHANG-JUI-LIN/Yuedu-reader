@@ -62,29 +62,48 @@ final class BrowserLayoutDocument {
     /// Both batch pagination and `BrowserLayoutSession` consume this — one
     /// implementation, no parallel paths.
     func makeLayout(containerSize: CGSize) throws -> BrowserLayoutPipelineResult {
-        let fullCSS = cssTexts + extractInlineStyles(html)
-        let document = try SwiftSoup.parse(html)
+        var discarded = LayoutMetrics()
+        return try makeLayout(containerSize: containerSize, metrics: &discarded)
+    }
+
+    /// Per-stage timings go into `metrics`. The stage names are a contract:
+    /// `BrowserLayoutPerfTests` asserts each one is present, so that "the new
+    /// engine is slower" can be answered with a breakdown instead of a guess.
+    /// Do not collapse these back into one span — that is what made the
+    /// breakdown disappear once already.
+    func makeLayout(
+        containerSize: CGSize,
+        metrics: inout LayoutMetrics
+    ) throws -> BrowserLayoutPipelineResult {
+        let fullCSS = metrics.time("cssCollect") { cssTexts + extractInlineStyles(html) }
+        let document = try metrics.time("htmlParse") { try SwiftSoup.parse(html) }
         guard let body = document.body() else {
             throw BrowserLayoutError.emptyBody
         }
-        let rules = fullCSS.flatMap { CSSParser.parse(css: $0, orderOffset: 0) }
+        let rules = metrics.time("cssParse") {
+            fullCSS.flatMap { CSSParser.parse(css: $0, orderOffset: 0) }
+        }
         let builder = ComputedStyleTreeBuilder(rules: rules, config: config)
-        let rootNode = builder.buildTree(body: body)
+        let rootNode = metrics.time("styleTree") { builder.buildTree(body: body) }
         var sourceText = SourceTextBuilder()
         var anchors: [String: Int] = [:]
-        let rootBox = BoxTreeBuilder.buildBlock(
-            for: rootNode, config: config,
-            sourceText: &sourceText, anchors: &anchors,
-            imageLoader: imageLoader
-        )
+        let rootBox = metrics.time("boxTree") {
+            BoxTreeBuilder.buildBlock(
+                for: rootNode, config: config,
+                sourceText: &sourceText, anchors: &anchors,
+                imageLoader: imageLoader
+            )
+        }
         let contentWidth = max(1, containerSize.width - config.contentInsets.left - config.contentInsets.right)
         let contentHeight = max(1, containerSize.height - config.contentInsets.top - config.contentInsets.bottom)
-        _ = BlockLayout.layOut(
-            root: rootBox,
-            containerWidth: contentWidth,
-            rootFontSize: config.rootFontSize,
-            writingMode: config.writingMode
-        )
+        metrics.time("layout") {
+            _ = BlockLayout.layOut(
+                root: rootBox,
+                containerWidth: contentWidth,
+                rootFontSize: config.rootFontSize,
+                writingMode: config.writingMode
+            )
+        }
         return BrowserLayoutPipelineResult(
             rootBox: rootBox,
             sourceText: sourceText.text,
@@ -210,9 +229,9 @@ final class BrowserLayoutDocument {
         let startFootprint = MemoryStats.currentFootprint()
         var peakFootprint = startFootprint
 
-        let pipeline = try metrics.time("pipeline") {
-            try makeLayout(containerSize: containerSize)
-        }
+        // Sub-stages are recorded individually; wrapping them in an outer span
+        // as well would double-count them in `total`.
+        let pipeline = try makeLayout(containerSize: containerSize, metrics: &metrics)
         peakFootprint = max(peakFootprint, MemoryStats.currentFootprint())
 
         var pages: [PageFragments] = []
@@ -348,7 +367,6 @@ enum MemoryTracker {
         case layoutBoxTree
         case fragmentTree
         case ctLineRun         // CoreText line/run objects during shaping
-        case pageFragments
         case displayList
         case decodedImage
         case snapshotBitmap

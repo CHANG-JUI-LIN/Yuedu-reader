@@ -128,9 +128,15 @@ enum SubscriptionICloudMirrorPolicy {
 enum SubscriptionRuntimeEnvironment {
     private static let storageKey = "subscription_running_environment"
 
-    /// `nil` until `AppTransaction` has been read once. Persisted after that: the
-    /// value cannot change for an installed build, so later launches resolve it
-    /// synchronously and offline.
+    /// `nil` until `AppTransaction` has been read once; persisted after that so
+    /// later launches have an answer synchronously and offline.
+    ///
+    /// This is a CACHE, not the truth. It does change for what iOS treats as one
+    /// installed app: a TestFlight build replaced by the App Store build keeps
+    /// this container, so a remembered `.sandbox` outlived the build that wrote
+    /// it and locked paying customers out of every entitlement path. Callers must
+    /// keep asking `AppTransaction` and overwrite this — see
+    /// `SubscriptionStore.resolveRunningEnvironment()`.
     static var current: AppStore.Environment? {
         UserDefaults.standard.string(forKey: storageKey)
             .map(AppStore.Environment.init(rawValue:))

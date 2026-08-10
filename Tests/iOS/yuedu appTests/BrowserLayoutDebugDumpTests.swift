@@ -4,7 +4,8 @@ import UIKit
 @testable import yuedu_app
 
 struct BrowserLayoutDebugDumpTests {
-    @Test func dumpNestedBoxGeometry() async throws {
+    @Test(.disabled("debug dump: writes /tmp artifacts for a human to read and asserts nothing. Enable manually when you need the dump; it must not run in the suite, where a bad fixture aborts the whole test process."))
+    func dumpNestedBoxGeometry() async throws {
         let css = """
         body { margin: 0; }
         .outer { width: 80%; margin: 20px auto; padding: 12px; border: 2px solid; }
@@ -53,18 +54,30 @@ struct BrowserLayoutDebugDumpTests {
         style.lineHeight = 24
         style.textAlign = .left
         let sourceText = "The quick brown fox jumps over the lazy dog. Padding makes layout robust."
+        // Ranges are derived, not hand-counted: they were off by one ("…lazy
+        // dog." is 44 characters, not 45), so the second run sliced past the
+        // end of sourceText and the NSException took the whole test process
+        // down — every test after this one included.
+        let firstSentence = "The quick brown fox jumps over the lazy dog."
+        let secondSentence = " Padding makes layout robust."
         let runs2 = [
-            InlineRun(text: "The quick brown fox jumps over the lazy dog.", style: style,
-                      sourceRange: NSRange(location: 0, length: 45)),
-            InlineRun(text: " Padding makes layout robust.", style: style,
-                      sourceRange: NSRange(location: 45, length: 29)),
+            InlineRun(text: firstSentence, style: style,
+                      sourceRange: NSRange(location: 0, length: (firstSentence as NSString).length)),
+            InlineRun(text: secondSentence, style: style,
+                      sourceRange: NSRange(location: (firstSentence as NSString).length,
+                                           length: (secondSentence as NSString).length)),
         ]
         let lines2 = InlineLayout.layoutLines(runs: runs2, maxWidth: 150, rootFontSize: 16,
                                               lineHeight: nil, sourceText: sourceText)
         var runDump: [String] = []
         for (i, line) in lines2.enumerated() {
             for run in line.runs {
-                runDump.append("line\(i) range=\(run.sourceRange) x=\(run.x) w=\(run.width) text=\"\((sourceText as NSString).substring(with: run.sourceRange))\"")
+                // Clamp: a dump must never be able to abort the test process.
+                let ns = sourceText as NSString
+                let r = run.sourceRange
+                let text = (r.location >= 0 && r.length >= 0 && r.location + r.length <= ns.length)
+                    ? ns.substring(with: r) : "<out-of-range \(r) of \(ns.length)>"
+                runDump.append("line\(i) range=\(r) x=\(run.x) w=\(run.width) text=\"\(text)\"")
             }
         }
         try runDump.joined(separator: "\n").write(toFile: "/tmp/browser-layout-runs.txt", atomically: true, encoding: .utf8)

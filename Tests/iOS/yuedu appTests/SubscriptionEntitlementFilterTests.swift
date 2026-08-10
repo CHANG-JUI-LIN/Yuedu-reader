@@ -45,3 +45,64 @@ struct SubscriptionEntitlementFilterTests {
             environment: .sandbox, runningEnvironment: .production, isDebugBuild: true) == true)
     }
 }
+
+/// A remembered running environment is a cache, not the truth. A paying customer
+/// lost Pro on every path at once because a TestFlight install's `.sandbox` was
+/// still in UserDefaults after the App Store build replaced it.
+@Suite("Subscription runtime environment")
+struct SubscriptionRuntimeEnvironmentTests {
+
+    private func withStoredEnvironment(_ value: String?, _ body: () -> Void) {
+        let key = "subscription_running_environment"
+        let previous = UserDefaults.standard.string(forKey: key)
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        if let value { UserDefaults.standard.set(value, forKey: key) }
+        else { UserDefaults.standard.removeObject(forKey: key) }
+        body()
+    }
+
+    @Test("a stale sandbox value routes the account read to the sandbox field")
+    func sandboxSelectsSandboxFields() {
+        withStoredEnvironment("Sandbox") {
+            #expect(SubscriptionRuntimeEnvironment.entitlementFieldNames.isActive == "sandboxIsProActive")
+            #expect(SubscriptionRuntimeEnvironment.storageSuffix == ".sandbox")
+        }
+    }
+
+    /// The three symptoms that identified the bug, asserted together: with the
+    /// environment stuck at Sandbox an App Store build reads the wrong Firestore
+    /// field, the wrong keychain/CloudKit slot, and discards its own Production
+    /// transaction — which is why Restore Purchases also came back empty.
+    @Test("a stale sandbox value disables all three entitlement paths")
+    func staleSandboxDisablesEveryPath() {
+        withStoredEnvironment("Sandbox") {
+            #expect(SubscriptionEntitlementFilter.shouldAccept(
+                environment: .production,
+                runningEnvironment: SubscriptionRuntimeEnvironment.current,
+                isDebugBuild: false) == false)
+            #expect(SubscriptionRuntimeEnvironment.entitlementFieldNames.isActive == "sandboxIsProActive")
+            #expect(SubscriptionRuntimeEnvironment.storageSuffix == ".sandbox")
+        }
+    }
+
+    @Test("production keeps the bare storage slot so existing caches survive")
+    func productionUsesBareSlot() {
+        withStoredEnvironment("Production") {
+            #expect(SubscriptionRuntimeEnvironment.entitlementFieldNames.isActive == "isProActive")
+            #expect(SubscriptionRuntimeEnvironment.storageSuffix == "")
+        }
+    }
+
+    @Test("an unresolved environment reads production fields and accepts transactions")
+    func unresolvedFallsBackToProduction() {
+        withStoredEnvironment(nil) {
+            #expect(SubscriptionRuntimeEnvironment.current == nil)
+            #expect(SubscriptionRuntimeEnvironment.entitlementFieldNames.isActive == "isProActive")
+            #expect(SubscriptionEntitlementFilter.shouldAccept(
+                environment: .production, runningEnvironment: nil, isDebugBuild: false) == true)
+        }
+    }
+}

@@ -445,7 +445,14 @@ struct PageWalker {
     /// Feeds one step through the paging rules; returns a COMPLETED page when
     /// the step crosses a page boundary (or nil otherwise).
     mutating func place(_ step: Step) -> PageFragments? {
-        MemoryTracker.record(.fragmentTree, bytes: 60)  // ~60B per fragment (estimate)
+        // Fragment bytes are accounted by `BrowserChapterLayout`
+        // (`refreshFragmentBytes`), which counts the finished pages and is the
+        // only place that can release them again on eviction. Recording here as
+        // well double-counted every fragment, and since eviction releases only
+        // the layout's own figure, the second copy stayed on the tracker
+        // forever — a chapter laid out and evicted leaked fragmentCount * 60
+        // bytes of *accounting*, which is exactly the monotonic growth
+        // MemoryTracker exists to disprove. One owner per artifact type.
         switch step {
         case .fill(let frag):
             return placeFill(frag)
