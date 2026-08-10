@@ -125,7 +125,10 @@ enum BrowserLayoutCapabilityScanner {
                     }
                     guard !matchedElements.isEmpty else { continue }  // unmatched rule → ignore
 
-                    for (property, value) in rule.declarations {
+                    // Source order, not dictionary order: the reported
+                    // reason list must be stable across runs.
+                    for property in rule.declarationOrder {
+                        guard let value = rule.declarations[property] else { continue }
                         if let feature = layoutAffectingDeclaration(key: property, value: value) {
                             reasons.append(feature)
                             if !matchedAnyUnsupported, let first = matchedElements.first {

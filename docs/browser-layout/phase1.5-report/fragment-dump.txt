@@ -1,8 +1,10 @@
 sourceText(70): "The box model, computed naturally.Second paragraph with a link inside."
-page[0] rect=(0.0, 0.0, 300.0, 400.0)
-  fill node=-1 (16.0, 0.0, 268.0, 63.6) UIExtendedSRGBColorSpace 0.941176 0.941176 0.941176 1
-  fill node=-1 (16.0, 0.0, 268.0, 2.0) UIExtendedGrayColorSpace 0 1
-  text node=1 range={0, 34} link=- (142.0, 22.0, 233.25979858398438, 19.6) "The box model, computed naturally."
-  text node=5 range={34, 22} link=- (0.0, 83.6, 189.14044256591794, 23.8) "Second paragraph with "
-  text node=4 range={56, 6} link=http://example.com/x (189.14044256591794, 83.6, 42.09374835205079, 23.8) "a link"
-  text node=5 range={62, 8} link=- (231.23419091796873, 83.6, 56.43155914306638, 23.8) " inside."
+page[0] rect=PageLocalRect(rawValue: (0.0, 0.0, 300.0, 400.0))
+  fill node=-1 PageLocalRect(rawValue: (16.0, 20.0, 268.0, 102.80000000000001)) UIExtendedSRGBColorSpace 0.941176 0.941176 0.941176 1
+  fill node=-1 PageLocalRect(rawValue: (130.0, 34.0, 140.0, 74.80000000000001)) UIExtendedGrayColorSpace 0 0
+  text node=1 range={0, 15} link=- PageLocalRect(rawValue: (142.0, 42.0, 104.99027673339845, 19.6)) "The box model, "
+  text node=1 range={15, 9} link=- PageLocalRect(rawValue: (142.0, 61.6, 69.54505383300781, 19.6)) "computed "
+  text node=1 range={24, 10} link=- PageLocalRect(rawValue: (142.0, 81.2, 58.72446801757812, 19.6)) "naturally."
+  text node=5 range={34, 22} link=- PageLocalRect(rawValue: (0.0, 142.8, 189.14044256591794, 23.8)) "Second paragraph with "
+  text node=4 range={56, 6} link=http://example.com/x PageLocalRect(rawValue: (189.14044256591794, 142.8, 42.09374835205079, 23.8)) "a link"
+  text node=5 range={62, 8} link=- PageLocalRect(rawValue: (231.23419091796873, 142.8, 56.43155914306638, 23.8)) " inside."

@@ -160,13 +160,17 @@ final class ComputedStyleTreeBuilder {
                 return lhs.specificity < rhs.specificity
             }
 
-        for rule in matched { cascadeApply(rule.declarations, to: &style, ctx: ctx) }
+        for rule in matched {
+            cascadeApply(rule.declarations, order: rule.declarationOrder, to: &style, ctx: ctx)
+        }
 
         let inlineDecl = CSSParser.parseDeclarationBlock((try? element.attr("style")) ?? "")
-        cascadeApply(inlineDecl.normal, to: &style, ctx: ctx)
+        cascadeApply(inlineDecl.normal, order: inlineDecl.order, to: &style, ctx: ctx)
 
-        for rule in matched { cascadeApply(rule.importantDeclarations, to: &style, ctx: ctx) }
-        cascadeApply(inlineDecl.important, to: &style, ctx: ctx)
+        for rule in matched {
+            cascadeApply(rule.importantDeclarations, order: rule.declarationOrder, to: &style, ctx: ctx)
+        }
+        cascadeApply(inlineDecl.important, order: inlineDecl.order, to: &style, ctx: ctx)
 
         if element.hasAttr("hidden") { style.isHidden = true }
         return style
@@ -207,7 +211,16 @@ private extension ComputedStyle {
 }
 
 private extension ComputedStyleTreeBuilder {
-    func cascadeApply(_ declarations: [String: String], to style: inout ComputedStyle, ctx: ApplyContext) {
+    /// Applies a declaration block. `order` carries the SOURCE order of the
+    /// property names; iterating `declarations` directly would apply them in
+    /// Swift's per-process randomized dictionary order, which made the cascade
+    /// non-deterministic across runs.
+    func cascadeApply(
+        _ declarations: [String: String],
+        order: [String],
+        to style: inout ComputedStyle,
+        ctx: ApplyContext
+    ) {
         // `line-height` percentages resolve against the element's COMPUTED
         // font-size, and `font-size` in the same block is always computed
         // first per CSS. Dictionary iteration order is not guaranteed, so
@@ -216,7 +229,8 @@ private extension ComputedStyleTreeBuilder {
         if let fontSize = declarations["font-size"] {
             ComputedStylePropertyApplier.apply(key: "font-size", value: fontSize, to: &style, ctx: ctx)
         }
-        for (key, value) in declarations where key != "font-size" {
+        for key in order where key != "font-size" {
+            guard let value = declarations[key] else { continue }
             ComputedStylePropertyApplier.apply(key: key, value: value, to: &style, ctx: ctx)
         }
     }

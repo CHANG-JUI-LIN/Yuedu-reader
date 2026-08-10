@@ -2478,7 +2478,12 @@ struct CSSRule {
     let selector: CSSSelector
     let declarations: [String: String]
     let importantDeclarations: [String: String]
+    /// Property names in source order. Apply declarations by walking this —
+    /// never by iterating `declarations`, whose order Swift randomizes per
+    /// process (see `DeclarationBlock.order`).
+    let declarationOrder: [String]
     let specificity: Int
+    /// This rule's position among all rules in the stylesheet.
     let order: Int
 }
 
@@ -2663,6 +2668,7 @@ enum CSSParser {
                     selector: selector,
                     declarations: declarations.normal,
                     importantDeclarations: declarations.important,
+                    declarationOrder: declarations.order,
                     specificity: specificity(of: selector),
                     order: orderOffset + index
                 )
@@ -2703,6 +2709,7 @@ enum CSSParser {
                     selector: selector,
                     declarations: declarations.normal,
                     importantDeclarations: declarations.important,
+                    declarationOrder: declarations.order,
                     specificity: specificity(of: selector),
                     order: orderOffset + index
                 )
@@ -2719,6 +2726,18 @@ enum CSSParser {
     struct DeclarationBlock {
         let normal: [String: String]
         let important: [String: String]
+        /// Property names in SOURCE order — the order they must be applied in.
+        ///
+        /// A dictionary cannot carry this: Swift randomizes `Dictionary`
+        /// iteration per process, so applying declarations by iterating the
+        /// dictionary made the cascade depend on the hash seed. Two shorthands
+        /// touching one property (`border: 4px` then `border-width: 4px 0px`)
+        /// resolved to whichever the seed happened to visit last, so identical
+        /// input rendered differently between runs.
+        ///
+        /// A property that appears more than once is listed at its LAST
+        /// position, which is where the surviving value was declared.
+        let order: [String]
 
         var merged: [String: String] {
             normal.merging(important) { _, importantValue in importantValue }
@@ -2766,6 +2785,7 @@ enum CSSParser {
     static func parseDeclarationBlock(_ css: String) -> DeclarationBlock {
         var normal: [String: String] = [:]
         var important: [String: String] = [:]
+        var order: [String] = []
         for segment in splitDeclarations(css) {
             let parts = segment.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true)
             guard parts.count == 2 else { continue }
@@ -2784,10 +2804,18 @@ enum CSSParser {
                     normal.removeValue(forKey: key)
                 } else if important[key] == nil {
                     normal[key] = value
+                } else {
+                    // An `!important` earlier in the block already won this
+                    // property; the later normal declaration is dead and must
+                    // not move the property's position.
+                    continue
                 }
+                // Re-declaring moves the property to its last position.
+                if let existing = order.firstIndex(of: key) { order.remove(at: existing) }
+                order.append(key)
             }
         }
-        return DeclarationBlock(normal: normal, important: important)
+        return DeclarationBlock(normal: normal, important: important, order: order)
     }
 
     /// Splits a complex selector into components joined by descendant (whitespace) and child (`>`)

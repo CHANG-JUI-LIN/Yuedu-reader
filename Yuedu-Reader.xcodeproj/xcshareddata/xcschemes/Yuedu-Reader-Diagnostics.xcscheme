@@ -76,19 +76,11 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "-browser-mode browserForced"
+            argument = "-browser-mode browserAuto"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
             argument = "-browser-overlay"
-            isEnabled = "YES">
-         </CommandLineArgument>
-         <CommandLineArgument
-            argument = "-open-book 红楼梦"
-            isEnabled = "YES">
-         </CommandLineArgument>
-         <CommandLineArgument
-            argument = "-warmup-chapters 9"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
