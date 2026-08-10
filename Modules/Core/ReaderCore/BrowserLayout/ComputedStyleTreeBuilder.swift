@@ -224,7 +224,17 @@ private extension ComputedStyleTreeBuilder {
 
 enum ComputedStylePropertyApplier {
     fileprivate static func apply(key: String, value raw: String, to style: inout ComputedStyle, ctx: ApplyContext) {
-        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // CSS keywords are case-insensitive, so the folded value drives every
+        // keyword comparison below. A `url()` payload is NOT a keyword — it is a
+        // path, and paths are case-sensitive. Folding it produced
+        // `../images/x.jpg` for an authored `../Images/x.jpg` (and
+        // `reader-book://id/oebps/…` for a stylesheet URL already rewritten by
+        // `EPUBStyleResolver.rewriteResourceURLs`), so the source the style tree
+        // asked the image loader for could never equal the key the prefetcher
+        // stored: every authored body background-image silently resolved to nil.
+        // `preserved` therefore feeds anything that carries a URL.
+        let preserved = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = preserved.lowercased()
         guard !value.isEmpty else { return }
         switch key {
         case "display":
@@ -239,8 +249,22 @@ enum ComputedStylePropertyApplier {
             if let c = parseColor(value) { style.color = c }
         case "background-color":
             if let c = parseColor(value) { style.backgroundColor = c }
+        case "float":
+            // Whitelist only, via the shared parser. An unrecognised value
+            // (`center`, `inline-start`, a typo) is an invalid declaration: it
+            // is DROPPED, leaving the initial `none`. Never map an unknown
+            // token onto a side.
+            if let parsed = CSSFloat.parse(value) { style.cssFloat = parsed }
+        case "clear":
+            switch value {
+            case "none": style.cssClear = .none
+            case "left": style.cssClear = .left
+            case "right": style.cssClear = .right
+            case "both": style.cssClear = .both
+            default: break
+            }
         case "background-image":
-            if let source = parseBackgroundImageSource(value) {
+            if let source = parseBackgroundImageSource(preserved) {
                 var bg = style.backgroundImage ?? BackgroundImageStyle(source: source)
                 bg.source = source
                 style.backgroundImage = bg
@@ -337,7 +361,7 @@ enum ComputedStylePropertyApplier {
         case "border-radius": style.borderRadius = numericWidth(value) ?? 0
         case "background":
             if let c = parseColor(shorthandBackgroundColor(value)) { style.backgroundColor = c }
-            if let source = parseBackgroundImageSource(value) {
+            if let source = parseBackgroundImageSource(preserved) {
                 var bg = style.backgroundImage ?? BackgroundImageStyle(source: source)
                 bg.source = source
                 if value.contains("no-repeat") { bg.repeatMode = .noRepeat }
@@ -458,8 +482,14 @@ enum ComputedStylePropertyApplier {
 
     /// Extracts `url(...)` from a background declaration; returns the raw source
     /// (quotes stripped). nil when no url() is present.
-    fileprivate static func parseBackgroundImageSource(_ value: String) -> String? {
-        guard let range = value.range(of: "url(") else { return nil }
+    /// Not fileprivate: `EPUBBrowserLayoutResourceAdapter` prefetches the root
+    /// background with the SAME parser, so the fetched key can never disagree
+    /// with the source the style tree resolves.
+    static func parseBackgroundImageSource(_ value: String) -> String? {
+        // Case-insensitive on the FUNCTION NAME only (CSS function names are
+        // case-insensitive), while the payload keeps the authored case — it is
+        // a path. Callers pass the unfolded declaration value for that reason.
+        guard let range = value.range(of: "url(", options: .caseInsensitive) else { return nil }
         let rest = value[range.upperBound...]
         guard let close = rest.firstIndex(of: ")") else { return nil }
         var source = String(rest[..<close]).trimmingCharacters(in: .whitespacesAndNewlines)

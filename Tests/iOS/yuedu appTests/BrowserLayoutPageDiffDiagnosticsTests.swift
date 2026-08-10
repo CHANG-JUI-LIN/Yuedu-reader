@@ -32,7 +32,7 @@ struct BrowserLayoutPageDiffDiagnosticsTests {
             if !scan.supported { continue }
 
             // Browser pages.
-            let images = await adapter.prefetchImages(forChapter: spine, html: html)
+            let images = await adapter.prefetchImages(forChapter: spine, html: html, renderWidth: renderSize.width - 24)
             let config = BrowserLayoutConfig(
                 renderWidth: renderSize.width - 24, renderHeight: renderSize.height - 24,
                 rootFontSize: 17, fontFamilies: [],

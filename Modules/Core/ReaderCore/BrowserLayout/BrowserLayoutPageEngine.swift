@@ -112,15 +112,20 @@ enum ChapterEngineChoice {
 /// source-offset → page mapping.
 struct BrowserChapterLayout {
     let spineIndex: Int
-    var pages: [PageFragments]
+    var pages: [PageFragments] {
+        didSet { pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText) }
+    }
     let sourceText: String
     let anchorOffsets: [String: Int]
-    /// Page-local source ranges (into `sourceText`), derived from the CURRENT
-    /// pages — computed so incremental completion (pages growing) stays
-    /// correct. Cheap: a few dozen pages × ~50 fragments.
-    var pageSourceRanges: [NSRange] {
-        Self.buildPageRanges(pages, sourceText: sourceText)
-    }
+    /// Page-local source ranges (into `sourceText`), rebuilt whenever `pages`
+    /// changes (incremental completion grows them).
+    ///
+    /// STORED, not computed. As a computed property it re-walked every fragment
+    /// of every page on each access — and `pageIndex(forCharOffset:)` reads it
+    /// INSIDE its binary-search loop, so one page-index lookup on a 40-page
+    /// chapter cost ~7 full rebuilds (tens of thousands of fragment visits), on
+    /// every page turn and every progress update.
+    private(set) var pageSourceRanges: [NSRange]
     let fontSize: CGFloat
     let themeTextColor: UIColor
     let themeBackgroundColor: UIColor
@@ -140,6 +145,8 @@ struct BrowserChapterLayout {
         self.pages = pages
         self.sourceText = sourceText
         self.anchorOffsets = anchorOffsets
+        // `didSet` does not run during init.
+        self.pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText)
         self.fontSize = fontSize
         self.themeTextColor = themeTextColor
         self.themeBackgroundColor = themeBackgroundColor
@@ -174,14 +181,15 @@ struct BrowserChapterLayout {
     /// are approximate; the spec restores to *nearby* content).
     func pageIndex(forCharOffset charOffset: Int) -> Int {
         guard !pages.isEmpty else { return 0 }
+        let ranges = pageSourceRanges
         let nsLength = (sourceText as NSString).length
         let target = min(max(charOffset, 0), nsLength)
         var low = 0
-        var high = pageSourceRanges.count - 1
+        var high = ranges.count - 1
         var best = 0
         while low <= high {
             let mid = (low + high) / 2
-            let range = pageSourceRanges[mid]
+            let range = ranges[mid]
             if range.location > target {
                 high = mid - 1
             } else if range.location + range.length < target {
@@ -221,7 +229,8 @@ struct BrowserChapterLayout {
                     items.append(.image(DisplayImageItem(
                         source: i.source, image: i.image, sourceRange: i.sourceRange,
                         nodeID: i.nodeID, linkTarget: i.linkTarget,
-                        writingMode: i.writingMode, rect: i.rect, alt: i.alt
+                        writingMode: i.writingMode, rect: i.rect, alt: i.alt,
+                        isBackgroundPaint: i.isBackgroundPaint
                     )))
                 case .group(let children): collect(children)
                 }
@@ -303,6 +312,30 @@ struct BrowserChapterLayout {
     }
 }
 
+/// Mutable image map shared between the chapter's prefetch and its layout
+/// session. The session's `imageLoader` is synchronous, but the root
+/// background-image can only be identified AFTER the style tree exists — the
+/// store lets that late arrival reach the same loader instead of forcing a
+/// second image path.
+/// Deliberately NOT actor-isolated: the session's `imageLoader` is a plain
+/// synchronous closure called from the (non-isolated) box tree and page walker,
+/// exactly like the `[String: UIImage]` dictionary it replaces. All mutation
+/// happens on the main actor, before or between layout steps.
+final class BrowserLayoutImageStore {
+    private var images: [String: UIImage]
+
+    init(_ images: [String: UIImage] = [:]) {
+        self.images = images
+    }
+
+    func image(for source: String) -> UIImage? { images[source] }
+
+    func set(_ image: UIImage?, for source: String) {
+        guard let image else { return }
+        images[source] = image
+    }
+}
+
 /// Reader adapter for the browser-layout engine. Implements the FULL
 /// `PageRenderingProvider` contract with per-chapter dispatch: chapters that
 /// pass the capability scan (or are forced in `browserForced` mode) render with
@@ -356,9 +389,19 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     /// Test seam: current browser-mode chapter layout (precise-geometry
     /// verification for selection rects).
+    /// Test seam: SOME laid-out chapter. `browserChapters` is a Dictionary, so
+    /// `.first` is unordered — once a second chapter is laid out (the engine
+    /// preloads chapter 0 in `start()`), which one this returns is arbitrary.
+    /// Use `testLayout(for:)` whenever the caller means a SPECIFIC chapter.
     var testChapterLayout: (spine: Int, layout: BrowserChapterLayout)? {
-        guard let (spine, layout) = browserChapters.first else { return nil }
+        guard let spine = browserChapters.keys.min(),
+              let layout = browserChapters[spine] else { return nil }
         return (spine, layout)
+    }
+
+    /// Test seam: the layout for ONE named chapter, deterministically.
+    func testLayout(for spine: Int) -> BrowserChapterLayout? {
+        browserChapters[spine]
     }
 
     /// Test seam: per-chapter lifecycle state (terminal checks, diagnostic
@@ -554,7 +597,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 return
             }
             let css = await resource.processedCSS(forChapter: spineIndex)
-            let images = await resource.prefetchImages(forChapter: spineIndex, html: html)
+            let store = BrowserLayoutImageStore(await resource.prefetchImages(
+                forChapter: spineIndex, html: html, renderWidth: contentWidth
+            ))
             guard generation == layoutGeneration else { return }  // stale
 
             let fontPolicy = Self.fontScalePolicy(for: html)
@@ -565,9 +610,32 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             noteSessionEnsure(spineIndex: spineIndex, generation: generation)
             let session = BrowserLayoutSession(
                 html: html, cssTexts: css, config: config,
-                imageLoader: { images[$0] }, generation: generation
+                imageLoader: { [store] in store.image(for: $0) }, generation: generation
             )
             session.diagnosticSpine = spineIndex
+
+            // Build the style/box tree first, then fetch the root
+            // background-image the COMPUTED tree actually resolved. Paint-only,
+            // so it is not needed to lay anything out — and taking the source
+            // from the style tree (instead of re-scanning the stylesheets) is
+            // what makes the fetched key and the painted key the same string.
+            let backgroundSource = try await withTimeout(nanos: chapterTimeoutNanos) {
+                try session.prepare()
+            }
+            guard generation == layoutGeneration else { return }
+            if let backgroundSource, store.image(for: backgroundSource) == nil {
+                store.set(
+                    await resource.loadImage(
+                        forChapter: spineIndex, source: backgroundSource, renderWidth: contentWidth
+                    ),
+                    for: backgroundSource
+                )
+                guard generation == layoutGeneration else { return }
+            }
+            // 多看 popup footnotes: publish to the SAME store the legacy engine
+            // uses, so a tap on a 注 marker opens the note in place instead of
+            // paging to the chapter tail.
+            FootnoteStore.index(notes: session.pipelineFootnotes, spineIndex: spineIndex)
 
             // FIRST PAGE: publish immediately — the rest of the chapter is NOT
             // laid out yet.
@@ -995,7 +1063,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             }
             guard let layout = browserChapters[spine],
                   layout.pages.indices.contains(local) else {
-                return PlaceholderPageViewController()
+                return notYetLaidOutPlaceholder(spine: spine, localPage: local, globalPage: index)
             }
             let list = cachedDisplayList(globalPage: index, spine: spine, local: local, layout: layout)
             let offset = layout.pageSourceRanges[local].location
@@ -1046,6 +1114,47 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         case .legacyFallback, .legacyEngineFailure:
             return delegate.pageViewController(at: delegatePageIndex(for: spine, localPage: local))
         }
+    }
+
+    /// Placeholder for a page whose chapter layout has not reached it yet.
+    ///
+    /// It MUST carry `globalPage` and, where known, a reading position. A
+    /// placeholder built with the memberwise defaults reports
+    /// `globalPageIndex == 0` and `coreTextReadingPosition == nil`; when the
+    /// turn settles, `CoreTextPagedView.Coordinator.readingPosition(from:)`
+    /// falls back to that 0 and resolves it to spine 0 / offset 0, so turning a
+    /// page inside a still-paginating chapter threw the reader back to the front
+    /// cover. Same contract as `CoreTextPageEngine.pageViewController(at:)`,
+    /// including the preload kick: nothing else drives layout for a chapter
+    /// entered through the page-index path.
+    private func notYetLaidOutPlaceholder(
+        spine: Int,
+        localPage: Int,
+        globalPage: Int
+    ) -> PlaceholderPageViewController {
+        BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) pageVCIndex placeholder spine=\(spine) local=\(localPage) global=\(globalPage) state=\((chapterLayoutStates[spine] ?? .idle).label)")
+        // Only page 0 has a position we can name exactly. For a later page the
+        // offset is unknown until layout reaches it — nil lets the coordinator
+        // ask `readingPosition(forPage:)`, which stays inside THIS chapter
+        // instead of inventing one.
+        let position: CoreTextReadingPosition? = localPage == 0
+            ? .chapterStart(spine)
+            : nil
+        let placeholder = PlaceholderPageViewController(
+            chapterTitle: resource.chapterTitle(at: spine),
+            globalPage: globalPage,
+            readingPosition: position,
+            themeBackgroundColor: themeBackgroundColor,
+            themeTextColor: themeTextColor
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            await self.preloadChapter(at: spine)
+            guard self.browserChapters[spine] != nil
+                    || self.chapterLayoutStates[spine]?.isTerminal == true else { return }
+            self.onChapterReady?(spine)
+        }
+        return placeholder
     }
 
     /// Position-driven page view. For a chapter the browser engine has NOT
@@ -1108,6 +1217,12 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     private func handleLinkTap(_ href: String, fromSpine spineIndex: Int) {
+        // duokan popup footnote: show the note in place instead of paging to
+        // the chapter tail. Mirrors CoreTextPageEngine's link handling.
+        if let note = FootnoteStore.text(spineIndex: spineIndex, href: href) {
+            onFootnoteTap?(note)
+            return
+        }
         if href.hasPrefix("http://") || href.hasPrefix("https://") {
             if let url = URL(string: href) {
                 UIApplication.shared.open(url)

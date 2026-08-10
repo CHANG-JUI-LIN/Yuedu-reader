@@ -270,9 +270,15 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     }
 
     /// The image fragment whose page-local rect contains the point.
+    ///
+    /// CSS background paint is skipped: it is not an element, so a browser never
+    /// hit-tests it. The injected background covers the whole canvas and sits
+    /// FIRST in the display list, so including it made every tap on such a page
+    /// "hit an image" — the reader's page-turn/menu zones never saw the tap and
+    /// the real illustrations behind it could not be opened.
     func imageTarget(at point: CGPoint) -> DisplayImageItem? {
         for item in displayList.items {
-            guard case .image(let image) = item else { continue }
+            guard case .image(let image) = item, !image.isBackgroundPaint else { continue }
             if image.rect.contains(point) {
                 return image
             }

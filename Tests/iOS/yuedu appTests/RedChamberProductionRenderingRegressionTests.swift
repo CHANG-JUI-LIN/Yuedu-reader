@@ -110,7 +110,10 @@ struct RedChamberProductionRenderingRegressionTests {
         await engine.start(renderSize: Self.viewport, bookId: "redchamber")
         await engine.preloadChapter(at: spine)
 
-        guard let (s, layout) = engine.testChapterLayout, s == spine else {
+        // Deterministic per-spine lookup: `testChapterLayout` reads an unordered
+        // Dictionary, and `start()` already laid out chapter 0, so it could
+        // return the wrong chapter here.
+        guard let layout = engine.testLayout(for: spine) else {
             let choiceDesc = engine.choice(for: spine).map { "\($0)" } ?? "nil"
             let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: css)
             print("PROD-DIAG spine=\(spine) choice=\(choiceDesc) scanSupported=\(scan.supported) unsupported=\(scan.unsupportedFeatures.map(\.description))")
@@ -254,7 +257,18 @@ struct RedChamberProductionRenderingRegressionTests {
         let k1 = try #require(Self.k1Candidates(in: page).first, "no k1 fill")
         let expectedK1BorderTop: CGFloat = 89.67 + Self.settings.contentInsets.top
 
-        let list = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: layout.themeTextColor)
+        let full = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: layout.themeTextColor)
+        // Drop the CSS background paint before rendering. What this test
+        // measures is WHERE the k1/k2 box lands in a real window — compositing
+        // the chapter's full-bleed 山水畫 behind it changes nothing about that,
+        // but it does make a colour probe meaningless: the painting's own ink is
+        // dark green, so the scan below cannot tell it from the k2 border (it
+        // hit the painting at y=60.3pt, above the border at 108.5). The probe
+        // used to survive only because the background never actually rendered.
+        let list = DisplayList(items: full.items.filter { item in
+            if case .image(let i) = item, i.isBackgroundPaint { return false }
+            return true
+        })
         let vc = BrowserLayoutPageViewController(
             globalPageIndex: 0, readingPosition: nil,
             displayList: list, backgroundColor: .white, statusText: nil, onLinkTap: nil
@@ -276,35 +290,51 @@ struct RedChamberProductionRenderingRegressionTests {
         let image = renderer.image { ctx in
             vc.view.layer.render(in: ctx.cgContext)
         }
-        let k2Top = Self.scanDarkBorderTop(image: image)
+        // Scan the k2 border's own x-span, not one column: the border is DOTTED
+        // (1pt dot every 3.5pt), so any single column can land in a gap — the
+        // same discontinuity `BrowserLayoutProductionCorrectnessTests` already
+        // scans a whole edge for. A single column silently regressed here when
+        // the dotted stroke's dash phase shifted by 1pt.
+        let scale = image.scale
+        let xFrom = Int((k1.rect.minX + 20) * scale)
+        let xTo = Int((k1.rect.maxX - 20) * scale)
+        let k2Top = Self.scanDarkBorderTop(image: image, xRange: xFrom...xTo)
         print("PIXEL k1FragmentTop=\(k1.rect.minY) k2ExpectedTop=\(k1.rect.minY + 6.8) scanned=\(String(describing: k2Top))")
-        if let scanned = k2Top {
-            let scale = image.scale
-            let scannedPt = CGFloat(scanned) / CGFloat(scale)
-            print("PIXEL scannedK2TopPt=\(scannedPt)")
-            #expect(abs(scannedPt - (k1.rect.minY + 6.8)) < 2,
-                    "window paints k2 border at \(scannedPt), expected \(k1.rect.minY + 6.8)")
-        }
+        // REQUIRED, not `if let`: before the body background actually rendered,
+        // the scan found nothing at all and this assertion was skipped — the
+        // test passed while proving nothing.
+        let scanned = try #require(k2Top, "no dark k2 border found anywhere in the rendered page")
+        let scannedPt = CGFloat(scanned) / CGFloat(scale)
+        print("PIXEL scannedK2TopPt=\(scannedPt)")
+        #expect(abs(scannedPt - (k1.rect.minY + 6.8)) < 2,
+                "window paints k2 border at \(scannedPt), expected \(k1.rect.minY + 6.8)")
         window.isHidden = true
     }
 
     /// Scans for the first row containing the k2 dark-green dotted border
     /// (#3a4431 ≈ 0.23,0.27,0.19) at the k1 center column.
-    static func scanDarkBorderTop(image: UIImage) -> Int? {
+    /// First row (in PIXELS) carrying the k2 dark-green dotted border within
+    /// `xRange`. The border is discontinuous, so a whole span is scanned: a
+    /// lone column can sit in a dash gap and miss a perfectly painted edge.
+    static func scanDarkBorderTop(image: UIImage, xRange: ClosedRange<Int>) -> Int? {
         guard let cg = image.cgImage else { return nil }
         let width = cg.width
         let height = cg.height
         guard let data = cg.dataProvider?.data, let ptr = CFDataGetBytePtr(data) else { return nil }
         let bpp = cg.bitsPerPixel / 8
         let bpr = cg.bytesPerRow
-        let x = width / 2
+        let lo = max(0, xRange.lowerBound)
+        let hi = min(width - 1, xRange.upperBound)
+        guard lo <= hi else { return nil }
         for y in 0..<height {
-            let off = y * bpr + x * bpp
-            let r = CGFloat(ptr[off]) / 255
-            let g = CGFloat(ptr[off + 1]) / 255
-            let b = CGFloat(ptr[off + 2]) / 255
-            if r < 0.6, g < 0.6, b < 0.6, g > r, g > b {
-                return y
+            for x in lo...hi {
+                let off = y * bpr + x * bpp
+                let r = CGFloat(ptr[off]) / 255
+                let g = CGFloat(ptr[off + 1]) / 255
+                let b = CGFloat(ptr[off + 2]) / 255
+                if r < 0.6, g < 0.6, b < 0.6, g > r, g > b {
+                    return y
+                }
             }
         }
         return nil
@@ -475,7 +505,7 @@ struct RedChamberProductionRenderingRegressionTests {
         let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
         await engine.start(renderSize: Self.viewport, bookId: "fixture")
         await engine.preloadChapter(at: 0)
-        guard let (_, layout) = engine.testChapterLayout else {
+        guard let layout = engine.testLayout(for: 0) else {
             Issue.record("fixture did not produce a browser layout")
             throw NSError(domain: "RedChamber", code: 3)
         }

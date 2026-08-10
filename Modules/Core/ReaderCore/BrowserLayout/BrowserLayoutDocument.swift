@@ -91,7 +91,8 @@ final class BrowserLayoutDocument {
             anchorOffsets: anchors,
             contentSize: CGSize(width: contentWidth, height: contentHeight),
             nodeCount: rootNode.nodeID,
-            boxCount: BoxTreeBuilder.countBoxes(in: rootBox)
+            boxCount: BoxTreeBuilder.countBoxes(in: rootBox),
+            footnotes: Self.collectFootnotes(in: document)
         )
     }
 
@@ -104,10 +105,38 @@ final class BrowserLayoutDocument {
         let nodeCount: Int
         /// Block-box count (lifecycle accounting).
         let boxCount: Int
+        /// 多看 popup footnotes found in the chapter (`noteID → text`).
+        /// Collected here because this is the one place the chapter DOM is
+        /// parsed; the ENGINE owns publishing them to `FootnoteStore`, so the
+        /// layout layer stays free of reader state.
+        let footnotes: [String: String]
     }
 
     enum BrowserLayoutError: Error {
         case emptyBody
+    }
+
+    /// 多看 popup-footnote payload: `<ol class="duokan-footnote-content">
+    /// <li class="duokan-footnote-item" id="m1">…</li></ol>` at the chapter tail.
+    /// Same shape `FootnoteStore` documents for the legacy path — an `li` with
+    /// an id and a class containing "footnote".
+    ///
+    /// The block itself is NOT hidden: the publisher's stylesheet never sets
+    /// `display: none` on it (a browser shows it, and the legacy engine renders
+    /// it inline too). Only the marker tap changes — it opens the note in place
+    /// instead of paging to the chapter tail.
+    static func collectFootnotes(in document: Document) -> [String: String] {
+        var map: [String: String] = [:]
+        for item in (try? document.select("li[id]").array()) ?? [] {
+            let classes = ((try? item.classNames().map { $0 }) ?? [])
+            guard classes.contains(where: { $0.contains("footnote") }) else { continue }
+            let id = (try? item.attr("id")) ?? ""
+            guard !id.isEmpty else { continue }
+            let text = ((try? item.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            map[id] = text
+        }
+        return map
     }
 
     /// The root box's authored background-image style, if any.
@@ -232,7 +261,8 @@ final class BrowserLayoutDocument {
                         writingMode: config.writingMode,
                         rect: PageLocalRect(rawValue: rect),
                         documentRect: DocumentRect(rawValue: rect),
-                        alt: nil
+                        alt: nil,
+                        isBackgroundPaint: true
                     )))
                 }
                 fragments.append(contentsOf: page.fragments)

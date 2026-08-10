@@ -457,4 +457,181 @@ struct BrowserLayoutImageTests {
         // the box itself sits at x=0 (no margin) — left edge ≈ (255-63)/2.
         #expect(abs(first.rect.minX - (255 - first.rect.width) / 2) < 2.0)
     }
+
+    // MARK: - Background-image source fidelity
+
+    /// A `url()` payload is a PATH, not a keyword: the style tree must hand the
+    /// image loader the source exactly as authored. It used to fold the whole
+    /// declaration value to lower case before parsing, so `../Images/Cover.JPG`
+    /// became `../images/cover.jpg` and could never match the key the
+    /// prefetcher stored — every authored body background painted nothing.
+    /// The loader here answers ONE exact string on purpose.
+    @Test func bodyBackgroundImageSourcePreservesCase() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 40, height: 40), color: .red)
+        let authored = "../Images/Cover.JPG"
+        let html = """
+        <html><body style="background-image:url(\(authored))"><p>x</p></body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
+            html, width: 300, height: 400, imageLoader: { $0 == authored ? img : nil }
+        )
+        let images = BrowserLayoutTestSupport.allImageFragments(pages)
+        let background = try #require(
+            images.first(where: { $0.source == authored }),
+            "no background image fragment — the style tree asked for a different source than authored"
+        )
+        #expect(background.rect.width >= 300 * 0.99)
+        #expect(background.rect.height >= 400 * 0.99)
+    }
+
+    /// Same invariant through the `background` SHORTHAND — 红楼梦's main
+    /// stylesheet declares its page texture as `body { background: url(…) }`,
+    /// and the shorthand branch parsed the folded value too.
+    @Test func bodyBackgroundShorthandSourcePreservesCase() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 40, height: 40), color: .blue)
+        let authored = "../Images/Texture.PNG"
+        let html = """
+        <html><body style="background:url(\(authored)) no-repeat center"><p>x</p></body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
+            html, width: 300, height: 400, imageLoader: { $0 == authored ? img : nil }
+        )
+        let images = BrowserLayoutTestSupport.allImageFragments(pages)
+        #expect(
+            images.contains(where: { $0.source == authored }),
+            "shorthand background source was not preserved as authored"
+        )
+    }
+
+    /// A CSS background is paint, not content: it must never be a tap target.
+    /// The injected canvas fragment is FIRST in the display list and covers the
+    /// whole page, so once backgrounds started resolving it captured every tap —
+    /// the reader's page-turn/menu zones went dead and the real `<img>` under it
+    /// could not be opened.
+    @MainActor
+    @Test func cssBackgroundIsPaintedButNeverHitTested() async throws {
+        let wallpaper = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 40, height: 40), color: .gray)
+        let photo = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 60, height: 30), color: .red)
+        let html = """
+        <html><body style="background-image:url(bg.png)"><p><img src="photo.png"></p></body></html>
+        """
+        let (pages, doc) = try await BrowserLayoutTestSupport.layout(
+            html, width: 300, height: 400,
+            imageLoader: loader(["bg.png": wallpaper, "photo.png": photo])
+        )
+        let page = try #require(pages.first)
+        let list = DisplayListBuilder.build(for: page, sourceText: doc.lastSourceText)
+
+        // Both are PAINTED.
+        let painted = list.items.compactMap { item -> DisplayImageItem? in
+            if case .image(let i) = item { return i }
+            return nil
+        }
+        #expect(painted.contains { $0.source == "bg.png" }, "background must still paint")
+        #expect(painted.contains { $0.source == "photo.png" }, "the <img> must still paint")
+
+        let view = BrowserLayoutPageView(frame: CGRect(x: 0, y: 0, width: 300, height: 400))
+        view.displayList = list
+
+        // A point over the <img> hits the <img>, never the wallpaper beneath it.
+        let photoItem = try #require(painted.first { $0.source == "photo.png" })
+        let insidePhoto = CGPoint(x: photoItem.rect.midX, y: photoItem.rect.midY)
+        #expect(view.imageTarget(at: insidePhoto)?.source == "photo.png")
+
+        // A point on bare background is NOT an image target at all, so the tap
+        // falls through to the reader's zones.
+        let bareSpot = CGPoint(x: 8, y: 390)
+        #expect(view.imageTarget(at: bareSpot) == nil,
+                "background paint must not be tappable — got \(view.imageTarget(at: bareSpot)?.source ?? "nil")")
+    }
+
+    /// CSS Backgrounds §2.11.2: the root element's background is propagated to
+    /// the canvas, and the root box must NOT paint it a second time. It used to,
+    /// so an opaque `body { background-color: #fff }` was laid back OVER the
+    /// wallpaper as a content-column-wide band — the white stripe across
+    /// 红楼梦's 回目 title pages.
+    @MainActor
+    @Test func rootBackgroundPaintsOnlyOnTheCanvas() async throws {
+        let wallpaper = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 40, height: 40), color: .gray)
+        let html = """
+        <html><body style="background-color:#ffffff; background-image:url(bg.png)">
+        <div style="background-color:#ff0000">plate</div>
+        </body></html>
+        """
+        let (pages, doc) = try await BrowserLayoutTestSupport.layout(
+            html, width: 300, height: 400, imageLoader: loader(["bg.png": wallpaper])
+        )
+        let page = try #require(pages.first)
+        let list = DisplayListBuilder.build(for: page, sourceText: doc.lastSourceText)
+
+        let fills = list.items.compactMap { item -> DisplayFillItem? in
+            if case .fill(let f) = item { return f }
+            return nil
+        }
+        let wallpaperIndex = try #require(
+            list.items.firstIndex { if case .image(let i) = $0 { return i.isBackgroundPaint } else { return false } },
+            "no canvas wallpaper painted"
+        )
+        // Exactly ONE opaque-white fill, and it sits UNDER the wallpaper.
+        func isOpaqueWhite(_ color: UIColor) -> Bool {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            guard color.getRed(&r, green: &g, blue: &b, alpha: &a) else { return false }
+            return r > 0.99 && g > 0.99 && b > 0.99 && a > 0.99
+        }
+        let whiteIndices = list.items.indices.filter {
+            if case .fill(let f) = list.items[$0] { return isOpaqueWhite(f.color) }
+            return false
+        }
+        #expect(whiteIndices.count == 1,
+                "root background painted \(whiteIndices.count) times; must be canvas-only")
+        if let canvasFillIndex = whiteIndices.first {
+            #expect(canvasFillIndex < wallpaperIndex, "the canvas fill must sit UNDER the wallpaper")
+        }
+
+        // A NON-root box still paints its own background normally.
+        #expect(fills.contains { f in
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            f.color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return r > 0.99 && g < 0.01 && b < 0.01
+        }, "a child box's own background must still paint")
+    }
+
+    /// Source ROUTING: `data:` and `http(s)` are not publication resources and
+    /// go to `OnlineImageLoader` (the reader's one remote/inline image path);
+    /// everything else is a publication-local href resolved against the
+    /// chapter. Pins the predicate the EPUB adapter branches on.
+    @Test func onlineLoaderOwnsDataAndRemoteSourcesOnly() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 4, height: 4), color: .red)
+        let png = try #require(img.pngData())
+
+        #expect(OnlineImageLoader.canLoad("data:image/png;base64,\(png.base64EncodedString())"))
+        #expect(OnlineImageLoader.canLoad("data:image/svg+xml,%3Csvg%2F%3E"))
+        #expect(OnlineImageLoader.canLoad("https://example.com/a.jpg"))
+        #expect(OnlineImageLoader.canLoad("http://example.com/a.jpg"))
+
+        // Publication-local sources must NOT be routed to the online loader.
+        #expect(!OnlineImageLoader.canLoad("../Images/Cover.JPG"))
+        #expect(!OnlineImageLoader.canLoad("OEBPS/Images/Cover.JPG"))
+        #expect(!OnlineImageLoader.canLoad("reader-book://book-1/OEBPS/Images/Cover.JPG"))
+    }
+
+    /// base64 is case-sensitive, so a `data:` background is the sharpest probe
+    /// for the style tree's case folding: fold the declaration value and the
+    /// payload decodes to a different byte string (or nothing at all).
+    @Test func dataURIBackgroundSourceSurvivesTheStyleTree() async throws {
+        let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 8, height: 8), color: .green)
+        let png = try #require(img.pngData())
+        let src = "data:image/png;base64,\(png.base64EncodedString())"
+        let html = """
+        <html><body style="background-image:url(\(src))"><p>x</p></body></html>
+        """
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
+            html, width: 300, height: 400, imageLoader: { $0 == src ? img : nil }
+        )
+        let images = BrowserLayoutTestSupport.allImageFragments(pages)
+        #expect(
+            images.contains(where: { $0.source == src }),
+            "the style tree handed back a different data URI than authored"
+        )
+    }
 }

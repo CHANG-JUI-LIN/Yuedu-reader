@@ -107,7 +107,83 @@ enum DisplayListDrawer {
             context.setLineCap(.square)
         }
 
-        let halfW = maxWidth / 2
+        /// One `border-radius` corner. Same per-path dash treatment as an edge.
+        func strokeArc(
+            center: CGPoint, radius: CGFloat, start: CGFloat, end: CGFloat,
+            width: CGFloat, style: BorderStyle, color: UIColor
+        ) {
+            guard width > 0, radius > 0, style != .none else { return }
+            color.setStroke()
+            context.setLineWidth(width)
+            switch style {
+            case .solid, .none:
+                context.setLineDash(phase: 0, lengths: [])
+            case .dotted:
+                context.setLineDash(phase: 0, lengths: [width, width * 2.5])
+                context.setLineCap(.round)
+            case .dashed:
+                context.setLineDash(phase: 0, lengths: [width * 3, width * 2])
+            }
+            context.beginPath()
+            context.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: false)
+            context.strokePath()
+            context.setLineDash(phase: 0, lengths: [])
+            context.setLineCap(.square)
+        }
+
+        // A UNIFORM border on a rounded box is stroked as ONE rounded path.
+        // The per-edge straight lines below cannot bend, so `border-radius: 12px`
+        // on a bordered box (红楼梦's dotted 回目 frame, `div.k2`) drew square
+        // corners while its own background fill was already clipped round —
+        // the fill and the frame disagreed on the same box.
+        if radius > 0, item.borderTop.isVisible,
+           item.borderTop.width == item.borderBottom.width,
+           item.borderTop.width == item.borderLeft.width,
+           item.borderTop.width == item.borderRight.width,
+           item.borderTop.style == item.borderBottom.style,
+           item.borderTop.style == item.borderLeft.style,
+           item.borderTop.style == item.borderRight.style,
+           item.borderTop.color == item.borderBottom.color,
+           item.borderTop.color == item.borderLeft.color,
+           item.borderTop.color == item.borderRight.color {
+            let width = item.borderTop.width
+            let inset = width / 2
+            let box = rect.insetBy(dx: inset, dy: inset)
+            let r = max(0, min(radius - inset, box.width / 2, box.height / 2))
+            let style = item.borderTop.style
+            let color = item.borderTop.color
+
+            // The four FLAT segments are stroked one path at a time, exactly as
+            // the square-corner code below does — a single closed path would run
+            // one continuous dash phase around the whole perimeter, which
+            // changes where dots land on every edge after the first. Only the
+            // corners are new geometry.
+            strokeEdge(from: CGPoint(x: box.minX + r, y: box.minY),
+                       to: CGPoint(x: box.maxX - r, y: box.minY),
+                       width: width, style: style, color: color)
+            strokeEdge(from: CGPoint(x: box.minX + r, y: box.maxY),
+                       to: CGPoint(x: box.maxX - r, y: box.maxY),
+                       width: width, style: style, color: color)
+            strokeEdge(from: CGPoint(x: box.minX, y: box.minY + r),
+                       to: CGPoint(x: box.minX, y: box.maxY - r),
+                       width: width, style: style, color: color)
+            strokeEdge(from: CGPoint(x: box.maxX, y: box.minY + r),
+                       to: CGPoint(x: box.maxX, y: box.maxY - r),
+                       width: width, style: style, color: color)
+            if r > 0 {
+                strokeArc(center: CGPoint(x: box.minX + r, y: box.minY + r), radius: r,
+                          start: .pi, end: 1.5 * .pi, width: width, style: style, color: color)
+                strokeArc(center: CGPoint(x: box.maxX - r, y: box.minY + r), radius: r,
+                          start: 1.5 * .pi, end: 2 * .pi, width: width, style: style, color: color)
+                strokeArc(center: CGPoint(x: box.maxX - r, y: box.maxY - r), radius: r,
+                          start: 0, end: 0.5 * .pi, width: width, style: style, color: color)
+                strokeArc(center: CGPoint(x: box.minX + r, y: box.maxY - r), radius: r,
+                          start: 0.5 * .pi, end: .pi, width: width, style: style, color: color)
+            }
+            context.restoreGState()
+            return
+        }
+
         // Top edge spans the full box width; side edges start below the top
         // border width and end above the bottom border width so corners don't
         // double-stroke.

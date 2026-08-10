@@ -185,7 +185,14 @@ enum BrowserLayoutCapabilityScanner {
     private static func layoutAffectingDeclaration(key: String, value: String) -> UnsupportedFeature? {
         let k = key.lowercased()
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if k == "float" { return .float }
+        // Reject only for a float that actually takes a box out of flow.
+        // `float: none` is a no-op, and an invalid token (`center`, a typo) is
+        // a DROPPED declaration that computes to `none` — neither needs float
+        // layout, so neither may cost the chapter the browser engine. Parsed
+        // through the same whitelist the cascade uses so the two cannot drift.
+        if k == "float" {
+            return CSSFloat.parse(v) == .left || CSSFloat.parse(v) == .right ? .float : nil
+        }
         if k == "position" && (v.contains("absolute") || v.contains("fixed") || v.contains("sticky")) {
             return .positioned
         }

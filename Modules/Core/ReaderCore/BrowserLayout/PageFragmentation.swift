@@ -50,6 +50,39 @@ struct ImageFragment {
     let rect: PageLocalRect
     let documentRect: DocumentRect
     let alt: String?
+    /// True for a CSS `background-image` painted across the page canvas.
+    ///
+    /// A CSS background is PAINT, not content: in a browser it has no element,
+    /// so it never hit-tests, cannot be opened, and never swallows a click.
+    /// The injected canvas fragment covers the whole page, so without this flag
+    /// it captured every tap on the page — the reader's page-turn/menu zones
+    /// stopped firing and tapping anywhere opened a full-screen preview of the
+    /// wallpaper, while real `<img>` illustrations underneath became untappable.
+    let isBackgroundPaint: Bool
+
+    init(
+        source: String,
+        image: UIImage?,
+        sourceRange: NSRange,
+        nodeID: Int,
+        linkTarget: String?,
+        writingMode: ReaderWritingMode,
+        rect: PageLocalRect,
+        documentRect: DocumentRect,
+        alt: String?,
+        isBackgroundPaint: Bool = false
+    ) {
+        self.source = source
+        self.image = image
+        self.sourceRange = sourceRange
+        self.nodeID = nodeID
+        self.linkTarget = linkTarget
+        self.writingMode = writingMode
+        self.rect = rect
+        self.documentRect = documentRect
+        self.alt = alt
+        self.isBackgroundPaint = isBackgroundPaint
+    }
 }
 
 indirect enum Fragment {
@@ -132,6 +165,9 @@ struct PageWalker {
         var lineIndex = 0
         var runIndex = 0
         var fillsEmitted = false
+        /// The root (html/body) frame. Its background belongs to the CANVAS,
+        /// not to the box — see the paint guard in `nextStep`.
+        var isRoot = false
     }
 
     /// Page block extent in DOCUMENT space (the content flow page height).
@@ -216,7 +252,9 @@ struct PageWalker {
         // The root's block-start margin is the margin adjoining the first
         // content; page 0 is `flowStart`, so it is retained there.
         self.adjoiningBlockStartMargin = rootBlockStartInset
-        self.stack = [Self.makeFrame(box, contentOrigin: CGPoint(x: 0, y: rootBlockStartInset))]
+        var rootFrame = Self.makeFrame(box, contentOrigin: CGPoint(x: 0, y: rootBlockStartInset))
+        rootFrame.isRoot = true
+        self.stack = [rootFrame]
     }
 
     /// Maps a document-absolute rect to page canvas-local coordinates for page
@@ -253,7 +291,18 @@ struct PageWalker {
                     x: frame.borderX, y: frame.borderY,
                     width: frame.box.frame.width, height: frame.box.frame.height
                 ))
-                if let bg = frame.box.style.backgroundColor {
+                // CSS Backgrounds §2.11.2: the ROOT element's background is
+                // propagated to the canvas and the root box does NOT paint it
+                // again. `BrowserLayoutDocument.bodyBackground` already hoists
+                // body's colour + image to the page canvas, UNDER the wallpaper.
+                // Painting it here too laid an OPAQUE `background-color: #fff`
+                // band back over that wallpaper — the content-column-wide white
+                // stripe across 红楼梦's 回目 title pages, sized to the body's
+                // content box (which is why the correctly centred 15em dotted
+                // frame sat inside a much wider white plate).
+                //
+                // Root BORDERS are not propagated, so those still paint below.
+                if let bg = frame.box.style.backgroundColor, !frame.isRoot {
                     return .fill(StepFill(
                         rect: boxRect,
                         color: bg,
@@ -350,7 +399,6 @@ struct PageWalker {
                             + "parentFrame=\(stack.count > 1 ? BrowserLayoutDeviceDiagnostic.rect(stack[stack.count-2].box.frame.rawValue, space: "parentLocal") : "none") "
                             + "atomicSize=\(atomic.usedSize.width)x\(atomic.usedSize.height)"
                         BrowserLayoutDeviceDiagnostic.summary(walkLine)
-                        FileHandle.standardError.write((walkLine + "\n").data(using: .utf8)!)
                         #endif
                         return .image(StepImage(
                             source: atomic.source,

@@ -2729,10 +2729,44 @@ enum CSSParser {
         parseDeclarationBlock(css).merged
     }
 
+    /// Splits a declaration block on `;` at PAREN DEPTH ZERO, outside quotes.
+    ///
+    /// A plain `split(separator: ";")` breaks any declaration whose value
+    /// legally contains a semicolon. The common one is a data URI —
+    /// `background-image: url(data:image/png;base64,…)` split into
+    /// `url(data:image/png` (no closing paren, so the source parsed to nil) plus
+    /// a junk `base64,…` fragment, and the image silently never painted.
+    /// Quoted strings can carry `;` as well.
+    private static func splitDeclarations(_ css: String) -> [Substring] {
+        var out: [Substring] = []
+        var depth = 0
+        var quote: Character?
+        var start = css.startIndex
+        var i = css.startIndex
+        while i < css.endIndex {
+            let c = css[i]
+            if let q = quote {
+                if c == q { quote = nil }
+            } else if c == "\"" || c == "'" {
+                quote = c
+            } else if c == "(" {
+                depth += 1
+            } else if c == ")" {
+                depth = max(0, depth - 1)
+            } else if c == ";", depth == 0 {
+                if start < i { out.append(css[start..<i]) }
+                start = css.index(after: i)
+            }
+            i = css.index(after: i)
+        }
+        if start < css.endIndex { out.append(css[start...]) }
+        return out
+    }
+
     static func parseDeclarationBlock(_ css: String) -> DeclarationBlock {
         var normal: [String: String] = [:]
         var important: [String: String] = [:]
-        for segment in css.split(separator: ";", omittingEmptySubsequences: true) {
+        for segment in splitDeclarations(css) {
             let parts = segment.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: true)
             guard parts.count == 2 else { continue }
             let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

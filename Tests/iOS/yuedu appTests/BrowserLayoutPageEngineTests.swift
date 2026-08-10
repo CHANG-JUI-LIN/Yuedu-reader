@@ -31,7 +31,8 @@ final class MockBrowserLayoutResource: BrowserLayoutResourceProviding {
         if failChapterCSS.contains(index) { return [] }
         return chapters[safe: index]?.css ?? []
     }
-    func prefetchImages(forChapter index: Int, html: String) async -> [String: UIImage] { [:] }
+    func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
+    func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
     func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
 
     enum MockError: Error { case failed }
@@ -153,6 +154,41 @@ struct BrowserLayoutPageEngineTests {
         #expect(vc is BrowserLayoutPageViewController)
         let position = (vc as? CoreTextReadingPositionProviding)?.coreTextReadingPosition
         #expect(position?.spineIndex == 0)
+
+        // `pageSourceRanges` is now STORED and refreshed by `pages`'s didSet
+        // (it used to re-walk every fragment on every access, inside a binary
+        // search). It must stay in step with the pages the chapter ended with.
+        let layout = try #require(engine.testChapterLayout?.layout)
+        #expect(layout.pageSourceRanges.count == layout.pages.count,
+                "stale page ranges: \(layout.pageSourceRanges.count) ranges for \(layout.pages.count) pages")
+    }
+
+    /// A page whose chapter layout has not reached it yet must still identify
+    /// ITSELF. The placeholder used to be default-constructed
+    /// (`PlaceholderPageViewController()`), reporting `globalPageIndex == 0`
+    /// and a nil reading position; when the turn settled,
+    /// `CoreTextPagedView.Coordinator.readingPosition(from:)` fell back to that
+    /// 0 and resolved it to spine 0 / offset 0 — so turning a page while a
+    /// chapter was still paginating threw the reader back to the front cover.
+    @Test func placeholderForUnlaidChapterCarriesItsOwnPageIndex() async throws {
+        let text = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 20)
+        let (engine, _, _) = await makeEngine(chapters: [
+            plainChapter(text, index: 0),
+            plainChapter(text, index: 1),
+        ])
+        // start() preloads chapter 0 only — chapter 1 has no pages yet.
+        let target = engine.pageIndex(forSpine: 1, charOffset: 0)
+        #expect(target > 0, "chapter 1 must not begin at global page 0")
+
+        let vc = engine.pageViewController(at: target)
+        let placeholder = try #require(
+            vc as? PlaceholderPageViewController,
+            "an un-laid-out chapter page should vend a placeholder"
+        )
+        #expect(placeholder.globalPageIndex == target,
+                "placeholder reported page \(placeholder.globalPageIndex), expected \(target)")
+        #expect(placeholder.coreTextReadingPosition?.spineIndex == 1,
+                "placeholder must anchor to its OWN chapter, not the book start")
     }
 
     @Test func positionRestoresNearOffsetAfterInvalidate() async throws {

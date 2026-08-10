@@ -92,3 +92,51 @@ struct BrowserLayoutCapabilityScannerTests {
         #expect(scan("<html><body><p>x</p></body></html>", css).supported)
     }
 }
+
+// MARK: - float: reject only what actually floats
+
+extension BrowserLayoutCapabilityScannerTests {
+
+    /// 红楼梦 declares `float: center` on 51 of 57 float-classed boxes. `center`
+    /// is not a float value, so those boxes compute to `none` and need no float
+    /// layout at all. Rejecting on the `float` key alone cost 41 chapters the
+    /// browser engine for nothing.
+    @Test func invalidFloatValueDoesNotRejectChapter() {
+        let html = "<html><body><div class=\"f\"><p>Text</p></div></body></html>"
+        let result = BrowserLayoutCapabilityScanner.scan(
+            html: html,
+            cssTexts: ["div.f { float: center; }"]
+        )
+        #expect(result.supported)
+        #expect(!result.unsupportedFeatures.contains(.float))
+    }
+
+    @Test func floatNoneDoesNotRejectChapter() {
+        let result = BrowserLayoutCapabilityScanner.scan(
+            html: "<html><body><p>Text</p></body></html>",
+            cssTexts: ["p { float: none; }"]
+        )
+        #expect(result.supported)
+    }
+
+    @Test func realFloatStillRejectsChapterUntilFloatLayoutLands() {
+        // Guard: this MUST keep rejecting until FloatContext exists. Flipping it
+        // early would silently lay out floated boxes in flow.
+        for value in ["left", "right", "LEFT", "  right  "] {
+            let result = BrowserLayoutCapabilityScanner.scan(
+                html: "<html><body><div class=\"f\">x</div></body></html>",
+                cssTexts: ["div.f { float: \(value); }"]
+            )
+            #expect(!result.supported, "float: \(value) must still reject")
+            #expect(result.unsupportedFeatures.contains(.float))
+        }
+    }
+
+    @Test func floatParserSharesOneWhitelist() {
+        #expect(CSSFloat.parse("left") == .left)
+        #expect(CSSFloat.parse("RIGHT") == .right)
+        #expect(CSSFloat.parse(" none ") == CSSFloat.none)
+        #expect(CSSFloat.parse("center") == nil)
+        #expect(CSSFloat.parse("inline-start") == nil)
+    }
+}

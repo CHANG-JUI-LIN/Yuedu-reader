@@ -32,6 +32,9 @@ final class BrowserLayoutSession {
     /// Lifecycle accounting: style-tree / box-tree sizes from the pipeline.
     private(set) var pipelineNodeCount = 0
     private(set) var pipelineBoxCount = 0
+    /// 多看 popup footnotes found while parsing this chapter (`noteID → text`).
+    /// The engine publishes them to `FootnoteStore`.
+    private(set) var pipelineFootnotes: [String: String] = [:]
 
     init(
         html: String,
@@ -48,6 +51,21 @@ final class BrowserLayoutSession {
     }
 
     // MARK: - Public API
+
+    /// Builds the chapter pipeline WITHOUT laying out a page, and reports the
+    /// authored root background-image source (nil when the chapter has none).
+    ///
+    /// A CSS background is paint-only: it never affects layout, so its bytes are
+    /// not needed to build the box tree. Resolving the source from the COMPUTED
+    /// root box — rather than re-scanning the stylesheets with a second parser —
+    /// is what makes the fetched key and the painted key the same string by
+    /// construction, instead of by two parsers agreeing.
+    @discardableResult
+    func prepare() throws -> String? {
+        try ensureInitialized()
+        guard let rootBox = pipeline?.rootBox else { return nil }
+        return BrowserLayoutDocument.bodyBackground(rootBox: rootBox).image?.source
+    }
 
     /// Builds the chapter pipeline and walks to the next page boundary.
     /// Returns the completed page, or nil when the chapter is exhausted.
@@ -233,7 +251,8 @@ final class BrowserLayoutSession {
                 writingMode: config.writingMode,
                 rect: PageLocalRect(rawValue: rect),
                 documentRect: DocumentRect(rawValue: rect),
-                alt: nil
+                alt: nil,
+                isBackgroundPaint: true
             )))
         }
         fragments.append(contentsOf: page.fragments)
@@ -294,6 +313,7 @@ final class BrowserLayoutSession {
         anchorOffsets = result.anchorOffsets
         pipelineNodeCount = result.nodeCount
         pipelineBoxCount = result.boxCount
+        pipelineFootnotes = result.footnotes
         pipeline = result
         walker = PageWalker(
             box: result.rootBox,

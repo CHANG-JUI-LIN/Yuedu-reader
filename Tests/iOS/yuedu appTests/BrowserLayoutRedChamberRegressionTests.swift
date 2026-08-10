@@ -414,9 +414,18 @@ struct BrowserLayoutRedChamberRegressionTests {
 
         let checker = Self.checkerImage(size: CGSize(width: 64, height: 64))
         let config = Self.makeConfig(adapter: adapter, images: [source: checker])
-        // The document resolves the background source via its own parser
-        // (quotes/url() stripped); a catch-all loader matches any source.
-        let doc = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { _ in checker })
+        // EXACT-KEYED loader. This used to be `{ _ in checker }` — a catch-all
+        // that answered any source at all, which made the real defect
+        // unobservable: the style tree was folding `url()` payloads to lower
+        // case, so the source it asked for (`../images/…`) could never equal a
+        // key the prefetcher stored (`../Images/…`), and every authored body
+        // background silently painted nothing on device. A loader that only
+        // answers the authored source is the whole point of this test.
+        let authored = try #require(
+            ComputedStylePropertyApplier.parseBackgroundImageSource(source),
+            "could not parse url() out of the authored declaration"
+        )
+        let doc = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { $0 == authored ? checker : nil })
         let pages = try await doc.renderPages(containerSize: Self.viewport)
 
         let page = try #require(pages.first, "no pages laid out")
@@ -446,6 +455,175 @@ struct BrowserLayoutRedChamberRegressionTests {
         // cover semantics: the resolved rect covers the viewport.
         #expect(rect.width >= Self.viewport.width * 0.99, "background rect too narrow: \(rect)")
         #expect(rect.height >= Self.viewport.height * 0.99, "background rect too short: \(rect)")
+    }
+
+    /// Spines carrying a body background, one per DECLARATION KIND — the two
+    /// kinds travel different code paths and broke for different reasons:
+    /// - inline `style="…background-image:url(../Images/x.jpg)…"` — a relative
+    ///   href, killed by the style tree's case folding;
+    /// - `<body class="qmp…">` matched by a stylesheet rule — already rewritten
+    ///   to an absolute `reader-book://` URL, killed by the prefetcher feeding
+    ///   that URL back through `resourceURL(for:)`.
+    static func backgroundChapters(session: PublicationSession) async -> (inline: Int?, classBased: Int?) {
+        var inline: Int? = nil
+        var classBased: Int? = nil
+        for index in session.chapters.indices.prefix(24) {
+            guard let html = try? await session.chapterHTML(at: index),
+                  let body = (try? SwiftSoup.parse(html))?.body() else { continue }
+            let style = (try? body.attr("style")) ?? ""
+            let classes = ((try? body.classNames().map { $0 }) ?? [])
+            if inline == nil, style.contains("background") { inline = index }
+            if classBased == nil, style.isEmpty, !classes.isEmpty { classBased = index }
+            if inline != nil, classBased != nil { break }
+        }
+        return (inline, classBased)
+    }
+
+    @Test("every body background source the style tree resolves is loadable", .enabled(if: epubPath != nil))
+    func bodyBackgroundSourcesAreAllLoadable() async throws {
+        let session = try await Self.session()
+        let candidates = await Self.backgroundChapters(session: session)
+        let spines = [candidates.inline, candidates.classBased].compactMap { $0 }
+        #expect(spines.count == 2, "expected an inline-style AND a class-based background chapter, got \(spines)")
+
+        for spine in spines {
+            let (html, css, adapter) = await Self.chapterContext(session: session, spine: spine)
+            let images = await adapter.prefetchImages(forChapter: spine, html: html, renderWidth: Self.contentRect.width)
+            let config = Self.makeConfig(adapter: adapter, images: images)
+            let document = BrowserLayoutDocument(
+                html: html, cssTexts: css, config: config, imageLoader: { images[$0] }
+            )
+            let result = try document.makeLayout(containerSize: Self.viewport)
+            let background = BrowserLayoutDocument.bodyBackground(rootBox: result.rootBox)
+            let source = try #require(
+                background.image?.source,
+                "spine \(spine): the style tree resolved no body background-image at all"
+            )
+            // THE invariant: whatever source the COMPUTED style tree asks the
+            // image loader for must resolve to real bytes. Both declaration
+            // kinds are covered — an inline relative href (killed by case
+            // folding) and a stylesheet rule already rewritten to an absolute
+            // `reader-book://` URL (killed by being re-wrapped as an href).
+            // A failure here is the 白屏 chapter on device.
+            let image = await adapter.loadImage(
+                forChapter: spine, source: source, renderWidth: Self.contentRect.width
+            )
+            #expect(image != nil, "spine \(spine): unloadable body background source: \(source)")
+        }
+    }
+
+    /// DIAGNOSTIC (prints, asserts almost nothing): what is actually PAINTED on
+    /// the 回目 title page, in draw order.
+    ///
+    /// The white plate behind the title is `div.k1 { background-color:
+    /// rgba(255,255,255,0.7) }` — authored, and meant to be translucent. Reading
+    /// its size and alpha off a screenshot gave contradictory answers, so this
+    /// dumps the real numbers: every fill's rect + RGBA, the background image's
+    /// rect, and the k1/k2 box frames it should agree with.
+    @Test("DIAG: title-page paint order, fill rects and alpha", .enabled(if: epubPath != nil))
+    func diagnosticTitlePagePaint() async throws {
+        let session = try await Self.session()
+        let spine = try await Self.locateFirstChapter(session: session)
+        let (html, css, adapter) = await Self.chapterContext(session: session, spine: spine)
+        let images = await adapter.prefetchImages(
+            forChapter: spine, html: html, renderWidth: Self.contentRect.width
+        )
+        // Two font sizes on purpose. `resolveSides` clamps an explicit width to
+        // the container (`min(width, containerWidth)`), and k1 is `width: 15em`
+        // — so at a large reader font size 15em EXCEEDS the 366pt content column
+        // and the plate silently becomes full-width. At 17pt it does not. If the
+        // white plate only misbehaves in the second block, that clamp is why.
+        for fontSize in [CGFloat(17), CGFloat(26)] {
+        let config = BrowserLayoutConfig(
+            renderWidth: Self.contentRect.width,
+            renderHeight: Self.contentRect.height,
+            rootFontSize: fontSize,
+            fontFamilies: [],
+            textColor: Self.settings.textColor,
+            backgroundColor: Self.settings.backgroundColor,
+            contentInsets: Self.settings.contentInsets,
+            lineHeight: Self.settings.lineHeightMultiple,
+            fontResolver: adapter.fontResolver()
+        )
+        let document = BrowserLayoutDocument(
+            html: html, cssTexts: css, config: config, imageLoader: { images[$0] }
+        )
+        let result = try document.makeLayout(containerSize: Self.viewport)
+
+        print("DIAG ======== rootFontSize=\(fontSize) 15em=\(15 * fontSize) contentWidth=\(Self.contentRect.width)")
+        if let k1 = Self.findK1(in: result.rootBox) {
+            print("DIAG k1 frame=\(k1.frame.rawValue) content=\(k1.contentSize) padding=\(k1.padding) borders=\(k1.borders) margins=\(k1.margins) fontSize=\(k1.style.fontSize)")
+            print("DIAG k1 background=\(Self.describe(k1.style.backgroundColor)) radius=\(k1.style.borderRadius)")
+        } else {
+            print("DIAG k1 NOT FOUND")
+        }
+        if let k2 = Self.findK2(in: result.rootBox) {
+            print("DIAG k2 frame=\(k2.frame.rawValue) content=\(k2.contentSize) padding=\(k2.padding) borders=\(k2.borders) fontSize=\(k2.style.fontSize)")
+        } else {
+            print("DIAG k2 NOT FOUND")
+        }
+
+        let pages = try await document.renderPages(containerSize: Self.viewport)
+        let page = try #require(pages.first, "no pages")
+        let list = DisplayListBuilder.build(for: page, sourceText: document.lastSourceText)
+        print("DIAG ---- page 0 draw order (\(list.items.count) items)")
+        for (i, item) in list.items.enumerated() {
+            switch item {
+            case .fill(let f):
+                print("DIAG [\(i)] FILL   rect=\(f.rect.rawValue) color=\(Self.describe(f.color)) radius=\(f.cornerRadius) borderTop=\(f.borderTop.width)/\(f.borderTop.style)")
+            case .image(let im):
+                print("DIAG [\(i)] IMAGE  rect=\(im.rect.rawValue) bgPaint=\(im.isBackgroundPaint) size=\(im.image?.size ?? .zero) src=\(im.source.suffix(28))")
+            case .text(let t):
+                print("DIAG [\(i)] TEXT   rect=\(t.rect.rawValue) \"\(t.text.prefix(12))\"")
+            }
+        }
+        // The only hard assertion: nothing paints wider than the page.
+        for case .fill(let f) in list.items where f.color != .clear {
+            #expect(f.rect.width <= Self.viewport.width + 0.5,
+                    "a fill is wider than the page: \(f.rect.rawValue)")
+        }
+        }
+    }
+
+    /// "r,g,b,a" for a UIColor, or "nil".
+    static func describe(_ color: UIColor?) -> String {
+        guard let color else { return "nil" }
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard color.getRed(&r, green: &g, blue: &b, alpha: &a) else { return "\(color)" }
+        return String(format: "rgba(%.0f,%.0f,%.0f,%.3f)", r * 255, g * 255, b * 255, a)
+    }
+
+    @Test("duokan popup footnotes are indexed for the browser engine", .enabled(if: epubPath != nil))
+    func duokanFootnotesAreIndexed() async throws {
+        let session = try await Self.session()
+        // The 回目 title pages carry the footnote payload; scan a bounded range.
+        var found: (spine: Int, id: String)? = nil
+        for spine in session.chapters.indices.prefix(24) {
+            guard let html = try? await session.chapterHTML(at: spine),
+                  let doc = try? SwiftSoup.parse(html) else { continue }
+            for item in (try? doc.select("li[id]").array()) ?? [] {
+                let classes = ((try? item.classNames().map { $0 }) ?? [])
+                guard classes.contains(where: { $0.contains("footnote") }) else { continue }
+                let id = (try? item.attr("id")) ?? ""
+                if !id.isEmpty { found = (spine, id); break }
+            }
+            if found != nil { break }
+        }
+        let target = try #require(found, "no duokan footnote item in the first 24 chapters")
+        let (html, css, adapter) = await Self.chapterContext(session: session, spine: target.spine)
+        let config = Self.makeConfig(adapter: adapter, images: [:])
+        let document = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { _ in nil })
+        let result = try document.makeLayout(containerSize: Self.viewport)
+        let note = try #require(
+            result.footnotes[target.id],
+            "footnote \(target.id) was not collected by the layout pipeline"
+        )
+        #expect(!note.isEmpty)
+
+        // Published to the SAME store the legacy engine and the reader use, and
+        // reachable by the href form a marker tap delivers.
+        FootnoteStore.index(notes: result.footnotes, spineIndex: target.spine)
+        #expect(FootnoteStore.text(spineIndex: target.spine, href: "#\(target.id)") == note)
     }
 
     // MARK: - 5. Text & pagination

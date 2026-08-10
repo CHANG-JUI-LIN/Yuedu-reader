@@ -65,9 +65,46 @@ struct BackgroundImageStyle: Equatable {
 /// Computed style: the result of cascading + inheritance. Box-model measures
 /// are stored as `CSSLength` (specified values); the layout stage resolves
 /// percentages/auto against the containing block into *used* values.
+/// CSS 2.1 §9.5.1 `float`. Initial value `none`; not inherited.
+enum CSSFloat: Equatable {
+    case none, left, right
+
+    /// The single source of truth for what counts as a valid `float` token.
+    /// Returns `nil` for an invalid declaration (`center`, `inline-start`, a
+    /// typo), which callers must DROP — dropping leaves the initial `none`.
+    ///
+    /// Both the style cascade and the capability scanner parse through here so
+    /// they can never disagree about whether a box floats. They did disagree
+    /// before: the scanner rejected a chapter on the `float` *key* alone, so
+    /// 红楼梦's 41 chapters carrying only `float: center` (invalid → `none`)
+    /// were refused by the browser engine despite having nothing to float.
+    static func parse(_ value: String) -> CSSFloat? {
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "none": return CSSFloat.none
+        case "left": return .left
+        case "right": return .right
+        default: return nil
+        }
+    }
+}
+
+/// CSS 2.1 §9.5.2 `clear`. Initial value `none`; not inherited.
+enum CSSClear: Equatable {
+    case none, left, right, both
+}
+
 struct ComputedStyle: Equatable {
     var display: CSSDisplay = .block
     var isHidden = false
+    /// Used `float`. STRICT: any token outside {none,left,right} leaves this at
+    /// `.none`, because an invalid declaration is dropped and the property keeps
+    /// its initial value. 红楼梦 declares `div.duokan-float-center { float: center }`
+    /// on 51 of its 57 float-classed boxes — `center` is not a float value, so a
+    /// browser renders those as ordinary blocks. Anything that dispatches on the
+    /// CLASS NAME instead of this computed value floats 89% of them wrongly.
+    var cssFloat: CSSFloat = .none
+    /// Used `clear`. Same strict rule.
+    var cssClear: CSSClear = .none
 
     // Inline text
     var fontSize: CGFloat

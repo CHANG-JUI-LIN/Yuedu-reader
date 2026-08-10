@@ -55,6 +55,30 @@ struct DisplayImageItem {
     let writingMode: ReaderWritingMode
     let rect: PageLocalRect
     let alt: String?
+    /// Painted CSS background — draws, never hit-tests. See `ImageFragment`.
+    let isBackgroundPaint: Bool
+
+    init(
+        source: String,
+        image: UIImage?,
+        sourceRange: NSRange,
+        nodeID: Int,
+        linkTarget: String?,
+        writingMode: ReaderWritingMode,
+        rect: PageLocalRect,
+        alt: String?,
+        isBackgroundPaint: Bool = false
+    ) {
+        self.source = source
+        self.image = image
+        self.sourceRange = sourceRange
+        self.nodeID = nodeID
+        self.linkTarget = linkTarget
+        self.writingMode = writingMode
+        self.rect = rect
+        self.alt = alt
+        self.isBackgroundPaint = isBackgroundPaint
+    }
 }
 
 struct DisplayList {
@@ -102,7 +126,8 @@ enum DisplayListBuilder {
                 items.append(.image(DisplayImageItem(
                     source: i.source, image: i.image, sourceRange: i.sourceRange,
                     nodeID: i.nodeID, linkTarget: i.linkTarget,
-                    writingMode: i.writingMode, rect: i.rect, alt: i.alt
+                    writingMode: i.writingMode, rect: i.rect, alt: i.alt,
+                    isBackgroundPaint: i.isBackgroundPaint
                 )))
             case .group(let children):
                 collect(children, into: &items, sourceText: sourceText)

@@ -30,7 +30,7 @@ struct BrowserLayoutParityDebugTests {
                 let css = await adapter.processedCSS(forChapter: spine)
                 let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: css)
                 if !scan.supported { continue }
-                let images = await adapter.prefetchImages(forChapter: spine, html: html)
+                let images = await adapter.prefetchImages(forChapter: spine, html: html, renderWidth: renderSize.width - 24)
                 let config = BrowserLayoutConfig(
                     renderWidth: renderSize.width - 24, renderHeight: renderSize.height - 24,
                     rootFontSize: 17, fontFamilies: [],

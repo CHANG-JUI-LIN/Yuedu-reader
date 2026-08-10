@@ -172,7 +172,10 @@ struct BrowserLayoutABHarnessTests {
         var engineFailure: String? = nil
 
         if scan.supported {
-            let images = await adapter.prefetchImages(forChapter: spine, html: html)
+            let images = await adapter.prefetchImages(
+                forChapter: spine, html: html,
+                renderWidth: renderSize.width - settings.contentInsets.left - settings.contentInsets.right
+            )
             let config = BrowserLayoutConfig(
                 renderWidth: renderSize.width - settings.contentInsets.left - settings.contentInsets.right,
                 renderHeight: renderSize.height - settings.contentInsets.top - settings.contentInsets.bottom,

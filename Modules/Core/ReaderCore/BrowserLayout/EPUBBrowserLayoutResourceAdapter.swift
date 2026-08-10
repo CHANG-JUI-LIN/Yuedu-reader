@@ -93,12 +93,11 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
 
     // MARK: - Images
 
-    func prefetchImages(forChapter index: Int, html: String) async -> [String: UIImage] {
+    func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] {
         guard session.chapters.indices.contains(index) else { return [:] }
-        let chapterHref = session.chapters[index].href
         guard let doc = try? SwiftSoup.parse(html) else { return [:] }
 
-        var images: [String: UIImage] = [:]
+        var images: [String: UIImage?] = [:]
         var sources = Set<String>()
         for img in (try? doc.select("img").array()) ?? [] {
             let src = (try? img.attr("src")) ?? ""
@@ -110,13 +109,77 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
         for svg in (try? doc.select("svg").array()) ?? [] {
             if let href = BoxTreeBuilder.svgWrappedImageSource(svg) { sources.insert(href) }
         }
+        // NOTE: the root background-image is deliberately NOT collected here.
+        // It is paint-only (never affects layout), and scanning the stylesheets
+        // for it meant a SECOND parser deciding what the source string is —
+        // which is exactly how the fetched key and the painted key drifted
+        // apart. The engine now asks the COMPUTED style tree for that source
+        // and fetches it through `loadImage`, so the two cannot disagree.
         for src in sources {
-            let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
-            guard let response = try? await resourceAdapter.response(for: resourceAdapter.resourceURL(for: resolved)),
-                  let image = UIImage(data: response.data) else { continue }
-            images[src] = image
+            images[src] = await loadImage(forChapter: index, source: src, renderWidth: renderWidth)
         }
-        return images
+        return images.compactMapValues { $0 }
+    }
+
+    func loadImage(forChapter index: Int, source src: String, renderWidth: CGFloat) async -> UIImage? {
+        guard session.chapters.indices.contains(index) else { return nil }
+        let chapterHref = session.chapters[index].href
+        // `data:` and `http(s)` are NOT publication resources, and a browser
+        // renders both: the first carries its bytes in the document, the second
+        // is fetched. `OnlineImageLoader` already owns exactly that — bounded by
+        // a hard timeout, and it rasterizes SVG data URIs through the shared
+        // WebView rasterizer. Reused rather than re-implemented so the reader
+        // keeps ONE remote/inline image path.
+        if OnlineImageLoader.canLoad(src) {
+            let image = await OnlineImageLoader.load(src: src, renderWidth: renderWidth)
+            if image == nil {
+                AppLogger.render("[BrowserLayout] loadImage: online loader returned nil spine=\(index) prefix=\(src.prefix(60))")
+            }
+            return image
+        }
+        guard let url = requestURL(forSource: src, chapterHref: chapterHref) else {
+            AppLogger.render("[BrowserLayout] loadImage: unresolvable source spine=\(index) prefix=\(src.prefix(60))")
+            return nil
+        }
+        do {
+            let response = try await resourceAdapter.response(for: url)
+            guard let image = UIImage(data: response.data) else {
+                AppLogger.render("[BrowserLayout] loadImage: undecodable image spine=\(index) bytes=\(response.data.count) url=\(url.lastPathComponent)")
+                return nil
+            }
+            return image
+        } catch {
+            AppLogger.render("[BrowserLayout] loadImage: fetch failed spine=\(index) url=\(url.lastPathComponent) error=\(error)")
+            return nil
+        }
+    }
+
+    /// Publication request URL for one PUBLICATION-LOCAL image source
+    /// (`data:` / `http(s)` never reach here — `OnlineImageLoader` owns those).
+    ///
+    /// The two local source kinds do NOT live in the same space and must not be
+    /// resolved the same way:
+    /// - a DOM source (`<img src>`, `<image xlink:href>`) is an href RELATIVE to
+    ///   the chapter, and needs `resolveImageHref` + `resourceURL(for:)`;
+    /// - a CSS source has already been rewritten to an ABSOLUTE
+    ///   `reader-book://<id>/…` URL by `EPUBStyleResolver.rewriteResourceURLs`
+    ///   before the stylesheet ever reaches us. Feeding that back through
+    ///   `resourceURL(for:)` percent-encoded the whole URL into the path
+    ///   (`reader-book://id/reader-book:/id/…`), so every stylesheet-declared
+    ///   background 404'd inside the publication.
+    ///   `EPUBAttributedStringBuilder.loadImage` already carried this same
+    ///   split; the browser adapter was the copy that never got it.
+    ///
+    /// The map key stays the source string verbatim either way — that is what
+    /// the box tree hands to `imageLoader`.
+    private func requestURL(forSource src: String, chapterHref: String) -> URL? {
+        if let url = URL(string: src), let scheme = url.scheme {
+            guard scheme == resourceAdapter.customScheme else { return nil }
+            return url
+        }
+        let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+        guard !resolved.isEmpty else { return nil }
+        return resourceAdapter.resourceURL(for: resolved)
     }
 
     // MARK: - Fonts
