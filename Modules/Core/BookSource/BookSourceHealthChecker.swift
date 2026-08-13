@@ -297,6 +297,11 @@ final class BookSourceHealthChecker: ObservableObject {
     }
 
     private var cancelled = false
+    /// Known-good titles from the user's bookshelf, keyed by their current source.
+    /// A source-specific shelf title is a stronger validation input than the global
+    /// placeholder keyword and avoids classifying a working source as broken merely
+    /// because it has no results for 「我的」.
+    private var preferredSearchKeywords: [UUID: String] = [:]
     /// Measured response times awaiting a single batched write — see `flushRespondTimes`.
     private var pendingRespondTimes: [UUID: Int64] = [:]
     private let fetcher: any BookSourceHealthCheckFetching
@@ -322,9 +327,24 @@ final class BookSourceHealthChecker: ObservableObject {
         return sourceCount >= 1_000 ? max(32, configured) : configured
     }
 
-    func prepare(sources: [BookSource]) {
+    func prepare(
+        sources: [BookSource],
+        preferredSearchKeywords: [UUID: String]? = nil
+    ) {
         cancelled = false
         lastSummary = nil
+        let sourceIDs = Set(sources.map(\.id))
+        if let preferredSearchKeywords {
+            self.preferredSearchKeywords = preferredSearchKeywords.filter {
+                sourceIDs.contains($0.key)
+                    && !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        } else {
+            // A rerun from the result sheet preserves the same known-good input.
+            self.preferredSearchKeywords = self.preferredSearchKeywords.filter {
+                sourceIDs.contains($0.key)
+            }
+        }
         items = sources.map { BookSourceCheckItem(source: $0) }
         finishedCount = 0
         publicationTask?.cancel()
@@ -580,9 +600,13 @@ final class BookSourceHealthChecker: ObservableObject {
         // detail / TOC / content already exposed a fatal transport/runtime error.
         if policy.checkSearch {
             setStage(index, .search, .running)
+            let shelfKeyword = preferredSearchKeywords[source.id]?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let keyword = source.ruleSearch.checkKeyWord
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let testWord = keyword.isEmpty ? policy.keyword : keyword
+            let testWord = !shelfKeyword.isEmpty
+                ? shelfKeyword
+                : (keyword.isEmpty ? policy.keyword : keyword)
             let result = await probeSearch(keyword: testWord, source: source)
             guard items.indices.contains(index), !cancelled else { return }
             switch result {
@@ -785,9 +809,10 @@ final class BookSourceHealthChecker: ObservableObject {
                 onHasMore: nil,
                 failureMode: .propagateTransportError
             )
-            guard let book = books.first(where: {
-                !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }) else {
+            guard let book = OnlineBookValidationSelector.preferredBook(
+                from: books,
+                for: source
+            ) else {
                 return .failure(.searchFailed, localized("搜索失效"))
             }
             return .success(book, "「\(keyword)」\(books.count) \(localized("本"))")
@@ -819,9 +844,10 @@ final class BookSourceHealthChecker: ObservableObject {
                 return .failure(.ruleMissing, localized("發現規則為空"))
             }
             let books = try await fetcher.discoverBooks(from: section, page: 1, in: source)
-            guard let book = books.first(where: {
-                !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }) else {
+            guard let book = OnlineBookValidationSelector.preferredBook(
+                from: books,
+                for: source
+            ) else {
                 return .failure(.discoveryFailed, localized("發現失效"))
             }
             let title = section.title ?? localized("發現")

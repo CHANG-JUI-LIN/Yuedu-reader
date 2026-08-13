@@ -29,6 +29,7 @@ struct OnlineBookView: View {
     @State private var alreadyInShelf = false
     @State private var temporaryReaderBookId: UUID? = nil
     @State private var detailInfo: OnlineBook? = nil
+    @State private var tocRuntimeVariables: [String: String]? = nil
     @State private var pendingShelfSourceSwitch = false
     @State private var introExpanded = false
     @State private var showSourcePicker = false
@@ -616,6 +617,7 @@ struct OnlineBookView: View {
         pendingShelfSourceSwitch = sourceSwitchBookId != nil
         currentBook = newBook
         detailInfo = nil
+        tocRuntimeVariables = nil
         chapters = []
         tocError = nil
         addedBookId = nil
@@ -675,6 +677,7 @@ struct OnlineBookView: View {
                 await MainActor.run {
                     guard isCurrentRequest(requestBook) else { return }
                     chapters = cached.chapters
+                    tocRuntimeVariables = cached.runtimeVariables
                     loadingTOC = false
                 }
             }
@@ -725,9 +728,14 @@ struct OnlineBookView: View {
                 await MainActor.run {
                     guard isCurrentRequest(requestBook) else { return }
                     chapters = tocPackage.chapters
+                    tocRuntimeVariables = tocPackage.runtimeVariables
                     loadingTOC = false
                     if !shouldPersistShelfSourceSwitch, let bookId = addedBookId {
-                        bookStore.updateOnlineChapters(bookId: bookId, chapters: tocPackage.chapters)
+                        bookStore.updateOnlineChapters(
+                            bookId: bookId,
+                            chapters: tocPackage.chapters,
+                            runtimeVariables: tocPackage.runtimeVariables
+                        )
                     }
                 }
             }
@@ -871,7 +879,9 @@ struct OnlineBookView: View {
             bookInfoURL: currentBook.bookUrl,
             tocURL: resolvedTOCURL,
             coverUrl: displayCoverUrl,
-            runtimeVariables: detailInfo?.runtimeVariables ?? currentBook.runtimeVariables,
+            runtimeVariables: tocRuntimeVariables
+                ?? detailInfo?.runtimeVariables
+                ?? currentBook.runtimeVariables,
             chapters: chapters
         )
         addedBookId = newBook.id
@@ -892,11 +902,13 @@ struct OnlineBookView: View {
         var targetBookId: UUID
 
         if alreadyInShelf, let existingId = addedBookId,
-            let existing = bookStore.books.first(where: { $0.id == existingId })
+            bookStore.books.contains(where: { $0.id == existingId })
         {
-            if existing.onlineChapters?.isEmpty != false, !chapters.isEmpty {
-                bookStore.updateOnlineChapters(bookId: existingId, chapters: chapters)
-            }
+            bookStore.updateOnlineChapters(
+                bookId: existingId,
+                chapters: chapters,
+                runtimeVariables: tocRuntimeVariables
+            )
             temporaryReaderBookId = nil
             targetBookId = existingId
         } else {
@@ -907,7 +919,9 @@ struct OnlineBookView: View {
                 bookInfoURL: currentBook.bookUrl,
                 tocURL: resolvedTOCURL,
                 coverUrl: displayCoverUrl,
-                runtimeVariables: detailInfo?.runtimeVariables ?? currentBook.runtimeVariables,
+                runtimeVariables: tocRuntimeVariables
+                    ?? detailInfo?.runtimeVariables
+                    ?? currentBook.runtimeVariables,
                 chapters: chapters
             )
             addedBookId = tempBook.id

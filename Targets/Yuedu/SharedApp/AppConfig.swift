@@ -58,10 +58,6 @@ enum AppConfig {
     /// Exceeding this throws FetchTimeoutError.chapterTimeout.
     static let chapterFetchTimeoutSeconds: UInt64 = 35
 
-    /// Additional seconds to wait after executing `jsAfterLoad` in WebView,
-    /// allowing dynamic pages time to apply JS results.
-    static let webViewPostLoadJSEffectDelay: TimeInterval = 0.5
-
     /// Timeout in seconds for waiting after loading an HTML string into WKWebView.
     static let webViewHTMLLoadTimeout: UInt64 = 10
 

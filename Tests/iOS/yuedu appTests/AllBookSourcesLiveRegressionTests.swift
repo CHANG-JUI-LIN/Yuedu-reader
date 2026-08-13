@@ -137,7 +137,10 @@ struct AllBookSourcesLiveRegressionTests {
                         }
                     }
                     discoverBookCount = discoveredBooks.count
-                    discoveredSearchSeed = discoveredBooks.first?.name
+                    discoveredSearchSeed = OnlineBookValidationSelector.preferredBook(
+                        from: discoveredBooks,
+                        for: source
+                    )?.name
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     if items.isEmpty {
                         discoverFailure = "no categories"
@@ -154,9 +157,14 @@ struct AllBookSourcesLiveRegressionTests {
                     resolvedSearchQuery = query
                     books = try await fetcher.search(query: query, in: source)
                     searchCount = books.count
-                    if books.contains(where: { !$0.bookUrl.isEmpty }) { break }
+                    if OnlineBookValidationSelector.preferredBook(from: books, for: source) != nil {
+                        break
+                    }
                 }
-                guard let book = books.first(where: { !$0.bookUrl.isEmpty }) else {
+                guard let book = OnlineBookValidationSelector.preferredBook(
+                    from: books,
+                    for: source
+                ) else {
                     throw StageFailure(stage: "search", detail: "no usable result")
                 }
 

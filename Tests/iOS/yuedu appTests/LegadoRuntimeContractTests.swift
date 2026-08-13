@@ -355,6 +355,31 @@ struct LegadoFullSourceFixtureTests {
 
 @Suite("Legado Parser Bridge Contract", .serialized)
 struct LegadoParserBridgeContractTests {
+    @Test("chapter content JS receives Legado nextChapterUrl")
+    func chapterContentReceivesNextChapterURL() throws {
+        var source = BookSource(
+            bookSourceUrl: "https://next-chapter.example",
+            bookSourceName: "next chapter fixture"
+        )
+        source.ruleContent.content = "<js>nextChapterUrl</js>"
+        let bridge = ModernParserBridge(source: source)
+        let chapter = OnlineChapterRef(
+            index: 0,
+            title: "Chapter 1",
+            url: "https://next-chapter.example/1"
+        )
+
+        let result = try bridge.parseChapterResult(
+            html: "fixture",
+            baseURL: chapter.url,
+            source: source,
+            chapterRef: chapter,
+            nextChapterURL: "https://next-chapter.example/2"
+        )
+
+        #expect(result.content == "https://next-chapter.example/2")
+    }
+
     @Test("TOC pre-update JS runs in the source runtime before transport")
     func tocPreUpdateUsesSourceRuntime() throws {
         var source = BookSource(

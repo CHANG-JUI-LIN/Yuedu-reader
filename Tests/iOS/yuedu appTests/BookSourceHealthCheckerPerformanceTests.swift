@@ -19,6 +19,14 @@ struct BookSourceHealthCheckerPerformanceTests {
         #expect(AppConfig.webViewExplicitJSWait == 0.1)
     }
 
+    @Test("book-source facade remains cross-source nonisolated")
+    func fetcherFacadeIsNotAGlobalActor() {
+        // This synchronous access is an intentional compile-time guard. Turning
+        // BookSourceFetcher back into an actor would make every source share one
+        // executor again and make this line require `await`.
+        let _: BookSourceParsingPipeline = BookSourceFetcher.shared.pipeline
+    }
+
     @Test("empty parsed content does not launch heuristic WebView recovery")
     func emptyContentDoesNotLaunchHeuristicWebViewRecovery() async {
         let content = await ChapterFetcher.shared.resolveContent(
@@ -88,17 +96,22 @@ struct BookSourceHealthCheckerPerformanceTests {
         try? FileManager.default.removeItem(at: sharedFetcher.tocCacheDir())
         let fetcher = TimedHealthCheckFetcher()
         let checker = BookSourceHealthChecker(fetcher: fetcher)
+        WebViewFetcher.shared.resetPerformanceMetrics()
         checker.prepare(sources: sources)
         let startedAt = ContinuousClock.now
         await checker.runAll()
         let elapsed = ContinuousClock.now - startedAt
         let timing = await fetcher.snapshot()
+        let webViewTiming = WebViewFetcher.shared.performanceSnapshot()
         let seconds = Double(elapsed.components.seconds)
             + Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
         print(
             "HEALTH_CHECK_LIVE sources=\(sources.count) finished=\(checker.finishedCount) "
                 + "elapsed=\(String(format: "%.3f", seconds))s maxActive=\(timing.maxActive) "
-                + "calls=\(timing.callCounts) stageSeconds=\(timing.stageSeconds)"
+                + "calls=\(timing.callCounts) stageSeconds=\(timing.stageSeconds) "
+                + "webViewPeak=\(webViewTiming.peakActiveCount) "
+                + "webViewQueued=\(webViewTiming.queuedLeaseCount) "
+                + "webViewQueueSeconds=\(String(format: "%.3f", webViewTiming.queuedLeaseSeconds))"
         )
         let slowest = checker.items
             .sorted { $0.responseTime > $1.responseTime }
@@ -111,6 +124,9 @@ struct BookSourceHealthCheckerPerformanceTests {
             maxActive: timing.maxActive,
             callCounts: timing.callCounts,
             stageSeconds: timing.stageSeconds,
+            webViewPeakActive: webViewTiming.peakActiveCount,
+            webViewQueuedLeaseCount: webViewTiming.queuedLeaseCount,
+            webViewQueuedLeaseSeconds: webViewTiming.queuedLeaseSeconds,
             slowestSources: Array(slowest)
         )
         let reportPath = ProcessInfo.processInfo.environment["HEALTH_CHECK_REPORT_PATH"]
@@ -140,6 +156,95 @@ struct BookSourceHealthCheckerPerformanceTests {
         #expect(checker.items[0].outcome(.discovery).status == .skipped)
         #expect(checker.items[0].outcome(.detail).status == .skipped)
         #expect(checker.items[0].failureCategory == .siteError)
+    }
+
+    @Test("bookshelf title is the primary source-specific search probe")
+    func bookshelfTitleReplacesGenericValidationKeyword() async {
+        let fetcher = HealthCheckKeywordCaptureFetcher()
+        let checker = BookSourceHealthChecker(fetcher: fetcher)
+        var source = BookSource(
+            bookSourceUrl: "https://shelf-keyword.example",
+            bookSourceName: "shelf keyword"
+        )
+        source.searchUrl = "https://shelf-keyword.example/search?q={{key}}"
+        source.ruleSearch.checkKeyWord = "stale source keyword"
+        checker.policy.checkDiscovery = false
+        checker.policy.checkInfo = false
+
+        checker.prepare(
+            sources: [source],
+            preferredSearchKeywords: [source.id: "Known Shelf Novel"]
+        )
+        await checker.runAll()
+
+        #expect(await fetcher.queries == ["Known Shelf Novel"])
+        #expect(checker.items[0].outcome(.search).status == .pass)
+    }
+
+    @Test("text source validation skips an explicitly typed audio result")
+    func textSourceSelectsDeclaredPrimaryContent() async {
+        let fetcher = HealthCheckMixedContentFetcher()
+        let checker = BookSourceHealthChecker(fetcher: fetcher)
+        var source = BookSource(
+            bookSourceUrl: "https://mixed-content.example",
+            bookSourceName: "mixed content"
+        )
+        source.bookSourceType = 0
+        source.searchUrl = "https://mixed-content.example/search?q={{key}}"
+        checker.policy.checkDiscovery = false
+
+        checker.prepare(sources: [source])
+        await checker.runAll()
+
+        #expect(checker.items[0].searchBook?.name == "text result")
+        #expect(checker.items[0].overallPass)
+        #expect(await fetcher.detailURLs == ["https://mixed-content.example/text"])
+    }
+
+    @Test("validation candidate selection respects declared and unknown content types")
+    func declaredContentSelectionContract() {
+        var textSource = BookSource(
+            bookSourceUrl: "https://selection.example/text",
+            bookSourceName: "text"
+        )
+        textSource.bookSourceType = 0
+        var audioSource = textSource
+        audioSource.bookSourceType = 1
+
+        func book(_ name: String, type: String?) -> OnlineBook {
+            OnlineBook(
+                name: name,
+                author: "",
+                intro: "",
+                coverUrl: "",
+                bookUrl: "https://selection.example/\(name)",
+                tocUrl: "",
+                wordCount: "",
+                lastChapter: "",
+                kind: "",
+                sourceId: textSource.id,
+                sourceName: textSource.bookSourceName,
+                runtimeVariables: type.map { ["book.type": $0] }
+            )
+        }
+
+        let audio = book("audio", type: "32")
+        let text = book("text", type: "8")
+        let manga = book("manga", type: "64")
+        let unknown = book("unknown", type: nil)
+
+        #expect(OnlineBookValidationSelector.preferredBook(
+            from: [audio, text], for: textSource
+        )?.name == "text")
+        #expect(OnlineBookValidationSelector.preferredBook(
+            from: [text, audio], for: audioSource
+        )?.name == "audio")
+        #expect(OnlineBookValidationSelector.preferredBook(
+            from: [audio, unknown], for: textSource
+        )?.name == "unknown")
+        #expect(OnlineBookValidationSelector.preferredBook(
+            from: [audio, manga], for: textSource
+        ) == nil)
     }
 
     @Test("detail transport failure aborts before discovery")
@@ -227,6 +332,9 @@ private struct LiveTimingReport: Codable {
     let maxActive: Int
     let callCounts: [String: Int]
     let stageSeconds: [String: Double]
+    let webViewPeakActive: Int
+    let webViewQueuedLeaseCount: Int
+    let webViewQueuedLeaseSeconds: Double
     let slowestSources: [SourceTime]
 }
 
@@ -311,6 +419,157 @@ private actor HealthCheckTransportFailureFetcher: BookSourceHealthCheckFetching 
     ) async throws -> String {
         calls.append("content")
         throw URLError(.timedOut)
+    }
+}
+
+private actor HealthCheckKeywordCaptureFetcher: BookSourceHealthCheckFetching {
+    private(set) var queries: [String] = []
+
+    func search(
+        query: String,
+        in source: BookSource,
+        page: Int,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        onHasMore: ((Bool?) -> Void)?,
+        failureMode: BookSourceSearchFailureMode
+    ) async throws -> [OnlineBook] {
+        queries.append(query)
+        return [OnlineBook(
+            name: query,
+            author: "",
+            intro: "",
+            coverUrl: "",
+            bookUrl: "https://shelf-keyword.example/book/1",
+            tocUrl: "",
+            wordCount: "",
+            lastChapter: "",
+            kind: "",
+            sourceId: source.id,
+            sourceName: source.bookSourceName
+        )]
+    }
+
+    func discoverItems(
+        page: Int,
+        in source: BookSource
+    ) async -> [ModernParserBridge.DiscoverItem] { [] }
+
+    func discoverBooks(
+        from item: ModernParserBridge.DiscoverItem,
+        page: Int,
+        in source: BookSource
+    ) async throws -> [OnlineBook] { [] }
+
+    func fetchBookInfo(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> OnlineBook { throw URLError(.unsupportedURL) }
+
+    func fetchTOC(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> [OnlineChapterRef] { [] }
+
+    func fetchChapter(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource,
+        chapterReferer: String?
+    ) async throws -> String { "" }
+}
+
+private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
+    private(set) var detailURLs: [String] = []
+
+    func search(
+        query: String,
+        in source: BookSource,
+        page: Int,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        onHasMore: ((Bool?) -> Void)?,
+        failureMode: BookSourceSearchFailureMode
+    ) async throws -> [OnlineBook] {
+        [
+            book(
+                name: "audio result",
+                url: "https://mixed-content.example/audio",
+                type: "32",
+                source: source
+            ),
+            book(
+                name: "text result",
+                url: "https://mixed-content.example/text",
+                type: "8",
+                source: source
+            ),
+        ]
+    }
+
+    func discoverItems(
+        page: Int,
+        in source: BookSource
+    ) async -> [ModernParserBridge.DiscoverItem] { [] }
+
+    func discoverBooks(
+        from item: ModernParserBridge.DiscoverItem,
+        page: Int,
+        in source: BookSource
+    ) async throws -> [OnlineBook] { [] }
+
+    func fetchBookInfo(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> OnlineBook {
+        detailURLs.append(url)
+        return book(
+            name: url.hasSuffix("/audio") ? "audio detail" : "text detail",
+            url: url,
+            tocURL: url + "/toc",
+            type: url.hasSuffix("/audio") ? "32" : "8",
+            source: source
+        )
+    }
+
+    func fetchTOC(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> [OnlineChapterRef] {
+        guard tocUrl.contains("/text/") else { return [] }
+        return [OnlineChapterRef(index: 0, title: "chapter", url: tocUrl + "/1")]
+    }
+
+    func fetchChapter(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource,
+        chapterReferer: String?
+    ) async throws -> String { "content" }
+
+    private func book(
+        name: String,
+        url: String,
+        tocURL: String = "",
+        type: String,
+        source: BookSource
+    ) -> OnlineBook {
+        OnlineBook(
+            name: name,
+            author: "",
+            intro: "",
+            coverUrl: "",
+            bookUrl: url,
+            tocUrl: tocURL,
+            wordCount: "",
+            lastChapter: "",
+            kind: "",
+            sourceId: source.id,
+            sourceName: source.bookSourceName,
+            runtimeVariables: ["book.type": type]
+        )
     }
 }
 

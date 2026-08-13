@@ -403,6 +403,7 @@ class JSCoreEngine {
     private static func containsTopLevelReturn(_ script: String) -> Bool {
         let bytes = Array(script.utf8)
         var braceDepth = 0
+        var canStartRegex = true
         var quote: UInt8?
         var escaped = false
         var lineComment = false
@@ -434,6 +435,7 @@ class JSCoreEngine {
                     escaped = true
                 } else if byte == activeQuote {
                     quote = nil
+                    canStartRegex = false
                 }
                 index += 1
                 continue
@@ -453,22 +455,84 @@ class JSCoreEngine {
                 index += 1
                 continue
             }
+            // A regular-expression literal may contain an escaped slash immediately
+            // followed by its closing slash (for example `/^https?:\/\//`). A plain
+            // byte scan mistakes that pair for a `//` comment, then loses the braces
+            // on the rest of the line and can classify a nested `return` as top-level.
+            // Skip the complete literal, including character classes, before tracking
+            // block depth. This is the same lexical distinction Rhino makes.
+            if byte == 47, canStartRegex {
+                index += 1
+                var inCharacterClass = false
+                var regexEscaped = false
+                while index < bytes.count {
+                    let regexByte = bytes[index]
+                    if regexEscaped {
+                        regexEscaped = false
+                    } else if regexByte == 92 {
+                        regexEscaped = true
+                    } else if regexByte == 91 {
+                        inCharacterClass = true
+                    } else if regexByte == 93 {
+                        inCharacterClass = false
+                    } else if regexByte == 47, !inCharacterClass {
+                        index += 1
+                        while index < bytes.count,
+                              (bytes[index] >= 65 && bytes[index] <= 90)
+                                || (bytes[index] >= 97 && bytes[index] <= 122) {
+                            index += 1
+                        }
+                        break
+                    }
+                    index += 1
+                }
+                canStartRegex = false
+                continue
+            }
             if byte == 123 {
                 braceDepth += 1
+                canStartRegex = true
                 index += 1
                 continue
             }
             if byte == 125 {
                 braceDepth = max(0, braceDepth - 1)
+                canStartRegex = false
                 index += 1
                 continue
             }
-            if braceDepth == 0, byte == 114,
-               index + 6 <= bytes.count,
-               Array(bytes[index..<(index + 6)]) == Array("return".utf8),
-               (index == 0 || !isIdentifierByte(bytes[index - 1])),
-               (index + 6 == bytes.count || !isIdentifierByte(bytes[index + 6])) {
-                return true
+            if isIdentifierByte(byte), !(byte >= 48 && byte <= 57) {
+                let start = index
+                index += 1
+                while index < bytes.count, isIdentifierByte(bytes[index]) {
+                    index += 1
+                }
+                let word = String(decoding: bytes[start..<index], as: UTF8.self)
+                if braceDepth == 0, word == "return" {
+                    return true
+                }
+                canStartRegex = [
+                    "return", "case", "throw", "delete", "void", "typeof",
+                    "new", "in", "of", "yield", "await", "else", "do",
+                ].contains(word)
+                continue
+            }
+            if byte >= 48 && byte <= 57 {
+                index += 1
+                while index < bytes.count,
+                      isIdentifierByte(bytes[index]) || bytes[index] == 46 {
+                    index += 1
+                }
+                canStartRegex = false
+                continue
+            }
+            if byte == 40 || byte == 91 || byte == 44 || byte == 59
+                || byte == 58 || byte == 61 || byte == 63 || byte == 33
+                || byte == 38 || byte == 124 || byte == 43 || byte == 45
+                || byte == 42 || byte == 37 || byte == 94 || byte == 126 {
+                canStartRegex = true
+            } else if byte == 41 || byte == 93 {
+                canStartRegex = false
             }
             index += 1
         }
@@ -865,6 +929,7 @@ class JSCoreEngine {
                     this.push.apply(this, incoming);
                     return true;
                 });
+                def('toArray', function () { return this.slice(); });
                 def('isEmpty', function () { return this.length === 0; });
                 def('contains', function (value) { return this.indexOf(value) >= 0; });
             })(Array.prototype);

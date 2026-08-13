@@ -97,12 +97,21 @@ final class WebViewLeaseWait {
 final class WebViewFetcher: NSObject, WKNavigationDelegate {
     static let shared = WebViewFetcher()
 
+    struct PerformanceSnapshot: Sendable {
+        let peakActiveCount: Int
+        let queuedLeaseCount: Int
+        let queuedLeaseSeconds: Double
+    }
+
     /// WebView instance pool (reused to avoid repeated creation costs)
     private var pool: [WKWebView] = []
     private let poolSize = AppConfig.webViewPoolSize
     private var waiters: [WebViewLeaseWait] = []
     /// Currently active (checked out but not yet returned) WebView count, including temporaries
     private var activeCount: Int = 0
+    private var peakActiveCount: Int = 0
+    private var queuedLeaseCount: Int = 0
+    private var queuedLeaseSeconds: Double = 0
 
     /// In-flight loading tasks
     private var loadingMap: [WKWebView: WebViewNavigationWait] = [:]
@@ -136,6 +145,20 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     }
 
     // MARK: - Public API
+
+    func resetPerformanceMetrics() {
+        peakActiveCount = activeCount
+        queuedLeaseCount = 0
+        queuedLeaseSeconds = 0
+    }
+
+    func performanceSnapshot() -> PerformanceSnapshot {
+        PerformanceSnapshot(
+            peakActiveCount: peakActiveCount,
+            queuedLeaseCount: queuedLeaseCount,
+            queuedLeaseSeconds: queuedLeaseSeconds
+        )
+    }
 
     /// Polls for page content to be ready before returning outerHTML.
     /// Fast sites return in ~100ms; slow sites wait at most maxWaitMs.
@@ -712,6 +735,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     private func acquireWebView() async throws -> WKWebView {
         if let wv = pool.popLast() {
             activeCount += 1
+            peakActiveCount = max(peakActiveCount, activeCount)
             return wv
         }
         // Pool exhausted: if active count is below the overflow limit, create a
@@ -719,13 +743,24 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         let maxActive = poolSize * AppConfig.webViewPoolOverflowMultiplier
         if activeCount < maxActive {
             activeCount += 1
+            peakActiveCount = max(peakActiveCount, activeCount)
             return createWebView()
         }
         // At capacity — wait in the queue
+        let waitStarted = ProcessInfo.processInfo.systemUptime
+        queuedLeaseCount += 1
         let waiter = WebViewLeaseWait()
         waiters.append(waiter)
         do {
-            return try await waiter.value()
+            let webView = try await waiter.value()
+            queuedLeaseSeconds += ProcessInfo.processInfo.systemUptime - waitStarted
+            SourcePerfTrace.record(
+                "webview.lease.wait",
+                "active=\(activeCount) queued=\(waiters.count)",
+                since: waitStarted,
+                thresholdMs: 0
+            )
+            return webView
         } catch {
             waiters.removeAll { $0 === waiter }
             throw error
@@ -744,6 +779,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
             waiters.removeFirst()
             if waiter.resume(returning: webView) {
                 activeCount += 1
+                peakActiveCount = max(peakActiveCount, activeCount)
                 return
             }
         }

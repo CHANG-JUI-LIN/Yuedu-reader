@@ -56,6 +56,8 @@ class ModernParserBridge {
     private let loginManager: LoginManager
     private let runtimeStateStore: BookSourceRuntimeStateStore
     let sourceRuleData: BookSourceRuleData
+    private var runtimeBookScope: RuleData?
+    private var runtimeChapterScope: RuleData?
 
     /// When set, every `ModernRuleEngine` created by `makeEngine()` will have this
     /// observer attached, emitting pipeline events for diff-driven debugging against
@@ -80,6 +82,11 @@ class ModernParserBridge {
     }
 
     var lastSourceScriptError: String? { jsEngine.lastError }
+
+    /// Book-scoped variables produced while evaluating the most recent TOC list rule.
+    /// Legado evaluates `chapterList` before assigning a chapter context, so `java.put`
+    /// there belongs to the book, not to every chapter row.
+    private(set) var lastTOCRuntimeVariables: [String: String]?
 
     // MARK: - Last JS network exchange (diagnostics)
 
@@ -162,7 +169,7 @@ class ModernParserBridge {
 
     /// Creates a fresh, fully-wired ModernRuleEngine for a single parse operation.
     /// A new instance per call prevents state bleed when async operations overlap.
-    private func makeEngine() -> ModernRuleEngine {
+    private func makeEngine(nextChapterURL: String? = nil) -> ModernRuleEngine {
         let e = ModernRuleEngine()
         e.source = sourceRuleData
         e.debugObserver = debugObserver
@@ -185,6 +192,9 @@ class ModernParserBridge {
                 "baseUrl": engine.baseUrl,
                 "baseURL": engine.baseUrl
             ]
+            if let nextChapterURL {
+                bindings["nextChapterUrl"] = nextChapterURL
+            }
             if let content = engine.content {
                 // Legado exposes the response currently being parsed as the global `src`.
                 // Some sources intentionally read `src` after an earlier rule segment has
@@ -236,7 +246,11 @@ class ModernParserBridge {
 
         engine.getData = { [weak self] key in
             guard let self else { return nil }
-            let localValue = self.sourceRuleData.getVariable(key: key)
+            let localValue = [
+                self.runtimeChapterScope?.getVariable(key: key),
+                self.runtimeBookScope?.getVariable(key: key),
+                self.sourceRuleData.getVariable(key: key)
+            ].compactMap { $0 }.first { !$0.isEmpty } ?? ""
             let value = localValue.isEmpty
                 ? (self.runtimeStateStore.sourceValue(
                     for: self.sourceRuleData.source.bookSourceUrl,
@@ -254,6 +268,14 @@ class ModernParserBridge {
         }
         engine.putData = { [weak self] key, value in
             guard let self else { return }
+            if let chapterScope = self.runtimeChapterScope {
+                chapterScope.putVariable(key: key, value: value)
+                return
+            }
+            if let bookScope = self.runtimeBookScope {
+                bookScope.putVariable(key: key, value: value)
+                return
+            }
             self.sourceRuleData.putVariable(key: key, value: value)
             self.runtimeStateStore.setSourceValue(
                 value,
@@ -910,7 +932,9 @@ class ModernParserBridge {
                 intro: intro,
                 coverUrl: coverUrl,
                 bookUrl: bookUrl,
-                tocUrl: bookUrl,
+                // SearchBook.tocUrl is empty in Legado. The real TOC URL is
+                // resolved by ruleBookInfo.tocUrl after opening the detail page.
+                tocUrl: "",
                 wordCount: wordCount,
                 lastChapter: lastChapter,
                 kind: kind,
@@ -1018,10 +1042,19 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) throws -> [OnlineChapterRef] {
+        lastTOCRuntimeVariables = nil
         loadRuntimeVariables(runtimeVariables)
         setBookContext(runtimeVariables: runtimeVariables)
         jsEngine.setChapterBridge(LegadoChapterBridge())
         let engine = makeEngine()
+        let bookScope = RuleData()
+        runtimeBookScope = bookScope
+        runtimeChapterScope = nil
+        engine.book = bookScope
+        defer {
+            runtimeChapterScope = nil
+            runtimeBookScope = nil
+        }
         engine.setContent(html, baseUrl: baseURL)
 
         let listRule = source.ruleToc.chapterList
@@ -1044,6 +1077,12 @@ class ModernParserBridge {
             return []
         }
 
+        // `chapterList` runs in book scope in Legado. Capture its mutations once,
+        // before per-row rules establish a chapter scope. Reusing this snapshot as
+        // every row's runtimeVariables multiplies whole-book maps by chapter count.
+        let bookRuntimeVariables = dumpRuntimeVariables()
+        lastTOCRuntimeVariables = bookRuntimeVariables
+
         let formatJs = source.ruleToc.formatJs.trimmingCharacters(in: .whitespacesAndNewlines)
 
         var chapters: [OnlineChapterRef] = []
@@ -1054,6 +1093,14 @@ class ModernParserBridge {
             let batchEnd = min(batchStart + batchSize, elements.count)
             autoreleasepool {
                 for index in batchStart..<batchEnd {
+                    // Each chapter starts from the list rule's book scope. A put made
+                    // while parsing one row must not leak into the next row.
+                    let chapterScope = RuleData()
+                    runtimeChapterScope = chapterScope
+                    engine.chapter = chapterScope
+                    setBookContext(runtimeVariables: bookRuntimeVariables)
+                    jsEngine.setChapterBridge(LegadoChapterBridge())
+                    let chapterBaseline = dumpRuntimeVariables() ?? [:]
                     let element = elements[index]
                     engine.setContent(element, baseUrl: baseURL)
 
@@ -1087,6 +1134,10 @@ class ModernParserBridge {
                         }
                     }
 
+                    let chapterSnapshot = dumpRuntimeVariables() ?? [:]
+                    let chapterDelta = chapterSnapshot.filter {
+                        chapterBaseline[$0.key] != $0.value
+                    }
                     let ref = OnlineChapterRef(
                         index: index,
                         title: title,
@@ -1094,7 +1145,7 @@ class ModernParserBridge {
                         isVolume: isVolume,
                         isVip: isVip,
                         isPay: isPay,
-                        runtimeVariables: dumpRuntimeVariables()
+                        runtimeVariables: chapterDelta.isEmpty ? nil : chapterDelta
                     )
                     if ref.isVolume || ref.hasVolumeSeparatorTitle || index < 12 {
                         AppLogger.parse("⟐ tocItem", context: [
@@ -1114,6 +1165,10 @@ class ModernParserBridge {
                 }
             }
         }
+
+        runtimeChapterScope = nil
+        engine.chapter = nil
+        setBookContext(runtimeVariables: bookRuntimeVariables)
 
         return chapters
     }
@@ -1157,7 +1212,8 @@ class ModernParserBridge {
         baseURL: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
-        chapterRef: OnlineChapterRef? = nil
+        chapterRef: OnlineChapterRef? = nil,
+        nextChapterURL: String? = nil
     ) throws -> ChapterParsePayload {
         loadRuntimeVariables(runtimeVariables)
         setBookContext(runtimeVariables: runtimeVariables)
@@ -1180,7 +1236,7 @@ class ModernParserBridge {
         } else {
             jsEngine.setChapterBridge(LegadoChapterBridge())
         }
-        let engine = makeEngine()
+        let engine = makeEngine(nextChapterURL: nextChapterURL)
         engine.setContent(html, baseUrl: baseURL)
 
         // ⟐ contentJS — diagnose 段评-on infinite-loading: if "done" never logs the
@@ -2076,7 +2132,9 @@ class ModernParserBridge {
                     intro: engine.getString(ruleStr: introRule),
                     coverUrl: coverUrl,
                     bookUrl: bookUrl,
-                    tocUrl: bookUrl,
+                    // Explore results have the same SearchBook contract: do
+                    // not mistake the detail URL for an already-resolved TOC.
+                    tocUrl: "",
                     wordCount: engine.getString(ruleStr: wordCountRule),
                     lastChapter: engine.getString(ruleStr: lastChapterRule),
                     kind: engine.getString(ruleStr: kindRule),
@@ -2414,6 +2472,12 @@ class ModernParserBridge {
 
     private func dumpRuntimeVariables() -> [String: String]? {
         var map = sourceRuleData.variableMap
+        if let runtimeBookScope {
+            map.merge(runtimeBookScope.variableMap) { _, new in new }
+        }
+        if let runtimeChapterScope {
+            map.merge(runtimeChapterScope.variableMap) { _, new in new }
+        }
         map.merge(jsEngine.bookBridge.runtimeStateVariables()) { _, new in new }
         for (key, value) in jsEngine.bookBridge.runtimeVariables() where !value.isEmpty {
             map["book.variable.\(key)"] = value

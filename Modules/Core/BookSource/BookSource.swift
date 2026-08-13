@@ -397,6 +397,22 @@ enum OnlineBookContentInference {
         if let sourceKind = kind(fromSourceType: sourceType), sourceKind != .text {
             return sourceKind
         }
+        return explicitKind(
+            runtimeVariables: runtimeVariables,
+            urls: urls,
+            metadataText: metadataText
+        ) ?? .text
+    }
+
+    /// Returns only content types that the book itself explicitly carries.
+    /// Unlike `infer`, this deliberately preserves `nil` for untyped results so
+    /// validation can use them as a neutral candidate without mistaking them for
+    /// an explicitly declared text/audio/manga entry.
+    static func explicitKind(
+        runtimeVariables: [String: String]? = nil,
+        urls: [String] = [],
+        metadataText: [String] = []
+    ) -> OnlineBookContentKind? {
         if let runtimeKind = kind(fromRuntimeVariables: runtimeVariables) {
             return runtimeKind
         }
@@ -410,7 +426,7 @@ enum OnlineBookContentInference {
                 return metadataKind
             }
         }
-        return .text
+        return nil
     }
 
     private static func kind(fromSourceType sourceType: Int?) -> OnlineBookContentKind? {
@@ -547,11 +563,17 @@ enum OnlineBookContentInference {
             || normalized == "manga" || normalized == "image" {
             return .manga
         }
+        if normalized == "小说" || normalized == "小說" || normalized == "novel"
+            || normalized == "text" || normalized == "文字" {
+            return .text
+        }
         return nil
     }
 
     private static func kind(fromTypeNumber value: Int) -> OnlineBookContentKind? {
         switch value {
+        case 0, 8:
+            return .text
         case 1, 32:
             return .audio
         case 2, 64:
@@ -625,6 +647,44 @@ extension OnlineBook {
             metadataText: [kind, intro, lastChapter, sourceName]
                 + OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
         )
+    }
+
+    var explicitlyInferredContentKind: OnlineBookContentKind? {
+        OnlineBookContentInference.explicitKind(
+            runtimeVariables: runtimeVariables,
+            urls: [bookUrl, tocUrl],
+            metadataText: [kind, intro, lastChapter]
+        )
+    }
+}
+
+/// Picks one deterministic validation candidate without crossing an explicitly
+/// declared content boundary. Aggregate sources can return text, audio and manga
+/// in the same result list; validating the first URL blindly can therefore test a
+/// secondary mode instead of the source's declared primary mode.
+enum OnlineBookValidationSelector {
+    static func preferredBook(from books: [OnlineBook], for source: BookSource) -> OnlineBook? {
+        let candidates = books.filter {
+            !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard let expectedKind = declaredContentKind(for: source.bookSourceType) else {
+            return candidates.first
+        }
+        if let matching = candidates.first(where: {
+            $0.explicitlyInferredContentKind == expectedKind
+        }) {
+            return matching
+        }
+        return candidates.first(where: { $0.explicitlyInferredContentKind == nil })
+    }
+
+    private static func declaredContentKind(for sourceType: Int) -> OnlineBookContentKind? {
+        switch sourceType {
+        case 0: return .text
+        case 1: return .audio
+        case 2: return .manga
+        default: return nil
+        }
     }
 }
 

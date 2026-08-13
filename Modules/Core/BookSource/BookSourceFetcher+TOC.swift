@@ -4,6 +4,25 @@ import Foundation
 
 extension BookSourceFetcher {
 
+    /// Private metadata carried with the first chapter so content JS receives
+    /// Legado's `nextChapterUrl` binding without changing the public TOC model.
+    static let nextChapterRuntimeVariableKey = "__legado.nextChapterUrl"
+
+    private func normalizedChaptersWithNextURL(
+        _ chapters: [OnlineChapterRef]
+    ) -> [OnlineChapterRef] {
+        chapters.enumerated().map { index, ref in
+            var normalized = ref
+            normalized.index = index
+            if chapters.indices.contains(index + 1) {
+                var variables = normalized.runtimeVariables ?? [:]
+                variables[Self.nextChapterRuntimeVariableKey] = chapters[index + 1].url
+                normalized.runtimeVariables = variables
+            }
+            return normalized
+        }
+    }
+
     /// Fetch TOC for source validation. Legado's checker calls `getChapterListAwait`
     /// with its default `runPerJs = false`, so validation must not execute
     /// `ruleToc.preUpdateJs` or open a WebView for it.
@@ -102,28 +121,25 @@ extension BookSourceFetcher {
             ) {
                 try await session.bridgeForAsyncOperations.fetch(ruleUrl: effectiveTOCURL)
             }
-            let chapters = try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
+            let parsed = try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
                 try session.withBridge { bridge in
-                    try bridge.parseTOC(
+                    let chapters = try bridge.parseTOC(
                         html: html,
                         baseURL: finalUrl,
                         source: source,
                         runtimeVariables: effectiveRuntimeVariables
                     )
+                    return (chapters, bridge.lastTOCRuntimeVariables)
                 }
             }
-            let normalized = chapters.enumerated().map { i, ref in
-                var r = ref
-                r.index = i
-                return r
-            }
+            let normalized = normalizedChaptersWithNextURL(parsed.0)
             if !normalized.isEmpty {
                 onFirstPageReady?(normalized)
             }
             return saveTOCPackage(
                 tocUrl: tocUrl,
                 source: source,
-                runtimeVariables: normalized.last?.runtimeVariables ?? effectiveRuntimeVariables,
+                runtimeVariables: parsed.1 ?? effectiveRuntimeVariables,
                 chapters: normalized,
                 rawHTML: html
             )
@@ -156,11 +172,11 @@ extension BookSourceFetcher {
                 "htmlPreview": String(html.prefix(150)).replacingOccurrences(of: "\n", with: " "),
             ], hyp: "H2")
         // #endregion
-        var chapters: [OnlineChapterRef] = try SourcePerfTrace.span(
+        let firstPage = try SourcePerfTrace.span(
             "toc.parse", source.bookSourceName
         ) {
             try autoreleasepool {
-                try pipeline.parseTOC(
+                try pipeline.parseTOCResult(
                     html: html,
                     baseURL: url.absoluteString,
                     source: source,
@@ -168,6 +184,8 @@ extension BookSourceFetcher {
                 )
             }
         }
+        var chapters = firstPage.chapters
+        var tocRuntimeVariables = firstPage.runtimeVariables ?? effectiveRuntimeVariables
         let htmlForNext = html
 
         // #region agent log
@@ -235,7 +253,7 @@ extension BookSourceFetcher {
             }
             // One session-serialized call parses chapters AND the next-page URL
             // from a single DOM (autoreleasepool drains SwiftSoup per page).
-            let pageResult: (chapters: [OnlineChapterRef], nextTocURL: String) = try autoreleasepool {
+            let pageResult = try autoreleasepool {
                 try pipeline.parseTOCPage(
                     html: nextHTML,
                     baseURL: nextURL,
@@ -245,21 +263,22 @@ extension BookSourceFetcher {
             }
             nextURL = pageResult.nextTocURL
             chapters.append(contentsOf: pageResult.chapters)
+            if let pageRuntime = pageResult.runtimeVariables {
+                var merged = tocRuntimeVariables ?? [:]
+                merged.merge(pageRuntime) { _, new in new }
+                tocRuntimeVariables = merged
+            }
             pageCount += 1
             SourcePerfTrace.record(
                 "toc.nextPage", "page=\(pageCount) \(source.bookSourceName)", since: pageStart
             )
         }
-        let normalized = chapters.enumerated().map { i, ref in
-            var r = ref
-            r.index = i
-            return r
-        }
+        let normalized = normalizedChaptersWithNextURL(chapters)
         // rawHTML was already written to disk page by page in the multi-page loop
         let package = saveTOCPackage(
             tocUrl: tocUrl,
             source: source,
-            runtimeVariables: effectiveRuntimeVariables,
+            runtimeVariables: tocRuntimeVariables,
             chapters: normalized,
             rawHTML: nil
         )

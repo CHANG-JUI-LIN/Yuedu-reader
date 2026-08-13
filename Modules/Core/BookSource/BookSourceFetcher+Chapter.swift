@@ -190,7 +190,8 @@ extension BookSourceFetcher {
                         baseURL: baseURL,
                         source: source,
                         runtimeVariables: runtimeBox.get(),
-                        chapterRef: ref
+                        chapterRef: ref,
+                        nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
                     )
                 }
                 if let runtimeVariables = parsed.runtimeVariables, !runtimeVariables.isEmpty {
@@ -291,7 +292,8 @@ extension BookSourceFetcher {
                     baseURL: finalUrl,
                     source: source,
                     runtimeVariables: ref.runtimeVariables,
-                    chapterRef: ref
+                    chapterRef: ref,
+                    nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
                 )
             }
         }

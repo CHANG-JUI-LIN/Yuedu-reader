@@ -49,11 +49,26 @@ struct BookSourceParsingPipeline {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) throws -> [OnlineChapterRef] {
+        try parseTOCResult(
+            html: html,
+            baseURL: baseURL,
+            source: source,
+            runtimeVariables: runtimeVariables
+        ).chapters
+    }
+
+    func parseTOCResult(
+        html: String,
+        baseURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]? = nil
+    ) throws -> (chapters: [OnlineChapterRef], runtimeVariables: [String: String]?) {
         try BookSourceSession.session(for: source).withBridge { bridge in
-            try bridge.parseTOC(
+            let chapters = try bridge.parseTOC(
                 html: html, baseURL: baseURL,
                 source: source, runtimeVariables: runtimeVariables
             )
+            return (chapters, bridge.lastTOCRuntimeVariables)
         }
     }
 
@@ -64,12 +79,17 @@ struct BookSourceParsingPipeline {
         baseURL: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil
-    ) throws -> (chapters: [OnlineChapterRef], nextTocURL: String) {
+    ) throws -> (
+        chapters: [OnlineChapterRef],
+        nextTocURL: String,
+        runtimeVariables: [String: String]?
+    ) {
         try BookSourceSession.session(for: source).withBridge { bridge in
-            try bridge.parseTOCPage(
+            let page = try bridge.parseTOCPage(
                 html: html, baseURL: baseURL,
                 source: source, runtimeVariables: runtimeVariables
             )
+            return (page.chapters, page.nextTocURL, bridge.lastTOCRuntimeVariables)
         }
     }
 
@@ -94,13 +114,15 @@ struct BookSourceParsingPipeline {
         baseURL: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
-        chapterRef: OnlineChapterRef? = nil
+        chapterRef: OnlineChapterRef? = nil,
+        nextChapterURL: String? = nil
     ) throws -> ChapterParsePayload {
         try BookSourceSession.session(for: source).withBridge { bridge in
             try bridge.parseChapterResult(
                 html: html, baseURL: baseURL,
                 source: source, runtimeVariables: runtimeVariables,
-                chapterRef: chapterRef
+                chapterRef: chapterRef,
+                nextChapterURL: nextChapterURL
             )
         }
     }

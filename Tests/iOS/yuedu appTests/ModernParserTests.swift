@@ -168,6 +168,36 @@ struct RuleAnalyzerTests {
 @Suite("ModernParserBridge Chapter Compatibility", .serialized)
 struct ModernParserBridgeChapterCompatibilityTests {
 
+    @Test("Search and discover results defer TOC URL resolution to book info")
+    func resultListsDoNotPretendBookURLIsTOCURL() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.ruleSearch.bookList = "li.book"
+        source.ruleSearch.name = "a@text"
+        source.ruleSearch.bookUrl = "a@href"
+        source.ruleExplore.bookList = source.ruleSearch.bookList
+        source.ruleExplore.name = source.ruleSearch.name
+        source.ruleExplore.bookUrl = source.ruleSearch.bookUrl
+
+        let html = #"<ul><li class="book"><a href="/book/1">First</a></li></ul>"#
+        let bridge = ModernParserBridge(source: source)
+        let searchBooks = try bridge.parseSearchResults(
+            html: html,
+            baseURL: "https://example.com/search",
+            source: source
+        )
+        let exploreBooks = bridge.parseExploreResults(
+            html: html,
+            baseURL: "https://example.com/explore",
+            source: source
+        )
+
+        #expect(searchBooks.first?.bookUrl == "https://example.com/book/1")
+        #expect(exploreBooks.first?.bookUrl == "https://example.com/book/1")
+        #expect(searchBooks.first?.tocUrl == "")
+        #expect(exploreBooks.first?.tocUrl == "")
+    }
+
     @Test("Legacy Jsoup tag chain is not claimed as a CSS selector")
     func legacyJsoupTagChainRoutesToDefaultExtractor() {
         let engine = ModernRuleEngine()
@@ -282,6 +312,23 @@ struct ModernParserBridgeChapterCompatibilityTests {
         """)
 
         #expect(result == "2:second:3:third")
+    }
+
+    @Test("java.getStringList exposes Java List toArray without regressing collection methods")
+    func javaGetStringListExposesJavaListToArray() {
+        let engine = JSCoreEngine()
+        engine.getStringListHandler = { _ in ["first", "second"] }
+
+        let result = engine.evaluate("""
+        var values = java.getStringList('fixture');
+        var copied = values.toArray();
+        copied.add('third');
+        [values.size(), values.get(1), copied.size(), copied.get(2), copied.map(function (value) {
+            return value.toUpperCase();
+        }).join(',')].join('|');
+        """)
+
+        #expect(result == "2|second|3|third|FIRST,SECOND,THIRD")
     }
 
     @Test("chapterList JS can inspect and return java.getElements rows")

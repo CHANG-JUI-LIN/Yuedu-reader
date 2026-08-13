@@ -14,6 +14,7 @@ private enum BookSourceImportPresentationRoute: Hashable {
 struct BookSourceListView: View {
     var embedsNavigationStack = true
 
+    @EnvironmentObject private var bookStore: BookStore
     @ObservedObject private var store = BookSourceStore.shared
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var showAdd = false
@@ -1014,7 +1015,17 @@ struct BookSourceListView: View {
     private func startCheck(with policy: BookSourceCheckPolicy, sources: [BookSource]) {
         guard !sources.isEmpty else { return }
         healthChecker.policy = policy
-        healthChecker.prepare(sources: sources)
+        var shelfTitles: [UUID: String] = [:]
+        for book in bookStore.books where book.isOnline {
+            guard let sourceID = book.bookSourceId else { continue }
+            let title = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, shelfTitles[sourceID] == nil else { continue }
+            shelfTitles[sourceID] = title
+        }
+        healthChecker.prepare(
+            sources: sources,
+            preferredSearchKeywords: shelfTitles
+        )
         showSourceCheck = true
         Task {
             await healthChecker.runAll()
@@ -1295,4 +1306,5 @@ struct BookSourceListView: View {
 
 #Preview {
     BookSourceListView()
+        .environmentObject(BookStore())
 }
