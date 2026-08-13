@@ -20,6 +20,9 @@ enum CoreTextChunkSlicer {
         let attributedString: NSAttributedString
     }
 
+    /// - Parameter minimumBackdropExtent: along-scroll size of one viewport. A chapter that
+    ///   carries a publication-authored page backdrop image and is shorter than this gets its
+    ///   last chunk padded up to it — see `padForBackdrop`. Zero disables the padding.
     static func slice(
         attributedString attrStr: NSAttributedString,
         chapterIndex: Int,
@@ -27,7 +30,8 @@ enum CoreTextChunkSlicer {
         heightCap: CGFloat = defaultHeightCap,
         writingMode: ReaderWritingMode = .horizontal,
         pageBackgroundColor: UIColor? = nil,
-        pageBackgroundImage: UIImage? = nil
+        pageBackgroundImage: UIImage? = nil,
+        minimumBackdropExtent: CGFloat = 0
     ) -> Output {
         let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
         let totalLen = attrStr.length
@@ -44,7 +48,8 @@ enum CoreTextChunkSlicer {
                 widthCap: heightCap,
                 writingMode: writingMode,
                 pageBackgroundColor: pageBackgroundColor,
-                pageBackgroundImage: pageBackgroundImage
+                pageBackgroundImage: pageBackgroundImage,
+                minimumBackdropExtent: minimumBackdropExtent
             )
         }
 
@@ -161,27 +166,14 @@ enum CoreTextChunkSlicer {
                 )
             }
 
-            let chunkSize = CGSize(width: contentWidth, height: actualHeight)
-            // Extract block decorations during slicing so they survive frame eviction
-            let decorations = extractBlockRenderables(
-                frame: frameBuild.frame,
-                chunkSize: chunkSize,
-                attributedString: attrStr,
-                charRange: actualRange,
-                writingMode: writingMode
-            )
-
-            chunks.append(CoreTextChunk(
-                chapterIndex: chapterIndex,
-                charRange: actualRange,
-                size: chunkSize,
+            chunks.append(makeHorizontalChunk(
+                frameBuild: frameBuild,
                 framesetter: framesetter,
-                attributedString: attrStr,
-                frame: frameBuild.frame,
+                attrStr: attrStr,
+                chapterIndex: chapterIndex,
+                range: actualRange,
+                size: CGSize(width: contentWidth, height: actualHeight),
                 writingMode: writingMode,
-                floatNotch: frameBuild.floatNotch,
-                floatAttachments: frameBuild.floatAttachments,
-                blockRenderables: decorations,
                 pageBackgroundColor: pageBackgroundColor,
                 pageBackgroundImage: pageBackgroundImage
             ))
@@ -189,7 +181,107 @@ enum CoreTextChunkSlicer {
             offset = actualRange.location + actualRange.length
         }
 
+        padForBackdrop(
+            chunks: &chunks,
+            minimumBackdropExtent: minimumBackdropExtent,
+            contentWidth: contentWidth,
+            framesetter: framesetter,
+            attrStr: attrStr,
+            chapterIndex: chapterIndex,
+            writingMode: writingMode,
+            pageBackgroundColor: pageBackgroundColor,
+            pageBackgroundImage: pageBackgroundImage
+        )
+
         return Output(chunks: chunks, framesetter: framesetter, attributedString: attrStr)
+    }
+
+    /// The publication-authored page backdrop is painted into the chunk's own box
+    /// (`CoreTextChunkBackdropView`), so a chapter shorter than one screen cropped the
+    /// artwork down to the height of its text: 《红楼梦》's 回目扉页 — a title plus two
+    /// footnotes over a full-bleed `background-image` on `<body>` — showed only the top
+    /// third of the painting, while paged mode paints that same image across a whole page
+    /// (`CoreTextPageView.drawContent`). Give the chapter's last chunk the missing extent so
+    /// the artwork gets one viewport in both modes. Scoped to chapters that actually carry a
+    /// backdrop image; a chapter with only an authored fill colour keeps its natural height.
+    /// Delete this once scroll mode has a page box of its own.
+    private static func padForBackdrop(
+        chunks: inout [CoreTextChunk],
+        minimumBackdropExtent: CGFloat,
+        contentWidth: CGFloat,
+        framesetter: CTFramesetter,
+        attrStr: NSAttributedString,
+        chapterIndex: Int,
+        writingMode: ReaderWritingMode,
+        pageBackgroundColor: UIColor?,
+        pageBackgroundImage: UIImage?
+    ) {
+        guard pageBackgroundImage != nil,
+              minimumBackdropExtent > 0,
+              let last = chunks.last
+        else { return }
+        let total = chunks.reduce(CGFloat(0)) { $0 + $1.height }
+        guard total < minimumBackdropExtent else { return }
+
+        // Height only — the character range is untouched, so progress, TTS and selection
+        // math see exactly the same chapter they did before.
+        let paddedSize = CGSize(
+            width: contentWidth,
+            height: last.height + (minimumBackdropExtent - total)
+        )
+        chunks[chunks.count - 1] = makeHorizontalChunk(
+            frameBuild: makeHorizontalFrame(
+                framesetter: framesetter,
+                attrStr: attrStr,
+                range: last.charRange,
+                chunkSize: paddedSize,
+                writingMode: writingMode
+            ),
+            framesetter: framesetter,
+            attrStr: attrStr,
+            chapterIndex: chapterIndex,
+            range: last.charRange,
+            size: paddedSize,
+            writingMode: writingMode,
+            pageBackgroundColor: pageBackgroundColor,
+            pageBackgroundImage: pageBackgroundImage
+        )
+    }
+
+    private static func makeHorizontalChunk(
+        frameBuild: HorizontalFrameBuild,
+        framesetter: CTFramesetter,
+        attrStr: NSAttributedString,
+        chapterIndex: Int,
+        range: CFRange,
+        size: CGSize,
+        writingMode: ReaderWritingMode,
+        pageBackgroundColor: UIColor?,
+        pageBackgroundImage: UIImage?
+    ) -> CoreTextChunk {
+        // Extract block decorations during slicing so they survive frame eviction
+        let decorations = extractBlockRenderables(
+            frame: frameBuild.frame,
+            chunkSize: size,
+            attributedString: attrStr,
+            charRange: range,
+            writingMode: writingMode
+        )
+
+        return CoreTextChunk(
+            chapterIndex: chapterIndex,
+            charRange: range,
+            size: size,
+            framesetter: framesetter,
+            attributedString: attrStr,
+            frame: frameBuild.frame,
+            writingMode: writingMode,
+            floatNotch: frameBuild.floatNotch,
+            floatAttachments: frameBuild.floatAttachments,
+            blockRenderables: decorations,
+            pageBackgroundColor: pageBackgroundColor,
+            pageBackgroundImage: pageBackgroundImage
+        )
     }
 
     private static func sliceVertical(
@@ -200,7 +292,8 @@ enum CoreTextChunkSlicer {
         widthCap: CGFloat,
         writingMode: ReaderWritingMode,
         pageBackgroundColor: UIColor?,
-        pageBackgroundImage: UIImage?
+        pageBackgroundImage: UIImage?,
+        minimumBackdropExtent: CGFloat
     ) -> Output {
         let totalLen = attrStr.length
         var chunks: [CoreTextChunk] = []
@@ -232,7 +325,19 @@ enum CoreTextChunkSlicer {
             var finalFrame = frame
             var finalChunkWidth = chunkWidth
             if actualRange.location + actualRange.length >= totalLen {
-                let usedWidth = min(chunkWidth, max(1, verticalUsedWidth(of: frame) + 2))
+                // Same backdrop rule as `padForBackdrop`, applied where vertical-rl decides
+                // the chapter's final column-block width: the scroll axis here is width, so
+                // compacting a short chapter to its used width cropped a full-bleed backdrop
+                // exactly the way the horizontal path did. A chapter that needed more than
+                // one chunk is already `widthCap` wide — far past one viewport — so the floor
+                // only applies while this is still the chapter's only chunk.
+                let backdropFloor = (pageBackgroundImage != nil && chunks.isEmpty)
+                    ? max(0, minimumBackdropExtent)
+                    : 0
+                let usedWidth = min(
+                    chunkWidth,
+                    max(1, max(verticalUsedWidth(of: frame) + 2, backdropFloor))
+                )
                 if usedWidth < chunkWidth {
                     let compactPath = CGPath(
                         rect: CGRect(x: 0, y: 0, width: usedWidth, height: chunkHeight),

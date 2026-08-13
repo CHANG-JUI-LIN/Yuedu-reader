@@ -114,14 +114,17 @@ struct BrowserLayoutPageEngineTests {
 
     private func makeEngine(
         chapters: [MockBrowserLayoutResource.Chapter],
-        fontSize: CGFloat = 17
+        fontSize: CGFloat = 17,
+        mode: EPUBLayoutEngineMode = .browserAuto
     ) async -> (engine: BrowserLayoutPageEngine, resource: MockBrowserLayoutResource, delegate: CoreTextPageEngine) {
         let resource = MockBrowserLayoutResource(chapters: chapters)
         let builder = MockAttributedStringBuilder(texts: chapters.map { $0.title })
         let store = CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("bl-test-\(UUID().uuidString)"))
         let settings = makeSettings(fontSize: fontSize)
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
-        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
+        let engine = BrowserLayoutPageEngine(
+            resource: resource, delegate: delegate, settings: settings, mode: mode
+        )
         await engine.start(renderSize: CGSize(width: 300, height: 400), bookId: "test")
         return (engine, resource, delegate)
     }
@@ -316,15 +319,6 @@ struct BrowserLayoutPageEngineTests {
     /// engine, never re-ensured). Position queries must not start a second
     /// session, and the reader must be able to turn past the diagnostic.
     @Test func browserForcedImageOnlyChapterPublishesDiagnosticPage() async throws {
-        let oldMode = BrowserLayoutFeature.mode
-        let oldOverlay = BrowserLayoutFeature.showDebugOverlay
-        BrowserLayoutFeature.mode = .browserForced
-        BrowserLayoutFeature.showDebugOverlay = true
-        defer {
-            BrowserLayoutFeature.mode = oldMode
-            BrowserLayoutFeature.showDebugOverlay = oldOverlay
-        }
-
         // A chapter that lays out ZERO pages (SVG-only body). The legacy
         // delegate would render the title placeholder; forced mode must NOT
         // delegate — it publishes the browser engine's diagnostic page.
@@ -344,7 +338,13 @@ struct BrowserLayoutPageEngineTests {
         let store = CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("bl-rg-\(UUID().uuidString)"))
         let settings = makeSettings()
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
-        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
+        // Forced mode is injected, never set on the global: two tests in this
+        // suite run in parallel, and flipping a shared `var` made the capability
+        // fallback test fail depending on interleaving.
+        let engine = BrowserLayoutPageEngine(
+            resource: resource, delegate: delegate, settings: settings,
+            mode: .browserForced, showDebugOverlay: true
+        )
         await engine.start(renderSize: CGSize(width: 390, height: 844), bookId: "rg")
 
         // Choice stays BROWSER — the browser engine owns the diagnostic page.

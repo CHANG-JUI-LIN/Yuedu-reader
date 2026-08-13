@@ -415,6 +415,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     ) {
         let extent = currentContentExtent
         let imageExtent = currentImageContentWidth
+        let viewportExtent = currentViewportExtent
         guard extent > 0 else { return }
         resliceTask?.cancel()
         pendingVisibleRefreshCompletion = completion
@@ -425,7 +426,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             let succeeded = await self.engine.reslice(
                 restoreAt: chapter,
                 contentWidth: extent,
-                imageContentWidth: imageExtent
+                imageContentWidth: imageExtent,
+                viewportExtent: viewportExtent
             )
             guard !Task.isCancelled else { return }
             guard succeeded else {
@@ -499,10 +501,24 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         }
     }
 
+    /// One screen along the scroll axis — the floor a chapter with a publication-authored
+    /// backdrop image is padded to. Deliberately the full viewport, not the inset content
+    /// box: paged mode paints that backdrop across the entire page including its margins
+    /// (`CoreTextPageView.drawContent`), and the padding exists to match it.
+    private var currentViewportExtent: CGFloat {
+        switch scrollAxis {
+        case .vertical:
+            return view.bounds.height
+        case .horizontalRTL:
+            return view.bounds.width
+        }
+    }
+
     private func kickoffEngineIfNeeded() {
         guard !hasKickedOffEngine else { return }
         let extent = currentContentExtent
         let imageExtent = currentImageContentWidth
+        let viewportExtent = currentViewportExtent
         guard extent > 0 else { return }
         hasKickedOffEngine = true
         Task { [weak self] in
@@ -510,7 +526,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             await self.engine.start(
                 initialChapter: self.pendingInitialChapter,
                 contentWidth: extent,
-                imageContentWidth: imageExtent
+                imageContentWidth: imageExtent,
+                viewportExtent: viewportExtent
             )
         }
     }

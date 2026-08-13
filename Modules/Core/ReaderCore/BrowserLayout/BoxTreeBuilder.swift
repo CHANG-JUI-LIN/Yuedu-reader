@@ -88,9 +88,13 @@ enum BoxTreeBuilder {
                     ))
                 } else if let element = elementNode.element,
                           let svgSource = Self.svgWrappedImageSource(element) {
+                    registerAnchors(&anchorStack, ownID: elementNode.anchorID,
+                                    anchors: &anchors, at: sourceText.currentOffset)
                     appendSVGImageRun(elementNode, source: svgSource, to: &pendingInline,
                                       sourceText: &sourceText, config: config, imageLoader: imageLoader)
                 } else if elementNode.tag == "img" {
+                    registerAnchors(&anchorStack, ownID: elementNode.anchorID,
+                                    anchors: &anchors, at: sourceText.currentOffset)
                     if elementNode.style.display == .block {
                         flushGroup(&pendingInline, style: node.style, config: config,
                                    containerWidth: containerWidth,
@@ -186,9 +190,13 @@ enum BoxTreeBuilder {
                     ))
                 } else if let element = elementNode.element,
                           let svgSource = Self.svgWrappedImageSource(element) {
+                    registerAnchors(&localStack, ownID: elementNode.anchorID,
+                                    anchors: &anchors, at: sourceText.currentOffset)
                     appendSVGImageRun(elementNode, source: svgSource, to: &runs,
                                       sourceText: &sourceText, config: config, imageLoader: imageLoader)
                 } else if elementNode.tag == "img" {
+                    registerAnchors(&localStack, ownID: elementNode.anchorID,
+                                    anchors: &anchors, at: sourceText.currentOffset)
                     appendImageRun(elementNode, to: &runs, sourceText: &sourceText,
                                    config: config, imageLoader: imageLoader)
                 } else if elementNode.style.display == .block || elementNode.style.display == .none {
@@ -206,6 +214,36 @@ enum BoxTreeBuilder {
                 }
             }
         }
+    }
+
+    // MARK: - Anchor registration
+
+    /// Binds the pending `id`s to the source offset where their content starts,
+    /// then clears the stack. The single registration point for
+    /// `charOffset(forSpine:fragment:)` — TOC entries, search results, restored
+    /// reading positions and link targets all read the same map.
+    ///
+    /// Also called for replaced elements (Phase 3A). Registering only at text
+    /// used to lose every id whose element contains no text of its own, and the
+    /// 多看 footnote idiom is exactly that shape: the reference marker is
+    /// `<a id="ref_1" href="#note_1"><img/></a>`, so "回到正文" resolved to a
+    /// missing anchor and jumped to the top of the chapter instead of back to
+    /// the sentence. `ownID` covers an id on the replaced element itself, which
+    /// no ancestor stack can carry.
+    private static func registerAnchors(
+        _ anchorStack: inout [String],
+        ownID: String? = nil,
+        anchors: inout [String: Int],
+        at offset: Int
+    ) {
+        if let ownID, anchors[ownID] == nil {
+            anchors[ownID] = offset
+        }
+        guard !anchorStack.isEmpty else { return }
+        for id in anchorStack where anchors[id] == nil {
+            anchors[id] = offset
+        }
+        anchorStack.removeAll()
     }
 
     // MARK: - Run creation
@@ -228,11 +266,8 @@ enum BoxTreeBuilder {
             // between block siblings): dropped, never rendered.
             return
         }
-        if !isWhitespaceOnly, !anchorStack.isEmpty {
-            for id in anchorStack where anchors[id] == nil {
-                anchors[id] = sourceText.currentOffset
-            }
-            anchorStack.removeAll()
+        if !isWhitespaceOnly {
+            registerAnchors(&anchorStack, anchors: &anchors, at: sourceText.currentOffset)
         }
         let range = sourceText.append(collapsed)
         runs.append(InlineRun(
@@ -285,7 +320,10 @@ enum BoxTreeBuilder {
             text: "\u{FFFC}", style: node.style,
             sourceRange: NSRange(location: sourceText.currentOffset, length: 0),
             nodeID: node.nodeID, linkTarget: node.linkTarget,
-            atomic: AtomicInline(source: source, image: image, usedSize: usedSize)
+            atomic: AtomicInline(
+                source: source, image: image, usedSize: usedSize,
+                nodeID: node.nodeID, linkTarget: node.linkTarget
+            )
         ))
     }
 
@@ -317,7 +355,10 @@ enum BoxTreeBuilder {
             text: "\u{FFFC}", style: node.style,
             sourceRange: NSRange(location: sourceText.currentOffset, length: 0),
             nodeID: node.nodeID, linkTarget: node.linkTarget,
-            atomic: AtomicInline(source: src, image: image, usedSize: usedSize)
+            atomic: AtomicInline(
+                source: src, image: image, usedSize: usedSize,
+                nodeID: node.nodeID, linkTarget: node.linkTarget
+            )
         ))
     }
 
@@ -335,7 +376,10 @@ enum BoxTreeBuilder {
             containerWidth: config.renderWidth,
             rootFontSize: config.rootFontSize
         )
-        return AtomicInline(source: src, image: image, usedSize: usedSize)
+        return AtomicInline(
+            source: src, image: image, usedSize: usedSize,
+            nodeID: node.nodeID, linkTarget: node.linkTarget
+        )
     }
 
     // MARK: - Group lifecycle

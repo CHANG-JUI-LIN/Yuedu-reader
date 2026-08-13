@@ -24,10 +24,6 @@ struct SVGCoverFixtureTests {
     /// publishes a TERMINAL diagnostic page (exactly 1 page, effectiveEngine
     /// stays browser), and position queries never re-ensure the session.
     @Test func emptyCoverPublishesDiagnosticAndNeverRelayouts() async throws {
-        let oldMode = BrowserLayoutFeature.mode
-        BrowserLayoutFeature.mode = .browserForced
-        defer { BrowserLayoutFeature.mode = oldMode }
-
         let chapter = MockBrowserLayoutResource.Chapter(
             title: "cover", href: "c0.xhtml",
             html: "<html><body><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\"><rect width=\"100\" height=\"100\"/></svg></body></html>",
@@ -48,7 +44,11 @@ struct SVGCoverFixtureTests {
             contentInsets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
         )
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
-        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
+        // Mode is injected, not set on the shared global: these suites run in
+        // parallel and a flipped `var` leaks into whatever else is mid-decision.
+        let engine = BrowserLayoutPageEngine(
+            resource: resource, delegate: delegate, settings: settings, mode: .browserForced
+        )
         await engine.start(renderSize: CGSize(width: 390, height: 844), bookId: "t")
 
         // Spine 0 (empty SVG): the BROWSER engine owns the outcome — choice is
@@ -95,10 +95,6 @@ struct SVGCoverFixtureTests {
     /// back to the delegate engine (the forced-mode diagnostic must NOT leak
     /// into auto mode).
     @Test func autoModeSVGCoverFallsBackToLegacy() async throws {
-        let oldMode = BrowserLayoutFeature.mode
-        BrowserLayoutFeature.mode = .browserAuto
-        defer { BrowserLayoutFeature.mode = oldMode }
-
         let chapter = MockBrowserLayoutResource.Chapter(
             title: "cover", href: "c0.xhtml",
             html: "<html><body><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\"><rect width=\"100\" height=\"100\"/></svg></body></html>",
@@ -114,7 +110,9 @@ struct SVGCoverFixtureTests {
             contentInsets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
         )
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
-        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
+        let engine = BrowserLayoutPageEngine(
+            resource: resource, delegate: delegate, settings: settings, mode: .browserAuto
+        )
         await engine.start(renderSize: CGSize(width: 390, height: 844), bookId: "t")
 
         // Auto mode: capability fallback to legacy — the SVG cover renders from

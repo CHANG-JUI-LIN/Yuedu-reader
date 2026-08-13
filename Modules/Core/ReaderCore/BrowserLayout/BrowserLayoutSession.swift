@@ -35,6 +35,8 @@ final class BrowserLayoutSession {
     /// 多看 popup footnotes found while parsing this chapter (`noteID → text`).
     /// The engine publishes them to `FootnoteStore`.
     private(set) var pipelineFootnotes: [String: String] = [:]
+    /// nodeID → owning `<a href>` for this chapter (Phase 3A link interaction).
+    private(set) var pipelineLinkAnchors: [Int: LinkAnchorInfo] = [:]
 
     init(
         html: String,
@@ -314,6 +316,7 @@ final class BrowserLayoutSession {
         pipelineNodeCount = result.nodeCount
         pipelineBoxCount = result.boxCount
         pipelineFootnotes = result.footnotes
+        pipelineLinkAnchors = result.linkAnchors
         pipeline = result
         walker = PageWalker(
             box: result.rootBox,

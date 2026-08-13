@@ -59,11 +59,9 @@ extension ReaderView {
                         }
                         return
                     }
-                    // duokan popup footnote: show the note in place rather than jumping to the tail.
-                    if let note = FootnoteStore.text(spineIndex: currentChapterIndex, href: href) {
-                        footnoteItem = ReaderFootnoteItem(text: note)
-                        return
-                    }
+                    // Footnotes never reach here: `CoreTextCollectionScrollViewController`
+                    // intercepts them at the tap and presents the anchored popover,
+                    // where the marker's rect is known.
                     Task {
                         guard let targetPage = await epubRenderer.resolveInternalLink(href, fromSpineIndex: currentChapterIndex),
                               let pagedEngine = epubRenderer.engine else { return }

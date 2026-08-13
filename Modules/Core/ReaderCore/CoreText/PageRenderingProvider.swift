@@ -88,13 +88,17 @@ protocol InternalLinkResolving: AnyObject {
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int?
 }
 
-/// Engines that surface link taps / footnote taps to the reader. The reader
-/// binds these callbacks through this protocol (cast at CoreTextPagedView),
-/// so non-CoreText engines (browser-layout) can drive link navigation too.
+/// Engines that surface link taps to the reader. The reader binds this callback
+/// through this protocol (cast at CoreTextPagedView), so non-CoreText engines
+/// (browser-layout) can drive link navigation too.
+///
+/// Footnotes are deliberately NOT here. A note is shown as a popover anchored to
+/// the marker that was tapped, which only the view that owns the tap can do —
+/// routing the text up to SwiftUI could only produce an unanchored sheet, and
+/// that sheet was retired.
 @MainActor
 protocol LinkNavigationProviding: AnyObject {
     var onLinkNavigate: ((Int) -> Void)? { get set }
-    var onFootnoteTap: ((String) -> Void)? { get set }
 }
 
 @MainActor

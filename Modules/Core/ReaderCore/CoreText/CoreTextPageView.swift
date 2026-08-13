@@ -1138,7 +1138,24 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             return
         }
 
+        // A footnote whose marker is TEXT (a numeral, not the 多看 icon image)
+        // gets the same anchored popover as the image marker above. It used to
+        // fall through to `onInternalLinkTap`, which routed it up to the reader
+        // as a bottom sheet — two presentations for one concept.
+        if let note = FootnoteStore.text(spineIndex: layout.spineIndex, href: href) {
+            onFootnoteTap?(note, Self.tapAnchorRect(around: point))
+            return
+        }
+
         onInternalLinkTap?(href)
+    }
+
+    /// A small box around the tap point, for anchoring a popover when the
+    /// marker's own rect is not to hand. Same 12pt convention the scroll
+    /// reader's `footnoteAnchor(at:)` uses, so the arrow lands identically.
+    static func tapAnchorRect(around point: CGPoint) -> CGRect {
+        let size: CGFloat = 12
+        return CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
     }
 
     /// Test seam for exercising the same tap path used by the gesture recognizer.

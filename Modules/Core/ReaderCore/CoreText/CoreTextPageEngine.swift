@@ -177,9 +177,6 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
     /// the host's executor model never turns a bare binding write into a visible page change,
     /// so a link tap must come through here to actually move the page view controller.
     var onLinkNavigate: ((Int) -> Void)?
-    /// Fired instead of `onNavigateToPage` when a tapped internal link resolves to a duokan
-    /// popup footnote (`FootnoteStore`) — the note text, ready to show in place.
-    var onFootnoteTap: ((String) -> Void)?
 
     deinit {
         chapterByteScanTask?.cancel()
@@ -1251,11 +1248,10 @@ _layouts.removeAll()
         let vc = CoreTextPageViewController()
         vc.onInternalLinkTap = { [weak self] href in
             guard let self else { return }
-            // duokan popup footnote: show the note in place instead of paging to the chapter tail.
-            if let note = FootnoteStore.text(spineIndex: spineIndex, href: href) {
-                self.onFootnoteTap?(note)
-                return
-            }
+            // Footnotes never reach here: `CoreTextPageView` intercepts both the
+            // image marker and the text marker and shows the anchored popover
+            // itself, where the marker's rect is known. This closure only ever
+            // sees real navigation.
             Task { @MainActor in
                 if let url = Self.externalURL(from: href) {
                     await UIApplication.shared.open(url)

@@ -271,7 +271,7 @@ struct RedChamberProductionRenderingRegressionTests {
         })
         let vc = BrowserLayoutPageViewController(
             globalPageIndex: 0, readingPosition: nil,
-            displayList: list, backgroundColor: .white, statusText: nil, onLinkTap: nil
+            displayList: list, backgroundColor: .white, statusText: nil, onLinkActivate: nil
         )
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = vc

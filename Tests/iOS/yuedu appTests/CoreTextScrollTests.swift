@@ -503,6 +503,135 @@ struct CoreTextScrollTests {
         #expect(chunk.pageBackgroundImage === authoredImage)
     }
 
+    /// 《红楼梦》回目扉页: a title and two footnotes over a full-bleed `background-image` on
+    /// `<body>`. The backdrop is painted into the chunk's own box, so before the padding the
+    /// chapter's chunk was only as tall as those few lines and the artwork was cropped to the
+    /// top third — paged mode paints the same image across a whole page.
+    @Test("a short chapter carrying a backdrop image is padded to one viewport")
+    func shortBackdropChapterFillsOneViewport() throws {
+        let backdrop = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 48)).image { _ in }
+        let attr = NSAttributedString(
+            string: "第十四回\n林如海捐馆扬州城\n贾宝玉路谒北静王\n",
+            attributes: [.font: UIFont.systemFont(ofSize: 18), .foregroundColor: UIColor.black]
+        )
+
+        let unpadded = CoreTextChunkSlicer.slice(
+            attributedString: attr,
+            chapterIndex: 0,
+            contentWidth: 220,
+            pageBackgroundImage: backdrop
+        )
+        let padded = CoreTextChunkSlicer.slice(
+            attributedString: attr,
+            chapterIndex: 0,
+            contentWidth: 220,
+            pageBackgroundImage: backdrop,
+            minimumBackdropExtent: 844
+        )
+
+        let short = try #require(unpadded.chunks.first)
+        try #require(short.height < 844)
+        #expect(padded.chunks.count == 1)
+        let filled = try #require(padded.chunks.first)
+        #expect(filled.height >= 844)
+        // Height only: the chapter's characters must be untouched, or progress, TTS
+        // and selection would all shift with the padding.
+        #expect(filled.charRange.location == short.charRange.location)
+        #expect(filled.charRange.length == short.charRange.length)
+        #expect(filled.charRange.length == attr.length)
+    }
+
+    @Test("a short chapter without a backdrop image keeps its natural height")
+    func shortChapterWithoutBackdropKeepsNaturalHeight() throws {
+        let attr = NSAttributedString(
+            string: "第十四回\n林如海捐馆扬州城\n",
+            attributes: [.font: UIFont.systemFont(ofSize: 18), .foregroundColor: UIColor.black]
+        )
+
+        let output = CoreTextChunkSlicer.slice(
+            attributedString: attr,
+            chapterIndex: 0,
+            contentWidth: 220,
+            pageBackgroundColor: .white,
+            minimumBackdropExtent: 844
+        )
+
+        let chunk = try #require(output.chunks.first)
+        #expect(chunk.height < 844)
+    }
+
+    @Test("a chapter already longer than one viewport is not padded")
+    func longBackdropChapterIsNotPadded() throws {
+        let backdrop = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 48)).image { _ in }
+        let attr = NSAttributedString(
+            string: (0..<40).map { "Authored page background paragraph \($0)." }.joined(separator: "\n"),
+            attributes: [.font: UIFont.systemFont(ofSize: 18), .foregroundColor: UIColor.black]
+        )
+
+        func totalHeight(minimumBackdropExtent: CGFloat) -> CGFloat {
+            CoreTextChunkSlicer.slice(
+                attributedString: attr,
+                chapterIndex: 0,
+                contentWidth: 220,
+                heightCap: 180,
+                pageBackgroundImage: backdrop,
+                minimumBackdropExtent: minimumBackdropExtent
+            ).chunks.reduce(CGFloat(0)) { $0 + $1.height }
+        }
+
+        let natural = totalHeight(minimumBackdropExtent: 0)
+        try #require(natural > 844)
+        #expect(totalHeight(minimumBackdropExtent: 844) == natural)
+    }
+
+    @Test("vertical-rl pads the backdrop chapter along the scroll axis (width)")
+    func verticalShortBackdropChapterFillsOneViewport() throws {
+        let backdrop = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 48)).image { _ in }
+        let attr = NSAttributedString(
+            string: "第十四回\n林如海捐馆扬州城\n",
+            attributes: [.font: UIFont.systemFont(ofSize: 18), .foregroundColor: UIColor.black]
+        )
+
+        let unpadded = CoreTextChunkSlicer.slice(
+            attributedString: attr,
+            chapterIndex: 0,
+            contentWidth: 700,
+            writingMode: .verticalRTL,
+            pageBackgroundImage: backdrop
+        )
+        let padded = CoreTextChunkSlicer.slice(
+            attributedString: attr,
+            chapterIndex: 0,
+            contentWidth: 700,
+            writingMode: .verticalRTL,
+            pageBackgroundImage: backdrop,
+            minimumBackdropExtent: 390
+        )
+
+        let narrow = try #require(unpadded.chunks.first)
+        try #require(narrow.width < 390)
+        #expect(padded.chunks.count == 1)
+        let filled = try #require(padded.chunks.first)
+        #expect(filled.width >= 390)
+        #expect(filled.charRange.length == narrow.charRange.length)
+    }
+
+    @Test("the scroll engine hands its viewport extent to the slicer")
+    @MainActor
+    func scrollEngineAppliesViewportExtentToBackdropChapter() async throws {
+        let engine = CoreTextScrollEngine(
+            builder: PageBackdropScrollTestBuilder(color: .darkGray, image: UIGraphicsImageRenderer(
+                size: CGSize(width: 12, height: 24)
+            ).image { _ in }),
+            renderSettings: Self.renderSettings
+        )
+
+        await engine.start(initialChapter: 0, contentWidth: 220, viewportExtent: 800)
+
+        let chunk = try #require(engine.chunks.first)
+        #expect(chunk.height >= 800)
+    }
+
     @Test("scroll backdrop repeats at viewport-sized intervals without stretching a tall chapter")
     @MainActor
     func scrollBackdropUsesViewportSizedTiles() {

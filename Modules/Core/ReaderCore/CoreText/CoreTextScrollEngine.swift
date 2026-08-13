@@ -47,6 +47,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     private(set) var renderSettings: ReaderRenderSettings
     private(set) var contentWidth: CGFloat = 0
     private var imageContentWidth: CGFloat?
+    /// Along-scroll size of one viewport, used as the floor for a chapter that carries a
+    /// publication-authored page backdrop image (see `CoreTextChunkSlicer.padForBackdrop`).
+    private var viewportExtent: CGFloat = 0
 
     /// Chapters currently being sliced (deduplication)
     private var slicingChapters: Set<Int> = []
@@ -86,10 +89,12 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         initialChapter: Int,
         contentWidth: CGFloat,
         imageContentWidth: CGFloat? = nil,
+        viewportExtent: CGFloat = 0,
         loadAdjacentChapters: Bool = true
     ) async {
         self.contentWidth = contentWidth
         self.imageContentWidth = imageContentWidth
+        self.viewportExtent = viewportExtent
         let clamped = max(0, min(initialChapter, max(0, builder.chapterCount - 1)))
         await loadChapter(clamped)
         isReady = true
@@ -133,11 +138,13 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         restoreAt chapterIndex: Int,
         contentWidth: CGFloat,
         imageContentWidth: CGFloat? = nil,
+        viewportExtent: CGFloat? = nil,
         restorePosition: CoreTextReadingPosition? = nil
     ) async -> Bool {
         resliceGeneration &+= 1
         let generation = resliceGeneration
         let resolvedImageContentWidth = imageContentWidth ?? self.imageContentWidth
+        let resolvedViewportExtent = viewportExtent ?? self.viewportExtent
 
         let replacement = CoreTextScrollEngine(
             builder: builder,
@@ -149,6 +156,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             initialChapter: chapterIndex,
             contentWidth: contentWidth,
             imageContentWidth: resolvedImageContentWidth,
+            viewportExtent: resolvedViewportExtent,
             loadAdjacentChapters: false
         )
 
@@ -157,6 +165,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         }
         self.contentWidth = contentWidth
         self.imageContentWidth = resolvedImageContentWidth
+        self.viewportExtent = resolvedViewportExtent
         chunks = replacement.chunks
         chapterRanges = replacement.chapterRanges
         chapterCharacterCounts = replacement.chapterCharacterCounts
@@ -190,6 +199,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             restoreAt: chapterIndex,
             contentWidth: contentWidth,
             imageContentWidth: imageContentWidth,
+            viewportExtent: viewportExtent,
             restorePosition: restorePosition
         )
     }
@@ -408,6 +418,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     executor: "background"
                 )
             )
+            let backdropFloor = viewportExtent
             let output: CoreTextChunkSlicer.Output = await Task.detached(priority: .userInitiated) {
                 CoreTextChunkSlicer.slice(
                     attributedString: attrStr,
@@ -415,7 +426,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     contentWidth: width,
                     writingMode: writingMode,
                     pageBackgroundColor: pageBackgroundColor,
-                    pageBackgroundImage: pageBackgroundImage
+                    pageBackgroundImage: pageBackgroundImage,
+                    minimumBackdropExtent: backdropFloor
                 )
             }.value
             ReaderPerfTrace.end(

@@ -17,7 +17,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     @Binding var currentPage: Int
     let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
     let onTapZone: (TouchAction) -> Void
-    var onFootnoteTap: (String) -> Void = { _ in }
     var onSwipeUpExit: () -> Void = {}
     var visibleRefreshCommit: ReaderVisibleRefreshCommit?
     var onVisibleRefreshFinished: (UInt64, ReaderVisibleRefreshOutcome) -> Void = { _, _ in }
@@ -302,7 +301,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             currentPage: $currentPage,
             onPageChanged: onPageChanged,
             onTapZone: onTapZone,
-            onFootnoteTap: onFootnoteTap,
             onSwipeUpExit: onSwipeUpExit
         )
     }
@@ -320,7 +318,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         @Binding var currentPage: Int
         let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
         let onTapZone: (TouchAction) -> Void
-        let onFootnoteTap: (String) -> Void
         let onSwipeUpExit: () -> Void
         let isRTL: Bool
         var isDoublePageSpread: Bool
@@ -649,7 +646,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
              currentPage: Binding<Int>,
              onPageChanged: @escaping (Int, CoreTextReadingPosition?) -> Void,
              onTapZone: @escaping (TouchAction) -> Void,
-             onFootnoteTap: @escaping (String) -> Void,
              onSwipeUpExit: @escaping () -> Void = {}) {
             self.currentEngine = engine
             self.pageTurnStyle = pageTurnStyle
@@ -664,7 +660,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             self._currentPage = currentPage
             self.onPageChanged = onPageChanged
             self.onTapZone = onTapZone
-            self.onFootnoteTap = onFootnoteTap
             self.onSwipeUpExit = onSwipeUpExit
             if let externalTargetPosition {
                 self.currentCoreTextPosition = externalTargetPosition
@@ -707,12 +702,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             if let linkEngine = engine as? any LinkNavigationProviding {
-                linkEngine.onFootnoteTap = { [weak self] note in
-                    DispatchQueue.main.async {
-                        guard let self, self.callbackEngineIdentifier == identifier else { return }
-                        self.onFootnoteTap(note)
-                    }
-                }
                 linkEngine.onLinkNavigate = { [weak self, weak pageViewController] page in
                     DispatchQueue.main.async {
                         guard let self, let pageViewController else { return }
@@ -733,7 +722,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 engine.onNavigateToPage = nil
             }
             if let linkEngine = callbackEngineObject as? any LinkNavigationProviding {
-                linkEngine.onFootnoteTap = nil
                 linkEngine.onLinkNavigate = nil
             }
             callbackEngineObject = nil

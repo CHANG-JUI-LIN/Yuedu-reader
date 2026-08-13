@@ -38,6 +38,8 @@ final class BrowserLayoutDocument {
     private(set) var lastSourceText = ""
     /// Element id → char offset of its first text in `lastSourceText`.
     private(set) var lastAnchorOffsets: [String: Int] = [:]
+    /// nodeID → owning `<a href>` of the last `renderPages` run (Phase 3A).
+    private(set) var lastLinkAnchors: [Int: LinkAnchorInfo] = [:]
     /// Metrics of the last `renderPages` run.
     private(set) var lastMetrics = LayoutMetrics()
 
@@ -84,7 +86,14 @@ final class BrowserLayoutDocument {
             fullCSS.flatMap { CSSParser.parse(css: $0, orderOffset: 0) }
         }
         let builder = ComputedStyleTreeBuilder(rules: rules, config: config)
-        let rootNode = metrics.time("styleTree") { builder.buildTree(body: body) }
+        var linkAnchors: [Int: LinkAnchorInfo] = [:]
+        let rootNode = metrics.time("styleTree") {
+            let tree = builder.buildTree(body: body)
+            // Link identity/semantics belong to the style tree stage: they are
+            // DOM facts, resolved once, and every later stage only carries them.
+            linkAnchors = ComputedStyleTreeBuilder.collectLinkAnchors(tree)
+            return tree
+        }
         var sourceText = SourceTextBuilder()
         var anchors: [String: Int] = [:]
         let rootBox = metrics.time("boxTree") {
@@ -111,7 +120,8 @@ final class BrowserLayoutDocument {
             contentSize: CGSize(width: contentWidth, height: contentHeight),
             nodeCount: rootNode.nodeID,
             boxCount: BoxTreeBuilder.countBoxes(in: rootBox),
-            footnotes: Self.collectFootnotes(in: document)
+            footnotes: Self.collectFootnotes(in: document),
+            linkAnchors: linkAnchors
         )
     }
 
@@ -129,6 +139,9 @@ final class BrowserLayoutDocument {
         /// parsed; the ENGINE owns publishing them to `FootnoteStore`, so the
         /// layout layer stays free of reader state.
         let footnotes: [String: String]
+        /// nodeID → owning `<a href>` (identity + EPUB semantics), for every
+        /// node inside a link. Consumed by `LinkInteractionRegionSet`.
+        let linkAnchors: [Int: LinkAnchorInfo]
     }
 
     enum BrowserLayoutError: Error {
@@ -151,6 +164,25 @@ final class BrowserLayoutDocument {
             guard classes.contains(where: { $0.contains("footnote") }) else { continue }
             let id = (try? item.attr("id")) ?? ""
             guard !id.isEmpty else { continue }
+            let text = ((try? item.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            map[id] = text
+        }
+        // EPUB 3 structural semantics (Phase 3A): a note body is whatever the
+        // author tagged `epub:type="footnote|endnote|note"`, on any element —
+        // `<aside epub:type="footnote" id="n1">` is the spec's own example and
+        // carries no 多看 class at all. Read from the attribute, never from a
+        // class name, so a `<a epub:type="noteref">` marker has a body to show.
+        for item in (try? document.select("[id]").array()) ?? [] {
+            let id = (try? item.attr("id")) ?? ""
+            guard !id.isEmpty, map[id] == nil else { continue }
+            let tokens = ((try? item.attr("epub:type")) ?? "")
+                .lowercased()
+                .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" })
+                .map(String.init)
+            guard tokens.contains("footnote") || tokens.contains("endnote")
+                    || tokens.contains("note") || tokens.contains("rearnote")
+            else { continue }
             let text = ((try? item.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
             map[id] = text
@@ -292,6 +324,7 @@ final class BrowserLayoutDocument {
 
         lastSourceText = pipeline.sourceText
         lastAnchorOffsets = pipeline.anchorOffsets
+        lastLinkAnchors = pipeline.linkAnchors
         metrics.peakFootprintDelta = peakFootprint - startFootprint
         lastMetrics = metrics
         return (pages, metrics)

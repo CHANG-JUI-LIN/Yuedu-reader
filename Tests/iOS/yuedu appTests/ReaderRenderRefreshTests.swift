@@ -496,7 +496,6 @@ struct ReaderRenderRefreshTests {
             currentPage: binding,
             onPageChanged: { _, _ in },
             onTapZone: { _ in },
-            onFootnoteTap: { _ in },
             onSwipeUpExit: {}
         )
         let pageViewController = UIPageViewController(

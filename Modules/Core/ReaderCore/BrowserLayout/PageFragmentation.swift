@@ -172,6 +172,16 @@ struct PageWalker {
 
     /// Page block extent in DOCUMENT space (the content flow page height).
     let pageHeight: CGFloat
+    /// The fragmentainer has NO bottom: the whole chapter is one continuous
+    /// flow (scroll mode).
+    ///
+    /// Not "a page tall enough to never break". A height large enough today is
+    /// still a height, and the first chapter that exceeds it silently paginates
+    /// — which is exactly how this went wrong: bounding the fragmentainer by the
+    /// laid-out content height was short by the root's block-start margin, so
+    /// the tail of every chapter wrapped back to the top. Scroll mode has no
+    /// page, so the paging rules are SKIPPED rather than given a number.
+    let isContinuous: Bool
     /// The page canvas rect (full viewport).
     let pageRect: PageLocalRect
     /// Reader page margins: content sits inside these within the canvas.
@@ -232,11 +242,13 @@ struct PageWalker {
         box: BlockBox,
         pageSize: CGSize,
         writingMode: ReaderWritingMode = .horizontal,
-        contentInsets: UIEdgeInsets = .zero
+        contentInsets: UIEdgeInsets = .zero,
+        isContinuous: Bool = false
     ) {
         // Phase 2C: the canvas is the actual page viewport, not the content
         // bounds. pageHeight (the paging stride in document space) is the
         // content flow height inside the canvas.
+        self.isContinuous = isContinuous
         self.pageHeight = max(1, pageSize.height - contentInsets.top - contentInsets.bottom)
         self.pageRect = PageLocalRect(rawValue: CGRect(origin: .zero, size: pageSize))
         self.contentInsets = contentInsets
@@ -363,8 +375,12 @@ struct PageWalker {
                     source: attachment.source,
                     image: attachment.image,
                     sourceRange: NSRange(location: 0, length: 0),
-                    nodeID: -1,
-                    linkTarget: nil,
+                    // A block-level replaced element has no line run, so the
+                    // attachment is the ONLY carrier of its DOM identity. These
+                    // were hardcoded to `-1`/`nil`, which erased the ancestor
+                    // anchor of every `<a href><img style="display:block"></a>`.
+                    nodeID: attachment.nodeID,
+                    linkTarget: attachment.linkTarget,
                     writingMode: writingMode,
                     rect: rect,
                     alt: nil
@@ -567,6 +583,24 @@ struct PageWalker {
     }
 
     private mutating func placeText(_ step: StepText) -> PageFragments? {
+        if isContinuous {
+            // No break can occur, so nothing is ever relocated and `flowShift`
+            // stays zero: the document position IS the final position.
+            let canvas = canvasRect(forDocument: step.rect, pageIndex: 0)
+            currentPage.append(.text(TextFragment(
+                sourceRange: step.sourceRange,
+                nodeID: step.nodeID,
+                linkTarget: step.linkTarget,
+                writingMode: step.writingMode,
+                rect: canvas,
+                documentRect: step.rect,
+                baselineY: canvas.minY + (step.baselineY - step.rect.minY),
+                font: step.font,
+                color: step.color,
+                ctLine: step.ctLine
+            )))
+            return nil
+        }
         let shiftedY = step.rect.minY + flowShift
         var target = max(0, Int(floor(shiftedY / pageHeight)))
         let pageLocalY = shiftedY - CGFloat(target) * pageHeight
@@ -603,6 +637,19 @@ struct PageWalker {
     }
 
     private mutating func placeFill(_ step: StepFill) -> PageFragments? {
+        if isContinuous {
+            currentPage.append(.fill(FillFragment(
+                rect: canvasRect(forDocument: step.rect, pageIndex: 0),
+                documentRect: step.rect,
+                color: step.color,
+                cornerRadius: step.cornerRadius,
+                borderTop: step.borderTop, borderBottom: step.borderBottom,
+                borderLeft: step.borderLeft, borderRight: step.borderRight,
+                nodeID: step.nodeID,
+                writingMode: step.writingMode
+            )))
+            return nil
+        }
         var shiftedRect = step.rect.rawValue
         shiftedRect.origin.y += flowShift
         let target = max(0, Int(floor(shiftedRect.minY / pageHeight)))
@@ -625,6 +672,25 @@ struct PageWalker {
     }
 
     private mutating func placeImage(_ step: StepImage) -> PageFragments? {
+        if isContinuous {
+            // Deliberately NO scale-to-fit here. The three replaced-element
+            // rules below all exist to make an image fit a PAGE; with no page
+            // there is nothing to fit it to, and block layout already resolved
+            // the used size against the container width. An image that still
+            // overflows overflows — which is what a browser does too.
+            currentPage.append(.image(ImageFragment(
+                source: step.source,
+                image: step.image,
+                sourceRange: step.sourceRange,
+                nodeID: step.nodeID,
+                linkTarget: step.linkTarget,
+                writingMode: step.writingMode,
+                rect: canvasRect(forDocument: step.rect, pageIndex: 0),
+                documentRect: step.rect,
+                alt: step.alt
+            )))
+            return nil
+        }
         let shiftedY = step.rect.minY + flowShift
         var target = max(0, Int(floor(shiftedY / pageHeight)))
         let pageLocalY = shiftedY - CGFloat(target) * pageHeight

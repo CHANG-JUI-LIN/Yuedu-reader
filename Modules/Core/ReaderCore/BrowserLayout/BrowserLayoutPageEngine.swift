@@ -117,6 +117,9 @@ struct BrowserChapterLayout {
     }
     let sourceText: String
     let anchorOffsets: [String: Int]
+    /// nodeID → owning `<a href>` (Phase 3A). Joined with page geometry to build
+    /// `LinkInteractionRegionSet`; never consulted by layout.
+    let linkAnchors: [Int: LinkAnchorInfo]
     /// Page-local source ranges (into `sourceText`), rebuilt whenever `pages`
     /// changes (incremental completion grows them).
     ///
@@ -140,11 +143,13 @@ struct BrowserChapterLayout {
     var diagnosticGeneration: Int = -1
 
     init(spineIndex: Int, pages: [PageFragments], sourceText: String, anchorOffsets: [String: Int],
+         linkAnchors: [Int: LinkAnchorInfo] = [:],
          fontSize: CGFloat, themeTextColor: UIColor, themeBackgroundColor: UIColor) {
         self.spineIndex = spineIndex
         self.pages = pages
         self.sourceText = sourceText
         self.anchorOffsets = anchorOffsets
+        self.linkAnchors = linkAnchors
         // `didSet` does not run during init.
         self.pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText)
         self.fontSize = fontSize
@@ -358,7 +363,6 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     var onChapterReady: ((Int?) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
     var onLinkNavigate: ((Int) -> Void)?
-    var onFootnoteTap: ((String) -> Void)?
 
     // MARK: - Dependencies
 
@@ -420,20 +424,46 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// not block later work).
     private var textAnnotations: [CoreTextTextAnnotation] = []
     private var engineStatus: [Int: String] = [:]
-    /// Bounded DisplayList window cache: ±2 pages around the current page keep
+    /// Bounded page-artifact window cache: ±2 pages around the current page keep
     /// their paint artifacts; farther pages rebuild on demand (DisplayLists
     /// are cheap to rebuild from fragments).
-    private var displayListCache: [Int: DisplayList] = [:]
+    ///
+    /// The link regions live in the SAME entry as the display list they were
+    /// derived from — one cache, one eviction rule. A second cache keyed the
+    /// same way is exactly how the two could ever describe different geometry.
+    private struct PageArtifacts {
+        let displayList: DisplayList
+        let interactionRegions: LinkInteractionRegionSet
+    }
+    private var displayListCache: [Int: PageArtifacts] = [:]
     private var displayListCacheBytes: [Int: Int64] = [:]
+
+    /// Engine mode for THIS engine, fixed at construction.
+    ///
+    /// Read from an instance field rather than `BrowserLayoutFeature.mode` on
+    /// every decision: the global is a mutable `var` in DEBUG (launch arguments
+    /// set it once at startup), and a decision path that re-reads it can be
+    /// changed underneath itself. That is not hypothetical — two tests in one
+    /// suite, one flipping the global to `.browserForced` while the other
+    /// asserted the capability fallback, raced and made
+    /// `capabilityFailureFallsBackWholeChapterToLegacy` fail intermittently.
+    /// The app sets the mode before any engine exists, so pinning it at init
+    /// changes nothing at runtime.
+    private let mode: EPUBLayoutEngineMode
+    private let showDebugOverlay: Bool
 
     init(
         resource: any BrowserLayoutResourceProviding,
         delegate: CoreTextPageEngine,
-        settings: ReaderRenderSettings
+        settings: ReaderRenderSettings,
+        mode: EPUBLayoutEngineMode = BrowserLayoutFeature.mode,
+        showDebugOverlay: Bool = BrowserLayoutFeature.showDebugOverlay
     ) {
         self.resource = resource
         self.delegate = delegate
         self.settings = settings
+        self.mode = mode
+        self.showDebugOverlay = showDebugOverlay
         self.themeTextColor = settings.textColor
         self.themeBackgroundColor = settings.backgroundColor
         delegate.onChapterReady = { [weak self] spine in
@@ -444,9 +474,6 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         delegate.onLinkNavigate = { [weak self] page in
             self?.onLinkNavigate?(page)
-        }
-        delegate.onFootnoteTap = { [weak self] note in
-            self?.onFootnoteTap?(note)
         }
     }
 
@@ -508,7 +535,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         case .browser:
             await layoutBrowserChapter(spineIndex)
         case .legacyFallback, .legacyEngineFailure:
-            if BrowserLayoutFeature.mode == .browserForced {
+            if mode == .browserForced {
                 // Forced mode NEVER hands a chapter to the legacy engine —
                 // not even on a chapterHTML fetch failure. Publish the
                 // browser engine's own terminal failure diagnostic instead.
@@ -546,7 +573,6 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         let css = await resource.processedCSS(forChapter: spineIndex)
         let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: css)
-        let mode = BrowserLayoutFeature.mode
         let decision: ChapterEngineChoice
         if scan.supported {
             decision = .browser
@@ -588,7 +614,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             .chapterConfig(spine: spineIndex, generation: generation),
             spine: spineIndex, generation: generation,
             message: "chapterLayoutStart trace=\(traceID) engineCreated=BrowserLayoutPageEngine "
-                + "mode=\(BrowserLayoutFeature.mode)"
+                + "mode=\(mode)"
         )
         do {
             let html = try await resource.chapterHTML(at: spineIndex)
@@ -660,6 +686,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 pages: [firstPage],
                 sourceText: session.sourceText,
                 anchorOffsets: session.anchorOffsets,
+                linkAnchors: session.pipelineLinkAnchors,
                 fontSize: settings.fontSize,
                 themeTextColor: self.themeTextColor,
                 themeBackgroundColor: themeBackgroundColor
@@ -753,7 +780,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         // reader always has a real page to hold (`effectiveEngine=browser`,
         // never legacy) and the state machine stops re-ensuring the session.
         // Only browserAuto may hand a chapter to the legacy engine.
-        if BrowserLayoutFeature.mode == .browserForced {
+        if mode == .browserForced {
             await publishForcedDiagnostic(spineIndex, reason: reason, generation: layoutGeneration)
             return
         }
@@ -972,36 +999,15 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     // MARK: - InternalLinkResolving
 
+    /// href → global page. Shares `LinkResolver` with `activateLink`, so a link
+    /// resolved through the protocol and a link the user tapped can never land
+    /// on different chapters.
     func resolveInternalLink(_ href: String, fromSpineIndex spineIndex: Int) async -> Int? {
-        // Legacy-compatible resolution: path#fragment → target spine + offset.
-        var path = href
-        var fragment: String? = nil
-        if let hashIndex = href.firstIndex(of: "#") {
-            path = String(href[..<hashIndex])
-            fragment = String(href[href.index(after: hashIndex)...])
-        }
-        var targetSpine = spineIndex
-        if !path.isEmpty {
-            // Resolve the path relative to the current chapter's href.
-            let currentHref = resource.chapterSourceHref(at: spineIndex) ?? ""
-            let resolved = EPUBStyleResolver.resolveImageHref(path, chapterHref: currentHref)
-            targetSpine = chapterIndexMatching(resolved) ?? spineIndex
-        }
+        guard case .internalTarget(let targetSpine, let fragment) =
+                linkResolver.resolve(href: href, fromSpine: spineIndex) else { return nil }
         await preloadChapter(at: targetSpine)
-        let offset: Int
-        if let fragment, !fragment.isEmpty {
-            offset = charOffset(forSpine: targetSpine, fragment: fragment) ?? 0
-        } else {
-            offset = 0
-        }
+        let offset = fragment.flatMap { charOffset(forSpine: targetSpine, fragment: $0) } ?? 0
         return pageIndex(forSpine: targetSpine, charOffset: offset)
-    }
-
-    private func chapterIndexMatching(_ href: String) -> Int? {
-        for index in 0..<resource.chapterCount {
-            if resource.chapterSourceHref(at: index) == href { return index }
-        }
-        return nil
     }
 
     // MARK: - ThemeUpdatable / AnnotationApplying / SnapshotRenderable
@@ -1058,29 +1064,43 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                     readingPosition: CoreTextReadingPosition(spineIndex: spine, charOffset: 0),
                     diagnosticPage: diag,
                     backgroundColor: themeBackgroundColor,
-                    showOverlay: BrowserLayoutFeature.showDebugOverlay
+                    showOverlay: showDebugOverlay
                 )
             }
             guard let layout = browserChapters[spine],
                   layout.pages.indices.contains(local) else {
                 return notYetLaidOutPlaceholder(spine: spine, localPage: local, globalPage: index)
             }
-            let list = cachedDisplayList(globalPage: index, spine: spine, local: local, layout: layout)
+            let artifacts = cachedArtifacts(globalPage: index, spine: spine, local: local, layout: layout)
+            let list = artifacts.displayList
             let offset = layout.pageSourceRanges[local].location
             let vc = BrowserLayoutPageViewController(
                 globalPageIndex: index,
                 readingPosition: CoreTextReadingPosition(spineIndex: spine, charOffset: offset),
                 displayList: list,
                 backgroundColor: themeBackgroundColor,
-                statusText: BrowserLayoutFeature.showDebugOverlay ? statusLabel(for: spine) : nil
-            ) { [weak self] href in
-                self?.handleLinkTap(href, fromSpine: spine)
+                statusText: showDebugOverlay ? statusLabel(for: spine) : nil,
+                interactionRegions: artifacts.interactionRegions,
+                // The press wash follows the reader theme rather than the system
+                // tint: on a sepia/night page a systemBlue flash is the only
+                // non-themed thing on screen.
+                pressedLinkColor: themeTextColor.withAlphaComponent(0.15)
+            ) { _ in }
+            // Bound after construction so the closure can reference THIS page's
+            // controller — it is the presenter, and it must be the instance that
+            // is actually on screen (vending a fresh one would present from a
+            // detached view controller and show nothing).
+            vc.pageView.onLinkActivate = { [weak self, weak vc] region in
+                guard let self, let vc else { return }
+                self.activateLink(region) { note in
+                    vc.presentFootnote(note, anchor: region.pageLocalRect)
+                }
             }
             // DEBUG: expose coordinate truth on the REAL page view (overlay
             // lines + superview chain + commit SHA). Never affects layout.
             let k1Rect = Self.k1PageLocalRect(in: list)
             let modeLabel: String
-            switch BrowserLayoutFeature.mode {
+            switch mode {
             case .legacy: modeLabel = "legacy"
             case .browserAuto: modeLabel = "browserAuto"
             case .browserForced: modeLabel = "browserForced"
@@ -1180,7 +1200,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                     readingPosition: position,
                     diagnosticPage: diag,
                     backgroundColor: themeBackgroundColor,
-                    showOverlay: BrowserLayoutFeature.showDebugOverlay
+                    showOverlay: showDebugOverlay
                 )
             }
             if let layout = browserChapters[spine], !layout.pages.isEmpty {
@@ -1216,25 +1236,72 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
     }
 
-    private func handleLinkTap(_ href: String, fromSpine spineIndex: Int) {
-        // duokan popup footnote: show the note in place instead of paging to
-        // the chapter tail. Mirrors CoreTextPageEngine's link handling.
-        if let note = FootnoteStore.text(spineIndex: spineIndex, href: href) {
-            onFootnoteTap?(note)
+    /// The ONE place a link activation turns into an action. Every kind of link
+    /// — same-spine anchor, cross-spine anchor, note reference, backlink,
+    /// external URL, text or image — arrives here and is dispatched from the
+    /// resolved destination, never from what the markup looked like.
+    /// - Parameter presentFootnote: shows a note anchored at the tapped marker.
+    ///   The engine decides that a tap IS a note; the page view owns presenting
+    ///   it, because only it has the presenter and the marker's on-screen rect.
+    func activateLink(
+        _ region: LinkInteractionRegion,
+        presentFootnote: @escaping (String) -> Void
+    ) {
+        let spine = region.spineIndex
+        let href = region.href
+
+        // A note whose body this chapter already indexed shows in place instead
+        // of paging to where the note lives. The decision is made by the TARGET
+        // (an indexed note body exists) — never by the marker's class name.
+        if let note = FootnoteStore.text(spineIndex: spine, href: href) {
+            presentFootnote(note)
             return
         }
-        if href.hasPrefix("http://") || href.hasPrefix("https://") {
-            if let url = URL(string: href) {
-                UIApplication.shared.open(url)
+
+        switch linkResolver.resolve(href: href, fromSpine: spine) {
+        case .external(let url):
+            UIApplication.shared.open(url)
+        case .unresolvable(let raw):
+            AppLogger.render(
+                "⟐ browserLink unresolvable href spine=\(spine) href=\(raw.prefix(120))"
+            )
+        case .internalTarget(let target, let fragment):
+            Task { [weak self] in
+                guard let self else { return }
+                await self.preloadChapter(at: target)
+                // Cross-spine note reference: the target chapter's notes are
+                // only indexed once it has been laid out, so the popup lookup
+                // repeats after the preload. Restricted to `noteref` — a plain
+                // link to another chapter navigates even if its target happens
+                // to be a note body.
+                if region.semantic == .noteref,
+                   let note = FootnoteStore.text(spineIndex: target, href: href) {
+                    presentFootnote(note)
+                    return
+                }
+                var offset = 0
+                if let fragment {
+                    if let resolved = self.charOffset(forSpine: target, fragment: fragment) {
+                        offset = resolved
+                    } else {
+                        // Landing at the chapter top when the anchor was named
+                        // is a real miss, not a normal outcome — say so instead
+                        // of silently scrolling somewhere else.
+                        AppLogger.render(
+                            "⟐ browserLink anchor not found spine=\(target) fragment=\(fragment.prefix(80))"
+                        )
+                    }
+                }
+                self.onLinkNavigate?(self.pageIndex(forSpine: target, charOffset: offset))
             }
-            return
         }
-        Task { [weak self] in
-            guard let self else { return }
-            if let target = await self.resolveInternalLink(href, fromSpineIndex: spineIndex) {
-                self.onLinkNavigate?(target)
-            }
-        }
+    }
+
+    /// Spine-href-driven href resolution. Rebuilt per use: the spine href list
+    /// is a handful of strings and a link tap is a human-speed event, so there
+    /// is no cache here to go stale when the book's resource changes.
+    private var linkResolver: LinkResolver {
+        LinkResolver(chapterHrefs: (0..<resource.chapterCount).map { resource.chapterSourceHref(at: $0) })
     }
 
     /// Selection/annotation/TTS contract: input a UTF-16 range in the
@@ -1393,10 +1460,18 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     // MARK: - DisplayList window cache
 
-    private func cachedDisplayList(globalPage: Int, spine: Int, local: Int, layout: BrowserChapterLayout) -> DisplayList {
+    private func cachedArtifacts(globalPage: Int, spine: Int, local: Int, layout: BrowserChapterLayout) -> PageArtifacts {
         if let cached = displayListCache[globalPage] { return cached }
         let list = layout.displayList(forPage: local, themeTextColor: themeTextColor, oldThemeColor: layout.themeTextColor)
-        displayListCache[globalPage] = list
+        // Regions are derived from the display list this page will actually
+        // draw, so a hit region can never disagree with what the reader sees.
+        let artifacts = PageArtifacts(
+            displayList: list,
+            interactionRegions: LinkInteractionRegionSet.build(
+                from: list, spineIndex: spine, anchors: layout.linkAnchors
+            )
+        )
+        displayListCache[globalPage] = artifacts
         let bytes = Int64(list.items.count) * 96
         displayListCacheBytes[globalPage] = bytes
         if var stored = browserChapters[spine] {
@@ -1405,7 +1480,27 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         MemoryTracker.record(.displayList, bytes: bytes)
         evictDisplayLists(around: globalPage)
-        return list
+        return artifacts
+    }
+
+    // MARK: - Link interaction (Phase 3A)
+
+    /// Every link region of one global page, in page-local coordinates.
+    /// Empty for pages the browser engine does not own (legacy fallback,
+    /// diagnostic pages, chapters not laid out yet).
+    func interactionRegions(forGlobalPage globalPage: Int) -> LinkInteractionRegionSet {
+        let (spine, local) = localPosition(for: globalPage)
+        guard case .browser = choices[spine] ?? .browser,
+              let layout = browserChapters[spine],
+              layout.pages.indices.contains(local) else { return .empty }
+        return cachedArtifacts(globalPage: globalPage, spine: spine, local: local, layout: layout)
+            .interactionRegions
+    }
+
+    /// The link at a page-local point on a page. The view layer's ONLY question:
+    /// it converts a touch to page-local coordinates and asks here.
+    func hitTest(_ pageLocalPoint: CGPoint, onGlobalPage globalPage: Int) -> LinkInteractionRegion? {
+        interactionRegions(forGlobalPage: globalPage).hitTest(pageLocalPoint)
     }
 
     private func evictDisplayLists(around globalPage: Int) {
@@ -1521,8 +1616,3 @@ extension BrowserLayoutPageEngine {
     }
 }
 
-private extension BrowserLayoutResourceProviding {
-    func chapterSourceHrefs() -> [String] {
-        (0..<chapterCount).compactMap { chapterSourceHref(at: $0) }
-    }
-}

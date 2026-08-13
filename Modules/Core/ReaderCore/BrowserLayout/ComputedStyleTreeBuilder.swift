@@ -144,6 +144,62 @@ final class ComputedStyleTreeBuilder {
         return value.isEmpty ? nil : value
     }
 
+    // MARK: - Link anchors (Phase 3A)
+
+    /// nodeID → the `<a href>` that owns it, for the anchor AND every node
+    /// inside it.
+    ///
+    /// A separate walk over the FINISHED tree rather than bookkeeping during the
+    /// build, because `nextNodeID` is consumed by the recursion into a node's
+    /// children before the node itself is numbered: while an `<a>`'s subtree is
+    /// being built its own nodeID does not exist yet. Renumbering to pre-order
+    /// would change `nodeCount` (the root's id doubles as the node total) and
+    /// every fragment's nodeID with it; one extra walk costs nothing by
+    /// comparison.
+    ///
+    /// Only nodes under a link are recorded, so this map stays tiny for ordinary
+    /// prose.
+    static func collectLinkAnchors(_ root: ComputedStyleNode) -> [Int: LinkAnchorInfo] {
+        var map: [Int: LinkAnchorInfo] = [:]
+        walkLinkAnchors(root, inherited: nil, into: &map)
+        return map
+    }
+
+    private static func walkLinkAnchors(
+        _ node: ComputedStyleNode,
+        inherited: LinkAnchorInfo?,
+        into map: inout [Int: LinkAnchorInfo]
+    ) {
+        var current = inherited
+        if let element = node.element, node.tag == "a",
+           let href = try? element.attr("href"), !href.isEmpty {
+            current = LinkAnchorInfo(
+                anchorNodeID: node.nodeID,
+                semantic: Self.semantic(of: element)
+            )
+        }
+        if let current {
+            map[node.nodeID] = current
+        }
+        for child in node.children {
+            guard case .element(let childNode) = child else { continue }
+            walkLinkAnchors(childNode, inherited: current, into: &map)
+        }
+    }
+
+    /// The anchor's authored semantic. Both spellings the EPUB 3 ecosystem
+    /// actually ships are read: the `epub:type` structural-semantics attribute
+    /// and the DPUB-ARIA `role` that publishers put next to it. Nothing else —
+    /// a class name or an image file name never decides semantics.
+    private static func semantic(of element: Element) -> LinkSemantic {
+        let epubType = (try? element.attr("epub:type")) ?? ""
+        let byEpubType = LinkSemantic.from(epubType: epubType)
+        if byEpubType != .plain { return byEpubType }
+        let role = ((try? element.attr("role")) ?? "").lowercased()
+        let roles = role.split(separator: " ").map(String.init)
+        return roles.contains("doc-noteref") ? .noteref : .plain
+    }
+
     // MARK: - Cascade for one element
 
     private func resolvedStyle(for element: Element, parent: ComputedStyle, parentElement: Element?) -> ComputedStyle {

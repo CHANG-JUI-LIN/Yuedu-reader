@@ -8,9 +8,19 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
 
     var displayList: DisplayList = .empty
     var backgroundColorFill: UIColor = .white
-    var onLinkTap: ((String) -> Void)?
+    /// Every tappable link on this page, in final page-local geometry, built by
+    /// the engine from the SAME display list this view draws. The view never
+    /// derives link geometry itself.
+    var interactionRegions: LinkInteractionRegionSet = .empty {
+        didSet { cancelLinkPress() }
+    }
+    var onLinkActivate: ((LinkInteractionRegion) -> Void)?
     var onImageTap: ((DisplayImageItem) -> Void)?
     var onLongPress: (() -> Void)?
+    /// Pressed-link wash. Paint only — never affects layout or pagination.
+    var linkPressedColor: UIColor = UIColor.label.withAlphaComponent(0.15) {
+        didSet { pressedHighlightLayer.fillColor = linkPressedColor.cgColor }
+    }
     /// Highlight rects (selection / TTS sentence) painted above the content.
     var highlightRects: [CGRect] = []
     var highlightColor: UIColor = UIColor.systemYellow.withAlphaComponent(0.35)
@@ -88,6 +98,8 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // The press overlay spans the page; its path is already page-local.
+        pressedHighlightLayer.frame = bounds
         guard let spec = debugSpec else { return }
         BrowserLayoutDeviceDiagnostic.log(
             .pageViewLayout(spine: spec.spine, generation: spec.generation),
@@ -97,6 +109,11 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
                 + "safeArea=\(safeAreaInsets) k1WindowRect=\(window.map { BrowserLayoutDeviceDiagnostic.rect(convert(spec.k1PageLocalRect, to: $0), space: "coordinate=window") } ?? "no-window")"
         )
     }
+
+    /// Pressed-link wash. A dedicated sublayer above the content layer so a
+    /// press costs a compositing pass and never a CoreGraphics redraw of the
+    /// page's text.
+    private let pressedHighlightLayer = CAShapeLayer()
 
     private lazy var tapRecognizer: UITapGestureRecognizer = {
         let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
@@ -112,10 +129,20 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         super.init(frame: frame)
         isUserInteractionEnabled = true
         tapRecognizer.delegate = self
+        // The tap recognizer's job for links is to CLAIM the touch, so the
+        // reader's ancestor page-turn/menu zones fail (see configureTapPriority).
+        // Activation itself runs from touchesEnded, which needs the touch to
+        // survive recognition — with the default `true`, UIKit replaces the
+        // view's touchesEnded with touchesCancelled the moment the recognizer
+        // fires, and no link could ever complete its press.
+        tapRecognizer.cancelsTouchesInView = false
         addGestureRecognizer(tapRecognizer)
         addGestureRecognizer(longPressRecognizer)
         // Long press wins over the tap recognizer when it fires.
         tapRecognizer.require(toFail: longPressRecognizer)
+        pressedHighlightLayer.fillColor = linkPressedColor.cgColor
+        pressedHighlightLayer.isHidden = true
+        layer.addSublayer(pressedHighlightLayer)
     }
 
     /// The page's tap recognizer only RECEIVES touches that hit a link (or an
@@ -131,7 +158,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         // Taps on links AND on images are owned by this page view (mirror
         // CoreTextPageView.shouldHandleTap, which also returns true for image
         // attachments). Anything else falls through to the reader's zones.
-        return linkTarget(at: point) != nil || imageTarget(at: point) != nil
+        return interactionRegions.hitTest(point) != nil || imageTarget(at: point) != nil
     }
 
     required init?(coder: NSCoder) {
@@ -249,24 +276,145 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
-        let point = recognizer.location(in: self)
-        // Selection takes priority over links: a tap inside an active
-        // selection deselects.
-        if hasActiveSelection {
-            let inside = highlightRects.contains { $0.insetBy(dx: -8, dy: -8).contains(point) }
-            if inside {
-                onDeselect?()
-                return
-            }
-            // Tapping outside the selection can still follow links.
-        }
-        if let link = linkTarget(at: point) {
-            onLinkTap?(link)
+        routeTap(at: recognizer.location(in: self))
+    }
+
+    /// What the tap recognizer decides, and the only thing it decides.
+    ///
+    /// Links are NOT activated here. The press lifecycle owns activation
+    /// (touchesBegan → touchesEnded) because only it can tell a completed press
+    /// from a finger that wandered off the link. This recognizer still has to
+    /// RECOGNIZE a link tap: that is what fails the reader's ancestor page-turn
+    /// recognizer, so following a link does not also turn the page.
+    func routeTap(at point: CGPoint) {
+        // Selection takes priority over links: a tap inside an active selection
+        // deselects. Tapping outside it can still follow links.
+        if isInsideActiveSelection(point) {
+            onDeselect?()
             return
         }
+        guard interactionRegions.hitTest(point) == nil else { return }
         if let image = imageTarget(at: point) {
             onImageTap?(image)
         }
+    }
+
+    // MARK: - Link press lifecycle (normal → pressed → activated)
+
+    enum LinkInteractionState: Equatable {
+        case normal
+        case pressed
+        case activated
+    }
+
+    /// Observable interaction state (`activated` is momentary — it is set for
+    /// the duration of the activation callback and reverts to `normal`).
+    private(set) var linkInteractionState: LinkInteractionState = .normal
+    /// The region the current touch went down on, and the only region this
+    /// touch is allowed to activate.
+    private(set) var pressedLinkRegion: LinkInteractionRegion?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        guard let touch = touches.first else { return }
+        beginLinkPress(at: touch.location(in: self))
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesMoved(touches, with: event)
+        guard let touch = touches.first else { return }
+        updateLinkPress(at: touch.location(in: self))
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        guard let touch = touches.first else { return }
+        endLinkPress(at: touch.location(in: self))
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesCancelled(touches, with: event)
+        cancelLinkPress()
+    }
+
+    /// Touch-down. Arms activation and paints the pressed wash when the point
+    /// is on a link. A no-op during an active selection — there the tap belongs
+    /// to the selection UI.
+    @discardableResult
+    func beginLinkPress(at point: CGPoint) -> LinkInteractionRegion? {
+        cancelLinkPress()
+        guard !isInsideActiveSelection(point),
+              let region = interactionRegions.hitTest(point) else { return nil }
+        pressedLinkRegion = region
+        linkInteractionState = .pressed
+        paintPressedHighlight(for: region)
+        return region
+    }
+
+    /// Touch-move. Leaving the pressed link disarms activation for the rest of
+    /// this touch (a finger that wandered off must not follow the link, and must
+    /// not adopt whichever link it wandered onto).
+    func updateLinkPress(at point: CGPoint) {
+        guard let region = pressedLinkRegion else { return }
+        if interactionRegions.hitTest(point)?.linkID != region.linkID {
+            cancelLinkPress()
+        }
+    }
+
+    /// Touch-up. Activates only when the finger lifts on the SAME link it went
+    /// down on; returns the activated region (nil when nothing activated).
+    @discardableResult
+    func endLinkPress(at point: CGPoint) -> LinkInteractionRegion? {
+        defer { cancelLinkPress() }
+        guard let region = pressedLinkRegion,
+              interactionRegions.hitTest(point)?.linkID == region.linkID else { return nil }
+        linkInteractionState = .activated
+        onLinkActivate?(region)
+        return region
+    }
+
+    func cancelLinkPress() {
+        pressedLinkRegion = nil
+        linkInteractionState = .normal
+        clearPressedHighlight()
+    }
+
+    /// True when a selection is up and the point lands on it. Such a point
+    /// belongs to the selection UI (it deselects) and must never start a link
+    /// press. One predicate, shared with the tap handler — the two used to
+    /// carry separate copies of the same rule.
+    private func isInsideActiveSelection(_ point: CGPoint) -> Bool {
+        guard hasActiveSelection else { return false }
+        return highlightRects.contains { $0.insetBy(dx: -8, dy: -8).contains(point) }
+    }
+
+    /// Paints every region of the pressed link — a link broken across two lines
+    /// highlights both halves, the way CSS `:active` applies to the element and
+    /// not to one of its boxes. Pure paint: no relayout, no repagination, and
+    /// the content layer is not even redrawn (the wash is its own sublayer).
+    private func paintPressedHighlight(for region: LinkInteractionRegion) {
+        let path = UIBezierPath()
+        for piece in interactionRegions.pieces(ofLink: region.linkID) {
+            path.append(UIBezierPath(
+                roundedRect: piece.pageLocalRect.insetBy(dx: -2, dy: -1),
+                cornerRadius: 3
+            ))
+        }
+        guard !path.isEmpty else { return }
+        // No implicit animation: a wash that fades in over 0.25s reads as lag.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pressedHighlightLayer.path = path.cgPath
+        pressedHighlightLayer.isHidden = false
+        CATransaction.commit()
+    }
+
+    private func clearPressedHighlight() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pressedHighlightLayer.isHidden = true
+        pressedHighlightLayer.path = nil
+        CATransaction.commit()
     }
 
     /// The image fragment whose page-local rect contains the point.
@@ -286,28 +434,15 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         return nil
     }
 
-    /// Nearest link hit region for a tap point (within the fragment rect or a
-    /// small tolerance vertically for adjacent lines).
+    /// The href at a page-local point.
+    ///
+    /// Delegates to the region set — the one hit-test implementation. The old
+    /// body here walked the display list for `.text` items only, which is why an
+    /// `<a href>` wrapping an `<img>` (the 文墨 annotation icon) drew fine and
+    /// never responded: its geometry was on an image item that link hit-testing
+    /// never looked at.
     func linkTarget(at point: CGPoint) -> String? {
-        var best: (href: String, distance: CGFloat)? = nil
-        for item in displayList.items {
-            guard case .text(let text) = item, let href = text.linkTarget else { continue }
-            let expanded = text.rect.rawValue.insetBy(dx: -4, dy: -4)
-            let distance: CGFloat
-            if expanded.contains(point) {
-                distance = 0
-            } else {
-                // Distance to the expanded rect (so taps just below/above the
-                // line still hit when no other link is closer).
-                let dx = max(expanded.minX - point.x, 0, point.x - expanded.maxX)
-                let dy = max(expanded.minY - point.y, 0, point.y - expanded.maxY)
-                distance = dx * dx + dy * dy
-            }
-            if best == nil || distance < best!.distance {
-                best = (href, distance)
-            }
-        }
-        return best?.distance ?? 0 <= 6 * 6 ? best?.href : nil
+        interactionRegions.hitTest(point)?.href
     }
 }
 
@@ -326,14 +461,20 @@ final class BrowserLayoutPageViewController: UIViewController,
         displayList: DisplayList,
         backgroundColor: UIColor,
         statusText: String? = nil,
-        onLinkTap: ((String) -> Void)?
+        interactionRegions: LinkInteractionRegionSet = .empty,
+        pressedLinkColor: UIColor? = nil,
+        onLinkActivate: ((LinkInteractionRegion) -> Void)?
     ) {
         self.globalPageIndex = globalPageIndex
         self.coreTextReadingPosition = readingPosition
         self.pageView = BrowserLayoutPageView(frame: .zero)
         self.pageView.displayList = displayList
         self.pageView.backgroundColorFill = backgroundColor
-        self.pageView.onLinkTap = onLinkTap
+        self.pageView.interactionRegions = interactionRegions
+        if let pressedLinkColor {
+            self.pageView.linkPressedColor = pressedLinkColor
+        }
+        self.pageView.onLinkActivate = onLinkActivate
         super.init(nibName: nil, bundle: nil)
         if let statusText, BrowserLayoutFeature.showDebugOverlay {
             let label = UILabel()
@@ -354,6 +495,19 @@ final class BrowserLayoutPageViewController: UIViewController,
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    /// Shows a note as an arrow popover anchored to the marker that was tapped —
+    /// the same `FootnotePopoverHost` the legacy paged and scroll readers use,
+    /// so all three modes present a note identically. `anchor` is the tapped
+    /// link region's page-local rect, which is the marker's exact geometry.
+    func presentFootnote(_ text: String, anchor: CGRect) {
+        FootnotePopoverHost.present(
+            text: text,
+            from: self,
+            sourceView: pageView,
+            sourceRect: anchor
+        )
     }
 
     /// Full-screen zoomable preview for a tapped image fragment — reuses the

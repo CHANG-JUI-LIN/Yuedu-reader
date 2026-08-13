@@ -154,42 +154,36 @@ struct BookSourceCheckView: View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             Text(localized("失敗類型細分"))
                 .font(DSFont.headline)
-            HStack(spacing: DSSpacing.sm) {
-                filterChip(.all, icon: "line.3.horizontal.circle",
-                           label: localized("全部"), count: failedItems.count)
-                filterChip(.ruleMissing, icon: "wrench.and.screwdriver",
-                           label: localized("規則缺失"), count: ruleMissingCount)
-                filterChip(.parseFailed, icon: "text.badge.xmark",
-                           label: localized("解析失效"), count: parseFailedCount)
-                filterChip(.environment, icon: "network.slash",
-                           label: localized("環境問題"), count: environmentCount)
-                Spacer(minLength: 0)
+            // A `Grid` row, not an `HStack` of capsules: four labels of different
+            // widths ("全部" vs "Environment Issues") squeezed into one line each,
+            // so the capsules came out at four different widths and wrapped their
+            // text into 1–3 lines, turning the narrow ones into circles. Grid gives
+            // every tile the same width and the same height as the tallest one.
+            Grid(horizontalSpacing: DSSpacing.sm, verticalSpacing: 0) {
+                GridRow {
+                    filterChip(.all, icon: "line.3.horizontal.circle",
+                               label: localized("全部"), count: failedItems.count)
+                    filterChip(.ruleMissing, icon: "wrench.and.screwdriver",
+                               label: localized("規則缺失"), count: ruleMissingCount)
+                    filterChip(.parseFailed, icon: "text.badge.xmark",
+                               label: localized("解析失效"), count: parseFailedCount)
+                    filterChip(.environment, icon: "network.slash",
+                               label: localized("環境問題"), count: environmentCount)
+                }
             }
         }
         .padding(.top, DSSpacing.xs)
     }
 
-    /// One filter chip: selected state keeps its accent fill but the label weight stays
-    /// fixed, so tapping never changes the text's appearance — only the fill color.
     private func filterChip(_ value: ResultFilter, icon: String, label: String, count: Int) -> some View {
-        let selected = filter == value
-        return Button {
+        FailureFilterChip(
+            icon: icon,
+            label: label,
+            count: count,
+            selected: filter == value
+        ) {
             filter = value
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(DSFont.caption)
-                Text("\(label) \(count)")
-                    .font(DSFont.subheadline)
-            }
-            .foregroundColor(selected ? .white : DSColor.textSecondary)
-            .padding(.horizontal, DSSpacing.md)
-            .padding(.vertical, DSSpacing.sm)
-            // Chips stay opaque — same neutral fill as `DSChip` and 書源管理's filter chips.
-            .background(selected ? DSColor.accent : DSColor.neutralControlFill)
-            .clipShape(Capsule())
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Row
@@ -331,4 +325,69 @@ struct BookSourceCheckView: View {
             .padding(.top, DSSpacing.sm)
         }
     }
+}
+
+// MARK: - Failure Filter Chip
+
+/// One failure-bucket tile. Selected state keeps its accent fill but the label
+/// weight stays fixed, so tapping never changes the text's appearance — only the
+/// fill color. Sized to fill its grid cell in both axes so all four tiles line up
+/// no matter how long the localized label is.
+private struct FailureFilterChip: View {
+    let icon: String
+    let label: String
+    let count: Int
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: DSSpacing.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: DSSpacing.xs) {
+                    Image(systemName: icon)
+                        .font(DSFont.caption)
+                        .accessibilityHidden(true)
+                    Text("\(count)")
+                        .font(DSFont.title3.weight(.semibold))
+                        .monospacedDigit()
+                }
+                Text(label)
+                    .font(DSFont.caption)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundColor(selected ? .white : DSColor.textSecondary)
+            .padding(.horizontal, DSSpacing.xs)
+            .padding(.vertical, DSSpacing.sm)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Chips stay opaque — same neutral fill as `DSChip` and 書源管理's filter chips.
+            .background(selected ? DSColor.accent : DSColor.neutralControlFill)
+            .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityValue("\(count)")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+#Preview("失敗類型細分") {
+    VStack(alignment: .leading, spacing: DSSpacing.sm) {
+        Text(localized("失敗類型細分"))
+            .font(DSFont.headline)
+        Grid(horizontalSpacing: DSSpacing.sm, verticalSpacing: 0) {
+            GridRow {
+                FailureFilterChip(icon: "line.3.horizontal.circle",
+                                  label: localized("全部"), count: 19, selected: true) {}
+                FailureFilterChip(icon: "wrench.and.screwdriver",
+                                  label: localized("規則缺失"), count: 1, selected: false) {}
+                FailureFilterChip(icon: "text.badge.xmark",
+                                  label: localized("解析失效"), count: 13, selected: false) {}
+                FailureFilterChip(icon: "network.slash",
+                                  label: localized("環境問題"), count: 5, selected: false) {}
+            }
+        }
+    }
+    .padding()
 }

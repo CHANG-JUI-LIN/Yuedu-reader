@@ -4,9 +4,13 @@ import UIKit
 @testable import yuedu_app
 
 struct BrowserLayoutFeatureTests {
-    @Test func featureIsOffByDefault() {
-        #expect(BrowserLayoutFeature.mode == .legacy)
-        #expect(!BrowserLayoutFeature.browserEnabled)
+    /// The shipping mode is `browserAuto`: the browser engine runs, and any
+    /// chapter it cannot render falls back to legacy. `browserForced` must NEVER
+    /// be the default — it suppresses that fallback and would ship diagnostic
+    /// pages to readers.
+    @Test func defaultModeIsBrowserAutoNotForced() {
+        #expect(BrowserLayoutFeature.mode == .browserAuto)
+        #expect(BrowserLayoutFeature.browserEnabled)
     }
 }
 

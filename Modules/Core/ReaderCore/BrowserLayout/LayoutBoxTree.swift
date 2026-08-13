@@ -9,6 +9,31 @@ struct AtomicInline {
     let source: String
     let image: UIImage
     let usedSize: CGSize
+    /// DOM identity of the replaced element.
+    ///
+    /// An INLINE image is emitted as a `LineRun`, which carries its own
+    /// nodeID/linkTarget, so these duplicate it. A BLOCK-level image has no run:
+    /// it becomes `BlockBox.imageAttachment`, and the attachment is the only
+    /// thing the page walker sees. Without them, `<a href="…"><img
+    /// style="display:block"></a>` reached the page as an image with no link at
+    /// all — which is why an illustration wrapped in an anchor rendered but
+    /// could not be tapped.
+    let nodeID: Int
+    let linkTarget: String?
+
+    init(
+        source: String,
+        image: UIImage,
+        usedSize: CGSize,
+        nodeID: Int = -1,
+        linkTarget: String? = nil
+    ) {
+        self.source = source
+        self.image = image
+        self.usedSize = usedSize
+        self.nodeID = nodeID
+        self.linkTarget = linkTarget
+    }
 }
 
 /// One run of inline content inside a line box. `sourceRange` points into the

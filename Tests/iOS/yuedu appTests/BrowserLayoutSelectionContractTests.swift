@@ -124,7 +124,7 @@ struct BrowserLayoutSelectionContractTests {
         var deselected = false
         var linkTapped: String? = nil
         pageView.onDeselect = { deselected = true }
-        pageView.onLinkTap = { linkTapped = $0 }
+        pageView.onLinkActivate = { linkTapped = $0.href }
 
         let linkItem = DisplayTextItem(
             sourceRange: NSRange(location: 0, length: 4), nodeID: 1,
@@ -134,6 +134,9 @@ struct BrowserLayoutSelectionContractTests {
             ctLine: nil
         )
         pageView.displayList = DisplayList(items: [.text(linkItem)])
+        pageView.interactionRegions = LinkInteractionRegionSet.build(
+            from: pageView.displayList, spineIndex: 0, anchors: [:]
+        )
         // Selection covers the link rect → tap inside deselects, no link.
         pageView.highlightRects = [CGRect(x: 10, y: 10, width: 80, height: 20)]
         pageView.hasActiveSelection = true
@@ -151,16 +154,14 @@ struct BrowserLayoutSelectionContractTests {
 }
 
 extension BrowserLayoutPageView {
-    /// Test seam: runs the same routing as the tap recognizer.
+    /// Test seam: a whole tap, driven through the view's REAL entry points —
+    /// the selection branch the tap recognizer runs, then the press lifecycle
+    /// that owns link activation. It must not reimplement the routing: the copy
+    /// that used to live here would have kept passing while the shipping path
+    /// changed underneath it.
     func handleTapForTesting(at point: CGPoint) {
-        if hasActiveSelection {
-            let inside = highlightRects.contains { $0.insetBy(dx: -8, dy: -8).contains(point) }
-            if inside {
-                onDeselect?()
-                return
-            }
-        }
-        guard let link = linkTarget(at: point) else { return }
-        onLinkTap?(link)
+        beginLinkPress(at: point)   // touchesBegan
+        routeTap(at: point)         // the tap recognizer's action
+        endLinkPress(at: point)     // touchesEnded
     }
 }

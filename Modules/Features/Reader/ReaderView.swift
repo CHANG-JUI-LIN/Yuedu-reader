@@ -177,7 +177,6 @@ struct ReaderView: View {
     @State var showChangeSourceSheet = false
     @State private var replaceRuleDraft: ReplaceRule?
     @State var reviewTarget: ReaderHTMLUtilities.ReviewTarget?
-    @State var footnoteItem: ReaderFootnoteItem?
     @State private var coreTextExternalTargetVersion: UInt = 0
     @State var bookDocument: (any BookDocument)? = nil
     @State var contentProvider: (any BookContentProvider)? = nil
@@ -1458,9 +1457,6 @@ struct ReaderView: View {
                         scheduleCoreTextPageChanged(newPage, engine: ctEngine, visiblePosition: visiblePosition)
                     },
                     onTapZone: handleTouchAction,
-                    onFootnoteTap: { text in
-                        footnoteItem = ReaderFootnoteItem(text: text)
-                    },
                     onSwipeUpExit: { closeReader() },
                     visibleRefreshCommit: epubRenderer.pendingVisibleRefreshCommit,
                     onVisibleRefreshFinished: { transactionID, outcome in
@@ -2149,11 +2145,6 @@ struct ReaderView: View {
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-        }
-        .sheet(item: $footnoteItem) { item in
-            ReaderFootnotePopupView(text: item.text) { footnoteItem = nil }
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
         }
         )
         return AnyView(
