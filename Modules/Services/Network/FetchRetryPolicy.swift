@@ -12,7 +12,15 @@ actor PerHostSemaphore {
     static let shared = PerHostSemaphore()
 
     private var available: [String: Int] = [:]
-    private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
+    private var waiters: [String: [Waiter]] = [:]
+    /// Handles cancellation racing ahead of continuation registration.
+    private var cancelledWaiterIDs: Set<UUID> = []
+    private var registeringWaiterIDs: Set<UUID> = []
 
     private init() {}
 
@@ -29,21 +37,38 @@ actor PerHostSemaphore {
         host: String,
         maxConcurrent: Int = 16,
         body: @Sendable () async throws -> T
-    ) async rethrows -> T {
-        await acquire(host: host, maxConcurrent: maxConcurrent)
+    ) async throws -> T {
+        try await acquire(host: host, maxConcurrent: maxConcurrent)
         defer { Task { self.release(host: host) } }
         return try await body()
     }
 
-    private func acquire(host: String, maxConcurrent: Int) async {
+    private func acquire(host: String, maxConcurrent: Int) async throws {
+        try Task.checkCancellation()
         let current = available[host] ?? maxConcurrent
         if current > 0 {
             available[host] = current - 1
             return
         }
-        // No available slot — queue to wait
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            waiters[host, default: []].append(cont)
+        let waiterID = UUID()
+        registeringWaiterIDs.insert(waiterID)
+        defer {
+            registeringWaiterIDs.remove(waiterID)
+            cancelledWaiterIDs.remove(waiterID)
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
+                if cancelledWaiterIDs.remove(waiterID) != nil || Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiters[host, default: []].append(
+                        Waiter(id: waiterID, continuation: continuation)
+                    )
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id: waiterID, host: host) }
         }
     }
 
@@ -53,10 +78,28 @@ actor PerHostSemaphore {
             if waiters[host]?.isEmpty == true {
                 waiters.removeValue(forKey: host)
             }
-            next.resume()
+            next.continuation.resume()
         } else {
             available[host] = (available[host] ?? 0) + 1
         }
+    }
+
+    private func cancelWaiter(id: UUID, host: String) {
+        guard let index = waiters[host]?.firstIndex(where: { $0.id == id }) else {
+            if registeringWaiterIDs.contains(id) {
+                cancelledWaiterIDs.insert(id)
+            }
+            return
+        }
+        let waiter = waiters[host]!.remove(at: index)
+        if waiters[host]?.isEmpty == true {
+            waiters.removeValue(forKey: host)
+        }
+        waiter.continuation.resume(throwing: CancellationError())
+    }
+
+    func queuedRequestCount(for host: String) -> Int {
+        waiters[host]?.count ?? 0
     }
 }
 

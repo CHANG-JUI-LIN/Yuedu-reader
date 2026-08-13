@@ -9,6 +9,8 @@ import Foundation
 ///   chapter.network / chapter.parse
 ///   js.runtimeCreate
 ///   coreText.firstPage / coreText.fullLayout
+///   reader.open.transition / reader.open.contentGate / reader.open.contentHold
+///   reader.open.deferredPreload
 ///   search.presentation.runtimeMarkers / kindInference / coverURL / introSanitize / mainMerge
 ///   search.presentation.coverURL.rejected
 ///   search.listPublish / search.listPublish.summary

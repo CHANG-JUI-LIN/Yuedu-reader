@@ -100,6 +100,11 @@ class JSCoreEngine {
         didSet { bridge.browserPresentHandler = browserPresentHandler }
     }
 
+    /// Called for Legado's source-authored four-argument browser pages.
+    var browserPagePresentHandler: ((LegadoBrowserPageRequest) -> Void)? {
+        didSet { bridge.browserPagePresentHandler = browserPagePresentHandler }
+    }
+
     /// Called when JS network requests hit a Cloudflare challenge.
     /// Presents the CF bypass UI on the main thread and calls `done` when CF cookies are obtained.
     /// Same DispatchSemaphore pattern as browserPresentHandler.
@@ -236,6 +241,11 @@ class JSCoreEngine {
         // jsLib is in place (and only once — see `resolvedSourceHeaders`).
         bridge.sourceHeadersProvider = { [weak self] in
             self?.resolvedSourceHeaders() ?? [:]
+        }
+        // Read live rather than snapshotted: the toggle can change while a
+        // source stays attached, and the next request must see it.
+        bridge.presentsAndroidIdentityProvider = { [weak self] in
+            self?.bookSource?.presentsAndroidIdentity ?? false
         }
     }
 
@@ -627,6 +637,37 @@ class JSCoreEngine {
 
         // Inject the `java` bridge object
         ctx.setObject(bridge, forKeyedSubscript: "java" as NSString)
+        // JSExport cannot expose two `showBrowser` overloads under one JavaScript name.
+        // Keep the native two-argument method for ordinary URLs, and route Legado's
+        // four-argument source-page form through a uniquely named native block.
+        let showBrowserPageBlock: @convention(block) (String, String, String, String) -> Void = {
+            [weak bridge] url, html, injectedJavaScript, configurationJSON in
+            bridge?.browserPagePresentHandler?(
+                LegadoBrowserPageRequest(
+                    baseURL: url,
+                    html: html,
+                    injectedJavaScript: injectedJavaScript,
+                    configurationJSON: configurationJSON
+                )
+            )
+        }
+        ctx.setObject(showBrowserPageBlock, forKeyedSubscript: "__yueduShowBrowserPage" as NSString)
+        ctx.evaluateScript("""
+            (function () {
+                var nativeShowBrowser = java.showBrowser.bind(java);
+                java.showBrowser = function (url, titleOrHTML, injectedJavaScript, configurationJSON) {
+                    if (arguments.length >= 3) {
+                        return __yueduShowBrowserPage(
+                            String(url == null ? '' : url),
+                            String(titleOrHTML == null ? '' : titleOrHTML),
+                            String(injectedJavaScript == null ? '' : injectedJavaScript),
+                            String(configurationJSON == null ? '' : configurationJSON)
+                        );
+                    }
+                    return nativeShowBrowser(url, titleOrHTML);
+                };
+            })();
+        """)
         // JavaScriptCore performs an Objective-C receiver check when an exported
         // bridge method is called as a detached function (`const b64 =
         // java.base64Encode; b64(...)`). Legado sources commonly use that form;
@@ -782,6 +823,51 @@ class JSCoreEngine {
                 def('save', function () { return o; });
                 return o;
             }
+        """)
+
+        // java.util.List compatibility. Rhino exposes both native Java lists (including
+        // AnalyzeRule.getElements()) and JSON arrays with Java collection methods. JSC
+        // exposes both as ordinary arrays, so source rules calling `.size()`, `.get()` or
+        // `.add()` otherwise abort even though the rows are present. Keep these methods
+        // non-enumerable so JSON.stringify, for..in and native array iteration are unchanged.
+        ctx.evaluateScript("""
+            (function (prototype) {
+                function def(name, fn) {
+                    if (typeof prototype[name] !== 'function') {
+                        Object.defineProperty(prototype, name, {
+                            value: fn, enumerable: false, configurable: true, writable: true
+                        });
+                    }
+                }
+                def('size', function () { return this.length; });
+                def('get', function (index) {
+                    index = Number(index);
+                    return index >= 0 && index < this.length ? this[index] : null;
+                });
+                def('set', function (index, value) {
+                    index = Number(index);
+                    var previous = this.get(index);
+                    this[index] = value;
+                    return previous;
+                });
+                def('add', function (indexOrValue, value) {
+                    if (arguments.length >= 2) {
+                        this.splice(Number(indexOrValue), 0, value);
+                    } else {
+                        this.push(indexOrValue);
+                    }
+                    return true;
+                });
+                def('addAll', function (values) {
+                    if (values == null) return false;
+                    var incoming = Array.prototype.slice.call(values);
+                    if (incoming.length === 0) return false;
+                    this.push.apply(this, incoming);
+                    return true;
+                });
+                def('isEmpty', function () { return this.length === 0; });
+                def('contains', function (value) { return this.indexOf(value) >= 0; });
+            })(Array.prototype);
         """)
 
         // Luo-Ya-Cheng (洛雅橙/lyc) mod compatibility shim.

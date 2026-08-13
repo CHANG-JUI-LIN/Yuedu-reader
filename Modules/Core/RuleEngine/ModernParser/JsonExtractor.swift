@@ -675,9 +675,16 @@ struct JsonExtractor: RuleExtractor {
             }
         }
         guard let json = parseJSON(content) else { return "" }
-        let path = cleanRule(rule)
-        let expanded = expandInnerRules(path, json: json)
-        let effectivePath = expanded.isEmpty ? path : expanded
+        // Expand `{$.field}` against the current JSON before normalizing a rule into
+        // JSONPath. Legado permits JSON mode to build a literal value such as
+        // `/b/{$.FolderName}`; prefixing that rule with `$.` first turns the intended URL
+        // fragment into an invalid JSONPath and silently falls back to the page URL.
+        let unprefixed = stripJSONPrefix(rule)
+        let expanded = expandInnerRules(unprefixed, json: json)
+        if expanded != unprefixed, !looksLikeJSONPath(unprefixed) {
+            return expanded
+        }
+        let effectivePath = cleanRule(expanded.isEmpty ? unprefixed : expanded)
 
         // If expansion replaced the entire rule with a concrete value, return it.
         if !effectivePath.hasPrefix("$") { return effectivePath }
@@ -724,10 +731,7 @@ struct JsonExtractor: RuleExtractor {
     }
 
     private func cleanRule(_ rule: String) -> String {
-        var r = rule.trimmingCharacters(in: .whitespacesAndNewlines)
-        if r.lowercased().hasPrefix("@json:") {
-            r = String(r.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+        var r = stripJSONPrefix(rule)
         // Legado accepts a rootless leading-dot filter as a recursive search.
         // Prefixing it with only `$` produces `$.[?(...)]`, which filters the
         // root value and can never reach arrays nested below response envelopes.
@@ -739,6 +743,27 @@ struct JsonExtractor: RuleExtractor {
             r = "$." + r
         }
         return r
+    }
+
+    private func stripJSONPrefix(_ rule: String) -> String {
+        var value = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.lowercased().hasPrefix("@json:") {
+            value = String(value.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return value
+    }
+
+    /// JSONPath may be root-qualified, rootless (`FolderName`), or a leading-dot path.
+    /// Literal templates contain URL/path punctuation before their inner field and must be
+    /// returned as the expanded value rather than queried as JSONPath.
+    private func looksLikeJSONPath(_ rule: String) -> Bool {
+        let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.hasPrefix("$") || trimmed.hasPrefix(".") { return true }
+        return trimmed.range(
+            of: #"^[A-Za-z_\p{L}][A-Za-z0-9_\p{L}]*(?:\.|\[|\{|$)"#,
+            options: .regularExpression
+        ) != nil
     }
 
     /// Expand `{$.inner.path}` references within a rule string.

@@ -294,6 +294,42 @@ struct OnlineReaderPipelineUnificationTests {
         }
     }
 
+    @Test("failing providers leave the paged reader alive without a corrupt layout")
+    func failingProviderLeavesPagedReaderAlive() async {
+        let failures: [Error] = [
+            FetchError.emptyContent,
+            URLError(.timedOut),
+        ]
+
+        for failure in failures {
+            let provider = ThrowingChapterContentProvider(error: failure, chapterCount: 1)
+            let builder = OnlineProviderAttributedStringBuilder(
+                provider: provider,
+                renderSize: CGSize(width: 320, height: 480)
+            )
+            let offsetDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("FailingOnlineProvider-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: offsetDirectory) }
+            let engine = CoreTextPageEngine(
+                attributedBuilder: builder,
+                renderSettings: Self.settings,
+                offsetStore: CharOffsetStore(directoryURL: offsetDirectory)
+            )
+
+            await engine.start(
+                renderSize: CGSize(width: 320, height: 480),
+                bookId: "failing-online-provider"
+            )
+
+            #expect(engine.currentPage == 0)
+            // Missing online content deliberately retains one estimated page so the
+            // reader stays mounted on its loading/error surface instead of collapsing.
+            #expect(engine.totalPages == 1)
+            #expect(engine.layouts.isEmpty)
+            #expect(engine.pageViewController(at: 0) is PlaceholderPageViewController)
+        }
+    }
+
     // MARK: - Legacy parity: provider builder renders paragraph review badges from cached normalized HTML
 
     @Test("provider builder renders paragraph review badges from cached normalized HTML")

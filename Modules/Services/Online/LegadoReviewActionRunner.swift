@@ -46,22 +46,29 @@ actor LegadoReviewActionRunner {
         }
 
         let js = target.sourceJS
-        let captured = await Task.detached(priority: .userInitiated) { () -> (url: String, title: String)? in
+        let captured = await Task.detached(priority: .userInitiated) { () -> BrowserRequestSink.Value? in
             let session = BookSourceSession.session(for: source)
             let bridge = session.bridgeForAsyncOperations
             let sink = BrowserRequestSink()
             let previous = bridge.browserPresentHandler
+            let previousPage = bridge.browserPagePresentHandler
             bridge.browserPresentHandler = { url, title, completion in
                 sink.record(url: url, title: title)
                 // `startBrowserAwait` blocks a JS thread on this completion — always call it.
                 completion(nil)
             }
-            defer { bridge.browserPresentHandler = previous }
+            bridge.browserPagePresentHandler = { request in
+                sink.record(page: request, sourceURL: source.bookSourceUrl)
+            }
+            defer {
+                bridge.browserPresentHandler = previous
+                bridge.browserPagePresentHandler = previousPage
+            }
             _ = bridge.evaluateSourceScript(js)
             return sink.first
         }.value
 
-        guard let captured, !captured.url.isEmpty else {
+        guard let captured else {
             AppLogger.parse("⟐ reviewAction no destination", context: [
                 "source": source.bookSourceName,
                 "js": String(js.prefix(120))
@@ -72,28 +79,63 @@ actor LegadoReviewActionRunner {
         AppLogger.parse("⟐ reviewAction resolved", context: [
             "source": source.bookSourceName,
             "js": String(js.prefix(80)),
-            "host": URL(string: captured.url)?.host ?? ""
+            "host": URL(string: captured.url)?.host ?? "",
+            "sourcePage": captured.page == nil ? "no" : "yes"
         ])
         return ReaderHTMLUtilities.ReviewTarget(
             url: captured.url,
-            title: captured.title.isEmpty ? target.title : captured.title
+            title: captured.title.isEmpty ? target.title : captured.title,
+            sourceBrowserPage: captured.page
         )
+    }
+
+    /// Executes one `window.run(...)` request from a source-authored review page in the
+    /// same per-source session that produced the chapter and review bubble.
+    func runSourcePageScript(_ script: String, sourceURL: String) throws -> String {
+        guard let source = BookSourceStore.shared.sources.first(
+            where: { $0.bookSourceUrl == sourceURL }
+        ) else {
+            throw ResolveError.sourceUnavailable
+        }
+        return BookSourceSession.session(for: source)
+            .bridgeForAsyncOperations
+            .evaluateSourceScript(script) ?? ""
     }
 }
 
 /// Collects the first browser request a source's JS makes during one evaluation.
 /// `browserPresentHandler` is invoked on the JS engine's queue, so access is locked.
 private final class BrowserRequestSink: @unchecked Sendable {
+    struct Value {
+        let url: String
+        let title: String
+        let page: ReaderHTMLUtilities.ReviewTarget.SourceBrowserPage?
+    }
+
     private let lock = NSLock()
-    private var value: (url: String, title: String)?
+    private var value: Value?
 
     func record(url: String, title: String) {
         lock.lock()
         defer { lock.unlock() }
-        if value == nil { value = (url, title) }
+        if value == nil { value = Value(url: url, title: title, page: nil) }
     }
 
-    var first: (url: String, title: String)? {
+    func record(page request: LegadoBrowserPageRequest, sourceURL: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard value == nil else { return }
+        let page = ReaderHTMLUtilities.ReviewTarget.SourceBrowserPage(
+            baseURL: request.baseURL,
+            html: request.html,
+            injectedJavaScript: request.injectedJavaScript,
+            configurationJSON: request.configurationJSON,
+            sourceURL: sourceURL
+        )
+        value = Value(url: request.baseURL, title: "", page: page)
+    }
+
+    var first: Value? {
         lock.lock()
         defer { lock.unlock() }
         return value

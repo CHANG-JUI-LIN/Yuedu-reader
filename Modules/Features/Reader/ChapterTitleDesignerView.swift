@@ -47,16 +47,23 @@ struct ChapterTitleDesignerView: View {
     }
 
     var body: some View {
-        switch ChapterTitleDesignerLayoutPolicy.resolve(
-            width: .zero,
-            horizontalSizeClass: horizontalSizeClass
-        ) {
-        case .tabbed:
-            NavigationStack {
-                designerChrome(compactTabs)
+        Group {
+            switch ChapterTitleDesignerLayoutPolicy.resolve(
+                width: .zero,
+                horizontalSizeClass: horizontalSizeClass
+            ) {
+            case .tabbed:
+                NavigationStack {
+                    designerChrome(compactTabs)
+                }
+            case .split:
+                regularSplit
             }
-        case .split:
-            designerChrome(regularSplit)
+        }
+        .onChange(of: model.draft) { _, design in
+            guard !isSourceEditorVisible else { return }
+            lightSource = ChapterTitleHTMLCodec.encode(design, appearance: .light)
+            darkSource = ChapterTitleHTMLCodec.encode(design, appearance: .dark)
         }
     }
 
@@ -94,9 +101,12 @@ struct ChapterTitleDesignerView: View {
                 .navigationTitle(localized("預覽"))
                 .toolbarTitleDisplayMode(.inline)
         } detail: {
-            detailTabs
-                .navigationTitle(localized("章節標題設計器"))
-                .toolbarTitleDisplayMode(.inline)
+            // The chrome must live *inside* the detail column, not on the
+            // NavigationSplitView: `.toolbar` applied to the split view itself
+            // never reaches a navigation bar, which silently dropped the
+            // cancel/undo/redo/apply buttons on iPad and left the full-screen
+            // designer with no way out.
+            designerChrome(detailTabs)
         }
         .navigationSplitViewStyle(.balanced)
     }
@@ -130,6 +140,9 @@ struct ChapterTitleDesignerView: View {
         )
     }
 
+    /// Title bar + cancel/undo/redo/apply. Apply this to the root content of a
+    /// navigation container (the `NavigationStack` body, or the split view's
+    /// detail column) — never to the container itself.
     private func designerChrome<Content: View>(_ content: Content) -> some View {
         content
             .background(DSColor.background)
@@ -170,11 +183,6 @@ struct ChapterTitleDesignerView: View {
                     .disabled(!model.hasChanges || model.isFinished)
                     .accessibilityLabel(localized("套用"))
                 }
-            }
-            .onChange(of: model.draft) { _, design in
-                guard !isSourceEditorVisible else { return }
-                lightSource = ChapterTitleHTMLCodec.encode(design, appearance: .light)
-                darkSource = ChapterTitleHTMLCodec.encode(design, appearance: .dark)
             }
     }
 

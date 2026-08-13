@@ -126,6 +126,38 @@ class ModernParserBridge {
         jsEngine.resolvedSourceHeaders()
     }
 
+    /// Executes Legado `ruleToc.preUpdateJs` in the source's JavaScript runtime
+    /// before the TOC request. It is a Rhino/JSCore rule hook, not page JavaScript:
+    /// opening a WebView here both changed its bindings and added a navigation plus
+    /// a fixed render delay to every TOC refresh.
+    func runTOCPreUpdateJS(
+        _ script: String,
+        tocURL: String,
+        runtimeVariables: [String: String]? = nil
+    ) throws -> (tocURL: String, runtimeVariables: [String: String]?) {
+        let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return (tocURL, runtimeVariables) }
+
+        loadRuntimeVariables(runtimeVariables)
+        setBookContext(runtimeVariables: runtimeVariables)
+        jsEngine.bookBridge.tocUrl = tocURL
+        jsEngine.setChapterBridge(LegadoChapterBridge())
+        evaluateJsLibIfNeeded()
+        _ = jsEngine.evaluateIsolated(
+            trimmed,
+            bindings: [
+                "baseUrl": tocURL,
+                "baseURL": tocURL
+            ]
+        )
+        if let error = jsEngine.lastError {
+            throw ModernParserBridgeError.parseError("preUpdateJs failed: \(error)")
+        }
+        let resolvedURL = jsEngine.bookBridge.tocUrl
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (resolvedURL.isEmpty ? tocURL : resolvedURL, dumpRuntimeVariables())
+    }
+
     // MARK: - Engine Factory
 
     /// Creates a fresh, fully-wired ModernRuleEngine for a single parse operation.
@@ -142,6 +174,7 @@ class ModernParserBridge {
             // Safe because jsEngine serialises all evaluations on its dedicated queue.
             self.jsEngine.getStringHandler = { ruleStr in engine.getString(ruleStr: ruleStr) }
             self.jsEngine.getStringListHandler = { ruleStr in engine.getStringList(ruleStr: ruleStr) }
+            self.jsEngine.getElementsHandler = { ruleStr in engine.getElements(ruleStr: ruleStr) }
             // `java.getString(rule, obj)` — evaluate against the caller-supplied document.
             // `mContent` is a per-call input in ModernRuleEngine, so this does not disturb
             // the content the surrounding rule chain is parsing.
@@ -804,6 +837,12 @@ class ModernParserBridge {
     var browserPresentHandler: ((String, String, @escaping (String?) -> Void) -> Void)? {
         get { jsEngine.browserPresentHandler }
         set { jsEngine.browserPresentHandler = newValue }
+    }
+
+    /// Presents source-authored HTML passed through Legado's four-argument browser API.
+    var browserPagePresentHandler: ((LegadoBrowserPageRequest) -> Void)? {
+        get { jsEngine.browserPagePresentHandler }
+        set { jsEngine.browserPagePresentHandler = newValue }
     }
 
     /// Legado-fork `hasMoreRule`: a JS expression run against the fetched page
@@ -2016,20 +2055,14 @@ class ModernParserBridge {
 
         // Parse books for one bookList variant. Resets engine content to the full
         // page first, because the per-element loop reassigns it.
-        func parseBooks(listVariant: String) -> (books: [OnlineBook], elements: Int, emptyNames: Int) {
+        func parseBooks(listVariant: String) -> [OnlineBook] {
             engine.setContent(html, baseUrl: baseURL)
             let elements = engine.getElements(ruleStr: listVariant)
             var result: [OnlineBook] = []
-            var emptyNames = 0
-            for (idx, element) in elements.enumerated() {
+            for element in elements {
                 engine.setContent(element, baseUrl: baseURL)
                 let name = engine.getString(ruleStr: nameRule)
-                if idx == 0 {
-                    let elHTML = String(describing: element).prefix(180)
-                        .replacingOccurrences(of: "\n", with: " ")
-                    NSLog("❖DISC❖ %@", "\(source.bookSourceName) EL0 list='\(listVariant.prefix(24))' nameRule='\(nameRule.prefix(24))' name='\(name.prefix(30))' el=\(elHTML)")
-                }
-                guard !name.isEmpty else { emptyNames += 1; continue }
+                guard !name.isEmpty else { continue }
                 let bookUrl = engine.getString(ruleStr: bookUrlRule, isUrl: true)
                 // `isUrl:true` falls back to baseURL when the rule matches nothing —
                 // a cover that is merely the page URL is junk (e.g. a bookList narrowed
@@ -2050,12 +2083,10 @@ class ModernParserBridge {
                     sourceId: source.id, sourceName: source.bookSourceName
                 ))
             }
-            return (result, elements.count, emptyNames)
+            return result
         }
 
-        let primary = parseBooks(listVariant: listRule)
-        var books = primary.books
-        NSLog("❖DISC❖ %@", "\(source.bookSourceName) parseExplore useSearch=\(useSearch) listRule='\(listRule.prefix(40))' elements=\(primary.elements) books=\(books.count) emptyNames=\(primary.emptyNames)")
+        var books = parseBooks(listVariant: listRule)
 
         // Compatibility beyond Legado: a `||` bookList returns the FIRST non-empty
         // element set, but that set can be the wrong one — e.g. a discover page that
@@ -2068,9 +2099,8 @@ class ModernParserBridge {
                 for branch in parts.dropFirst() {
                     let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { continue }
-                    let alt = parseBooks(listVariant: trimmed)
-                    NSLog("❖DISC❖ %@", "\(source.bookSourceName) parseExplore || retry '\(trimmed.prefix(30))' elements=\(alt.elements) books=\(alt.books.count)")
-                    if !alt.books.isEmpty { books = alt.books; break }
+                    let alternateBooks = parseBooks(listVariant: trimmed)
+                    if !alternateBooks.isEmpty { books = alternateBooks; break }
                 }
             }
         }
@@ -2088,11 +2118,10 @@ class ModernParserBridge {
             let broaderList = String(listRule[..<lastAt.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !broaderList.isEmpty {
-                let broader = parseBooks(listVariant: broaderList)
-                if broader.books.count == books.count,
-                   broader.books.contains(where: { !$0.coverUrl.isEmpty }) {
-                    NSLog("❖DISC❖ %@", "\(source.bookSourceName) parseExplore cover-broaden '\(broaderList.prefix(30))' recovered covers (\(broader.books.count) books)")
-                    books = broader.books
+                let broaderBooks = parseBooks(listVariant: broaderList)
+                if broaderBooks.count == books.count,
+                   broaderBooks.contains(where: { !$0.coverUrl.isEmpty }) {
+                    books = broaderBooks
                 }
             }
         }
@@ -2101,9 +2130,7 @@ class ModernParserBridge {
         // payload is instead a plain {title,url} JSON list. Preserve that legacy
         // path so no source that worked before this fallback regresses.
         if books.isEmpty, useSearch {
-            let fallback = discoverItemsAsBooks(html: html, source: source)
-            NSLog("❖DISC❖ %@", "\(source.bookSourceName) parseExplore search-fallback empty → discoverJSON books=\(fallback.count)")
-            return fallback
+            return discoverItemsAsBooks(html: html, source: source)
         }
         return books
     }
@@ -2464,6 +2491,7 @@ class ModernParserBridge {
             author: runtimeVariables?["book.author"] ?? "",
             coverUrl: runtimeVariables?["book.coverUrl"] ?? "",
             bookUrl: runtimeVariables?["book.bookUrl"] ?? "",
+            tocUrl: runtimeVariables?["book.tocUrl"] ?? "",
             abstract: runtimeVariables?["book.abstract"] ?? "",
             variables: bookVariables
         )

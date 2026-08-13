@@ -207,6 +207,82 @@ struct ReaderCardTransitionMathTests {
         #expect(forward.shadowOpacity == reverse.shadowOpacity)
     }
 
+    // MARK: Offscreen-pass budget
+
+    @Test("card rounding retires well before the card reaches full screen")
+    func cardCornerRadiusRetiresEarly() {
+        let phase = ReaderCardTransitionMath.cardCornerRadiusPhase
+        // The whole point of the shorter window: rounding requires clipping,
+        // and clipping the full-screen reader tree costs an offscreen pass per
+        // frame. Rounding must be gone while the card is still mid-growth so
+        // the expensive majority of frames composite without one.
+        #expect(phase.upperBound < 0.5)
+
+        let radius = { (p: CGFloat) in
+            ReaderCardTransitionMath.lerp(
+                12, 0,
+                ReaderCardTransitionMath.phase(p, in: phase)
+            )
+        }
+        #expect(radius(0) == 12)
+        #expect(radius(phase.upperBound) == 0)
+        #expect(radius(1) == 0)
+        // Monotonic decrease, so an interactive reversal never jumps.
+        #expect(radius(0.1) > radius(0.3))
+        #expect(radius(0.3) > radius(0.44))
+    }
+
+    @Test("aspect-fill contents rect crops the overflowing axis, centered")
+    func aspectFillContentsRectCrops() {
+        let cover = CGSize(width: 200, height: 300) // 2:3 artwork
+
+        // Same aspect ratio: nothing to crop.
+        let exact = ReaderCardTransitionMath.aspectFillContentsRect(
+            contentSize: cover,
+            targetSize: CGSize(width: 100, height: 150)
+        )
+        #expect(abs(exact.width - 1) < 0.0001)
+        #expect(abs(exact.height - 1) < 0.0001)
+
+        // Target narrower than the artwork (card growing toward full screen):
+        // keep full height, crop the sides symmetrically.
+        let narrow = ReaderCardTransitionMath.aspectFillContentsRect(
+            contentSize: cover,
+            targetSize: CGSize(width: 390, height: 844)
+        )
+        #expect(narrow.height == 1)
+        #expect(narrow.width < 1)
+        #expect(abs(narrow.minX - (1 - narrow.width) / 2) < 0.0001)
+
+        // Target wider than the artwork: keep full width, crop top and bottom.
+        let wide = ReaderCardTransitionMath.aspectFillContentsRect(
+            contentSize: cover,
+            targetSize: CGSize(width: 844, height: 390)
+        )
+        #expect(wide.width == 1)
+        #expect(wide.height < 1)
+        #expect(abs(wide.minY - (1 - wide.height) / 2) < 0.0001)
+    }
+
+    @Test("aspect-fill contents rect falls back to the unit rect")
+    func aspectFillContentsRectDegenerate() {
+        let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
+        // A missing snapshot resolves to .zero; the layer has no contents to
+        // crop, so the unit rect must come back rather than a NaN rect.
+        #expect(
+            ReaderCardTransitionMath.aspectFillContentsRect(
+                contentSize: .zero,
+                targetSize: CGSize(width: 100, height: 200)
+            ) == unit
+        )
+        #expect(
+            ReaderCardTransitionMath.aspectFillContentsRect(
+                contentSize: CGSize(width: 100, height: 200),
+                targetSize: .zero
+            ) == unit
+        )
+    }
+
     // MARK: Predominantly-horizontal gate
 
     @Test("vertical-dominant drags fail the horizontal gate")

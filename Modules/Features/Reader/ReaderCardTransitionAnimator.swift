@@ -18,6 +18,26 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
     private let operation: Operation
     private let source: ReaderTransitionSource
     private let completion: (Bool) -> Void
+    /// Awaited before the opening animation starts driving, so the reader's
+    /// first-page work (CSS, embedded fonts, CoreText pagination) runs with the
+    /// card still at rest. Measured on device: that work blocks the main thread
+    /// for 34–67ms starting 4–7ms into the animation, which is exactly the
+    /// window this moves it out of. Nil starts driving immediately.
+    private let contentReadyGate: (@MainActor () async -> Void)?
+    /// True while parked on `contentReadyGate`. The driver's watchdog reads
+    /// this so a not-yet-started timeline is not mistaken for an abandoned one.
+    private(set) var isAwaitingContentReady = false
+    /// Guards `beginDrivingPresentation()` against running twice when both the
+    /// gated and ungated paths are reachable.
+    private var isDrivingPresentation = false
+    /// Captured in `interruptibleAnimator` so a gated start can still use the
+    /// duration UIKit asked for when it finally begins driving.
+    private var presentationDuration: TimeInterval = 0
+    /// Point size of the cover artwork, used to compute the `contentsRect`
+    /// crop that replaces `scaleAspectFill` + `clipsToBounds`. `nil` when the
+    /// source had no snapshot — the stage then falls back to a plain coloured
+    /// card, whose rounding is drawn from `backgroundColor` and needs no clip.
+    private let coverContentSize: CGSize?
     private var propertyAnimator: UIViewPropertyAnimator?
     private weak var activeTransitionContext: UIViewControllerContextTransitioning?
     private var displayLink: CADisplayLink?
@@ -43,11 +63,14 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
     init(
         operation: Operation,
         source: ReaderTransitionSource,
+        contentReadyGate: (@MainActor () async -> Void)? = nil,
         completion: @escaping (Bool) -> Void
     ) {
         self.operation = operation
         self.source = source
+        self.contentReadyGate = contentReadyGate
         self.completion = completion
+        self.coverContentSize = source.snapshot?.size
         super.init()
     }
 
@@ -61,7 +84,33 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
 
     func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
         let animator = interruptibleAnimator(using: transitionContext)
-        animator.startAnimation()
+
+        // The card is already staged at the shelf tile, cover shut — holding it
+        // there for a few frames is invisible, whereas letting the reader's
+        // first-page work land mid-flight is not.
+        guard let contentReadyGate, runtimeState != nil else {
+            beginDrivingPresentation()
+            animator.startAnimation()
+            return
+        }
+
+        isAwaitingContentReady = true
+        let gateStart = ProcessInfo.processInfo.systemUptime
+        Task { @MainActor [weak self] in
+            await contentReadyGate()
+            guard let self, self.propertyAnimator === animator, !self.completionDelivered else {
+                return
+            }
+            self.isAwaitingContentReady = false
+            SourcePerfTrace.record(
+                "reader.open.contentGate",
+                "op=push",
+                since: gateStart,
+                thresholdMs: 0
+            )
+            self.beginDrivingPresentation()
+            animator.startAnimation()
+        }
     }
 
     func interruptibleAnimator(
@@ -210,22 +259,34 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             self.deliverCompletion(completed)
         }
         propertyAnimator = animator
-        if transitionContext.isInteractive {
+        presentationDuration = transitionDuration(using: transitionContext)
+        if transitionContext.isInteractive || contentReadyGate == nil {
+            beginDrivingPresentation()
+        }
+        // With a gate, `animateTransition` starts the driving once the reader
+        // reports its first page. UIKit's contract routes every non-interactive
+        // transition through `animateTransition`, so nothing is left unstarted.
+        return animator
+    }
+
+    /// Commits the visual model and begins playback. Split out of
+    /// `interruptibleAnimator` so an opening transition can hold the staged
+    /// card at rest until the reader's first page exists, then start the
+    /// property animator and every layer keyframe in lockstep.
+    private func beginDrivingPresentation() {
+        guard !isDrivingPresentation else { return }
+        isDrivingPresentation = true
+        guard let state = runtimeState else { return }
+        if state.isInteractive {
             // Interactive edge-pop scrubs with the finger: keep the per-frame
             // CADisplayLink model so drag position maps 1:1 to the visuals.
             startDisplayLink()
-        } else if let state = runtimeState {
+        } else {
             // Non-interactive push / programmatic pop: run the phased model
             // declaratively on the render server (see runDeclarativeAnimation)
             // so a momentarily busy main thread can't drop transition frames.
-            runDeclarativeAnimation(
-                state: state,
-                duration: transitionDuration(using: transitionContext)
-            )
-        } else {
-            startDisplayLink()
+            runDeclarativeAnimation(state: state, duration: presentationDuration)
         }
-        return animator
     }
 
     func animationEnded(_ transitionCompleted: Bool) {
@@ -554,17 +615,29 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         spineShadowView.alpha = 0
         coverContainer.addSubview(spineShadowView)
 
-        let coverView: UIView
+        let coverView = UIView()
+        coverView.isUserInteractionEnabled = false
         if let image = source.snapshot {
-            let imageView = UIImageView(image: image)
-            imageView.contentMode = .scaleAspectFill
-            imageView.clipsToBounds = true
-            coverView = imageView
+            // Deliberately not a `UIImageView` with `.scaleAspectFill` +
+            // `clipsToBounds`. That pairing clips a rounded, 3D-rotated layer,
+            // which Core Animation can only satisfy with an offscreen pass on
+            // every frame. Driving `contents` + `contentsRect` puts the exact
+            // same crop in texture space, where the GPU does it for free.
+            // `layer.contents` ignores UIImage orientation metadata, so a
+            // non-upright cover is redrawn once here rather than shown rotated.
+            let normalized: UIImage = image.imageOrientation == .up
+                ? image
+                : UIGraphicsImageRenderer(size: image.size).image { _ in
+                    image.draw(at: .zero)
+                }
+            coverView.layer.contents = normalized.cgImage
+            coverView.layer.contentsGravity = .resize
+            coverView.layer.contentsScale = normalized.scale
         } else {
-            let fallback = UIView()
-            fallback.backgroundColor = UIColor(DSColor.surface)
-            fallback.layer.masksToBounds = true
-            coverView = fallback
+            // A plain colour card gets its rounding straight from
+            // `backgroundColor` + `cornerRadius`, which Core Animation draws
+            // without clipping, so this branch never sets `masksToBounds`.
+            coverView.backgroundColor = UIColor(DSColor.surface)
         }
         // The hinge anchor is fixed for the whole transition, so per-frame
         // layout can set bounds/position directly without anchor migration.
@@ -635,6 +708,8 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         var coverBounds: CGRect
         var coverPosition: CGPoint
         var coverCornerRadius: CGFloat
+        var coverMasksToBounds: Bool
+        var coverContentsRect: CGRect
         var coverTransform: CATransform3D
         var coverAlpha: CGFloat
     }
@@ -673,6 +748,8 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
                 coverBounds: CGRect(origin: .zero, size: visual.frame.size),
                 coverPosition: .zero,
                 coverCornerRadius: visual.cornerRadius,
+                coverMasksToBounds: false,
+                coverContentsRect: CGRect(x: 0, y: 0, width: 1, height: 1),
                 coverTransform: CATransform3DIdentity,
                 coverAlpha: 0
             )
@@ -680,6 +757,19 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
 
         let pose = ReaderBookOpeningPose.interpolate(progress: p, direction: source.direction)
         let full = destinationGeometry.frame
+
+        // The card's on-screen corner radius runs on its own, much shorter
+        // phase than the frame growth: rounding forces a clipping pass, and
+        // every layer that carries it pays an offscreen render each frame.
+        // See `ReaderCardTransitionMath.cardCornerRadiusPhase`.
+        let cardCornerRadius = ReaderCardTransitionMath.lerp(
+            sourceGeometry.cornerRadius,
+            destinationGeometry.cornerRadius,
+            ReaderCardTransitionMath.phase(
+                p,
+                in: ReaderCardTransitionMath.cardCornerRadiusPhase
+            )
+        )
 
         // The real reader view is the transition's paper: it scales between
         // the shelf card and full screen, so live content grows and shrinks
@@ -694,7 +784,7 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         ).scaledBy(x: scaleX, y: scaleY)
         // Corner radius lives in the view's own (unscaled) coordinate space;
         // divide so the on-screen rounding matches the card's.
-        let readerCornerRadius = visual.cornerRadius / scaleX
+        let readerCornerRadius = cardCornerRadius / scaleX
 
         let spineShadowWidth = min(full.width * 0.18, visual.frame.width)
         let spineShadowFrame = CGRect(
@@ -733,14 +823,14 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             reduceMotion: false,
             readerTransform: readerTransform,
             readerCornerRadius: readerCornerRadius,
-            readerMasksToBounds: visual.cornerRadius > 0,
+            readerMasksToBounds: cardCornerRadius > 0,
             readerAlpha: 1,
             backdropAlpha: ReaderCardTransitionMath.phase(p, in: 0.04...0.72),
             shadowViewAlpha: 1,
             shadowFrame: visual.frame,
             shadowOpacity: Float(visual.shadowOpacity),
             shadowSize: visual.frame.size,
-            shadowCornerRadius: visual.cornerRadius,
+            shadowCornerRadius: cardCornerRadius,
             shadowOffset: shadowOffset,
             coverContainerAlpha: 1,
             coverContainerFrame: visual.frame,
@@ -748,7 +838,14 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             spineShadowAlpha: pose.spineShadowOpacity,
             coverBounds: coverBounds,
             coverPosition: coverPosition,
-            coverCornerRadius: visual.cornerRadius,
+            coverCornerRadius: cardCornerRadius,
+            // Only artwork needs clipping, and only while the corner is still
+            // round; the plain-colour fallback rounds via `backgroundColor`.
+            coverMasksToBounds: coverContentSize != nil && cardCornerRadius > 0,
+            coverContentsRect: ReaderCardTransitionMath.aspectFillContentsRect(
+                contentSize: coverContentSize ?? .zero,
+                targetSize: visual.frame.size
+            ),
             coverTransform: coverTransform,
             coverAlpha: pose.coverOpacity
         )
@@ -805,6 +902,8 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         stage.coverView.layer.bounds = values.coverBounds
         stage.coverView.layer.position = values.coverPosition
         stage.coverView.layer.cornerRadius = values.coverCornerRadius
+        stage.coverView.layer.masksToBounds = values.coverMasksToBounds
+        stage.coverView.layer.contentsRect = values.coverContentsRect
         stage.coverView.layer.transform = values.coverTransform
         stage.coverView.alpha = values.coverAlpha
     }
@@ -867,6 +966,31 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             layer.add(animation, forKey: "readerTransition.\(keyPath)")
         }
 
+        /// `masksToBounds` is animatable but must never be interpolated, so
+        /// emit only the sample indices where it actually flips. This is what
+        /// lets clipping — and with it the per-frame offscreen pass — switch
+        /// off partway through the run instead of staying on throughout.
+        func addBooleanKeyframe(_ keyPath: String, to layer: CALayer, flags: [Bool]) {
+            var values: [NSNumber] = []
+            var times: [NSNumber] = []
+            var previous: Bool?
+            for (index, flag) in flags.enumerated() where flag != previous {
+                values.append(NSNumber(value: flag))
+                times.append(NSNumber(value: Double(index) / Double(max(flags.count - 1, 1))))
+                previous = flag
+            }
+            // Never toggles: the model value already set from `endValues` holds
+            // for the whole run, so an animation here would be pure overhead.
+            guard values.count > 1 else { return }
+            let animation = CAKeyframeAnimation(keyPath: keyPath)
+            animation.values = values
+            animation.keyTimes = times
+            animation.duration = duration
+            animation.calculationMode = .discrete
+            animation.isRemovedOnCompletion = true
+            layer.add(animation, forKey: "readerTransition.\(keyPath)")
+        }
+
         if state.reduceMotion {
             // Reduce Motion is a plain crossfade: only reader and backdrop
             // opacity carry it, the book stage stays hidden throughout.
@@ -888,13 +1012,6 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             return
         }
 
-        // masksToBounds cannot animate; enable it for the whole run when any
-        // sampled frame needs clipping, matching the scrub path's per-frame
-        // rule. The completion handler restores the resting value.
-        if frames.contains(where: { $0.readerMasksToBounds }) {
-            state.liveReaderView.layer.masksToBounds = true
-        }
-
         let readerLayer = state.liveReaderView.layer
         addKeyframe(
             "transform",
@@ -907,6 +1024,16 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             "cornerRadius",
             to: readerLayer,
             values: frames.map { NSNumber(value: Double($0.readerCornerRadius)) }
+        )
+        // Clipping the full-screen reader tree to a rounded rect is the single
+        // most expensive thing this transition can ask the GPU for: one
+        // offscreen render of the whole tree per frame. Toggling it off the
+        // moment the corner radius reaches zero keeps it away from the frames
+        // where the tree is largest.
+        addBooleanKeyframe(
+            "masksToBounds",
+            to: readerLayer,
+            flags: frames.map(\.readerMasksToBounds)
         )
 
         addKeyframe(
@@ -1022,6 +1149,18 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             to: coverLayer,
             values: frames.map { NSNumber(value: Double($0.coverCornerRadius)) }
         )
+        addBooleanKeyframe(
+            "masksToBounds",
+            to: coverLayer,
+            flags: frames.map(\.coverMasksToBounds)
+        )
+        // Texture-space crop standing in for `scaleAspectFill` + `clipsToBounds`
+        // as the card's aspect ratio travels from shelf tile to full screen.
+        addKeyframe(
+            "contentsRect",
+            to: coverLayer,
+            values: frames.map { NSValue(cgRect: $0.coverContentsRect) }
+        )
         addKeyframe(
             "transform",
             to: coverLayer,
@@ -1033,10 +1172,17 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             values: frames.map { NSNumber(value: Double($0.coverAlpha)) }
         )
 
+        // `clip` is the offscreen-pass budget: how many sampled frames still
+        // ask Core Animation to clip the full-screen reader tree to a rounded
+        // rect. Every frame outside that count composites without an offscreen
+        // render, so this ratio is the number to watch when tuning
+        // `cardCornerRadiusPhase`.
+        let clippedFrameCount = frames.filter(\.readerMasksToBounds).count
         AppLogger.info(
             "⟐ reader-transition declarative committed "
             + "op=\(operation == .push ? "push" : "pop") "
             + "keyframes=\(sampleCount + 1) "
+            + "clip=\(clippedFrameCount)/\(frames.count) "
             + "dur=\(String(format: "%.2f", duration))s "
             + "commit=\(String(format: "%.1f", (CACurrentMediaTime() - commitStart) * 1000))ms"
         )

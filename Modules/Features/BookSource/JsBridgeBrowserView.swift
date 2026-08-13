@@ -20,11 +20,25 @@ struct JsBridgeBrowserView: View {
     let title: String
     let onDismiss: (_ body: String?) -> Void
     let hidesToolbar: Bool
+    let initialHTML: String?
+    let injectedJavaScript: String
+    let sourceRunHandler: ((String) async throws -> String)?
 
-    init(urlString: String, title: String = "", hidesToolbar: Bool = false, onDismiss: @escaping (_ body: String?) -> Void) {
+    init(
+        urlString: String,
+        title: String = "",
+        hidesToolbar: Bool = false,
+        initialHTML: String? = nil,
+        injectedJavaScript: String = "",
+        sourceRunHandler: ((String) async throws -> String)? = nil,
+        onDismiss: @escaping (_ body: String?) -> Void
+    ) {
         self.urlString = urlString
         self.title = title
         self.hidesToolbar = hidesToolbar
+        self.initialHTML = initialHTML
+        self.injectedJavaScript = injectedJavaScript
+        self.sourceRunHandler = sourceRunHandler
         self.onDismiss = onDismiss
     }
 
@@ -84,7 +98,13 @@ struct JsBridgeBrowserView: View {
 
     private var contentView: some View {
         ZStack(alignment: .top) {
-            JsBridgeBrowserRepresentable(urlString: urlString, bridge: bridge)
+            JsBridgeBrowserRepresentable(
+                urlString: urlString,
+                initialHTML: initialHTML,
+                injectedJavaScript: injectedJavaScript,
+                sourceRunHandler: sourceRunHandler,
+                bridge: bridge
+            )
                 .edgesIgnoringSafeArea(hidesToolbar ? .all : .bottom)
 
             // Full-screen state until the page delivers its first content.
@@ -150,6 +170,40 @@ struct JsBridgeBrowserView: View {
     }
 }
 
+/// Presents a decoded paragraph-review target. Source-authored pages keep the same native
+/// sheet/browser shell as ordinary review URLs, but receive the `window.run` bridge they need
+/// to call back into their own shared Legado runtime.
+struct LegadoReviewBrowserView: View {
+    let target: ReaderHTMLUtilities.ReviewTarget
+    let onDismiss: (_ body: String?) -> Void
+
+    var body: some View {
+        if let page = target.sourceBrowserPage {
+            JsBridgeBrowserView(
+                urlString: page.baseURL,
+                title: target.title,
+                hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar,
+                initialHTML: page.html,
+                injectedJavaScript: page.injectedJavaScript,
+                sourceRunHandler: { script in
+                    try await LegadoReviewActionRunner.shared.runSourcePageScript(
+                        script,
+                        sourceURL: page.sourceURL
+                    )
+                },
+                onDismiss: onDismiss
+            )
+        } else {
+            JsBridgeBrowserView(
+                urlString: target.url,
+                title: target.title,
+                hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar,
+                onDismiss: onDismiss
+            )
+        }
+    }
+}
+
 // MARK: - JsBridgeBrowserBridge
 
 final class JsBridgeBrowserBridge: ObservableObject {
@@ -167,7 +221,23 @@ final class JsBridgeBrowserBridge: ObservableObject {
 
 struct JsBridgeBrowserRepresentable: UIViewRepresentable {
     let urlString: String
+    let initialHTML: String?
+    let injectedJavaScript: String
+    let sourceRunHandler: ((String) async throws -> String)?
     let bridge: JsBridgeBrowserBridge
+
+    static func sourcePageBootstrap(injectedJavaScript: String) -> String {
+        """
+        window.java = window.java || {};
+        window.cache = window.cache || {};
+        window.source = window.source || {};
+        window.run = function (script) {
+            return window.webkit.messageHandlers.\(Coordinator.sourceRunMessageName)
+                .postMessage(String(script == null ? '' : script));
+        };
+        \(injectedJavaScript)
+        """
+    }
 
     func makeUIView(context: Context) -> WKWebView {
         // Let JavaScript-driven input focus raise the keyboard (SMS 验证码 fields focus a hidden
@@ -183,6 +253,18 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         // A captcha/OAuth widget that opens itself (not from a tap) is blocked before
         // the UI delegate is ever consulted unless script-opened windows are allowed.
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        context.coordinator.sourceRunHandler = sourceRunHandler
+        if sourceRunHandler != nil {
+            config.userContentController.addScriptMessageHandler(
+                context.coordinator,
+                contentWorld: .page,
+                name: Coordinator.sourceRunMessageName
+            )
+            let bootstrap = Self.sourcePageBootstrap(injectedJavaScript: injectedJavaScript)
+            config.userContentController.addUserScript(
+                WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            )
+        }
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.customUserAgent =
@@ -207,27 +289,38 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             coordinator?.syncCookiesAndDismiss(from: wv, completion: completion)
         }
         bridge.reload = { [weak coordinator, weak bridge] in
-            guard let coordinator, let wv = coordinator.webView,
-                  let url = URL(string: urlString) else { return }
+            guard let coordinator, let wv = coordinator.webView else { return }
             bridge?.phase = .loading
             bridge?.errorText = nil
             bridge?.progress = 0
-            coordinator.load(url: url, in: wv)
+            coordinator.loadInitial(
+                urlString: urlString,
+                html: initialHTML,
+                in: wv
+            )
         }
 
-        if let url = URL(string: urlString) {
-            context.coordinator.load(url: url, in: wv)
-        }
+        context.coordinator.loadInitial(urlString: urlString, html: initialHTML, in: wv)
         return wv
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(
+            forName: Coordinator.sourceRunMessageName,
+            contentWorld: .page
+        )
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandlerWithReply {
+        static let sourceRunMessageName = "yueduSourceRun"
+
         weak var webView: WKWebView?
         weak var bridge: JsBridgeBrowserBridge?
         var progressObservation: NSKeyValueObservation?
+        var sourceRunHandler: ((String) async throws -> String)?
         /// Strongly held: `WKWebView.uiDelegate` is weak.
         let uiDelegate = SourceWebUIDelegate()
         private var keyboardHideObserver: NSObjectProtocol?
@@ -305,6 +398,34 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             }
             group.notify(queue: .main) {
                 webView.load(request)
+            }
+        }
+
+        func loadInitial(urlString: String, html: String?, in webView: WKWebView) {
+            if let html {
+                webView.loadHTMLString(html, baseURL: URL(string: urlString))
+            } else if let url = URL(string: urlString) {
+                load(url: url, in: webView)
+            }
+        }
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage,
+            replyHandler: @escaping (Any?, String?) -> Void
+        ) {
+            guard message.name == Self.sourceRunMessageName,
+                  let script = message.body as? String,
+                  let sourceRunHandler else {
+                replyHandler(nil, localized("段評執行環境不可用"))
+                return
+            }
+            Task {
+                do {
+                    replyHandler(try await sourceRunHandler(script), nil)
+                } catch {
+                    replyHandler(nil, error.localizedDescription)
+                }
             }
         }
 

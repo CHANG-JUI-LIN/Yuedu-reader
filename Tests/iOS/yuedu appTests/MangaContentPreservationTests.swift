@@ -12,9 +12,7 @@ struct MangaContentPreservationTests {
     private func resolve(_ content: String) async -> String {
         await ChapterFetcher.shared.resolveContent(
             parsed: ChapterParsePayload(
-                content: content, title: "Ch", sourceMatched: true, isPay: false),
-            fetchViaJS: { nil },
-            fetchBySelectors: { nil }
+                content: content, title: "Ch", sourceMatched: true, isPay: false)
         )
     }
 

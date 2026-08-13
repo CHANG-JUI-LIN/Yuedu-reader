@@ -168,6 +168,155 @@ struct RuleAnalyzerTests {
 @Suite("ModernParserBridge Chapter Compatibility", .serialized)
 struct ModernParserBridgeChapterCompatibilityTests {
 
+    @Test("Legacy Jsoup tag chain is not claimed as a CSS selector")
+    func legacyJsoupTagChainRoutesToDefaultExtractor() {
+        let engine = ModernRuleEngine()
+        engine.setContent(
+            """
+            <ul class="book-list">
+              <li><p class="book-list-info-title">First</p></li>
+              <li><p class="book-list-info-title">Second</p></li>
+            </ul>
+            """,
+            baseUrl: "https://example.com/search"
+        )
+
+        let rows = engine.getElements(ruleStr: "ul.book-list@tag.li")
+
+        #expect(rows.count == 2)
+        #expect(CssExtractor().canHandle(rule: #"div.item[data-route="@tag.li"]"#))
+    }
+
+    @Test("Legacy Jsoup bare-tag chain selects nested chapter rows")
+    func legacyJsoupBareTagChainSelectsNestedRows() {
+        let engine = ModernRuleEngine()
+        engine.setContent(
+            """
+            <ul class="detail-list-1 detail-list-select">
+              <li><a href="/c/1">First</a></li>
+              <li><a href="/c/2">Second</a></li>
+            </ul>
+            """,
+            baseUrl: "https://example.com/book"
+        )
+
+        let rows = engine.getElements(ruleStr: "ul.detail-list-select@li")
+
+        #expect(rows.count == 2)
+    }
+
+    @Test("Duplicate-id Legado search list remains parseable")
+    func duplicateIDSearchListParsesBooks() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.ruleSearch.bookList = "id.hism"
+        source.ruleSearch.name = "h3@a@text"
+        source.ruleSearch.bookUrl = "class.mb5 fs20 f_mbo pt5 ell@tag.a@href"
+
+        let books = try ModernParserBridge(source: source).parseSearchResults(
+            html: """
+            <ul>
+              <li class="pr" id="hism">
+                <h3 class="mb5 fs20 f_mbo pt5 ell"><a href="/book/1">First</a></h3>
+              </li>
+              <li class="pr" id="hism">
+                <h3 class="mb5 fs20 f_mbo pt5 ell"><a href="/book/2">Second</a></h3>
+              </li>
+            </ul>
+            """,
+            baseURL: "https://example.com/sa",
+            source: source
+        )
+
+        #expect(books.count == 1)
+        #expect(books.first?.name == "First")
+        #expect(books.first?.bookUrl == "https://example.com/book/1")
+    }
+
+    @Test("Malformed search heading keeps nested link fields parseable")
+    func malformedSearchHeadingKeepsNestedLinkFieldsParseable() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.ruleSearch.bookList = "id.hism"
+        source.ruleSearch.name = "h3@a@text"
+        source.ruleSearch.bookUrl = "class.mb5 fs20 f_mbo pt5 ell@tag.a@href"
+
+        let books = try ModernParserBridge(source: source).parseSearchResults(
+            html: """
+            <li class="pr pb20 mb20" id="hism">
+              <h3 class="mb5 fs20 f_mbo pt5 ell"><a href="/book/19865/?for-search">
+                <span class="hot">我的</span>无限怪兽分身</h3></a>
+            </li>
+            """,
+            baseURL: "https://example.com/sa",
+            source: source
+        )
+
+        #expect(books.count == 1)
+        #expect(books.first?.name == "我的无限怪兽分身")
+        #expect(books.first?.bookUrl == "https://example.com/book/19865/?for-search")
+    }
+
+    @Test("JSON literal template expands an inner field before URL resolution")
+    func jsonLiteralTemplateExpandsInnerField() throws {
+        let engine = ModernRuleEngine()
+        engine.setContent(#"{"FolderName":"yaoshenji"}"#, baseUrl: "https://mm.example/search")
+
+        let url = engine.getString(ruleStr: "@json:/b/{$.FolderName}", isUrl: true)
+
+        #expect(url == "https://mm.example/b/yaoshenji")
+        #expect(engine.getString(ruleStr: "$.FolderName") == "yaoshenji")
+        #expect(engine.getString(ruleStr: "FolderName") == "yaoshenji")
+    }
+
+    @Test("java.getElements exposes the Legado List contract")
+    func javaGetElementsExposesLegadoListContract() {
+        let engine = JSCoreEngine()
+        engine.getElementsHandler = { _ in ["first", "second"] }
+
+        let result = engine.evaluate("""
+        var elements = java.getElements('fixture');
+        var before = elements.size() + ':' + elements.get(1);
+        elements.add('third');
+        before + ':' + elements.size() + ':' + elements.get(2);
+        """)
+
+        #expect(result == "2:second:3:third")
+    }
+
+    @Test("chapterList JS can inspect and return java.getElements rows")
+    func chapterListJSCarriesJavaElementsIntoTOC() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "java-elements-toc-\(UUID().uuidString)"
+        source.ruleToc.chapterList = """
+        @js:
+        let elements = java.getElements("@css:.chapter");
+        let rows = [];
+        for (let i = 0; i < elements.size(); i++) {
+            rows.push(elements.get(i));
+        }
+        rows.reverse();
+        rows;
+        """
+        source.ruleToc.chapterName = "@text"
+        source.ruleToc.chapterUrl = "@href"
+
+        let chapters = try ModernParserBridge(source: source).parseTOC(
+            html: """
+            <a class="chapter" href="/1">First</a>
+            <a class="chapter" href="/2">Second</a>
+            """,
+            baseURL: "https://example.com/book",
+            source: source
+        )
+
+        #expect(chapters.map(\.title) == ["Second", "First"])
+        #expect(chapters.map(\.url) == [
+            "https://example.com/2",
+            "https://example.com/1",
+        ])
+    }
+
     @Test("bare JSON numeric field can feed a following JS URL rule")
     func bareJSONNumericFieldFeedsJSURLRule() {
         let engine = ModernRuleEngine()
@@ -2492,6 +2641,42 @@ struct JSCoreEngineTests {
         )
 
         #expect(result == "<html>done</html>")
+    }
+
+    @Test("four-argument showBrowser preserves source-authored page contract")
+    func showBrowserPreservesSourceAuthoredPage() {
+        let engine = JSCoreEngine()
+        var captured: LegadoBrowserPageRequest?
+        engine.browserPagePresentHandler = { captured = $0 }
+
+        _ = engine.evaluate(
+            #"java.showBrowser('https://reviews.example/', '<html>reviews</html>', 'window.qmRun=run;', '{\"heightPercentage\":0.8}')"#
+        )
+
+        #expect(captured?.baseURL == "https://reviews.example/")
+        #expect(captured?.html == "<html>reviews</html>")
+        #expect(captured?.injectedJavaScript == "window.qmRun=run;")
+        #expect(captured?.configurationJSON == #"{"heightPercentage":0.8}"#)
+    }
+
+    @Test("source-authored browser page routes qmRun to the native reply bridge")
+    func sourceBrowserPageRunBridge() throws {
+        let context = try #require(JSContext())
+        _ = context.evaluateScript("""
+            var window = this;
+            window.webkit = { messageHandlers: { yueduSourceRun: {
+                postMessage: function (script) { return 'native:' + script; }
+            } } };
+        """)
+        _ = context.evaluateScript(
+            JsBridgeBrowserRepresentable.sourcePageBootstrap(
+                injectedJavaScript: "window.qmRun=run;window.qmLocalCommentPage=true;"
+            )
+        )
+
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("qmRun('fixture-script')")?.toString() == "native:fixture-script")
+        #expect(context.evaluateScript("qmLocalCommentPage")?.toBool() == true)
     }
 
     // MARK: Login-source bridge methods (番茄/起点/企点 special sources)

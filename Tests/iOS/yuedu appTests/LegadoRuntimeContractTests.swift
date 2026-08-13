@@ -297,6 +297,8 @@ struct LegadoFullSourceFixtureTests {
     func qimaoFixture() throws {
         let source = try loadSource(environmentKey: "QIMAO_SOURCE_JSON", defaultPath: Self.qimaoDefaultPath)
         let bridge = ModernParserBridge(source: source)
+        var browserPage: LegadoBrowserPageRequest?
+        bridge.browserPagePresentHandler = { browserPage = $0 }
         #expect(bridge.evaluateSourceScript("typeof qmDevice") == "function")
         #expect(bridge.lastSourceScriptError == nil)
         let device = try #require(bridge.evaluateSourceScript("JSON.stringify(qmDevice.call(this))"))
@@ -306,6 +308,18 @@ struct LegadoFullSourceFixtureTests {
         let headers = try #require(bridge.evaluateSourceScript("JSON.stringify(qmHeaders.call(this, 'fixture-token'))"))
         #expect(headers.contains("qm-params"))
         #expect(headers.contains("sign"))
+
+        #expect(
+            bridge.evaluateSourceScript(
+                "qmOpenComment.call(this,'paragraph','book-fixture','chapter-fixture','paragraph-fixture','七猫段评','')"
+            ) == "true"
+        )
+        let page = try #require(browserPage)
+        #expect(page.baseURL == "https://api-cmnt.wtzw.com/")
+        #expect(page.html.contains("qmCommentPageData"))
+        #expect(page.injectedJavaScript.contains("window.qmRun=run"))
+        #expect(page.configurationJSON.contains("heightPercentage"))
+        #expect(bridge.lastSourceScriptError == nil)
     }
 
     @Test(
@@ -341,6 +355,36 @@ struct LegadoFullSourceFixtureTests {
 
 @Suite("Legado Parser Bridge Contract", .serialized)
 struct LegadoParserBridgeContractTests {
+    @Test("TOC pre-update JS runs in the source runtime before transport")
+    func tocPreUpdateUsesSourceRuntime() throws {
+        var source = BookSource(
+            bookSourceUrl: "https://preupdate.example",
+            bookSourceName: "pre-update fixture"
+        )
+        source.lastUpdateTime = Int64.random(in: 1...Int64.max)
+        let bridge = ModernParserBridge(source: source)
+
+        let result = try bridge.runTOCPreUpdateJS(
+            """
+            source.put('preUpdateMarker', 'ran');
+            book.setVariable('pageToken', 'token-1');
+            book.tocUrl = 'https://preupdate.example/toc/updated';
+            """,
+            tocURL: "https://preupdate.example/toc/original",
+            runtimeVariables: ["book.name": "Fixture"]
+        )
+
+        #expect(result.tocURL == "https://preupdate.example/toc/updated")
+        #expect(result.runtimeVariables?["book.tocUrl"] == result.tocURL)
+        #expect(result.runtimeVariables?["book.variable.pageToken"] == "token-1")
+        #expect(
+            BookSourceRuntimeStateStore.shared.sourceValue(
+                for: source.bookSourceUrl,
+                key: "preUpdateMarker"
+            ) == "ran"
+        )
+    }
+
     @Test("source script HTTP uses the injected bridge handler")
     func injectedNetworkHandler() {
         var source = BookSource()

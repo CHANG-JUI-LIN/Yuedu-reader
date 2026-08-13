@@ -516,7 +516,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                 return .emptyContent
             case .invalidURL, .noSearchURL, .volumeSeparator:
                 return .invalidChapter
-            case .httpError, .cloudflareChallengeRequired:
+            case .httpError, .cloudflareChallengeRequired, .sourceAPIError:
                 return .network
             case .encodingError:
                 return .parsing

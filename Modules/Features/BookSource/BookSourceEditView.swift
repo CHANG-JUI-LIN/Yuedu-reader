@@ -202,6 +202,14 @@ struct BookSourceEditView: View {
                 Toggle(localized("發現"), isOn: $source.enabledExplore)
                 Toggle(localized("CookieJar"), isOn: $source.enabledCookieJar)
                 Toggle(localized("段評"), isOn: $source.enabledReview)
+                Toggle(isOn: $source.presentsAndroidIdentity) {
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                        Text(localized("以 Android 身分回報"))
+                        Text(localized("僅在書源要求 Android 裝置碼時開啟。多數書源用它判斷平台，開啟會被誤認為 Android。"))
+                            .font(DSFont.caption)
+                            .foregroundStyle(DSColor.textSecondary)
+                    }
+                }
             }
             .interfaceSectionSurface()
 

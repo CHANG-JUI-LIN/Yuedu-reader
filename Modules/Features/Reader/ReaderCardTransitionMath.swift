@@ -44,6 +44,17 @@ enum ReaderCardTransitionMath {
     /// faster than real time without affecting visible motion.
     static let cancellationFinalizationSpeed: CGFloat = 4
 
+    /// Progress window over which the card's on-screen corner radius falls to
+    /// zero. Deliberately far shorter than the frame-growth window
+    /// (`0.02...1.00`): a rounded corner requires `masksToBounds`, and clipping
+    /// a rounded rect is one of Core Animation's offscreen passes — on the live
+    /// reader that means rendering the entire full-screen layer tree into a
+    /// temporary texture on every single frame. By the time the card is roughly
+    /// half-screen the rounding is no longer perceptible, so retiring it here
+    /// lets the expensive second half of the transition composite with clipping
+    /// switched off entirely.
+    static let cardCornerRadiusPhase: ClosedRange<CGFloat> = 0.02...0.45
+
     // MARK: Progress
 
     /// Clamp any raw progress value into the canonical 0...1 range.
@@ -82,6 +93,34 @@ enum ReaderCardTransitionMath {
         guard hi > lo else { return progress >= hi ? 1 : 0 }
         let t = (progress - lo) / (hi - lo)
         return min(max(t, 0), 1)
+    }
+
+    /// Texture-space crop reproducing `UIView.ContentMode.scaleAspectFill`
+    /// without any clipping pass. Assigned to `CALayer.contentsRect` alongside
+    /// `contentsGravity = .resize`, it makes the GPU sample only the visible
+    /// slice of the artwork, so the cover stays inside the card without
+    /// `masksToBounds` — which on a 3D-rotated, rounded layer would cost an
+    /// offscreen pass every frame. Returns the unit rect for degenerate sizes.
+    static func aspectFillContentsRect(
+        contentSize: CGSize,
+        targetSize: CGSize
+    ) -> CGRect {
+        let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
+        guard
+            contentSize.width > 0, contentSize.height > 0,
+            targetSize.width > 0, targetSize.height > 0
+        else { return unit }
+
+        let contentAspect = contentSize.width / contentSize.height
+        let targetAspect = targetSize.width / targetSize.height
+        if targetAspect < contentAspect {
+            // Target is narrower than the artwork: keep full height, crop sides.
+            let width = targetAspect / contentAspect
+            return CGRect(x: (1 - width) / 2, y: 0, width: width, height: 1)
+        }
+        // Target is wider: keep full width, crop top and bottom.
+        let height = contentAspect / targetAspect
+        return CGRect(x: 0, y: (1 - height) / 2, width: 1, height: height)
     }
 
     /// Linear interpolation between two scalar endpoints, clamped to 0...1 in

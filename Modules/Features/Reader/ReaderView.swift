@@ -1,4 +1,5 @@
 import Combine
+import Foundation
     import SwiftUI
 import UIKit
 import YueduCoreText
@@ -57,6 +58,10 @@ struct ReaderView: View {
     }
 
 
+    /// Set only for a slow open: the card animation already started on the
+    /// loading chrome, so the first page must not be swapped in until the
+    /// transition commits. See `holdContentForOpeningTransitionIfNeeded`.
+    @State private var isHoldingContentForOpeningTransition = false
     @State var chapters: [BookChapter] = []
     @State var allPages: [PageContent] = []
     @State var currentPage = 0
@@ -909,10 +914,32 @@ struct ReaderView: View {
             // Keep BOTH neighbors paginated, not just forward ones. Previously only
             // chapters ahead stayed warm, so turning back (or a nearby TOC jump) hit a
             // cold chapter and stalled on on-demand pagination — the "laggy" feel.
+            //
+            // Neighbour pagination is the heaviest work an open triggers, and this
+            // runs while the card transition is still in flight — its layer updates
+            // land in the transition's own render pass and drop frames. Waiting for
+            // the transition to commit costs nothing visible: the first page comes
+            // from `applyInitialProgressIfNeeded`, which deliberately does not wait.
+            // The gate is open (returns instantly) for every later page turn.
             if let engine = epubRenderer.engine, usesCoreTextEPUB {
+                let navigator = readerNavigator
                 for neighbor in [newChapter - 1, newChapter + 1]
                 where chapters.indices.contains(neighbor) && isChapterContentAvailable(at: neighbor) {
-                    Task { await engine.preloadChapter(at: neighbor) }
+                    Task { @MainActor in
+                        let waitStart = ProcessInfo.processInfo.systemUptime
+                        let waited = await navigator?.awaitOpeningTransitionEnd() ?? false
+                        // Threshold 0 so this line appears even when the gate
+                        // was already open: absent output would otherwise be
+                        // ambiguous between "never reached here" and "did not
+                        // need to wait", which are very different diagnoses.
+                        SourcePerfTrace.record(
+                            "reader.open.deferredPreload",
+                            "spine=\(neighbor) waited=\(waited)",
+                            since: waitStart,
+                            thresholdMs: 0
+                        )
+                        await engine.preloadChapter(at: neighbor)
+                    }
                 }
             }
         }
@@ -1286,13 +1313,56 @@ struct ReaderView: View {
             }
             isRestoringPosition = false
         }
-        .task(id: modernCoverSourceID) { loadModernCoverImage() }
+        .task(id: modernCoverSourceID) {
+            // Toolbar chrome, not first-page content — and the toolbar is hidden
+            // for the whole opening transition. Decoding the cover here used to
+            // commit an image upload straight into the transition's render pass.
+            await readerNavigator?.awaitOpeningTransitionEnd()
+            loadModernCoverImage()
+        }
     }
 
     /// Changes when the 現代 chrome needs a different cover — a different file, or the
     /// interface being switched to (or away from) 現代.
     private var modernCoverSourceID: String {
         "\(settings.appearanceReaderInterface.rawValue)|\(book?.coverImagePath ?? "")"
+    }
+
+    /// The loading spinner stays up either because there is genuinely nothing to
+    /// show yet, or because the opening card animation started on that spinner
+    /// and swapping the real page in now would land the whole first layout in
+    /// the animation's render pass. See `isHoldingContentForOpeningTransition`.
+    private var showsLoadingChrome: Bool {
+        chapters.isEmpty || isHoldingContentForOpeningTransition
+    }
+
+    /// Slow opens only. The card animation has already started on the loading
+    /// chrome — the content-ready ceiling fired — so a first page arriving now
+    /// would commit a full layout into the running animation, which is the
+    /// hitch this whole change exists to remove. Hold the chrome until the
+    /// transition commits: the spinner was already on screen, so the extra wait
+    /// is barely perceptible, and it buys an animation window with nothing
+    /// competing for the main thread. Fast opens never reach here — they signal
+    /// ready before the ceiling, leaving `openingStartedWithoutContent` false.
+    private func holdContentForOpeningTransitionIfNeeded(contentIsEmpty: Bool) {
+        guard !contentIsEmpty,
+              !isHoldingContentForOpeningTransition,
+              let navigator = readerNavigator,
+              navigator.isOpeningTransitionActive,
+              navigator.openingStartedWithoutContent
+        else { return }
+
+        isHoldingContentForOpeningTransition = true
+        let holdStart = ProcessInfo.processInfo.systemUptime
+        Task { @MainActor in
+            await navigator.awaitOpeningTransitionEnd()
+            isHoldingContentForOpeningTransition = false
+            SourcePerfTrace.record(
+                "reader.open.contentHold",
+                since: holdStart,
+                thresholdMs: 0
+            )
+        }
     }
 
     private func buildBody() -> AnyView {
@@ -1305,7 +1375,7 @@ struct ReaderView: View {
             readerSurfaceBackground
                 .animation(.easeInOut(duration: uiFeedbackDuration), value: readerTheme)
 
-            if chapters.isEmpty {
+            if showsLoadingChrome {
                 VStack {
                     Spacer()
                     ProgressView(localized("載入中…"))
@@ -2074,10 +2144,7 @@ struct ReaderView: View {
             }
         }
         .sheet(item: $reviewTarget) { target in
-            JsBridgeBrowserView(
-                urlString: target.url,
-                hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar
-            ) { _ in
+            LegadoReviewBrowserView(target: target) { _ in
                 reviewTarget = nil
             }
             .presentationDetents([.medium, .large])
@@ -2114,8 +2181,15 @@ struct ReaderView: View {
                 readerViewModel.stopChangeSourceSearch()
             }
         }
+        .onChanged(of: chapters.isEmpty) { isEmpty in
+            holdContentForOpeningTransitionIfNeeded(contentIsEmpty: isEmpty)
+        }
         .onChanged(of: epubRenderer.isCoreTextReady) { ready in
             if ready {
+                // Releases the card animation, which is holding at the shelf
+                // tile so this chapter's CSS/font/pagination work does not land
+                // inside the animation window.
+                readerNavigator?.signalReaderContentReady()
                 if !isVerticalEPUB && epubRenderer.cssDetectedVerticalWritingMode {
                     isVerticalEPUB = true
                     readerNavigator?.updateOpeningDirection(.rightSpine)

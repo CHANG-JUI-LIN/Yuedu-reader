@@ -41,9 +41,15 @@ enum AppConfig {
     /// Default timeout in seconds for WebView rendering requests.
     static let webViewFetchTimeout: TimeInterval = 15
 
-    /// Default additional seconds to wait for JS rendering after WebView page
-    /// load (retained for legacy paths like book-source rules).
-    static let webViewJSRenderWait: TimeInterval = 2.0
+    /// Default delay after `didFinish` for a plain WebView response. Legado's
+    /// `BackstageWebView` waits 900 ms plus its 100 ms dispatch delay when a
+    /// source did not provide JavaScript or an explicit `webViewDelayTime`.
+    static let webViewJSRenderWait: TimeInterval = 1.0
+
+    /// Delay before executing an explicit source `webJs`. Legado dispatches
+    /// explicit JavaScript 100 ms after `onPageFinished`; the old local 2-second
+    /// floor was not part of the source contract and accumulated at every stage.
+    static let webViewExplicitJSWait: TimeInterval = 0.1
 
     /// Timeout in seconds for a single JS rule engine execution.
     static let jsRuleEngineExecutionTimeout: TimeInterval = 8

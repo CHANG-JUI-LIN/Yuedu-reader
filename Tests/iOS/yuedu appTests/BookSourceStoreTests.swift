@@ -287,6 +287,93 @@ struct BookSourceStoreTests {
         #expect(store.pinRecord(for: sources[2].id)?.position == .top)
     }
 
+    // MARK: - Import merge
+    //
+    // The merge indexes the existing sources by `bookSourceUrl` instead of running a
+    // `firstIndex(where:)` scan per imported source, and inserts the genuinely new ones in
+    // one batch instead of one at a time. These lock in the four behaviours that made the
+    // old shape observable: update-in-place, order, intra-pack dedupe, and the 置底 boundary.
+
+    @Test("re-importing a pack updates matching sources in place and keeps list order")
+    func reimportUpdatesInPlaceKeepingOrder() throws {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let existing = (0..<3).map(makeSource)
+        store.replaceSourcesFromSync(existing)
+
+        var updated = makeSource(index: 1)      // same bookSourceUrl as existing[1]
+        updated.bookSourceName = "Renamed"
+        let newcomer = makeSource(index: 9)
+
+        _ = try store.importFromJSON(try encodeSources([updated, newcomer]))
+
+        #expect(store.sources.count == 4)
+        #expect(store.sources.map(\.bookSourceUrl)
+            == existing.map(\.bookSourceUrl) + [newcomer.bookSourceUrl])
+        // The stored id must survive the update, or the iCloud merge sees a different source.
+        #expect(store.sources[1].id == existing[1].id)
+        #expect(store.sources[1].bookSourceName == "Renamed")
+    }
+
+    @Test("the same URL twice inside one imported pack collapses to the last entry")
+    func duplicateURLWithinOnePackCollapses() throws {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+        store.replaceSourcesFromSync([])
+
+        var first = makeSource(index: 0)
+        first.bookSourceName = "First"
+        var second = makeSource(index: 0)       // same URL
+        second.bookSourceName = "Second"
+
+        _ = try store.importFromJSON(try encodeSources([first, second]))
+
+        #expect(store.sources.count == 1)
+        #expect(store.sources.first?.bookSourceName == "Second")
+    }
+
+    @Test("a whole imported batch lands above the 置底 group, in import order")
+    func importBatchStaysAboveBottomPin() throws {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let existing = (0..<2).map(makeSource)
+        store.replaceSourcesFromSync(existing)
+        store.pinToBottom(id: existing[1].id)
+
+        let newcomers = (5..<8).map(makeSource)
+        _ = try store.importFromJSON(try encodeSources(newcomers))
+
+        #expect(store.sources.map(\.bookSourceUrl)
+            == [existing[0].bookSourceUrl] + newcomers.map(\.bookSourceUrl)
+                + [existing[1].bookSourceUrl])
+        #expect(store.pinRecord(for: existing[1].id)?.position == .bottom)
+    }
+
+    @Test("exportToJSON(ids:) exports exactly the selected sources, in list order")
+    func exportSelectedSources() throws {
+        let store = BookSourceStore.shared
+        let previousSources = store.sources
+        defer { store.replaceSourcesFromSync(previousSources) }
+
+        let sources = (0..<4).map(makeSource)
+        store.replaceSourcesFromSync(sources)
+
+        let json = store.exportToJSON(ids: [sources[3].id, sources[1].id])
+        let exported = try #require(BookSourceStore.parseSources(json))
+
+        #expect(exported.map(\.bookSourceUrl)
+            == [sources[1].bookSourceUrl, sources[3].bookSourceUrl])
+    }
+
+    private func encodeSources(_ sources: [BookSource]) throws -> String {
+        String(decoding: try JSONEncoder().encode(sources), as: UTF8.self)
+    }
+
     private func makeSource(index: Int) -> BookSource {
         var source = BookSource()
         source.bookSourceName = "Source \(index)"

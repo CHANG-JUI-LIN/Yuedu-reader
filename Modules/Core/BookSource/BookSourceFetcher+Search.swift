@@ -1,5 +1,15 @@
 import Foundation
 
+enum BookSourceSearchFailureMode: Sendable {
+    /// Interactive search treats an unreachable source like an empty result so one
+    /// broken site does not fail the whole aggregate search UI.
+    case emptyResult
+    /// Source validation needs the transport error itself so it can fail that source
+    /// immediately, matching Legado's `checkSource` coroutine instead of continuing
+    /// into discovery and holding a validation worker for another timeout window.
+    case propagateTransportError
+}
+
 /// Legado aggregate sources accept qualified searches such as
 /// `m:book name@source`. The full expression must reach the source's search JS,
 /// while local result matching must compare against the book-name portion only.
@@ -40,7 +50,8 @@ extension BookSourceFetcher {
         in source: BookSource,
         page: Int = 1,
         earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
-        onHasMore: ((Bool?) -> Void)? = nil
+        onHasMore: ((Bool?) -> Void)? = nil,
+        failureMode: BookSourceSearchFailureMode = .emptyResult
     ) async throws -> [OnlineBook] {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
         let cacheDays = GlobalSettings.shared.searchCacheDays
@@ -113,6 +124,9 @@ extension BookSourceFetcher {
                 throw err
             }
         } catch {
+            if failureMode == .propagateTransportError {
+                throw error
+            }
             return []
         }
 

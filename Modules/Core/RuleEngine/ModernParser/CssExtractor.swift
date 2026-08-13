@@ -59,6 +59,12 @@ struct CssExtractor: RuleExtractor {
         if trimmed.contains("||") || trimmed.contains("&&") || trimmed.contains("%%") {
             return false
         }
+        // A tag-qualified first step can look like ordinary CSS even when the rule
+        // continues in Legado's Jsoup syntax: `ul.book-list@tag.li`.  SwiftSoup
+        // treats the full string as an invalid CSS selector, so leave any top-level
+        // legacy chain token to JsoupDefaultExtractor.  Tokens inside a quoted CSS
+        // attribute selector (for example `[data-route="@tag.li"]`) are literals.
+        if containsTopLevelLegacyChainToken(trimmed) { return false }
         return looksLikeCssSelector(trimmed)
     }
 
@@ -225,6 +231,58 @@ struct CssExtractor: RuleExtractor {
             return true
         }
 
+        return false
+    }
+
+    private func containsTopLevelLegacyChainToken(_ rule: String) -> Bool {
+        let legacyPrefixes = ["tag.", "class.", "id.", "text.", "children"]
+        let htmlTags: Set<String> = [
+            "a", "abbr", "address", "article", "aside", "audio", "b", "blockquote",
+            "body", "br", "button", "canvas", "caption", "code", "col", "colgroup",
+            "dd", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer",
+            "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hr", "i",
+            "iframe", "img", "input", "label", "li", "link", "main", "meta", "nav", "ol",
+            "option", "p", "picture", "pre", "script", "section", "select", "small", "source",
+            "span", "strong", "style", "summary", "table", "tbody", "td", "textarea", "tfoot",
+            "th", "thead", "title", "tr", "track", "ul", "video",
+        ]
+        var bracketDepth = 0
+        var quote: Character?
+        var escaped = false
+        var index = rule.startIndex
+
+        while index < rule.endIndex {
+            let character = rule[index]
+            if escaped {
+                escaped = false
+                index = rule.index(after: index)
+                continue
+            }
+            if character == "\\", quote != nil {
+                escaped = true
+                index = rule.index(after: index)
+                continue
+            }
+            if character == "\"" || character == "'" {
+                if quote == character { quote = nil }
+                else if quote == nil { quote = character }
+                index = rule.index(after: index)
+                continue
+            }
+            if quote == nil {
+                if character == "[" { bracketDepth += 1 }
+                else if character == "]" { bracketDepth = max(0, bracketDepth - 1) }
+                else if character == "@", bracketDepth == 0 {
+                    let tail = rule[rule.index(after: index)...].lowercased()
+                    if legacyPrefixes.contains(where: { tail.hasPrefix($0) }) {
+                        return true
+                    }
+                    let token = tail.prefix { $0.isLetter || $0.isNumber }
+                    if htmlTags.contains(String(token)) { return true }
+                }
+            }
+            index = rule.index(after: index)
+        }
         return false
     }
 

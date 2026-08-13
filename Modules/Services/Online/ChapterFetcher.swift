@@ -35,6 +35,12 @@ struct ChapterBuildResult {
 struct ChapterFetcher {
     static let shared = ChapterFetcher()
 
+    func validateResolvedContent(_ content: String) throws {
+        if let message = SourceAPIErrorLog.chapterErrorEnvelopeMessage(content) {
+            throw FetchError.sourceAPIError(message)
+        }
+    }
+
     func buildNormalizedHTML(title: String, content: String) -> String {
         return ReaderHTMLUtilities.normalizedChapterHTML(
             title: title,
@@ -499,9 +505,7 @@ struct ChapterFetcher {
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil,
         parsePage: @escaping @Sendable (String, String) async throws -> ChapterParsePayload,
         extractNextURLs: @escaping @Sendable (String, String) async -> [String],
-        fetchNextPageHTML: @escaping @Sendable (URL) async throws -> String,
-        fetchViaJS: @escaping @Sendable () async throws -> String?,
-        fetchBySelectors: @escaping @Sendable () async throws -> String?
+        fetchNextPageHTML: @escaping @Sendable (URL) async throws -> String
     ) async throws -> ChapterBuildResult {
         let parseStart = CFAbsoluteTimeGetCurrent()
         ReaderTelemetry.shared.log(
@@ -527,13 +531,12 @@ struct ChapterFetcher {
             sourceUrl: ReplaceRuleScope.resolve(
                 chapterURL: sourceURL,
                 bookSourceURL: replaceRuleScope
-            ),
-            fetchViaJS: fetchViaJS,
-            fetchBySelectors: fetchBySelectors
+            )
         )
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FetchError.emptyContent
         }
+        try validateResolvedContent(content)
         let canonicalTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveTitle = canonicalTitle.isEmpty ? tocTitle : canonicalTitle
         let effectiveReviewContext = reviewContext?.withRuntimeVariables(parsed.runtimeVariables)
@@ -589,28 +592,10 @@ struct ChapterFetcher {
 
     func resolveContent(
         parsed: ChapterParsePayload,
-        sourceUrl: String = "",
-        fetchViaJS: @escaping @Sendable () async throws -> String?,
-        fetchBySelectors: @escaping @Sendable () async throws -> String?
+        sourceUrl: String = ""
     ) async -> String {
         let chapterTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
         var content = Self.sanitizeResolvedContent(parsed.content, title: chapterTitle)
-
-        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !parsed.isPay {
-            do {
-                if let fallback = try await fetchViaJS() {
-                    content = Self.sanitizeResolvedContent(fallback, title: chapterTitle)
-                }
-            } catch {}
-        }
-
-        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !parsed.isPay {
-            do {
-                if let fallback = try await fetchBySelectors() {
-                    content = Self.sanitizeResolvedContent(fallback, title: chapterTitle)
-                }
-            } catch {}
-        }
 
         if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && parsed.isPay {
             content = "[付費章節]"

@@ -1744,6 +1744,9 @@
 "移動到新分組" = "Move to New Group";
 "移出分組" = "Remove from Group";
 "新增分組…" = "New Group…";
+"搜索分組" = "Search Groups";
+"新增分組" = "New Group";
+"沒有符合的分組" = "No Matching Groups";
 "手動新增" = "Add Manually";
 "匯出" = "Export";
 "匯出書源檔案" = "Export Source File";
@@ -2022,3 +2025,8 @@
 "使用自訂正則、文字樣式與背景效果標示閱讀內容" = "Highlight reading content with custom regex, text styles, and background effects";
 "已鎖定" = "Locked";
 "未鎖定" = "Unlocked";
+
+/* Book source: Android device identity opt-in */
+"以 Android 身分回報" = "Report as Android";
+"僅在書源要求 Android 裝置碼時開啟。多數書源用它判斷平台，開啟會被誤認為 Android。" = "Turn on only for sources that need an Android device id. Most sources use it to detect the platform, so turning it on makes them treat this device as Android.";
+"段評執行環境不可用" = "The paragraph review runtime is unavailable";

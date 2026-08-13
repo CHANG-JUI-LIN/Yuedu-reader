@@ -4,6 +4,15 @@ import CryptoKit
 import CommonCrypto
 import UIKit
 
+/// A source-authored browser page passed through Legado's four-argument
+/// `java.showBrowser(url, html, injectedJS, configuration)` contract.
+struct LegadoBrowserPageRequest: Equatable, Sendable {
+    let baseURL: String
+    let html: String
+    let injectedJavaScript: String
+    let configurationJSON: String
+}
+
 extension Notification.Name {
     /// A book source's JS asked the app to search for a keyword
     /// (`java.searchBook` / `java.open('search', …)`). `userInfo["keyword"]`.
@@ -236,6 +245,11 @@ struct LegadoHTTPResult {
     /// For `startBrowserAwait` the bridge blocks jsQueue via DispatchSemaphore until completion is called.
     var browserPresentHandler: ((String, String, @escaping (String?) -> Void) -> Void)?
 
+    /// Called for source-authored HTML browser pages. Unlike the two-argument browser API,
+    /// the second argument is page HTML (not a title), and the injected script wires the
+    /// page back to the source runtime for calls such as paragraph-review pagination.
+    var browserPagePresentHandler: ((LegadoBrowserPageRequest) -> Void)?
+
     /// Called when JS invokes `java.toast(msg)` / `java.longToast(msg)`.
     var toastHandler: ((String) -> Void)?
 
@@ -270,6 +284,11 @@ struct LegadoHTTPResult {
     /// source is attached resolved 书山聚合's rule too early and left every
     /// `java.get`/`java.post` without the token its server requires.
     var sourceHeadersProvider: (() -> [String: String])?
+
+    /// Whether this source opted into an Android device identity
+    /// (`BookSource.presentsAndroidIdentity`). Supplied by the owning engine
+    /// because the bridge is per-source but the flag lives on the model.
+    var presentsAndroidIdentityProvider: (() -> Bool)?
     var sourceHeaders: [String: String] { sourceHeadersProvider?() ?? [:] }
 
     /// Timeout for `java.ajax`/`java.connect` requests. Legado sources carry `respondTime`
@@ -1166,6 +1185,15 @@ struct LegadoHTTPResult {
     /// ANDROID_ID has). `deviceID()` is left alone — 光遇's `checkEnv()` wants the
     /// real vendor UUID.
     func androidId() -> String {
+        // Empty unless the source asked for an Android identity. Sources call
+        // this for two incompatible reasons: as a real device key, and as a
+        // platform probe (`if (java.androidId()) -> not iOS`). Answering
+        // everyone told the probes we were Android, which is what broke
+        // 书山聚合's chapter loading. Empty — not a thrown error — because a
+        // probe reads `if (id && id !== '')` and falls through cleanly, while
+        // 知秋's `requestApiUrl` calls this bare and would take the whole
+        // request down with it.
+        guard presentsAndroidIdentityProvider?() == true else { return "" }
         let digest = SHA256.hash(data: Data(deviceID().utf8))
         return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }

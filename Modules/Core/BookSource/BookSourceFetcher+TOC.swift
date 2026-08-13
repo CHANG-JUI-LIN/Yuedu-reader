@@ -4,8 +4,9 @@ import Foundation
 
 extension BookSourceFetcher {
 
-    /// Fetch TOC (Legado compatible: ruleToc.chapterList/name/url, multi-page nextTocUrl, preUpdateJs).
-    /// If ruleToc.preUpdateJs is set, loads the TOC page via WebView, executes the JS first, then retrieves HTML.
+    /// Fetch TOC for source validation. Legado's checker calls `getChapterListAwait`
+    /// with its default `runPerJs = false`, so validation must not execute
+    /// `ruleToc.preUpdateJs` or open a WebView for it.
     func fetchTOC(
         tocUrl: String,
         source: BookSource,
@@ -14,7 +15,8 @@ extension BookSourceFetcher {
         let package = try await fetchTOCPackage(
             tocUrl: tocUrl,
             source: source,
-            runtimeVariables: runtimeVariables
+            runtimeVariables: runtimeVariables,
+            runPreUpdateJs: false
         )
         return package.chapters
     }
@@ -41,7 +43,8 @@ extension BookSourceFetcher {
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
         onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)? = nil,
-        forceRefresh: Bool = false
+        forceRefresh: Bool = false,
+        runPreUpdateJs: Bool = true
     ) async throws -> TOCPackage {
         if !forceRefresh, let cached = cachedTOCPackage(tocUrl: tocUrl, source: source) {
             return cached
@@ -65,14 +68,39 @@ extension BookSourceFetcher {
         }
         // #endregion
 
-        if source.shouldUseLegadoRuntimeFetch(for: tocUrl) {
+        var effectiveTOCURL = tocUrl
+        var effectiveRuntimeVariables = runtimeVariables
+        if runPreUpdateJs,
+           !source.ruleToc.preUpdateJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let session = BookSourceSession.session(for: source)
+            do {
+                let result = try session.withBridge { bridge in
+                    try bridge.runTOCPreUpdateJS(
+                        source.ruleToc.preUpdateJs,
+                        tocURL: tocUrl,
+                        runtimeVariables: runtimeVariables
+                    )
+                }
+                effectiveTOCURL = result.tocURL
+                effectiveRuntimeVariables = result.runtimeVariables
+            } catch {
+                // Legado logs preUpdateJs failures and continues with the original
+                // book/URL. Preserve that contract without changing transport.
+                AppLogger.parse("TOC preUpdateJs failed", context: [
+                    "source": source.bookSourceName,
+                    "error": error.localizedDescription
+                ])
+            }
+        }
+
+        if source.shouldUseLegadoRuntimeFetch(for: effectiveTOCURL) {
             // Reuse the per-source session's bridge (JS runtime + jsLib) instead
             // of standing up a fresh one for this fetch+parse pair.
             let session = BookSourceSession.session(for: source)
             let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
                 "toc.network", source.bookSourceName
             ) {
-                try await session.bridgeForAsyncOperations.fetch(ruleUrl: tocUrl)
+                try await session.bridgeForAsyncOperations.fetch(ruleUrl: effectiveTOCURL)
             }
             let chapters = try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
                 try session.withBridge { bridge in
@@ -80,7 +108,7 @@ extension BookSourceFetcher {
                         html: html,
                         baseURL: finalUrl,
                         source: source,
-                        runtimeVariables: runtimeVariables
+                        runtimeVariables: effectiveRuntimeVariables
                     )
                 }
             }
@@ -95,23 +123,20 @@ extension BookSourceFetcher {
             return saveTOCPackage(
                 tocUrl: tocUrl,
                 source: source,
-                runtimeVariables: normalized.last?.runtimeVariables ?? runtimeVariables,
+                runtimeVariables: normalized.last?.runtimeVariables ?? effectiveRuntimeVariables,
                 chapters: normalized,
                 rawHTML: html
             )
         }
 
-        guard let url = safeURL(string: tocUrl) else { throw FetchError.invalidURL(tocUrl) }
+        guard let url = safeURL(string: effectiveTOCURL) else {
+            throw FetchError.invalidURL(effectiveTOCURL)
+        }
         let html: String
         var usedWebView = false
-        let baseForReferer = tocUrl
+        let baseForReferer = effectiveTOCURL
         let tocNetworkStart = ProcessInfo.processInfo.systemUptime
-        if !source.ruleToc.preUpdateJs.isEmpty {
-            html = try await WebViewFetcher.shared.fetchHTMLWithCustomJS(
-                url: url, headers: source.parsedHeaders,
-                jsAfterLoad: source.ruleToc.preUpdateJs, timeout: 20, jsWait: 2.0)
-            usedWebView = true
-        } else if source.needsWebView {
+        if source.needsWebView {
             html = try await Self.fetchViaWebView(url: url, headers: source.parsedHeaders)
             usedWebView = true
         } else {
@@ -139,11 +164,11 @@ extension BookSourceFetcher {
                     html: html,
                     baseURL: url.absoluteString,
                     source: source,
-                    runtimeVariables: runtimeVariables
+                    runtimeVariables: effectiveRuntimeVariables
                 )
             }
         }
-        var htmlForNext = html
+        let htmlForNext = html
 
         // #region agent log
         _dbgLog(
@@ -157,46 +182,11 @@ extension BookSourceFetcher {
             ], hyp: "T1")
         // #endregion
 
-        // If URLSession returns empty TOC, retry with WebView (many sites load TOC dynamically via JS)
-        if chapters.isEmpty && !usedWebView {
-            let webHtml = try await WebViewFetcher.shared.fetchHTML(
-                url: url,
-                headers: source.parsedHeaders,
-                timeout: 20,
-                jsWait: 4.0
-            )
-            chapters = try autoreleasepool {
-                try pipeline.parseTOC(
-                    html: webHtml,
-                    baseURL: url.absoluteString,
-                    source: source,
-                    runtimeVariables: runtimeVariables
-                )
-            }
-            htmlForNext = webHtml
-            // #region agent log
-            _dbgLog(
-                "fetchTOC WebView 重試後",
-                data: ["source": source.bookSourceName, "chaptersCount": chapters.count], hyp: "B")
-            // #endregion
-        }
-        if chapters.isEmpty && usedWebView && source.ruleToc.preUpdateJs.isEmpty {
-            let delayedHtml = try await WebViewFetcher.shared.fetchHTML(
-                url: url,
-                headers: source.parsedHeaders,
-                timeout: 20,
-                jsWait: 4.0
-            )
-            chapters = try autoreleasepool {
-                try pipeline.parseTOC(
-                    html: delayedHtml,
-                    baseURL: url.absoluteString,
-                    source: source,
-                    runtimeVariables: runtimeVariables
-                )
-            }
-            htmlForNext = delayedHtml
-        }
+        // Empty means the configured rule/transport produced no chapters. Legado
+        // does not silently switch an ordinary HTTP source to WebView here; WebView
+        // is selected above only when the source explicitly requests it through
+        // `needsWebView` or `preUpdateJs`. The former global retry added 15–20 s to
+        // every dead rule and hid parser failures behind a second transport.
 
         // Progressive loading: notify caller immediately after first page parse, don't wait for multi-page fetch
         if !chapters.isEmpty, let onFirstPageReady {
@@ -217,21 +207,16 @@ extension BookSourceFetcher {
             html: htmlForNext,
             baseURL: url.absoluteString,
             source: source,
-            runtimeVariables: runtimeVariables
+            runtimeVariables: effectiveRuntimeVariables
         )
         var pageCount = 0
-        let usePreUpdateJs = !source.ruleToc.preUpdateJs.isEmpty
         while !nextURL.isEmpty && pageCount < 20 {
             guard let nextPageURL = URL(string: nextURL) else { break }
             let nextBase = nextURL.isEmpty ? source.bookSourceUrl : nextURL
             let pageStart = ProcessInfo.processInfo.systemUptime
             // Network request must be outside autoreleasepool (async cannot be in synchronous closure)
             let nextHTML: String
-            if usePreUpdateJs {
-                nextHTML = try await WebViewFetcher.shared.fetchHTMLWithCustomJS(
-                    url: nextPageURL, headers: source.parsedHeaders,
-                    jsAfterLoad: source.ruleToc.preUpdateJs, timeout: 20, jsWait: 2.0)
-            } else if source.needsWebView {
+            if source.needsWebView {
                 nextHTML = try await Self.fetchViaWebView(
                     url: nextPageURL, headers: source.parsedHeaders)
             } else {
@@ -255,7 +240,7 @@ extension BookSourceFetcher {
                     html: nextHTML,
                     baseURL: nextURL,
                     source: source,
-                    runtimeVariables: runtimeVariables
+                    runtimeVariables: effectiveRuntimeVariables
                 )
             }
             nextURL = pageResult.nextTocURL
@@ -274,7 +259,7 @@ extension BookSourceFetcher {
         let package = saveTOCPackage(
             tocUrl: tocUrl,
             source: source,
-            runtimeVariables: runtimeVariables,
+            runtimeVariables: effectiveRuntimeVariables,
             chapters: normalized,
             rawHTML: nil
         )

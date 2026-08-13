@@ -31,6 +31,82 @@ final class ReaderNavigationCoordinator: ObservableObject {
     /// animator entirely.
     private(set) var source: ReaderTransitionSource?
 
+    /// True from the moment a reader push is handed to UIKit until that
+    /// transition commits. The card animation itself runs on the render server
+    /// and no longer needs the main thread, but anything the reader commits
+    /// while it is in flight lands in the same render pass — a chapter
+    /// pagination or a cover decode there shows up as a dropped transition
+    /// frame. Work that the first visible page does not depend on waits on
+    /// `awaitOpeningTransitionEnd()` instead of racing the animation.
+    ///
+    /// Deliberately **not** `@Published`: publishing it would invalidate the
+    /// reader's SwiftUI body at the exact moment the transition starts, which
+    /// is precisely the kind of commit this gate exists to keep out of the
+    /// animation.
+    private(set) var isOpeningTransitionActive = false
+
+    /// Continuations parked in `awaitOpeningTransitionEnd()`. MainActor-isolated
+    /// like the rest of this type, so appending and resuming never race.
+    private var openingTransitionWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Set once the reader reports its first page laid out. The card animation
+    /// waits for this before it starts driving, so the reader's own startup —
+    /// CSS parse, embedded-font registration, CoreText pagination, measured on
+    /// device at 34–67ms and landing 4–7ms into the animation — runs while the
+    /// card is still at rest instead of inside the animation window.
+    private var isReaderContentReady = false
+    private var readerContentReadyWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// FALLBACK (disclosed): ceiling on how long the card will sit still
+    /// waiting for a first page. Two real cases need it — a slow book (large
+    /// EPUB on a cold cache, or an online book) that takes seconds to lay out,
+    /// and a reader that never reports ready at all (content fails to parse, or
+    /// a non-CoreText path that never drives `isCoreTextReady`). Without it the
+    /// card would freeze on the shelf tile for as long as the book takes, which
+    /// reads as a hung app — far worse than opening onto a spinner. Measured
+    /// warm first-page work is 34–67ms, so 100ms clears the common case with
+    /// room to spare while keeping the tap responsive. Can be deleted only if
+    /// every reader path is made to signal on both success and failure exits.
+    private static let readerContentReadyCeiling: Duration = .milliseconds(100)
+    private var readerContentReadyCeilingTask: Task<Void, Never>?
+
+    /// True when the ceiling fired, i.e. the animation started while the reader
+    /// was still showing its loading chrome. The reader reads this to hold that
+    /// chrome until the transition commits: swapping the real first page in
+    /// mid-animation would commit the entire first layout into the animation's
+    /// render pass — the exact hitch this whole change removes. A book that
+    /// made the deadline never sets it, so fast opens are never held back.
+    private(set) var openingStartedWithoutContent = false
+
+    /// Start timestamp of the in-flight opening transition, for the `⏱
+    /// reader.open.transition` span. A measured duration far above the nominal
+    /// animation length is the signal that the main thread was blocked during
+    /// the open, since the completion callback that ends it is main-thread.
+    private var openingTransitionStart: TimeInterval?
+
+    /// Main-thread stall sampler, live only while an opening transition runs.
+    /// The card animation itself is committed to the render server, so a frame
+    /// is dropped only when the main thread misses a vsync. Stage spans cannot
+    /// show that: an async span's elapsed time includes suspension, so a 50ms
+    /// `epub.font.fetch` may have blocked nothing at all. A display link
+    /// measures the blocking directly — the gaps between its own callbacks.
+    private var openingStallLink: CADisplayLink?
+    private var openingStallLastTimestamp: CFTimeInterval?
+    private var openingStallCount = 0
+    private var openingStallWorst: CFTimeInterval = 0
+    private var openingStallWorstAt: CFTimeInterval = 0
+    private var openingStallLostTime: CFTimeInterval = 0
+    /// Media-time origin for the sampler, so a stall can be reported at its
+    /// offset into the transition rather than as a bare duration.
+    private var openingStallOrigin: CFTimeInterval = 0
+    /// Gap between arming the sampler and its first callback. The main thread
+    /// is blocked for that whole window by the synchronous push work — UIKit
+    /// building the animator and SwiftUI laying out the reader for the first
+    /// time — which all happens *before* the animation is committed. A stall
+    /// there delays the animation's start instead of dropping its frames, so
+    /// it needs to be told apart from the in-flight stalls below.
+    private var openingStallStartupBlock: CFTimeInterval = 0
+
     private let transitionDriver: ReaderNavigationTransitionDriver
     private var pendingDestinationFactory: (@MainActor () -> UIViewController)?
     private var pendingDestinationViewController: UIViewController?
@@ -52,6 +128,9 @@ final class ReaderNavigationCoordinator: ObservableObject {
             return self.source ?? ReaderTransitionSource.fallback(bookID: bookID)
         }
         driver.readerIsPresented = { [weak self] in self?.isReaderPresented == true }
+        driver.contentReadyGate = { [weak self] in
+            await self?.awaitReaderContentReady()
+        }
         driver.onInteractivePopCompleted = { [weak self] in
             self?.completeInteractivePop()
         }
@@ -108,6 +187,10 @@ final class ReaderNavigationCoordinator: ObservableObject {
 
         pendingCloseAfterPush = false
         isProgrammaticPopPending = false
+        // A fresh book must lay out its own first page before the card starts
+        // turning; the previous book's readiness says nothing about this one.
+        isReaderContentReady = false
+        openingStartedWithoutContent = false
         pendingPushRetryTask?.cancel()
         pendingPushRetryTask = nil
         pendingOpenCompletion = onTransitionCompleted
@@ -149,10 +232,140 @@ final class ReaderNavigationCoordinator: ObservableObject {
             return
         }
         AppLogger.info("⟐ coordinator.beginPendingPush startPush accepted")
+        openingTransitionStart = ProcessInfo.processInfo.systemUptime
+        isOpeningTransitionActive = true
+        beginOpeningStallSampling()
+        armReaderContentReadyCeiling()
         pendingPushRetryTask?.cancel()
         pendingPushRetryTask = nil
         pendingDestinationViewController = nil
         presentedReaderController = destination
+    }
+
+    /// Suspends until the opening transition has committed. Returns immediately
+    /// when nothing is in flight, so modal entry points (which have no
+    /// coordinator at all) and work started on a settled reader are never
+    /// delayed. Awaits the published state rather than a timer — the signal is
+    /// UIKit's own transition completion.
+    /// Returns whether it actually had to wait, so callers can log the
+    /// difference between "the gate was already open" and "this never ran at
+    /// all" — two states that look identical when only real waits are traced.
+    @discardableResult
+    func awaitOpeningTransitionEnd() async -> Bool {
+        // The guard and the append both run synchronously on the main actor, so
+        // a transition cannot finish between them and strand this waiter.
+        guard isOpeningTransitionActive else { return false }
+        await withCheckedContinuation { continuation in
+            openingTransitionWaiters.append(continuation)
+        }
+        return true
+    }
+
+    /// Called by the reader once its first page is laid out. Idempotent — the
+    /// first caller wins and the ceiling is stood down.
+    func signalReaderContentReady() {
+        guard !isReaderContentReady else { return }
+        isReaderContentReady = true
+        readerContentReadyCeilingTask?.cancel()
+        readerContentReadyCeilingTask = nil
+
+        guard !readerContentReadyWaiters.isEmpty else { return }
+        let waiters = readerContentReadyWaiters
+        readerContentReadyWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// Suspends until the reader's first page is laid out (or the ceiling
+    /// fires). Returns immediately once ready, so a second transition for an
+    /// already-warm reader is never held back.
+    func awaitReaderContentReady() async {
+        guard !isReaderContentReady else { return }
+        await withCheckedContinuation { continuation in
+            readerContentReadyWaiters.append(continuation)
+        }
+    }
+
+    private func armReaderContentReadyCeiling() {
+        readerContentReadyCeilingTask?.cancel()
+        readerContentReadyCeilingTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.readerContentReadyCeiling)
+            guard !Task.isCancelled, let self, !self.isReaderContentReady else { return }
+            AppLogger.info("⟐ reader-nav content-ready ceiling fired; starting animation on the loading chrome")
+            self.openingStartedWithoutContent = true
+            self.signalReaderContentReady()
+        }
+    }
+
+    private func beginOpeningStallSampling() {
+        openingStallLink?.invalidate()
+        openingStallLastTimestamp = nil
+        openingStallCount = 0
+        openingStallWorst = 0
+        openingStallWorstAt = 0
+        openingStallLostTime = 0
+        openingStallStartupBlock = 0
+        openingStallOrigin = CACurrentMediaTime()
+        let link = CADisplayLink(target: self, selector: #selector(sampleOpeningStall(_:)))
+        link.add(to: .main, forMode: .common)
+        openingStallLink = link
+    }
+
+    @objc private func sampleOpeningStall(_ link: CADisplayLink) {
+        defer { openingStallLastTimestamp = link.timestamp }
+        guard let last = openingStallLastTimestamp else {
+            // First callback: everything before it was the synchronous push
+            // path holding the main thread, not a dropped animation frame.
+            openingStallStartupBlock = link.timestamp - openingStallOrigin
+            return
+        }
+        // `duration` reports the active refresh interval, so this adapts to
+        // ProMotion instead of assuming a 60Hz budget.
+        let budget = link.duration > 0 ? link.duration : 1.0 / 60.0
+        let gap = link.timestamp - last
+        guard gap > budget * 1.5 else { return }
+        openingStallCount += 1
+        openingStallLostTime += gap - budget
+        guard gap > openingStallWorst else { return }
+        openingStallWorst = gap
+        openingStallWorstAt = last - openingStallOrigin
+    }
+
+    /// Clears the opening gate, closes its span, and releases every waiter.
+    /// Idempotent, and reached from every path that ends a push — the normal
+    /// completion, the driver's watchdog rollback, and the external-detach
+    /// self-heal — so a waiter can never be left parked forever.
+    private func endOpeningTransition(committed: Bool) {
+        openingStallLink?.invalidate()
+        openingStallLink = nil
+        readerContentReadyCeilingTask?.cancel()
+        readerContentReadyCeilingTask = nil
+        // Release anything still parked on the first page: the transition is
+        // over, so waiting for it can only strand the waiter.
+        signalReaderContentReady()
+
+        if let start = openingTransitionStart {
+            let ms = { (seconds: CFTimeInterval) in String(format: "%.0f", seconds * 1000) }
+            // `startup` is main-thread time spent before the animation was even
+            // committed (felt as a delay after the tap, not as a dropped frame).
+            // `worst@at` is the longest single freeze and how far into the
+            // transition it happened — the offset is what says which stage of
+            // the reader's own startup caused it.
+            SourcePerfTrace.record(
+                "reader.open.transition",
+                "committed=\(committed) startup=\(ms(openingStallStartupBlock))ms "
+                + "stalls=\(openingStallCount) "
+                + "worst=\(ms(openingStallWorst))ms@\(ms(openingStallWorstAt))ms "
+                + "lost=\(ms(openingStallLostTime))ms",
+                since: start
+            )
+            openingTransitionStart = nil
+        }
+        isOpeningTransitionActive = false
+
+        guard !openingTransitionWaiters.isEmpty else { return }
+        let waiters = openingTransitionWaiters
+        openingTransitionWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 
     private func schedulePendingPushRetry() {
@@ -208,6 +421,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
         else { return }
 
         AppLogger.info("⟐ coordinator reconcile: reader controller popped externally; resetting state")
+        endOpeningTransition(committed: false)
         pendingPushRetryTask?.cancel()
         pendingPushRetryTask = nil
         pendingCloseAfterPush = false
@@ -254,6 +468,10 @@ final class ReaderNavigationCoordinator: ObservableObject {
     }
 
     func detachNavigationController() {
+        // `detach()` drops the driver's pending operation without delivering a
+        // completion, so nothing else would ever reopen the gate. Release it
+        // here or a parked preload leaks its continuation with the shelf.
+        endOpeningTransition(committed: false)
         transitionDriver.detach()
     }
 
@@ -276,6 +494,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
     }
 
     private func completePushTransition(completed: Bool) {
+        endOpeningTransition(committed: completed)
         let completion = pendingOpenCompletion
         pendingOpenCompletion = nil
         if completed { completion?() }

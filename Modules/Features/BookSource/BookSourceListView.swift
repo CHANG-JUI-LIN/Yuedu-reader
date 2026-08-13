@@ -57,13 +57,11 @@ struct BookSourceListView: View {
     @State private var groupNameText = ""
     /// Group the 刪除該分組 confirmation is about to delete.
     @State private var deletingGroup: PendingGroupAction? = nil
+    /// Pending 移動到分組 / 合併到其他分組 pick, shown as a searchable group list.
+    @State private var groupPicking: PendingGroupPick? = nil
     /// Source shown in the read-only 查看詳情 sheet.
     @State private var infoSource: BookSource? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// Leading slot for the 置頂／置底 pin icon, matching the old warning bar + checkbox
-    /// padding so source names keep their horizontal position.
-    private let pinSlotWidth = DSSpacing.lg + DSSpacing.xs
 
     private var checkSources: [BookSource] {
         if !selectedIds.isEmpty {
@@ -93,30 +91,6 @@ struct BookSourceListView: View {
         }
     }
 
-    /// Sentinel ids for the built-in 置頂／置底 groups — kept distinct from any user group
-    /// name, so a group literally named 置頂 cannot collide with them.
-    private static let topPinnedGroupID = "yuedu.pin-group.top"
-    private static let bottomPinnedGroupID = "yuedu.pin-group.bottom"
-
-    /// One row group in the management list. Every displayed source belongs to exactly one
-    /// group: pinned sources land in the built-in 置頂／置底 groups, the rest use their
-    /// `bookSourceGroup` — and sources without one land in the built-in 默認分組 (Legado's
-    /// default group — ungrouped sources are never left flat).
-    private struct BookSourceRowGroup: Identifiable {
-        let id: String
-        let name: String
-        let sources: [BookSource]
-
-        /// 置頂／置底 are synthetic buckets built from pin state, not from `bookSourceGroup`.
-        /// Renaming, merging, or deleting "the group" is meaningless for them, so their menu
-        /// only offers the operations that act on the member sources.
-        var isPinGroup: Bool {
-            id == BookSourceListView.topPinnedGroupID || id == BookSourceListView.bottomPinnedGroupID
-        }
-
-        var sourceIds: Set<UUID> { Set(sources.map(\.id)) }
-    }
-
     /// A group snapshot frozen at the moment its menu item was tapped, so the delete alert
     /// acts on exactly what the user saw — the live list can be re-grouped by the very edit
     /// they are confirming.
@@ -124,6 +98,21 @@ struct BookSourceListView: View {
         let id: String
         let name: String
         let sourceIds: Set<UUID>
+    }
+
+    /// A pending 移動到分組 / 合併到其他分組, frozen when its menu row was tapped so the sheet
+    /// acts on exactly what the user saw — the live list can be re-grouped by the very edit
+    /// being made (same contract as `PendingGroupAction`).
+    private struct PendingGroupPick: Identifiable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let sourceIds: Set<UUID>
+        let candidates: [BookSourceGroupCandidate]
+        /// The group these sources are leaving, so the sheet doesn't offer to re-create it.
+        let excluded: String
+        let defaultGroupTitle: String?
+        let allowsNewGroup: Bool
     }
 
     /// A pending group-name entry — 重命名分組 for a whole group, or 移動到新分組 for one
@@ -153,7 +142,7 @@ struct BookSourceListView: View {
         var groups: [BookSourceRowGroup] = []
         if !topPinned.isEmpty {
             groups.append(BookSourceRowGroup(
-                id: Self.topPinnedGroupID, name: localized("置頂組"), sources: topPinned))
+                id: BookSourceRowGroup.topPinnedID, name: localized("置頂組"), sources: topPinned))
         }
         var names: [String] = []
         var byName: [String: [BookSource]] = [:]
@@ -168,7 +157,8 @@ struct BookSourceListView: View {
         })
         if !bottomPinned.isEmpty {
             groups.append(BookSourceRowGroup(
-                id: Self.bottomPinnedGroupID, name: localized("置底組"), sources: bottomPinned))
+                id: BookSourceRowGroup.bottomPinnedID, name: localized("置底組"),
+                sources: bottomPinned))
         }
         return groups
     }
@@ -191,11 +181,13 @@ struct BookSourceListView: View {
         }) {
             ids.insert(defaultGroupName)
         }
-        if store.sources.contains(where: { store.pinRecord(for: $0.id)?.position == .top }) {
-            ids.insert(Self.topPinnedGroupID)
+        // Read the pin table directly instead of scanning every source for a pin: the
+        // scan was O(sources) twice per body evaluation, and pins are a handful of rows.
+        if store.pinRecords.values.contains(where: { $0.position == .top }) {
+            ids.insert(BookSourceRowGroup.topPinnedID)
         }
-        if store.sources.contains(where: { store.pinRecord(for: $0.id)?.position == .bottom }) {
-            ids.insert(Self.bottomPinnedGroupID)
+        if store.pinRecords.values.contains(where: { $0.position == .bottom }) {
+            ids.insert(BookSourceRowGroup.bottomPinnedID)
         }
         return ids
     }
@@ -260,13 +252,13 @@ struct BookSourceListView: View {
                         Divider()
                         Menu {
                             if !selectedIds.isEmpty {
-                                exportShareLink(
+                                BookSourceExportShareLink(
                                     label: localized("匯出選中"),
                                     filenameLabel: localized("選中書源"),
                                     sources: store.sources.filter { selectedIds.contains($0.id) }
                                 )
                             }
-                            exportShareLink(
+                            BookSourceExportShareLink(
                                 label: localized("匯出全部"),
                                 filenameLabel: localized("全部書源"),
                                 sources: store.sources
@@ -375,6 +367,21 @@ struct BookSourceListView: View {
                 } else {
                     BookSourceFormLoginView(source: src) {
                         loginSource = nil
+                    }
+                }
+            }
+            .sheet(item: $groupPicking) { pick in
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    BookSourceGroupPickerSheet(
+                        title: pick.title,
+                        subtitle: pick.subtitle,
+                        candidates: pick.candidates,
+                        excluded: pick.excluded,
+                        defaultGroupTitle: pick.defaultGroupTitle,
+                        defaultGroupName: defaultGroupName,
+                        allowsNewGroup: pick.allowsNewGroup
+                    ) { name in
+                        applyGroupName(name, to: pick.sourceIds)
                     }
                 }
             }
@@ -578,21 +585,12 @@ struct BookSourceListView: View {
         }
     }
 
-    /// Native share row for 匯出 …（儲存到「檔案」／AirDrop／…）. See `BookSourceExportFile` for
-    /// why this is a `ShareLink` and not a `.fileExporter`.
-    private func exportShareLink(
-        label: String, filenameLabel: String, sources: [BookSource]
-    ) -> some View {
-        let file = BookSourceExportFile(
-            filename: BookSourceExportFile.filename(for: filenameLabel), sources: sources)
-        return ShareLink(item: file, preview: SharePreview(file.filename)) {
-            Label(label, systemImage: "square.and.arrow.up")
-        }
-    }
-
     // MARK: - Source List
+
     private var sourceList: some View {
-        ScrollViewReader { proxy in
+        let rowActions = self.rowActions
+        let groupActions = self.groupActions
+        return ScrollViewReader { proxy in
             List {
                 Section {
                     SourceValidationListHeader(
@@ -615,16 +613,26 @@ struct BookSourceListView: View {
                     // and a custom `DisclosureGroupStyle` would collapse the whole group into
                     // one List row — losing per-source separators, insets, and lazy rows.
                     ForEach(displayedGroups) { group in
-                        sourceGroupHeaderRow(group)
+                        BookSourceGroupHeaderRow(
+                            group: group,
+                            expanded: expandedGroups.contains(group.id),
+                            actions: groupActions
+                        )
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 0, leading: DSSpacing.md, bottom: 0, trailing: DSSpacing.md))
+                        .listRowSeparator(.hidden)
+                        .interfaceSectionSurface()
+
                         if expandedGroups.contains(group.id) {
                             ForEach(group.sources) { source in
-                                sourceRowListEntry(source)
+                                sourceRowListEntry(source, actions: rowActions)
                             }
                         }
                     }
                 } else {
                     ForEach(displayedSources) { source in
-                        sourceRowListEntry(source)
+                        sourceRowListEntry(source, actions: rowActions)
                     }
                 }
             }
@@ -646,20 +654,65 @@ struct BookSourceListView: View {
         }
     }
 
-    @ViewBuilder
-    private func sourceRowListEntry(_ source: BookSource) -> some View {
-        sourceRow(source: source)
-            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-            .listRowSeparator(.visible)
-            .interfaceSectionSurface()
+    /// Only the row modifiers live here — the row itself is `BookSourceRow`, a separate
+    /// `View` struct so `List` defers building its menus and rotor actions until the row
+    /// scrolls in. See the note at the top of `BookSourceRowViews.swift`.
+    private func sourceRowListEntry(
+        _ source: BookSource, actions: BookSourceRowActions
+    ) -> some View {
+        BookSourceRow(
+            source: source,
+            isSelected: selectedIds.contains(source.id),
+            pin: store.pinRecord(for: source.id)?.position,
+            health: healthChecker.healthById[source.id],
+            defaultGroupName: defaultGroupName,
+            actions: actions
+        )
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        .listRowSeparator(.visible)
+        .interfaceSectionSurface()
     }
 
-    private func sourceGroupHeaderRow(_ group: BookSourceRowGroup) -> some View {
-        sourceGroupHeader(group)
-            .listRowInsets(
-                EdgeInsets(top: 0, leading: DSSpacing.md, bottom: 0, trailing: DSSpacing.md))
-            .listRowSeparator(.hidden)
-            .interfaceSectionSurface()
+    // MARK: - Row & Group Actions
+
+    /// Built once per body evaluation and shared by every row, so constructing a row costs
+    /// a handful of closure retains instead of reaching back into this view's state.
+    private var rowActions: BookSourceRowActions {
+        BookSourceRowActions(
+            toggleSelection: { self.toggleSelection($0) },
+            toggleEnabled: { self.store.toggle(id: $0) },
+            showInfo: { self.infoSource = $0 },
+            test: { self.presentCheckOptions(for: [$0]) },
+            edit: { self.editingSource = $0 },
+            copyJSON: { self.copySourceJSON($0) },
+            login: { self.loginSource = $0 },
+            editVariables: { self.variableEditingSource = $0 },
+            applyGroupName: { self.applyGroupName($0, to: $1) },
+            pickGroup: { self.beginPickingGroup(for: $0) },
+            moveToNewGroup: { self.beginMovingToNewGroup($0) },
+            pinToTop: { self.pinSourceToTop($0) },
+            pinToBottom: { self.pinSourceToBottom($0) },
+            unpin: { self.unpinSource($0, announcement: $1) },
+            delete: { source in
+                self.selectedIds.remove(source.id)
+                self.store.delete(id: source.id)
+            }
+        )
+    }
+
+    private var groupActions: BookSourceGroupActions {
+        BookSourceGroupActions(
+            toggleExpansion: { self.toggleGroupExpansion($0) },
+            rename: { self.beginRenamingGroup($0) },
+            pickMergeTarget: { self.beginPickingMergeTarget(for: $0) },
+            setEnabled: { self.store.setEnabledByUser(ids: $0, enabled: $1) },
+            select: { self.selectedIds.formUnion($0) },
+            copyToPasteboard: { self.copyGroupToPasteboard($0) },
+            delete: { group in
+                self.deletingGroup = PendingGroupAction(
+                    id: group.id, name: group.name, sourceIds: group.sourceIds)
+            }
+        )
     }
 
     private func toggleGroupExpansion(_ id: String) {
@@ -672,125 +725,7 @@ struct BookSourceListView: View {
         }
     }
 
-    /// 「› 分組名 12 ⋯」 — the chevron leads the title (Legado's layout) and the whole title
-    /// area toggles the group; the trailing menu holds the group-level operations.
-    private func sourceGroupHeader(_ group: BookSourceRowGroup) -> some View {
-        let expanded = expandedGroups.contains(group.id)
-        return HStack(spacing: DSSpacing.xs) {
-            Button {
-                toggleGroupExpansion(group.id)
-            } label: {
-                HStack(spacing: DSSpacing.sm) {
-                    Image(systemName: "chevron.right")
-                        .font(DSFont.caption.weight(.semibold))
-                        .foregroundColor(DSColor.textSecondary)
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .frame(width: DSSpacing.md)
-                        .accessibilityHidden(true)
-                    Text(group.name)
-                        .font(DSFont.toolbarIcon)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    Text("\(group.sources.count)")
-                        .font(DSFont.fixed(size: 12))
-                        .foregroundColor(DSColor.textSecondary)
-                        .monospacedDigit()
-                    Spacer(minLength: 0)
-                }
-                .frame(minHeight: DSLayout.minimumTapTarget)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(group.name)，\(group.sources.count)")
-            .accessibilityValue(localized(expanded ? "已展開" : "已收合"))
-            .accessibilityHint(localized("點兩下展開或收合分組"))
-            .accessibilityAddTraits(.isHeader)
-
-            sourceGroupMenu(group)
-        }
-    }
-
-    /// 分組操作 menu — Legado's group actions. Rename / merge / delete are hidden for the
-    /// synthetic 置頂／置底 buckets, which have no `bookSourceGroup` to act on.
-    private func sourceGroupMenu(_ group: BookSourceRowGroup) -> some View {
-        Menu {
-            if !group.isPinGroup {
-                Button {
-                    beginRenamingGroup(group)
-                } label: {
-                    Label(localized("重命名分組"), systemImage: "pencil")
-                }
-                let targets = mergeTargets(for: group)
-                if !targets.isEmpty {
-                    Menu {
-                        ForEach(targets, id: \.self) { target in
-                            Button(target) {
-                                mergeGroup(group, into: target)
-                            }
-                        }
-                    } label: {
-                        Label(localized("合併到其他分組"), systemImage: "arrow.triangle.merge")
-                    }
-                }
-                Divider()
-            }
-            Button {
-                store.setEnabledByUser(ids: group.sourceIds, enabled: true)
-            } label: {
-                Label(localized("啟用全部"), systemImage: "play.circle")
-            }
-            Button {
-                store.setEnabledByUser(ids: group.sourceIds, enabled: false)
-            } label: {
-                Label(localized("停用全部"), systemImage: "pause.circle")
-            }
-            Divider()
-            Button {
-                selectedIds.formUnion(group.sourceIds)
-            } label: {
-                Label(localized("選擇該分組"), systemImage: "checkmark.circle")
-            }
-            exportShareLink(
-                label: localized("匯出該分組"),
-                filenameLabel: group.name,
-                sources: group.sources
-            )
-            Button {
-                copyGroupToPasteboard(group)
-            } label: {
-                Label(localized("複製該分組到剪貼簿"), systemImage: "doc.on.doc")
-            }
-            if !group.isPinGroup {
-                Divider()
-                Button(role: .destructive) {
-                    deletingGroup = PendingGroupAction(
-                        id: group.id, name: group.name, sourceIds: group.sourceIds)
-                } label: {
-                    Label(localized("刪除該分組"), systemImage: "trash")
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(DSFont.toolbarIcon)
-                .foregroundColor(DSColor.textSecondary)
-                .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
-                .contentShape(Rectangle())
-                .accessibilityHidden(true)
-        }
-        .accessibilityLabel(localized("分組操作"))
-    }
-
     // MARK: - Group Operations
-
-    /// Groups this one can merge into: every other named group, plus the built-in default
-    /// group (merging there just clears `bookSourceGroup`).
-    private func mergeTargets(for group: BookSourceRowGroup) -> [String] {
-        var targets = store.groupNames.filter { $0 != group.name }
-        if group.name != defaultGroupName {
-            targets.append(defaultGroupName)
-        }
-        return targets
-    }
 
     private func beginRenamingGroup(_ group: BookSourceRowGroup) {
         // 默認分組 is a display-only label for sources with no group, so the field starts
@@ -827,39 +762,42 @@ struct BookSourceListView: View {
         applyGroupName(trimmed, to: pending.sourceIds)
     }
 
-    /// 移動到分組 submenu for one source: the other existing groups, 移出分組, and a text
-    /// entry for a group that doesn't exist yet.
-    private func moveToGroupMenu(_ source: BookSource) -> some View {
+    /// 移動到分組 for one source — opens the searchable group list.
+    private func beginPickingGroup(for source: BookSource) {
         let current = source.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines)
-        let others = store.groupNames.filter { $0 != current }
-        return Menu {
-            ForEach(others, id: \.self) { name in
-                Button(name) {
-                    applyGroupName(name, to: [source.id])
-                }
-            }
-            if !others.isEmpty {
-                Divider()
-            }
-            if !current.isEmpty {
-                Button {
-                    applyGroupName(defaultGroupName, to: [source.id])
-                } label: {
-                    Label(localized("移出分組"), systemImage: "folder.badge.minus")
-                }
-            }
-            Button {
-                beginMovingToNewGroup(source)
-            } label: {
-                Label(localized("新增分組…"), systemImage: "folder.badge.plus")
-            }
-        } label: {
-            Label(localized("移動到分組"), systemImage: "folder")
-        }
+        groupPicking = PendingGroupPick(
+            id: source.id.uuidString,
+            title: localized("移動到分組"),
+            subtitle: source.bookSourceName.isEmpty
+                ? localized("未命名書源") : source.bookSourceName,
+            sourceIds: [source.id],
+            candidates: groupCandidates(excluding: current),
+            excluded: current,
+            // Only a source that has a group can leave it.
+            defaultGroupTitle: current.isEmpty ? nil : localized("移出分組"),
+            allowsNewGroup: true
+        )
     }
 
-    private func mergeGroup(_ group: BookSourceRowGroup, into target: String) {
-        applyGroupName(target, to: group.sourceIds)
+    /// 合併到其他分組 for a whole group — the same sheet, minus 新增分組 (重命名分組 covers
+    /// moving a group to a name that doesn't exist yet).
+    private func beginPickingMergeTarget(for group: BookSourceRowGroup) {
+        groupPicking = PendingGroupPick(
+            id: group.id,
+            title: localized("合併到其他分組"),
+            subtitle: group.name + " · \(group.sources.count) " + localized("個書源"),
+            sourceIds: group.sourceIds,
+            candidates: groupCandidates(excluding: group.name),
+            excluded: group.name,
+            defaultGroupTitle: group.name == defaultGroupName ? nil : defaultGroupName,
+            allowsNewGroup: false
+        )
+    }
+
+    private func groupCandidates(excluding excluded: String) -> [BookSourceGroupCandidate] {
+        store.groupCounts(excluding: excluded).map {
+            BookSourceGroupCandidate(name: $0.name, count: $0.count)
+        }
     }
 
     /// Single write path for 重命名分組 and 合併到其他分組. The built-in default group has no
@@ -886,306 +824,6 @@ struct BookSourceListView: View {
             // return makes `withAnimation` itself yield a value nobody reads.
             _ = store.delete(ids: pending.sourceIds)
         }
-    }
-
-    /// One VoiceOver element per source.
-    ///
-    /// The row packs five separate controls (核取方塊 / 啟用開關 / 編輯 / 更多) around three
-    /// lines of text, so unmerged it cost eight swipes per source and announced bare SF
-    /// Symbol names ("square", "square.and.pencil", "ellipsis") for four of them. Merging
-    /// means every control has to come back as a rotor action — see `sourceRotorActions`
-    /// — and the 網址 moves to rotor custom content so it isn't re-read on every swipe.
-    /// Rules in `docs/design.md` §7.
-    @ViewBuilder
-    private func sourceRow(source: BookSource) -> some View {
-        let row = sourceRowContent(source: source)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(sourceAccessibilityLabel(source))
-            .accessibilityValue(sourceAccessibilityValue(source))
-            .accessibilityAddTraits(sourceAccessibilityTraits(source))
-            .accessibilityHint(localized("點兩下切換啟用狀態"))
-            .accessibilityAction { store.toggle(id: source.id) }
-            .accessibilityActions { sourceRotorActions(source) }
-
-        if source.bookSourceUrl.isEmpty {
-            row
-        } else {
-            row.accessibilityCustomContent(
-                Text(localized("網址")),
-                Text(source.bookSourceUrl)
-            )
-        }
-    }
-
-    /// The row's VoiceOver name: 書源名稱（分組）, matching the first visible line.
-    private func sourceAccessibilityLabel(_ source: BookSource) -> String {
-        let name = source.bookSourceName.isEmpty
-            ? localized("未命名書源")
-            : source.bookSourceName
-        guard !source.bookSourceGroup.isEmpty else { return name }
-        return "\(name)（\(source.bookSourceGroup)）"
-    }
-
-    /// State the row shows visually: the 啟用 toggle, the pin marker, and the validation badge.
-    /// Selection is carried by the `.isSelected` trait instead, so it isn't said twice.
-    private func sourceAccessibilityValue(_ source: BookSource) -> String {
-        var parts = [localized(source.enabled ? "已啟用" : "已停用")]
-        if let position = store.pinRecord(for: source.id)?.position {
-            parts.append(localized(position == .top ? "已置頂" : "已置底"))
-        }
-        if let health = healthChecker.healthById[source.id]?.health {
-            parts.append(sourceHealthText(health))
-        }
-        return parts.joined(separator: "，")
-    }
-
-    /// `.isSelected` is what carries the leading checkbox — VoiceOver says 「已選取」 for it,
-    /// so the value line stays about 啟用 state only.
-    private func sourceAccessibilityTraits(_ source: BookSource) -> AccessibilityTraits {
-        var traits: AccessibilityTraits = .isButton
-        if selectedIds.contains(source.id) {
-            // SwiftUI's `AccessibilityTraits.insert` is not `@discardableResult`.
-            _ = traits.insert(.isSelected)
-        }
-        return traits
-    }
-
-    private func sourceHealthText(_ health: SourceHealth) -> String {
-        switch health {
-        case .passed:       return localized("驗證通過")
-        case .fetchError:   return localized("抓取異常")
-        case .contentError: return localized("正文異常")
-        }
-    }
-
-    /// Everything the row's buttons and menu can do, as rotor actions. Must stay in sync
-    /// with the visible controls in `sourceRowContent` — the merged element is the only
-    /// way VoiceOver can reach any of them.
-    @ViewBuilder
-    private func sourceRotorActions(_ source: BookSource) -> some View {
-        Button(localized(selectedIds.contains(source.id) ? "取消選取" : "選取")) {
-            toggleSelection(source.id)
-        }
-        Button(localized("查看詳情")) {
-            infoSource = source
-        }
-        Button(localized("測試書源")) {
-            presentCheckOptions(for: [source])
-        }
-        Button(localized("編輯")) {
-            editingSource = source
-        }
-        Button(localized("複製 JSON")) {
-            copySourceJSON(source)
-        }
-        if !source.loginUrl.isEmpty {
-            Button(localized("Cookie 驗證登入")) {
-                loginSource = source
-            }
-        }
-        Button(localized("設置源變量")) {
-            variableEditingSource = source
-        }
-        // The menu's 移動到分組 is a submenu of every group name, which a rotor can't express.
-        // Typing the destination covers the same ground: an existing name merges into it.
-        Button(localized("移動到新分組")) {
-            beginMovingToNewGroup(source)
-        }
-        if !source.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Button(localized("移出分組")) {
-                applyGroupName(defaultGroupName, to: [source.id])
-            }
-        }
-        if store.pinRecord(for: source.id)?.position == .top {
-            Button(localized("取消置頂")) {
-                unpinSource(source, announcement: localized("已取消置頂"))
-            }
-        } else {
-            Button(localized("置頂")) {
-                pinSourceToTop(source)
-            }
-        }
-        if store.pinRecord(for: source.id)?.position == .bottom {
-            Button(localized("取消置底")) {
-                unpinSource(source, announcement: localized("已取消置底"))
-            }
-        } else {
-            Button(localized("置底")) {
-                pinSourceToBottom(source)
-            }
-        }
-        Button(localized("刪除"), role: .destructive) {
-            selectedIds.remove(source.id)
-            store.delete(id: source.id)
-        }
-    }
-
-    @ViewBuilder
-    private func sourceRowContent(source: BookSource) -> some View {
-        HStack(spacing: 0) {
-            pinIndicator(for: source)
-
-            Button {
-                toggleSelection(source.id)
-            } label: {
-                Image(
-                    systemName: selectedIds.contains(source.id) ? "checkmark.square.fill" : "square"
-                )
-                .font(DSFont.fixed(size: 20))
-                .foregroundColor(
-                    selectedIds.contains(source.id) ? DSColor.accent : Color(UIColor.systemGray3))
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 12)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(source.bookSourceName.isEmpty ? localized("未命名書源") : source.bookSourceName)
-                        .font(DSFont.toolbarIcon)
-                        .foregroundColor(source.enabled ? .primary : .secondary)
-                        .lineLimit(1)
-
-                    if !source.bookSourceGroup.isEmpty {
-                        Text("(\(source.bookSourceGroup))")
-                            .font(DSFont.fixed(size: 13))
-                            .foregroundColor(DSColor.textSecondary)
-                            .lineLimit(1)
-                    }
-                }
-
-                if !source.bookSourceUrl.isEmpty {
-                    Text(source.bookSourceUrl)
-                        .font(DSFont.fixed(size: 11))
-                        .foregroundColor(DSColor.textSecondary.opacity(0.6))
-                        .lineLimit(1)
-                }
-                SourceValidationBadge(summary: healthChecker.healthById[source.id])
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Toggle(
-                "",
-                isOn: Binding(
-                    get: { source.enabled },
-                    set: { _ in store.toggle(id: source.id) }
-                )
-            )
-            .labelsHidden()
-            .scaleEffect(0.85)
-            .padding(.trailing, 4)
-
-            Button {
-                editingSource = source
-            } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(DSFont.toolbarIcon)
-                    .foregroundColor(DSColor.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-
-            Menu {
-                Button {
-                    infoSource = source
-                } label: {
-                    Label(localized("查看詳情"), systemImage: "info.circle")
-                }
-                Button {
-                    presentCheckOptions(for: [source])
-                } label: {
-                    Label(localized("測試書源"), systemImage: "stethoscope")
-                }
-                Button {
-                    editingSource = source
-                } label: {
-                    Label(localized("編輯"), systemImage: "pencil")
-                }
-                if !source.loginUrl.isEmpty {
-                    Button {
-                        loginSource = source
-                    } label: {
-                        Label(localized("Cookie 驗證登入"), systemImage: "key.fill")
-                    }
-                }
-                Button {
-                    toggleSelection(source.id)
-                } label: {
-                    Label(
-                        localized(selectedIds.contains(source.id) ? "取消選取" : "選取此書源"),
-                        systemImage: selectedIds.contains(source.id)
-                            ? "checkmark.circle.fill" : "checkmark.circle")
-                }
-                Divider()
-                Button {
-                    store.toggle(id: source.id)
-                } label: {
-                    Label(
-                        localized(source.enabled ? "停用" : "啟用"),
-                        systemImage: source.enabled ? "pause.circle" : "play.circle")
-                }
-                moveToGroupMenu(source)
-                Button {
-                    variableEditingSource = source
-                } label: {
-                    Label(localized("設置源變量"), systemImage: "curlybraces")
-                }
-                Divider()
-                exportShareLink(
-                    label: localized("匯出書源檔案"),
-                    filenameLabel: source.bookSourceName.isEmpty
-                        ? localized("未命名書源") : source.bookSourceName,
-                    sources: [source]
-                )
-                Button {
-                    copySourceJSON(source)
-                } label: {
-                    Label(localized("複製 JSON"), systemImage: "doc.on.doc")
-                }
-                Divider()
-                if store.pinRecord(for: source.id)?.position == .top {
-                    Button {
-                        unpinSource(source, announcement: localized("已取消置頂"))
-                    } label: {
-                        Label(localized("取消置頂"), systemImage: "pin.slash")
-                    }
-                } else {
-                    Button {
-                        pinSourceToTop(source)
-                    } label: {
-                        Label(localized("置頂"), systemImage: "arrow.up.to.line")
-                    }
-                }
-                if store.pinRecord(for: source.id)?.position == .bottom {
-                    Button {
-                        unpinSource(source, announcement: localized("已取消置底"))
-                    } label: {
-                        Label(localized("取消置底"), systemImage: "pin.slash")
-                    }
-                } else {
-                    Button {
-                        pinSourceToBottom(source)
-                    } label: {
-                        Label(localized("置底"), systemImage: "arrow.down.to.line")
-                    }
-                }
-                Divider()
-                Button(role: .destructive) {
-                    selectedIds.remove(source.id)
-                    store.delete(id: source.id)
-                } label: {
-                    Label(localized("刪除"), systemImage: "trash")
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(DSFont.toolbarIcon)
-                    .foregroundColor(DSColor.textSecondary)
-                    .frame(width: 24, height: 24)
-                    .rotationEffect(.degrees(90))
-            }
-            .padding(.trailing, 12)
-        }
-        .padding(.vertical, 14)
-        .opacity(source.enabled ? 1 : 0.6)
     }
 
     // MARK: - Bottom Toolbar
@@ -1297,24 +935,6 @@ struct BookSourceListView: View {
     }
 
     // MARK: - Pinning
-
-    /// 置頂／置底 marker: a pin icon instead of the old warning-colored bar, so only sources
-    /// the user explicitly pinned carry an indicator (the first unpinned source does not).
-    @ViewBuilder
-    private func pinIndicator(for source: BookSource) -> some View {
-        if let record = store.pinRecord(for: source.id) {
-            Image(systemName: "pin.fill")
-                .font(DSFont.fixed(size: 12))
-                .foregroundColor(DSColor.accent)
-                .rotationEffect(.degrees(record.position == .bottom ? 180 : 0))
-                .frame(width: pinSlotWidth)
-                .accessibilityHidden(true)
-        } else {
-            Color.clear
-                .frame(width: pinSlotWidth)
-                .accessibilityHidden(true)
-        }
-    }
 
     /// The row leaves the viewport when it jumps to the other end of a long list, which reads
     /// as "the source disappeared", so pinning and unpinning both scroll the row back into

@@ -142,7 +142,7 @@ extension BookSourceFetcher {
                             headers: requestHeadersSnapshot,
                             jsAfterLoad: source.ruleContent.webJs,
                             timeout: 25,
-                            jsWait: effectiveWebViewDelay ?? 2.0
+                            jsWait: effectiveWebViewDelay ?? AppConfig.webViewExplicitJSWait
                         )
                     }
                     return try await Self.fetchViaWebView(url: targetURL, headers: requestHeadersSnapshot, jsWait: effectiveWebViewDelay)
@@ -243,20 +243,6 @@ extension BookSourceFetcher {
             extractNextURLs: extractNextPages
         ) { nextPageURL in
             try await fetchChapterHTML(nextPageURL, "GET", nil)
-        } fetchViaJS: {
-            try await WebViewFetcher.shared.fetchWebContentViaJS(
-                url: url,
-                headers: requestHeadersSnapshot,
-                timeout: 18,
-                jsWait: 2.5
-            )
-        } fetchBySelectors: {
-            try await WebViewFetcher.shared.fetchChapterContentBySelectors(
-                url: url,
-                headers: requestHeadersSnapshot,
-                timeout: 15,
-                jsWait: 1.5
-            )
         }
 
         try saveChapterPackageToCache(
@@ -311,13 +297,12 @@ extension BookSourceFetcher {
         }
         let content = await ChapterFetcher.shared.resolveContent(
             parsed: parsed,
-            sourceUrl: ref.url,
-            fetchViaJS: { nil },
-            fetchBySelectors: { nil }
+            sourceUrl: ref.url
         )
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FetchError.emptyContent
         }
+        try ChapterFetcher.shared.validateResolvedContent(content)
         let canonicalTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveTitle = canonicalTitle.isEmpty ? ref.title : canonicalTitle
         let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(

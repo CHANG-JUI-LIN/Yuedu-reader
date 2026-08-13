@@ -49,6 +49,46 @@ final class WebViewNavigationWait {
     }
 }
 
+/// Cancellation-aware wait for a pooled WKWebView lease. A cancelled validation
+/// request must leave the pool queue immediately; otherwise a timed-out source keeps
+/// one of the health checker's limited worker slots until every earlier WebView load
+/// has drained.
+@MainActor
+final class WebViewLeaseWait {
+    private var continuation: CheckedContinuation<WKWebView, Error>?
+
+    var isWaiting: Bool { continuation != nil }
+
+    func value() async throws -> WKWebView {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    self.continuation = continuation
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancel() }
+        }
+    }
+
+    @discardableResult
+    func resume(returning webView: WKWebView) -> Bool {
+        guard let continuation else { return false }
+        self.continuation = nil
+        continuation.resume(returning: webView)
+        return true
+    }
+
+    func cancel() {
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume(throwing: CancellationError())
+    }
+}
+
 // MARK: - WKWebView Background JS Rendering Engine
 
 /// Loads pages that require JavaScript rendering and returns the full DOM HTML.
@@ -60,7 +100,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     /// WebView instance pool (reused to avoid repeated creation costs)
     private var pool: [WKWebView] = []
     private let poolSize = AppConfig.webViewPoolSize
-    private var waiters: [CheckedContinuation<WKWebView, Never>] = []
+    private var waiters: [WebViewLeaseWait] = []
     /// Currently active (checked out but not yet returned) WebView count, including temporaries
     private var activeCount: Int = 0
 
@@ -130,7 +170,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         timeout: TimeInterval = AppConfig.webViewFetchTimeout, jsWait: TimeInterval = AppConfig.webViewJSRenderWait
     ) async throws -> String {
 
-        let webView = await acquireWebView()
+        let webView = try await acquireWebView()
 
         defer { releaseWebView(webView) }
 
@@ -183,9 +223,10 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     /// Used for TOC pages where JS must run before the list appears.
     func fetchHTMLWithCustomJS(
         url: URL, headers: [String: String] = [:],
-        jsAfterLoad: String, timeout: TimeInterval = 20, jsWait: TimeInterval = 2.0
+        jsAfterLoad: String, timeout: TimeInterval = 20,
+        jsWait: TimeInterval = AppConfig.webViewExplicitJSWait
     ) async throws -> String {
-        let webView = await acquireWebView()
+        let webView = try await acquireWebView()
         defer { releaseWebView(webView) }
 
         let request = await prepareRequest(
@@ -201,12 +242,11 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                 try await self.waitForNavigation(in: webView) {
                     webView.load(request)
                 }
-                try await Task.sleep(nanoseconds: UInt64(jsWait * 1_000_000_000))
+                if jsWait > 0 {
+                    try await Task.sleep(nanoseconds: UInt64(jsWait * 1_000_000_000))
+                }
                 if !jsAfterLoad.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     _ = try? await webView.evaluateJavaScript(jsAfterLoad)
-                    try await Task.sleep(
-                        nanoseconds: UInt64(AppConfig.webViewPostLoadJSEffectDelay * 1_000_000_000)
-                    )
                 }
                 let html = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String ?? ""
                 if LegadoJSBridge.isCloudflareChallengedBody(html) {
@@ -230,7 +270,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     /// login is required (truthy = login needed).
     func evaluateInHTML(html: String, baseURL: String, js: String) async throws -> Bool {
         guard !js.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        let webView = await acquireWebView()
+        let webView = try await acquireWebView()
         defer { releaseWebView(webView) }
         let base = URL(string: baseURL) ?? URL(string: "about:blank")!
         try await loadHTMLString(html, baseURL: base, into: webView)
@@ -265,9 +305,9 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
             "#articleBody", ".article-body", "article", ".article", ".Readarea", ".readArea"
         ],
         scrollToEndDelay: TimeInterval = 0.5,
-        timeout: TimeInterval = 25, jsWait: TimeInterval = 2.0
+        timeout: TimeInterval = 25, jsWait: TimeInterval = AppConfig.webViewJSRenderWait
     ) async throws -> String {
-        let webView = await acquireWebView()
+        let webView = try await acquireWebView()
         defer { releaseWebView(webView) }
 
         let request = await prepareRequest(
@@ -430,7 +470,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         url: URL, headers: [String: String] = [:],
         timeout: TimeInterval = 20, jsWait: TimeInterval = 1.5
     ) async throws -> String {
-        let webView = await acquireWebView()
+        let webView = try await acquireWebView()
         defer { releaseWebView(webView) }
 
         let request = await prepareRequest(
@@ -482,7 +522,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         url: URL, headers: [String: String] = [:],
         timeout: TimeInterval = 15, jsWait: TimeInterval = 1.5
     ) async throws -> PageResult {
-        let webView = await acquireWebView()
+        let webView = try await acquireWebView()
         defer { releaseWebView(webView) }
 
         let request = await prepareRequest(
@@ -535,7 +575,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
 
     /// Extracts article content from HTML via Readability (for source-less web pages).
     func extractArticle(html: String, baseURL: String? = nil) async throws -> String? {
-        let webView = await acquireWebView()
+        let webView = try await acquireWebView()
         defer { releaseWebView(webView) }
 
         let baseURLForLoad: URL = baseURL.flatMap { URL(string: $0) } ?? URL(string: "about:blank")!
@@ -561,7 +601,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
 
     /// Executes Legado rules on the injected HTML, returning a single result string.
     func evaluateHTMLRule(html: String, rule: String, baseURL: String) async throws -> String {
-        let webView = await acquireWebView()
+        let webView = try await acquireWebView()
         defer { releaseWebView(webView) }
 
         let baseURLForLoad: URL = URL(string: baseURL) ?? URL(string: "about:blank")!
@@ -669,7 +709,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         return HTTPCookie.requestHeaderFields(with: cookies)["Cookie"]
     }
 
-    private func acquireWebView() async -> WKWebView {
+    private func acquireWebView() async throws -> WKWebView {
         if let wv = pool.popLast() {
             activeCount += 1
             return wv
@@ -682,8 +722,13 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
             return createWebView()
         }
         // At capacity — wait in the queue
-        return await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        let waiter = WebViewLeaseWait()
+        waiters.append(waiter)
+        do {
+            return try await waiter.value()
+        } catch {
+            waiters.removeAll { $0 === waiter }
+            throw error
         }
     }
 
@@ -695,11 +740,14 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         loadingMap.removeValue(forKey: webView)?.cancel()
         activeCount = max(0, activeCount - 1)
 
-        if let waiter = waiters.first {
+        while let waiter = waiters.first {
             waiters.removeFirst()
-            activeCount += 1
-            waiter.resume(returning: webView)
-        } else if pool.count < poolSize {
+            if waiter.resume(returning: webView) {
+                activeCount += 1
+                return
+            }
+        }
+        if pool.count < poolSize {
             pool.append(webView)
         }
         // Temporary WebViews exceeding the pool size are discarded

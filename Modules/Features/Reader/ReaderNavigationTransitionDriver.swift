@@ -124,6 +124,10 @@ final class ReaderNavigationTransitionDriver: NSObject {
 
     var sourceProvider: () -> ReaderTransitionSource? = { nil }
     var readerIsPresented: () -> Bool = { false }
+    /// Awaited by an opening animator before it starts driving, so the reader's
+    /// first-page work happens with the card still at rest instead of inside
+    /// the animation window. Nil (the default) starts the animation at once.
+    var contentReadyGate: (@MainActor () async -> Void)?
     var onInteractivePopCompleted: () -> Void = {}
     var onPopTransitionCompleted: (Bool) -> Void = { _ in }
     var onPushTransitionCompleted: (Bool) -> Void = { _ in }
@@ -521,9 +525,13 @@ final class ReaderNavigationTransitionDriver: NSObject {
                     // and no `didShow` will ever arrive, and the shelf sits
                     // bar-less under a dead transition container.
                     let fraction = animator.currentFractionComplete
-                    let isAdvancing = fraction != nil
-                        && fraction != lastObservedFraction
-                        && retryCount < maxRetries
+                    // A frozen timeline is normal while the animator is parked
+                    // on the content-ready gate — it has not started driving
+                    // yet. Treat that as healthy and re-arm, or the watchdog
+                    // would force-settle a transition that is about to run.
+                    let isAdvancing = retryCount < maxRetries
+                        && (animator.isAwaitingContentReady
+                            || (fraction != nil && fraction != lastObservedFraction))
                     if isAdvancing {
                         self.schedulePendingReconciliation(
                             for: operation,
@@ -698,7 +706,10 @@ extension ReaderNavigationTransitionDriver: UINavigationControllerDelegate {
 
         let animator = ReaderCardTransitionAnimator(
             operation: animatorOperation,
-            source: source
+            source: source,
+            // Only an opening push waits: a pop's reader is already laid out,
+            // and an interactive pop must track the finger with no delay.
+            contentReadyGate: animatorOperation == .push ? contentReadyGate : nil
         ) { [weak self] completed in
             self?.finishTransition(operation: expectedOperation, completed: completed)
         }

@@ -137,6 +137,106 @@ final class SourceAPIErrorLog: @unchecked Sendable {
         return nil
     }
 
+    /// Detect an API failure that survived a source's content rule and would otherwise be
+    /// cached and rendered as chapter prose. This is deliberately stricter than merely
+    /// seeing a short JSON object: a non-empty content-bearing payload always wins, because
+    /// some sources intentionally expose JSON as readable chapter text.
+    static func chapterErrorEnvelopeMessage(_ body: String?) -> String? {
+        guard let body, body.utf8.count <= 4096,
+              let data = body.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              !hasChapterPayload(object)
+        else { return nil }
+
+        let message = firstText(in: object, keys: [
+            "error", "errmsg", "errorMsg", "err_msg", "error_msg", "message", "msg",
+        ])
+
+        if let explicitError = firstText(in: object, keys: errorKeys),
+           !explicitError.isEmpty {
+            return sanitized(explicitError)
+        }
+        if let errorFlag = object["error"] as? Bool, errorFlag {
+            return message.map(sanitized) ?? "error"
+        }
+        if let success = object["success"] as? Bool, !success {
+            return message.map(sanitized) ?? "success=false"
+        }
+        if isFailureStatus(object["status"]) {
+            return message.map(sanitized) ?? scalarText(object["status"]) ?? "failed"
+        }
+        if isFailureCode(object["code"]) {
+            return message.map(sanitized) ?? scalarText(object["code"]) ?? "failed"
+        }
+        if let message, looksLikeFailureMessage(message) {
+            return sanitized(message)
+        }
+        return nil
+    }
+
+    private static let chapterPayloadKeys = [
+        "content", "text", "body", "html", "chapter", "paragraphs", "items", "list",
+        "result", "data",
+    ]
+
+    private static func hasChapterPayload(_ object: [String: Any]) -> Bool {
+        chapterPayloadKeys.contains { key in
+            guard let value = object[key], !(value is NSNull) else { return false }
+            if let text = value as? String {
+                return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            if let array = value as? [Any] { return !array.isEmpty }
+            if let dictionary = value as? [String: Any] { return !dictionary.isEmpty }
+            return false
+        }
+    }
+
+    private static func firstText(in object: [String: Any], keys: [String]) -> String? {
+        for key in keys {
+            if let text = object[key] as? String,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+
+    private static func scalarText(_ value: Any?) -> String? {
+        switch value {
+        case let text as String: return text
+        case let number as NSNumber: return number.stringValue
+        default: return nil
+        }
+    }
+
+    private static func isFailureStatus(_ value: Any?) -> Bool {
+        if let number = value as? NSNumber { return number.intValue >= 400 }
+        guard let text = value as? String else { return false }
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let number = Int(normalized) { return number >= 400 }
+        return ["error", "failed", "failure", "unauthorized", "forbidden", "denied"]
+            .contains(normalized)
+    }
+
+    private static func isFailureCode(_ value: Any?) -> Bool {
+        if let number = value as? NSNumber {
+            return number.intValue < 0 || number.intValue >= 400
+        }
+        guard let text = value as? String else { return false }
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let number = Int(normalized) { return number < 0 || number >= 400 }
+        return ["error", "failed", "failure", "unauthorized", "forbidden", "denied"]
+            .contains(normalized)
+    }
+
+    private static func looksLikeFailureMessage(_ message: String) -> Bool {
+        let normalized = message.lowercased()
+        return [
+            "unauthorized", "forbidden", "access denied", "token expired", "invalid token",
+            "未授权", "未授權", "未登录", "未登錄", "无权限", "無權限", "访问被拒绝", "訪問被拒絕",
+        ].contains { normalized.contains($0) }
+    }
+
     /// Collapse the server's text to one bounded line before it reaches a `Text`.
     private static func sanitized(_ text: String) -> String {
         let collapsed = text

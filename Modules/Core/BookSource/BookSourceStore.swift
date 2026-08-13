@@ -234,9 +234,9 @@ class BookSourceStore: ObservableObject {
         savePins()
     }
 
-    /// Records the health checker's measured response time (ms), which doubles as the
-    /// adaptive request timeout (Legado semantics: elapsed on success, timeout+elapsed on
-    /// failure). Deliberately does NOT advance `lastUpdateTime`: an automated measurement
+    /// Records the health checker's measured response time (ms), using Legado's persisted
+    /// values: elapsed on success, timeout+elapsed on failure. Deliberately does NOT advance
+    /// `lastUpdateTime`: an automated measurement
     /// shouldn't win the sync merge (same contract as `setEnabled`).
     func setRespondTime(id: UUID, ms: Int64) {
         setRespondTimes([id: ms])
@@ -319,17 +319,24 @@ class BookSourceStore: ObservableObject {
         if changed { save() }
     }
 
-    /// Every distinct non-empty `bookSourceGroup`, in first-appearance order — the merge
-    /// targets offered by the group menu.
-    var groupNames: [String] {
-        var seen = Set<String>()
-        var names: [String] = []
+    /// Every distinct non-empty `bookSourceGroup` with how many sources it holds, in
+    /// first-appearance order — the destinations 移動到分組 / 合併到其他分組 offer.
+    ///
+    /// Call this when a picker opens, never per row: it is a full pass over `sources` with a
+    /// trim per entry, and the group menus used to run one such pass each (see the note in
+    /// `BookSourceRowViews.swift`).
+    ///
+    /// - Parameter excluded: A group to leave out — the one the sources are moving away from.
+    func groupCounts(excluding excluded: String = "") -> [(name: String, count: Int)] {
+        var order: [String] = []
+        var counts: [String: Int] = [:]
         for source in sources {
             let name = source.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, seen.insert(name).inserted else { continue }
-            names.append(name)
+            guard !name.isEmpty, name != excluded else { continue }
+            if counts[name] == nil { order.append(name) }
+            counts[name, default: 0] += 1
         }
-        return names
+        return order.map { (name: $0, count: counts[$0] ?? 0) }
     }
 
     var enabledSources: [BookSource] {
@@ -462,26 +469,50 @@ class BookSourceStore: ObservableObject {
         // identical list doesn't churn the sync. `lastUpdateTime` is otherwise only a sync clock /
         // cache key / display value — nothing compares it against a remote source to gate updates.
         let nowMillis = Self.currentMillis()
+        // Work on a local array and index the existing sources by URL first: the per-source
+        // `firstIndex(where:)` scan made importing a pack quadratic (a 3000-source pack over
+        // 3000 existing sources spent ~86 ms just re-scanning), and mutating `sources`
+        // in the loop republished the whole `@Published` array once per imported source.
+        var merged = sources
+        var indexByURL: [String: Int] = .init(minimumCapacity: merged.count)
+        for (index, source) in merged.enumerated() where !source.bookSourceUrl.isEmpty {
+            if indexByURL[source.bookSourceUrl] == nil { indexByURL[source.bookSourceUrl] = index }
+        }
+        // Genuinely new sources are collected and inserted in one go. Inserting them one at a
+        // time would shift every index behind the 置底 group per source — quadratic again.
+        var additions: [BookSource] = []
+        var additionIndexByURL: [String: Int] = [:]
         for src in imported {
-            if let idx = sources.firstIndex(where: { $0.bookSourceUrl == src.bookSourceUrl }) {
-                var updated = src
-                updated.id = sources[idx].id
-                updated.lastUpdateTime = Self.sourceContentDiffers(updated, sources[idx])
+            var candidate = src
+            if !candidate.bookSourceUrl.isEmpty, let idx = indexByURL[candidate.bookSourceUrl] {
+                candidate.id = merged[idx].id
+                candidate.lastUpdateTime = Self.sourceContentDiffers(candidate, merged[idx])
                     ? nowMillis
-                    : sources[idx].lastUpdateTime
-                sources[idx] = updated
+                    : merged[idx].lastUpdateTime
+                merged[idx] = candidate
+            } else if !candidate.bookSourceUrl.isEmpty,
+                      let idx = additionIndexByURL[candidate.bookSourceUrl] {
+                // The same URL twice inside one imported pack: the later entry wins, exactly
+                // as it did when each addition was written into `sources` immediately.
+                candidate.id = additions[idx].id
+                candidate.lastUpdateTime = nowMillis
+                additions[idx] = candidate
             } else {
-                var added = src
-                added.lastUpdateTime = nowMillis
-                // New imports append at the tail — but above the whole 置底 group,
-                // so the pin markers keep matching the tail region.
-                if let bottomPinnedIndex = sources.firstIndex(where: { pinRecords[$0.id]?.position == .bottom }) {
-                    sources.insert(added, at: bottomPinnedIndex)
-                } else {
-                    sources.append(added)
+                candidate.lastUpdateTime = nowMillis
+                if !candidate.bookSourceUrl.isEmpty {
+                    additionIndexByURL[candidate.bookSourceUrl] = additions.count
                 }
+                additions.append(candidate)
             }
         }
+        if !additions.isEmpty {
+            // New imports append at the tail — but above the whole 置底 group,
+            // so the pin markers keep matching the tail region.
+            let insertionIndex = merged.firstIndex(
+                where: { pinRecords[$0.id]?.position == .bottom }) ?? merged.count
+            merged.insert(contentsOf: additions, at: insertionIndex)
+        }
+        sources = merged
         save()
         return imported.count
     }
@@ -654,7 +685,9 @@ class BookSourceStore: ObservableObject {
     }
 
     func exportToJSON(ids: [UUID]) -> String {
-        let selected = sources.filter { ids.contains($0.id) }
+        // Set, not `Array.contains`: 匯出選中／匯出該分組 over a large pack was O(sources × ids).
+        let wanted = Set(ids)
+        let selected = sources.filter { wanted.contains($0.id) }
         guard let data = try? JSONEncoder().encode(selected),
               let str = String(data: data, encoding: .utf8)
         else { return "[]" }

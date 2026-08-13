@@ -257,6 +257,20 @@ struct BookSource: Identifiable, Codable {
     var enabledExplore: Bool = true   // Legado: discover page toggle
     var enabledCookieJar: Bool = false // Legado: automatic cookie management
     var enabledReview: Bool = false   // Legado: newer version field
+    /// Whether `java.androidId()` hands this source an Android device identifier.
+    ///
+    /// Off by default, because on iOS there is no ANDROID_ID and most sources
+    /// call `androidId()` only to ask *which platform they are on*: 书山聚合's
+    /// `deviceType()` treats any non-empty answer as proof of Android, so
+    /// answering broke its `X-Device-Type` header and every chapter with it.
+    /// Six of the seven sources on hand probe exactly like that; only 知秋's
+    /// family uses the value as a real device key (`x-android-id`), and it
+    /// caches what it gets via `source.put('androidId', …)`, so turning this on
+    /// once is enough — no re-login.
+    ///
+    /// Optional in the decoder: archives written before this field exists must
+    /// keep loading.
+    var presentsAndroidIdentity: Bool = false
     var searchUrl: String = ""
     var exploreUrl: String = ""       // Discover/category page URL (common Legado field)
     var concurrentRate: String = ""   // Concurrency rate limit
@@ -294,6 +308,7 @@ struct BookSource: Identifiable, Codable {
         case enabled, enabledExplore, enabledCookieJar, enabledReview
         case searchUrl, exploreUrl, concurrentRate
         case header, loginUrl, loginUi, loginCheckJs
+        case presentsAndroidIdentity
         case respondTime, lastUpdateTime, weight
         case variableComment, exploreScreen, coverDecodeJs, jsLib
         case ruleSearch, ruleExplore, ruleBookInfo, ruleToc, ruleContent, ruleReview
@@ -328,6 +343,7 @@ struct BookSource: Identifiable, Codable {
         enabled          = c.safeBool(forKey: .enabled, defaultValue: true)
         enabledExplore   = c.safeBool(forKey: .enabledExplore, defaultValue: true)
         enabledCookieJar = c.safeBool(forKey: .enabledCookieJar, defaultValue: false)
+        presentsAndroidIdentity = c.safeBool(forKey: .presentsAndroidIdentity, defaultValue: false)
         enabledReview    = c.safeBool(forKey: .enabledReview, defaultValue: false)
         // Rule structures: Legado may use objects or JSON strings (double-encoded during backup)
         ruleSearch   = c.decodeRule(SearchRule.self,   forKey: .ruleSearch)   ?? SearchRule()

@@ -83,6 +83,60 @@ struct ReaderViewModelChapterStateTests {
         #expect(!viewModel.isChapterContentAvailable(at: 0))
     }
 
+    @Test("empty content keeps the reader on a recoverable failure surface")
+    func emptyContentKeepsRecoverableFailureSurface() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+
+        await fetcher.enqueueEmptyContent(chapterIndex: 0)
+        await viewModel.ensureChapterReady(
+            book: book,
+            chapterIndex: 0,
+            priority: .immediate,
+            store: nil
+        )
+
+        let reason = FetchError.emptyContent.localizedDescription
+        await waitForFailure(reason, in: viewModel, chapterIndex: 0)
+
+        #expect(!viewModel.isChapterContentAvailable(at: 0))
+        #expect(
+            ReaderChapterPresentation.overlayState(
+                isContentAvailable: viewModel.isChapterContentAvailable(at: 0),
+                loadState: viewModel.chapterState(for: 0)
+            ) == .failed(message: reason)
+        )
+        #expect(await fetcher.fetchCount(for: 0) == 1)
+    }
+
+    @Test("network timeout keeps the reader on a recoverable failure surface")
+    func timeoutKeepsRecoverableFailureSurface() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+
+        await fetcher.enqueueTimeout(chapterIndex: 0)
+        await viewModel.ensureChapterReady(
+            book: book,
+            chapterIndex: 0,
+            priority: .immediate,
+            store: nil
+        )
+
+        let reason = URLError(.timedOut).localizedDescription
+        await waitForFailure(reason, in: viewModel, chapterIndex: 0)
+
+        #expect(!viewModel.isChapterContentAvailable(at: 0))
+        #expect(
+            ReaderChapterPresentation.overlayState(
+                isContentAvailable: viewModel.isChapterContentAvailable(at: 0),
+                loadState: viewModel.chapterState(for: 0)
+            ) == .failed(message: reason)
+        )
+        #expect(await fetcher.fetchCount(for: 0) == 1)
+    }
+
     @Test("failed packages map to failed chapter state")
     func failedPackageMapsToFailureState() async throws {
         let fetcher = MockChapterFetcher()
@@ -430,6 +484,8 @@ actor MockChapterFetcher: ChapterFetching {
         case pending
         case success(ChapterPackage)
         case failure(MockError)
+        case emptyContent
+        case timeout
     }
 
     private var cachedChapters = Set<Int>()
@@ -458,6 +514,14 @@ actor MockChapterFetcher: ChapterFetching {
 
     func enqueueFailure(chapterIndex: Int, message: String) {
         outcomes[chapterIndex, default: []].append(.failure(MockError(message: message)))
+    }
+
+    func enqueueEmptyContent(chapterIndex: Int) {
+        outcomes[chapterIndex, default: []].append(.emptyContent)
+    }
+
+    func enqueueTimeout(chapterIndex: Int) {
+        outcomes[chapterIndex, default: []].append(.timeout)
     }
 
     func enqueuePackage(chapterIndex: Int, package: ChapterPackage) {
@@ -537,6 +601,10 @@ actor MockChapterFetcher: ChapterFetching {
             return package
         case .failure(let error):
             throw error
+        case .emptyContent:
+            throw FetchError.emptyContent
+        case .timeout:
+            throw URLError(.timedOut)
         }
     }
 

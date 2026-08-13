@@ -11,15 +11,11 @@ extension BookSourceFetcher {
         guard source.enabledExplore,
               !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
-            NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverItems SKIP enabledExplore=\(source.enabledExplore)")
             return []
         }
 
-        let items = await BookSourceSession.session(for: source)
+        return await BookSourceSession.session(for: source)
             .bridgeForAsyncOperations.getExploreItems(page: page)
-        let cats = items.prefix(5).map { "\($0.title ?? "nil")[\($0.type ?? "-")]" }.joined(separator: ", ")
-        NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverItems categories=\(items.count) :: \(cats)")
-        return items
     }
 
     /// Prime any site cookie the source's discover endpoints need but don't set themselves
@@ -38,22 +34,11 @@ extension BookSourceFetcher {
         guard let rawURL = item.url?.trimmingCharacters(in: .whitespacesAndNewlines),
               !rawURL.isEmpty
         else {
-            NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverBooks SKIP empty item.url (title=\(item.title ?? "nil"))")
             return []
         }
 
-        NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverBooks fetch page=\(page) url=\(rawURL.prefix(100))")
         let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
-        do {
-            let (html, finalURL) = try await bridge.fetch(ruleUrl: rawURL, page: page)
-            let head = String(html.prefix(80)).replacingOccurrences(of: "\n", with: " ")
-            NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverBooks html=\(html.count) bytes head=\(head)")
-            let books = bridge.parseExploreResults(html: html, baseURL: finalURL, source: source)
-            NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverBooks RESULT books=\(books.count)")
-            return books
-        } catch {
-            NSLog("❖DISC❖ %@", "\(source.bookSourceName) discoverBooks ERROR: \(error.localizedDescription)")
-            throw error
-        }
+        let (html, finalURL) = try await bridge.fetch(ruleUrl: rawURL, page: page)
+        return bridge.parseExploreResults(html: html, baseURL: finalURL, source: source)
     }
 }

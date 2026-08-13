@@ -99,7 +99,13 @@ private func isPrivateIPv6(_ addr: in6_addr) -> Bool {
     return false
 }
 
-actor BookSourceFetcher {
+/// Stateless facade over per-source parsing sessions and the shared HTTP client.
+///
+/// Cross-source work must not be actor-serialized: source validation/search fan-out
+/// parses unrelated sources concurrently, matching Legado's worker pool. Mutable JS
+/// context remains protected by `BookSourceSession.withBridge`, which serializes only
+/// calls belonging to the same source.
+final class BookSourceFetcher: @unchecked Sendable {
     /// Debug log for external callers (log pipeline verification)
     static func debugLog(_ msg: String, data: [String: Any] = [:]) {
         _ = msg
@@ -180,6 +186,7 @@ enum FetchError: LocalizedError {
     case cloudflareChallengeRequired(String)
     case encodingError
     case emptyContent
+    case sourceAPIError(String)
     case volumeSeparator(String)
 
     var errorDescription: String? {
@@ -190,6 +197,7 @@ enum FetchError: LocalizedError {
         case .cloudflareChallengeRequired(let url): return "CAPTCHA required: \(url)"
         case .encodingError: return "Page encoding not recognized"
         case .emptyContent: return "Fetched empty content"
+        case .sourceAPIError(let message): return "Source API error: \(message)"
         case .volumeSeparator(let title): return "Volume separator has no chapter content: \(title)"
         }
     }

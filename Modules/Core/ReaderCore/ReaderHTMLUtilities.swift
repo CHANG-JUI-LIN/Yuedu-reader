@@ -249,22 +249,43 @@ enum ReaderHTMLUtilities {
     /// signs it with the user's shared token) — those arrive with an empty `url` and a `sourceJS`
     /// expression for `LegadoReviewActionRunner` to run against `sourceURL`'s session.
     struct ReviewTarget: Identifiable, Hashable {
+        struct SourceBrowserPage: Hashable {
+            let baseURL: String
+            let html: String
+            let injectedJavaScript: String
+            let configurationJSON: String
+            let sourceURL: String
+        }
+
         let url: String
         let title: String
         let sourceJS: String
         let sourceURL: String
+        let sourceBrowserPage: SourceBrowserPage?
 
-        init(url: String, title: String, sourceJS: String = "", sourceURL: String = "") {
+        init(
+            url: String,
+            title: String,
+            sourceJS: String = "",
+            sourceURL: String = "",
+            sourceBrowserPage: SourceBrowserPage? = nil
+        ) {
             self.url = url
             self.title = title
             self.sourceJS = sourceJS
             self.sourceURL = sourceURL
+            self.sourceBrowserPage = sourceBrowserPage
         }
 
         /// True when the review page can only be obtained by running the source's own JS.
         var requiresSourceJS: Bool { url.isEmpty && !sourceJS.isEmpty }
 
-        var id: String { url.isEmpty ? "\(sourceURL)#\(sourceJS)" : url }
+        var id: String {
+            if let sourceBrowserPage {
+                return "\(sourceBrowserPage.sourceURL)#page#\(sourceBrowserPage.baseURL)"
+            }
+            return url.isEmpty ? "\(sourceURL)#\(sourceJS)" : url
+        }
     }
 
     /// Minimal source context needed to recover Legado image click-configs into tappable review links.

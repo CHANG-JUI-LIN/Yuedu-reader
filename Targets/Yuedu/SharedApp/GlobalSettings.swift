@@ -1636,8 +1636,9 @@ class GlobalSettings: ObservableObject {
             ?? Self.defaultBookshelfGridColumnCount
         )
 
-        // 16 matches Legado's default `threadCount`, which is what its search and
-        // its 校验书源 both run at. We sat at half that.
+        // MD3 defaults to 16. Current upstream Legado defaults to 32, while its
+        // fixed CPU dispatcher is capped at 9; our URLSession work is asynchronous
+        // and uses this value as the actual in-flight source bound.
         searchConcurrency =
             (UserDefaults.standard.object(forKey: "yd_search_concurrency") as? Int) ?? 16
         searchAutoPauseCount =

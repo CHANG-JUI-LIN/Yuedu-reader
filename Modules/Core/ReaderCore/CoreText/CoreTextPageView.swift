@@ -2133,10 +2133,7 @@ final class CoreTextPageViewController: UIViewController {
             return
         }
         weak var weakHost: UIViewController?
-        let view = JsBridgeBrowserView(
-            urlString: target.url,
-            hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar
-        ) { _ in
+        let view = LegadoReviewBrowserView(target: target) { _ in
             weakHost?.dismiss(animated: true)
         }
         let host = UIHostingController(rootView: view)

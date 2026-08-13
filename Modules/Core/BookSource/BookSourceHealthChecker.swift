@@ -1,6 +1,41 @@
 import Combine
 import Foundation
 
+protocol BookSourceHealthCheckFetching: Sendable {
+    func search(
+        query: String,
+        in source: BookSource,
+        page: Int,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        onHasMore: ((Bool?) -> Void)?,
+        failureMode: BookSourceSearchFailureMode
+    ) async throws -> [OnlineBook]
+    func discoverItems(page: Int, in source: BookSource) async -> [ModernParserBridge.DiscoverItem]
+    func discoverBooks(
+        from item: ModernParserBridge.DiscoverItem,
+        page: Int,
+        in source: BookSource
+    ) async throws -> [OnlineBook]
+    func fetchBookInfo(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> OnlineBook
+    func fetchTOC(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> [OnlineChapterRef]
+    func fetchChapter(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource,
+        chapterReferer: String?
+    ) async throws -> String
+}
+
+extension BookSourceFetcher: BookSourceHealthCheckFetching {}
+
 /// What to do with sources that fail / are too slow, chosen by the user before a run.
 struct BookSourceCheckPolicy: Equatable {
     enum BadAction: String, CaseIterable, Identifiable {
@@ -149,6 +184,16 @@ enum FailureCategory: Equatable {
         case .timeout, .jsError, .siteError: return .environment
         }
     }
+
+    /// Legado aborts the current source when a transport/runtime exception escapes
+    /// a probe. Only ordinary empty parse results continue to the other track.
+    var stopsCurrentSource: Bool {
+        switch self {
+        case .timeout, .jsError, .siteError: return true
+        case .ruleMissing, .searchFailed, .discoveryFailed, .tocEmpty, .contentEmpty:
+            return false
+        }
+    }
 }
 
 struct StageOutcome: Equatable {
@@ -230,7 +275,10 @@ final class BookSourceHealthChecker: ObservableObject {
     /// One-line summary of the actions applied after the last completed run (disabled / deleted).
     @Published var lastSummary: String?
     /// Last finished verdict per source id — drives the badges in the source list.
-    @Published var healthById: [UUID: SourceValidationSummary] = [:]
+    /// Mutated once per finished source but published through the same coalesced
+    /// `objectWillChange` path as `items`. `@Published` here used to bypass that
+    /// gate and force up to one full 3,000-row SwiftUI diff per completed source.
+    private(set) var healthById: [UUID: SourceValidationSummary] = [:]
 
     /// The user-chosen handling for bad/slow sources and the Legado check toggles,
     /// set before `runAll()`.
@@ -242,23 +290,48 @@ final class BookSourceHealthChecker: ObservableObject {
     /// 6 with no way to raise it, which is most of why validating a large source
     /// list felt slower here than there.
     private var maxConcurrent: Int {
-        NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
+        Self.effectiveConcurrency(
+            configured: GlobalSettings.shared.searchConcurrency,
+            sourceCount: items.count
+        )
     }
 
     private var cancelled = false
     /// Measured response times awaiting a single batched write — see `flushRespondTimes`.
     private var pendingRespondTimes: [UUID: Int64] = [:]
-    private let fetcher = BookSourceFetcher.shared
+    private let fetcher: any BookSourceHealthCheckFetching
 
-    var finishedCount: Int { items.filter(\.isFinished).count }
+    init(fetcher: any BookSourceHealthCheckFetching = BookSourceFetcher.shared) {
+        self.fetcher = fetcher
+    }
+
+    private(set) var finishedCount = 0
+
+    static func publicationInterval(for sourceCount: Int) -> TimeInterval {
+        if sourceCount >= 2_000 { return 1.0 }
+        if sourceCount >= 500 { return 0.5 }
+        return 0.25
+    }
+
+    /// Current Legado validates with a default `threadCount` of 32. Keep the
+    /// user's normal network setting for ordinary runs, but do not make packs of
+    /// 1,000+ sources use our older 16-wide default for hours. Thirty-two also
+    /// matches `BookSourceSession`'s bounded active-session cache.
+    static func effectiveConcurrency(configured: Int, sourceCount: Int) -> Int {
+        let configured = NetworkSearchSettings.clampedConcurrency(configured)
+        return sourceCount >= 1_000 ? max(32, configured) : configured
+    }
 
     func prepare(sources: [BookSource]) {
         cancelled = false
         lastSummary = nil
         items = sources.map { BookSourceCheckItem(source: $0) }
+        finishedCount = 0
         publicationTask?.cancel()
         publicationTask = nil
-        publicationGate = SearchResultPublicationGate(minimumInterval: 0.25)
+        publicationGate = SearchResultPublicationGate(
+            minimumInterval: Self.publicationInterval(for: sources.count)
+        )
         requestItemsPublication(force: true)
     }
 
@@ -269,9 +342,18 @@ final class BookSourceHealthChecker: ObservableObject {
         lastSummary = nil
 
         let concurrency = maxConcurrent
+        let total = items.count
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        defer {
+            SourcePerfTrace.record(
+                "sourceCheck.run",
+                "sources=\(total) finished=\(finishedCount) concurrency=\(concurrency)",
+                since: startedAt,
+                thresholdMs: 0
+            )
+        }
         await withTaskGroup(of: Void.self) { group in
             var next = 0
-            let total = items.count
             while next < min(concurrency, total) {
                 let index = next
                 group.addTask { [weak self] in await self?.checkItem(at: index) }
@@ -394,14 +476,15 @@ final class BookSourceHealthChecker: ObservableObject {
                 health: health, responseMs: elapsed
             )
         }
-        // Legado (CheckSourceService.checkSource): respondTime doubles as the adaptive
-        // request timeout — measured elapsed time on success, timeout+elapsed on failure.
+        // Legado/MD3 persist respondTime as outcome metadata: measured elapsed time
+        // on success, configured timeout + elapsed time on failure.
         // Accumulated, not persisted here: writing per source re-encoded the whole
         // source library to disk once per finished source (see `setRespondTimes`).
         // Flushed when the run ends or is cancelled.
         pendingRespondTimes[items[index].source.id] = items[index].overallPass
             ? elapsed
             : Int64(policy.timeoutSeconds) * 1000 + elapsed
+        finishedCount += 1
         requestItemsPublication()
     }
 
@@ -418,17 +501,10 @@ final class BookSourceHealthChecker: ObservableObject {
 
     private struct CheckTimeoutError: Error, Sendable {}
 
-    /// A single check request exceeded the source's adaptive timeout — Legado treats
-    /// this as a site failure (网站失效 group), not the whole-source 校驗超時.
-    private struct StageTimeoutError: Error, LocalizedError, Sendable {
-        var errorDescription: String? { localized("請求超時") }
-    }
-
-    /// One timeout primitive for both bounds:
-    /// - the whole-source timeout (CheckTimeoutError → 校驗超時), and
-    /// - the Legado-style adaptive per-stage request bound (StageTimeoutError →
-    ///   請求超時), where each probe's request dies at the source's measured
-    ///   `respondTime` instead of waiting out the URLSession 15/30 s defaults.
+    /// Whole-source timeout matching Legado / MD3 / Sigma `CheckSource.timeout`.
+    /// Individual HTTP, WebView and JS operations retain their own lower-level
+    /// bounds. `respondTime` is output metadata used for display/sorting; upstream
+    /// Legado does not feed it back as a per-stage timeout.
     private func withTimeout<T, E: Error & Sendable>(
         seconds: TimeInterval,
         throwing error: E,
@@ -444,18 +520,6 @@ final class BookSourceHealthChecker: ObservableObject {
             group.cancelAll()
             return result
         }
-    }
-
-    /// Legado's adaptive per-request timeout: the source's measured `respondTime`
-    /// (elapsed on the last successful check — typically 1–3 s), so a dead source
-    /// is declared dead in about one respondTime instead of after the URLSession
-    /// defaults. Floored at 2 s (URLSession's minimum sensible idle timeout below
-    /// which a slow-but-alive server false-positives) and capped at 60 s — Legado's
-    /// OkHttp callTimeout ceiling — so a never-checked source (default 180 s)
-    /// keeps today's behavior.
-    private func adaptiveTimeout(for source: BookSource) -> TimeInterval {
-        let ms = max(2_000, min(source.respondTime, 60_000))
-        return TimeInterval(ms) / 1000.0
     }
 
     private func checkItem(at index: Int) async {
@@ -497,11 +561,23 @@ final class BookSourceHealthChecker: ObservableObject {
         recordFailure(at: index, .timeout)
     }
 
+    private func skipPendingStages(at index: Int) {
+        guard items.indices.contains(index) else { return }
+        for stage in ValidationStage.allCases
+        where items[index].outcome(stage).status == .pending {
+            items[index].stages[stage.rawValue] = StageOutcome(status: .skipped, summary: "—")
+        }
+        requestItemsPublication()
+    }
+
     private func runStages(at index: Int) async throws {
         guard items.indices.contains(index), !cancelled else { return }
         let source = items[index].source
 
-        // Stage 1 — search track (搜索)
+        // Legado validates one track completely before starting the other:
+        // search -> checkBook, then discovery -> checkBook. Besides matching its
+        // observable order, this prevents an unnecessary discovery request when
+        // detail / TOC / content already exposed a fatal transport/runtime error.
         if policy.checkSearch {
             setStage(index, .search, .running)
             let keyword = source.ruleSearch.checkKeyWord
@@ -513,16 +589,29 @@ final class BookSourceHealthChecker: ObservableObject {
             case .success(let book, let message):
                 setStage(index, .search, .pass, message)
                 items[index].searchBook = book
+                guard await runBookTrack(
+                    at: index,
+                    track: localized("搜索"),
+                    book: book,
+                    source: source
+                ) else {
+                    skipPendingStages(at: index)
+                    return
+                }
             case .failure(let category, let message):
                 setStage(index, .search, .fail, message)
                 recordFailure(at: index, category)
+                if category.stopsCurrentSource {
+                    skipPendingStages(at: index)
+                    return
+                }
             }
         } else {
             setStage(index, .search, .skipped, "—")
         }
 
-        // Stage 2 — discovery track (發現). Like Legado, sources without an explore URL
-        // simply skip discovery — an empty explore URL is not a failure.
+        // Sources without an explore URL simply skip discovery — an empty explore
+        // URL is not a failure.
         let hasExplore = source.enabledExplore
             && !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if policy.checkDiscovery, hasExplore {
@@ -533,129 +622,151 @@ final class BookSourceHealthChecker: ObservableObject {
             case .success(let book, let message):
                 setStage(index, .discovery, .pass, message)
                 items[index].discoveryBook = book
+                guard await runBookTrack(
+                    at: index,
+                    track: localized("發現"),
+                    book: book,
+                    source: source
+                ) else {
+                    skipPendingStages(at: index)
+                    return
+                }
             case .failure(let category, let message):
                 setStage(index, .discovery, .fail, message)
                 recordFailure(at: index, category)
+                if category.stopsCurrentSource {
+                    skipPendingStages(at: index)
+                    return
+                }
             }
         } else {
             setStage(index, .discovery, .skipped, "—")
         }
 
-        // Stages 3–5 — detail / toc / content across every track that produced a book
-        // (Legado checkBook). checkInfo gates the whole chain; checkCategory gates toc
-        // and content; checkContent gates content only.
-        guard items.indices.contains(index), !cancelled else { return }
+        // If neither track produced a book, or a check toggle omitted the shared
+        // checkBook chain, close any untouched dots as skipped.
+        skipPendingStages(at: index)
+    }
 
-        let books: [(track: String, book: OnlineBook)] = {
-            var result: [(track: String, book: OnlineBook)] = []
-            if let searchBook = items[index].searchBook {
-                result.append((localized("搜索"), searchBook))
-            }
-            if let discoveryBook = items[index].discoveryBook {
-                result.append((localized("發現"), discoveryBook))
-            }
-            return result
-        }()
+    /// Runs Legado's `checkBook` chain for one search/discovery result. Returns
+    /// `false` only when an exception category should abort the whole source.
+    private func runBookTrack(
+        at index: Int,
+        track: String,
+        book: OnlineBook,
+        source: BookSource
+    ) async -> Bool {
+        guard items.indices.contains(index), !cancelled else { return false }
+        guard policy.checkInfo else { return true }
 
-        guard !books.isEmpty else {
-            // Both tracks failed (or were skipped): nothing left to chain-test.
-            setStage(index, .detail, .skipped, "—")
-            setStage(index, .toc, .skipped, "—")
-            setStage(index, .content, .skipped, "—")
-            return
+        let detail = await runTrackStage(at: index, stage: .detail, track: track) {
+            await self.probeDetail(book: book, source: source)
+        }
+        let resolvedBook: OnlineBook
+        switch detail {
+        case .success(let book):
+            resolvedBook = book
+        case .failure(let category):
+            return !category.stopsCurrentSource
         }
 
-        guard policy.checkInfo else {
-            // Legado: checkInfo=false returns from checkBook before anything runs.
-            setStage(index, .detail, .skipped, "—")
-            setStage(index, .toc, .skipped, "—")
-            setStage(index, .content, .skipped, "—")
-            return
+        guard policy.checkCategory, source.bookSourceType != 3 else {
+            markStageSkippedIfPending(at: index, .toc)
+            markStageSkippedIfPending(at: index, .content)
+            return true
         }
 
-        // Stage 3 — detail, only when the book lacks a tocUrl (Legado skips the request).
-        setStage(index, .detail, .running)
-        var resolvedBooks: [(track: String, book: OnlineBook)] = []
-        var detailFailures: [(FailureCategory, String)] = []
-        var detailSuccesses: [String] = []
-        for (track, book) in books {
-            guard items.indices.contains(index), !cancelled else { return }
-            let result = await probeDetail(book: book, source: source)
-            switch result {
-            case .success(let info, let message):
-                resolvedBooks.append((track, info))
-                detailSuccesses.append(message)
-            case .failure(let category, let message):
-                detailFailures.append((category, "\(track)\(message)"))
-            }
+        let toc = await runTrackStage(at: index, stage: .toc, track: track) {
+            await self.probeTOC(book: resolvedBook, source: source)
         }
-        guard items.indices.contains(index), !cancelled else { return }
-        if detailFailures.isEmpty {
-            setStage(index, .detail, .pass, detailSuccesses.joined(separator: "；"))
-        } else {
-            setStage(index, .detail, .fail, detailFailures.map(\.1).joined(separator: "；"))
-            recordFailure(at: index, detailFailures[0].0)
+        let chapter: OnlineChapterRef
+        switch toc {
+        case .success(let value):
+            chapter = value
+        case .failure(let category):
+            return !category.stopsCurrentSource
         }
 
-        // Stages 4–5 — toc then content. Legado skips both for file-type sources
-        // and when checkCategory is off.
-        let chainDisabled = !policy.checkCategory || source.bookSourceType == 3
-        if chainDisabled {
-            setStage(index, .toc, .skipped, "—")
-            setStage(index, .content, .skipped, "—")
-            return
-        }
-
-        // Stage 4 — chapter list (first two chapters, mirroring Legado's take(2)).
-        setStage(index, .toc, .running)
-        var tocChapters: [(track: String, chapter: OnlineChapterRef)] = []
-        var tocFailures: [(FailureCategory, String)] = []
-        var tocSuccesses: [String] = []
-        for (track, book) in resolvedBooks {
-            guard items.indices.contains(index), !cancelled else { return }
-            let result = await probeTOC(book: book, source: source)
-            switch result {
-            case .success(let chapter, let message):
-                tocChapters.append((track, chapter))
-                tocSuccesses.append(message)
-            case .failure(let category, let message):
-                tocFailures.append((category, "\(track)\(message)"))
-            }
-        }
-        guard items.indices.contains(index), !cancelled else { return }
-        if tocFailures.isEmpty {
-            setStage(index, .toc, .pass, tocSuccesses.joined(separator: "；"))
-        } else {
-            setStage(index, .toc, .fail, tocFailures.map(\.1).joined(separator: "；"))
-            recordFailure(at: index, tocFailures[0].0)
-        }
-
-        // Stage 5 — first chapter body (Legado getContentAwait, needSave = false).
         guard policy.checkContent else {
-            setStage(index, .content, .skipped, "—")
+            markStageSkippedIfPending(at: index, .content)
+            return true
+        }
+
+        let content = await runTrackStage(at: index, stage: .content, track: track) {
+            await self.probeContent(chapter: chapter, source: source)
+        }
+        switch content {
+        case .success:
+            return true
+        case .failure(let category):
+            return !category.stopsCurrentSource
+        }
+    }
+
+    private enum TrackStageResult<T> {
+        case success(T)
+        case failure(FailureCategory)
+    }
+
+    /// Merges one track's result into the shared five-dot UI without letting a
+    /// later successful track erase an earlier failure.
+    private func runTrackStage<T>(
+        at index: Int,
+        stage: ValidationStage,
+        track: String,
+        operation: () async -> ProbeResult<T>
+    ) async -> TrackStageResult<T> {
+        guard items.indices.contains(index), !cancelled else {
+            return .failure(.siteError)
+        }
+        let previous = items[index].outcome(stage)
+        setStage(index, stage, .running, previous.summary)
+        let result = await operation()
+        guard items.indices.contains(index), !cancelled else {
+            return .failure(.siteError)
+        }
+
+        switch result {
+        case .success(let value, let message):
+            mergeTrackStage(
+                at: index,
+                stage: stage,
+                previous: previous,
+                status: .pass,
+                summary: "\(track)\(message)"
+            )
+            return .success(value)
+        case .failure(let category, let message):
+            mergeTrackStage(
+                at: index,
+                stage: stage,
+                previous: previous,
+                status: .fail,
+                summary: "\(track)\(message)"
+            )
+            recordFailure(at: index, category)
+            return .failure(category)
+        }
+    }
+
+    private func mergeTrackStage(
+        at index: Int,
+        stage: ValidationStage,
+        previous: StageOutcome,
+        status: StageStatus,
+        summary: String
+    ) {
+        let finalStatus: StageStatus = previous.status == .fail || status == .fail ? .fail : status
+        let oldSummary = previous.summary == "—" ? "" : previous.summary
+        let combined = oldSummary.isEmpty ? summary : "\(oldSummary)；\(summary)"
+        setStage(index, stage, finalStatus, combined)
+    }
+
+    private func markStageSkippedIfPending(at index: Int, _ stage: ValidationStage) {
+        guard items.indices.contains(index), items[index].outcome(stage).status == .pending else {
             return
         }
-        setStage(index, .content, .running)
-        var contentFailures: [(FailureCategory, String)] = []
-        var contentSuccesses: [String] = []
-        for (track, chapter) in tocChapters {
-            guard items.indices.contains(index), !cancelled else { return }
-            let result = await probeContent(chapter: chapter, source: source)
-            switch result {
-            case .success(let count, let message):
-                contentSuccesses.append(message)
-                _ = count
-            case .failure(let category, let message):
-                contentFailures.append((category, "\(track)\(message)"))
-            }
-        }
-        guard items.indices.contains(index), !cancelled else { return }
-        if contentFailures.isEmpty {
-            setStage(index, .content, .pass, contentSuccesses.joined(separator: "；"))
-        } else {
-            setStage(index, .content, .fail, contentFailures.map(\.1).joined(separator: "；"))
-            recordFailure(at: index, contentFailures[0].0)
-        }
+        setStage(index, stage, .skipped, "—")
     }
 
     // MARK: - Stage probes
@@ -666,12 +777,14 @@ final class BookSourceHealthChecker: ObservableObject {
             return .failure(.ruleMissing, localized("搜索鏈接規則為空"))
         }
         do {
-            let books = try await withTimeout(
-                seconds: adaptiveTimeout(for: source),
-                throwing: StageTimeoutError()
-            ) { [self] in
-                try await fetcher.search(query: keyword, in: source)
-            }
+            let books = try await fetcher.search(
+                query: keyword,
+                in: source,
+                page: 1,
+                earlyFilter: nil,
+                onHasMore: nil,
+                failureMode: .propagateTransportError
+            )
             guard let book = books.first(where: {
                 !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }) else {
@@ -705,12 +818,7 @@ final class BookSourceHealthChecker: ObservableObject {
             guard let section = sections.first else {
                 return .failure(.ruleMissing, localized("發現規則為空"))
             }
-            let books = try await withTimeout(
-                seconds: adaptiveTimeout(for: source),
-                throwing: StageTimeoutError()
-            ) { [self] in
-                try await fetcher.discoverBooks(from: section, page: 1, in: source)
-            }
+            let books = try await fetcher.discoverBooks(from: section, page: 1, in: source)
             guard let book = books.first(where: {
                 !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }) else {
@@ -729,12 +837,11 @@ final class BookSourceHealthChecker: ObservableObject {
             return .success(book, localized("詳情已含目錄地址"))
         }
         do {
-            let info = try await withTimeout(
-                seconds: adaptiveTimeout(for: source),
-                throwing: StageTimeoutError()
-            ) { [self] in
-                try await fetcher.fetchBookInfo(url: book.bookUrl, source: source)
-            }
+            let info = try await fetcher.fetchBookInfo(
+                url: book.bookUrl,
+                source: source,
+                runtimeVariables: book.runtimeVariables
+            )
             let name = info.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return .failure(.ruleMissing, localized("詳情為空")) }
             return .success(info, "《\(name)》")
@@ -746,12 +853,11 @@ final class BookSourceHealthChecker: ObservableObject {
     /// Returns the first loadable (non-volume-separator) chapter of the TOC.
     private func probeTOC(book: OnlineBook, source: BookSource) async -> ProbeResult<OnlineChapterRef> {
         do {
-            let chapters = try await withTimeout(
-                seconds: adaptiveTimeout(for: source),
-                throwing: StageTimeoutError()
-            ) { [self] in
-                try await fetcher.fetchTOC(tocUrl: book.tocUrl, source: source)
-            }
+            let chapters = try await fetcher.fetchTOC(
+                tocUrl: book.tocUrl,
+                source: source,
+                runtimeVariables: book.runtimeVariables
+            )
             guard let first = chapters.first(where: {
                 !$0.shouldRenderAsVolumeSeparator && $0.hasLoadableContentURL
             }) else {
@@ -767,12 +873,12 @@ final class BookSourceHealthChecker: ObservableObject {
         chapter: OnlineChapterRef, source: BookSource
     ) async -> ProbeResult<Int> {
         do {
-            let text = try await withTimeout(
-                seconds: adaptiveTimeout(for: source),
-                throwing: StageTimeoutError()
-            ) { [self] in
-                try await fetcher.fetchChapter(ref: chapter, bookId: UUID(), source: source)
-            }
+            let text = try await fetcher.fetchChapter(
+                ref: chapter,
+                bookId: UUID(),
+                source: source,
+                chapterReferer: nil
+            )
             let count = text.trimmingCharacters(in: .whitespacesAndNewlines).count
             guard count > 0 else { return .failure(.contentEmpty, localized("正文失效")) }
             return .success(count, "\(localized("抓取")) \(count) \(localized("字"))")
