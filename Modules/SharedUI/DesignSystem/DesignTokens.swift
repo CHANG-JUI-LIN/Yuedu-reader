@@ -79,6 +79,11 @@ enum DSColor {
     static let accentLight = Color.accentColor.opacity(0.08)
     /// Card shadow
     static let shadow = Color.black.opacity(0.05)
+    /// Drop shadow under a hero book cover. Deeper than `shadow` because the
+    /// cover has to lift off a blurred wash of itself rather than a flat card.
+    /// Decorative only — it carries no state, so it may go unnoticed against a
+    /// dark backdrop without costing the user anything.
+    static let coverHeroShadow = Color.black.opacity(0.3)
     /// Selected highlight
     static let highlight = Color.accentColor.opacity(0.15)
 
@@ -179,6 +184,21 @@ enum DSLayout {
     static let searchResultCoverHeight: CGFloat = 96
     /// Diameter of the audiobook badge over a search-result cover.
     static let searchResultAudiobookBadgeSize: CGFloat = 20
+    /// Width of the cover hero at the top of 書籍資訊. 2:3 like the shelf grid,
+    /// so the same artwork is not re-cropped between the two screens.
+    static let bookCoverHeroWidth: CGFloat = 176
+    /// Height of the cover hero at the top of 書籍資訊.
+    static let bookCoverHeroHeight: CGFloat = 264
+    /// Blur radius of the cover repeated behind the hero as a colour wash.
+    static let bookCoverHeroBackdropBlur: CGFloat = 44
+    /// Opacity of the blurred hero backdrop over the page background.
+    static let bookCoverHeroBackdropOpacity: Double = 0.55
+    /// Saturation lift that keeps the blurred backdrop from going muddy grey.
+    static let bookCoverHeroBackdropSaturation: Double = 1.5
+    /// Drop-shadow radius under the hero cover.
+    static let bookCoverHeroShadowRadius: CGFloat = 18
+    /// Drop-shadow vertical offset under the hero cover.
+    static let bookCoverHeroShadowOffsetY: CGFloat = 10
     /// Narrow modal content such as confirmations or small pickers.
     static let readableNarrowWidth: CGFloat = 480
     /// Compact sheets with short forms or account actions.

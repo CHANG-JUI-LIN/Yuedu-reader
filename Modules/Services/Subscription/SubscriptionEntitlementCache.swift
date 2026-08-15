@@ -4,6 +4,17 @@ import Security
 struct CachedSubscriptionEntitlement: Codable, Equatable {
     let isProActive: Bool
     let expiresAt: Date?
+    /// Products the backend counted towards this entitlement. `nil` means the
+    /// backend was never asked since this field existed — an older cached value,
+    /// not an empty purchase list. Callers must treat `nil` as "unknown" and let
+    /// the server decide, never as "owns nothing".
+    let productIDs: [String]?
+
+    init(isProActive: Bool, expiresAt: Date?, productIDs: [String]? = nil) {
+        self.isProActive = isProActive
+        self.expiresAt = expiresAt
+        self.productIDs = productIDs
+    }
 
     func isActive(at date: Date = Date()) -> Bool {
         guard isProActive else { return false }

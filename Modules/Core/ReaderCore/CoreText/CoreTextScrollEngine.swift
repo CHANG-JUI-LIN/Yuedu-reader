@@ -21,7 +21,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     // MARK: - Published
 
     /// Linear chunk array; UICollectionView maps 1:1 to cells
-    @Published private(set) var chunks: [CoreTextChunk] = []
+    @Published private(set) var chunks: [CoreTextChunk] = [] {
+        didSet { geometryStoreIsStale = true }
+    }
     /// chapter → index range within chunks (inclusive start, exclusive end)
     @Published private(set) var chapterRanges: [Int: Range<Int>] = [:]
     @Published private(set) var isReady: Bool = false
@@ -31,11 +33,85 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// scroll positions can be converted to stable book-wide content units.
     private var chapterCharacterCounts: [Int: Int] = [:]
 
+    // MARK: - Scroll geometry
+
+    /// Owner of every height the scroll view lays out with
+    /// (`Technotes/ViewportScrollArchitecture.md` §5).
+    ///
+    /// At stage 1 it is populated from chunks that have *already* been laid out, so it reports
+    /// exactly the numbers `CoreTextChunk.height` always did — the seam is in place, the
+    /// behaviour is unchanged. Stage 3 is what lets estimates answer these queries instead, and
+    /// it needs the collection view to have stopped asking chunks directly by then.
+    private let geometryStore = FragmentGeometryStore()
+
+    /// Derived, never incrementally maintained. `insert` alone has three branches that each
+    /// re-derive the chunk list, and a store updated in lockstep with them would be a second
+    /// bookkeeping path free to drift. The `didSet` on `chunks` makes it structurally impossible
+    /// for a mutation to skip invalidation.
+    ///
+    /// Deliberately keyed off `chunks` only. It used to also watch `chapterRanges`, which was
+    /// worse than redundant: the store *read* both, and the two are assigned one after the other,
+    /// so a rebuild triggered in between saw a chunk list its ranges did not cover.
+    private var geometryStoreIsStale = true
+
+    private func rebuiltGeometryStore() -> FragmentGeometryStore {
+        guard geometryStoreIsStale else { return geometryStore }
+        geometryStoreIsStale = false
+        geometryStore.removeAll()
+        let isVertical = renderSettings.writingMode.isVertical
+
+        // Grouped from `chunks` alone — see `ChapterOutline.grouped`.
+        //
+        // The first version derived the grouping from `chapterRanges` instead, and that was a
+        // real defect: `chunks` and `chapterRanges` are two separately `@Published` properties
+        // that `insert` assigns one after the other, so any observer running between the two
+        // assignments — a SwiftUI update, a Combine subscriber, a layout pass — rebuilt the store
+        // from ranges that no longer covered every chunk. The uncovered chunks fell off the end
+        // of the flat index and reported an extent of zero, which the next pass then corrected.
+        // That is what made a restored reading position visibly bounce before settling.
+        for outline in ChapterOutline.grouped(chunks: chunks, extent: {
+            isVertical ? $0.width : $0.height
+        }) {
+            geometryStore.setOutline(outline)
+        }
+        return geometryStore
+    }
+
+    /// Extent of the item at `index` along the scroll axis, as the geometry store reports it.
+    ///
+    /// `nil` means the index is past the end of the loaded content — the same condition the
+    /// caller already has to handle when indexing `chunks`.
+    func scrollExtent(at index: Int) -> CGFloat? {
+        rebuiltGeometryStore().height(atFlatIndex: index)
+    }
+
+    /// Total extent of everything loaded. Stage 2's custom layout reads `contentSize` from here
+    /// instead of summing `sizeForItemAt` over every item, which is what forces eager layout today.
+    var loadedScrollExtent: CGFloat {
+        rebuiltGeometryStore().totalHeight
+    }
+
+    /// Diagnostics only. Must always equal `chunks.count`; anything else means the geometry store
+    /// and the chunk list disagree about how many items exist, which shows up on screen as items
+    /// with zero extent and a reading position that lands in the wrong place.
+    var geometryFragmentCount: Int {
+        rebuiltGeometryStore().flatFragmentCount
+    }
+
+    /// Diagnostics only: chapter order as the geometry store sees it, which is the order the flat
+    /// index walks. A mismatch with the on-screen chapter order misplaces every item after the
+    /// first divergence.
+    var geometryChapterOrder: [Int] {
+        rebuiltGeometryStore().chapterOrder
+    }
+
     /// Change event stream: VC subscribes to perform insertRows / contentOffset compensation
     enum Event {
         case reset(restorePosition: CoreTextReadingPosition?)
-        case insertedAtBottom(count: Int, chapter: Int)
-        case insertedAtTop(count: Int, addedHeight: CGFloat, chapter: Int)
+        /// Chunks landed at `range` in `chunks`. There is no top/bottom distinction any more:
+        /// position is now re-derived from the reading position after every structural change,
+        /// so the view never needs to know which side content arrived on in order to compensate.
+        case chunksInserted(range: Range<Int>, chapter: Int)
     }
     let events = PassthroughSubject<Event, Never>()
     var onChapterContentRequired: ((Int) -> Void)?
@@ -56,7 +132,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// Chapters that have been fully sliced
     private var loadedChapters: Set<Int> = []
     /// Chapters that could not be sliced because their online content was not cached yet.
-    private var pendingMissingChapters: [Int: Bool] = [:]
+    /// Was `[Int: Bool]`, where the Bool recorded a prepend direction that no longer decides
+    /// anything now that `insert` places by chapter index.
+    private var pendingMissingChapters: Set<Int> = []
     /// Chapters currently standing in for real content with a 載入中 placeholder chunk.
     /// Paged mode renders a placeholder page for these; scroll mode used to render
     /// nothing at all, which is why an uncached chapter appeared as a blank screen.
@@ -103,7 +181,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             await loadChapter(clamped + 1)
         }
         if clamped - 1 >= 0 {
-            await loadChapter(clamped - 1, prepend: true)
+            await loadChapter(clamped - 1)
         }
     }
 
@@ -118,18 +196,19 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         guard next < builder.chapterCount,
               !loadedChapters.contains(next),
               !slicingChapters.contains(next),
-              pendingMissingChapters[next] == nil else { return }
+              !pendingMissingChapters.contains(next) else { return }
         Task { await loadChapter(next) }
     }
 
-    /// Called when near the top; prepends the previous chapter (caller must handle contentOffset compensation)
+    /// Called when near the top; loads the previous chapter. The view re-applies the reading
+    /// position afterwards, so there is no offset compensation for the caller to handle.
     func ensureChapterBehind(of chapterIndex: Int) {
         let prev = chapterIndex - 1
         guard prev >= 0,
               !loadedChapters.contains(prev),
               !slicingChapters.contains(prev),
-              pendingMissingChapters[prev] == nil else { return }
-        Task { await loadChapter(prev, prepend: true) }
+              !pendingMissingChapters.contains(prev) else { return }
+        Task { await loadChapter(prev) }
     }
 
     /// Reslice (settings changed): clear all chunks and re-slice from the specified chapter
@@ -313,41 +392,39 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         // up front lost the chapter permanently whenever the load below threw for any
         // other reason, because nothing else records that it is still missing — and with
         // the loading placeholder in place that strands a visible 載入中 block.
-        guard let prepend = pendingMissingChapters[chapterIndex],
+        guard pendingMissingChapters.contains(chapterIndex),
               !loadedChapters.contains(chapterIndex),
               !slicingChapters.contains(chapterIndex)
         else { return false }
 
-        // A missing initial/current chapter can have an adjacent chapter loaded
-        // while its network fetch is in flight. Re-inserting it with the original
-        // `prepend` flag would then put chapter N after chapter N+1. Preserve the
-        // explicit direction for ordinary adjacent loads, but repair the boundary
-        // order when the pending chapter now sits outside the rendered range.
-        let resolvedPrepend: Bool
-        if let firstChapter = chunks.first?.chapterIndex,
-           chapterIndex < firstChapter {
-            resolvedPrepend = true
-        } else if let lastChapter = chunks.last?.chapterIndex,
-                  chapterIndex > lastChapter {
-            resolvedPrepend = false
-        } else {
-            resolvedPrepend = prepend
-        }
-
-        await loadChapter(chapterIndex, prepend: resolvedPrepend)
+        // The boundary-order repair that used to live here is gone: `insert` now places by
+        // chapter index, which is the general form of what it was approximating for the two
+        // cases where the pending chapter had drifted outside the rendered range.
+        await loadChapter(chapterIndex)
         return loadedChapters.contains(chapterIndex)
     }
 
     // MARK: - Internal load
 
-    /// Loads and slices a single chapter, appending or prepending to chunks
-    private func loadChapter(_ chapterIndex: Int, prepend: Bool = false) async {
+    /// Formats a `systemUptime` delta for the `⏱` breakdown fields.
+    private static func ms(_ seconds: Double) -> String {
+        String(format: "%.1fms", seconds * 1000)
+    }
+
+    /// Loads and slices a single chapter, placing it in chapter order (see `insertionIndex`).
+    private func loadChapter(_ chapterIndex: Int) async {
         guard chapterIndex >= 0, chapterIndex < builder.chapterCount else { return }
         guard !loadedChapters.contains(chapterIndex), !slicingChapters.contains(chapterIndex) else { return }
         slicingChapters.insert(chapterIndex)
         defer { slicingChapters.remove(chapterIndex) }
 
+        // Stage-0 baseline for `Technotes/ViewportScrollArchitecture.md`. The migration's only
+        // success criterion is that this wall time decouples from chapter length, so the phases
+        // are timed separately: `document` (HTML/CSS → NSAttributedString) is not something lazy
+        // layout can improve, while `slice` is exactly what it removes from the critical path.
+        let loadStart = CoreTextSliceMetrics.now
         do {
+            let documentStart = CoreTextSliceMetrics.now
             let result = try await ReaderPerfTrace.spanAsync(
                 .chapterLoad,
                 metadata: ReaderPerfMetadata(
@@ -365,6 +442,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     )
                 )
             }
+            let documentSeconds = CoreTextSliceMetrics.now - documentStart
+
+            let prepareStart = CoreTextSliceMetrics.now
             let attrStr: NSAttributedString
             if renderSettings.writingMode.isVertical {
                 attrStr = ReaderPerfTrace.span(
@@ -381,6 +461,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             } else {
                 attrStr = prepareAttributedString(result.attributedString)
             }
+            let prepareSeconds = CoreTextSliceMetrics.now - prepareStart
             chapterCharacterCounts[chapterIndex] = attrStr.length
             let width = contentWidth
             let cIdx = chapterIndex
@@ -400,11 +481,20 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     pageBackgroundColor: pageBackgroundColor,
                     pageBackgroundImage: pageBackgroundImage
                 )
-                insert(chunks: [chunk], chapterIndex: chapterIndex, prepend: prepend)
+                insert(chunks: [chunk], chapterIndex: chapterIndex)
                 if let range = chapterRanges[chapterIndex] {
                     warmChunks(around: range.lowerBound, radius: 4)
                 }
                 loadedChapters.insert(chapterIndex)
+                // Logged on this path too: an image-only chapter is the natural control for
+                // "load time vs chapter length" — it does no slicing at any chapter size.
+                SourcePerfTrace.record(
+                    "coreText.scroll.loadChapter",
+                    "spine=\(chapterIndex) chars=\(attrStr.length) chunks=1 kind=imagePage "
+                        + "document=\(Self.ms(documentSeconds)) prepare=\(Self.ms(prepareSeconds))",
+                    since: loadStart,
+                    thresholdMs: 0
+                )
                 return
             }
 
@@ -419,6 +509,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                 )
             )
             let backdropFloor = viewportExtent
+            let sliceStart = CoreTextSliceMetrics.now
             let output: CoreTextChunkSlicer.Output = await Task.detached(priority: .userInitiated) {
                 CoreTextChunkSlicer.slice(
                     attributedString: attrStr,
@@ -430,6 +521,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     minimumBackdropExtent: backdropFloor
                 )
             }.value
+            let sliceSeconds = CoreTextSliceMetrics.now - sliceStart
             ReaderPerfTrace.end(
                 slicingTrace,
                 metadata: ReaderPerfMetadata(
@@ -440,28 +532,47 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     executor: "background"
                 )
             )
+            // `slice` measures itself; this stage measures the hop to the detached task as
+            // well, so the two numbers together show what scheduling costs on top of layout.
+            SourcePerfTrace.record(
+                "coreText.scroll.slice",
+                "spine=\(chapterIndex) writing=\(writingMode) \(output.metrics.logDetail)",
+                since: sliceStart,
+                thresholdMs: 0
+            )
 
-            // The placeholder occupies this chapter's slot at the same end of the list,
-            // so dropping it here leaves `insert` appending/prepending into the position
-            // it just vacated. The row-count change is what makes the collection view
-            // reload through `reloadPreservingVisiblePosition`.
+            // The placeholder already holds this chapter's slot, so the real content takes
+            // exactly that index rather than being re-placed by chapter order.
+            let insertStart = CoreTextSliceMetrics.now
             let vacatedIndex = removeLoadingPlaceholder(for: chapterIndex)
             insert(
                 chunks: output.chunks,
                 chapterIndex: chapterIndex,
-                prepend: prepend,
                 at: vacatedIndex
             )
+            let insertSeconds = CoreTextSliceMetrics.now - insertStart
+            let warmStart = CoreTextSliceMetrics.now
             if let range = chapterRanges[chapterIndex] {
                 warmChunks(around: range.lowerBound, radius: 4)
             }
+            let warmSeconds = CoreTextSliceMetrics.now - warmStart
             loadedChapters.insert(chapterIndex)
-            pendingMissingChapters.removeValue(forKey: chapterIndex)
+            pendingMissingChapters.remove(chapterIndex)
+
+            SourcePerfTrace.record(
+                "coreText.scroll.loadChapter",
+                "spine=\(chapterIndex) chars=\(attrStr.length) chunks=\(output.chunks.count) "
+                    + "kind=text document=\(Self.ms(documentSeconds)) prepare=\(Self.ms(prepareSeconds)) "
+                    + "slice=\(Self.ms(sliceSeconds)) insert=\(Self.ms(insertSeconds)) "
+                    + "warm=\(Self.ms(warmSeconds))",
+                since: loadStart,
+                thresholdMs: 0
+            )
         } catch AttributedStringBuildingError.contentNotCached(let missingChapter) {
             let requestedChapter = missingChapter == chapterIndex ? missingChapter : chapterIndex
-            pendingMissingChapters[requestedChapter] = prepend
-            AppLogger.render("[ScrollEngine] chapter content missing chapter=\(requestedChapter) prepend=\(prepend)")
-            insertLoadingPlaceholder(for: requestedChapter, prepend: prepend)
+            pendingMissingChapters.insert(requestedChapter)
+            AppLogger.render("[ScrollEngine] chapter content missing chapter=\(requestedChapter)")
+            insertLoadingPlaceholder(for: requestedChapter)
             onChapterContentRequired?(requestedChapter)
         } catch {
             AppLogger.render("[ScrollEngine] buildChapter error chapter=\(chapterIndex) error=\(error)")
@@ -475,20 +586,31 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// content has not arrived contributes zero chunks, so jumping into it — or scrolling
     /// to a chapter boundary — showed a blank surface with nothing to indicate a fetch was
     /// running. Replaced in place by `loadChapter` as soon as the real content is sliced.
-    private func insertLoadingPlaceholder(for chapterIndex: Int, prepend: Bool) {
+    private func insertLoadingPlaceholder(for chapterIndex: Int) {
         guard contentWidth > 0,
               !placeholderChapters.contains(chapterIndex),
               !loadedChapters.contains(chapterIndex)
         else { return }
+        // Measured because this is the one synchronous, main-actor `slice()` in the engine
+        // (`ViewportScrollArchitecture.md` §3.3). The placeholder string is short so it should
+        // be near-free — this line is what proves that, and what would catch it if it stopped
+        // being true before stage 5 removes the call.
+        let placeholderStart = CoreTextSliceMetrics.now
         let output = CoreTextChunkSlicer.slice(
             attributedString: makeLoadingPlaceholderString(for: chapterIndex),
             chapterIndex: chapterIndex,
             contentWidth: contentWidth,
             writingMode: renderSettings.writingMode
         )
+        SourcePerfTrace.record(
+            "coreText.scroll.placeholderSlice",
+            "spine=\(chapterIndex) \(output.metrics.logDetail)",
+            since: placeholderStart,
+            thresholdMs: 0
+        )
         guard !output.chunks.isEmpty else { return }
         placeholderChapters.insert(chapterIndex)
-        insert(chunks: output.chunks, chapterIndex: chapterIndex, prepend: prepend)
+        insert(chunks: output.chunks, chapterIndex: chapterIndex)
     }
 
     /// Removes a chapter's placeholder rows and closes the gap, returning the index the
@@ -553,58 +675,47 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         return result
     }
 
+    /// Where a chapter's chunks belong in `chunks` — decided by **chapter order**, never by
+    /// arrival order.
+    ///
+    /// `loadChapter` runs concurrently and finishes out of order. A device log captured
+    /// `order=[256, 258]` → `[256, 258, 257]` → `[256, 258, 257, 259]`: chapter 258's text sat
+    /// physically above 257's, so scrolling down from 256 reached 258 and only then 257. The book
+    /// itself was out of order.
+    ///
+    /// The cause was placing by a `prepend` flag that recorded the direction a chapter was first
+    /// *requested* in, not where it belonged once its neighbours arrived. `retryChapterIfNeeded`
+    /// carried a hand-rolled repair for the two boundary cases; deciding position from the chapter
+    /// index covers those and every case between them, so that repair is gone.
+    private func insertionIndex(forChapter chapterIndex: Int) -> Int {
+        chunks.firstIndex { $0.chapterIndex > chapterIndex } ?? chunks.endIndex
+    }
+
     private func insert(
         chunks newChunks: [CoreTextChunk],
         chapterIndex: Int,
-        prepend: Bool,
         at vacatedIndex: Int? = nil
     ) {
         guard !newChunks.isEmpty else {
-            chapterRanges[chapterIndex] = chunks.endIndex..<chunks.endIndex
+            let slot = insertionIndex(forChapter: chapterIndex)
+            chapterRanges[chapterIndex] = slot..<slot
             return
         }
-        // Replacing a loading placeholder: this chapter's position in the list was already
-        // decided when the placeholder went in. Re-deriving head/tail from `prepend` would
-        // reorder chapters, because that flag records the direction the chapter was *first*
-        // requested in, not where it ended up once neighbours were placed around it — which
-        // is how a chapter's body could land below the next chapter's placeholder.
-        if let vacatedIndex, vacatedIndex >= 0, vacatedIndex <= chunks.endIndex {
-            chunks.insert(contentsOf: newChunks, at: vacatedIndex)
-            let delta = newChunks.count
-            var newRanges: [Int: Range<Int>] = [:]
-            for (chapter, existing) in chapterRanges {
-                newRanges[chapter] = existing.lowerBound >= vacatedIndex
-                    ? (existing.lowerBound + delta)..<(existing.upperBound + delta)
-                    : existing
-            }
-            newRanges[chapterIndex] = vacatedIndex..<(vacatedIndex + delta)
-            chapterRanges = newRanges
-            // The row count no longer matches what the collection view last displayed
-            // (placeholder rows out, content rows in), so its desync guard reloads while
-            // preserving the reader's position — the correct handling for a mid-list swap.
-            events.send(.insertedAtBottom(count: delta, chapter: chapterIndex))
-            return
+        // A loading placeholder already reserved this chapter's slot, so the real content takes
+        // exactly that slot. Otherwise chapter order decides.
+        let insertAt = vacatedIndex.map { min(max(0, $0), chunks.endIndex) }
+            ?? insertionIndex(forChapter: chapterIndex)
+        chunks.insert(contentsOf: newChunks, at: insertAt)
+        let delta = newChunks.count
+        var newRanges: [Int: Range<Int>] = [:]
+        for (chapter, existing) in chapterRanges {
+            newRanges[chapter] = existing.lowerBound >= insertAt
+                ? (existing.lowerBound + delta)..<(existing.upperBound + delta)
+                : existing
         }
-        if prepend {
-            let insertAt = 0
-            chunks.insert(contentsOf: newChunks, at: insertAt)
-            let delta = newChunks.count
-            let addedHeight = newChunks.reduce(CGFloat(0)) {
-                $0 + (renderSettings.writingMode.isVertical ? $1.width : $1.height)
-            }
-            var newRanges: [Int: Range<Int>] = [:]
-            for (k, r) in chapterRanges {
-                newRanges[k] = (r.lowerBound + delta)..<(r.upperBound + delta)
-            }
-            newRanges[chapterIndex] = insertAt..<(insertAt + delta)
-            chapterRanges = newRanges
-            events.send(.insertedAtTop(count: delta, addedHeight: addedHeight, chapter: chapterIndex))
-        } else {
-            let insertAt = chunks.endIndex
-            chunks.append(contentsOf: newChunks)
-            chapterRanges[chapterIndex] = insertAt..<(insertAt + newChunks.count)
-            events.send(.insertedAtBottom(count: newChunks.count, chapter: chapterIndex))
-        }
+        newRanges[chapterIndex] = insertAt..<(insertAt + delta)
+        chapterRanges = newRanges
+        events.send(.chunksInserted(range: insertAt..<(insertAt + delta), chapter: chapterIndex))
     }
 
     // MARK: - Single-image chunk

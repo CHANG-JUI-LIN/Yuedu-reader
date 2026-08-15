@@ -19,6 +19,10 @@ final class FixedPageZoomableScrollView: UIScrollView, UIScrollViewDelegate {
         }
     }
 
+    /// Fires once a zoom gesture settles. Vector-backed pages (PDF) re-render at the
+    /// new scale so text stays sharp instead of showing enlarged pixels.
+    var onZoomSettled: ((CGFloat) -> Void)?
+
     private lazy var zoomingTap: UITapGestureRecognizer = {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
         tap.numberOfTapsRequired = 2
@@ -105,5 +109,9 @@ final class FixedPageZoomableScrollView: UIScrollView, UIScrollViewDelegate {
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         centerView()
+    }
+
+    func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+        onZoomSettled?(scale)
     }
 }

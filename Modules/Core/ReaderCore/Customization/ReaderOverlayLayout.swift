@@ -414,3 +414,22 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
         ) ?? ReaderOverlayContentReservations(top: 0, bottom: 0)
     }
 }
+
+/// The iCloud-synced header/footer layout — which components exist, where they
+/// sit, and how much body space they reserve.
+///
+/// Synced as ONE always-present last-write-wins record, exactly like
+/// `ReaderCommentBubbleSyncSelection`: an *absent* record would let the merge's
+/// local-deletion loop tombstone the constant record id with `now` and destroy a
+/// layout a second device had just edited. `modifiedAt` advances only when the
+/// user edits the layout on that device (see
+/// `GlobalSettings.readerOverlayLayoutSyncClock`).
+///
+/// Component positions are normalized 0…1, so they carry across screen sizes
+/// unchanged. `contentReservations` is in points and does not — a value tuned on
+/// an iPhone lands unchanged on an iPad. That is the deliberate trade: one
+/// setting that reads the same everywhere beats two that silently diverge.
+struct ReaderOverlayLayoutSyncRecord: Codable, Equatable, Sendable {
+    var layout: ReaderOverlayLayout
+    var modifiedAt: Date?
+}

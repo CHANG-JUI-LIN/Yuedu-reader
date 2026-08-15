@@ -19,6 +19,7 @@ import {
   assertBindingOwner,
   assertTransactionCanBind,
   bindingGrantsEntitlement,
+  entitlementGrantsTestFlight,
   environmentName,
   productionEnvironment,
   sandboxEnvironment,
@@ -97,11 +98,6 @@ interface TestFlightProRequestDocument {
   updatedAt?: FieldValue;
 }
 
-interface EntitlementDocument {
-  isProActive?: boolean;
-  expiresAt?: Timestamp | null;
-}
-
 const testFlightGroupNameSecret = defineSecret("APP_STORE_CONNECT_GROUP_NAME");
 const appStoreIssuerIdSecret = defineSecret("APP_STORE_CONNECT_ISSUER_ID");
 const appStoreKeyIdSecret = defineSecret("APP_STORE_CONNECT_KEY_ID");
@@ -125,15 +121,27 @@ function requireUid(
   return auth.uid;
 }
 
-async function requireActivePro(uid: string): Promise<void> {
-  const snapshot = await db.collection("entitlements").doc(uid).get();
-  const entitlement = snapshot.data() as EntitlementDocument | undefined;
-  const expiresAt = entitlement?.expiresAt;
-  const expired = expiresAt instanceof Timestamp && expiresAt.toMillis() <= Date.now();
-  if (entitlement?.isProActive !== true || expired) {
+/**
+ * Authorises a TestFlight request: a lifetime purchase made with real money.
+ *
+ * Reads `purchaseBindings` rather than the `entitlements/{uid}` projection.
+ * The projection is rewritten wholesale by `recomputeEntitlement`, so its
+ * `productIds` field only exists for accounts touched since that field was
+ * added; going to the source keeps one code path instead of a
+ * missing-field branch.
+ *
+ * Production only. A Sandbox lifetime binding costs a TestFlight tester
+ * nothing, so honouring it would let one free purchase mint the very seat
+ * being guarded.
+ */
+async function requireLifetimePro(uid: string): Promise<void> {
+  const snapshot = await db.collection("purchaseBindings").where("uid", "==", uid).get();
+  const bindings = snapshot.docs.map((document) => document.data() as PurchaseBindingDocument);
+  const entitlement = summariseEnvironment(bindings, productionEnvironment);
+  if (!entitlementGrantsTestFlight(entitlement.isProActive, entitlement.productIds)) {
     throw new HttpsError(
       "permission-denied",
-      "An active Pro account is required to request TestFlight access."
+      "A lifetime Pro purchase is required to request TestFlight access."
     );
   }
 }
@@ -382,9 +390,9 @@ export const requestTestFlightAccess = onCall(
   async (request) => {
     const uid = requireUid(
       request.auth,
-      "Sign in with a Pro account before requesting TestFlight access."
+      "Sign in with a lifetime Pro account before requesting TestFlight access."
     );
-    await requireActivePro(uid);
+    await requireLifetimePro(uid);
 
     const email = normalizeTestFlightEmail(request.data?.email);
     if (email === null) {

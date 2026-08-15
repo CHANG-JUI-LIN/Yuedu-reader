@@ -2,6 +2,16 @@ import Foundation
 import UIKit
 import WebKit
 
+// MARK: - Fixed-layout EPUB rendering
+//
+// A fixed-layout EPUB page is HTML positioned at an exact viewport size, so it is
+// rasterized through a WebView and then displayed like any other fixed page.
+//
+// Everything here exists once per document, not once per page: one open
+// `PublicationSession`, one WKWebView, one image cache. The reader loads the whole
+// book as a single chapter (see `FixedPageReaderViewController`), so turning a page
+// is a cache hit or a single render — never a reopen of the publication.
+
 enum FixedLayoutEPUBPageProviderError: LocalizedError {
     case notFixedLayout
     case chapterOutOfRange(Int)
@@ -31,57 +41,177 @@ enum FixedLayoutEPUBPageProvider {
             )
         }
     }
-
-    static func renderPageImage(
-        from sourceURL: URL,
-        chapterIndex: Int
-    ) async throws -> UIImage {
-        let session = try await PublicationSession.open(sourceURL: sourceURL)
-        guard session.layoutMode == .prePaginated else {
-            throw FixedLayoutEPUBPageProviderError.notFixedLayout
-        }
-        return try await renderPage(
-            session: session,
-            chapterIndex: chapterIndex,
-            renderer: FixedLayoutEPUBPageRasterizer()
-        )
-    }
-
-    private static func renderPage(
-        session: PublicationSession,
-        chapterIndex: Int,
-        renderer: FixedLayoutEPUBPageRasterizer
-    ) async throws -> UIImage {
-        guard session.chapters.indices.contains(chapterIndex) else {
-            throw FixedLayoutEPUBPageProviderError.chapterOutOfRange(chapterIndex)
-        }
-
-        let adapter = ReadiumBookResourceAdapter(session: session)
-        let resolver = FixedLayoutViewportResolver(
-            defaultViewport: session.fixedLayoutViewport?.defaultViewport,
-            pageViewports: session.fixedLayoutViewport?.pageViewports ?? [:]
-        )
-        let pageSize = await resolver.viewport(for: chapterIndex, resourceProvider: adapter)
-        let chapter = session.chapters[chapterIndex]
-        let html = try await session.chapterHTML(at: chapterIndex)
-        let preparedHTML = await FixedLayoutEPUBHTMLInliner(
-            resourceProvider: adapter,
-            chapterHref: chapter.href
-        ).inlinedHTML(html)
-
-        guard let image = await renderer.render(html: preparedHTML, pageSize: pageSize) else {
-            throw FixedLayoutEPUBPageProviderError.renderFailed(chapterIndex)
-        }
-        return image
-    }
 }
 
 @MainActor
+final class FixedLayoutEPUBRenderer {
+
+    static let shared = FixedLayoutEPUBRenderer()
+
+    struct DocumentInfo {
+        let pageCount: Int
+        let sections: [FixedPageDocumentSection]
+    }
+
+    /// One book's opened publication plus the per-document helpers built from it.
+    /// The viewport resolver in particular caches each page's declared size, which
+    /// is thrown away every time the document is reopened.
+    private final class OpenDocument {
+        let sourceURL: URL
+        let session: PublicationSession
+        let adapter: ReadiumBookResourceAdapter
+        let resolver: FixedLayoutViewportResolver
+
+        init(sourceURL: URL, session: PublicationSession) {
+            self.sourceURL = sourceURL
+            self.session = session
+            self.adapter = ReadiumBookResourceAdapter(session: session)
+            self.resolver = FixedLayoutViewportResolver(
+                defaultViewport: session.fixedLayoutViewport?.defaultViewport,
+                pageViewports: session.fixedLayoutViewport?.pageViewports ?? [:]
+            )
+        }
+    }
+
+    /// Rendered pages, keyed by document + page + requested width. Cost is the
+    /// image's byte size; a full-screen page on a 3x device is ~7 MB.
+    private let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 8
+        cache.totalCostLimit = 48 * 1024 * 1024
+        return cache
+    }()
+
+    private let rasterizer = FixedLayoutEPUBPageRasterizer()
+    private var openDocument: OpenDocument?
+    /// In-flight opens, so two page loads racing on a cold document open it once.
+    private var openTasks: [String: Task<OpenDocument, Error>] = [:]
+
+    func documentInfo(sourceURL: URL) async throws -> DocumentInfo {
+        let document = try await self.document(for: sourceURL)
+        let sections = document.session.chapters.map { descriptor -> FixedPageDocumentSection in
+            let title = descriptor.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return FixedPageDocumentSection(
+                title: title.isEmpty ? String(format: localized("第 %d 頁"), descriptor.index + 1) : title,
+                startPage: descriptor.index
+            )
+        }
+        return DocumentInfo(pageCount: document.session.chapters.count, sections: sections)
+    }
+
+    /// Rasterize one page, fitted to `targetWidth` points. The WebView still lays the
+    /// page out at its declared viewport — that's what makes the layout correct — but
+    /// the snapshot is taken at display size instead of viewport size.
+    func image(sourceURL: URL, pageIndex: Int, targetWidth: CGFloat) async -> UIImage? {
+        guard targetWidth > 0 else { return nil }
+        let key = cacheKey(sourceURL: sourceURL, pageIndex: pageIndex, targetWidth: targetWidth)
+        if let cached = cache.object(forKey: key) { return cached }
+
+        do {
+            let document = try await self.document(for: sourceURL)
+            guard document.session.layoutMode == .prePaginated else {
+                throw FixedLayoutEPUBPageProviderError.notFixedLayout
+            }
+            guard document.session.chapters.indices.contains(pageIndex) else {
+                throw FixedLayoutEPUBPageProviderError.chapterOutOfRange(pageIndex)
+            }
+
+            let chapter = document.session.chapters[pageIndex]
+            let pageSize = await document.resolver.viewport(
+                for: pageIndex,
+                resourceProvider: document.adapter
+            )
+            let html = try await document.session.chapterHTML(at: pageIndex)
+            let preparedHTML = await FixedLayoutEPUBHTMLInliner(
+                resourceProvider: document.adapter,
+                chapterHref: chapter.href
+            ).inlinedHTML(html)
+
+            guard let image = await rasterizer.render(
+                html: preparedHTML,
+                pageSize: pageSize,
+                snapshotWidth: targetWidth
+            ) else {
+                throw FixedLayoutEPUBPageProviderError.renderFailed(pageIndex)
+            }
+
+            cache.setObject(image, forKey: key, cost: Self.byteCost(of: image))
+            return image
+        } catch {
+            AppLogger.render(
+                "Fixed-layout EPUB page render failed: page \(pageIndex) of \(sourceURL.lastPathComponent)",
+                error: error
+            )
+            return nil
+        }
+    }
+
+    /// Release the open publication and its rendered pages (the reader closed).
+    func purge() {
+        cache.removeAllObjects()
+        openDocument = nil
+        openTasks.removeAll()
+    }
+
+    private func document(for sourceURL: URL) async throws -> OpenDocument {
+        if let openDocument, openDocument.sourceURL == sourceURL { return openDocument }
+
+        let key = sourceURL.path
+        if let existing = openTasks[key] { return try await existing.value }
+
+        let task = Task {
+            let session = try await PublicationSession.open(sourceURL: sourceURL)
+            return OpenDocument(sourceURL: sourceURL, session: session)
+        }
+        openTasks[key] = task
+        defer { openTasks[key] = nil }
+
+        let document = try await task.value
+        // Only one book is read at a time; holding a second publication open would
+        // keep its zip handles and resources alive for nothing.
+        openDocument = document
+        return document
+    }
+
+    private func cacheKey(sourceURL: URL, pageIndex: Int, targetWidth: CGFloat) -> NSString {
+        "\(sourceURL.path)#\(pageIndex)@\(Int(targetWidth.rounded()))" as NSString
+    }
+
+    private static func byteCost(of image: UIImage) -> Int {
+        guard let cgImage = image.cgImage else { return 0 }
+        return cgImage.bytesPerRow * cgImage.height
+    }
+}
+
+// MARK: - WebView rasterizer
+
+/// Renders one page at a time in a single reused WKWebView.
+///
+/// Requests queue: the WebView has one document and one navigation delegate, so
+/// starting a second load while a snapshot is pending would strand the first
+/// caller. Serializing is what makes reuse safe.
+@MainActor
 private final class FixedLayoutEPUBPageRasterizer: NSObject, WKNavigationDelegate {
+
+    private struct Request {
+        let id = UUID()
+        let html: String
+        let pageSize: CGSize
+        let snapshotWidth: CGFloat
+        let continuation: CheckedContinuation<UIImage?, Never>
+    }
+
+    /// Upper bound on a single page's render. This is not a wait for state to
+    /// settle — the snapshot is driven by the page's own readiness signals below.
+    /// It bounds a WebView that never reports either success or failure, which
+    /// would otherwise stall every queued page behind it. Delete it if WebKit ever
+    /// guarantees a terminal navigation callback.
+    private static let renderTimeout: Duration = .seconds(10)
+
     private let webView: WKWebView
-    private var continuation: CheckedContinuation<UIImage?, Never>?
-    private var currentToken: UUID?
-    private var currentSize: CGSize = .zero
+    private var queue: [Request] = []
+    private var active: Request?
+    private var watchdog: Task<Void, Never>?
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -95,57 +225,108 @@ private final class FixedLayoutEPUBPageRasterizer: NSObject, WKNavigationDelegat
         webView.navigationDelegate = self
     }
 
-    func render(html: String, pageSize: CGSize) async -> UIImage? {
-        let size = CGSize(
-            width: max(1, pageSize.width.rounded(.up)),
-            height: max(1, pageSize.height.rounded(.up))
-        )
-        let token = UUID()
-        currentToken = token
-        currentSize = size
-        webView.frame = CGRect(origin: .zero, size: size)
-
-        return await withCheckedContinuation { continuation in
-            self.continuation = continuation
-            self.webView.loadHTMLString(html, baseURL: nil)
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-                guard let self, self.currentToken == token else { return }
-                self.finish(nil)
-            }
+    func render(html: String, pageSize: CGSize, snapshotWidth: CGFloat) async -> UIImage? {
+        await withCheckedContinuation { continuation in
+            queue.append(
+                Request(
+                    html: html,
+                    pageSize: CGSize(
+                        width: max(1, pageSize.width.rounded(.up)),
+                        height: max(1, pageSize.height.rounded(.up))
+                    ),
+                    snapshotWidth: max(1, snapshotWidth.rounded()),
+                    continuation: continuation
+                )
+            )
+            startNextIfIdle()
         }
     }
 
+    private func startNextIfIdle() {
+        guard active == nil, !queue.isEmpty else { return }
+        let request = queue.removeFirst()
+        active = request
+
+        webView.frame = CGRect(origin: .zero, size: request.pageSize)
+        webView.loadHTMLString(request.html, baseURL: nil)
+
+        watchdog = Task { [weak self] in
+            try? await Task.sleep(for: Self.renderTimeout)
+            guard let self, !Task.isCancelled else { return }
+            AppLogger.render("Fixed-layout EPUB page render timed out")
+            self.finish(nil, for: request.id)
+        }
+    }
+
+    private func snapshotActivePage() async {
+        guard let request = active else { return }
+
+        // Wait for what actually makes the page paintable rather than for a fixed
+        // delay: the inlined `data:` images decode asynchronously and web fonts
+        // load asynchronously, so `didFinish` alone can capture a half-drawn page.
+        _ = try? await webView.callAsyncJavaScript(
+            """
+            await Promise.all(
+                Array.from(document.images)
+                    .filter(image => !image.complete)
+                    .map(image => new Promise(done => { image.onload = done; image.onerror = done }))
+            );
+            if (document.fonts) { await document.fonts.ready; }
+            return true;
+            """,
+            contentWorld: .defaultClient
+        )
+        guard active?.id == request.id else { return }
+
+        let configuration = WKSnapshotConfiguration()
+        configuration.rect = CGRect(origin: .zero, size: request.pageSize)
+        // Lays out at viewport size, captures at display size: a 1200pt-wide page
+        // snapshotted at 1200pt on a 3x screen is a 69 MB bitmap nobody can see.
+        configuration.snapshotWidth = NSNumber(value: Double(request.snapshotWidth))
+
+        let image = try? await webView.takeSnapshot(configuration: configuration)
+        finish(image, for: request.id)
+    }
+
+    private func finish(_ image: UIImage?, for id: UUID) {
+        guard let request = active, request.id == id else { return }
+        watchdog?.cancel()
+        watchdog = nil
+        active = nil
+        request.continuation.resume(returning: image)
+        startNextIfIdle()
+    }
+
+    // MARK: WKNavigationDelegate
+
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Task { @MainActor [weak self, weak webView] in
-            guard let self, let webView, self.continuation != nil else { return }
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            let config = WKSnapshotConfiguration()
-            config.rect = CGRect(origin: .zero, size: self.currentSize)
-            let image = try? await webView.takeSnapshot(configuration: config)
-            self.finish(image)
+        Task { @MainActor [weak self] in
+            await self?.snapshotActivePage()
         }
     }
 
     nonisolated func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         Task { @MainActor [weak self] in
-            self?.finish(nil)
+            guard let self, let id = self.active?.id else { return }
+            AppLogger.render("Fixed-layout EPUB page navigation failed", error: error)
+            self.finish(nil, for: id)
         }
     }
 
-    nonisolated func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    nonisolated func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
         Task { @MainActor [weak self] in
-            self?.finish(nil)
+            guard let self, let id = self.active?.id else { return }
+            AppLogger.render("Fixed-layout EPUB page load failed", error: error)
+            self.finish(nil, for: id)
         }
-    }
-
-    private func finish(_ image: UIImage?) {
-        guard let continuation else { return }
-        self.continuation = nil
-        currentToken = nil
-        continuation.resume(returning: image)
     }
 }
+
+// MARK: - Resource inlining
 
 @MainActor
 private struct FixedLayoutEPUBHTMLInliner {

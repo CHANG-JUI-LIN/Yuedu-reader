@@ -364,6 +364,11 @@ final class SharedImportQueueDrainer: ObservableObject {
             return 1
         }
 
+        if LocalPDFArchive.supports(url) {
+            _ = try await bookStore.importLocalPDF(url: url)
+            return 1
+        }
+
         if LocalAudiobookArchive.supports(url) {
             _ = try await bookStore.importLocalAudiobook(url: url)
             return 1
@@ -443,7 +448,7 @@ enum SharedImportPayloadClassification: Equatable {
 
 enum SharedImportPayloadClassifier {
     private static let directLocalBookExtensions = Set([
-        "epub", "cbz", "zip",
+        "epub", "pdf", "cbz", "zip",
         "mp3", "m4a", "m4b", "aac", "flac", "wav"
     ])
 

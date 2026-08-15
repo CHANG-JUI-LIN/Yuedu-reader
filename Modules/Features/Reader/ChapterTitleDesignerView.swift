@@ -213,12 +213,14 @@ struct ChapterTitleDesignerView: View {
                     Label(localized("套用源碼"), systemImage: "checkmark.circle")
                 }
             }
+            .interfaceSectionSurface()
             if let error = model.validationError {
                 Section {
                     Label(sourceErrorText(error), systemImage: "exclamationmark.triangle")
                         .foregroundStyle(DSColor.warning)
                         .accessibilityElement(children: .combine)
                 }
+                .interfaceSectionSurface()
             }
         }
     }
@@ -237,7 +239,7 @@ struct ChapterTitleDesignerView: View {
         var result: [UUID: [ReaderStyleAssetReference]] = [:]
         for layer in model.draft.layers {
             let reference = ReaderStyleAssetReference.chapterLayer(layer.name)
-            for id in Set(layer.assetIDs) {
+            for id in ReaderStyleAssetReferences.assetIDs(in: layer) {
                 result[id, default: []].append(reference)
             }
         }
@@ -272,18 +274,6 @@ struct ChapterTitleDesignerView: View {
         default:
             return error.localizedDescription
         }
-    }
-}
-
-private extension ChapterTitleLayer {
-    var assetIDs: [UUID] {
-        var ids: [UUID] = []
-        if case let .image(id) = content { ids.append(id) }
-        for style in [lightStyle, darkStyle] {
-            if let id = style.imagePresentation?.assetID { ids.append(id) }
-            if let id = style.ruleStyle.decoration.backgroundImage?.assetID { ids.append(id) }
-        }
-        return ids
     }
 }
 

@@ -90,7 +90,7 @@
 "前往小說章節頁，點擊右下角即可轉碼閱讀" = "Open a novel chapter page, then tap the bottom-right button to start converted reading";
 "加入 TestFlight" = "Join TestFlight";
 "加入 TestFlight 測試版" = "Join the TestFlight beta";
-"加入 TestFlight 測試版，搶先體驗新功能並協助我們改善 Yuedu Reader。申請後我們會寄邀請郵件到你填寫的郵箱。" = "Join the TestFlight beta to try new features first and help us improve Yuedu Reader. After you apply, we'll send an invite to the email you enter.";
+"加入 TestFlight 測試版，搶先體驗新功能並協助我們改善 Yuedu Reader。名額為永久會員專屬，申請後我們會寄邀請郵件到你填寫的郵箱。" = "Join the TestFlight beta to try new features first and help us improve Yuedu Reader. Seats are exclusive to lifetime members. After you apply, we'll send an invite to the email you enter.";
 "加入中…" = "Adding…";
 "加入時間" = "Date Added";
 "加入書架" = "Bookmarked";
@@ -1669,8 +1669,8 @@
 "此郵箱已經在 TestFlight；如果尚未看到測試版，請確認 Apple 帳號與 TestFlight App。" = "This email is already in TestFlight. If you cannot see the build, check the Apple Account and the TestFlight app.";
 "TestFlight 名額已使用" = "TestFlight slot already used";
 "這個 Pro 帳號已經申請過一個郵箱，不能再邀請第二個。" = "This Pro account has already requested one email and cannot invite a second one.";
-"需要 Pro 會員" = "Pro membership required";
-"只有有效的 Pro 會員可以申請 TestFlight。" = "An active Pro membership is required to request TestFlight access.";
+"需要永久會員" = "Lifetime membership required";
+"TestFlight 名額只開放給永久會員。月會員可以在「閱讀Pro」升級為永久會員後申請。" = "TestFlight seats are open to lifetime members only. Monthly members can apply after upgrading to lifetime in Yuedu Pro.";
 "每個 Pro 帳號只能申請一次；如果尚未收到邀請，請聯絡管理員。" = "Each Pro account can request TestFlight access only once. If you have not received an invite, contact the administrator.";
 "申請已記錄，但邀請尚未完成，請聯絡管理員。" = "The request was recorded, but the invite has not completed. Contact the administrator.";
 "「%@」沒有回應這則段評，可能需要先在書源設定填寫 Token。" = "\"%@\" did not respond to this comment. You may need to enter a token in its book-source settings first.";
@@ -1836,7 +1836,6 @@
 "文字" = "Text";
 "音頻" = "Audio";
 "文件" = "File";
-"CookieJar" = "CookieJar";
 "段評" = "Comments";
 "點兩下編輯規則" = "Double-tap to edit rule";
 "源註釋" = "Source Comment";
@@ -2029,4 +2028,72 @@
 /* Book source: Android device identity opt-in */
 "以 Android 身分回報" = "Report as Android";
 "僅在書源要求 Android 裝置碼時開啟。多數書源用它判斷平台，開啟會被誤認為 Android。" = "Turn on only for sources that need an Android device id. Most sources use it to detect the platform, so turning it on makes them treat this device as Android.";
+"此書源要求裝置識別碼，目前沒有提供給它" = "This source asks for a device id, and none is being given to it";
+"開啟 Android 身分並重試" = "Report as Android and retry";
 "段評執行環境不可用" = "The paragraph review runtime is unavailable";
+"不支援的 PDF 格式" = "Unsupported PDF format";
+"無法讀取 PDF 檔案" = "Unable to read the PDF file";
+"這個 PDF 有密碼保護，目前無法開啟" = "This PDF is password protected and can't be opened";
+"PDF 中未找到頁面" = "No pages found in the PDF";
+"無法複製 PDF 檔案：" = "Unable to copy the PDF file: ";
+"已解析 PDF，共 %d 頁" = "PDF parsed, %d pages";
+"支援格式：TXT / Markdown / JSON / EPUB / PDF / CBZ / ZIP / 音訊" = "Supported formats: TXT / Markdown / JSON / EPUB / PDF / CBZ / ZIP / Audio";
+"支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、PDF（.pdf）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。" = "Supports plain text (.txt / .md / .markdown / .json), ebooks (.epub), PDF (.pdf), local manga (.cbz / .zip), and audio (.mp3 / .m4a / .m4b / .aac / .flac / .wav). Content is detected automatically.";
+"點擊選取 TXT / EPUB / PDF / 漫畫 / 音訊文件" = "Tap to Select a TXT / EPUB / PDF / Manga / Audio File";
+"無法讀取這本書的頁面" = "Unable to read this book's pages";
+
+/* Book info — cover search */
+"封面搜索" = "Search Covers";
+"選擇封面圖片" = "Choose Cover Image";
+"重設封面" = "Reset Cover";
+"封面網址" = "Cover URL";
+"套用網址" = "Apply URL";
+"封面搜索會在所有啟用的書源中，尋找同書名同作者的封面。" = "Cover search looks through every enabled book source for covers of the same title and author.";
+"貼上圖片網址後，點「套用網址」下載為封面。" = "Paste an image URL, then tap Apply URL to download it as the cover.";
+"封面設定失敗" = "Couldn't Set Cover";
+"無法下載這張封面，請換一張或檢查網路。" = "Couldn't download this cover. Try another one or check your connection.";
+"目前封面" = "Current cover";
+"正在套用封面" = "Applying cover";
+"沒有找到其他封面" = "No other covers found";
+"可以改用相簿裡的圖片，或直接貼上封面網址。" = "You can use a photo from your library instead, or paste a cover URL.";
+"正在搜尋封面…" = "Searching for covers…";
+"正在搜尋更多封面…" = "Searching for more covers…";
+"停止搜索" = "Stop Search";
+"點兩下使用這張封面" = "Double tap to use this cover";
+
+/* Speech settings — system voice */
+"系統語音音色" = "System Voice";
+"跟隨系統預設" = "Use System Default";
+"這是一段試聽文字，用來確認語音音色。" = "This is a sample sentence for previewing the voice.";
+"這台裝置上沒有可用的語音。" = "No voices are available on this device.";
+"想要更多音色，可到「設定 → 輔助使用 → 朗讀內容 → 語音」下載增強或優質語音，下載後會出現在這裡。Siri 音色由系統保留給內建 App，第三方 App 無法使用。" = "For more voices, download Enhanced or Premium voices in Settings → Accessibility → Spoken Content → Voices; they show up here once installed. Siri voices are reserved by the system for Apple's own apps and can't be used by third-party apps.";
+"個人語音" = "Personal Voice";
+"已允許使用個人語音" = "Personal Voice allowed";
+"個人語音未獲授權。可到「設定 → 輔助使用 → 個人語音」重新允許。" = "Personal Voice isn't authorized. You can allow it again in Settings → Accessibility → Personal Voice.";
+"允許使用個人語音" = "Allow Personal Voice";
+"個人語音是你在「設定 → 輔助使用 → 個人語音」錄製的聲音。授權後會出現在下方語音列表中。" = "Personal Voice is the voice you recorded in Settings → Accessibility → Personal Voice. Once allowed, it appears in the list below.";
+"預設" = "Default";
+"增強" = "Enhanced";
+"優質" = "Premium";
+"試聽" = "Preview";
+"點兩下選用並試聽" = "Double tap to select and preview";
+
+/* 正則高亮 / 閱讀設定匯入匯出 */
+"內置規則不能刪除。需要改匹配方式時，直接複製一條為自定義規則再改。" = "Built-in rules can't be deleted. To change how one matches, copy it as a custom rule and edit that.";
+"內置規則會恢復預設顏色與開關，自定義規則會全部刪除。" = "Built-in rules return to their default colors and switches; every custom rule is deleted.";
+"全局開關已開啟" = "Highlighting is on";
+"全局開關關閉中" = "Highlighting is off";
+"匯入規則" = "Import Rules";
+"匯出規則" = "Export Rules";
+"匯入閱讀設定" = "Import Reading Settings";
+"匯出閱讀設定" = "Export Reading Settings";
+"匯出的檔案包含排版參數、章節標題樣式與正則高亮，可在其他裝置匯入。匯入也接受 legado 的 readConfig.json。" = "The exported file carries the layout parameters, chapter-title style and regex highlights, ready to import on another device. Import also accepts legado's readConfig.json.";
+"已匯入「%@」：%@" = "Imported “%@”: %@";
+"常用引號已經內置。平時只需要開關或改顏色；要做特殊高亮時，再新增自定義規則。" = "The common quotation marks are built in. Day to day you only switch them on or off or change a color; add a custom rule when you need something special.";
+"添加自定義規則" = "Add Custom Rule";
+"編輯設計" = "Edit Design";
+"自定義規則排在內置規則之後，適合做更具體的覆蓋高亮。左滑可刪除，點右上角「編輯」可排序。" = "Custom rules run after the built-in ones, so they're the place for a more specific override. Swipe left to delete; tap Edit to reorder.";
+"重設所有規則" = "Reset All Rules";
+"重設所有規則？" = "Reset All Rules?";
+"閱讀設定備份" = "Reading Settings Backup";
+"關閉後下面的規則只做配置，不會參與閱讀頁匹配。" = "With this off, the rules below are configuration only and never match in the reader.";

@@ -181,6 +181,10 @@ struct TTSSettingsView: View {
                 .listRowSeparator(.visible)
                 .interfaceSectionSurface()
 
+            systemVoicePickerRow
+                .listRowSeparator(.visible)
+                .interfaceSectionSurface()
+
             ForEach(filteredSources) { source in
                 sourceRow(source)
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -528,6 +532,36 @@ struct TTSSettingsView: View {
             .accessibilityActions {
                 Button(localized("測試播放")) { testSystemPlayback() }
             }
+    }
+
+    /// Which installed voice 系統離線語音 speaks with. Its own row rather than a
+    /// third control inside the source row above, which is one VoiceOver element
+    /// by contract.
+    private var systemVoicePickerRow: some View {
+        NavigationLink {
+            SystemVoicePickerView()
+        } label: {
+            HStack {
+                Text(localized("系統語音音色"))
+                Spacer()
+                Text(selectedSystemVoiceSummary)
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    /// The voice that would read Chinese text right now — the one the user cares
+    /// about — or 跟隨系統預設 when they have not chosen any.
+    private var selectedSystemVoiceSummary: String {
+        let language = SystemTTSEngine.preferredLanguage(for: "中")
+        guard SystemTTSVoiceCatalog.selectedIdentifier(forLanguage: language) != nil,
+              let voice = SystemTTSVoiceCatalog.selectedVoice(forLanguage: language)
+        else {
+            return localized("跟隨系統預設")
+        }
+        return voice.name
     }
 
     private var systemVoiceSourceRowContent: some View {

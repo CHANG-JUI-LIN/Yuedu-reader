@@ -40,6 +40,7 @@ final class HTMLBuilderDOMParser {
         collectStyles: @escaping (Document) async -> [String],
         stylesheetCache: HTMLStylesheetCache? = nil
     ) async -> HTMLAttributedStringBuilder.ParsedHTML? {
+        let htmlParseStart = SourcePerfTrace.now
         let parsedDOM: (document: Document, body: Element)? = ReaderPerfTrace.span(
             .htmlParse,
             metadata: ReaderPerfMetadata(
@@ -58,11 +59,19 @@ final class HTMLBuilderDOMParser {
             ReaderHTMLUtilities.restoreDataURIPayloads(in: document, restore: payloadRestore)
             return (document, body)
         }
+        SourcePerfTrace.record(
+            "coreText.document.htmlParse",
+            "\(ReaderDocumentTrace.spineTag)html=\(html.utf16.count) ok=\(parsedDOM != nil)",
+            since: htmlParseStart,
+            thresholdMs: 0
+        )
         guard let parsedDOM else {
             return nil
         }
 
+        // `collectStyles` is the caller's closure; its own `css.collect` line is emitted inside it.
         let stylesheetTexts = await collectStyles(parsedDOM.document)
+        let cssParseStart = SourcePerfTrace.now
         let cssParseTrace = ReaderPerfTrace.begin(
             .cssParse,
             metadata: ReaderPerfMetadata(
@@ -97,6 +106,15 @@ final class HTMLBuilderDOMParser {
                 executor: Thread.isMainThread ? "main" : "background"
             )
         )
+        SourcePerfTrace.record(
+            "coreText.document.cssParse",
+            "\(ReaderDocumentTrace.spineTag)sheets=\(stylesheetTexts.count) "
+                + "css=\(stylesheetTexts.reduce(0) { $0 + $1.utf16.count }) "
+                + "rules=\(regularRules.count + firstLetterRules.count) "
+                + "cached=\(stylesheetCache != nil)",
+            since: cssParseStart,
+            thresholdMs: 0
+        )
         return HTMLAttributedStringBuilder.ParsedHTML(
             body: parsedDOM.body,
             rules: regularRules,
@@ -114,6 +132,7 @@ final class HTMLBuilderStyleResolver {
         buildChildren: ([Node], HTMLAttributedStringBuilder.ResolvedStyle, [CSSRule], CGFloat, Element?, HTMLAttributedStringBuilder.Config) async -> [HTMLAttributedStringBuilder.ASTNode],
         makeAttributeMap: (Element) -> [String: String]
     ) async -> HTMLAttributedStringBuilder.ElementNode {
+        let cssMatchStart = SourcePerfTrace.now
         let cssMatchTrace = ReaderPerfTrace.begin(
             .cssMatch,
             metadata: ReaderPerfMetadata(
@@ -145,6 +164,16 @@ final class HTMLBuilderStyleResolver {
             attributes: makeAttributeMap(parsed.body),
             resolvedStyle: bodyStyle,
             children: astChildren
+        )
+        // Covers the whole recursive element walk: selector matching, cascade, and inline-style
+        // resolution for every node. `buildChildren` is the caller's recursion, so a slow
+        // number here is the style system, not the tree shape alone.
+        SourcePerfTrace.record(
+            "coreText.document.cssMatch",
+            "\(ReaderDocumentTrace.spineTag)rules=\(parsed.rules.count + parsed.firstLetterRules.count) "
+                + "topLevel=\(astChildren.count) writing=\(config.writingMode)",
+            since: cssMatchStart,
+            thresholdMs: 0
         )
         ReaderPerfTrace.end(
             cssMatchTrace,

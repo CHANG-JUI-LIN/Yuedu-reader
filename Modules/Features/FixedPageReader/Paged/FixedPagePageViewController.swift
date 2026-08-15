@@ -18,6 +18,11 @@ final class FixedPagePageViewController: UIViewController {
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let retryButton = UIButton(type: .system)
     private var loadTask: Task<Void, Never>?
+    private var refineTask: Task<Void, Never>?
+    /// The 1x render, kept so zooming back out drops the large one.
+    private var baseImage: UIImage?
+    /// Width multiple the currently displayed image was rendered at.
+    private var renderedWidthMultiple: CGFloat = 1
 
     init(
         page: FixedPage,
@@ -45,6 +50,7 @@ final class FixedPagePageViewController: UIViewController {
         imageView.contentMode = .scaleAspectFit
         scrollView.zoomEnabled = fixedPageReaderConfiguration.isZoomEnabled
         scrollView.zoomView = imageView
+        scrollView.onZoomSettled = { [weak self] scale in self?.refineImage(forZoomScale: scale) }
 
         spinner.color = .white
         spinner.translatesAutoresizingMaskIntoConstraints = false
@@ -78,6 +84,8 @@ final class FixedPagePageViewController: UIViewController {
         let bounds = scrollView.bounds
         guard bounds.width > 0, image.size.width > 0 else { return }
         scrollView.resetZoom()
+        // Zoom is gone, so is the reason to hold a zoomed-in render.
+        refineImage(forZoomScale: 1)
         let height = bounds.width * (image.size.height / image.size.width)
         imageView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
         scrollView.contentSize = imageView.frame.size
@@ -94,6 +102,8 @@ final class FixedPagePageViewController: UIViewController {
             if Task.isCancelled { return }
             self.spinner.stopAnimating()
             if let image {
+                self.baseImage = image
+                self.renderedWidthMultiple = 1
                 self.imageView.image = image
                 self.layoutImage()
             } else {
@@ -102,11 +112,49 @@ final class FixedPagePageViewController: UIViewController {
         }
     }
 
+    /// Re-rasterize a vector-backed page (PDF, fixed-layout EPUB) at the zoomed-in
+    /// scale. An image page has no detail beyond its own pixels, so it stays put.
+    private func refineImage(forZoomScale zoomScale: CGFloat) {
+        guard page.renderSource != .image, targetWidth > 0, baseImage != nil else { return }
+
+        if zoomScale <= 1.05 {
+            refineTask?.cancel()
+            if renderedWidthMultiple > 1 {
+                imageView.image = baseImage
+                renderedWidthMultiple = 1
+            }
+            return
+        }
+
+        let renderScale = FixedPageImageLoader.defaultRenderScale
+        let maxPointWidth = FixedPageImageLoader.maxRasterPixelWidth / renderScale
+        let desiredWidth = min(targetWidth * zoomScale, maxPointWidth)
+        // Skip re-rendering for a marginal gain over what is already on screen.
+        guard desiredWidth > targetWidth * renderedWidthMultiple * 1.2 else { return }
+
+        refineTask?.cancel()
+        refineTask = Task { [weak self] in
+            guard let self else { return }
+            let image = await FixedPageImageLoader.loadImage(
+                for: self.page,
+                targetWidth: desiredWidth,
+                renderScale: renderScale
+            )
+            if Task.isCancelled { return }
+            guard let image else { return }
+            self.imageView.image = image
+            self.renderedWidthMultiple = desiredWidth / self.targetWidth
+        }
+    }
+
     @objc private func retry() { load() }
 
     func clearImage() {
         loadTask?.cancel()
+        refineTask?.cancel()
         imageView.image = nil
+        baseImage = nil
+        renderedWidthMultiple = 1
         scrollView.resetZoom()
     }
 }

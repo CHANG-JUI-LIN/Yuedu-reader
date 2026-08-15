@@ -24,6 +24,23 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     private let styleResolver: EPUBStyleResolver
     private var processedCSSCache: [String: String] = [:]
     private let stylesheetCache = HTMLStylesheetCache()
+
+    /// Decoded book images, keyed by resolved resource URL.
+    ///
+    /// A chapter references the same illustration many times over — measured at 102 loads for
+    /// 11 distinct images in one chapter, 58 for 2 in another — and each miss costs a full
+    /// archive read (33–40ms on device, since this publication's resources are obfuscated and
+    /// have to be de-transformed). Without this, `loadImage` was 97% of chapter render time.
+    ///
+    /// One instance per book, matching `processedCSSCache` above. `NSCache` rather than a
+    /// dictionary so the entries are evictable: images are the largest thing here, and it purges
+    /// itself under memory pressure.
+    private let imageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 256
+        cache.totalCostLimit = 32 * 1024 * 1024
+        return cache
+    }()
     /// Current render area size (injected by EPUBPageRenderer during load / notifyViewportSize).
     var renderSize: CGSize
     /// Set to true when CSS writing-mode: vertical-rl is detected from any chapter's stylesheet or body element.
@@ -92,8 +109,14 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         guard session.chapters.indices.contains(index) else {
             throw AttributedStringBuildingError.chapterOutOfRange(index)
         }
+        // Phase stamps for `⏱ coreText.document.buildChapter`. Stage 0 found this function is
+        // 80–98% of chapter load; the seven existing ReaderPerfTrace spans only cover its middle,
+        // so the zip read, font registration, footnote indexing and anchor scan are timed here
+        // too — an unattributed remainder would just restart the same investigation.
+        let buildStart = SourcePerfTrace.now
         let chapterHref = session.chapters[index].href
         let html = try await session.chapterHTML(at: index)
+        let afterFetch = SourcePerfTrace.now
 
         // ── Create HTML builder and inject callbacks ──────────────────────────────────
         let localBuilder = HTMLAttributedStringBuilder()
@@ -141,6 +164,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         )
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.chapter.begin index=\(index) href=\(chapterHref) htmlLen=\(html.count) settingsWritingMode=\(settings.writingMode) configWritingMode=\(config.writingMode) renderWidth=\(config.renderWidth)")
 
+        let styledASTStart = SourcePerfTrace.now
         guard let ast = await localBuilder.buildStyledAST(
             html: html,
             config: config,
@@ -154,18 +178,32 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             )
         }
 
+        let afterStyledAST = SourcePerfTrace.now
+
         // Record duokan popup footnotes (`<li class="…footnote…" id="note_1">`) so a tap on the
         // reference marker shows the note in place instead of jumping to the chapter tail.
         FootnoteStore.index(body: ast, spineIndex: index)
+        let afterFootnotes = SourcePerfTrace.now
 
         let pageBackgroundImage = await localBuilder.pageBackgroundImage(from: ast)
         let pageBackgroundColor = localBuilder.pageBackgroundColor(from: ast)
+        let afterBackground = SourcePerfTrace.now
         if pageBackgroundImage == nil, let imagePage = await localBuilder.imagePage(from: ast) {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: settings.fontSize),
                 .foregroundColor: themeTextColor,
                 .backgroundColor: themeBackgroundColor,
             ]
+            SourcePerfTrace.record(
+                "coreText.document.buildChapter",
+                "spine=\(index) html=\(html.utf16.count) kind=imagePage "
+                    + "fetch=\(Self.ms(afterFetch - buildStart)) "
+                    + "styledAST=\(Self.ms(afterStyledAST - styledASTStart)) "
+                    + "footnote=\(Self.ms(afterFootnotes - afterStyledAST)) "
+                    + "background=\(Self.ms(afterBackground - afterFootnotes))",
+                since: buildStart,
+                thresholdMs: 0
+            )
             return AttributedChapterBuildResult(
                 attributedString: NSAttributedString(string: "\u{FFFC}", attributes: attrs),
                 imagePage: imagePage,
@@ -175,9 +213,12 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             )
         }
 
-        await styleResolver.registerFontFaces(
-            requests: HTMLStyledASTRenderableNodeConverter.referencedFonts(in: ast)
-        )
+        // `CTFontManagerRegisterGraphicsFont` per embedded face. Untimed until now and a prime
+        // suspect for the heavy-CSS book, where a chapter costs seconds.
+        let fontsStart = SourcePerfTrace.now
+        let fontRequests = HTMLStyledASTRenderableNodeConverter.referencedFonts(in: ast)
+        await styleResolver.registerFontFaces(requests: fontRequests)
+        let afterFonts = SourcePerfTrace.now
 
         let nodes = ReaderPerfTrace.span(
             .irConvert,
@@ -190,6 +231,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         ) {
             HTMLStyledASTRenderableNodeConverter.convert(body: ast)
         }
+        let afterIR = SourcePerfTrace.now
         let renderer = NodeAttributedStringRenderer(
             config: NodeAttributedStringRenderer.Config(
                 from: settings,
@@ -232,10 +274,37 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                 executor: Thread.isMainThread ? "main" : "background"
             )
         )
+        let renderStart = SourcePerfTrace.now
         let attributedString = await renderer.render(nodes)
+        let afterRender = SourcePerfTrace.now
         ReaderPerfTrace.end(renderInterval)
         CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.rendered index=\(index) href=\(chapterHref) attrLen=\(attributedString.length) cssDetectedVerticalGlobal=\(cssDetectedVerticalWritingMode) prefix=\"\(debugTextPreview(attributedString.string))\"")
         let anchorOffsets = localBuilder.anchorOffsets(in: attributedString)
+        let afterAnchors = SourcePerfTrace.now
+
+        // `styledAST` is itself broken down by the `coreText.document.{htmlParse,cssCollect,
+        // cssParse,cssMatch,astBuild}` lines; `other` is whatever none of the stamps cover
+        // (builder/renderer construction, the callback wiring above).
+        let accounted = (afterFetch - buildStart) + (afterStyledAST - styledASTStart)
+            + (afterFootnotes - afterStyledAST) + (afterBackground - afterFootnotes)
+            + (afterFonts - fontsStart) + (afterIR - afterFonts)
+            + (afterRender - renderStart) + (afterAnchors - afterRender)
+        SourcePerfTrace.record(
+            "coreText.document.buildChapter",
+            "spine=\(index) html=\(html.utf16.count) chars=\(attributedString.length) "
+                + "nodes=\(nodes.count) fontFaces=\(fontRequests.count) kind=text "
+                + "fetch=\(Self.ms(afterFetch - buildStart)) "
+                + "styledAST=\(Self.ms(afterStyledAST - styledASTStart)) "
+                + "footnote=\(Self.ms(afterFootnotes - afterStyledAST)) "
+                + "background=\(Self.ms(afterBackground - afterFootnotes)) "
+                + "fonts=\(Self.ms(afterFonts - fontsStart)) "
+                + "ir=\(Self.ms(afterIR - afterFonts)) "
+                + "render=\(Self.ms(afterRender - renderStart)) "
+                + "anchors=\(Self.ms(afterAnchors - afterRender)) "
+                + "other=\(Self.ms(max(0, (afterAnchors - buildStart) - accounted)))",
+            since: buildStart,
+            thresholdMs: 0
+        )
 
         return AttributedChapterBuildResult(
             attributedString: attributedString,
@@ -246,28 +315,79 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         )
     }
 
+    /// Formats a `systemUptime` delta for the `⏱` breakdown fields.
+    private static func ms(_ seconds: Double) -> String {
+        String(format: "%.1fms", seconds * 1000)
+    }
+
     // MARK: - Private Helpers
 
+    /// Resolves an `<img src>` / CSS `url()` value to the resource URL to read.
+    ///
+    /// CSS url() values arrive pre-resolved by `EPUBStyleResolver.rewriteResourceURLs` into the
+    /// resource provider's absolute form (reader-book://…). Those are used directly — running
+    /// them through the chapter-relative resolution would mangle the URL.
+    private func imageResourceURL(src: String, chapterHref: String) -> URL {
+        if let absolute = URL(string: src),
+           let scheme = absolute.scheme,
+           scheme != "http", scheme != "https", scheme != "data" {
+            return absolute
+        }
+        let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+        return resourceProvider.resourceURL(for: resolved)
+    }
+
     private func loadImage(src: String, chapterHref: String) async -> UIImage? {
-        await ReaderPerfTrace.spanAsync(
+        let url = imageResourceURL(src: src, chapterHref: chapterHref)
+        // Noted before the cache lookup so `u<N>` in the log means "distinct images referenced",
+        // independent of how many of those the cache served.
+        ReaderDocumentTrace.note("imageLoad", key: url.absoluteString)
+
+        let cacheKey = url.absoluteString as NSString
+        if let cached = imageCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        return await ReaderPerfTrace.spanAsync(
             .imageLoad,
             metadata: ReaderPerfMetadata(
                 executor: Thread.isMainThread ? "main" : "background"
             )
         ) {
-            // CSS url() values arrive pre-resolved by EPUBStyleResolver.rewriteResourceURLs into the
-            // resource provider's absolute form (reader-book://…). Fetch those directly — running
-            // them through the chapter-relative resolution below would mangle the URL.
-            if let absolute = URL(string: src),
-               let scheme = absolute.scheme,
-               scheme != "http", scheme != "https", scheme != "data" {
-                guard let response = try? await resourceProvider.response(for: absolute) else { return nil }
-                return UIImage(data: response.data)
+            // Buckets kept from the stage-0.6 investigation. `imageLoad.zip` now counts only
+            // cache misses, so its call count against the outer `imageLoad` count is the hit rate.
+            let response: PublicationResourceResponse
+            do {
+                response = try await ReaderDocumentTrace.measuring("imageLoad.zip") {
+                    try await resourceProvider.response(for: url)
+                }
+            } catch {
+                // Was a silent `try?`. A missing or unreadable image renders as a gap with no
+                // trace of why, and on-device diagnosis has no other signal.
+                AppLogger.render(
+                    "epub.image.readFailed",
+                    error: error,
+                    context: ["url": url.absoluteString]
+                )
+                return nil
             }
-            let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
-            let url = resourceProvider.resourceURL(for: resolved)
-            guard let response = try? await resourceProvider.response(for: url) else { return nil }
-            return UIImage(data: response.data)
+
+            guard let image = ReaderDocumentTrace.measuringSync("imageLoad.decode", {
+                UIImage(data: response.data)
+            }) else {
+                AppLogger.render(
+                    "epub.image.decodeFailed",
+                    context: ["url": url.absoluteString, "bytes": response.data.count]
+                )
+                return nil
+            }
+
+            // Cost is the decoded pixel budget, not the archived byte count: `UIImage(data:)` is
+            // lazy, so what eventually occupies memory is width × height × scale² × 4.
+            let scale = image.scale
+            let cost = Int(image.size.width * scale * image.size.height * scale * 4)
+            imageCache.setObject(image, forKey: cacheKey, cost: max(cost, 1))
+            return image
         }
     }
 

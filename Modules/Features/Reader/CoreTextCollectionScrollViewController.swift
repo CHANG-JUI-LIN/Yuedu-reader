@@ -23,8 +23,24 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
 
     private let collectionView: UICollectionView
     private var cancellables: Set<AnyCancellable> = []
-    private var pendingInitialScroll: (chapter: Int, charOffset: Int)?
-    private var hasAppliedInitialScroll = false
+    /// **Where the reader is, as a character in the book. The source of truth.**
+    ///
+    /// `contentOffset` is derived from this; never the reverse. Only four things write it: the
+    /// handover from paged mode / cold start, a scroll the *user* performed, a TTS follow, and a
+    /// navigation request. Chapter loads deliberately do not — that was the compensation model,
+    /// and it could not be made to work. Two overlapping `performBatchUpdates` completions each
+    /// computed their offset delta against geometry the other had already changed, which a device
+    /// log caught red-handed: `insertCompensation … applied=27195.3` immediately followed by
+    /// `… applied=13908.3`, a whole chapter down and back up again.
+    private var readingPosition: CoreTextReadingPosition?
+    /// Whether `readingPosition` has been put on screen at least once. Until it has, the reader is
+    /// showing whatever the collection view happened to lay out, not a position anyone chose.
+    private var hasAppliedReadingPosition = false
+    /// Set while we are writing an offset ourselves, so scroll callbacks do not turn our own
+    /// programmatic scroll back into a "the user moved" signal. Without it the restore overwrote
+    /// the position it had just restored: the device log shows the saved offset flipping
+    /// `off253 → off0 → off253` across successive reader instances.
+    private var isApplyingReadingPosition = false
     private var hasKickedOffEngine = false
     private var pendingInitialChapter: Int = 0
     private var displayedCount: Int = 0
@@ -69,6 +85,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         self.horizontalInset = horizontalInset
         self.verticalInset = verticalInset
 
+        // Flow layout. `ReaderScrollLayout` exists and its geometry is proven pixel-identical, but
+        // it is not wired in: the migration it belongs to (`Technotes/ViewportScrollArchitecture.md`)
+        // is on hold pending an architecture change, and it buys the reader nothing until then.
         let layout = CoreTextScrollFlowLayout()
         layout.scrollDirection = axis.collectionScrollDirection
         layout.minimumLineSpacing = 0
@@ -284,14 +303,19 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         kickoffEngineIfNeeded()
-        applyPendingInitialScrollIfPossible()
+        applyReadingPositionIfPossible()
         reconcileInlineVideos()
     }
 
     func setInitialPosition(chapter: Int, charOffset: Int) {
-        pendingInitialScroll = (chapter, charOffset)
+        // Entry point for both "open the book" and "switch from paged to scroll" — the two cases
+        // that land wrong. If the target logged here is already wrong, the fault is upstream in
+        // whoever computed the handover position, not in this controller.
+        posTrace("setInitialPosition", "target=(ch\(chapter),off\(charOffset))")
+        readingPosition = CoreTextReadingPosition(spineIndex: chapter, charOffset: charOffset)
+        hasAppliedReadingPosition = false
         pendingInitialChapter = chapter
-        applyPendingInitialScrollIfPossible()
+        applyReadingPositionIfPossible()
     }
 
     func update(axis: CoreTextScrollAxis, horizontal: CGFloat, vertical: CGFloat, bottomMargin: CGFloat = 0) {
@@ -385,23 +409,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         guard rect.maxY > triggerY else { return }
 
         let desiredOffset = rect.minY - topInset - viewportHeight * 0.3
-        let minOffset = -topInset
-        let maxOffset = max(minOffset, collectionView.contentSize.height - collectionView.bounds.height + collectionView.adjustedContentInset.bottom)
-        let clamped = min(max(desiredOffset, minOffset), maxOffset)
-        guard clamped > collectionView.contentOffset.y + 1 else { return }
+        let clamped = clampedScrollOffset(CGPoint(x: collectionView.contentOffset.x, y: desiredOffset))
+        // Only ever nudge forward: if the clamp pulls the target back to where we already are (or
+        // above it), the highlight is close enough and moving would fight the reader.
+        guard clamped.y > collectionView.contentOffset.y + 1 else { return }
 
         isAutoScrollingPlayback = true
-        UIView.animate(
-            withDuration: 0.35,
-            delay: 0,
-            options: [.curveEaseInOut, .allowUserInteraction],
-            animations: { self.collectionView.contentOffset.y = clamped },
-            completion: { [weak self] _ in
-                guard let self else { return }
-                self.isAutoScrollingPlayback = false
-                self.commitProgress()
-            }
-        )
+        setScrollOffset(clamped, source: .ttsFollow, animated: true)
     }
 
     func requestReslice(at chapter: Int, charOffset: Int = 0) {
@@ -421,8 +435,11 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         pendingVisibleRefreshCompletion = completion
         resliceTask = Task { [weak self] in
             guard let self = self else { return }
-            self.hasAppliedInitialScroll = false
-            self.pendingInitialScroll = (chapter, charOffset)
+            self.hasAppliedReadingPosition = false
+            self.readingPosition = CoreTextReadingPosition(
+                spineIndex: chapter,
+                charOffset: charOffset
+            )
             let succeeded = await self.engine.reslice(
                 restoreAt: chapter,
                 contentWidth: extent,
@@ -437,7 +454,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 self.resliceTask = nil
                 return
             }
-            self.applyPendingInitialScrollIfPossible()
+            self.applyReadingPositionIfPossible(force: true)
             self.resliceTask = nil
         }
     }
@@ -561,224 +578,191 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private func handle(event: CoreTextScrollEngine.Event) {
         switch event {
         case .reset(let restorePosition):
+            posTrace(
+                "event.reset",
+                "restore=\(restorePosition.map { "(ch\($0.spineIndex),off\($0.charOffset))" } ?? "nil") "
+                    + "held=\(readingPosition.map { "(ch\($0.spineIndex),off\($0.charOffset))" } ?? "nil")"
+            )
+            // A reset with no position is no longer destructive. The engine used to be the only
+            // thing that knew where the reader was, so `restore=nil` — which is what every reslice
+            // outside this controller sends — meant the position was simply gone and whatever
+            // offset survived the rebuild was an accident. The controller now holds it, so an
+            // engine reset can only ever *override* it, never erase it.
             if let restorePosition {
-                hasAppliedInitialScroll = false
-                pendingInitialScroll = (
-                    restorePosition.spineIndex,
-                    restorePosition.charOffset
-                )
+                readingPosition = restorePosition
             }
+            hasAppliedReadingPosition = false
             displayedCount = engine.chunks.count
             lastWarmRow = nil
             collectionView.reloadData()
-        case .insertedAtBottom(let count, _):
-            insertItems(count: count, atBottom: true, addedExtent: 0)
-        case .insertedAtTop(let count, let addedExtent, _):
-            insertItems(count: count, atBottom: false, addedExtent: addedExtent)
+            applyReadingPositionIfPossible(force: true)
+        case .chunksInserted(let range, _):
+            applyChunkInsertion(range)
         }
 
-        applyPendingInitialScrollIfPossible()
         reconcileInlineVideos()
     }
 
-    private func insertItems(count: Int, atBottom: Bool, addedExtent: CGFloat) {
+    /// Brings the collection view in line with `engine.chunks` after an insertion, then puts the
+    /// reader back where they were.
+    ///
+    /// There is no offset arithmetic here at all any more. The previous version captured the
+    /// current offset and an anchor frame *before* the batch update and applied the difference
+    /// afterwards, which is only correct if nothing else changes in between — and chapter loads
+    /// are concurrent, so something else routinely did. Re-applying the reading position needs no
+    /// before-picture, so overlapping insertions cannot interfere with each other.
+    private func applyChunkInsertion(_ range: Range<Int>) {
         let total = engine.chunks.count
         let actualOld = displayedCount
-        let expectedOld = max(0, total - count)
+        let expectedOld = max(0, total - range.count)
+        posTrace(
+            "insert",
+            "range=\(range.lowerBound)..<\(range.upperBound) actualOld=\(actualOld) "
+                + "expectedOld=\(expectedOld) applied=\(hasAppliedReadingPosition)"
+        )
 
-        // Count desync: concurrent chapter loads (fast scrolling) leave displayedCount
-        // out of step with engine.chunks, so incremental insertItems(at:) is unsafe.
-        // Reload but keep the reader's position — never reset to chapter start.
-        guard actualOld == expectedOld else {
-            reloadPreservingVisiblePosition()
-            return
-        }
-
-        warmChunks(around: atBottom ? actualOld : count, force: true)
-        guard actualOld > 0, collectionView.window != nil else {
-            reloadPreservingVisiblePosition()
-            return
-        }
-
-        // RTL columns (vertical writing): the frame-anchor offset math below is unreliable
-        // (it can fling the offset to a garbage value). Restore by reading position instead.
-        if !atBottom && scrollAxis == .horizontalRTL {
-            reloadPreservingVisiblePosition()
-            return
-        }
-
-        let offset = collectionView.contentOffset
-        let anchorPath = atBottom ? nil : visibleProgressIndexPath()
-        let anchorFrame = anchorPath.flatMap {
-            collectionView.layoutAttributesForItem(at: $0)?.frame
-        }
-        let paths: [IndexPath] = atBottom
-            ? (actualOld..<total).map { IndexPath(item: $0, section: 0) }
-            : (0..<count).map { IndexPath(item: $0, section: 0) }
-        collectionView.performBatchUpdates {
-            self.displayedCount = total
-            collectionView.insertItems(at: paths)
-        } completion: { [weak self] _ in
-            guard let self = self, !atBottom else { return }
-            self.collectionView.layoutIfNeeded()
-            if let anchorPath,
-               let anchorFrame,
-               let newFrame = self.collectionView.layoutAttributesForItem(
-                   at: IndexPath(item: anchorPath.item + count, section: anchorPath.section)
-               )?.frame {
-                self.collectionView.setContentOffset(
-                    CGPoint(
-                        x: offset.x + newFrame.minX - anchorFrame.minX,
-                        y: offset.y + newFrame.minY - anchorFrame.minY
-                    ),
-                    animated: false
+        // Count desync: concurrent chapter loads leave `displayedCount` out of step with
+        // `engine.chunks`, so an incremental `insertItems(at:)` would raise. A full reload is
+        // correct here precisely because the position no longer rides on the offset.
+        if actualOld == expectedOld, actualOld > 0, collectionView.window != nil {
+            collectionView.performBatchUpdates {
+                self.displayedCount = total
+                self.collectionView.insertItems(
+                    at: range.map { IndexPath(item: $0, section: 0) }
                 )
-            } else if self.scrollAxis == .vertical {
-                self.collectionView.setContentOffset(
-                    CGPoint(x: offset.x, y: offset.y + addedExtent),
-                    animated: false
-                )
+            } completion: { [weak self] _ in
+                guard let self else { return }
+                self.collectionView.layoutIfNeeded()
+                self.applyReadingPositionIfPossible(force: true)
             }
+            return
         }
-    }
 
-    /// Reloads the collection view while keeping the reader at the same content
-    /// position. Used when incremental insertion can't be trusted (count desync,
-    /// RTL prepend) so the reader never snaps back to the chapter start.
-    ///
-    /// Anchor strategy: capture the topmost visible chunk and the offset from
-    /// that chunk's frame origin to the viewport's top-left corner BEFORE the
-    /// reload, then re-apply that exact delta after the reload. Centering the
-    /// chunk with `.centeredVertically` was wrong: if the user is looking at
-    /// the lower half of a tall chunk (e.g. fast scroll-down stopped mid-chunk),
-    /// centering jumps the viewport UP by up to half a chunk — the "往上回跳一
-    /// 點點" reported when scrolling fast downward and stopping manually. Chunk
-    /// identity is stable across reloads (`loadChapter` only prepends/appends;
-    /// existing chunk instances are never replaced), so we can re-find the same
-    /// instance via `===` after the reload.
-    private func reloadPreservingVisiblePosition() {
-        let anchorPath = visibleProgressIndexPath()
-        let anchorRow = anchorPath?.item
-        let anchorChunk: CoreTextChunk? = anchorRow.flatMap {
-            engine.chunks.indices.contains($0) ? engine.chunks[$0] : nil
-        }
-        let anchorFrame = anchorPath.flatMap {
-            collectionView.layoutAttributesForItem(at: $0)?.frame
-        }
-        let savedOffset = collectionView.contentOffset
-        let deltaFromAnchorOrigin: CGPoint? = (anchorFrame != nil)
-            ? CGPoint(
-                x: savedOffset.x - anchorFrame!.minX,
-                y: savedOffset.y - anchorFrame!.minY
-            )
-            : nil
-
-        displayedCount = engine.chunks.count
+        displayedCount = total
+        lastWarmRow = nil
         collectionView.reloadData()
         collectionView.layoutIfNeeded()
-
-        guard let anchorChunk,
-              let newRow = engine.chunks.firstIndex(where: { $0 === anchorChunk }),
-              newRow < collectionView.numberOfItems(inSection: 0),
-              let newFrame = collectionView.layoutAttributesForItem(
-                at: IndexPath(item: newRow, section: 0)
-              )?.frame else {
-            // Last-resort fallback: keep the user inside the anchor's chapter by
-            // scrolling to its first chunk. Better than chapter-start snap, but
-            // only triggers if identity lookup fails (which would indicate a
-            // separate bug in the engine).
-            if let anchorChunk,
-               let fallbackRow = engine.chunkIndex(
-                forChapter: anchorChunk.chapterIndex,
-                charOffset: anchorChunk.charRange.location
-               ),
-               fallbackRow < collectionView.numberOfItems(inSection: 0) {
-                let position: UICollectionView.ScrollPosition =
-                    scrollAxis == .vertical ? .top : .right
-                collectionView.scrollToItem(
-                    at: IndexPath(item: fallbackRow, section: 0),
-                    at: position,
-                    animated: false
-                )
-            }
-            return
-        }
-
-        let proposed: CGPoint
-        if let deltaFromAnchorOrigin {
-            proposed = CGPoint(
-                x: newFrame.minX + deltaFromAnchorOrigin.x,
-                y: newFrame.minY + deltaFromAnchorOrigin.y
-            )
-        } else {
-            proposed = savedOffset
-        }
-        // Axis-aware clamp: vertical mode scrolls contentOffset.y in [0, +max],
-        // but horizontalRTL scrolls contentOffset.x in [-max, 0] (RTL shoves
-        // content to the left of the viewport). A naive `max(0, ...)` clamp
-        // would push RTL offsets back to 0.
-        let clampedX: CGFloat
-        let clampedY: CGFloat
-        if scrollAxis == .vertical {
-            let maxYOffset = max(0, collectionView.contentSize.height - collectionView.bounds.height)
-            clampedY = min(max(0, proposed.y), maxYOffset)
-            clampedX = proposed.x
-        } else {
-            let minXOffset = -max(0, collectionView.contentSize.width - collectionView.bounds.width)
-            clampedX = min(max(minXOffset, proposed.x), 0)
-            clampedY = proposed.y
-        }
-        collectionView.setContentOffset(
-            CGPoint(x: clampedX, y: clampedY),
-            animated: false
-        )
+        applyReadingPositionIfPossible(force: true)
     }
 
-    private func applyPendingInitialScrollIfPossible() {
-        guard !hasAppliedInitialScroll, let target = pendingInitialScroll else { return }
-        guard let row = engine.chunkIndex(forChapter: target.chapter, charOffset: target.charOffset),
-              row < engine.chunks.count else { return }
-        let chunkStart = engine.chunks[row].charRange.location
-        print("[ProgressTrace][ScrollVC] restoreLanding target=(ch\(target.chapter),off\(target.charOffset)) -> row=\(row) chunkStartOffset=\(chunkStart) lostWithinChunk=\(target.charOffset - chunkStart)")
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            guard self.scrollToInitialRow(row) else { return }
-            self.warmChunks(around: row, force: true)
-            self.hasAppliedInitialScroll = true
-            self.pendingInitialScroll = nil
-            let completion = self.pendingVisibleRefreshCompletion
-            self.pendingVisibleRefreshCompletion = nil
-            completion?(true)
-        }
-    }
-
+    /// Puts `readingPosition` back on screen.
+    ///
+    /// Called after **every** structural change — initial layout, chapter insertion, reset,
+    /// reload. That is the whole model: rather than working out how far the content moved and
+    /// compensating, the reader is simply put where it belongs again. The answer does not depend
+    /// on what changed, or on the order changes arrived in, so overlapping chapter loads cannot
+    /// produce a wrong result the way overlapping compensations did.
+    ///
+    /// - Parameter force: re-apply even if the position is already on screen. Structural changes
+    ///   pass `true`; idle layout passes pass `false` so the user's own scrolling is left alone.
     @discardableResult
-    private func scrollToInitialRow(_ row: Int) -> Bool {
+    private func applyReadingPositionIfPossible(force: Bool = false) -> Bool {
+        guard force || !hasAppliedReadingPosition else { return false }
+        guard let target = readingPosition else { return false }
+        guard let row = engine.chunkIndex(
+            forChapter: target.spineIndex,
+            charOffset: target.charOffset
+        ), row < engine.chunks.count else {
+            // Called from `viewDidLayoutSubviews` too, so deferring is normal early on. It matters
+            // only if it keeps deferring — or if it resolves once content has *changed* under it.
+            posTrace(
+                "restore.deferred",
+                "target=(ch\(target.spineIndex),off\(target.charOffset)) chunks=\(engine.chunks.count)"
+            )
+            return false
+        }
+        let chunk = engine.chunks[row]
+        posTrace(
+            "restore.resolve",
+            "target=(ch\(target.spineIndex),off\(target.charOffset)) row=\(row) force=\(force) "
+                + "chunkChapter=\(chunk.chapterIndex) chunkStart=\(chunk.charRange.location) "
+                + "withinChunkChars=\(target.charOffset - chunk.charRange.location)"
+        )
+        guard scrollToRow(row, charOffset: target.charOffset) else { return false }
+        warmChunks(around: row, force: true)
+        hasAppliedReadingPosition = true
+        let completion = pendingVisibleRefreshCompletion
+        pendingVisibleRefreshCompletion = nil
+        completion?(true)
+        return true
+    }
+
+    /// Puts `charOffset` — not the chunk that contains it — at the top of the viewport.
+    ///
+    /// This is where "switching from paged to scroll runs away" came from. The handover position is
+    /// character-granular, but the restore was `scrollToItem(at: .top)`, which can only express
+    /// *rows*: it pinned the chunk's upper edge to the viewport top and silently discarded
+    /// `charOffset - chunk.charRange.location`. Chunks are capped at
+    /// `CoreTextChunkSlicer.defaultHeightCap` (2000pt) against a viewport nearer 800pt, so the
+    /// discard was worth up to roughly two and a half screens. The quantity was already being
+    /// logged, as `restore.resolve`'s `lostWithinChunk`.
+    @discardableResult
+    private func scrollToRow(_ row: Int, charOffset: Int) -> Bool {
+        // Re-entrancy guard, not a delay. Writing `contentOffset` can provoke another layout pass,
+        // and this is called from `viewDidLayoutSubviews`; the old code sidestepped that with a
+        // `DispatchQueue.main.async` hop, which also decoupled the write from the change that
+        // caused it. Refusing re-entry is the same protection without the timing dependency.
+        guard !isApplyingReadingPosition else { return false }
         guard collectionView.window != nil,
               collectionView.bounds.width > 0,
               collectionView.bounds.height > 0,
               collectionView.numberOfItems(inSection: 0) > row
-        else { return false }
+        else {
+            posTrace("restore.blocked", "row=\(row) bounds=\(collectionView.bounds.size)")
+            return false
+        }
+        isApplyingReadingPosition = true
+        defer { isApplyingReadingPosition = false }
 
         let path = IndexPath(item: row, section: 0)
         collectionView.layoutIfNeeded()
 
-        switch scrollAxis {
-        case .vertical:
+        // The frame we are aiming at, and what the offset actually became. If `targetFrame`
+        // disagrees with the item's real position the geometry is wrong; if it agrees but the
+        // final offset does not follow it, something moved us after the fact.
+        let targetFrame = collectionView.layoutAttributesForItem(at: path)?.frame
+
+        // Horizontal RTL stays on `scrollToItem`. `topOffset(forCharacterIndex:)` deliberately
+        // refuses vertical writing — its lines run along x, so it would answer in the wrong axis —
+        // and this file's mirrored inset arithmetic is unverified. Vertical CJK therefore still
+        // restores to the chunk edge: a known remaining gap, not an oversight.
+        guard scrollAxis == .vertical,
+              let frame = targetFrame,
+              row < engine.chunks.count
+        else {
             collectionView.scrollToItem(
                 at: path,
                 at: scrollAxis.initialScrollPosition,
                 animated: false
             )
-            return true
-        case .horizontalRTL:
-            collectionView.scrollToItem(
-                at: path,
-                at: scrollAxis.initialScrollPosition,
-                animated: false
+            posTrace(
+                "offset.restore",
+                "row=\(row) viaScrollToItem=yes axis=\(scrollAxis) "
+                    + "targetFrame=\(targetFrame.map { "\($0)" } ?? "nil")"
             )
             return true
         }
+
+        // `nil` from `topOffset` is an answer, not a failure: an image-only chunk, or an offset
+        // sitting on the chunk's first character, both belong at the chunk's own top edge.
+        //
+        // The landed offset can differ from the one computed here by up to half a device pixel —
+        // `contentOffset` is quantised, measured at 1/6pt on a 3x screen. That is the resolution
+        // of the API, not slack in the arithmetic, which `ScrollOffsetEquivalenceTests` pins
+        // separately and exactly.
+        let chunk = engine.chunks[row]
+        let withinChunk = chunk.topOffset(forCharacterIndex: charOffset) ?? 0
+        setScrollOffset(
+            CGPoint(
+                x: collectionView.contentOffset.x,
+                y: frame.minY + withinChunk - collectionView.adjustedContentInset.top
+            ),
+            source: .restore,
+            detail: "row=\(row) off=\(charOffset) chunkStart=\(chunk.charRange.location) "
+                + "withinChunk=\(String(format: "%.1f", withinChunk)) "
+                + "frameY=\(String(format: "%.1f", frame.minY))"
+        )
+        return true
     }
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -1037,16 +1021,150 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         return chunks.indices.contains(row) ? chunks[row].chapterIndex : (chunks.first?.chapterIndex ?? 0)
     }
 
-    private func visibleProgressIndexPath() -> IndexPath? {
-        guard !engine.chunks.isEmpty else { return nil }
+    /// **The one definition of "where the reader is": the character under the viewport's leading
+    /// edge.**
+    ///
+    /// Three definitions used to coexist, and no clamp or compensation can reconcile them. Chapter
+    /// tracking and insert anchoring read the leading edge (here). The position that actually gets
+    /// *saved*, `visibleCanonicalPosition`, read `bounds.midY` — the centre. The restore put its
+    /// target back at the leading edge. Paged mode's position is the page's first character, so it
+    /// is a leading edge too. Saving the centre and restoring the top cannot round-trip: every
+    /// paged↔scroll switch moved the reader by half a viewport, on top of the chunk-granularity
+    /// loss that `scrollToInitialRow` documents.
+    private var visibleAnchorPoint: CGPoint {
         switch scrollAxis {
         case .vertical:
             let visibleY = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
-            return collectionView.indexPathForItem(at: CGPoint(x: collectionView.bounds.midX, y: max(0, visibleY)))
+            return CGPoint(x: collectionView.bounds.midX, y: max(0, visibleY))
         case .horizontalRTL:
-            let rightX = collectionView.contentOffset.x + collectionView.bounds.width - collectionView.adjustedContentInset.right - 1
-            return collectionView.indexPathForItem(at: CGPoint(x: max(0, rightX), y: collectionView.bounds.midY))
+            // Vertical writing flows right to left, so the leading edge is the right one.
+            let rightX = collectionView.contentOffset.x + collectionView.bounds.width
+                - collectionView.adjustedContentInset.right - 1
+            return CGPoint(x: max(0, rightX), y: collectionView.bounds.midY)
         }
+    }
+
+    private func visibleProgressIndexPath() -> IndexPath? {
+        guard !engine.chunks.isEmpty else { return nil }
+        return collectionView.indexPathForItem(at: visibleAnchorPoint)
+    }
+
+    // MARK: - Scroll offset: the single writer
+
+    /// Who is moving the reader. Appears in `⟲ scrollpos`, so a wrong position can be attributed
+    /// to one writer instead of guessed at.
+    ///
+    /// Down to two. `insertCompensation`, `reload` and `reloadFallback` are gone with the
+    /// compensation model: every structural change now ends in `restore`, because the reader is
+    /// put back at their reading position rather than nudged by however much the content moved.
+    private enum ScrollOffsetSource: String {
+        case restore
+        case ttsFollow
+    }
+
+    /// **The only place `contentOffset` is written.**
+    ///
+    /// Six call sites used to set it independently, each with its own clamping — and two of those
+    /// clamps disagreed, which is how a restore could land 16pt below the true top. Funnelling
+    /// them here is the first step of making the reading position, not the scroll offset, the
+    /// thing that decides where the reader is: a single writer is what later lets that position
+    /// be re-applied instead of compensated for.
+    private func setScrollOffset(
+        _ proposed: CGPoint,
+        source: ScrollOffsetSource,
+        animated: Bool = false,
+        detail: String = ""
+    ) {
+        let clamped = clampedScrollOffset(proposed)
+        let before = collectionView.contentOffset
+        if animated {
+            UIView.animate(
+                withDuration: 0.35,
+                delay: 0,
+                options: [.curveEaseInOut, .allowUserInteraction],
+                animations: { self.collectionView.contentOffset = clamped },
+                completion: { [weak self] _ in self?.didFinishAnimatedScroll(source: source) }
+            )
+        } else {
+            collectionView.setContentOffset(clamped, animated: false)
+        }
+        posTrace(
+            "offset.\(source.rawValue)",
+            "from=\(String(format: "%.1f", scrollAxis == .vertical ? before.y : before.x)) "
+                + "proposed=\(String(format: "%.1f", scrollAxis == .vertical ? proposed.y : proposed.x)) "
+                + "applied=\(String(format: "%.1f", scrollAxis == .vertical ? clamped.y : clamped.x)) "
+                + "clamped=\(clamped != proposed) animated=\(animated) \(detail)"
+        )
+    }
+
+    /// Keeps the offset inside the scrollable range.
+    ///
+    /// Vertical uses the content-inset-aware bounds. The reader's natural resting offset at the
+    /// top of the content is `-contentInset.top`, not zero: `reloadPreservingVisiblePosition`
+    /// used to clamp to zero and so pushed the reader 16pt down from the top whenever a restore
+    /// proposed anything negative — visible in device logs as `proposedY=-167.7 → 0.0`.
+    ///
+    /// Horizontal RTL keeps exactly the bounds it already had. Its inset relationship is mirrored
+    /// and unverified here, and changing it on reasoning alone is what this whole effort has been
+    /// paying for.
+    private func clampedScrollOffset(_ proposed: CGPoint) -> CGPoint {
+        switch scrollAxis {
+        case .vertical:
+            let minY = -collectionView.adjustedContentInset.top
+            let maxY = max(
+                minY,
+                collectionView.contentSize.height - collectionView.bounds.height
+                    + collectionView.adjustedContentInset.bottom
+            )
+            return CGPoint(x: proposed.x, y: min(max(minY, proposed.y), maxY))
+        case .horizontalRTL:
+            let minX = -max(0, collectionView.contentSize.width - collectionView.bounds.width)
+            return CGPoint(x: min(max(minX, proposed.x), 0), y: proposed.y)
+        }
+    }
+
+    private func didFinishAnimatedScroll(source: ScrollOffsetSource) {
+        guard source == .ttsFollow else { return }
+        isAutoScrollingPlayback = false
+        commitProgress()
+    }
+
+    // MARK: - Position diagnostics
+    //
+    // Reading position on entering scroll mode has been reported wrong from a device — both when
+    // reopening a book and, intermittently, when switching from paged to scroll (switching back is
+    // fine). Three attempts at reasoning from the code picked the wrong cause, so this traces the
+    // actual sequence instead. Filter Console on `⟲ scrollpos`.
+    //
+    // Deliberately event-scoped, never per scroll tick: restore, insert, reload and the mode
+    // handover are the only places the position is decided.
+
+    private func posTrace(_ event: String, _ detail: String = "") {
+        AppLogger.render("⟲ scrollpos.\(event) \(detail) \(geometrySnapshot)")
+    }
+
+    /// The numbers that distinguish "we aimed at the wrong place" from "we aimed correctly and
+    /// something moved us afterwards".
+    private var geometrySnapshot: String {
+        let axisOffset = scrollAxis == .vertical
+            ? collectionView.contentOffset.y
+            : collectionView.contentOffset.x
+        let axisContent = scrollAxis == .vertical
+            ? collectionView.contentSize.height
+            : collectionView.contentSize.width
+        // `chunks` vs `fragments` must match; a gap means the geometry store lost items and every
+        // index after the gap resolves to the wrong chunk.
+        return String(
+            format: "| chunks=%d displayed=%d fragments=%d order=%@ extent=%.1f content=%.1f offset=%.1f window=%@",
+            engine.chunks.count,
+            displayedCount,
+            engine.geometryFragmentCount,
+            "\(engine.geometryChapterOrder)",
+            engine.loadedScrollExtent,
+            axisContent,
+            axisOffset,
+            collectionView.window == nil ? "no" : "yes"
+        )
     }
 
     private func chapterGap(for row: Int) -> CGFloat {
@@ -1156,9 +1274,20 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         commitProgress()
     }
 
+    /// The only place the screen is allowed to redefine `readingPosition`.
+    ///
+    /// Guarded against our own writes. Without the guard the cycle closes on itself:
+    /// `applyReadingPositionIfPossible` → `setContentOffset` → a scroll callback →
+    /// `commitProgress` → `readingPosition` overwritten with wherever the restore happened to
+    /// land. That is how a precise saved offset degraded to the chapter start between reader
+    /// instances (`off253 → off0` in the device log).
     private func commitProgress() {
+        guard !isApplyingReadingPosition else { return }
         guard let pos = visibleCanonicalPosition() else { return }
-        print("[ProgressTrace][ScrollVC] commit(visibleCenter) spine=\(pos.spineIndex) charOffset=\(pos.charOffset)")
+        readingPosition = pos
+        AppLogger.render(
+            "[ProgressTrace][ScrollVC] commit spine=\(pos.spineIndex) charOffset=\(pos.charOffset)"
+        )
         onProgressCommit?(pos)
     }
 
@@ -1184,29 +1313,30 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
     private func visibleCanonicalPosition() -> CoreTextReadingPosition? {
         guard !engine.chunks.isEmpty else { return nil }
 
-        // `collectionView.bounds` already has its origin shifted by `contentOffset`
-        // (UIScrollView semantics), so `bounds.midX/Y` IS the visible center in
-        // the collection view's coordinate system. Adding `contentOffset` again
-        // double-counted it, sent the hit-test point far past the content, and
-        // made every caller fall through to the top-chunk fallback — which in
-        // turn made `reloadPreservingVisiblePosition` snap to the chunk start
-        // and caused the "scroll-down stop → jump back" symptom.
-        let visibleCenter = CGPoint(
-            x: collectionView.bounds.midX,
-            y: collectionView.bounds.midY
-        )
-
-        if let (_, chunk, localPoint) = hitTestChunk(at: visibleCenter) {
+        // Anchored on `visibleAnchorPoint` — the same edge the restore aims at — so that saving
+        // and restoring are inverses of each other. This used to read `bounds.midY`, half a
+        // viewport away from where it would later be put back.
+        //
+        // The hazard the old comment recorded is still live and still worth knowing:
+        // `collectionView.bounds` already has its origin shifted by `contentOffset` (UIScrollView
+        // semantics), so adding `contentOffset` to anything derived from `bounds` double-counts
+        // it, throws the hit test past the content, and drops every caller into the fallback
+        // below — which is what made `reloadPreservingVisiblePosition` snap to the chunk start
+        // and produced the "scroll down, stop, jump back" symptom.
+        if let (_, chunk, localPoint) = hitTestChunk(at: visibleAnchorPoint) {
             let char = chunk.stringIndex(atLocalPoint: localPoint) ?? chunk.charRange.location
             return CoreTextReadingPosition(spineIndex: chunk.chapterIndex, charOffset: char)
         }
 
-        guard let path = visibleProgressIndexPath(),
-              path.item < engine.chunks.count else { return nil }
-        let chunk = engine.chunks[path.item]
-        return CoreTextReadingPosition(spineIndex: chunk.chapterIndex, charOffset: chunk.charRange.location)
+        // Deliberately no chunk-start fallback. Returning the chunk's first character when the
+        // hit test fails looks harmless and is not: it is a *fabricated* position that then gets
+        // saved over the real one, which is how the reader's progress walked backwards to the
+        // chapter start. Not knowing where the reader is means not writing anything down.
+        posTrace("commit.unresolved", "anchor=\(visibleAnchorPoint)")
+        return nil
     }
 }
+
 
 private final class CoreTextScrollFlowLayout: UICollectionViewFlowLayout {
     override var flipsHorizontallyInOppositeLayoutDirection: Bool { true }

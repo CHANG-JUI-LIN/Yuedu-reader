@@ -524,6 +524,7 @@ class GlobalSettings: ObservableObject {
     private static let ttsHighlightBoxColorHexKey = "yd_tts_highlight_box_color_hex"
     private static let ttsHighlightBoxStyleKey = "yd_tts_highlight_box_style"
     private static let ttsKeepsScreenAwakeKey = "yd_tts_keeps_screen_awake"
+    private static let ttsSystemVoiceIdentifiersKey = "yd_tts_system_voice_ids"
     private static let readerTextColorOverridesKey = "yd_reader_text_color_overrides"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
@@ -531,6 +532,7 @@ class GlobalSettings: ObservableObject {
     private static let readerOverlayLayoutDataKey = "yd_reader_overlay_layout_data"
     private static let readerOverlayLayoutMigrationVersionKey = "yd_reader_overlay_layout_migration_version"
     private static let readerOverlayLayoutCorruptBackupKey = "yd_reader_overlay_layout_corrupt_backup"
+    private static let readerOverlayLayoutSyncClockKey = "yd_reader_overlay_layout_sync_clock"
     private static let launchImageEnabledKey = "yd_launch_image_enabled"
     private static let launchImageLightFileNameKey = "yd_launch_image_light_file_name"
     private static let launchImageDarkFileNameKey = "yd_launch_image_dark_file_name"
@@ -730,6 +732,22 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(readerHeaderFieldPositions, forKey: "yd_reader_header_positions") }
     }
     @Published private(set) var readerOverlayLayout: ReaderOverlayLayout
+    /// Merge clock for the iCloud-synced header/footer layout. Advances only
+    /// when *this device's user* edits the layout, never when a sync applies a
+    /// remote one — otherwise every sync would re-stamp the record as newest and
+    /// the two devices would fight forever. See `ReaderOverlayLayoutSyncRecord`.
+    @Published private(set) var readerOverlayLayoutSyncClock: Date? {
+        didSet {
+            if let readerOverlayLayoutSyncClock {
+                UserDefaults.standard.set(
+                    readerOverlayLayoutSyncClock,
+                    forKey: Self.readerOverlayLayoutSyncClockKey
+                )
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.readerOverlayLayoutSyncClockKey)
+            }
+        }
+    }
     @Published var pageTurnStyle: PageTurnStyle {
         didSet { UserDefaults.standard.set(pageTurnStyle.rawValue, forKey: "yd_page_turn_style") }
     }
@@ -1245,10 +1263,14 @@ class GlobalSettings: ObservableObject {
     @Published var ttsKeepsScreenAwake: Bool {
         didSet { UserDefaults.standard.set(ttsKeepsScreenAwake, forKey: Self.ttsKeepsScreenAwakeKey) }
     }
-    /// Legacy persisted voice identifier kept for settings compatibility. System TTS now lets
-    /// AVSpeechSynthesizer choose the voice from the device's own speech settings.
-    @Published var ttsSystemVoiceIdentifier: String {
-        didSet { UserDefaults.standard.set(ttsSystemVoiceIdentifier, forKey: "yd_tts_system_voice_id") }
+    /// The user's system-voice choice per language (BCP-47 code → voice identifier),
+    /// set in 語音朗讀設定 → 系統語音音色. Empty means "let the system pick the
+    /// default voice for the language", which was the only behavior before.
+    /// Stored per language because the engine chooses the language from the text.
+    @Published var ttsSystemVoiceIdentifiers: [String: String] {
+        didSet {
+            UserDefaults.standard.set(ttsSystemVoiceIdentifiers, forKey: Self.ttsSystemVoiceIdentifiersKey)
+        }
     }
     @Published var sourceDisclaimerAccepted: Bool {
         didSet { UserDefaults.standard.set(sourceDisclaimerAccepted, forKey: "yd_source_disclaimer_accepted") }
@@ -1397,6 +1419,9 @@ class GlobalSettings: ObservableObject {
             legacy: legacyOverlaySettings
         )
         readerOverlayLayout = overlayResolution.layout
+        readerOverlayLayoutSyncClock = overlayDefaults.object(
+            forKey: Self.readerOverlayLayoutSyncClockKey
+        ) as? Date
         if let corruptData = overlayResolution.corruptData {
             overlayDefaults.set(corruptData, forKey: Self.readerOverlayLayoutCorruptBackupKey)
         }
@@ -1654,7 +1679,9 @@ class GlobalSettings: ObservableObject {
         importedTTSSources = Self.loadImportedTTSSources()
         ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
         ttsKeepsScreenAwake = UserDefaults.standard.bool(forKey: Self.ttsKeepsScreenAwakeKey)
-        ttsSystemVoiceIdentifier = UserDefaults.standard.string(forKey: "yd_tts_system_voice_id") ?? ""
+        ttsSystemVoiceIdentifiers =
+            (UserDefaults.standard.dictionary(forKey: Self.ttsSystemVoiceIdentifiersKey)
+                as? [String: String]) ?? [:]
         sourceDisclaimerAccepted = UserDefaults.standard.bool(forKey: "yd_source_disclaimer_accepted")
         bookSourceListGrouped =
             (UserDefaults.standard.object(forKey: "yd_booksource_list_grouped") as? Bool) ?? true
@@ -1877,6 +1904,26 @@ class GlobalSettings: ObservableObject {
 
     @discardableResult
     func saveReaderOverlayLayout(_ proposedLayout: ReaderOverlayLayout) -> Bool {
+        persistReaderOverlayLayout(proposedLayout, stampsSyncClock: true)
+    }
+
+    /// Applies the iCloud-merged header/footer layout. Deliberately does **not**
+    /// stamp the sync clock: the merged value already carries the winning
+    /// device's timestamp, and re-stamping it here would make every device
+    /// declare itself newest on the next pass.
+    func applyReaderOverlayLayoutFromSync(_ layout: ReaderOverlayLayout, modifiedAt: Date?) {
+        guard layout != readerOverlayLayout || modifiedAt != readerOverlayLayoutSyncClock else {
+            return
+        }
+        guard persistReaderOverlayLayout(layout, stampsSyncClock: false) else { return }
+        readerOverlayLayoutSyncClock = modifiedAt
+    }
+
+    @discardableResult
+    private func persistReaderOverlayLayout(
+        _ proposedLayout: ReaderOverlayLayout,
+        stampsSyncClock: Bool
+    ) -> Bool {
         let result = ReaderOverlayLayoutPersistence.save(
             current: readerOverlayLayout,
             proposed: proposedLayout
@@ -1885,6 +1932,9 @@ class GlobalSettings: ObservableObject {
         }
         guard result.didPersist else { return false }
         readerOverlayLayout = result.layout
+        if stampsSyncClock {
+            readerOverlayLayoutSyncClock = Date()
+        }
         return true
     }
 

@@ -286,7 +286,7 @@ extension ReaderView {
     /// meaningless to a reader, so they get 「線上」 instead of "HTML".
     var modernFormatText: String {
         guard let book else { return "" }
-        return book.isOnline ? localized("線上") : book.resolvedPipelineKind.displayFormat
+        return book.displayFormatLabel
     }
 
     /// "current chapter / total chapters" — the 進度 chip in the book card. Chapters,

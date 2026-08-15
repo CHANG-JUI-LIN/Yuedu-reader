@@ -60,6 +60,7 @@ struct RegexHighlightRuleEditorView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            .interfaceSectionSurface()
 
             switch selectedTab {
             case .basic:
@@ -143,6 +144,7 @@ struct RegexHighlightRuleEditorView: View {
             errorText(model.regexError.map(String.init(describing:)))
             errorText(model.saveError?.localizedDescription)
         }
+        .interfaceSectionSurface()
         appearanceSection
         Section(localized("文字")) {
                 Menu {
@@ -175,6 +177,7 @@ struct RegexHighlightRuleEditorView: View {
                 Toggle(localized("底線"), isOn: styleBoolBinding(\.text.underline))
                 Toggle(localized("刪除線"), isOn: styleBoolBinding(\.text.strikethrough))
         }
+        .interfaceSectionSurface()
         Section(localized("即時測試")) {
             TextEditor(text: $model.testText)
                 .frame(minHeight: 96)
@@ -184,6 +187,7 @@ struct RegexHighlightRuleEditorView: View {
                 .font(DSFont.caption)
                 .foregroundStyle(DSColor.textSecondary)
         }
+        .interfaceSectionSurface()
     }
 
     @ViewBuilder
@@ -222,6 +226,8 @@ struct RegexHighlightRuleEditorView: View {
                     multiplier: 100
                 )
         }
+        .interfaceSectionSurface()
+        stylePreviewSection
         contrastWarningSection
     }
 
@@ -253,6 +259,7 @@ struct RegexHighlightRuleEditorView: View {
                     unit: "pt"
                 )
         }
+        .interfaceSectionSurface()
         Section(localized("每邊邊框")) {
                 ForEach(ReaderStyleEdge.allCases, id: \.rawValue) { edge in
                     DisclosureGroup(localized(edge.editorTitleKey)) {
@@ -273,6 +280,7 @@ struct RegexHighlightRuleEditorView: View {
                     }
                 }
         }
+        .interfaceSectionSurface()
         Section(localized("陰影")) {
                 Button {
                     mutateStyle { $0.decoration.shadows.append(.init(colorHex: 0, radius: 4, x: 0, y: 2)) }
@@ -302,6 +310,8 @@ struct RegexHighlightRuleEditorView: View {
                     }
                 }
         }
+        .interfaceSectionSurface()
+        stylePreviewSection
     }
 
     @ViewBuilder
@@ -328,6 +338,8 @@ struct RegexHighlightRuleEditorView: View {
                 Label(localized("套用 CSS"), systemImage: "checkmark")
                 }
         }
+        .interfaceSectionSurface()
+        stylePreviewSection
     }
 
     private var appearanceSection: some View {
@@ -338,6 +350,7 @@ struct RegexHighlightRuleEditorView: View {
             }
             .pickerStyle(.segmented)
         }
+        .interfaceSectionSurface()
     }
 
     @ViewBuilder
@@ -399,15 +412,34 @@ struct RegexHighlightRuleEditorView: View {
                 )
                 .foregroundStyle(DSColor.warning)
             }
+            .interfaceSectionSurface()
         }
+    }
+
+    /// The reading background the previewed appearance actually uses. A rule's
+    /// background colour, gradient, borders and shadows are only judgeable
+    /// against the page they will sit on — on the settings card they read as a
+    /// different design entirely, which is the whole point of these previews.
+    private var previewTheme: ReaderTheme {
+        appearance == .light ? .white : .night
     }
 
     @ViewBuilder
     private var highlightedPreview: some View {
-        switch Result(catching: { try model.previewAttributedString(appearance: appearance) }) {
+        switch Result(catching: {
+            try model.previewAttributedString(
+                appearance: appearance,
+                baseTextColor: UIColor(previewTheme.previewTextColor)
+            )
+        }) {
         case .success(let attributed):
             RegexHighlightLivePreview(attributed: attributed)
                 .frame(minHeight: DSLayout.minimumTapTarget * 3)
+                .padding(DSSpacing.md)
+                .background(
+                    previewTheme.previewBackgroundColor,
+                    in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
+                )
                 .padding(.vertical, DSSpacing.sm)
                 .accessibilityLabel(model.testText)
         case .failure(let error):
@@ -415,6 +447,16 @@ struct RegexHighlightRuleEditorView: View {
                 .foregroundStyle(DSColor.warning)
                 .accessibilityValue(error.localizedDescription)
         }
+    }
+
+    /// The 背景圖 / 邊距 / CSS tabs get the same renderer as 即時測試, minus the
+    /// test-text editor: there you are judging the styling, not the regex, and
+    /// the text itself is edited once on 基礎 and shared across all four tabs.
+    private var stylePreviewSection: some View {
+        Section(localized("預覽")) {
+            highlightedPreview
+        }
+        .interfaceSectionSurface()
     }
 
     private var activeStyle: ReaderStyleRuleStyle {

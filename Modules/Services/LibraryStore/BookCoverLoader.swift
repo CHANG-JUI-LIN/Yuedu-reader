@@ -90,7 +90,11 @@ enum BookCoverLoader {
 
     /// Downsample to the largest size any cover slot renders at, forcing the
     /// decode here (already off-main) so cells draw a ready bitmap.
-    private static func decodedCover(from data: Data) -> UIImage? {
+    ///
+    /// Also used for covers that never came from the network — a photo-library
+    /// pick is routinely 12MP, and storing that full size would put a full-size
+    /// decode on the main thread in every shelf row that draws it.
+    static func decodedCover(from data: Data) -> UIImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
             return UIImage(data: data)

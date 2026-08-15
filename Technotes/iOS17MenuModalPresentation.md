@@ -43,11 +43,29 @@ management from Settings and Explore on iOS 17. Its import, add, edit, login,
 and validation destinations therefore become first-level presentations. iOS
 18 retains the original book-source management sheet.
 
+`BookInfoEditPresentationPolicy` pushes 書籍資訊 (book info / cover editing) from
+the bookshelf on iOS 17 for the same reason: it owns the 選擇圖片 photo and file
+pickers, which as a sheet would be nested presentations. Its 封面搜索 destination
+is a `NavigationLink` in both variants — internal navigation inside a sheet never
+crosses a presentation boundary. iOS 18 keeps the sheet.
+
 `ReaderSettingsPresentationPolicy` dismisses reader settings before font
 import on iOS 17. `ReaderView` retains the pending font-import route and opens
 the document picker only from the settings sheet's real `onDismiss` callback,
 so the picker is owned by the reader's first-level presenter. iOS 18 keeps the
 font importer inside reader settings.
+
+The same policy now covers every document picker reader settings owns. 匯入閱讀
+設定, 匯入正則高亮 and 章節標題樣式's 從檔案匯入樣式 all call
+`ReaderSettingsView.requestStyleImporter`, which either sets the local
+`styleImportRoute` (iOS 18+) or hands a `ReaderStyleImportRoute` to `ReaderView`
+via `onOpenStyleImporter` (iOS 17). Either presenter attaches the one
+`readerStyleImportPresentation` modifier, so there is a single picker, a single
+parse route (`ReaderSettingsImportService`), and a single apply.
+
+Exports do **not** use this path: `ShareLink` hands presentation to UIKit, so
+匯出閱讀設定 / 匯出規則 / 匯出樣式檔案 are safe even from inside a ⋯ menu inside the
+sheet. `.fileExporter` is not — it is a document picker like any other.
 
 Both sequenced flows use an event boundary, not a guessed duration:
 
@@ -69,8 +87,10 @@ The compatibility path covers menu-launched imports in:
 - TTS sources: local and network import
 - Replacement rules: add and JSON import
 - Reader font import (first-level presenter after settings dismissal on iOS 17)
+- 閱讀設定 import: 閱讀設定備份, 正則高亮 rules, 章節標題樣式 (same handoff)
 - Appearance background images: Photos and Files
 - Bottom-tab custom icons
+- 書籍資訊 cover images (pushed from the bookshelf on iOS 17)
 
 Direct import buttons remain unchanged unless their owner is book-source
 management or reader settings. Book-source management changes navigation
@@ -82,8 +102,9 @@ the reader's first-level presenter.
 Delete the compatibility policy, chooser routes, and contract tests only when
 the app's minimum deployment target reaches iOS 18. Until then, new modal or
 document-picker actions must not be launched directly from a SwiftUI `Menu` on
-iOS 17, book-source management must not be changed back to a sheet there, and
-reader font import must keep its first-level presenter handoff.
+iOS 17, book-source management and 書籍資訊 must not be changed back to sheets
+there, and reader font import and the 閱讀設定 style importers must keep their
+first-level presenter handoff.
 
 ## Regression Checks
 

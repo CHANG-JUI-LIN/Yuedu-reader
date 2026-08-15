@@ -159,6 +159,56 @@ final class CoreTextChunk {
         frame = nil
     }
 
+    // MARK: - Position restore
+
+    /// Distance from this chunk's top edge to the top of the line holding `characterIndex`.
+    ///
+    /// The inverse of `stringIndex(atLocalPoint:)`, and the piece that makes restoring a reading
+    /// position character-accurate. Without it the reader can only be put at a chunk's top edge,
+    /// which silently discards however far into the chunk they actually were — measured on device
+    /// at 84, 259 and 530 characters. Worse, the discarded position is what gets saved on the way
+    /// out, so every visit to scroll mode walks the reader's progress backwards.
+    ///
+    /// - Parameter characterIndex: chapter-relative UTF-16 index, the same space as `charRange`.
+    /// - Returns: `nil` when the index is outside this chunk, or when there is nothing to lay out
+    ///   (an image-only chunk has no lines and its top edge *is* the right answer).
+    func topOffset(forCharacterIndex characterIndex: Int) -> CGFloat? {
+        guard !isImageOnly,
+              characterIndex > charRange.location,
+              characterIndex < charRange.location + charRange.length
+        else { return nil }
+        materializeFrameIfNeeded()
+        guard let frame else { return nil }
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return nil }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        // Vertical writing lays lines out along x, right to left; the caller handles that axis
+        // itself, so refuse rather than return a number in the wrong axis.
+        guard !writingMode.isVertical else { return nil }
+
+        for index in lines.indices {
+            // `CTLineGetStringRange` already reports chapter-relative indices, because the frame
+            // was built from a range of the whole chapter's attributed string. Adding
+            // `charRange.location` on top double-counts: harmless for the chunk at offset 0,
+            // but for every later chunk it pushes `start` past the target so the *first* line
+            // always matches — the restore then lands 2.5pt into the chunk no matter where the
+            // reader actually was. `stringIndex(atLocalPoint:)` returns these ranges unmodified
+            // for the same reason.
+            let lineRange = CTLineGetStringRange(lines[index])
+            guard characterIndex < lineRange.location + lineRange.length else {
+                continue
+            }
+            var ascent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(lines[index], &ascent, nil, nil)
+            // CoreText origins are bottom-up within the frame; the line's top in UIKit
+            // coordinates is the frame height minus its ascent above the baseline.
+            return max(0, height - (origins[index].y + ascent))
+        }
+        return nil
+    }
+
     // MARK: - Selection (hit-test / rect calculation)
 
     /// Converts a UIKit coordinate point within the cell to a chapter-level character index (including the full-chapter index starting from charRange.location)

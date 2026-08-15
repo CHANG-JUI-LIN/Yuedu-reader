@@ -289,6 +289,12 @@ struct LegadoHTTPResult {
     /// (`BookSource.presentsAndroidIdentity`). Supplied by the owning engine
     /// because the bridge is per-source but the flag lives on the model.
     var presentsAndroidIdentityProvider: (() -> Bool)?
+
+    /// Whether this source's own JS catches an `androidId()` failure and recovers
+    /// through `deviceID()` (`AndroidIdentityRecovery.handlesMissingAndroidId`).
+    /// Those sources are handed an exception rather than the empty string — see
+    /// `androidId()`.
+    var handlesMissingAndroidIdProvider: (() -> Bool)?
     var sourceHeaders: [String: String] { sourceHeadersProvider?() ?? [:] }
 
     /// Timeout for `java.ajax`/`java.connect` requests. Legado sources carry `respondTime`
@@ -343,7 +349,15 @@ struct LegadoHTTPResult {
         recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
         // ⟐ ajax — reveal WHY 起点 content comes back empty: log the response of the
         // auth/content/review API calls (get_my_token / content.php / review.php …).
-        if Self.shouldLogReviewNetwork(urlStr) {
+        //
+        // The path allowlist below only ever covered ONE source's endpoints, which
+        // left every other source's API failures invisible on device: 书山聚合 POSTs
+        // its chapter body to `{host}/content` and matches none of them, so when its
+        // 正文 stopped arriving there was nothing in Console to say whether the server
+        // refused, answered an error envelope, or was never reached. A short reply is
+        // never a chapter body — those run to kilobytes — so treat it as a control or
+        // error envelope and record it regardless of path.
+        if Self.shouldLogReviewNetwork(urlStr) || body.utf8.count <= 1024 {
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             AppLogger.parse("⟐ ajax", context: [
                 "kind": Self.reviewNetworkKind(urlStr),
@@ -535,9 +549,17 @@ struct LegadoHTTPResult {
         guard let components = URLComponents(string: rawURL),
               let items = components.queryItems,
               !items.isEmpty else { return "" }
+        // Credential-shaped parameter names. Sources carry secrets in the query far
+        // beyond `token`: 晴天起点 sends `&key=…&dttoken=…`, 书山聚合 sends
+        // `?session=…`. Over-redacting a harmless name costs nothing; under-redacting
+        // writes a live credential into a log the user may hand to someone else. Only
+        // whether the value is present is ever recorded, which is all a diagnosis needs.
+        let secretNameFragments = [
+            "token", "cookie", "password", "key", "secret", "session", "sign", "auth",
+        ]
         let preview = items.prefix(8).map { item -> String in
             let lower = item.name.lowercased()
-            if lower.contains("token") || lower.contains("cookie") || lower.contains("password") {
+            if secretNameFragments.contains(where: { lower.contains($0) }) {
                 return "\(item.name)=<redacted:\((item.value ?? "").isEmpty ? "empty" : "set")>"
             }
             return "\(item.name)=\(item.value ?? "")"
@@ -1193,9 +1215,37 @@ struct LegadoHTTPResult {
         // probe reads `if (id && id !== '')` and falls through cleanly, while
         // 知秋's `requestApiUrl` calls this bare and would take the whole
         // request down with it.
-        guard presentsAndroidIdentityProvider?() == true else { return "" }
+        //
+        // The exception is a source that wrote its own recovery:
+        //
+        //     try { device = java.androidId(); }
+        //     catch { try { device = java.deviceID(); } catch {} }
+        //
+        // 晴天起点 does this, and to it an empty string is a *false success* —
+        // JS `catch` sees no error, the `deviceID()` branch never runs, and the
+        // request goes out as `&device=` for its server to refuse with
+        // 「缺少设备信息」. Those sources get the truth (this device has no
+        // ANDROID_ID) as an exception they demonstrably catch.
+        guard presentsAndroidIdentityProvider?() == true else {
+            guard handlesMissingAndroidIdProvider?() == true else { return "" }
+            return throwNoAndroidIdentity()
+        }
         let digest = SHA256.hash(data: Data(deviceID().utf8))
         return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Raise a JS exception at the `java.androidId()` call site, for the sources that
+    /// wrap it in a `try` and recover through `deviceID()`. The returned value is
+    /// never consumed — the exception propagates as soon as the bridge call returns.
+    private func throwNoAndroidIdentity() -> String {
+        AppLogger.parse("⟐ androidId refused, raising for source-side fallback")
+        if let context = JSContext.current() {
+            context.exception = JSValue(
+                newErrorFromMessage: "androidId: no ANDROID_ID on this device",
+                in: context
+            )
+        }
+        return ""
     }
 
     /// True for the 36-character uppercase vendor UUID `androidId()` used to hand out.

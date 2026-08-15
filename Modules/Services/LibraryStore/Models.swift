@@ -198,6 +198,25 @@ struct ReadingBook: Identifiable, Codable {
 
     // Cover image path (relative filename under Application Support/Covers, e.g. "xxx_cover.jpg")
     var coverImagePath: String?
+
+    /// The cover the user picked by hand in 書籍資訊 — a remote URL (封面搜索 or a
+    /// pasted address) or `localCustomCoverMarker` when it came from the photo
+    /// library / Files. Non-nil is the definition of "this cover is customized",
+    /// which is what gates 重設封面. Mirrors Legado's `Book.customCoverUrl`.
+    var customCoverUrl: String?
+
+    /// Filename (under Application Support/Covers) of the cover the book had
+    /// before the user replaced it, so 重設封面 restores the source's / EPUB's own
+    /// cover without a network round trip. Nil when nothing needed preserving.
+    /// Not carried by iCloud sync — only `coverImagePath` is — so a restored
+    /// device falls back to re-downloading `coverUrl`.
+    var originalCoverImagePath: String?
+
+    /// `customCoverUrl` value meaning "the cover file is a local pick, not a URL".
+    static let localCustomCoverMarker = "yuedu://local-cover"
+
+    /// True once the user has replaced the cover by hand.
+    var hasCustomCover: Bool { customCoverUrl != nil }
     var rendererPreference: BookRendererPreference
     var compatibilityState: BookCompatibilityState
     var offlineDownloadState: BookOfflineDownloadState
@@ -273,6 +292,8 @@ struct ReadingBook: Identifiable, Codable {
         hasNewChapterUpdate = (try? c.decode(Bool.self, forKey: .hasNewChapterUpdate)) ?? false
         bookmarks = (try? c.decode([Bookmark].self, forKey: .bookmarks)) ?? []
         coverImagePath = try? c.decode(String.self, forKey: .coverImagePath)
+        customCoverUrl = try? c.decode(String.self, forKey: .customCoverUrl)
+        originalCoverImagePath = try? c.decode(String.self, forKey: .originalCoverImagePath)
         rendererPreference =
             (try? c.decode(BookRendererPreference.self, forKey: .rendererPreference))
             ?? .defaultWeb
@@ -294,7 +315,8 @@ struct ReadingBook: Identifiable, Codable {
     enum CodingKeys: String, CodingKey {
         case id, title, author, source, contentFilename, contentPipelineKind, currentPosition, addedDate
         case isOnline, bookSourceId, bookInfoURL, tocURL, runtimeVariables, onlineChapters, coverUrl, hasNewChapterUpdate, bookmarks
-        case coverImagePath, rendererPreference, compatibilityState
+        case coverImagePath, customCoverUrl, originalCoverImagePath
+        case rendererPreference, compatibilityState
         case offlineDownloadState, downloadedChapterCount, offlineDownloadTask, group, lastOpenedDate
         case mangaChapterIndex, mangaPage
         case audioChapterIndex, audioTimeSeconds
@@ -350,6 +372,14 @@ extension ReadingBook {
 
     var isLegacyParsedEPUB: Bool {
         contentFilename.hasSuffix("_epub.json")
+    }
+
+    /// Label for the 格式 chip. `.fixedPage` covers both fixed-layout EPUB and PDF,
+    /// so the pipeline kind alone can't name the format — the import source can.
+    var displayFormatLabel: String {
+        if isOnline { return localized("線上") }
+        if resolvedPipelineKind == .fixedPage, source == "local_epub" { return "EPUB" }
+        return resolvedPipelineKind.displayFormat
     }
 }
 

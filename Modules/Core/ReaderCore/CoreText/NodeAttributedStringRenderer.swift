@@ -114,7 +114,32 @@ struct NodeAttributedStringRenderer {
     // MARK: - Entry Point
 
     /// Converts a set of top-level nodes into a pageable NSAttributedString.
+    ///
+    /// Wrapper only: binds the leaf-cost collector for the duration of the render and emits one
+    /// `⏱ coreText.document.renderLeaves` line. Stage 0.5 found this call is 85–91% of a heavy
+    /// chapter's build time, and its cost is in awaited services rather than the tree walk.
     func render(_ nodes: [RenderableNode]) async -> NSAttributedString {
+        let renderStart = SourcePerfTrace.now
+        // Reuse an already-bound collector rather than shadowing it, so an outer scope (a test,
+        // or a nested render) still sees the leaves this call performed.
+        let leaves = ReaderDocumentTrace.renderLeaves ?? RenderLeafMetrics()
+        let result = await ReaderDocumentTrace.$renderLeaves.withValue(leaves) {
+            await renderTopLevel(nodes)
+        }
+        // `walk` is the header total minus the awaited leaves: the tree recursion, attribute
+        // construction, CJK typography and margin-collapse passes.
+        let walkSeconds = max(0, (SourcePerfTrace.now - renderStart) - leaves.totalSeconds)
+        SourcePerfTrace.record(
+            "coreText.document.renderLeaves",
+            "\(ReaderDocumentTrace.spineTag)nodes=\(nodes.count) chars=\(result.length) "
+                + "\(leaves.logDetail) walk=\(String(format: "%.1f", walkSeconds * 1000))ms",
+            since: renderStart,
+            thresholdMs: 0
+        )
+        return result
+    }
+
+    private func renderTopLevel(_ nodes: [RenderableNode]) async -> NSAttributedString {
         let result = NSMutableAttributedString()
         let ctx = RenderContext.makeBody(config: config)
         for node in nodes {
@@ -151,7 +176,9 @@ struct NodeAttributedStringRenderer {
         }
         normalizeCompactBlockSpacing(processed)
         if config.regexHighlightConfiguration.isEnabled {
-            await prewarmRegexHighlightAssets()
+            await ReaderDocumentTrace.measuring("regexPrewarm") {
+                await prewarmRegexHighlightAssets()
+            }
             do {
                 let result = try RegexHighlightEngine.apply(
                     configuration: config.regexHighlightConfiguration,
@@ -277,10 +304,14 @@ struct NodeAttributedStringRenderer {
             return await renderInlineImage(src: src, alt: alt, style: style, svgContent: svgContent, ctx: ctx)
 
         case .mathML(let latex, let alt, let style, let displayMode):
-            return await renderMathML(latex: latex, alt: alt, style: style, displayMode: displayMode, ctx: ctx)
+            return await ReaderDocumentTrace.measuring("mathml") {
+                await renderMathML(latex: latex, alt: alt, style: style, displayMode: displayMode, ctx: ctx)
+            }
 
         case .table(let table, let style):
-            return await renderTable(table, style: style, ctx: ctx)
+            return await ReaderDocumentTrace.measuring("table") {
+                await renderTable(table, style: style, ctx: ctx)
+            }
 
         case .media(let media, let style):
             return await renderMedia(media, style: style, ctx: ctx)
@@ -1216,21 +1247,27 @@ struct NodeAttributedStringRenderer {
         }
 
         if let svgContent, !svgContent.isEmpty {
-            let screenWidth = await MainActor.run { UIScreen.main.bounds.width }
+            let screenWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
             let resolvedWidth = config.renderWidth ?? screenWidth
-            let targetSize = await SVGWebViewRasterizer.shared.resolveSVGSize(
-                styleWidth: style.width,
-                styleHeight: style.height,
-                svgString: svgContent,
-                renderWidth: resolvedWidth
-            )
-            var image = await SVGWebViewRasterizer.shared.render(
-                svgString: svgContent,
-                size: targetSize,
-                baseURL: nil
-            )
+            let targetSize = await ReaderDocumentTrace.measuring("svgSize") {
+                await SVGWebViewRasterizer.shared.resolveSVGSize(
+                    styleWidth: style.width,
+                    styleHeight: style.height,
+                    svgString: svgContent,
+                    renderWidth: resolvedWidth
+                )
+            }
+            var image = await ReaderDocumentTrace.measuring("svgRaster") {
+                await SVGWebViewRasterizer.shared.render(
+                    svgString: svgContent,
+                    size: targetSize,
+                    baseURL: nil
+                )
+            }
             if style.isTextSizedImage, let img = image {
-                image = img.trimmingTransparentPixels() ?? img
+                image = ReaderDocumentTrace.measuringSync("svgTrim") {
+                    img.trimmingTransparentPixels() ?? img
+                }
             }
             if image == nil {
                 guard !alt.isEmpty else { return NSAttributedString() }
@@ -1285,19 +1322,28 @@ struct NodeAttributedStringRenderer {
             return NSAttributedString(string: "[\(alt)]\n", attributes: attrs)
         }
 
-        var image = src.isEmpty ? nil : await config.imageLoader?(src)
+        var image = src.isEmpty ? nil : await ReaderDocumentTrace.measuring("imageLoad") {
+            await config.imageLoader?(src)
+        }
         // ⟐ bubble: this is the WebView-fallback path (recognize missed). Whether the baked-in
         // SVG margins get cropped depends ENTIRELY on isTextSizedImage here. Log the decision +
         // the before/after size so we can see if the gap survives trimming or trimming is skipped.
+        // MEASURING ONLY — this block is a diagnostic that costs a full-image pixel scan
+        // (`trimmingTransparentPixels`) on every SVG, just to build `after`. `diag` dedupes by
+        // signature and drops all but the first, and the real trim runs again three lines below,
+        // so the scan is pure waste on the second SVG onward. Bucketed as `diagTrim` to size the
+        // waste before removing it.
         if svgContent != nil || src.lowercased().contains("svg") {
-            let fp = src.range(of: ";base64,").map { String(src[$0.upperBound...].prefix(10)) } ?? String(src.prefix(10))
-            let before = image.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "nil"
-            let after = (style.isTextSizedImage ? image?.trimmingTransparentPixels() : image).map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? before
-            CommentBubbleSVGRecognizer.diag("loaderTrim fp=\(fp) isTextSized=\(style.isTextSizedImage)",
-                context: ["before": before, "after": after])
+            ReaderDocumentTrace.measuringSync("diagTrim") {
+                let fp = src.range(of: ";base64,").map { String(src[$0.upperBound...].prefix(10)) } ?? String(src.prefix(10))
+                let before = image.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "nil"
+                let after = (style.isTextSizedImage ? image?.trimmingTransparentPixels() : image).map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? before
+                CommentBubbleSVGRecognizer.diag("loaderTrim fp=\(fp) isTextSized=\(style.isTextSizedImage)",
+                    context: ["before": before, "after": after])
+            }
         }
         if style.isTextSizedImage, let img = image {
-            image = img.trimmingTransparentPixels() ?? img
+            image = ReaderDocumentTrace.measuringSync("imageTrim") { img.trimmingTransparentPixels() ?? img }
         }
         CoreTextPaginator.debugVerticalLog("EPUBFLOW render.inlineImage.node src=\(src) alt=\(alt) imageLoaded=\(image != nil) writingMode=\(config.writingMode) fontSize=\(ctx.font.pointSize) styleWidth=\(style.width.map { "\($0)" } ?? "nil") styleHeight=\(style.height.map { "\($0)" } ?? "nil")")
         if let side = style.floatSide {
@@ -1385,7 +1431,7 @@ struct NodeAttributedStringRenderer {
         let blockCtx = applyBlockStyle(blockStyle, to: ctx, isHeading: isHeading, headingLevel: headingLevel)
         let image: UIImage?
         if let svgContent = payload.svgContent, !svgContent.isEmpty {
-            let screenWidth = await MainActor.run { UIScreen.main.bounds.width }
+            let screenWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
             let resolvedWidth = config.renderWidth ?? screenWidth
             let targetSize = await SVGWebViewRasterizer.shared.resolveSVGSize(
                 styleWidth: payload.style.width,
@@ -1399,7 +1445,9 @@ struct NodeAttributedStringRenderer {
                 baseURL: nil
             )
         } else {
-            image = payload.src.isEmpty ? nil : await config.imageLoader?(payload.src)
+            image = payload.src.isEmpty ? nil : await ReaderDocumentTrace.measuring("imageLoad") {
+                await config.imageLoader?(payload.src)
+            }
         }
 
         var attachmentStyle = blockStyle
@@ -1494,7 +1542,7 @@ struct NodeAttributedStringRenderer {
         } else if let renderWidth = config.renderWidth {
             maxWidth = renderWidth
         } else {
-            maxWidth = await MainActor.run { UIScreen.main.bounds.width }
+            maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
         }
 
         let tableImages = await loadTableImages(table)
@@ -1600,7 +1648,7 @@ struct NodeAttributedStringRenderer {
         if let renderWidth = config.renderWidth {
             maxWidth = renderWidth
         } else {
-            maxWidth = await MainActor.run { UIScreen.main.bounds.width }
+            maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
         }
         let resolvedMedia = EPUBMediaAttachment(
             kind: media.kind,
@@ -1674,7 +1722,7 @@ struct NodeAttributedStringRenderer {
         if let renderWidth = config.renderWidth {
             maxWidth = renderWidth
         } else {
-            maxWidth = await MainActor.run { UIScreen.main.bounds.width }
+            maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
         }
         let image = await MainActor.run {
             EPUBMediaPlaceholderRenderer.interactiveImage(
@@ -2121,7 +2169,7 @@ struct NodeAttributedStringRenderer {
         displayMode: ImageRunInfo.DisplayMode = .inline,
         availableWidthOverride: CGFloat? = nil
     ) async -> ImageMetrics {
-        let screenWidth = await MainActor.run { UIScreen.main.bounds.width }
+        let screenWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
         let baseWidth = availableWidthOverride ?? config.renderWidth ?? screenWidth
         let availableWidth = max(1, baseWidth - style.paddingLeft - style.paddingRight)
         let maxDrawHeight = max(1, baseWidth * 1.5)
@@ -2705,7 +2753,9 @@ struct NodeAttributedStringRenderer {
         for style: RenderStyle
     ) async -> HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage? {
         guard let src = style.backgroundImageSource, !src.isEmpty,
-              let image = await config.imageLoader?(src)
+              let image = await ReaderDocumentTrace.measuring("blockBgImage", {
+                  await config.imageLoader?(src)
+              })
         else { return nil }
         return HTMLAttributedStringBuilder.BlockRenderStyle.BackgroundImage(
             image: image,

@@ -470,6 +470,7 @@ final class HTMLAttributedStringBuilder {
         var mergedConfig = config
         mergedConfig.firstLetterRules = parsed.firstLetterRules
 
+        let astBuildStart = SourcePerfTrace.now
         let ast = await ReaderPerfTrace.spanAsync(
             .astBuild,
             metadata: ReaderPerfMetadata(
@@ -511,6 +512,16 @@ final class HTMLAttributedStringBuilder {
             )
         }
 
+        // `cssMatch` is nested inside this span, not parallel to it — do not add the two together.
+        // The gap between them is ElementNode construction and class-name extraction.
+        SourcePerfTrace.record(
+            "coreText.document.astBuild",
+            "\(ReaderDocumentTrace.spineTag)html=\(sanitizedHTML.utf16.count) "
+                + "rules=\(parsed.rules.count + parsed.firstLetterRules.count) contains=cssMatch",
+            since: astBuildStart,
+            thresholdMs: 0
+        )
+
         if ast.resolvedStyle.isVerticalWritingMode {
             detectedVerticalWritingMode = true
         }
@@ -541,6 +552,7 @@ final class HTMLAttributedStringBuilder {
     }
 
     private func collectStyles(from document: Document) async -> [String] {
+        let collectStart = SourcePerfTrace.now
         let collectTrace = ReaderPerfTrace.begin(
             .cssCollect,
             metadata: ReaderPerfMetadata(
@@ -583,6 +595,15 @@ final class HTMLAttributedStringBuilder {
                 characterCount: styles.reduce(0) { $0 + $1.utf16.count },
                 executor: Thread.isMainThread ? "main" : "background"
             )
+        )
+        // Includes `cssLoader` I/O for every <link rel=stylesheet>, so a big number here can be
+        // disk/unzip rather than CPU.
+        SourcePerfTrace.record(
+            "coreText.document.cssCollect",
+            "\(ReaderDocumentTrace.spineTag)sheets=\(styles.count) "
+                + "css=\(styles.reduce(0) { $0 + $1.utf16.count })",
+            since: collectStart,
+            thresholdMs: 0
         )
         return styles
     }

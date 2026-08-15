@@ -29,15 +29,29 @@ struct DismissalSequencedPresentationTests {
         )
     }
 
-    @Test("iOS 17 presents reader font import from the reader level")
-    func iOS17UsesFirstLevelReaderFontImporter() {
+    @Test("iOS 17 pushes 書籍資訊 so its cover pickers are first-level")
+    func iOS17PushesBookInfoEdit() {
         #expect(
-            ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter(
+            BookInfoEditPresentationPolicy.prefersNavigationDestination(
                 osMajorVersion: 17
             )
         )
         #expect(
-            !ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter(
+            !BookInfoEditPresentationPolicy.prefersNavigationDestination(
+                osMajorVersion: 18
+            )
+        )
+    }
+
+    @Test("iOS 17 presents reader font import from the reader level")
+    func iOS17UsesFirstLevelReaderFontImporter() {
+        #expect(
+            ReaderSettingsPresentationPolicy.requiresFirstLevelImporter(
+                osMajorVersion: 17
+            )
+        )
+        #expect(
+            !ReaderSettingsPresentationPolicy.requiresFirstLevelImporter(
                 osMajorVersion: 18
             )
         )

@@ -84,6 +84,43 @@ struct SubscriptionAccessPolicyTests {
         )
     }
 
+    private func testFlightEligibility(
+        isProActive: Bool,
+        productIDs: [String]?
+    ) -> TestFlightEligibility {
+        TestFlightAccessPolicy.eligibility(
+            isProActive: isProActive,
+            productIDs: productIDs,
+            lifetimeProductID: Self.lifetimeID
+        )
+    }
+
+    @Test("only a lifetime purchase can claim a TestFlight seat")
+    func testFlightNeedsLifetime() {
+        #expect(testFlightEligibility(isProActive: true, productIDs: [Self.lifetimeID]) == .eligible)
+        #expect(
+            testFlightEligibility(isProActive: true, productIDs: [Self.monthlyID, Self.lifetimeID])
+                == .eligible
+        )
+        // Pro, but on a plan that could cancel after one month and keep a seat
+        // that has no revocation path.
+        #expect(
+            testFlightEligibility(isProActive: true, productIDs: [Self.monthlyID])
+                == .requiresLifetime
+        )
+        #expect(testFlightEligibility(isProActive: false, productIDs: []) == .requiresLifetime)
+    }
+
+    @Test("an unknown plan defers to the server instead of blocking")
+    func testFlightUnknownPlanDefersToServer() {
+        // nil means this device never saw the backend name the products — an
+        // entitlement cached before product IDs were recorded, or an offline
+        // launch. Rendering "requires lifetime" here would lock out a real
+        // lifetime buyer, so the form shows and the callable decides.
+        #expect(testFlightEligibility(isProActive: true, productIDs: nil) == .undetermined)
+        #expect(testFlightEligibility(isProActive: false, productIDs: nil) == .undetermined)
+    }
+
     @Test("a lifetime owner is never shown the purchase options again")
     func lifetimeOwnerSeesNoPaywall() {
         // Opening straight onto the plan picker reads as being asked to pay twice.

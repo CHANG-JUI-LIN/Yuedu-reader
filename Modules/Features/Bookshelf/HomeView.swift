@@ -441,7 +441,20 @@ struct HomeView: View {
                         .environmentObject(store)
                 }
             }
-            .sheet(item: $editingBook) { book in
+            // 書籍資訊 owns the cover pickers, so on iOS 17 it is pushed rather
+            // than presented (`BookInfoEditPresentationPolicy`); iOS 18 keeps the
+            // sheet. Two bindings, one screen — the same shape ProfileView uses
+            // for book-source management.
+            .navigationDestination(item: pushedEditingBookId) { bookId in
+                if let book = store.books.first(where: { $0.id == bookId }) {
+                    EditBookSheet(book: book, presentation: .push) { newTitle, newAuthor, newGroup in
+                        store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
+                        store.setGroup(newGroup, for: book.id)
+                    }
+                    .environmentObject(store)
+                }
+            }
+            .sheet(item: sheetEditingBook) { book in
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
                     EditBookSheet(book: book) { newTitle, newAuthor, newGroup in
                         store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
@@ -703,6 +716,32 @@ struct HomeView: View {
         }
     }
 
+    /// 書籍資訊 as a pushed destination (iOS 17) — nil on iOS 18+. Carries the id
+    /// rather than the book because `navigationDestination(item:)` needs a
+    /// Hashable value, and the editor reads the live record from the store anyway.
+    private var pushedEditingBookId: Binding<UUID?> {
+        Binding(
+            get: {
+                BookInfoEditPresentationPolicy.prefersNavigationDestination
+                    ? editingBook?.id
+                    : nil
+            },
+            set: { if $0 == nil { editingBook = nil } }
+        )
+    }
+
+    /// 書籍資訊 as a sheet (iOS 18+) — nil on iOS 17.
+    private var sheetEditingBook: Binding<ReadingBook?> {
+        Binding(
+            get: {
+                BookInfoEditPresentationPolicy.prefersNavigationDestination
+                    ? nil
+                    : editingBook
+            },
+            set: { if $0 == nil { editingBook = nil } }
+        )
+    }
+
     private func canShowOnlineBookDetail(for book: ReadingBook) -> Bool {
         book.isOnline && book.bookSourceId != nil
     }
@@ -732,28 +771,98 @@ struct HomeView: View {
 }
 
 // MARK: - Edit Book Info Sheet
+
+/// How 書籍資訊 is being shown. On iOS 17 the bookshelf pushes it so its image
+/// pickers are first-level presentations — see `BookInfoEditPresentationPolicy`.
+enum BookInfoEditPresentation {
+    case sheet
+    case push
+}
+
 struct EditBookSheet: View {
     let book: ReadingBook
+    var presentation: BookInfoEditPresentation = .sheet
     let onSave: (String, String, String) -> Void
 
     @State private var titleInput: String
     @State private var authorInput: String
     @State private var groupInput: String
+    @State private var coverUrlInput: String
+    @State private var isApplyingCover = false
+    @State private var coverErrorMessage: String?
     @Environment(\.presentationMode) var dismiss
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var store: BookStore
 
-    init(book: ReadingBook, onSave: @escaping (String, String, String) -> Void) {
+    init(
+        book: ReadingBook,
+        presentation: BookInfoEditPresentation = .sheet,
+        onSave: @escaping (String, String, String) -> Void
+    ) {
         self.book = book
+        self.presentation = presentation
         self.onSave = onSave
         _titleInput = State(initialValue: book.title)
         _authorInput = State(initialValue: book.author)
         _groupInput = State(initialValue: book.group)
+        // The remote address currently in effect: the user's own if they set one,
+        // otherwise whatever the source gave us, so the field starts truthful.
+        let customUrl = book.customCoverUrl == ReadingBook.localCustomCoverMarker
+            ? nil
+            : book.customCoverUrl
+        _coverUrlInput = State(initialValue: customUrl ?? book.coverUrl ?? "")
+    }
+
+    /// The book as the store currently has it — `book` is the snapshot the sheet
+    /// was opened with, and every cover action writes through the store.
+    private var liveBook: ReadingBook {
+        store.books.first { $0.id == book.id } ?? book
     }
 
     var body: some View {
-        NavigationStack {
+        switch presentation {
+        case .sheet:
+            NavigationStack {
+                editorContent
+                    .toolbarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                dismiss.wrappedValue.dismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
+                            .accessibilityLabel(localized("關閉"))
+                        }
+                        saveToolbarItem
+                    }
+            }
+        case .push:
+            // Pushed from the shelf: the back button is the way out, so no 關閉.
+            editorContent
+                .toolbarTitleDisplayMode(.inlineLarge)
+                .toolbar { saveToolbarItem }
+        }
+    }
+
+    private var saveToolbarItem: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                onSave(titleInput, authorInput, groupInput)
+                dismiss.wrappedValue.dismiss()
+            } label: {
+                Image(systemName: "checkmark")
+            }
+            .accessibilityLabel(localized("完成"))
+            .disabled(titleInput.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+    }
+
+    private var editorContent: some View {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
                 Form {
+                    coverSection
+
                     Section(header: Text(localized("基本資訊"))) {
                         HStack {
                             Text(localized("書名"))
@@ -812,28 +921,238 @@ struct EditBookSheet: View {
                     .interfaceSectionSurface()
                 }
                 .navigationTitle(localized("書籍資訊"))
-                .toolbarTitleDisplayMode(.inline)
                 .themedAppSurface(for: .bookshelf)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            dismiss.wrappedValue.dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                        }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            onSave(titleInput, authorInput, groupInput)
-                            dismiss.wrappedValue.dismiss()
-                        } label: {
-                            Image(systemName: "checkmark")
-                        }
-                        .disabled(titleInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
+                .alert(
+                    localized("封面設定失敗"),
+                    isPresented: Binding(
+                        get: { coverErrorMessage != nil },
+                        set: { if !$0 { coverErrorMessage = nil } }
+                    )
+                ) {
+                    Button(localized("確定"), role: .cancel) {}
+                } message: {
+                    Text(coverErrorMessage ?? "")
                 }
+        }
+    }
+
+    // MARK: - Cover
+
+    /// Legado's 换封面 block: the cover as the page's hero, a cross-source cover
+    /// search, a local pick, a reset, and the raw address.
+    @ViewBuilder
+    private var coverSection: some View {
+        // Full-bleed and card-less: the hero paints its own backdrop, so it takes
+        // the row edge to edge and hands back a clear row instead of a surface.
+        Section {
+            coverHero
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+
+        Section {
+            // Pushed, not presented: a nested sheet is the shape iOS 17 drops
+            // (Technotes/iOS17MenuModalPresentation.md), and internal navigation
+            // inside a sheet is the sanctioned pattern anyway.
+            NavigationLink {
+                CoverSearchView(
+                    bookId: book.id,
+                    title: liveBook.title,
+                    author: liveBook.author
+                ) { candidate in
+                    applyCover(url: candidate.coverUrl, sourceId: candidate.sourceId)
+                }
+            } label: {
+                Label(localized("封面搜索"), systemImage: "magnifyingglass")
+            }
+            .disabled(isApplyingCover)
+
+            ImageSourcePickerButton(
+                accessibilityTitle: localized("選擇封面圖片"),
+                onPick: handleCoverPick
+            ) {
+                Label(localized("選擇圖片"), systemImage: "photo")
+            }
+            .disabled(isApplyingCover)
+
+            if liveBook.hasCustomCover {
+                Button(role: .destructive) {
+                    store.resetCover(bookId: book.id)
+                    coverUrlInput = liveBook.coverUrl ?? ""
+                } label: {
+                    Label(localized("重設封面"), systemImage: "arrow.uturn.backward")
+                }
+                .disabled(isApplyingCover)
+            }
+        } header: {
+            Text(localized("封面"))
+        } footer: {
+            Text(localized("封面搜索會在所有啟用的書源中，尋找同書名同作者的封面。"))
+        }
+        .interfaceSectionSurface()
+
+        Section {
+            TextField(localized("封面網址"), text: $coverUrlInput)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .accessibilityLabel(localized("封面網址"))
+
+            Button {
+                applyCover(url: coverUrlInput, sourceId: liveBook.bookSourceId)
+            } label: {
+                Label(localized("套用網址"), systemImage: "arrow.down.circle")
+            }
+            .disabled(isApplyingCover || !canApplyCoverUrl)
+        } footer: {
+            Text(localized("貼上圖片網址後，點「套用網址」下載為封面。"))
+        }
+        .interfaceSectionSurface()
+    }
+
+    private var canApplyCoverUrl: Bool {
+        let trimmed = coverUrlInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return false }
+        return url.scheme?.hasPrefix("http") == true
+    }
+
+    /// The artwork itself, filling whatever frame the caller gives it: the user's
+    /// own image when they set one, otherwise the source's cover.
+    @ViewBuilder
+    private var coverArtwork: some View {
+        if let path = liveBook.coverImagePath,
+           let image = BookshelfCoverLoader.load(filename: path) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            let source = liveBook.bookSourceId.flatMap { id in
+                BookSourceStore.shared.sources.first { $0.id == id }
+            }
+            BookCoverImage(
+                coverURL: liveBook.coverUrl ?? "",
+                title: liveBook.title,
+                sourceBaseURL: source?.bookSourceUrl,
+                sourceHeaders: source?.parsedHeaders ?? [:]
+            )
+        }
+    }
+
+    /// 書籍資訊 opens on the cover: the artwork at a size worth looking at, lifted
+    /// off a blurred wash of itself that melts into the page background.
+    ///
+    /// Both layers render one `coverArtwork` value, so the artwork is resolved
+    /// once per pass — `BookshelfCoverLoader.load` reads and decodes from disk on
+    /// every call, and `BookCoverImage` would start a second load.
+    private var coverHero: some View {
+        let artwork = coverArtwork
+        let shape = RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
+
+        return ZStack {
+            artwork
+
+            if isApplyingCover {
+                Color.black.opacity(0.35)
+                ProgressView()
+                    .tint(.white)
             }
         }
+        .frame(width: DSLayout.bookCoverHeroWidth, height: DSLayout.bookCoverHeroHeight)
+        .clipShape(shape)
+        .overlay(shape.stroke(DSColor.textSecondary.opacity(0.2), lineWidth: 0.5))
+        .shadow(
+            color: DSColor.coverHeroShadow,
+            radius: DSLayout.bookCoverHeroShadowRadius,
+            y: DSLayout.bookCoverHeroShadowOffsetY
+        )
+        .padding(.vertical, DSSpacing.xl)
+        .frame(maxWidth: .infinity)
+        .background { coverHeroBackdrop(artwork) }
+        // One image, not an interactive element; the buttons below act on it.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            isApplyingCover ? localized("正在套用封面") : localized("目前封面")
+        )
+    }
+
+    /// The same artwork blurred out into a colour wash behind the hero. Purely
+    /// decorative and carrying no state, so Reduce Transparency drops it entirely
+    /// and the cover sits on the plain page background instead.
+    @ViewBuilder
+    private func coverHeroBackdrop<Artwork: View>(_ artwork: Artwork) -> some View {
+        if !reduceTransparency {
+            GeometryReader { proxy in
+                artwork
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    // `opaque: true` samples the edge pixels instead of the
+                    // transparency outside the frame, so the wash keeps its
+                    // strength at the edges rather than fading into a halo.
+                    .blur(radius: DSLayout.bookCoverHeroBackdropBlur, opaque: true)
+                    .clipped()
+            }
+            .saturation(DSLayout.bookCoverHeroBackdropSaturation)
+            .opacity(DSLayout.bookCoverHeroBackdropOpacity)
+            .mask { coverHeroBackdropFade }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Soft top and bottom edges so the wash reads as light coming off the cover,
+    /// not a band pasted across the top of the form. The form's own inset above
+    /// the first section means a hard top edge would show as a seam.
+    private var coverHeroBackdropFade: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black, location: 0.16),
+                .init(color: .black, location: 0.58),
+                .init(color: .clear, location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private func applyCover(url: String, sourceId: UUID?) {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isApplyingCover = true
+        Task {
+            let applied = await store.applyCustomCover(
+                bookId: book.id, coverUrl: trimmed, sourceId: sourceId
+            )
+            isApplyingCover = false
+            if applied {
+                coverUrlInput = trimmed
+            } else {
+                coverErrorMessage = localized("無法下載這張封面，請換一張或檢查網路。")
+            }
+        }
+    }
+
+    private func handleCoverPick(_ result: Result<PickedImageSource, PickedImageError>) {
+        switch result {
+        case .success(.data(let data)):
+            storePickedCover(data)
+        case .success(.file(let url)):
+            guard let data = try? Data(contentsOf: url) else {
+                coverErrorMessage = localized("無法讀取圖片。")
+                return
+            }
+            storePickedCover(data)
+        case .failure(let error):
+            coverErrorMessage = localized(error.messageKey)
+        }
+    }
+
+    private func storePickedCover(_ data: Data) {
+        guard store.applyCustomCover(bookId: book.id, imageData: data) else {
+            coverErrorMessage = localized("無法讀取圖片。")
+            return
+        }
+        coverUrlInput = ""
     }
 }
 
@@ -1399,5 +1718,10 @@ private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
         BookGridCell(book: previewOnlineBook(hasUpdate: false), onOpen: { _ in }, onEdit: {}, onDelete: {})
     }
     .padding()
+}
+
+#Preview("書籍資訊 – 封面區") {
+    EditBookSheet(book: previewOnlineBook(hasUpdate: false)) { _, _, _ in }
+        .environmentObject(BookStore())
 }
 #endif

@@ -22,6 +22,9 @@ enum ReaderStylePackageKind: String, Codable, Sendable {
     case chapterTitle
     case regexHighlights
     case appearance
+    /// 整套閱讀設定 — layout parameters plus both style halves. See
+    /// `ReaderSettingsBundle`.
+    case readerSettings
 }
 
 struct ReaderStylePackagePayload: Codable, Equatable, Sendable {

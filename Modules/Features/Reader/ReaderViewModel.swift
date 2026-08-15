@@ -322,91 +322,25 @@ final class ReaderViewModel: ObservableObject {
         tocWarmTask?.cancel()
         changeSourceSearchTask = Task { [weak self] in
             guard let self else { return }
-            var seenOriginKeys = Set<String>()
             let bookSourceFetcher = self.bookSourceFetcher
 
-            // Fan out with a bounded active window. Results are consumed on the
-            // MainActor as they stream in, so dedup state stays single-threaded,
-            // the list fills progressively, and auto-pause can stop enqueueing
-            // untouched sources.
-            await withTaskGroup(of: [OnlineBook]?.self) { group in
-                var nextSourceIndex = 0
-                let activeLimit = min(concurrency, sources.count)
-
-                func enqueueNextSource() {
-                    guard nextSourceIndex < sources.count else { return }
-                    let source = sources[nextSourceIndex]
-                    nextSourceIndex += 1
-                    group.addTask {
-                        guard !Task.isCancelled else { return nil }
-                        return await Self.searchSourceWithTimeout(
-                            query: bookTitle,
-                            bookTitle: bookTitle,
-                            bookAuthor: bookAuthor,
-                            source: source,
-                            bookSourceFetcher: bookSourceFetcher
-                        )
-                    }
+            // Fan out with a bounded active window (shared with 封面搜索). Results
+            // are consumed on the MainActor as they stream in, so the list fills
+            // progressively and auto-pause can stop enqueueing untouched sources.
+            await BookOriginSearchService.stream(
+                title: bookTitle,
+                author: bookAuthor,
+                sources: sources,
+                concurrency: concurrency,
+                fetcher: bookSourceFetcher,
+                excludingOriginKey: currentOriginKey,
+                shouldStop: { matchCount in
+                    autoPausePolicy.shouldPause(exactCount: matchCount, fuzzyCount: 0)
+                },
+                onBatch: { batchOrigins in
+                    self.changeSourceOrigins.append(contentsOf: batchOrigins)
                 }
-
-                for _ in 0..<activeLimit {
-                    enqueueNextSource()
-                }
-
-                while let list = await group.next() {
-                    if Task.isCancelled { break }
-                    guard let list else { continue }
-                    var shouldPause = false
-                    // Collect the whole source's matches first and append once:
-                    // per-book appends re-published (and re-diffed) the sheet's
-                    // list for every single origin.
-                    var batchOrigins: [BookOrigin] = []
-                    for ob in list {
-                        let matched = SearchBook.isLikelySameBook(
-                            name: bookTitle, author: bookAuthor,
-                            name: ob.name, author: ob.author
-                        )
-                        guard matched else { continue }
-                        // Dedup only the same source + URL. Aggregation channels from
-                        // different sources may share a URL but remain distinct rules.
-                        let originKey = ChangeSourceCache.originKey(
-                            sourceId: ob.sourceId, bookUrl: ob.bookUrl)
-                        if !originKey.isEmpty {
-                            if originKey == currentOriginKey { continue }
-                            guard seenOriginKeys.insert(originKey).inserted else { continue }
-                        }
-                        batchOrigins.append(
-                            BookOrigin(
-                                sourceId: ob.sourceId,
-                                sourceName: ob.sourceName,
-                                bookUrl: ob.bookUrl,
-                                tocUrl: ob.tocUrl,
-                                coverUrl: ob.coverUrl,
-                                intro: ob.intro,
-                                lastChapter: ob.lastChapter,
-                                wordCount: ob.wordCount,
-                                kind: ob.kind,
-                                runtimeVariables: ob.runtimeVariables
-                            )
-                        )
-                        if autoPausePolicy.shouldPause(
-                            exactCount: self.changeSourceOrigins.count + batchOrigins.count,
-                            fuzzyCount: 0
-                        ) {
-                            shouldPause = true
-                            break
-                        }
-                    }
-                    if !batchOrigins.isEmpty {
-                        self.changeSourceOrigins.append(contentsOf: batchOrigins)
-                    }
-                    if shouldPause {
-                        group.cancelAll()
-                        break
-                    }
-                    enqueueNextSource()
-                }
-            }
+            )
 
             if Task.isCancelled { return }
             self.changeSourceLoading = false
@@ -620,51 +554,6 @@ final class ReaderViewModel: ObservableObject {
     /// Searches one source with a timeout, off the main actor. Returns nil on error
     /// or timeout so a slow/hung source can't stall the whole 換源 search.
     /// `nonisolated` so concurrent tasks don't serialize back onto the MainActor.
-    nonisolated private static func searchSourceWithTimeout(
-        query: String,
-        bookTitle: String,
-        bookAuthor: String,
-        source: BookSource,
-        bookSourceFetcher: BookSourceFetching,
-        seconds: UInt64 = 20
-    ) async -> [OnlineBook]? {
-        let startedAt = ProcessInfo.processInfo.systemUptime
-        let books: [OnlineBook]? = await withTaskGroup(of: [OnlineBook]?.self) { group in
-            group.addTask {
-                // Early filter (Legado BookList idea): reject non-matching items
-                // right after their name/author rules run, so the remaining field
-                // rules (cover/intro/kind/wordCount/lastChapter/bookUrl) are never
-                // evaluated — 換源 only keeps exact same-book candidates anyway.
-                try? await bookSourceFetcher.search(
-                    query: query,
-                    in: source,
-                    earlyFilter: { name, author in
-                        SearchBook.isLikelySameBook(
-                            name: bookTitle, author: bookAuthor,
-                            name: name, author: author
-                        )
-                    }
-                )
-            }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
-        if books != nil {
-            // Feed the response-time EMA so the 換源 list can rank fast sources first.
-            let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
-            let sourceId = source.id
-            await MainActor.run {
-                SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
-            }
-        }
-        return books
-    }
-
     // MARK: - Private
 
     /// Reads an already-validated cached package off the main presentation path. Besides the

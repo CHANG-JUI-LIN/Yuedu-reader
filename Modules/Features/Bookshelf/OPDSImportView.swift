@@ -367,6 +367,8 @@ struct OPDSFeedView: View {
                 switch acquisition.importExtension {
                 case "epub":
                     try await store.importEpub(url: tempURL, title: title, author: entry.author)
+                case "pdf":
+                    try await store.importLocalPDF(url: tempURL, title: title, author: entry.author)
                 case "md":
                     try store.importMarkdown(url: tempURL, title: title)
                 default:

@@ -26,6 +26,9 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private var imagePrefetcher = ImagePrefetcher()
     private var currentPages: [FixedPage] = []
     private var targetWidth: CGFloat = 0
+    /// Single-chapter documents only: the file's own table of contents, used as
+    /// in-document jump targets.
+    private var documentSections: [FixedPageDocumentSection] = []
 
     init(
         book: ReadingBook,
@@ -59,6 +62,16 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    deinit {
+        // Rendered pages are the largest thing this reader holds; closing the book
+        // releases them along with the open document. A no-op for a manga book,
+        // whose caches are empty.
+        Task {
+            await PDFPageRasterizer.shared.purge()
+            await FixedLayoutEPUBRenderer.shared.purge()
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
@@ -67,7 +80,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         state.chapterListItems = FixedPageChapterListItem.items(from: chapters)
         state.currentChapterIndex = chapterIndex
         state.onJumpToPage = { [weak self] page in self?.reader?.goToPage(page, animated: false) }
-        state.onSelectChapter = { [weak self] index in self?.selectChapter(at: index) }
+        state.onSelectChapter = { [weak self] index in self?.selectTableOfContentsEntry(at: index) }
         state.onSetConfiguration = { [weak self] configuration in self?.changeConfiguration(configuration) }
         state.onNextChapter = { [weak self] in self?.loadNextChapter() }
         state.onPrevChapter = { [weak self] in self?.loadPreviousChapter() }
@@ -78,17 +91,38 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
 
         store?.updateLastOpened(bookId: book.id)
         installReader()
-        loadChapter(at: chapterIndex, startPage: book.mangaPage)
+        if isSingleChapterDocumentBook { chapterIndex = 0 }
+        loadChapter(at: chapterIndex, startPage: restoredStartPage)
+    }
+
+    /// Fixed-layout EPUB used to load one page per chapter, so its saved positions
+    /// carry the page number in `mangaChapterIndex` with `mangaPage` at 0. Reading
+    /// those as a page keeps a mid-book position across the move to a single
+    /// chapter; positions saved from now on are (chapter 0, page N). Removable once
+    /// no shelf still holds a pre-2026-08 fixed-layout position.
+    private var restoredStartPage: Int {
+        if isSingleChapterDocumentBook, book.mangaPage == 0, book.mangaChapterIndex > 0 {
+            return book.mangaChapterIndex
+        }
+        return book.mangaPage
+    }
+
+    /// Chapter count for progress bookkeeping. A single-chapter document reports 1,
+    /// even though a fixed-layout EPUB still persists one chapter ref per page.
+    private var progressChapterCount: Int {
+        isSingleChapterDocumentBook ? 1 : chapters.count
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         saveTask?.cancel()
+        let page = reader?.currentPageIndex() ?? 0
         store?.updateMangaPosition(
             bookId: book.id,
             chapter: chapterIndex,
-            page: reader?.currentPageIndex() ?? 0,
-            totalChapters: chapters.count
+            page: page,
+            totalChapters: progressChapterCount,
+            pageProgress: documentProgress(forPage: page)
         )
     }
 
@@ -132,6 +166,10 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
 
         let token = UUID()
         loadToken = token
+        if isSingleChapterDocumentBook {
+            loadLocalDocument(startPage: startPage, token: token)
+            return
+        }
         if isLocalFixedPageBook {
             loadLocalChapter(at: index, startPage: startPage, token: token)
             return
@@ -173,43 +211,119 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             && book.contentFilename.lowercased().hasSuffix(".epub")
     }
 
+    private var isLocalPDFBook: Bool {
+        isLocalFixedPageBook && book.source == "local_pdf"
+    }
+
+    /// A local document whose pages are rasterized on demand — a PDF or a
+    /// fixed-layout EPUB. Both load as a single chapter holding every page, so page
+    /// numbers stay absolute and turning a page never reopens the document; their
+    /// table of contents moves within that chapter instead of loading another one.
+    private var isSingleChapterDocumentBook: Bool {
+        isLocalPDFBook || isLocalFixedLayoutEPUBBook
+    }
+
+    // MARK: Single-chapter documents (PDF / fixed-layout EPUB)
+
+    private func loadLocalDocument(startPage: Int, token: UUID) {
+        let filename = book.contentFilename
+        let isPDF = isLocalPDFBook
+        let fileURL = isPDF
+            ? LocalPDFArchive.archiveURL(for: filename)
+            : LocalMangaArchive.archiveURL(for: filename)
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            var pageCount = 0
+            var sections: [FixedPageDocumentSection] = []
+            if isPDF {
+                pageCount = await PDFPageRasterizer.shared.pageCount(fileURL: fileURL)
+                sections = await PDFPageRasterizer.shared.sections(fileURL: fileURL)
+            } else {
+                do {
+                    let info = try await FixedLayoutEPUBRenderer.shared.documentInfo(sourceURL: fileURL)
+                    pageCount = info.pageCount
+                    sections = info.sections
+                } catch {
+                    AppLogger.render("Fixed-layout EPUB could not be opened: \(filename)", error: error)
+                }
+            }
+            guard self.loadToken == token else { return }
+
+            self.state.isLoading = false
+            guard pageCount > 0 else {
+                AppLogger.error("Fixed-page document has no readable pages: \(filename)")
+                self.state.errorMessage = isPDF
+                    ? LocalPDFArchiveError.cannotReadDocument.errorDescription
+                    : localized("無法讀取這本書的頁面")
+                return
+            }
+
+            let pages = (0..<pageCount).map { pageIndex in
+                FixedPage(
+                    id: pageIndex,
+                    imageURL: fileURL.absoluteString,
+                    headers: [:],
+                    localURL: nil,
+                    renderSource: isPDF
+                        ? .pdf(sourceFilename: filename, pageIndex: pageIndex)
+                        : .fixedLayoutEPUB(sourceFilename: filename, chapterIndex: pageIndex)
+                )
+            }
+            let resolvedStart = max(0, min(startPage, pageCount - 1))
+            self.currentPages = pages
+            self.documentSections = sections
+            // No bookmarks means no table of contents to show, which the overlay
+            // reads as "hide the 目錄 button".
+            self.state.chapterListItems = sections.enumerated().map { offset, section in
+                FixedPageChapterListItem(id: UUID(), index: offset, title: section.title)
+            }
+            self.reader?.setPages(pages, startPage: resolvedStart)
+            self.syncDocumentSection(forPage: resolvedStart)
+            self.prefetchCurrentChapterPages(pages: pages, currentPage: resolvedStart)
+        }
+    }
+
+    /// Keep the top bar's title and the table of contents' checkmark on the section
+    /// containing the current page.
+    private func syncDocumentSection(forPage page: Int) {
+        guard !documentSections.isEmpty else { return }
+        let index = documentSections.lastIndex { $0.startPage <= page } ?? 0
+        guard state.currentChapterIndex != index || state.chapterTitle != documentSections[index].title else { return }
+        state.currentChapterIndex = index
+        state.chapterTitle = documentSections[index].title
+    }
+
+    private func jumpToDocumentSection(at index: Int) {
+        guard documentSections.indices.contains(index) else { return }
+        reader?.goToPage(documentSections[index].startPage, animated: false)
+        syncDocumentSection(forPage: documentSections[index].startPage)
+    }
+
+    /// The current page's section, or nil when the document has no table of contents.
+    private var currentDocumentSectionIndex: Int? {
+        guard !documentSections.isEmpty else { return nil }
+        let page = reader?.currentPageIndex() ?? 0
+        return documentSections.lastIndex { $0.startPage <= page } ?? 0
+    }
+
     private func loadLocalChapter(at index: Int, startPage: Int, token: UUID) {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let archiveFilename: String
-                if self.isLocalFixedLayoutEPUBBook || self.chapters[index].url.isEmpty {
-                    archiveFilename = self.book.contentFilename
-                } else {
-                    archiveFilename = self.chapters[index].url
-                }
+                let chapterURL = self.chapters[index].url
+                let archiveFilename = chapterURL.isEmpty ? self.book.contentFilename : chapterURL
                 let archiveURL = LocalMangaArchive.archiveURL(for: archiveFilename)
-                let pages: [FixedPage]
-                if self.isLocalFixedLayoutEPUBBook {
-                    pages = [
-                        FixedPage(
-                            id: 0,
-                            imageURL: archiveURL.absoluteString,
-                            headers: [:],
-                            localURL: nil,
-                            renderSource: .fixedLayoutEPUB(
-                                sourceFilename: self.book.contentFilename,
-                                chapterIndex: index
-                            )
-                        )
-                    ]
-                } else {
-                    var imagePages = LocalMangaArchive.pagesForExtractedChapter(
-                        bookId: self.book.id,
-                        chapterIndex: index
+                var pages = LocalMangaArchive.pagesForExtractedChapter(
+                    bookId: self.book.id,
+                    chapterIndex: index
+                )
+                if pages.isEmpty {
+                    pages = try await LocalMangaArchive.extractPages(
+                        from: archiveURL,
+                        to: LocalMangaArchive.chapterDirectory(bookId: self.book.id, chapterIndex: index)
                     )
-                    if imagePages.isEmpty {
-                        imagePages = try await LocalMangaArchive.extractPages(
-                            from: archiveURL,
-                            to: LocalMangaArchive.chapterDirectory(bookId: self.book.id, chapterIndex: index)
-                        )
-                    }
-                    pages = imagePages
                 }
                 guard self.loadToken == token else { return }
                 self.state.isLoading = false
@@ -226,17 +340,39 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         }
     }
 
+    /// A table-of-contents row: a chapter load for every book except a PDF, whose
+    /// rows are bookmarks inside the single loaded chapter.
+    private func selectTableOfContentsEntry(at index: Int) {
+        if isSingleChapterDocumentBook {
+            jumpToDocumentSection(at: index)
+        } else {
+            selectChapter(at: index)
+        }
+    }
+
     private func selectChapter(at index: Int) {
         guard chapters.indices.contains(index), index != chapterIndex else { return }
         loadChapter(at: index, startPage: 0)
     }
 
     private func loadNextChapter() {
+        if isSingleChapterDocumentBook {
+            guard let current = currentDocumentSectionIndex else { return }
+            jumpToDocumentSection(at: current + 1)
+            return
+        }
         guard chapterIndex + 1 < chapters.count else { return }
         loadChapter(at: chapterIndex + 1, startPage: 0)
     }
 
     private func loadPreviousChapter() {
+        if isSingleChapterDocumentBook {
+            guard let current = currentDocumentSectionIndex else { return }
+            // Already past a section's first page: go back to that page first.
+            let page = reader?.currentPageIndex() ?? 0
+            jumpToDocumentSection(at: documentSections[current].startPage < page ? current : current - 1)
+            return
+        }
         guard chapterIndex - 1 >= 0 else { return }
         loadChapter(at: chapterIndex - 1, startPage: 0)
     }
@@ -257,6 +393,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         state.currentPage = page
         state.totalPages = total
         scheduleSave(page: page)
+        if isSingleChapterDocumentBook { syncDocumentSection(forPage: page) }
         guard !currentPages.isEmpty else { return }
         prefetchCurrentChapterPages(pages: currentPages, currentPage: page)
         if total > 3, page >= total * 3 / 4 {
@@ -269,12 +406,21 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     func readerToggleControls() { state.showControls.toggle() }
     func readerToggleBookmark() {
         guard chapters.indices.contains(chapterIndex) else { return }
+        let page = reader?.currentPageIndex() ?? 0
+        // These books are a single chapter, so `chapterStart` would collapse every
+        // page onto one bookmark; carry the page in the offset slot instead.
+        let position: CoreTextReadingPosition = isSingleChapterDocumentBook
+            ? CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: page)
+            : .chapterStart(chapterIndex)
+        let title = isSingleChapterDocumentBook
+            ? (currentDocumentSectionIndex.map { documentSections[$0].title } ?? chapters[chapterIndex].title)
+            : chapters[chapterIndex].title
         store?.toggleBookmark(
             bookId: book.id,
             chapterIndex: chapterIndex,
-            chapterTitle: chapters[chapterIndex].title,
-            position: .chapterStart(chapterIndex),
-            excerpt: ""
+            chapterTitle: title,
+            position: position,
+            excerpt: isSingleChapterDocumentBook ? String(format: localized("第 %d 頁"), page + 1) : ""
         )
     }
     func readerShowTableOfContents() { state.showChapterList = true }
@@ -326,7 +472,10 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
 
     private func prefetchCurrentChapterPages(pages: [FixedPage], currentPage: Int) {
         let start = currentPage + 1
-        let end = min(start + 5, pages.count)
+        // Rasterized pages are megabytes each and are produced by our own CPU work,
+        // unlike the network-bound image pages Nuke streams in.
+        let lookahead = isSingleChapterDocumentBook ? 2 : 5
+        let end = min(start + lookahead, pages.count)
         guard start < end else { return }
         FixedPageImageLoader.prefetch(
             Array(pages[start..<end]), targetWidth: targetWidth, using: imagePrefetcher)
@@ -368,11 +517,26 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private func scheduleSave(page: Int) {
         saveTask?.cancel()
         let index = chapterIndex
-        let total = chapters.count
+        let total = progressChapterCount
+        let progress = documentProgress(forPage: page)
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard let self, !Task.isCancelled else { return }
-            self.store?.updateMangaPosition(bookId: self.book.id, chapter: index, page: page, totalChapters: total)
+            self.store?.updateMangaPosition(
+                bookId: self.book.id,
+                chapter: index,
+                page: page,
+                totalChapters: total,
+                pageProgress: progress
+            )
         }
+    }
+
+    /// These books are one chapter, so chapter-count progress would sit at 0
+    /// forever; report the page's share of the document instead. Nil for every other
+    /// book, which keeps their existing chapter-based progress untouched.
+    private func documentProgress(forPage page: Int) -> Double? {
+        guard isSingleChapterDocumentBook, currentPages.count > 1 else { return nil }
+        return Double(page) / Double(currentPages.count - 1)
     }
 }

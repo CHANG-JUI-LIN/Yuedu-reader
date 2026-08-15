@@ -21,7 +21,7 @@ struct WebDAVBrowseClient {
 
         /// Whether this file is a format the library importer can ingest.
         var isImportableBook: Bool {
-            ["epub", "txt", "md", "markdown"].contains(fileExtension)
+            ["epub", "pdf", "txt", "md", "markdown"].contains(fileExtension)
         }
     }
 

@@ -27,12 +27,24 @@ final class EPUBPageRenderer: ObservableObject {
             // directly, so the scroll body can gate on a ready engine without a
             // white/blank flash. SwiftUI does not observe nested ObservableObjects.
             guard oldValue !== scrollEngine else { return }
+            // ⟐ engine-churn probe. A device log showed the scroll reader being stood up four
+            // times for a single book open, each with its own engine, each restoring the reading
+            // position independently — which is most of what the user sees as "jumping". The
+            // count is what tells the next capture whether a fix landed; the caller is named by
+            // the matching `⟐ rebuildPages` line.
+            if scrollEngine != nil {
+                scrollEngineCreations += 1
+                AppLogger.render("⟐ scrollEngine created #\(scrollEngineCreations)")
+            }
             scrollEngineReady = scrollEngine?.isReady ?? false
             scrollReadyCancellable = scrollEngine?.$isReady
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] ready in self?.scrollEngineReady = ready }
         }
     }
+
+    /// How many scroll engines this renderer has created. Diagnostics only; see the probe above.
+    private var scrollEngineCreations = 0
 
     /// Mirrors `scrollEngine?.isReady` reactively for the SwiftUI body.
     @Published private(set) var scrollEngineReady: Bool = false

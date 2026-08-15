@@ -200,8 +200,11 @@ struct BookSourceEditView: View {
                 .pickerStyle(.menu)
                 Toggle(localized("啟用"), isOn: $source.enabled)
                 Toggle(localized("發現"), isOn: $source.enabledExplore)
-                Toggle(localized("CookieJar"), isOn: $source.enabledCookieJar)
-                Toggle(localized("段評"), isOn: $source.enabledReview)
+                // `enabledCookieJar` and `enabledReview` are deliberately NOT editable
+                // here: neither gates anything in this app (see their declarations in
+                // `BookSource`), so a switch for them reads as a feature toggle while
+                // changing nothing. Both fields are still decoded, encoded, and handed
+                // to the source's JS — only the misleading control is gone.
                 Toggle(isOn: $source.presentsAndroidIdentity) {
                     VStack(alignment: .leading, spacing: DSSpacing.xs) {
                         Text(localized("以 Android 身分回報"))

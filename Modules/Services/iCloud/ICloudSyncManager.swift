@@ -138,6 +138,7 @@ final class ICloudSyncManager: ObservableObject {
     /// Fixed per-device id for the single bubble-selection sync record, so two
     /// devices merge the same record instead of appending duplicates.
     private static let bubbleSelectionRecordID = "comment_bubble_selection"
+    private static let readerOverlayLayoutRecordID = "reader_overlay_layout"
 
     // Local merge shadows (per-id updatedAt/hash/deleted) for the auto-merge sync.
     private static let shadowBooks = "icloud_books"
@@ -145,6 +146,7 @@ final class ICloudSyncManager: ObservableObject {
     private static let shadowReplaceRules = "icloud_replaceRules"
     private static let shadowCommentBubbleStyles = "icloud_commentBubbleStyles"
     private static let shadowCommentBubbleSelection = "icloud_commentBubbleSelection"
+    private static let shadowReaderOverlayLayout = "icloud_readerOverlayLayout"
 
     /// Bound at launch so the merge sync can read/write the live bookshelf.
     /// `BookStore` is not a singleton (created in the app entry point).
@@ -326,7 +328,39 @@ final class ICloudSyncManager: ObservableObject {
                 await MainActor.run { GlobalSettings.shared.applyCommentBubbleSync(selection: mergedSelection) }
             }
 
-            // 4. Bookshelf (bound store). Progress lives in each book's
+            // 4. Reader header/footer layout (singleton setting). Same shape as
+            //    the bubble selection above: ONE always-present record under a
+            //    constant id, whose merge clock advances only on a real user
+            //    edit — never when a sync applies a remote layout, which would
+            //    make both devices claim to be newest on every pass.
+            let (localOverlayLayout, overlayLayoutClock) = await MainActor.run {
+                let settings = GlobalSettings.shared
+                return (settings.readerOverlayLayout, settings.readerOverlayLayoutSyncClock)
+            }
+            let overlayLayoutMerge = try await mergeType(
+                recordName: "reader_overlay_layout",
+                shadowKey: Self.shadowReaderOverlayLayout,
+                local: [
+                    ReaderOverlayLayoutSyncRecord(
+                        layout: localOverlayLayout,
+                        modifiedAt: overlayLayoutClock
+                    )
+                ],
+                id: { _ in Self.readerOverlayLayoutRecordID },
+                hash: { Self.stableHash($0) },
+                fallbackUpdatedAt: { $0.modifiedAt ?? .distantPast }
+            )
+            changedRemote = changedRemote || overlayLayoutMerge.uploaded
+            if overlayLayoutMerge.shouldApplyLocally, let merged = overlayLayoutMerge.values.first {
+                await MainActor.run {
+                    GlobalSettings.shared.applyReaderOverlayLayoutFromSync(
+                        merged.layout,
+                        modifiedAt: merged.modifiedAt
+                    )
+                }
+            }
+
+            // 5. Bookshelf (bound store). Progress lives in each book's
             //    lastOpenedDate, so newest-wins handles reading-progress merges too.
             if let store = boundBookStore {
                 let localBooks = await MainActor.run { store.books }
@@ -344,12 +378,12 @@ final class ICloudSyncManager: ObservableObject {
                 }
             }
 
-            // 5. Binary book files (EPUB/TXT content + cover images).
+            // 6. Binary book files (EPUB/TXT content + cover images).
             let uploadedBookFileCount = try await uploadBookFiles()
             changedRemote = changedRemote || uploadedBookFileCount > 0
             _ = try await downloadMissingBookFiles()
 
-            // 6. Manifest + timestamp.
+            // 7. Manifest + timestamp.
             let date = Date()
             if changedRemote {
                 try await saveManifest(await makeManifest(date: date))

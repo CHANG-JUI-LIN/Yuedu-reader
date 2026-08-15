@@ -9,6 +9,9 @@ import Foundation
 ///   chapter.network / chapter.parse
 ///   js.runtimeCreate
 ///   coreText.firstPage / coreText.fullLayout
+///   coreText.scroll.loadChapter / coreText.scroll.slice / coreText.scroll.placeholderSlice
+///   coreText.document.buildChapter  (per-phase totals; sub-phases below are nested in it)
+///   coreText.document.htmlParse / cssCollect / cssParse / astBuild / cssMatch
 ///   reader.open.transition / reader.open.contentGate / reader.open.contentHold
 ///   reader.open.deferredPreload
 ///   search.presentation.runtimeMarkers / kindInference / coverURL / introSanitize / mainMerge
@@ -19,6 +22,10 @@ import Foundation
 /// Only spans at or above their reporting threshold are logged, so hot paths
 /// (per-chapter title rules etc.) don't flood the Console.
 enum SourcePerfTrace {
+
+    /// Start stamp for the manual `record(since:)` form, so call sites that cannot wrap their
+    /// work in a closure don't each spell out the clock.
+    static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     /// Measure a synchronous span.
     @discardableResult

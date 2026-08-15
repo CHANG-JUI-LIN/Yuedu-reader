@@ -126,6 +126,47 @@ Apple 未明述估算誤差累積如何被吸收，也未明述 fragment 何時�
 
 ## 3. 目前最大的效能瓶頸
 
+### 3.0 實測基準（2026-08-14，真機）
+
+階段 0 量到的數字。**這一節推翻了本文原先的優先序判斷**，見 §3.3。
+
+**slice 對章長：完美線性，正如預測。** 同一本書 1588→9313 字（5.9×）：
+
+| chars | slice | perKChar |
+|---|---|---|
+| 1588 | 4.9ms | 3.09 |
+| 3477 | 10.4ms | 3.00 |
+| 4820 | 15.0ms | 3.11 |
+| 8862 | 24.7ms | 2.78 |
+| 9313 | 29.2ms | 3.13 |
+
+重 CSS 書（紅樓夢類）為 5.06–8.26 ms/kchar。
+
+**slice 內部組成**（§3.1 的推斷全部證實，除了一項）：
+
+| | 重 CSS 書 | 輕量書 |
+|---|---|---|
+| `SuggestFrameSize` | **58%** | **43%** |
+| `CreateFrame` | 26% | 20% |
+| attachment 抽取 | 5% | 23% |
+| framesetter 建立 | 8% | 12% |
+| **renderable 抽取** | **0.6%** | **1%** |
+
+`SuggestFrameSize` 是最大單一項，每 chunk 約 1.9 次（§3.1 預測 1～4，符合）。
+**但 renderable 抽取幾乎免費**——§3.1 把它列為三大成本之一是錯的，之後不必為它花力氣。
+
+**決定性的數字：slice 不是瓶頸。**
+
+| | document | slice | slice 佔 loadChapter |
+|---|---|---|---|
+| 重 CSS 書 14334 字 | **5307.6ms** | 105.7ms | **2.0%** |
+| 重 CSS 書 14039 字 | 3932.5ms | 97.0ms | 2.4% |
+| 輕量書 9313 字 | 140.1ms | 29.2ms | 17% |
+| 輕量書 3106 字 | 227.0ms | 9.3ms | 3.9% |
+
+每一筆樣本，document 都是 slice 的 **5～50 倍**。**階段 1–5 全部做完、slice 砍到 0，重 CSS
+書的章節載入是 5414ms → 5308ms（快 2%）。**
+
 ### 3.1 直接原因：`slice()` 是整章 eager layout
 
 `CoreTextChunkSlicer.slice()` 的主迴圈 `while offset < totalLen` 走完整章。每一圈實際成本：
@@ -152,7 +193,16 @@ flow layout 必須拿到**每個 item 的精確尺寸**才能算出 `contentSize
 
 1. **`insertLoadingPlaceholder` 在 main actor 上同步呼叫 `slice()`**（`CoreTextScrollEngine.swift:483`）。佔位字串很短所以目前不痛，但這是一條同步排版路徑，架構上該收掉。
 2. **frame 已經是 lazy 的，量測不是**。`evictFrame()` / `materializeFrameIfNeeded()` 已經讓 `CTFrame` 可丟可重建，但 `chunk.height` 是在 slice 時定死的 —— 也就是說**我們已經有一半的懶惰機制，卡在幾何這一關**。
-3. 每章一次的 `chapterDocumentStore.document(for:)` 產生**整章的 `NSAttributedString`**。這是 CSS／HTML → attributed string 的成本，與 CoreText 排版無關，lazy layout 不會改善它。要改善得動 `HTMLAttributedStringBuilder`，屬於另一個題目。
+3. ~~每章一次的 `chapterDocumentStore.document(for:)` …屬於另一個題目。~~
+   **【2026-08-14 實測更正】這不是次要瓶頸，是主要瓶頸，差 5～50 倍（§3.0）。**
+   `chapterDocumentStore.document(for:)` 產生整章 `NSAttributedString` 的成本主導了整個
+   `loadChapter`；lazy layout 確實不會改善它，但那意味著**本文的成功判準無法只靠 viewport
+   重構達成**，不意味著它可以晚點再說。
+
+   而且它跑在主執行緒：[`ChapterDocument.swift:86`](../Modules/Core/ReaderCore/CoreText/ChapterDocument.swift)
+   是 `Task { @MainActor [builder] in }`，而 `EPUBAttributedStringBuilder` 標了 `@MainActor`。
+   那 5.3 秒不只是慢，是卡住 UI。（但 wall time 含 `await` 掛起，不全是 CPU——這正是要拆
+   子階段的原因。）
 
 ---
 
@@ -256,17 +306,382 @@ charsPerLine ≈ contentWidth / averageGlyphAdvance
 
 每一階段都可獨立驗證、獨立回退。
 
-### 階段 0 — 量測基準（不改行為）
-在 `slice()` 與 `loadChapter` 加 `ReaderPerfTrace` span，量出真機上：整章 slice 的毫秒數（按章長分佈）、`SuggestFrameSize` 累計時間、`CreateFrame` 累計時間、renderable 抽取時間。**沒有這組數字，後面每一步都是憑感覺。**
+### 階段 0 — 量測基準（不改行為）✅ 已落地
+在 `slice()` 與 `loadChapter` 加 span，量出真機上：整章 slice 的毫秒數（按章長分佈）、`SuggestFrameSize` 累計時間、`CreateFrame` 累計時間、renderable 抽取時間。**沒有這組數字，後面每一步都是憑感覺。**
 
-### 階段 1 — 抽出 outline（行為不變）
+#### 實作方式
+
+`CoreTextSliceMetrics`（`Modules/Core/ReaderCore/CoreText/`）是每次 `slice()` 呼叫的成本累加器，以 `inout` 貫穿 `makeHorizontalFrame` / `makeHorizontalChunk` / `padForBackdrop` / `sliceVertical`，隨 `CoreTextChunkSlicer.Output.metrics` 回傳。**累加器是單次呼叫的區域變數**——章節會並行切片，全域計數器既會 race 也會把不同章混在一起。
+
+三個 stage 走 `SourcePerfTrace`（`⏱` 行，Release Console 可見）：
+
+| stage | 內容 |
+|---|---|
+| `coreText.scroll.loadChapter` | 端到端：`document` / `prepare` / `slice` / `insert` / `warm` 五段 |
+| `coreText.scroll.slice` | `slice()` 內部拆解：`framesetter` / `suggest` / `frame` / `extract` / `attach` / `other`，各附呼叫次數 |
+| `coreText.scroll.placeholderSlice` | §3.3 那條 main-actor 同步 `slice()`，證明它確實近乎免費 |
+
+> **為什麼不是新增 `ReaderPerfStage` case**：`ReaderPerfStage` 定義在**遠端套件** `YueduCoreText`（pin 0.2.1），加 case 要改套件、發版、再改兩邊的 `ReaderPerfTraceTests`。而且我們要的是**累計值**——signpost 是逐次區間，一章上百個區間得掛 Instruments 才讀得到，拿不到真機 Console 上的一行摘要。既有的 `.chapterLoad` / `.layoutPageRanges` signpost 原封不動保留。
+
+#### 怎麼收數字
+
+Console.app 接真機，filter `⏱ coreText.scroll`。捲動模式開紅樓夢（章長分佈廣）、洪武大帝（多看盒模型），直排開 kusamakura，各翻十幾章。
+
+關鍵欄位是 **`perKChar`**：每千字的毫秒數。
+
+- **今天**應該隨章長大致持平（成本與章長成正比）。
+- **階段 3 之後**應該隨章長**下降**——長章跟短章一樣只排一個 viewport。
+
+`perKChar` 從持平變成隨章長下降，就是「章節載入時間與章長脫鉤」在數據上的樣子。
+
+### 階段 0.5 — 拆解 document（因 §3.0 的發現插入）
+
+`slice` 只佔章節載入的 2～17%，所以在動 viewport 之前必須先知道 document 那 5.3 秒花在哪。
+
+七個子階段（`html.parse` / `css.collect` / `css.parse` / `css.match` / `ast.build` /
+`ir.convert` / `attributed.render`）本來就有 `ReaderPerfTrace` span，但只是 signpost，真機
+Console 看不到，且**只蓋到 `buildChapter` 的中段**。以下四段原本完全沒量，一併補上：
+
+| 缺口 | 為什麼可能很貴 |
+|---|---|
+| `session.chapterHTML(at:)` | EPUB zip 讀取＋解壓 |
+| `styleResolver.registerFontFaces` | 每個內嵌字面一次 `CTFontManagerRegisterGraphicsFont`；重 CSS 書的頭號嫌疑 |
+| `FootnoteStore.index` | 走訪整棵 AST |
+| `anchorOffsets(in:)` | 走訪整個 attributed string |
+
+輸出是一行 `⏱ coreText.document.buildChapter`，含 `fetch` / `styledAST` / `footnote` /
+`background` / `fonts` / `ir` / `render` / `anchors` / `other` 九段；`styledAST` 再由
+`coreText.document.{htmlParse,cssCollect,cssParse,astBuild,cssMatch}` 五行細拆。
+
+> **巢狀關係，別相加**：`cssMatch` 在 `astBuild` 裡面；`htmlParse` / `cssCollect` /
+> `cssParse` / `astBuild` 四者相加才約等於 `styledAST`。
+
+#### 階段 0.5 實測結果（2026-08-14）
+
+| 階段 | 重 CSS 書 spine 15 | 重 CSS 書 spine 17 | 輕量書 spine 22 |
+|---|---|---|---|
+| chars / nodes | 14334 / **63** | 10360 / **26** | 21233 / **414** |
+| **總計** | **5037ms** | **2187ms** | **325ms** |
+| fetch（zip 解壓） | 18.1 | 2.4 | 1.8 |
+| styledAST | 441.4 | 105.6 | 171.2 |
+| ├ htmlParse | 12 | 4 | 6 |
+| ├ cssCollect | 179 | 46 | 1 |
+| ├ cssParse | 11 | 0 | 0 |
+| └ **cssMatch** | 237 | 55 | **163** |
+| background | 37.1 | 76.1 | 0.0 |
+| fonts | 273.4 | 0.4 | 0.8 |
+| ir | 5.9 | 2.6 | 3.8 |
+| **render** | **4257.3 (85%)** | **1999.7 (91%)** | 146.9 (45%) |
+| anchors / other | 0.1 / 0.4 | 0.1 / 0.0 | 0.0 / 0.1 |
+
+**結論：兩本書瓶頸不同。**
+
+- **重 CSS 書 → `render`（85–91%）。** 決定性的線索是 node 密度：spine 15 用 **63 個 node**
+  裝 14334 字（**67.6ms/node**），輕量書 spine 22 用 414 個 node 裝 21233 字
+  （**0.35ms/node**）——**差 200 倍**。這不可能是文字組裝，node 裡面有很貴的 await。
+- **輕量書 → `cssMatch`（總計的 50%）。** 與 topLevel 元素數線性相關（816→163ms、377→79ms、
+  188→53ms，約 0.2ms/element）。
+
+**被排除的假設：**
+
+| 原本的嫌疑 | 實測 | 結論 |
+|---|---|---|
+| zip 讀取／解壓 | 1.4–18.1ms | 無罪 |
+| CSS 解析 | 0–11ms（`cached=true` 有效） | 無罪 |
+| HTML 解析 | 0–12ms | 無罪 |
+| 字型註冊 | 首章 273.4ms，之後 0.4ms | 一次性，非主因 |
+
+**另外兩個發現：**
+
+1. **短章的固定成本是 `background`**：spine 14（22 字）花 144.5ms、spine 13（0 字）花
+   62.9ms 在背景圖上。這解釋了為什麼上一輪「22 字的章節也要 176ms」。
+2. **`document` 有快取**：同章第二次載入 `document=0.0ms`。所以這些是**開書與首次翻到**的成本。
+
+### 階段 0.6 — 拆解 `render` 的 await leaves
+
+`render` 是重 CSS 書的 85–91% 且完全是黑盒，所以再拆一層。`NodeAttributedStringRenderer`
+是刻意無狀態的 `struct`，render 是深層 async 遞迴——用 task-local 的參照型 `RenderLeafMetrics`
+收集，不動它的設計。bucket 是**被 await 的服務**（`svgRaster` / `svgSize` / `imageLoad` /
+`blockBgImage` / `mainActorHop` / `mathml` / `table` / `regexPrewarm` / `imageTrim` /
+`svgTrim` / `diagTrim`），加一個 `walk` = 總時間減去所有 leaf，代表樹走訪本身。
+
+輸出 `⏱ coreText.document.renderLeaves`，bucket 由大到小排。
+
+#### 階段 0.6 實測結果（2026-08-14）：**`imageLoad`**
+
+| 書 | spine | nodes | render | **imageLoad** | 次數 | 每次 | mainActorHop | walk |
+|---|---|---|---|---|---|---|---|---|
+| 重 CSS | 19 | 47 | 3641.6 | **3548.3 (97%)** | **102** | 34.8ms | 11.5 | 81.7 |
+| 重 CSS | 17 | 26 | 2541.8 | **2481.2 (98%)** | **54** | 45.9ms | 4.3 | 55.8 |
+| 輕量 | 22 | 414 | 202.4 | 121.5 (60%) | 11 | 11.0ms | 0.4 | 80.4 |
+| 輕量 | 23 | 64 | 24.8 | 13.6 | 2 | 6.8ms | 0.0 | 11.2 |
+
+**兩個原本的嫌疑都無罪**：`mainActorHop` 102 次只花 11.5ms；`svgRaster` / `diagTrim` 完全
+沒出現（這本書不走 SVG 路徑）。`walk`（樹走訪本身）也只有 55–82ms。
+
+**根因：`EPUBAttributedStringBuilder.loadImage` 沒有任何快取。**
+
+```
+resourceProvider.response(for:)   →  zip 讀取＋解壓
+UIImage(data:)                     →  建立 UIImage
+```
+
+每次呼叫都完整重做，旁邊的 `loadCSS` 卻有 `processedCSSCache`。一章 102 次呼叫。
+
+**定案數據（2026-08-14）：**
+
+| spine | imageLoad | 呼叫 | **相異** | **zip** | decode | 單次 zip |
+|---|---|---|---|---|---|---|
+| 19 | 4178.8ms | 102 | **11** | **4059.0ms (97%)** | 4.7ms | 39.8ms |
+| 21 | 1959.6ms | 58 | **2** | **1942.6ms (99%)** | 3.1ms | 33.5ms |
+| 20 | 65.5ms | 2 | 1 | 65.3ms | 0.1ms | 32.7ms |
+
+**兩個獨立的問題：**
+
+1. **29 倍重複讀取**（spine 21：58 次呼叫、2 張圖）。成本 100% 在 zip 讀取；
+   `UIImage(data:)` 是 0.05ms/次——它本來就惰性，不在這裡解碼像素。
+   加快取後 spine 21 的 1942.6ms → 約 67ms（**省 96.6%**），
+   spine 19 的 4059ms → 約 438ms（**省 89%**）。
+2. **單次 zip 讀取 33–40ms 本身就太慢。** 這是獨立的異常，快取只是讓它從付 102 次
+   變成付 11 次。可疑處在 `PublicationSession.response(for:)`：`resource.properties()`
+   ＋ `resource.read()` ＋ `transformedDataIfNeeded(…, algorithm:)`——這本書有
+   `encryptionAlgorithm`（多看混淆），解密可能就是那 40ms。**尚未查證。**
+
+**現有快取都不適用**（`ReaderStyleAssetImageCache` 是使用者自訂樣式資產、
+`AppearancePageBackground` 是外觀背景、`CommentBubbleSVGRecognizer` 是段評氣泡、
+`ReviewBadgeRenderer` 是書評徽章），沒有一個涵蓋 EPUB 書內資源讀取。
+
+順帶：`loadImage` 用 `try?` 靜默吞掉錯誤，違反 CLAUDE.md「不吞錯誤」，修快取時一併處理。
+
+#### 已修（2026-08-14）
+
+`EPUBAttributedStringBuilder` 加了 per-book `imageCache: NSCache<NSString, UIImage>`
+（countLimit 256、totalCostLimit 32MB，cost 用解碼後像素預算 `w×h×scale²×4` 而非壓縮位元組，
+因為 `UIImage(data:)` 是惰性的）。key 是解析後的資源 URL，所以 CSS 的絕對式
+`reader-book://…` 與章節相對的 `<img src>` 指到同一份資源時會共用。
+
+選擇 `loadImage` 這一層而非 `PublicationSession.response(for:)`：與同檔案裡
+`processedCSSCache` 同一層、同一形狀，值是 `UIImage`（記憶體用量可直接估算），
+不必快取字型與大檔的原始 `Data`。
+
+`try?` 一併換成 `do/catch` ＋ `AppLogger.render`（讀取失敗與解碼失敗分開記）。
+
+**實測（2026-08-14，同書同 spine，皆冷開）：**
+
+| spine | chars | 總計 | render |
+|---|---|---|---|
+| 21 | 8904 | 2123ms → **797ms** | 2015.8 → **309.6ms（−85%）** |
+| 20 | 194 | 189ms → **11ms** | 67.6 → **2.0ms** |
+| 22 | 168 | 112ms → 232ms ⚠️ | 66.1 → **2.5ms** |
+
+spine 23（39512 html / 16831 字，比先前任何樣本都大）現在是 **365ms**。
+
+**spine 22 反而變慢**：render 掉到 2.5ms，但 `background` 從 39.1 漲到 **220.6ms**——
+同一份資源的單次 archive 讀取從 39ms 變 220ms。這是下面那個未修的異常，**它的變異比原本
+估計的大得多**。單一樣本，不臆測原因。（旁證：spine 20 的 `background` 現在是 0.1ms，
+證明背景圖確實走同一條快取。）
+
+**單次 zip 讀取 33–40ms（實測可達 220ms）的異常沒有修**，只是從付 102 次變成付 11 次；
+那是獨立的待辦，嫌疑在 `PublicationSession.response` 的 `transformedDataIfNeeded`。
+
+回歸測試 `EPUBImageCacheTests`：斷言的是**呼叫次數**不是毫秒（毫秒在 CI 上會飄），
+「N 次引用只能有 distinct 次 archive 讀取」正是退化掉的那條性質。
+
+> 帶點的 bucket（`imageLoad.zip`）是**巢狀細分**，`totalSeconds` 會排除它們，否則
+> `walk` 會被重複扣成負數。
+
+**原本的兩個嫌疑（已由數據排除，保留供日後辨認）：**
+
+1. **`resolvedImageMetrics` 每張圖開頭都是 `await MainActor.run { UIScreen.main.bounds.width }`**。
+   `render` 是 `nonisolated async`，跑在 global executor，所以這是每張圖一次的主執行緒往返
+   ——而主執行緒此時正忙著別章的 document build。全檔共 6 處相同寫法，都記進 `mainActorHop`。
+2. **SVG 路徑上有段診斷碼做了多餘的全圖 pixel 掃描**：`CommentBubbleSVGRecognizer.diag`
+   的 `after` 參數會呼叫 `trimmingTransparentPixels()`，而 `diag` 只保留第一次出現的簽章、
+   其餘丟棄，真正的 trim 又在三行後重跑一次。記進 `diagTrim`，確認成本後就可以刪。
+
+`spine=` 由 task-local `ReaderDocumentTrace.spineIndex` 帶下去——那幾個 HTML/CSS 檔案刻意不
+知道自己在建哪一章，為了純診斷用途去加參數會污染六層簽章。`Task {}` 會繼承 task-local，
+`Task.detached` 不會，所以跑進 detached 的階段會印 `spine=?` 而不是印錯的號碼。
+
+### 階段 1 — 抽出 outline（行為不變）🔶 型別已落地，引擎接線未做
 `ChapterOutline` ＋ `FragmentDescriptor` ＋ `EstimatedHeightModel`。此時仍然整章實算，但幾何改由 `FragmentGeometryStore` 提供。**驗證：所有 chunk 高度與改前逐一相同。**
 
-### 階段 2 — 自訂 layout（行為不變）
+#### 已完成（2026-08-14）
+
+四個型別全部落地，且都不碰 `CTFramesetter*`：
+
+| 型別 | 職責 |
+|---|---|
+| `EstimatedHeightModel` | §4.1 的算術估算。**這個型別裡永遠不得出現 `CTFramesetter*` 呼叫** |
+| `FragmentDescriptor` | 四態（`.described`/`.estimated`/`.measured`/`.laidOut`），高度單調性由型別保證 |
+| `ChapterOutline` | 掃 `\n` 與 run-delegate attachment 切段落；順帶取樣 CJK 佔比餵給估算模型 |
+| `FragmentGeometryStore` | 章 → outline、高度查詢／回寫、`totalHeight`、charOffset → fragment |
+
+`ChapterOutlineTests` 覆蓋 §9 的三條不變量（第三條錨點守恆要等階段 3 才有意義）：
+
+1. **邊界權威**：fragment 的 range 必須**無縫也無重疊地鋪滿整章**——包含沒有結尾換行、
+   連續空行、空章三種邊界情形。
+2. **高度單調性**：`recordActualHeight` 之後 `demoteToMeasured` 只降狀態不退高度。
+3. **總高一致**：store 的 total 恆等於各 fragment 之和，量測前後皆然；跨章 offset 累加、
+   prepend 插到最前、移除章節都各有案例。
+
+**設計決定：blank paragraph 佔一行而不是 0 高。** 空行是使用者看得到的間距，估 0 會讓捲動
+幾何在空行多的章節系統性偏短。
+
+#### 引擎接線已完成（2026-08-14，150 個測試全綠）
+
+`CoreTextCollectionScrollViewController.sizeForItemAt` 已改問
+`CoreTextScrollEngine.scrollExtent(at:)`，不再直接讀 `chunk.height`。
+
+**store 是衍生的，不是同步維護的。** `insert` 有三條分支各自重算內容，讓 store 跟著它們逐步
+更新等於開第二套帳。改成 `chunks` 的 `didSet` 只標記 stale、下次讀取整份重建——**任何
+mutation 都不可能漏掉失效，這是結構保證不是紀律要求**。
+
+#### ⚠️ 分組只能來自 `chunks`，不能來自 `chapterRanges`（真機回報「開書回跳半天」的真因）
+
+第一版用 `chapterRanges` 分組，**這是真正的 bug**：`chunks` 與 `chapterRanges` 是兩個各自
+獨立的 `@Published` 屬性，`insert` 是先後兩次賦值：
+
+```swift
+chunks.insert(contentsOf: newChunks, at: insertAt)   // ← 這一行就會同步通知觀察者
+chapterRanges = newRanges                            // ← 還沒執行到
+```
+
+任何觀察者（SwiftUI 更新、Combine 訂閱、layout pass）在這兩行**中間**跑起來，就會拿舊的
+ranges 去分組新的 chunks。沒被涵蓋到的 chunk 掉出 flat index，`height(atFlatIndex:)` 回
+`nil`，延伸量變成 **0**；下一輪才修正回來——這就是「跳一下、修正、再跳一下、才穩定」。
+
+> **延遲重建擋不住這個。** 延遲只保證「不在 `insert` 內部重建」，擋不住外部觀察者在兩次
+> 賦值中間觸發讀取。**問題不是何時重建，是讀了兩個不同步的來源。**
+
+修法：分組改用**每個 chunk 自己帶的 `chunk.chapterIndex`**（`ChapterOutline.grouped`）。
+只讀一個屬性 → 映射在構造上完備：每個 chunk 必落在某個 outline，flat index `i` 恆等於
+`chunks[i]`。`chapterRanges` 的 `didSet` 一併移除，store 不再讀它。
+
+**診斷教訓**：症狀出現在換 layout 之後，於是連續兩次都只在 layout 裡找。那是**時序巧合**
+——階段 1 的 store 早就壞了，只是 flow layout 每次重新問 delegate、把錯值蓋掉得夠快所以
+看不見，換成會快取的自訂 layout 才顯形。**改動 A 之後才出現的症狀，成因可能在更早的 B。**
+
+**顆粒度**：階段 1 的 store 以 **chunk 顆粒度**填充（`ChapterOutline.measured`），每個
+descriptor 直接進 `.laidOut` 態並帶著實測高度，所以 `hasEstimates == false`——
+**估算值在這個階段進不了畫面**。段落級 `ChapterOutline.make` 已就緒但尚未驅動版面，
+階段 3 才換手。
+
+新增的驗證（對真正 slice 出來的 chunk，非手搭替身）：
+
+- `measuredOutlineMatchesChunksExactly` — charRange 與 height **逐一相同**，且無任何
+  fragment 處於估算態
+- `flatIndexWalksChaptersInScrollOrder` — flat index 跨章按捲動順序走，越界回 `nil`
+- `verticalOutlineUsesWidthAsExtent` — 直排以 width 為延伸軸
+
+`scrollExtent(at:)` 回 `nil` 只代表索引超出已載入內容，與呼叫端本來就得處理的
+`chunks` 越界是同一個條件——**不是兜底**。
+
+### 階段 2 — 自訂 layout（行為不變）✅ 已落地（156 個測試綠）
 `ReaderScrollLayout` 取代 flow layout，仍然吃精確高度。**驗證：捲動位置、章節邊界間距、RTL 直排與改前像素一致。**
 
-### 階段 3 — 估算高度上線（行為改變，最危險的一步）
+#### 實作
+
+`Modules/Features/Reader/ReaderScrollLayout.swift`。閱讀器的 collection view 是**單一 section、
+跨軸滿版、零間距**，所以幾何就是沿捲動軸的累加和；章節間距做在 item 的延伸量**之內**
+（`sizeForItemAt` 一直都是這樣報的），不是 item 之間的 spacing。
+
+- `sizeForItemAt` 刪除，改由 layout 呼叫 `scrollExtent(forItem:)`——**延伸量只剩一個計算點**
+- conformance 從 `UICollectionViewDelegateFlowLayout` 降回 `UICollectionViewDelegate`
+- `CoreTextScrollFlowLayout` 刪除
+- `extentProvider` 用 `[weak self]`：layout ← collection view ← VC，強引用會成環
+- `layoutAttributesForElements` 用 binary search（每次捲動都會呼叫，item 數隨載入章節增長）
+
+#### ⚠️ flow layout 會把 item origin 對齊裝置像素格
+
+**這是等價測試抓到的，讀程式碼絕對想不到。** 第一版直接用全精度累加，前 3 個 item 一致，
+從第 4 個起每個差 **1/6 pt**（@3x 螢幕的 1/2 像素）：
+
+```
+mine  4428.5              (1997 + 2000 + 431.5)
+flow  4428.666666666667   (4428.5 × 3 = 13285.5 → 四捨五入 13286 → ÷3)
+```
+
+正確模型是三件事同時成立：
+
+| | 做法 |
+|---|---|
+| origin | `round(cursor × scale) / scale`，`.5` 一律進位（away from zero） |
+| size | **不對齊**，保持精確值（期望值裡仍是 `1204.25`、`2000.75`） |
+| 累加 | 用**全精度**推進，不用對齊後的值，否則誤差會累積 |
+| `contentSize` | 原始總和（`16377.5`），**不對齊** |
+
+理由是合理的：cell 落在整數實體像素上，CoreText 自繪的文字才不會糊。
+
+binary search 也改用**實際 frame 的邊界**而非原始累加值——對齊會讓 origin 移動最多 1 像素，
+兩套數字各算各的就會在邊界上漏掉或多出 cell。
+
+> **若沒有這個測試**：症狀會是「捲動久了位置慢慢偏」，每 item 差 1/6 pt、幾百個 chunk
+> 累積成數十 pt，且只在特定章長組合下出現——肉眼看不出來，只會變成使用者回報的「有時候會跳」。
+
+#### ⚠️ 自訂 layout 的兩個必要契約（真機回報「開書回跳半天」後補上）
+
+幾何算對還不夠。第一版上真機後出現「開書回來反覆跳很久才穩定到原位」，根因是兩個
+`UICollectionViewLayout` 的契約沒遵守——**兩者單元測試都測不到，因為它們只在
+`performBatchUpdates` 與 UIKit 內部改寫時才發作**：
+
+1. **`layoutAttributesFor…` 必須回傳複本，不能回傳快取實例。**
+   `UICollectionViewLayoutAttributes` 是 class，UIKit 會**就地修改**它拿到的物件（套用更新
+   動畫、inset 調整、內部記帳）。回傳快取實例等於讓 UIKit 改寫我們的快取，之後每一輪讀到
+   的都是被污染的 frame。`UICollectionViewFlowLayout` 正是為此一律複製。
+2. **必須實作 `initialLayoutAttributesForAppearingItem` /
+   `finalLayoutAttributesForDisappearingItem`。**
+   章節 prepend 走 `insertItems`，UIKit 會用**舊／新兩套 index path** 詢問屬性；快取只有新的
+   一套時，索引位移過的 cell 會落在無關位置，直到後續 pass 才修正。
+   本閱讀器不做插入動畫（改用 `contentOffset` 補償），所以兩者都回穩定後的幾何。
+
+回歸測試：拿到屬性後改寫其 frame，再讀一次必須拿回原值。
+
+#### 測試
+
+`ReaderScrollLayoutTests` 立**兩個真的 `UICollectionView`**，一個掛 flow layout、一個掛
+`ReaderScrollLayout`，比對 UIKit 實際算出的 `layoutAttributes`（而非跟手算數字比，這樣連
+flow layout 沒寫在文件裡的行為也一起對到）。直排與 RTL 兩軸各一組；rect 探測刻意包含
+**正好落在 item 邊界上**的偏移。
+
+### 階段 3 — 估算高度上線（行為改變，最危險的一步）🔶 防跳動機制已落地，估算尚未上畫面
 outline 出來即插入，高度先用估算值；`willDisplay` ＋ overscan 觸發實算；實算高度回寫 store → layout 失效 → `AnchorCompensator` 修正 offset。**驗證：見第 9 節。**
+
+#### 已完成：`AnchorCompensator`（2026-08-14，160 測試綠）
+
+**順序是刻意的**：補償機制被證明之前，不讓任何估算高度有機會造成跳動。
+
+`ScrollAnchor` 三個欄位：`chapterIndex` ＋ `charOffset` ＋ `distanceIntoFragment`。
+
+| 決定 | 理由 |
+|---|---|
+| 錨點用 **charOffset** 不用 index path | 章節 prepend／reload 會讓 index 失效，字元位移不會（附錄明訂） |
+| 片段內位移用**絕對點數**不用比例 | 錨點的意義是「該 fragment 頂端視覺上不動」；比例會在該 fragment 自己被重新量測時滑動 |
+| 內容不在了回 **`nil`** 不回舊值 | 章節被驅逐／換源後硬給數字會把讀者捲到隨機位置，比不調整更糟。**這不是缺兜底，是拒絕猜測** |
+
+`AnchorCompensatorTests` 驗 §9 不變量 3。高度刻意用 `211.5 / 97 / 340.25` 這種不整齊的值，
+且上方兩個 fragment **一個變高一個變矮**，算術錯了不會剛好抵銷。核心斷言是：套用補償後
+重新錨定得到的 `ScrollAnchor` 必須與原本**完全相等**。涵蓋：
+
+- 視窗上方重新量測 → 補償量恰為淨變化量
+- 視窗下方重新量測 → 補償量為 0
+- prepend 一整章 → 補償量恰為插入高度
+- **整章 8 個 fragment 一次全部重新量測** → 錨點仍守恆
+- 章節被驅逐 → 回 `nil`
+- `.measured` 不退回估算（否則捲走再回來會被推回去）
+
+#### 未完成：估算值上畫面
+
+還需要（依風險排序）：
+
+1. **邊界權威**（§8.2，最容易出錯）：outline 決定 charRange 後，實算不得再改。目前
+   `paragraphBoundaryLookback`、`splitBeforeFloatLocation`、`CTFrameGetVisibleStringRange`
+   修正**都會在實算時改變邊界**，與此直接衝突。float 偵測必須前移到 outline 階段。
+2. **單一 descriptor 排版**：`CoreTextChunkSlicer` 要從「迴圈整章」改成「排一個 descriptor」。
+3. **`willDisplay` ＋ overscan 觸發實算**，實算回寫 → layout 失效 → 套用補償。
+4. **拖曳／甩動策略**（§8.1）：拖曳中只補償視窗上方；甩動期間不實算。
+5. 直排 `sliceVertical` 末塊壓縮與背景圖補滿一屏，兩者都依賴「知道整章有幾塊」，
+   在 lazy 模型下要重新表述。
 
 ### 階段 4 — 丟棄策略
 遠離 viewport 的 fragment 丟 CTFrame 但**保留 actualHeight**。調整 warm/evict 半徑。

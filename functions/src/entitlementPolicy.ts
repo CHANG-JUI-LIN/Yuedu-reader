@@ -50,10 +50,29 @@ interface EnvironmentPayload {
   };
 }
 
-const supportedProductIds = new Set([
-  "com.zhangruilin.yuedureader.pro.lifetime",
-  "com.zhangruilin.yuedureader.pro.monthly",
-]);
+/** One-time non-consumable: Pro forever, no expiry date on the binding. */
+export const lifetimeProductId = "com.zhangruilin.yuedureader.pro.lifetime";
+/** Auto-renewable subscription: Pro until the current period ends. */
+export const monthlyProductId = "com.zhangruilin.yuedureader.pro.monthly";
+
+const supportedProductIds = new Set([lifetimeProductId, monthlyProductId]);
+
+/**
+ * Whether an entitlement may claim a TestFlight seat.
+ *
+ * Lifetime only, deliberately narrower than Pro itself. A TestFlight seat
+ * cannot be taken back: the one-time slot in `testflightProRequests` is keyed
+ * by uid and never released, and Apple keeps the tester in the beta group with
+ * no revocation path here. A monthly plan could therefore buy a single month,
+ * collect a permanent seat, and cancel. Widen this only alongside a working
+ * revocation path for both the slot and the App Store Connect tester.
+ */
+export function entitlementGrantsTestFlight(
+  isProActive: boolean,
+  productIds: readonly string[]
+): boolean {
+  return isProActive && productIds.includes(lifetimeProductId);
+}
 
 export function effectiveEntitlement(
   storeKitIsActive: boolean,

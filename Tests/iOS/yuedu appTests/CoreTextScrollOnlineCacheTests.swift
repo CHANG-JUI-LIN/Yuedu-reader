@@ -93,19 +93,45 @@ struct CoreTextScrollOnlineCacheTests {
         await engine.start(initialChapter: 0, contentWidth: 320)
 
         #expect(requestedChapters.contains(0))
-        #expect(engine.chapterRanges[0] == nil)
-        #expect(engine.chunks.first?.chapterIndex == 1)
+        // An uncached chapter stands up a 載入中 placeholder, and now stands it up *in chapter
+        // order* — so chapter 0 is the first row instead of being appended below chapter 1. The
+        // expectations these replace (`chapterRanges[0] == nil`, chapter 1 on top) described the
+        // ordering bug that `CoreTextScrollEngine.insertionIndex(forChapter:)` removed; the sibling
+        // test above asserts the same invariant as `firstRange.upperBound <= secondRange.lowerBound`.
+        #expect(engine.chapterRanges[0] != nil)
+        #expect(engine.chunks.first?.chapterIndex == 0)
 
         builder.cachedChapters[0] = "Current chapter body"
-        let result = await renderer.refresh(
-            ReaderRenderRefreshRequest(
-                intent: .chapterContent(0),
-                mode: .scroll,
-                settings: makeSettings(),
-                position: .chapterStart(0),
-                viewportSize: CGSize(width: 320, height: 480)
+        // Chapter *supply* is deliberately not part of `refresh` — `prepareScroll` says so, and the
+        // reason is that a refresh transaction is latest-wins, so loading from inside it let one
+        // chapter's arrival cancel another's mid-load. `ReaderView` drives this call from the
+        // chapter-ready event, so the test drives it too; without it the placeholder is never
+        // swapped and the reader keeps showing 載入中.
+        #expect(await engine.retryChapterIfNeeded(0))
+
+        // `refresh` on the *visible* chapter returns `.requiresVisibleCommit`, which parks the
+        // continuation until a view reports the commit back. Awaiting it directly — as this test
+        // did — can never return, because no view exists here to close the handshake. That is not
+        // a slow test, it is a deadlock: it is what left a whole batch sitting for hours until
+        // `-test-timeouts-enabled` finally turned it into a failure. Drive both halves, the way
+        // `ReaderRenderRefreshTests` does.
+        let refreshTask = Task {
+            await renderer.refresh(
+                ReaderRenderRefreshRequest(
+                    intent: .chapterContent(0),
+                    mode: .scroll,
+                    settings: makeSettings(),
+                    position: .chapterStart(0),
+                    viewportSize: CGSize(width: 320, height: 480)
+                )
             )
+        }
+        let commit = await waitForScrollVisibleCommit(renderer)
+        renderer.finishVisibleRefresh(
+            transactionID: commit.transactionID,
+            outcome: .applied
         )
+        let result = await refreshTask.value
 
         #expect(result == .completed(transactionID: 1))
         #expect(renderer.pendingVisibleRefreshCommit == nil)
@@ -220,5 +246,21 @@ private final class MutableOnlineLikeBuilder: AttributedStringBuilding {
             pageBackgroundImage: nil,
             anchorOffsets: [:]
         )
+    }
+}
+
+/// Waits for `refresh` to park a visible commit, so the test can close the handshake a real view
+/// would close. Mirrors the helper in `ReaderRenderRefreshTests`, which is file-private there.
+@MainActor
+private func waitForScrollVisibleCommit(
+    _ renderer: EPUBPageRenderer,
+    after transactionID: UInt64 = 0
+) async -> ReaderVisibleRefreshCommit {
+    while true {
+        if let commit = renderer.pendingVisibleRefreshCommit,
+           commit.transactionID > transactionID {
+            return commit
+        }
+        await Task.yield()
     }
 }

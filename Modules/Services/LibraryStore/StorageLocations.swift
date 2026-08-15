@@ -63,11 +63,29 @@ enum StorageLocations {
         directory("Covers")
     }
 
+    /// Covers the user set by hand in 書籍資訊 (封面搜索 / 相簿).
+    ///
+    /// Deliberately outside `covers`: 設定 → 快取管理 empties that directory
+    /// wholesale on the premise that every cover in it can be downloaded again,
+    /// and a picture the user chose from their photo library cannot.
+    static var customCovers: URL {
+        directory("CustomCovers")
+    }
+
+    /// Marker inside the filename that says a cover is user-set and therefore
+    /// lives in `customCovers`. Encoded in the name so resolving a cover stays a
+    /// string test — the bookshelf resolves one per row while scrolling, and a
+    /// filesystem probe per cover is not worth paying for.
+    static let customCoverFilenameMarker = "_cover_custom_"
+
     /// A cover image, resolved from the filename stored on `ReadingBook`.
     /// Every cover read in the app goes through here — the lookup used to be
     /// copy-pasted into five call sites, which is exactly how one gets missed.
     static func coverFile(_ filename: String) -> URL {
-        covers.appendingPathComponent(filename)
+        if filename.contains(customCoverFilenameMarker) {
+            return customCovers.appendingPathComponent(filename)
+        }
+        return covers.appendingPathComponent(filename)
     }
 
     /// Downloaded chapters of online books, per book id.

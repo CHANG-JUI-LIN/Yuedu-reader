@@ -20,6 +20,39 @@ enum SubscriptionAccessPolicy {
     }
 }
 
+/// What the TestFlight screen should do before the user types an address.
+enum TestFlightEligibility: Equatable {
+    case eligible
+    /// Pro, but on a plan that cannot claim a seat.
+    case requiresLifetime
+    /// This device cannot tell yet. The screen must let the request through and
+    /// let the callable answer — guessing `requiresLifetime` here would lock out
+    /// a lifetime buyer whose entitlement was cached before product IDs were
+    /// recorded, or who is offline.
+    case undetermined
+}
+
+enum TestFlightAccessPolicy {
+    /// Mirrors the `requireLifetimePro` check in Cloud Functions so the screen
+    /// can explain the rule up front instead of after a failed submission. The
+    /// callable stays the authority; this only decides what to render.
+    ///
+    /// Lifetime-only because a TestFlight seat cannot be taken back: the
+    /// one-time slot is keyed by uid and never released, and the tester stays in
+    /// Apple's beta group. Keep this aligned with `entitlementGrantsTestFlight`.
+    static func eligibility(
+        isProActive: Bool,
+        productIDs: [String]?,
+        lifetimeProductID: String
+    ) -> TestFlightEligibility {
+        guard let productIDs else { return .undetermined }
+        if productIDs.contains(lifetimeProductID) {
+            return isProActive ? .eligible : .requiresLifetime
+        }
+        return .requiresLifetime
+    }
+}
+
 enum PaywallPresentationState: Equatable {
     /// Nothing owned yet: the normal offer.
     case offer
@@ -167,10 +200,10 @@ enum SubscriptionRuntimeEnvironment {
     /// Firestore field names on `entitlements/{uid}` for this environment. The
     /// document carries both environments side by side so one account can hold a
     /// TestFlight entitlement and an App Store one independently.
-    static var entitlementFieldNames: (isActive: String, expiresAt: String) {
+    static var entitlementFieldNames: (isActive: String, expiresAt: String, productIDs: String) {
         current == .sandbox ?
-            ("sandboxIsProActive", "sandboxExpiresAt") :
-            ("isProActive", "expiresAt")
+            ("sandboxIsProActive", "sandboxExpiresAt", "sandboxProductIds") :
+            ("isProActive", "expiresAt", "productIds")
     }
 }
 

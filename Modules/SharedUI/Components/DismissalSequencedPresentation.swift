@@ -41,21 +41,44 @@ enum BookSourceManagementPresentationPolicy {
     }
 }
 
+/// 書籍資訊 (book info / cover editing) presents the photo and file pickers for
+/// 選擇圖片. As a sheet it is the same shape iOS 17 drops: a presented sheet asked
+/// to resolve a presenter for a picker. Push it from the bookshelf on iOS 17 so
+/// its pickers are first-level presentations, exactly as book-source management
+/// does. iOS 18 keeps the sheet. Delete when the deployment target reaches iOS 18.
+enum BookInfoEditPresentationPolicy {
+    static func prefersNavigationDestination(
+        osMajorVersion: Int
+    ) -> Bool {
+        osMajorVersion < 18
+    }
+
+    static var prefersNavigationDestination: Bool {
+        prefersNavigationDestination(
+            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        )
+    }
+}
+
 /// Reader settings is itself presented as a sheet. On iOS 17, asking that
 /// sheet to present a document picker can be dropped even when the import
 /// control is a direct button. Dismiss reader settings first, then let the
 /// reader's first-level presenter open the picker from the sheet's real
 /// `onDismiss` callback. Delete this policy when the deployment target reaches
 /// iOS 18.
+///
+/// Covers every document picker reader settings owns — font import, and the
+/// 閱讀設定 / 正則高亮 style importers, whose 匯入 controls sit on pages pushed
+/// *inside* that sheet (and, for 正則高亮, inside a `Menu` as well).
 enum ReaderSettingsPresentationPolicy {
-    static func requiresFirstLevelFontImporter(
+    static func requiresFirstLevelImporter(
         osMajorVersion: Int
     ) -> Bool {
         osMajorVersion < 18
     }
 
-    static var requiresFirstLevelFontImporter: Bool {
-        requiresFirstLevelFontImporter(
+    static var requiresFirstLevelImporter: Bool {
+        requiresFirstLevelImporter(
             osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
         )
     }

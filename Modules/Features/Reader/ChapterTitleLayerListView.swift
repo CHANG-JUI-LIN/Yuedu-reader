@@ -18,6 +18,7 @@ struct ChapterTitleLayerListView: View {
                     Label(localized("新增元素"), systemImage: "plus")
                 }
             }
+            .interfaceSectionSurface()
 
             Section(localized("圖層")) {
                 if model.draft.layers.isEmpty {
@@ -74,6 +75,7 @@ struct ChapterTitleLayerListView: View {
                     .onMove(perform: model.moveLayer)
                 }
             }
+            .interfaceSectionSurface()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { EditButton() }

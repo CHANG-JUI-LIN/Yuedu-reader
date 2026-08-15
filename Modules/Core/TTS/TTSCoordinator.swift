@@ -322,6 +322,15 @@ final class TTSCoordinator: ObservableObject {
     static let minSpeechRate: Float = 0.1
     static let maxSpeechRate: Float = 2.5
 
+    /// The rate playback last used. Read by 系統語音音色's 試聽 so a preview sounds
+    /// like real narration without starting a coordinator (which would route to
+    /// whichever TTS source is active, not to the system voice being auditioned).
+    static var persistedSpeechRate: Float {
+        guard UserDefaults.standard.object(forKey: speechRateDefaultsKey) != nil else { return 0.5 }
+        let stored = UserDefaults.standard.float(forKey: speechRateDefaultsKey)
+        return max(minSpeechRate, min(stored, maxSpeechRate))
+    }
+
     init() {
         if UserDefaults.standard.object(forKey: Self.speechRateDefaultsKey) != nil {
             let stored = UserDefaults.standard.float(forKey: Self.speechRateDefaultsKey)

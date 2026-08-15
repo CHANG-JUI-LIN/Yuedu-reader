@@ -332,6 +332,77 @@ class BookStore: ObservableObject, BookProvider {
         }
     }
 
+    // MARK: Import Local PDF
+
+    /// Import a PDF as a `.fixedPage` book: the file stays in Documents, the whole
+    /// document is one chapter (so page numbers stay absolute), and the PDF's own
+    /// bookmarks become the reader's table of contents.
+    @discardableResult
+    func importLocalPDF(
+        url: URL,
+        title: String? = nil,
+        author: String? = nil
+    ) async throws -> ReadingBook {
+        let info = try LocalPDFArchive.inspect(url: url)
+        let uuid = UUID().uuidString
+        let filename = "\(uuid).pdf"
+        let destURL = documentsURL(for: filename)
+        var coverFilename: String?
+
+        func cleanupImportedFiles() {
+            try? FileManager.default.removeItem(at: destURL)
+            if let coverFilename {
+                try? FileManager.default.removeItem(at: StorageLocations.coverFile(coverFilename))
+            }
+        }
+
+        do {
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                try FileManager.default.removeItem(at: destURL)
+            }
+            try FileManager.default.copyItem(at: url, to: destURL)
+
+            let resolvedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? title!.trimmingCharacters(in: .whitespacesAndNewlines)
+                : info.title
+            let resolvedAuthor = author?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? author!.trimmingCharacters(in: .whitespacesAndNewlines)
+                : info.author
+
+            if let coverData = LocalPDFArchive.coverImageData(from: destURL) {
+                let candidate = "\(uuid)_cover.jpg"
+                try coverData.write(to: StorageLocations.coverFile(candidate))
+                coverFilename = candidate
+            }
+
+            var imported = ReadingBook(
+                title: resolvedTitle,
+                author: resolvedAuthor,
+                source: "local_pdf",
+                contentFilename: filename
+            )
+            imported.contentPipelineKind = .fixedPage
+            imported.onlineChapters = [
+                LocalPDFArchive.chapterRef(
+                    for: info,
+                    filename: filename,
+                    bookTitle: resolvedTitle
+                )
+            ]
+            imported.coverImagePath = coverFilename
+
+            let importedBook = imported
+            await MainActor.run {
+                self.books.insert(importedBook, at: 0)
+                self.saveMeta()
+            }
+            return importedBook
+        } catch {
+            cleanupImportedFiles()
+            throw error
+        }
+    }
+
     // MARK: Import Local Audiobook
 
     @discardableResult
@@ -597,18 +668,24 @@ class BookStore: ObservableObject, BookProvider {
 
     /// Persist manga reading position (chapter index + page) plus an overall
     /// progress fraction so the bookshelf progress bar stays meaningful.
+    /// - Parameter pageProgress: how far through the *current* chapter the reader is
+    ///   (0...1). Books whose whole content is a single chapter — a local PDF — have
+    ///   no chapter-level progress to report, so they pass this instead; leaving it
+    ///   nil keeps the chapter-count behaviour every other fixed-page book has.
     func updateMangaPosition(
         bookId: UUID,
         chapter: Int,
         page: Int,
         totalChapters: Int,
+        pageProgress: Double? = nil,
         forceSave: Bool = false
     ) {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         books[idx].mangaChapterIndex = chapter
         books[idx].mangaPage = page
         if totalChapters > 0 {
-            books[idx].currentPosition = min(1.0, Double(chapter) / Double(totalChapters))
+            let progress = (Double(chapter) + (pageProgress ?? 0)) / Double(totalChapters)
+            books[idx].currentPosition = min(1.0, max(0, progress))
         }
         persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: books[idx], force: forceSave)
     }
@@ -1097,6 +1174,126 @@ class BookStore: ObservableObject, BookProvider {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         books[idx].coverImagePath = filename
         saveMeta()
+    }
+
+    // MARK: - Custom cover (封面搜索 / 相簿 / 手動網址)
+
+    /// Download a cover the user picked in 書籍資訊 (封面搜索 result or a pasted
+    /// address) and make it this book's cover.
+    ///
+    /// `sourceId` is the book source the cover URL came from — its headers are
+    /// what make hotlink-protected CDN covers load at all, so a cover found in
+    /// source B is downloaded with B's headers, not with the book's own source.
+    /// Returns false when the image could not be fetched or decoded, so the
+    /// caller can tell the user instead of silently keeping the old cover.
+    @discardableResult
+    @MainActor
+    func applyCustomCover(bookId: UUID, coverUrl: String, sourceId: UUID?) async -> Bool {
+        let trimmed = coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, books.contains(where: { $0.id == bookId }) else { return false }
+
+        let source = sourceId.flatMap { id in BookSourceStore.shared.sources.first { $0.id == id } }
+        let headers = BookCoverLoader.headers(
+            sourceBaseURL: source?.bookSourceUrl,
+            sourceHeaders: source?.parsedHeaders ?? [:]
+        )
+        CoverDecodeService.shared.registerIfNeeded(coverUrl: trimmed, source: source)
+        guard let image = await BookCoverLoader.loadImage(urlString: trimmed, headers: headers) else {
+            AppLogger.network("[Cover] custom cover download failed url=\(trimmed)")
+            return false
+        }
+        return storeCustomCover(bookId: bookId, image: image, customCoverUrl: trimmed)
+    }
+
+    /// Make a locally picked image (相簿 / 檔案) this book's cover. Downsampled on
+    /// the way in, like every network cover, so a 12MP photo does not become a
+    /// full-size decode in each shelf row.
+    @discardableResult
+    @MainActor
+    func applyCustomCover(bookId: UUID, imageData: Data) -> Bool {
+        guard let image = BookCoverLoader.decodedCover(from: imageData) else {
+            AppLogger.render("[Cover] custom cover pick could not be decoded")
+            return false
+        }
+        return storeCustomCover(
+            bookId: bookId,
+            image: image,
+            customCoverUrl: ReadingBook.localCustomCoverMarker
+        )
+    }
+
+    /// Writes the chosen image to the custom-cover directory and points the book
+    /// at it.
+    ///
+    /// Each custom cover lands under a fresh filename rather than overwriting
+    /// `<id>_cover.jpg`: the bookshelf reads covers straight off disk keyed by
+    /// that filename, so reusing it leaves every already-rendered row showing the
+    /// previous image until the app restarts.
+    @MainActor
+    private func storeCustomCover(bookId: UUID, image: UIImage, customCoverUrl: String) -> Bool {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }),
+              let jpeg = image.jpegData(compressionQuality: 0.85) else { return false }
+
+        // The marker routes the file to `StorageLocations.customCovers`, which
+        // 快取管理 does not wipe — a photo-library pick has no second source.
+        let filename =
+            "\(bookId.uuidString)\(StorageLocations.customCoverFilenameMarker)"
+            + "\(UUID().uuidString.prefix(8)).jpg"
+        do {
+            try jpeg.write(to: StorageLocations.coverFile(filename), options: .atomic)
+        } catch {
+            AppLogger.render("[Cover] could not write custom cover: \(error.localizedDescription)")
+            return false
+        }
+
+        let previousPath = books[idx].coverImagePath
+        // First customization only: keep whatever the source or the EPUB gave us
+        // so 重設封面 has something to restore. Later changes replace each other.
+        if books[idx].originalCoverImagePath == nil {
+            books[idx].originalCoverImagePath = previousPath
+        } else if let previousPath, previousPath != books[idx].originalCoverImagePath {
+            removeCoverFile(previousPath)
+        }
+        books[idx].coverImagePath = filename
+        books[idx].customCoverUrl = customCoverUrl
+        saveMeta()
+        return true
+    }
+
+    /// Drop the user's cover and go back to the source's / EPUB's own.
+    ///
+    /// The preserved original is not synced by iCloud (only `coverImagePath` is),
+    /// so on a restored device the file can be gone — that case re-downloads from
+    /// `coverUrl` instead of leaving the book with no cover at all.
+    @MainActor
+    func resetCover(bookId: UUID) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        let customPath = books[idx].coverImagePath
+        let originalPath = books[idx].originalCoverImagePath
+
+        books[idx].customCoverUrl = nil
+        books[idx].originalCoverImagePath = nil
+
+        if let originalPath,
+           FileManager.default.fileExists(atPath: StorageLocations.coverFile(originalPath).path) {
+            books[idx].coverImagePath = originalPath
+            if let customPath, customPath != originalPath { removeCoverFile(customPath) }
+            saveMeta()
+            return
+        }
+
+        books[idx].coverImagePath = nil
+        if let customPath { removeCoverFile(customPath) }
+        saveMeta()
+        downloadCoverIfNeeded(
+            bookId: bookId,
+            coverUrl: books[idx].coverUrl ?? "",
+            sourceId: books[idx].bookSourceId
+        )
+    }
+
+    private func removeCoverFile(_ filename: String) {
+        try? FileManager.default.removeItem(at: StorageLocations.coverFile(filename))
     }
 
     // MARK: Add Browser-Imported Book (no book source; lazy-loads by URL)

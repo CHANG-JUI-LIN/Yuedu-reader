@@ -1,7 +1,6 @@
 import Combine
 import CoreText
 import SwiftUI
-import UniformTypeIdentifiers
 import UIKit
 
 /// "章節標題樣式" — the sub-page reached from reader settings. Two modes:
@@ -16,15 +15,16 @@ import UIKit
 /// Spacing (上方間距/與正文間距) is one shared set — light/dark differ only in
 /// template colors, per user decision 2026-07-22.
 struct ChapterTitleStyleSettingsView: View {
+    /// Opens the style importer. Non-nil only where a first-level presenter can
+    /// own the document picker — see `Technotes/iOS17MenuModalPresentation.md`.
+    var onOpenImporter: (() -> Void)?
+
     @ObservedObject private var settings = GlobalSettings.shared
     @StateObject private var readerConfig = ReaderConfig.shared
 
     @State private var previewIsDark = false
-    @State private var showingImporter = false
-    @State private var showingExporter = false
     @State private var showingDesigner = false
     @State private var designerDraft = ChapterTitleDesign.default
-    @State private var exportData = Data()
     @State private var savePresetName = ""
     @State private var showingSavePresetDialog = false
     @State private var presetPendingDeletion: ChapterTitleStylePreset?
@@ -54,19 +54,6 @@ struct ChapterTitleStyleSettingsView: View {
             // ReaderView observes the immutable render-settings snapshot and
             // submits the refresh after any title-style mutation.
         }
-        .fileImporter(
-            isPresented: $showingImporter,
-            allowedContentTypes: Self.styleContentTypes,
-            allowsMultipleSelection: false,
-            onCompletion: handleImport
-        )
-        .fileExporter(
-            isPresented: $showingExporter,
-            document: ChapterTitleStylePackageDocument(data: exportData),
-            contentType: .yueduReaderStyle,
-            defaultFilename: localized("章節標題樣式"),
-            onCompletion: handleExport
-        )
         .fullScreenCover(isPresented: $showingDesigner) {
             ChapterTitleDesignerView(initial: designerDraft) { design in
                 updateStyle { $0.design = design }
@@ -310,15 +297,18 @@ struct ChapterTitleStyleSettingsView: View {
             } label: {
                 Label(localized("存為我的預設"), systemImage: "square.and.arrow.down")
             }
-            Button {
-                showingImporter = true
-            } label: {
-                Label(localized("從檔案匯入樣式"), systemImage: "tray.and.arrow.down")
-            }
-            Button {
-                prepareExport()
-            } label: {
+            ShareLink(
+                item: exportPayload,
+                preview: SharePreview(localized("章節標題樣式"))
+            ) {
                 Label(localized("匯出樣式檔案"), systemImage: "square.and.arrow.up")
+            }
+            if let onOpenImporter {
+                Button {
+                    onOpenImporter()
+                } label: {
+                    Label(localized("從檔案匯入樣式"), systemImage: "tray.and.arrow.down")
+                }
             }
             Button(role: .destructive) {
                 applyStyle(.default)
@@ -362,65 +352,12 @@ struct ChapterTitleStyleSettingsView: View {
         presetPendingDeletion = nil
     }
 
-    // MARK: - Import / Export
+    // MARK: - Export
 
-    private func handleImport(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            let data = try Data(contentsOf: url)
-            let isPackage = url.pathExtension.lowercased() == "yuedustyle"
-            Task { await importStyle(data: data, isPackage: isPackage) }
-        } catch {
-            importAlert = TitleStyleAlert(titleKey: "匯入失敗", message: error.localizedDescription)
-        }
-    }
-
-    @MainActor
-    private func importStyle(data: Data, isPackage: Bool) async {
-        do {
-            let decoded: ChapterTitleStyle
-            if isPackage {
-                let payload = try await ReaderStylePackage.import(data, assetStore: .shared)
-                guard payload.kind == .chapterTitle else {
-                    throw ReaderStylePackageError.malformedManifest
-                }
-                decoded = try payload.decode(ChapterTitleStyle.self)
-            } else {
-                decoded = try ReaderStylePackage.decodeLegacyChapterTitleJSON(data)
-            }
-            applyStyle(decoded)
-            importAlert = TitleStyleAlert(
-                titleKey: "匯入成功",
-                message: localized("已套用匯入的章節標題樣式。")
-            )
-        } catch {
-            importAlert = TitleStyleAlert(titleKey: "匯入失敗", message: error.localizedDescription)
-        }
-    }
-
-    private func prepareExport() {
-        let style = style
-        Task { @MainActor in
-            do {
-                let payload = try ReaderStylePackagePayload.encode(
-                    style,
-                    kind: .chapterTitle,
-                    assetIDs: style.design?.assetIDs ?? []
-                )
-                exportData = try await ReaderStylePackage.export(payload, assetStore: .shared)
-                showingExporter = true
-            } catch {
-                importAlert = TitleStyleAlert(titleKey: "操作失敗", message: error.localizedDescription)
-            }
-        }
-    }
-
-    private func handleExport(_ result: Result<URL, Error>) {
-        if case .failure(let error) = result {
-            importAlert = TitleStyleAlert(titleKey: "操作失敗", message: error.localizedDescription)
-        }
+    /// The archive itself is built inside the share transfer, so this stays a
+    /// cheap value read even though menu/list content is rebuilt on every layout.
+    private var exportPayload: ChapterTitleStyleExportPayload {
+        ChapterTitleStyleExportPayload(style: style)
     }
 
     // MARK: - Helpers
@@ -461,7 +398,6 @@ struct ChapterTitleStyleSettingsView: View {
         }
     }
 
-    private static let styleContentTypes: [UTType] = [.yueduReaderStyle, .json, .plainText, .data]
 }
 
 enum ChapterTitleDesignerEntryDesign {
@@ -696,39 +632,6 @@ private struct TitleStyleAlert: Identifiable {
     let id = UUID()
     let titleKey: String
     let message: String
-}
-
-private struct ChapterTitleStylePackageDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.yueduReaderStyle] }
-    static var writableContentTypes: [UTType] { [.yueduReaderStyle] }
-
-    var data: Data
-
-    init(data: Data) {
-        self.data = data
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        data = configuration.file.regularFileContents ?? Data()
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        return FileWrapper(regularFileWithContents: data)
-    }
-}
-
-private extension ChapterTitleDesign {
-    var assetIDs: [UUID] {
-        var values: [UUID] = []
-        for layer in layers {
-            if case let .image(id) = layer.content { values.append(id) }
-            for style in [layer.lightStyle, layer.darkStyle] {
-                if let id = style.imagePresentation?.assetID { values.append(id) }
-                if let id = style.ruleStyle.decoration.backgroundImage?.assetID { values.append(id) }
-            }
-        }
-        return Array(Set(values))
-    }
 }
 
 #Preview {

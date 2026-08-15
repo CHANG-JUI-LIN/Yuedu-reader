@@ -145,10 +145,12 @@ extension ReaderView {
     /// because rate-limited sources (起點代理限流) would avalanche.
     @ViewBuilder
     func chapterLoadFailureOverlay(message: String) -> some View {
+        let repairSource = androidIdentityRepairCandidate(failureMessage: message)
         VStack(spacing: DSSpacing.md) {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 34))
                 .foregroundStyle(DSColor.textSecondary)
+                .accessibilityHidden(true)
             Text(localized("章節載入失敗"))
                 .font(DSFont.body.weight(.semibold))
                 .foregroundStyle(DSColor.textPrimary)
@@ -157,20 +159,64 @@ extension ReaderView {
                 .foregroundStyle(DSColor.textSecondary)
                 .lineLimit(4)
                 .multilineTextAlignment(.center)
-            Button {
-                retryCurrentChapterLoad()
-            } label: {
-                Text(localized("重試"))
-                    .font(DSFont.body.weight(.semibold))
-                    .padding(.horizontal, DSSpacing.lg)
+            if let repairSource {
+                // The source asked for a device id and got none, and the toggle that
+                // fixes it lives in 書源編輯 → 基本 — unreachable from here. Offer it
+                // where the failure is. See `AndroidIdentityRecovery`.
+                Text(localized("此書源要求裝置識別碼，目前沒有提供給它"))
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .multilineTextAlignment(.center)
+                Button {
+                    enableAndroidIdentityAndRetry(source: repairSource)
+                } label: {
+                    Text(localized("開啟 Android 身分並重試"))
+                        .font(DSFont.body.weight(.semibold))
+                        .padding(.horizontal, DSSpacing.lg)
+                }
+                .buttonStyle(.borderedProminent)
+                // 重試 steps back to secondary here: retrying without the device id
+                // repeats the request the source just refused.
+                retryChapterButton.buttonStyle(.bordered)
+            } else {
+                retryChapterButton.buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
         .padding(DSSpacing.xl)
         .frame(maxWidth: 300)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
+    }
+
+    /// Unstyled so the caller can set its prominence — the failure card demotes it
+    /// when there is a repair worth tapping first.
+    private var retryChapterButton: some View {
+        Button {
+            retryCurrentChapterLoad()
+        } label: {
+            Text(localized("重試"))
+                .font(DSFont.body.weight(.semibold))
+                .padding(.horizontal, DSSpacing.lg)
+        }
+    }
+
+    /// The book's source when 以 Android 身分回報 is the plausible repair for this
+    /// failure — the only case where the failure card offers more than 重試.
+    func androidIdentityRepairCandidate(failureMessage: String) -> BookSource? {
+        guard let book, book.isOnline,
+              let source = AndroidIdentityRecovery.source(withId: book.bookSourceId),
+              AndroidIdentityRecovery.canRepair(source, failureMessage: failureMessage)
+        else { return nil }
+        return source
+    }
+
+    /// Turn the opt-in on for this source, then run the same surgical retry the
+    /// 重試 button does — the refused request's cached artifact has to go, or the
+    /// retry would replay the error the source already stored.
+    func enableAndroidIdentityAndRetry(source: BookSource) {
+        AndroidIdentityRecovery.enable(source)
+        retryCurrentChapterLoad()
     }
 
     /// Surgical retry for the failed chapter only: removes that chapter's

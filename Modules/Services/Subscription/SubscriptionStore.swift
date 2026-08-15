@@ -109,6 +109,10 @@ final class SubscriptionStore: ObservableObject {
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var storeKitIsProActive: Bool = false
     @Published private(set) var accountIsProActive: Bool = false
+    /// Products the backend counted towards the account entitlement, or `nil`
+    /// when this device has not seen them named. Only the TestFlight screen
+    /// reads this — Pro gating itself stays on the single `isProActive` flag.
+    @Published private(set) var accountProductIDs: [String]?
     /// Mirrored into the iCloud account, which survives an App Store account
     /// switch. See `SubscriptionICloudMirror`.
     @Published private(set) var iCloudIsProActive: Bool = false
@@ -184,6 +188,16 @@ final class SubscriptionStore: ObservableObject {
     /// The single entitlement gate. Coarse in v1: all features map to Pro.
     func hasAccess(_ feature: PremiumFeature) -> Bool {
         isProActive
+    }
+
+    /// Whether this account may claim a TestFlight seat. Narrower than Pro:
+    /// lifetime only. `requestTestFlightAccess` enforces the same rule.
+    var testFlightEligibility: TestFlightEligibility {
+        TestFlightAccessPolicy.eligibility(
+            isProActive: accountIsProActive,
+            productIDs: accountProductIDs,
+            lifetimeProductID: ProProduct.lifetime.rawValue
+        )
     }
 
     // MARK: - Product loading
@@ -290,6 +304,7 @@ final class SubscriptionStore: ObservableObject {
                 if accountToken != nil, acceptsTransaction(transaction.environment) {
                     do {
                         accountIsProActive = try await accountService.bind(transaction: verification)
+                        accountProductIDs = accountService.cachedEntitlementProductIDs()
                     } catch {
                         // The Apple purchase is already valid. Keep StoreKit access and
                         // explain that cross-Apple-Account binding still needs retrying.
@@ -429,6 +444,8 @@ final class SubscriptionStore: ObservableObject {
         if let accountEntitlement = await accountService.refreshEntitlement() {
             accountIsProActive = accountEntitlement
         }
+        // Read after the refresh above, which is what writes the cache.
+        accountProductIDs = accountService.cachedEntitlementProductIDs()
         recomputeEntitlement()
         await bindPendingPurchaseIfNeeded()
     }
@@ -496,6 +513,10 @@ final class SubscriptionStore: ObservableObject {
     /// cancellation) stays the exclusive job of a real server response, which
     /// `refreshEntitlement()` applies and writes back to the cache.
     private func seedAccountEntitlementFromCache() {
+        // Seeded unconditionally, including when the entitlement itself is not
+        // seeded below: the TestFlight screen should know the plan on a cold
+        // offline launch rather than after a network refresh.
+        accountProductIDs = accountService.cachedEntitlementProductIDs()
         guard SubscriptionEntitlementSeedPolicy.shouldSeed(
             current: accountIsProActive,
             cached: accountService.cachedEntitlement()
@@ -508,6 +529,7 @@ final class SubscriptionStore: ObservableObject {
     func authenticationDidChange(isAuthenticated: Bool) async {
         if !isAuthenticated {
             accountIsProActive = false
+            accountProductIDs = nil
             recomputeEntitlement()
             return
         }
@@ -533,6 +555,7 @@ final class SubscriptionStore: ObservableObject {
     func deleteCurrentAccountSubscriptionData() async throws {
         try await accountService.deleteAccountData()
         accountIsProActive = false
+        accountProductIDs = nil
         recomputeEntitlement()
     }
 
@@ -544,6 +567,7 @@ final class SubscriptionStore: ObservableObject {
                   acceptsTransaction(transaction.environment) else { continue }
             do {
                 accountIsProActive = try await accountService.bind(transaction: result)
+                accountProductIDs = accountService.cachedEntitlementProductIDs()
                 permanentBindFailureProductIDs.remove(transaction.productID)
             } catch {
                 didFailBinding = true

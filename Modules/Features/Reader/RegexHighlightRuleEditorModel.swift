@@ -103,14 +103,20 @@ final class RegexHighlightRuleEditorModel: ObservableObject {
         )
     }
 
+    /// - Parameter baseTextColor: Colour for the text the rule does *not* match.
+    ///   The caller passes the previewed appearance's reading text colour, not
+    ///   `UIColor.label`: the preview sits on a page-coloured backdrop, so a
+    ///   trait-derived label colour renders dark-on-dark whenever the previewed
+    ///   appearance differs from the device's.
     func previewAttributedString(
-        appearance: ReaderStyleAppearance
+        appearance: ReaderStyleAppearance,
+        baseTextColor: UIColor
     ) throws -> NSAttributedString {
         let attributed = NSMutableAttributedString(
             string: testText,
             attributes: [
                 .font: UIFont.preferredFont(forTextStyle: .body),
-                .foregroundColor: UIColor.label,
+                .foregroundColor: baseTextColor,
             ]
         )
         _ = try RegexHighlightEngine.apply(

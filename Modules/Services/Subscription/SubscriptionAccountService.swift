@@ -33,6 +33,14 @@ final class SubscriptionAccountService {
         return SubscriptionEntitlementCache.load(uid: uid)?.isActive()
     }
 
+    /// Products behind the cached entitlement, or `nil` when this device has
+    /// never seen the backend name them. Used to tell a lifetime purchase from a
+    /// subscription without a round-trip; `nil` must stay "unknown".
+    func cachedEntitlementProductIDs() -> [String]? {
+        guard FirebaseApp.app() != nil, let uid = Auth.auth().currentUser?.uid else { return nil }
+        return SubscriptionEntitlementCache.load(uid: uid)?.productIDs
+    }
+
     /// Whether a failed `bind` is worth retrying later. Anything that isn't a
     /// Cloud Functions status — a URLSession failure, a decoding error — is
     /// treated as temporary, since those are the shapes an unreachable backend
@@ -124,7 +132,8 @@ final class SubscriptionAccountService {
             let fields = SubscriptionRuntimeEnvironment.entitlementFieldNames
             let entitlement = CachedSubscriptionEntitlement(
                 isProActive: data[fields.isActive] as? Bool == true,
-                expiresAt: (data[fields.expiresAt] as? Timestamp)?.dateValue()
+                expiresAt: (data[fields.expiresAt] as? Timestamp)?.dateValue(),
+                productIDs: data[fields.productIDs] as? [String]
             )
             SubscriptionEntitlementCache.save(entitlement, uid: uid)
             subscriptionAccountLog.notice(
@@ -159,7 +168,11 @@ final class SubscriptionAccountService {
         } else {
             expiresAt = nil
         }
-        return CachedSubscriptionEntitlement(isProActive: isProActive, expiresAt: expiresAt)
+        return CachedSubscriptionEntitlement(
+            isProActive: isProActive,
+            expiresAt: expiresAt,
+            productIDs: payload["productIds"] as? [String]
+        )
     }
 }
 

@@ -60,14 +60,24 @@ struct DiscoverShowcaseView: View {
         // When the source replied with a plain message instead of categories
         // (e.g. 「请先于【源变量】处填写共享Token」), show ITS words — the generic
         // copy would hide the one instruction the user needs.
-        ContentUnavailableView(
-            localized("暫無發現內容"),
-            systemImage: "sparkles",
-            description: Text(
+        ContentUnavailableView {
+            Label(localized("暫無發現內容"), systemImage: "sparkles")
+        } description: {
+            Text(
                 discover.sourceNotice
                     ?? localized("此書源未回傳發現內容，可下拉重新整理或切換書源")
             )
-        )
+        } actions: {
+            // The source asked for a device id and got none. The toggle that fixes
+            // it lives in 書源編輯 → 基本, which nobody looking at an empty 發現頁
+            // will find — so offer it here. See `AndroidIdentityRecovery`.
+            if discover.androidIdentityRepairSource != nil {
+                Button(localized("開啟 Android 身分並重試")) {
+                    discover.enableAndroidIdentityAndReload()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
         .frame(maxWidth: .infinity, minHeight: 320)
     }
 

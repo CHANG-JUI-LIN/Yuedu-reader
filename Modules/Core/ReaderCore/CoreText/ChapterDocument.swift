@@ -84,13 +84,17 @@ final class ChapterDocumentStore {
         let entryID = UUID()
         let requestGeneration = generation
         let task = Task { @MainActor [builder] in
-            let result = try await builder.buildChapter(
-                at: request.spineIndex,
-                settings: request.settings,
-                themeTextColor: request.themeTextColor,
-                themeBackgroundColor: request.themeBackgroundColor
-            )
-            return ChapterDocument(spineIndex: request.spineIndex, buildResult: result)
+            // Binds the spine index for the `⏱ coreText.document.*` lines emitted deep inside
+            // the chapter-agnostic HTML/CSS builders. See `ReaderDocumentTrace`.
+            try await ReaderDocumentTrace.$spineIndex.withValue(request.spineIndex) {
+                let result = try await builder.buildChapter(
+                    at: request.spineIndex,
+                    settings: request.settings,
+                    themeTextColor: request.themeTextColor,
+                    themeBackgroundColor: request.themeBackgroundColor
+                )
+                return ChapterDocument(spineIndex: request.spineIndex, buildResult: result)
+            }
         }
         inFlight.append(
             InFlightEntry(

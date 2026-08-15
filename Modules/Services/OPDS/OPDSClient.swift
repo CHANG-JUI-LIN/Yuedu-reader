@@ -17,6 +17,7 @@ struct OPDSAcquisition: Hashable {
     var importExtension: String? {
         let t = type.lowercased()
         if t.contains("epub") { return "epub" }
+        if t.contains("pdf") { return "pdf" }
         if t.contains("markdown") { return "md" }
         if t.hasPrefix("text/plain") || t == "text/plain" { return "txt" }
         return nil
@@ -38,10 +39,11 @@ struct OPDSEntry: Identifiable, Hashable {
     var isBook: Bool { !acquisitions.isEmpty }
     var isNavigation: Bool { acquisitions.isEmpty && navigationURL != nil }
 
-    /// Preferred downloadable link: EPUB, then TXT, then Markdown.
+    /// Preferred downloadable link: EPUB (reflowable) before PDF (fixed), then TXT
+    /// and Markdown.
     var bestAcquisition: OPDSAcquisition? {
         let supported = acquisitions.filter { $0.isSupported }
-        let order: [String: Int] = ["epub": 0, "txt": 1, "md": 2]
+        let order: [String: Int] = ["epub": 0, "pdf": 1, "txt": 2, "md": 3]
         return supported.min { (order[$0.importExtension ?? ""] ?? 9) < (order[$1.importExtension ?? ""] ?? 9) }
     }
 

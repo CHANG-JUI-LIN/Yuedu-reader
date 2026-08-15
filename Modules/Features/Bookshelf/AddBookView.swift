@@ -68,6 +68,8 @@ struct FileImportTab: View {
     @State private var pendingMarkdownURL: URL? = nil
     @State private var pendingMangaURL: URL? = nil
     @State private var pendingMangaPageCount: Int = 0
+    @State private var pendingPDFURL: URL? = nil
+    @State private var pendingPDFPageCount: Int = 0
     @State private var pendingAudiobookURL: URL? = nil
     @State private var pendingAudiobookChapterCount: Int = 0
     @State private var pendingAudiobookTotalDuration: Double? = nil
@@ -82,8 +84,8 @@ struct FileImportTab: View {
         ScrollView {
             VStack(spacing: 24) {
                 HintCard(
-                    icon: "doc.text", title: localized("支援格式：TXT / Markdown / JSON / EPUB / CBZ / ZIP / 音訊"),
-                    detail: localized("支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。"))
+                    icon: "doc.text", title: localized("支援格式：TXT / Markdown / JSON / EPUB / PDF / CBZ / ZIP / 音訊"),
+                    detail: localized("支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、PDF（.pdf）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。"))
 
                 if let content = pendingContent {
                     VStack(alignment: .leading, spacing: 12) {
@@ -109,6 +111,9 @@ struct FileImportTab: View {
                             }
                         } else if pendingMangaURL != nil {
                             Text(String(format: localized("已解析漫畫，共 %d 頁"), pendingMangaPageCount))
+                                .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
+                        } else if pendingPDFURL != nil {
+                            Text(String(format: localized("已解析 PDF，共 %d 頁"), pendingPDFPageCount))
                                 .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                         } else if pendingEpubURL != nil {
                             Text(localized("已解析 EPUB 結構，點擊下方按鈕匯入"))
@@ -141,6 +146,7 @@ struct FileImportTab: View {
                             let epubURLForImport = pendingEpubURL
                             let markdownURLForImport = pendingMarkdownURL
                             let mangaURLForImport = pendingMangaURL
+                            let pdfURLForImport = pendingPDFURL
                             let audiobookURLForImport = pendingAudiobookURL
                             let startUptime = ProcessInfo.processInfo.systemUptime
 
@@ -153,6 +159,8 @@ struct FileImportTab: View {
                                             mode = "audiobook"
                                         } else if mangaURLForImport != nil {
                                             mode = "manga"
+                                        } else if pdfURLForImport != nil {
+                                            mode = "pdf"
                                         } else if epubURLForImport != nil {
                                             mode = "epub"
                                         } else if markdownURLForImport != nil {
@@ -174,6 +182,11 @@ struct FileImportTab: View {
                                         _ = try await store.importLocalManga(url: mangaURL, title: t, author: a)
                                         try Task.checkCancellation()
                                         try? FileManager.default.removeItem(at: mangaURL)
+                                    } else if let pdfURL = pdfURLForImport {
+                                        try Task.checkCancellation()
+                                        _ = try await store.importLocalPDF(url: pdfURL, title: t, author: a)
+                                        try Task.checkCancellation()
+                                        try? FileManager.default.removeItem(at: pdfURL)
                                     } else if let epubURL = epubURLForImport {
                                         try Task.checkCancellation()
                                         _ = try await store.importEpub(url: epubURL, title: t, author: a)
@@ -240,7 +253,7 @@ struct FileImportTab: View {
                         VStack(spacing: 12) {
                             Image(systemName: "folder.badge.plus")
                                 .font(DSFont.fixed(size: 44)).foregroundColor(DSColor.accent)
-                            Text(localized("點擊選取 TXT / EPUB / 漫畫 / 音訊文件"))
+                            Text(localized("點擊選取 TXT / EPUB / PDF / 漫畫 / 音訊文件"))
                                 .font(DSFont.headline).foregroundColor(DSColor.accent)
                             Text(localized("從文件 App、iCloud、本機儲存等選取"))
                                 .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
@@ -278,6 +291,7 @@ struct FileImportTab: View {
                 UTType(filenameExtension: "markdown") ?? .plainText,
                 .json,
                 UTType.epub,
+                UTType.pdf,
                 UTType(filenameExtension: "cbz") ?? .data,
                 UTType(filenameExtension: "zip") ?? .data,
                 UTType.audio,
@@ -295,6 +309,7 @@ struct FileImportTab: View {
                 cleanupPendingEpubTempFile()
                 cleanupPendingMarkdownTempFile()
                 cleanupPendingMangaTempFile()
+                cleanupPendingPDFTempFile()
                 cleanupPendingAudiobookTempFile()
                 let sessionID = nextSessionID()
                 isLoading = true
@@ -303,6 +318,8 @@ struct FileImportTab: View {
                 pendingMarkdownURL = nil
                 pendingMangaURL = nil
                 pendingMangaPageCount = 0
+                pendingPDFURL = nil
+                pendingPDFPageCount = 0
                 pendingAudiobookURL = nil
                 pendingAudiobookChapterCount = 0
                 pendingAudiobookTotalDuration = nil
@@ -313,6 +330,8 @@ struct FileImportTab: View {
                 )
                 if ext == "epub" {
                     importEPUB(url: url, sessionID: sessionID)
+                } else if LocalPDFArchive.supports(url) {
+                    importPDF(url: url, sessionID: sessionID)
                 } else if ext == "txt" {
                     importTXTImmediately(url: url, sessionID: sessionID)
                 } else if ext == "zip" {
@@ -335,6 +354,7 @@ struct FileImportTab: View {
             cleanupPendingEpubTempFile()
             cleanupPendingMarkdownTempFile()
             cleanupPendingMangaTempFile()
+            cleanupPendingPDFTempFile()
             cleanupPendingAudiobookTempFile()
             resetTransientState()
             activeSessionID = UUID()
@@ -542,6 +562,92 @@ struct FileImportTab: View {
                 startUptime: startUptime,
                 tracePrefix: "importManga"
             )
+        }
+    }
+
+    // MARK: - Local PDF Import
+    private func importPDF(url: URL, sessionID: UUID) {
+        parseTask = Task(priority: .userInitiated) {
+            let startUptime = ProcessInfo.processInfo.systemUptime
+            await MainActor.run {
+                importTrace("importPDF stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
+            }
+            let ok = url.startAccessingSecurityScopedResource()
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString + ".pdf")
+            do {
+                try FileManager.default.copyItem(at: url, to: tempURL)
+            } catch {
+                if ok { url.stopAccessingSecurityScopedResource() }
+                await MainActor.run {
+                    importTrace(
+                        "importPDF stage=copyFailed session=\(sessionID) error=\(error.localizedDescription)"
+                    )
+                    isLoading = false
+                    errorMsg = localized("無法複製 PDF 檔案：") + error.localizedDescription
+                }
+                return
+            }
+            if ok { url.stopAccessingSecurityScopedResource() }
+
+            await preparePDFTempFile(
+                tempURL,
+                sessionID: sessionID,
+                startUptime: startUptime,
+                tracePrefix: "importPDF"
+            )
+        }
+    }
+
+    private func preparePDFTempFile(
+        _ tempURL: URL,
+        sessionID: UUID,
+        startUptime: TimeInterval,
+        tracePrefix: String
+    ) async {
+        do {
+            let info = try LocalPDFArchive.inspect(url: tempURL)
+            if Task.isCancelled {
+                try? FileManager.default.removeItem(at: tempURL)
+                return
+            }
+
+            await MainActor.run {
+                guard AddBookImportGuard.shouldApplyResult(
+                    activeSessionID: activeSessionID,
+                    resultSessionID: sessionID,
+                    isCancelled: Task.isCancelled
+                ) else {
+                    importTrace("\(tracePrefix) stage=staleDiscarded session=\(sessionID)")
+                    try? FileManager.default.removeItem(at: tempURL)
+                    return
+                }
+
+                isLoading = false
+                pendingContent = "PDF_READY"
+                pendingPDFURL = tempURL
+                pendingPDFPageCount = info.pageCount
+                titleInput = info.title
+                authorInput = info.author == localized("未知作者") ? "" : info.author
+                importTrace(
+                    "\(tracePrefix) stage=prepared session=\(sessionID) pages=\(info.pageCount) sections=\(info.sections.count) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) tempFile=\(tempURL.lastPathComponent)"
+                )
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            await MainActor.run {
+                guard AddBookImportGuard.shouldApplyResult(
+                    activeSessionID: activeSessionID,
+                    resultSessionID: sessionID,
+                    isCancelled: Task.isCancelled
+                ) else { return }
+                AppLogger.error("PDF import inspect failed", error: error)
+                importTrace(
+                    "\(tracePrefix) stage=parseFailed session=\(sessionID) error=\(error.localizedDescription)"
+                )
+                isLoading = false
+                errorMsg = localized("匯入失敗：") + error.localizedDescription
+            }
         }
     }
 
@@ -756,6 +862,12 @@ struct FileImportTab: View {
         }
     }
 
+    private func cleanupPendingPDFTempFile() {
+        if let url = pendingPDFURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     private func cleanupPendingAudiobookTempFile() {
         if let url = pendingAudiobookURL {
             try? FileManager.default.removeItem(at: url)
@@ -784,6 +896,8 @@ struct FileImportTab: View {
         pendingMarkdownURL = nil
         pendingMangaURL = nil
         pendingMangaPageCount = 0
+        pendingPDFURL = nil
+        pendingPDFPageCount = 0
         pendingAudiobookURL = nil
         pendingAudiobookChapterCount = 0
         pendingAudiobookTotalDuration = nil

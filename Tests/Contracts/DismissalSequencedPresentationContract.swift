@@ -27,12 +27,22 @@ private enum DismissalSequencedPresentationContract {
             )
         )
         precondition(
-            ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter(
+            BookInfoEditPresentationPolicy.prefersNavigationDestination(
                 osMajorVersion: 17
             )
         )
         precondition(
-            !ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter(
+            !BookInfoEditPresentationPolicy.prefersNavigationDestination(
+                osMajorVersion: 18
+            )
+        )
+        precondition(
+            ReaderSettingsPresentationPolicy.requiresFirstLevelImporter(
+                osMajorVersion: 17
+            )
+        )
+        precondition(
+            !ReaderSettingsPresentationPolicy.requiresFirstLevelImporter(
                 osMajorVersion: 18
             )
         )

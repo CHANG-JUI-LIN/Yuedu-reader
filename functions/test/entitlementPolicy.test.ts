@@ -6,7 +6,10 @@ import {
   assertTransactionCanBind,
   bindingGrantsEntitlement,
   effectiveEntitlement,
+  entitlementGrantsTestFlight,
   environmentName,
+  lifetimeProductId,
+  monthlyProductId,
   transactionIsActive,
 } from "../src/entitlementPolicy.js";
 
@@ -16,6 +19,19 @@ describe("entitlement policy", () => {
     assert.equal(effectiveEntitlement(true, false), true);
     assert.equal(effectiveEntitlement(false, true), true);
     assert.equal(effectiveEntitlement(true, true), true);
+  });
+
+  it("grants a TestFlight seat to lifetime buyers only", () => {
+    assert.equal(entitlementGrantsTestFlight(true, [lifetimeProductId]), true);
+    assert.equal(
+      entitlementGrantsTestFlight(true, [monthlyProductId, lifetimeProductId]),
+      true
+    );
+    // A monthly plan is Pro but must not claim the unrevocable seat.
+    assert.equal(entitlementGrantsTestFlight(true, [monthlyProductId]), false);
+    assert.equal(entitlementGrantsTestFlight(true, []), false);
+    // A lapsed lifetime binding (refunded, so no longer active) still fails.
+    assert.equal(entitlementGrantsTestFlight(false, [lifetimeProductId]), false);
   });
 
   it("rejects a transaction already bound to another account", () => {

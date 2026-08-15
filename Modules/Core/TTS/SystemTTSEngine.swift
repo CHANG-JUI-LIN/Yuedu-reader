@@ -459,10 +459,16 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     // MARK: - Voice & rate
 
-    /// Selects a language voice from the text so Chinese content is not spoken by the
-    /// device's English default voice. This is language selection, not a user voice override.
+    /// Selects a voice from the text's language so Chinese content is not spoken by the
+    /// device's English default voice, then lets the user's own choice for that language
+    /// win (語音朗讀設定 → 系統語音音色). With no choice stored — or one whose downloaded
+    /// voice has since been deleted — this stays exactly the old language default.
     static func preferredVoice(for text: String) -> AVSpeechSynthesisVoice? {
-        AVSpeechSynthesisVoice(language: preferredLanguage(for: text))
+        let language = preferredLanguage(for: text)
+        if let selected = SystemTTSVoiceCatalog.selectedVoice(forLanguage: language) {
+            return selected
+        }
+        return AVSpeechSynthesisVoice(language: language)
     }
 
     static func preferredLanguage(for text: String) -> String {

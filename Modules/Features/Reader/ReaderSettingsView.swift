@@ -13,19 +13,21 @@ struct ReaderSettingsView: View {
     var onOpenFontImporter: () -> Void
     var onOpenHeaderFooterEditor: (() -> Void)?
     var onOpenTouchZoneEditor: (() -> Void)?
+    /// Hands a style/layout import to the reader's first-level presenter. Nil in
+    /// contexts that already are one; see `ReaderSettingsPresentationPolicy`.
+    var onOpenStyleImporter: ((ReaderStyleImportRoute) -> Void)?
 
     @StateObject private var readerConfig = ReaderConfig.shared
     @ObservedObject private var settings = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showingFontImporter = false
-    @State private var showingLayoutImporter = false
     @State private var fontImportError: FontImportError?
     @State private var layoutImportAlert: LayoutImportAlert?
     @State private var customLayoutEnabled = true
     @State private var showingOverlayResetConfirmation = false
-    @State private var showingOverlayImportConfirmation = false
-    @State private var pendingLayoutPreset: ReaderLayoutPreset?
+    /// Set only on iOS 18+, where this sheet can own the picker itself.
+    @State private var styleImportRoute: ReaderStyleImportRoute?
 
     private var supportsFontSize: Bool { capabilities.contains(.fontSize) }
     private var supportsUserFont: Bool { supportsFontSize && allowsUserSelectedReaderFont }
@@ -86,7 +88,7 @@ struct ReaderSettingsView: View {
                     brightnessSection
 
                     if premiumVisibility.showsLayoutPresetImport {
-                        layoutPresetSection
+                        readerSettingsBackupSection
                     }
                 }
             }
@@ -119,12 +121,8 @@ struct ReaderSettingsView: View {
         ) { result in
             handleFontImport(result)
         }
-        .fileImporter(
-            isPresented: $showingLayoutImporter,
-            allowedContentTypes: Self.layoutPresetContentTypes,
-            allowsMultipleSelection: false
-        ) { result in
-            handleLayoutImport(result)
+        .readerStyleImportPresentation(route: $styleImportRoute) { _ in
+            customLayoutEnabled = hasCustomLayoutOverrides
         }
         .alert(item: $fontImportError) { error in
             Alert(
@@ -150,26 +148,6 @@ struct ReaderSettingsView: View {
             Button(localized("取消"), role: .cancel) {}
         } message: {
             Text(localized("這會恢復預設組件、位置與正文保留空間。"))
-        }
-        .alert(
-            localized("套用匯入的頁首頁尾？"),
-            isPresented: $showingOverlayImportConfirmation
-        ) {
-            Button(localized("套用")) {
-                guard let preset = pendingLayoutPreset else { return }
-                pendingLayoutPreset = nil
-                finishLayoutPresetImport(preset)
-            }
-            Button(localized("取消"), role: .cancel) {
-                pendingLayoutPreset = nil
-            }
-        } message: {
-            Text(localized("這會取代目前的頁首頁尾組件、位置與正文保留空間。"))
-        }
-        .onChanged(of: showingOverlayImportConfirmation) { isPresented in
-            if !isPresented {
-                pendingLayoutPreset = nil
-            }
         }
         .onAppear {
             customLayoutEnabled = hasCustomLayoutOverrides
@@ -266,19 +244,44 @@ struct ReaderSettingsView: View {
         .interfaceSectionSurface()
     }
 
-    private var layoutPresetSection: some View {
+    /// 匯出/匯入 the whole of 閱讀設定 in one file: layout parameters, the chapter
+    /// title style, and the regex highlight rules. Each of those two styles keeps
+    /// its own single-purpose export on its own page; this is the "move my whole
+    /// reading setup to the new phone" file.
+    private var readerSettingsBackupSection: some View {
         Section {
+            ShareLink(
+                item: ReaderSettingsExportPayload(inputs: ReaderSettingsExportSnapshot.make()),
+                preview: SharePreview(localized("閱讀設定"))
+            ) {
+                Label(localized("匯出閱讀設定"), systemImage: "square.and.arrow.up")
+            }
+
             Button {
-                showingLayoutImporter = true
+                requestStyleImporter(.readerSettings)
             } label: {
-                Label(localized("匯入排版參數"), systemImage: "square.and.arrow.down")
+                Label(localized("匯入閱讀設定"), systemImage: "square.and.arrow.down")
             }
         } header: {
-            Text(localized("排版參數"))
+            Text(localized("閱讀設定備份"))
         } footer: {
-            Text(localized("匯入的檔案會覆蓋目前的字體大小、間距、頁面邊距與頁首頁尾配置。"))
+            Text(localized("匯出的檔案包含排版參數、章節標題樣式與正則高亮，可在其他裝置匯入。匯入也接受 legado 的 readConfig.json。"))
         }
         .interfaceSectionSurface()
+    }
+
+    /// iOS 17 cannot present a document picker from this sheet — hand it to the
+    /// reader's first-level presenter instead. See
+    /// `Technotes/iOS17MenuModalPresentation.md`.
+    private func requestStyleImporter(_ route: ReaderStyleImportRoute) {
+        guard ReaderSettingsPresentationPolicy.requiresFirstLevelImporter,
+              let onOpenStyleImporter else {
+            styleImportRoute = route
+            return
+        }
+        // The caller dismisses this sheet and presents from its real `onDismiss`
+        // — an event boundary, never a timed delay.
+        onOpenStyleImporter(route)
     }
 
     private func overlayReservationBinding(
@@ -452,7 +455,9 @@ struct ReaderSettingsView: View {
 
             if supportsLineHeight {
                 NavigationLink {
-                    ChapterTitleStyleSettingsView()
+                    ChapterTitleStyleSettingsView(
+                        onOpenImporter: { requestStyleImporter(.chapterTitleStyle) }
+                    )
                 } label: {
                     Label(localized("章節標題樣式"), systemImage: "textformat.size")
                 }
@@ -562,7 +567,7 @@ struct ReaderSettingsView: View {
                     }
                 }
 
-                if !ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter {
+                if !ReaderSettingsPresentationPolicy.requiresFirstLevelImporter {
                     Divider()
                     Button {
                         showingFontImporter = true
@@ -584,7 +589,7 @@ struct ReaderSettingsView: View {
             }
             .buttonStyle(.plain)
 
-            if ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter {
+            if ReaderSettingsPresentationPolicy.requiresFirstLevelImporter {
                 Button {
                     onOpenFontImporter()
                 } label: {
@@ -687,6 +692,7 @@ struct ReaderSettingsView: View {
             NavigationLink {
                 RegexHighlightSettingsView(
                     configuration: settings.regexHighlightConfiguration,
+                    onOpenImporter: { requestStyleImporter(.regexHighlights) },
                     onChange: { settings.regexHighlightConfiguration = $0 }
                 )
             } label: {
@@ -839,11 +845,6 @@ struct ReaderSettingsView: View {
         UTType(filenameExtension: "otf") ?? .data,
     ]
 
-    private static let layoutPresetContentTypes: [UTType] = [
-        .json,
-        UTType(filenameExtension: "zip") ?? .data,
-    ]
-
     private func handleFontImport(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
@@ -859,94 +860,6 @@ struct ReaderSettingsView: View {
         }
     }
 
-    private func handleLayoutImport(_ result: Result<[URL], Error>) {
-        Task { @MainActor in
-            do {
-                guard let url = try result.get().first else { return }
-                let shouldStopAccessing = url.startAccessingSecurityScopedResource()
-                defer {
-                    if shouldStopAccessing {
-                        url.stopAccessingSecurityScopedResource()
-                    }
-                }
-                let preset = try await ReaderLayoutPresetImporter.importPreset(from: url)
-                if preset.readerOverlayLayout != nil {
-                    pendingLayoutPreset = preset
-                    showingOverlayImportConfirmation = true
-                    return
-                }
-                finishLayoutPresetImport(preset)
-            } catch {
-                layoutImportAlert = LayoutImportAlert(
-                    titleKey: "排版匯入失敗",
-                    message: error.localizedDescription
-                )
-            }
-        }
-    }
-
-    private func finishLayoutPresetImport(_ preset: ReaderLayoutPreset) {
-        guard applyLayoutPreset(preset) else {
-            layoutImportAlert = LayoutImportAlert(
-                titleKey: "排版匯入失敗",
-                message: localized("無法儲存頁首頁尾設定")
-            )
-            return
-        }
-        let importedName = preset.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let message = importedName?.isEmpty == false
-            ? String(format: localized("已匯入「%@」的排版參數"), importedName!)
-            : localized("已匯入排版參數")
-        layoutImportAlert = LayoutImportAlert(titleKey: "排版匯入成功", message: message)
-    }
-
-    private func applyLayoutPreset(_ preset: ReaderLayoutPreset) -> Bool {
-        if let overlayLayout = preset.readerOverlayLayout,
-           !settings.saveReaderOverlayLayout(overlayLayout) {
-            return false
-        }
-        customLayoutEnabled = true
-        if let fontSize = preset.fontSize {
-            self.fontSize = fontSize
-        }
-        if let isBold = preset.isBold {
-            readerConfig.readerFontBold = isBold
-        }
-        if let lineHeightMultiple = preset.lineHeightMultiple {
-            readerConfig.lineHeightMultiple = lineHeightMultiple
-        }
-        if let letterSpacing = preset.letterSpacing {
-            readerConfig.letterSpacing = letterSpacing
-        }
-        if let paragraphSpacingMultiplier = preset.paragraphSpacingMultiplier {
-            readerConfig.paragraphSpacingMultiplier = paragraphSpacingMultiplier
-        }
-        if let pageMarginH = preset.pageMarginH {
-            readerConfig.pageMarginH = pageMarginH
-        }
-        if let pageMarginV = preset.pageMarginV {
-            readerConfig.pageMarginV = pageMarginV
-        }
-        if let titleVisible = preset.titleVisible {
-            settings.readerTitleVisible = titleVisible
-        }
-        if let titleSize = preset.titleSize {
-            settings.readerTitleSize = Double(titleSize)
-        }
-        if let titleTopSpacing = preset.titleTopSpacing {
-            settings.readerTitleTopSpacing = Double(titleTopSpacing)
-        }
-        if let titleBottomSpacing = preset.titleBottomSpacing {
-            settings.readerTitleBottomSpacing = Double(titleBottomSpacing)
-        }
-        if let scrollMode = preset.scrollMode {
-            settings.scrollMode = scrollMode
-        }
-        if let pageTurnStyle = preset.pageTurnStyle, preset.scrollMode != true {
-            settings.pageTurnStyle = pageTurnStyle
-        }
-        return true
-    }
 }
 
 private enum LayoutMetricIconKind {

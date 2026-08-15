@@ -465,8 +465,29 @@ extension ReaderView {
         }
     }
 
+    /// Builds the reader pipeline for a chapter that arrived before one existed.
+    ///
+    /// This used to begin with `isLoadingPipeline = false`, force-clearing the single guard that
+    /// stops `loadContent` running twice. Opening a book fetches chapters N, N-1 and N+1 together
+    /// and each arrival reaches here, so each got its own pipeline — a device capture showed four
+    /// `CoreTextScrollEngine` instances for one book open, each with its own reader view restoring
+    /// the reading position independently. That is a large part of what the user sees as jumping.
+    ///
+    /// Not clearing it is the correct reading of the caller's intent. "No engine yet" means either
+    /// a build is in flight — in which case that build will produce the engine and starting a
+    /// second one is pure damage — or the flag is stranded from an aborted load, which is a
+    /// *different* bug that force-clearing was hiding. `loadContent`'s `⟐ loadContent blocked`
+    /// line is what surfaces the stranded case, so it can be fixed rather than papered over.
+    ///
+    /// Note this is a no-op change for online books: `loadOnlineCoreText` clears the flag
+    /// synchronously before it returns, so it is already false by the time any chapter callback
+    /// runs. It matters for the TXT/EPUB paths, which hold the flag across async work — exactly
+    /// where "a load really is in flight" is true.
     func rebuildPages() {
-        isLoadingPipeline = false
+        AppLogger.render(
+            "⟐ rebuildPages loading=\(isLoadingPipeline) engine=\(epubRenderer.engine != nil) "
+                + "scrollEngine=\(epubRenderer.scrollEngine != nil)"
+        )
         loadContent()
     }
 

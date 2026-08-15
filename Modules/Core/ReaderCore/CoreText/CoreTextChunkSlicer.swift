@@ -18,6 +18,9 @@ enum CoreTextChunkSlicer {
         let chunks: [CoreTextChunk]
         let framesetter: CTFramesetter
         let attributedString: NSAttributedString
+        /// Cost breakdown of the call that produced this output. Reported, not acted on —
+        /// see `CoreTextSliceMetrics`.
+        let metrics: CoreTextSliceMetrics
     }
 
     /// - Parameter minimumBackdropExtent: along-scroll size of one viewport. A chapter that
@@ -33,10 +36,23 @@ enum CoreTextChunkSlicer {
         pageBackgroundImage: UIImage? = nil,
         minimumBackdropExtent: CGFloat = 0
     ) -> Output {
+        let sliceStart = CoreTextSliceMetrics.now
+        var metrics = CoreTextSliceMetrics()
+        metrics.characterCount = attrStr.length
+
+        let framesetterStart = CoreTextSliceMetrics.now
         let framesetter = CoreTextFramesetterFactory.make(for: attrStr)
+        metrics.recordFramesetter(since: framesetterStart)
+
         let totalLen = attrStr.length
         guard contentWidth > 0, totalLen > 0 else {
-            return Output(chunks: [], framesetter: framesetter, attributedString: attrStr)
+            metrics.totalSeconds = CoreTextSliceMetrics.now - sliceStart
+            return Output(
+                chunks: [],
+                framesetter: framesetter,
+                attributedString: attrStr,
+                metrics: metrics
+            )
         }
 
         if writingMode.isVertical {
@@ -49,7 +65,9 @@ enum CoreTextChunkSlicer {
                 writingMode: writingMode,
                 pageBackgroundColor: pageBackgroundColor,
                 pageBackgroundImage: pageBackgroundImage,
-                minimumBackdropExtent: minimumBackdropExtent
+                minimumBackdropExtent: minimumBackdropExtent,
+                metrics: metrics,
+                sliceStart: sliceStart
             )
         }
 
@@ -60,24 +78,28 @@ enum CoreTextChunkSlicer {
         while offset < totalLen {
             let constraints = CGSize(width: contentWidth, height: heightCap)
             var fitRange = CFRange(location: 0, length: 0)
-            var suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-                framesetter,
-                CFRange(location: offset, length: 0),
-                nil,
-                constraints,
-                &fitRange
-            )
+            var suggested = metrics.measuringSuggestFrameSize {
+                CTFramesetterSuggestFrameSizeWithConstraints(
+                    framesetter,
+                    CFRange(location: offset, length: 0),
+                    nil,
+                    constraints,
+                    &fitRange
+                )
+            }
 
             // Single element exceeds heightCap (e.g. cover image, large illustration) → re-fetch without height limit
             if fitRange.length == 0 {
                 var fr2 = CFRange(location: 0, length: 0)
-                suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-                    framesetter,
-                    CFRange(location: offset, length: 0),
-                    nil,
-                    CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                    &fr2
-                )
+                suggested = metrics.measuringSuggestFrameSize {
+                    CTFramesetterSuggestFrameSizeWithConstraints(
+                        framesetter,
+                        CFRange(location: offset, length: 0),
+                        nil,
+                        CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                        &fr2
+                    )
+                }
                 fitRange = fr2
             }
 
@@ -106,13 +128,15 @@ enum CoreTextChunkSlicer {
                     actualRange.length = adjustedLen
                     // Recompute height for the trimmed range
                     var frAdj = CFRange(location: 0, length: 0)
-                    suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-                        framesetter,
-                        actualRange,
-                        nil,
-                        CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                        &frAdj
-                    )
+                    suggested = metrics.measuringSuggestFrameSize {
+                        CTFramesetterSuggestFrameSizeWithConstraints(
+                            framesetter,
+                            actualRange,
+                            nil,
+                            CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                            &frAdj
+                        )
+                    }
                 }
             }
 
@@ -127,20 +151,23 @@ enum CoreTextChunkSlicer {
                 attrStr: attrStr,
                 range: actualRange,
                 chunkSize: CGSize(width: contentWidth, height: actualHeight),
-                writingMode: writingMode
+                writingMode: writingMode,
+                metrics: &metrics
             )
 
             if let splitLocation = frameBuild.splitBeforeFloatLocation,
                splitLocation > actualRange.location {
                 actualRange.length = splitLocation - actualRange.location
                 var frAdj = CFRange(location: 0, length: 0)
-                suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-                    framesetter,
-                    actualRange,
-                    nil,
-                    CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                    &frAdj
-                )
+                suggested = metrics.measuringSuggestFrameSize {
+                    CTFramesetterSuggestFrameSizeWithConstraints(
+                        framesetter,
+                        actualRange,
+                        nil,
+                        CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                        &frAdj
+                    )
+                }
                 actualHeight = ceil(max(suggested.height, 1))
                 actualHeight = max(actualHeight, blockImageHeight(in: attrStr, range: actualRange))
                 frameBuild = makeHorizontalFrame(
@@ -148,7 +175,8 @@ enum CoreTextChunkSlicer {
                     attrStr: attrStr,
                     range: actualRange,
                     chunkSize: CGSize(width: contentWidth, height: actualHeight),
-                    writingMode: writingMode
+                    writingMode: writingMode,
+                    metrics: &metrics
                 )
             }
 
@@ -162,11 +190,12 @@ enum CoreTextChunkSlicer {
                     attrStr: attrStr,
                     range: actualRange,
                     chunkSize: CGSize(width: contentWidth, height: actualHeight),
-                    writingMode: writingMode
+                    writingMode: writingMode,
+                    metrics: &metrics
                 )
             }
 
-            chunks.append(makeHorizontalChunk(
+            let chunk = makeHorizontalChunk(
                 frameBuild: frameBuild,
                 framesetter: framesetter,
                 attrStr: attrStr,
@@ -175,8 +204,10 @@ enum CoreTextChunkSlicer {
                 size: CGSize(width: contentWidth, height: actualHeight),
                 writingMode: writingMode,
                 pageBackgroundColor: pageBackgroundColor,
-                pageBackgroundImage: pageBackgroundImage
-            ))
+                pageBackgroundImage: pageBackgroundImage,
+                metrics: &metrics
+            )
+            chunks.append(chunk)
 
             offset = actualRange.location + actualRange.length
         }
@@ -190,10 +221,18 @@ enum CoreTextChunkSlicer {
             chapterIndex: chapterIndex,
             writingMode: writingMode,
             pageBackgroundColor: pageBackgroundColor,
-            pageBackgroundImage: pageBackgroundImage
+            pageBackgroundImage: pageBackgroundImage,
+            metrics: &metrics
         )
 
-        return Output(chunks: chunks, framesetter: framesetter, attributedString: attrStr)
+        metrics.chunkCount = chunks.count
+        metrics.totalSeconds = CoreTextSliceMetrics.now - sliceStart
+        return Output(
+            chunks: chunks,
+            framesetter: framesetter,
+            attributedString: attrStr,
+            metrics: metrics
+        )
     }
 
     /// The publication-authored page backdrop is painted into the chunk's own box
@@ -214,7 +253,8 @@ enum CoreTextChunkSlicer {
         chapterIndex: Int,
         writingMode: ReaderWritingMode,
         pageBackgroundColor: UIColor?,
-        pageBackgroundImage: UIImage?
+        pageBackgroundImage: UIImage?,
+        metrics: inout CoreTextSliceMetrics
     ) {
         guard pageBackgroundImage != nil,
               minimumBackdropExtent > 0,
@@ -229,14 +269,18 @@ enum CoreTextChunkSlicer {
             width: contentWidth,
             height: last.height + (minimumBackdropExtent - total)
         )
+        // Two statements, not one nested expression: both helpers take `metrics` inout, and
+        // nesting them would be overlapping exclusive access to the same variable.
+        let paddedBuild = makeHorizontalFrame(
+            framesetter: framesetter,
+            attrStr: attrStr,
+            range: last.charRange,
+            chunkSize: paddedSize,
+            writingMode: writingMode,
+            metrics: &metrics
+        )
         chunks[chunks.count - 1] = makeHorizontalChunk(
-            frameBuild: makeHorizontalFrame(
-                framesetter: framesetter,
-                attrStr: attrStr,
-                range: last.charRange,
-                chunkSize: paddedSize,
-                writingMode: writingMode
-            ),
+            frameBuild: paddedBuild,
             framesetter: framesetter,
             attrStr: attrStr,
             chapterIndex: chapterIndex,
@@ -244,7 +288,8 @@ enum CoreTextChunkSlicer {
             size: paddedSize,
             writingMode: writingMode,
             pageBackgroundColor: pageBackgroundColor,
-            pageBackgroundImage: pageBackgroundImage
+            pageBackgroundImage: pageBackgroundImage,
+            metrics: &metrics
         )
     }
 
@@ -257,31 +302,38 @@ enum CoreTextChunkSlicer {
         size: CGSize,
         writingMode: ReaderWritingMode,
         pageBackgroundColor: UIColor?,
-        pageBackgroundImage: UIImage?
+        pageBackgroundImage: UIImage?,
+        metrics: inout CoreTextSliceMetrics
     ) -> CoreTextChunk {
         // Extract block decorations during slicing so they survive frame eviction
-        let decorations = extractBlockRenderables(
-            frame: frameBuild.frame,
-            chunkSize: size,
-            attributedString: attrStr,
-            charRange: range,
-            writingMode: writingMode
-        )
+        let decorations = metrics.measuringExtract {
+            extractBlockRenderables(
+                frame: frameBuild.frame,
+                chunkSize: size,
+                attributedString: attrStr,
+                charRange: range,
+                writingMode: writingMode
+            )
+        }
 
-        return CoreTextChunk(
-            chapterIndex: chapterIndex,
-            charRange: range,
-            size: size,
-            framesetter: framesetter,
-            attributedString: attrStr,
-            frame: frameBuild.frame,
-            writingMode: writingMode,
-            floatNotch: frameBuild.floatNotch,
-            floatAttachments: frameBuild.floatAttachments,
-            blockRenderables: decorations,
-            pageBackgroundColor: pageBackgroundColor,
-            pageBackgroundImage: pageBackgroundImage
-        )
+        // `CoreTextChunk.init` eagerly runs `CoreTextChunkAttachmentExtractor.extract`
+        // whenever it is handed a frame, so the init itself is a measured layout cost.
+        return metrics.measuringChunkInit {
+            CoreTextChunk(
+                chapterIndex: chapterIndex,
+                charRange: range,
+                size: size,
+                framesetter: framesetter,
+                attributedString: attrStr,
+                frame: frameBuild.frame,
+                writingMode: writingMode,
+                floatNotch: frameBuild.floatNotch,
+                floatAttachments: frameBuild.floatAttachments,
+                blockRenderables: decorations,
+                pageBackgroundColor: pageBackgroundColor,
+                pageBackgroundImage: pageBackgroundImage
+            )
+        }
     }
 
     private static func sliceVertical(
@@ -293,8 +345,11 @@ enum CoreTextChunkSlicer {
         writingMode: ReaderWritingMode,
         pageBackgroundColor: UIColor?,
         pageBackgroundImage: UIImage?,
-        minimumBackdropExtent: CGFloat
+        minimumBackdropExtent: CGFloat,
+        metrics: CoreTextSliceMetrics,
+        sliceStart: TimeInterval
     ) -> Output {
+        var metrics = metrics
         let totalLen = attrStr.length
         var chunks: [CoreTextChunk] = []
         var offset: CFIndex = 0
@@ -307,21 +362,25 @@ enum CoreTextChunkSlicer {
                 transform: nil
             )
             let searchRange = CFRange(location: offset, length: totalLen - offset)
-            let probeFrame = CoreTextPaginator.makeFrame(
-                framesetter: framesetter,
-                range: searchRange,
-                path: path,
-                writingMode: writingMode
-            )
+            let probeFrame = metrics.measuringCreateFrame {
+                CoreTextPaginator.makeFrame(
+                    framesetter: framesetter,
+                    range: searchRange,
+                    path: path,
+                    writingMode: writingMode
+                )
+            }
             let visible = CTFrameGetVisibleStringRange(probeFrame)
             let consumeLen = max(visible.length, 1)
             let actualRange = CFRange(location: offset, length: min(consumeLen, totalLen - offset))
-            let frame = CoreTextPaginator.makeFrame(
-                framesetter: framesetter,
-                range: actualRange,
-                path: path,
-                writingMode: writingMode
-            )
+            let frame = metrics.measuringCreateFrame {
+                CoreTextPaginator.makeFrame(
+                    framesetter: framesetter,
+                    range: actualRange,
+                    path: path,
+                    writingMode: writingMode
+                )
+            }
             var finalFrame = frame
             var finalChunkWidth = chunkWidth
             if actualRange.location + actualRange.length >= totalLen {
@@ -343,12 +402,14 @@ enum CoreTextChunkSlicer {
                         rect: CGRect(x: 0, y: 0, width: usedWidth, height: chunkHeight),
                         transform: nil
                     )
-                    let compactFrame = CoreTextPaginator.makeFrame(
-                        framesetter: framesetter,
-                        range: actualRange,
-                        path: compactPath,
-                        writingMode: writingMode
-                    )
+                    let compactFrame = metrics.measuringCreateFrame {
+                        CoreTextPaginator.makeFrame(
+                            framesetter: framesetter,
+                            range: actualRange,
+                            path: compactPath,
+                            writingMode: writingMode
+                        )
+                    }
                     let compactVisible = CTFrameGetVisibleStringRange(compactFrame)
                     if compactVisible.location == actualRange.location,
                        compactVisible.length >= actualRange.length {
@@ -359,35 +420,49 @@ enum CoreTextChunkSlicer {
             }
 
             let chunkSize = CGSize(width: finalChunkWidth, height: chunkHeight)
-            let annotations = extractInlineAnnotations(
-                frame: finalFrame,
-                chunkSize: chunkSize,
-                attributedString: attrStr
-            )
-            let titleRenderables = extractBlockRenderables(
-                frame: finalFrame,
-                chunkSize: chunkSize,
-                attributedString: attrStr,
-                charRange: actualRange,
-                writingMode: writingMode
-            )
-            chunks.append(CoreTextChunk(
-                chapterIndex: chapterIndex,
-                charRange: actualRange,
-                size: chunkSize,
-                framesetter: framesetter,
-                attributedString: attrStr,
-                frame: finalFrame,
-                writingMode: writingMode,
-                blockRenderables: titleRenderables,
-                inlineAnnotations: annotations,
-                pageBackgroundColor: pageBackgroundColor,
-                pageBackgroundImage: pageBackgroundImage
-            ))
+            let annotations = metrics.measuringExtract {
+                extractInlineAnnotations(
+                    frame: finalFrame,
+                    chunkSize: chunkSize,
+                    attributedString: attrStr
+                )
+            }
+            let titleRenderables = metrics.measuringExtract {
+                extractBlockRenderables(
+                    frame: finalFrame,
+                    chunkSize: chunkSize,
+                    attributedString: attrStr,
+                    charRange: actualRange,
+                    writingMode: writingMode
+                )
+            }
+            let chunk = metrics.measuringChunkInit {
+                CoreTextChunk(
+                    chapterIndex: chapterIndex,
+                    charRange: actualRange,
+                    size: chunkSize,
+                    framesetter: framesetter,
+                    attributedString: attrStr,
+                    frame: finalFrame,
+                    writingMode: writingMode,
+                    blockRenderables: titleRenderables,
+                    inlineAnnotations: annotations,
+                    pageBackgroundColor: pageBackgroundColor,
+                    pageBackgroundImage: pageBackgroundImage
+                )
+            }
+            chunks.append(chunk)
             offset = actualRange.location + actualRange.length
         }
 
-        return Output(chunks: chunks, framesetter: framesetter, attributedString: attrStr)
+        metrics.chunkCount = chunks.count
+        metrics.totalSeconds = CoreTextSliceMetrics.now - sliceStart
+        return Output(
+            chunks: chunks,
+            framesetter: framesetter,
+            attributedString: attrStr,
+            metrics: metrics
+        )
     }
 
     private static func verticalUsedWidth(of frame: CTFrame) -> CGFloat {
@@ -424,7 +499,8 @@ enum CoreTextChunkSlicer {
         attrStr: NSAttributedString,
         range: CFRange,
         chunkSize: CGSize,
-        writingMode: ReaderWritingMode
+        writingMode: ReaderWritingMode,
+        metrics: inout CoreTextSliceMetrics
     ) -> HorizontalFrameBuild {
         let contentRect = CGRect(origin: .zero, size: chunkSize)
         let rectangularPath = CGPath(rect: contentRect, transform: nil)
@@ -435,12 +511,14 @@ enum CoreTextChunkSlicer {
                       && marker.placeholder.image != nil
               })
         else {
-            let frame = CoreTextPaginator.makeFrame(
-                framesetter: framesetter,
-                range: range,
-                path: rectangularPath,
-                writingMode: writingMode
-            )
+            let frame = metrics.measuringCreateFrame {
+                CoreTextPaginator.makeFrame(
+                    framesetter: framesetter,
+                    range: range,
+                    path: rectangularPath,
+                    writingMode: writingMode
+                )
+            }
             return HorizontalFrameBuild(
                 frame: frame,
                 floatNotch: nil,
@@ -449,12 +527,14 @@ enum CoreTextChunkSlicer {
             )
         }
 
-        let probe = CoreTextPaginator.makeFrame(
-            framesetter: framesetter,
-            range: range,
-            path: rectangularPath,
-            writingMode: writingMode
-        )
+        let probe = metrics.measuringCreateFrame {
+            CoreTextPaginator.makeFrame(
+                framesetter: framesetter,
+                range: range,
+                path: rectangularPath,
+                writingMode: writingMode
+            )
+        }
         guard let lineTop = CoreTextPaginator.lineTopY(in: probe, offset: marker.offset, contentPathRect: contentRect),
               let image = marker.placeholder.image else {
             return HorizontalFrameBuild(
@@ -492,12 +572,14 @@ enum CoreTextChunkSlicer {
         }
 
         let path = CoreTextPaginator.framePath(contentPathRect: contentRect, floatNotch: notch)
-        let frame = CoreTextPaginator.makeFrame(
-            framesetter: framesetter,
-            range: range,
-            path: path,
-            writingMode: writingMode
-        )
+        let frame = metrics.measuringCreateFrame {
+            CoreTextPaginator.makeFrame(
+                framesetter: framesetter,
+                range: range,
+                path: path,
+                writingMode: writingMode
+            )
+        }
         let attachment = CoreTextPaginator.RenderedAttachment(
             rect: attachmentRect,
             image: image,

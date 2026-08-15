@@ -405,6 +405,29 @@ final class DiscoverViewModel: ObservableObject {
         return "\(localized("書源伺服器回應失敗"))\n\(failure.displayText)"
     }
 
+    /// The selected source when the empty 發現頁 is explained by it asking for a
+    /// device id it was never given — the one failure the reader can repair from
+    /// here. See `AndroidIdentityRecovery`.
+    var androidIdentityRepairSource: BookSource? {
+        guard items.isEmpty, let source = selectedSource,
+              AndroidIdentityRecovery.canRepair(source)
+        else { return nil }
+        return source
+    }
+
+    /// Turn 以 Android 身分回報 on for the selected source and load 發現 again.
+    ///
+    /// `refreshSources()` before the reload is required, not cosmetic:
+    /// `exploreSources` is a snapshot taken before the edit, and reloading against
+    /// that stale copy would land on the same `BookSourceSession` — its cache key
+    /// carries `lastUpdateTime`, which the edit just advanced.
+    func enableAndroidIdentityAndReload() {
+        guard let source = androidIdentityRepairSource else { return }
+        AndroidIdentityRecovery.enable(source)
+        refreshSources()
+        reload(forceRefresh: true)
+    }
+
     /// Cache key for the current (source, discover runtime variables) pair.
     private func discoverKindsCacheKey(for source: BookSource) -> String {
         // Fingerprint whatever the source variable actually IS. Keying only off a

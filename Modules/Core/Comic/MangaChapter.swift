@@ -3,11 +3,12 @@ import Foundation
 // MARK: - Fixed page model
 //
 // A fixed-page chapter can come from image URLs, extracted archive files, or a
-// renderer-backed source such as fixed-layout EPUB.
+// renderer-backed source such as fixed-layout EPUB or a local PDF.
 
 enum FixedPageRenderSource: Equatable {
     case image
     case fixedLayoutEPUB(sourceFilename: String, chapterIndex: Int)
+    case pdf(sourceFilename: String, pageIndex: Int)
 }
 
 struct FixedPage: Identifiable, Equatable {
@@ -16,6 +17,15 @@ struct FixedPage: Identifiable, Equatable {
     let headers: [String: String]
     var localURL: URL?        // non-nil when downloaded for offline reading
     var renderSource: FixedPageRenderSource = .image
+}
+
+/// A jump target inside a document that is loaded as a single chapter (local PDF,
+/// fixed-layout EPUB): a table-of-contents row that moves to a page rather than
+/// loading another chapter.
+struct FixedPageDocumentSection: Equatable {
+    let title: String
+    /// 0-based page index this entry points at.
+    let startPage: Int
 }
 
 enum MangaChapterParser {

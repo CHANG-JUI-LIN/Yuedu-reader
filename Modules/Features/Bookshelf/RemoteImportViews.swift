@@ -192,6 +192,7 @@ struct WebDAVDirectoryView: View {
     private func icon(for entry: WebDAVBrowseClient.Entry) -> String {
         switch entry.fileExtension {
         case "epub":            return "book.closed"
+        case "pdf":             return "doc.richtext"
         case "txt", "md", "markdown": return "doc.text"
         default:                return "doc"
         }
@@ -233,6 +234,8 @@ struct WebDAVDirectoryView: View {
                 switch entry.fileExtension {
                 case "epub":
                     try await store.importEpub(url: tempURL, title: bookTitle)
+                case "pdf":
+                    try await store.importLocalPDF(url: tempURL, title: bookTitle)
                 case "md", "markdown":
                     try store.importMarkdown(url: tempURL, title: bookTitle)
                 default:

@@ -6,6 +6,7 @@ import SwiftUI
 /// `requestTestFlightAccess` callable, which adds the tester to the configured
 /// App Store Connect beta group and lets Apple send the invite email.
 struct TestFlightApplyView: View {
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @State private var email = ""
     @State private var state: TestFlightApplyState = .idle
     @State private var submissionStatus: String?
@@ -22,7 +23,7 @@ struct TestFlightApplyView: View {
                         .accessibilityHidden(true)
                     Text(localized("搶先體驗新功能"))
                         .font(DSFont.title3.weight(.semibold))
-                    Text(localized("加入 TestFlight 測試版，搶先體驗新功能並協助我們改善 Yuedu Reader。申請後我們會寄邀請郵件到你填寫的郵箱。"))
+                    Text(localized("加入 TestFlight 測試版，搶先體驗新功能並協助我們改善 Yuedu Reader。名額為永久會員專屬，申請後我們會寄邀請郵件到你填寫的郵箱。"))
                         .font(DSFont.footnote)
                         .foregroundColor(DSColor.textSecondary)
                         .multilineTextAlignment(.center)
@@ -33,9 +34,9 @@ struct TestFlightApplyView: View {
             }
             .interfaceSectionSurface()
 
-            if case .submitted = state {
+            if case .submitted = displayState {
                 submittedRow
-            } else if case let .blocked(reason) = state {
+            } else if case let .blocked(reason) = displayState {
                 blockedRow(reason: reason)
             } else {
                 Section {
@@ -145,6 +146,16 @@ struct TestFlightApplyView: View {
         .interfaceSectionSurface()
     }
 
+    /// Anything the server already answered wins. Only before a submission does
+    /// the locally-known plan decide, and only when it is known: `.undetermined`
+    /// shows the form and lets `requestTestFlightAccess` be the authority.
+    private var displayState: TestFlightApplyState {
+        guard case .idle = state else { return state }
+        return subscriptionStore.testFlightEligibility == .requiresLifetime
+            ? .blocked(.requiresLifetime)
+            : state
+    }
+
     private var isSubmitting: Bool {
         if case .submitting = state { return true }
         return false
@@ -195,7 +206,7 @@ struct TestFlightApplyView: View {
                     state = .blocked(.oneSlotUsed)
                     errorMessage = nil
                 case 7:
-                    state = .blocked(.requiresPro)
+                    state = .blocked(.requiresLifetime)
                     errorMessage = nil
                 default:
                     state = .idle
@@ -230,19 +241,19 @@ private enum TestFlightApplyState {
 
 private enum TestFlightBlockReason {
     case oneSlotUsed
-    case requiresPro
+    case requiresLifetime
 
     var symbol: String {
         switch self {
         case .oneSlotUsed: return "person.crop.circle.badge.exclamationmark"
-        case .requiresPro: return "lock.circle"
+        case .requiresLifetime: return "lock.circle"
         }
     }
 
     var title: String {
         switch self {
         case .oneSlotUsed: return localized("TestFlight 名額已使用")
-        case .requiresPro: return localized("需要 Pro 會員")
+        case .requiresLifetime: return localized("需要永久會員")
         }
     }
 
@@ -250,8 +261,8 @@ private enum TestFlightBlockReason {
         switch self {
         case .oneSlotUsed:
             return localized("這個 Pro 帳號已經申請過一個郵箱，不能再邀請第二個。")
-        case .requiresPro:
-            return localized("只有有效的 Pro 會員可以申請 TestFlight。")
+        case .requiresLifetime:
+            return localized("TestFlight 名額只開放給永久會員。月會員可以在「閱讀Pro」升級為永久會員後申請。")
         }
     }
 }
@@ -287,4 +298,5 @@ enum TestFlightAccessService {
     NavigationStack {
         TestFlightApplyView()
     }
+    .environmentObject(SubscriptionStore.shared)
 }

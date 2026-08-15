@@ -8,6 +8,9 @@ let uiFeedbackDuration: Double = 0.25
 
 private enum ReaderSettingsDeferredPresentationRoute {
     case fontImporter
+    /// 匯入閱讀設定 / 匯入正則高亮 — same first-level-presenter handoff as the font
+    /// importer, because those controls also live inside the settings sheet.
+    case styleImporter(ReaderStyleImportRoute)
 }
 
 private struct ReaderFontImportPresentationError: Identifiable {
@@ -75,6 +78,7 @@ struct ReaderView: View {
         DismissalSequencedPresentation<ReaderSettingsDeferredPresentationRoute>()
     @State private var showReaderFontImporter = false
     @State private var readerFontImportError: ReaderFontImportPresentationError?
+    @State private var readerStyleImportRoute: ReaderStyleImportRoute?
     @State var showQuickThemePanel = false
     @State var showReaderSearch = false
     @State var showTOC = false
@@ -1951,7 +1955,8 @@ struct ReaderView: View {
                         guard subscriptionStore.isProActive, !effectiveScrollMode else { return }
                         showBars = false
                         showTouchZoneEditor = true
-                    }
+                    },
+                    onOpenStyleImporter: requestFirstLevelReaderStyleImporter
                 )
             }
         }
@@ -2162,6 +2167,7 @@ struct ReaderView: View {
                         dismissButton: .default(Text(localized("確定")))
                     )
                 }
+                .readerStyleImportPresentation(route: $readerStyleImportRoute)
                 .onChanged(of: showChangeSourceSheet) { show in
             if show {
                 loadOtherOrigins()
@@ -2205,11 +2211,20 @@ struct ReaderView: View {
     }
 
     private func requestFirstLevelReaderFontImporter() {
-        guard ReaderSettingsPresentationPolicy.requiresFirstLevelFontImporter else {
+        guard ReaderSettingsPresentationPolicy.requiresFirstLevelImporter else {
             showReaderFontImporter = true
             return
         }
         readerSettingsDeferredPresentation.select(.fontImporter)
+        showSettings = false
+    }
+
+    private func requestFirstLevelReaderStyleImporter(_ route: ReaderStyleImportRoute) {
+        guard ReaderSettingsPresentationPolicy.requiresFirstLevelImporter else {
+            readerStyleImportRoute = route
+            return
+        }
+        readerSettingsDeferredPresentation.select(.styleImporter(route))
         showSettings = false
     }
 
@@ -2220,6 +2235,8 @@ struct ReaderView: View {
         switch route {
         case .fontImporter:
             showReaderFontImporter = true
+        case .styleImporter(let styleRoute):
+            readerStyleImportRoute = styleRoute
         }
     }
 

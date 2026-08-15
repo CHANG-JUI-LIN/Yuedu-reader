@@ -14,14 +14,14 @@ struct ChapterTitleInspectorView: View {
     var body: some View {
         Form {
             if let layer = selectedLayer {
-                appearanceSection
-                identitySection(layer)
-                contentSection(layer)
-                typographySection(layer)
-                backgroundSection(layer)
-                spacingSection(layer)
-                borderSection(layer)
-                contrastSection(layer)
+                appearanceSection.interfaceSectionSurface()
+                identitySection(layer).interfaceSectionSurface()
+                contentSection(layer).interfaceSectionSurface()
+                typographySection(layer).interfaceSectionSurface()
+                backgroundSection(layer).interfaceSectionSurface()
+                spacingSection(layer).interfaceSectionSurface()
+                borderSection(layer).interfaceSectionSurface()
+                contrastSection(layer).interfaceSectionSurface()
             } else {
                 ContentUnavailableView(
                     localized("未選擇元素"),

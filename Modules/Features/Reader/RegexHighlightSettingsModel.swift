@@ -43,11 +43,13 @@ final class RegexHighlightSettingsModel: ObservableObject {
         }
     }
 
-    func addCustom() {
-        mutate {
-            $0.customRules.append(
-                RegexHighlightRule.custom(name: localized("新規則"), pattern: "")
-            )
+    /// Back to the shipped rule set. Keeps the global switch where the user left
+    /// it — 重設所有規則 is about the rules, and silently switching highlighting
+    /// back on would be a second, unasked-for change.
+    func resetToDefaults() {
+        mutate { configuration in
+            configuration.rules = RegexHighlightRule.builtIns
+            configuration.customRules = []
         }
     }
 

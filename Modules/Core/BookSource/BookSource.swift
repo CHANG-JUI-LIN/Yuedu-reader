@@ -255,8 +255,18 @@ struct BookSource: Identifiable, Codable {
     var customOrder: Int = 0          // Legado: custom ordering
     var enabled: Bool = true
     var enabledExplore: Bool = true   // Legado: discover page toggle
-    var enabledCookieJar: Bool = false // Legado: automatic cookie management
-    var enabledReview: Bool = false   // Legado: newer version field
+    /// Legado's automatic-cookie-management switch. **Carried, not honored:**
+    /// `CookieStore` saves and replays cookies for every source unconditionally, so
+    /// this flag gates nothing here — it is decoded and re-encoded so an imported
+    /// source round-trips intact, and exposed to rule JS as `source.enabledCookieJar`.
+    /// No editor control, because a switch that changes nothing reads as a bug.
+    var enabledCookieJar: Bool = false
+    /// Legado's 段评 switch, which there enables the source's `ruleReview`.
+    /// **Carried, not honored:** this app has no `ruleReview` parsing path at all —
+    /// paragraph reviews are detected from the review markers a source embeds in the
+    /// chapter HTML (`ReaderViewModel.recordParagraphReviewsIfPresent`), which no flag
+    /// gates. Kept for round-tripping and for `source.enabledReview` in rule JS.
+    var enabledReview: Bool = false
     /// Whether `java.androidId()` hands this source an Android device identifier.
     ///
     /// Off by default, because on iOS there is no ANDROID_ID and most sources
@@ -702,6 +712,10 @@ struct OnlineChapterRef: Identifiable, Codable {
     var runtimeVariables: [String: String]? = nil
     var audioStartSeconds: Double? = nil
     var audioDurationSeconds: Double? = nil
+    /// Local PDF books: how many document pages this chapter covers. Optional so
+    /// books saved before PDF support still decode (the synthesized decoder only
+    /// tolerates missing keys for optional properties).
+    var pdfPageCount: Int? = nil
 }
 
 extension OnlineChapterRef {
