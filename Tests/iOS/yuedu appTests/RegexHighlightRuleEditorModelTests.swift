@@ -89,7 +89,7 @@ struct RegexHighlightRuleEditorModelTests {
             ]
         )
 
-        let preview = try model.previewAttributedString(appearance: .light)
+        let preview = try model.previewAttributedString(appearance: .light, baseTextColor: .label)
         let color = try #require(preview.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor)
         let font = try #require(preview.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)
         let decoration = try #require(

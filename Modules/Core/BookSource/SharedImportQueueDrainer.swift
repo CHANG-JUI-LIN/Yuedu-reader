@@ -308,7 +308,11 @@ final class SharedImportQueueDrainer: ObservableObject {
         case .replaceRules:
             return .init(count: try importReplaceRuleData(Data(contentsOf: url)), category: .replaceRule)
         case .localBook:
-            return .init(count: try await importBookFile(url), category: .book)
+            guard let staged = restagedIfRenamed(url, suggestedFilename: suggestedFilename) else {
+                return .init(count: try await importBookFile(url), category: .book)
+            }
+            defer { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) }
+            return .init(count: try await importBookFile(staged), category: .book)
         }
     }
 
@@ -338,7 +342,7 @@ final class SharedImportQueueDrainer: ObservableObject {
                 fileExtension: ext,
                 suggestedFilename: suggestedFilename
             )
-            defer { try? FileManager.default.removeItem(at: tempURL) }
+            defer { try? FileManager.default.removeItem(at: tempURL.deletingLastPathComponent()) }
             return .init(count: try await importBookFile(tempURL), category: .book)
         }
     }
@@ -421,6 +425,12 @@ final class SharedImportQueueDrainer: ObservableObject {
         return url.pathExtension.lowercased()
     }
 
+    /// Stage a shared payload under the name it arrived with.
+    ///
+    /// The local-book importers fall back to the *file's name* when the document
+    /// carries no title of its own, so writing the payload as `<UUID>.pdf` put a
+    /// UUID on the shelf instead of the shared file's name. Each payload gets its
+    /// own directory so the real name can be used verbatim.
     private func writeTemporaryPayload(
         _ data: Data,
         fileExtension: String,
@@ -430,11 +440,36 @@ final class SharedImportQueueDrainer: ObservableObject {
             fileExtension,
             suggestedFilename: suggestedFilename
         )
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension(ext)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let name = SharedImportPayloadClassifier.stagedFilename(
+            suggestedFilename: suggestedFilename,
+            fileExtension: ext
+        )
+        let tempURL = directory.appendingPathComponent(name)
         try data.write(to: tempURL, options: .atomic)
         return tempURL
+    }
+
+    /// Re-stage a queued file whose on-disk name isn't the name it was shared with,
+    /// for the same reason `writeTemporaryPayload` keeps the suggested name.
+    private func restagedIfRenamed(_ url: URL, suggestedFilename: String?) -> URL? {
+        guard let suggestedFilename, !suggestedFilename.isEmpty,
+              suggestedFilename != url.lastPathComponent else { return nil }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let destination = directory.appendingPathComponent(suggestedFilename)
+            try FileManager.default.copyItem(at: url, to: destination)
+            return destination
+        } catch {
+            AppLogger.error("Shared import could not restage \(suggestedFilename)", error: error)
+            try? FileManager.default.removeItem(at: directory)
+            return nil
+        }
     }
 }
 
@@ -540,6 +575,21 @@ enum SharedImportPayloadClassifier {
         }
 
         throw SharedImportQueueDrainer.ImportError.unsupportedPayload(suggestedFilename ?? ext)
+    }
+
+    /// The name a shared book payload should be staged under: the name it arrived
+    /// with when there is one (that's what becomes the book's title for documents
+    /// with no title of their own), otherwise a generated one.
+    static func stagedFilename(suggestedFilename: String?, fileExtension: String) -> String {
+        let trimmed = (suggestedFilename ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+        guard !trimmed.isEmpty, trimmed != ".", trimmed != ".." else {
+            return "\(UUID().uuidString).\(fileExtension)"
+        }
+        return (trimmed as NSString).pathExtension.isEmpty
+            ? "\(trimmed).\(fileExtension)"
+            : trimmed
     }
 
     static func normalizedLocalBookExtension(_ ext: String, suggestedFilename: String?) -> String {

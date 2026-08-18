@@ -151,7 +151,7 @@ struct SVGCoverFixtureTests {
         var walker = PageWalker(box: result.rootBox, pageSize: CGSize(width: 390, height: 844),
                                 contentInsets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12))
         var steps = 0
-        while let step = walker.nextStep(), steps < 50 {
+        while walker.nextStep() != nil, steps < 50 {
             steps += 1
             print("SPINE0 step \(steps)")
         }

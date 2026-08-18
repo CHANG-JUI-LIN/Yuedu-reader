@@ -240,9 +240,7 @@ private final class CountingBookSourceFetcher: BookSourceFetching {
     func clearAllChapterCache(bookId: UUID) {}
 
     func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
-        lock.lock()
-        calls += 1
-        lock.unlock()
+        lock.withLock { calls += 1 }
         return [
             OnlineBook(
                 name: query,

@@ -14,6 +14,9 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// MainActor: `ReaderSettingsImportService` is MainActor-isolated, and the
+    /// only reader is the `.fileImporter` below, which runs in `body`.
+    @MainActor
     var contentTypes: [UTType] {
         switch self {
         case .readerSettings: ReaderSettingsImportService.readerSettingsContentTypes

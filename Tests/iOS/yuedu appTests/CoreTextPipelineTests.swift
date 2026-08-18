@@ -385,7 +385,7 @@ struct CSSPropertyApplierTests {
         var style = Self.makeDefaultStyle()
         let ctx = Self.makeContext(parentStyle: style)
 
-        HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
+        _ = HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
             declarations: ["font-style": "italic"],
             style: &style,
             context: ctx
@@ -400,7 +400,7 @@ struct CSSPropertyApplierTests {
         style.isItalic = true
         let ctx = Self.makeContext(parentStyle: style)
 
-        HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
+        _ = HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
             declarations: ["font-style": "normal"],
             style: &style,
             context: ctx
@@ -414,7 +414,7 @@ struct CSSPropertyApplierTests {
         var style = Self.makeDefaultStyle()
         let ctx = Self.makeContext(parentStyle: style)
 
-        HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
+        _ = HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
             declarations: ["font-weight": "bold"],
             style: &style,
             context: ctx
@@ -428,7 +428,7 @@ struct CSSPropertyApplierTests {
         var style = Self.makeDefaultStyle()
         let ctx = Self.makeContext(parentStyle: style)
 
-        HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
+        _ = HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
             declarations: ["text-align": "center"],
             style: &style,
             context: ctx
@@ -442,7 +442,7 @@ struct CSSPropertyApplierTests {
         var style = Self.makeDefaultStyle()
         let ctx = Self.makeContext(parentStyle: style)
 
-        HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
+        _ = HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
             declarations: ["text-align": "left"],
             style: &style,
             context: ctx
@@ -456,7 +456,7 @@ struct CSSPropertyApplierTests {
         var style = Self.makeDefaultStyle()
         let ctx = Self.makeContext(parentStyle: style)
 
-        HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
+        _ = HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
             declarations: ["font-size": "24px"],
             style: &style,
             context: ctx
@@ -470,7 +470,7 @@ struct CSSPropertyApplierTests {
         var style = Self.makeDefaultStyle()
         let ctx = Self.makeContext(parentStyle: style)
 
-        HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
+        _ = HTMLCSSPropertyApplierRegistry.defaultRegistry.apply(
             declarations: ["display": "block"],
             style: &style,
             context: ctx

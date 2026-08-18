@@ -289,12 +289,6 @@ struct LegadoHTTPResult {
     /// (`BookSource.presentsAndroidIdentity`). Supplied by the owning engine
     /// because the bridge is per-source but the flag lives on the model.
     var presentsAndroidIdentityProvider: (() -> Bool)?
-
-    /// Whether this source's own JS catches an `androidId()` failure and recovers
-    /// through `deviceID()` (`AndroidIdentityRecovery.handlesMissingAndroidId`).
-    /// Those sources are handed an exception rather than the empty string — see
-    /// `androidId()`.
-    var handlesMissingAndroidIdProvider: (() -> Bool)?
     var sourceHeaders: [String: String] { sourceHeadersProvider?() ?? [:] }
 
     /// Timeout for `java.ajax`/`java.connect` requests. Legado sources carry `respondTime`
@@ -1207,45 +1201,15 @@ struct LegadoHTTPResult {
     /// ANDROID_ID has). `deviceID()` is left alone — 光遇's `checkEnv()` wants the
     /// real vendor UUID.
     func androidId() -> String {
-        // Empty unless the source asked for an Android identity. Sources call
-        // this for two incompatible reasons: as a real device key, and as a
-        // platform probe (`if (java.androidId()) -> not iOS`). Answering
-        // everyone told the probes we were Android, which is what broke
-        // 书山聚合's chapter loading. Empty — not a thrown error — because a
-        // probe reads `if (id && id !== '')` and falls through cleanly, while
-        // 知秋's `requestApiUrl` calls this bare and would take the whole
-        // request down with it.
-        //
-        // The exception is a source that wrote its own recovery:
-        //
-        //     try { device = java.androidId(); }
-        //     catch { try { device = java.deviceID(); } catch {} }
-        //
-        // 晴天起点 does this, and to it an empty string is a *false success* —
-        // JS `catch` sees no error, the `deviceID()` branch never runs, and the
-        // request goes out as `&device=` for its server to refuse with
-        // 「缺少设备信息」. Those sources get the truth (this device has no
-        // ANDROID_ID) as an exception they demonstrably catch.
-        guard presentsAndroidIdentityProvider?() == true else {
-            guard handlesMissingAndroidIdProvider?() == true else { return "" }
-            return throwNoAndroidIdentity()
-        }
+        // Answered by default, as upstream does — see `presentsAndroidIdentity`
+        // for why the opt-out exists and why it defaults ON. Empty (rather than a
+        // thrown error) when a source is opted OUT, because a platform probe reads
+        // `if (id && id !== '')` and falls through cleanly, while 知秋's
+        // `requestApiUrl` calls this bare and a throw would take the whole request
+        // down with it.
+        guard presentsAndroidIdentityProvider?() == true else { return "" }
         let digest = SHA256.hash(data: Data(deviceID().utf8))
         return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// Raise a JS exception at the `java.androidId()` call site, for the sources that
-    /// wrap it in a `try` and recover through `deviceID()`. The returned value is
-    /// never consumed — the exception propagates as soon as the bridge call returns.
-    private func throwNoAndroidIdentity() -> String {
-        AppLogger.parse("⟐ androidId refused, raising for source-side fallback")
-        if let context = JSContext.current() {
-            context.exception = JSValue(
-                newErrorFromMessage: "androidId: no ANDROID_ID on this device",
-                in: context
-            )
-        }
-        return ""
     }
 
     /// True for the 36-character uppercase vendor UUID `androidId()` used to hand out.

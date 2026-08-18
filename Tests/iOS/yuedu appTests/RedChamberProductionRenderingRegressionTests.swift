@@ -106,7 +106,11 @@ struct RedChamberProductionRenderingRegressionTests {
             directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("prod-\(UUID().uuidString)")
         )
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
-        let engine = BrowserLayoutPageEngine(resource: adapter, delegate: delegate, settings: settings)
+        // `mode:` is explicit: the shipping default is `.legacy`, which would
+        // route this whole test through the legacy delegate and pass vacuously.
+        let engine = BrowserLayoutPageEngine(
+            resource: adapter, delegate: delegate, settings: settings, mode: .browserAuto
+        )
         await engine.start(renderSize: Self.viewport, bookId: "redchamber")
         await engine.preloadChapter(at: spine)
 
@@ -152,7 +156,7 @@ struct RedChamberProductionRenderingRegressionTests {
     func k1CoordinateSurvivesProductionChain() async throws {
         let session = try await Self.session()
         let spine = try await Self.locateFirstChapter(session: session)
-        let (engine, layout, html, _) = try await Self.productionLayout(spine: spine)
+        let (_, layout, _, _) = try await Self.productionLayout(spine: spine)
 
         let page = try #require(layout.pages.first, "no first page")
         // Stage A: body content rect (from the engine's settings).
@@ -255,7 +259,6 @@ struct RedChamberProductionRenderingRegressionTests {
         let (_, layout, _, _) = try await Self.productionLayout(spine: spine)
         let page = try #require(layout.pages.first)
         let k1 = try #require(Self.k1Candidates(in: page).first, "no k1 fill")
-        let expectedK1BorderTop: CGFloat = 89.67 + Self.settings.contentInsets.top
 
         let full = layout.displayList(forPage: 0, themeTextColor: .black, oldThemeColor: layout.themeTextColor)
         // Drop the CSS background paint before rendering. What this test
@@ -414,14 +417,16 @@ struct RedChamberProductionRenderingRegressionTests {
 
     // MARK: - 3. Synthetic fixture: font-scale policy + production paint
 
-    static let fixedFixtureCSS = """
+    nonisolated static let fixedFixtureCSS = """
     body { margin: 0; }
     .k1 { margin: 25% auto 0; padding: 0.4em; width: 15em; background-color: rgba(255,255,255,0.7); }
     .k2 { padding: 2.2em 0; border: dotted 1px #3a4431; }
     .chapter { margin: 0 auto; padding: 0; font-size: 135%; line-height: 145%; text-align: center; }
     """
 
-    static let fixedFixtureHTML = """
+    // `nonisolated`: it is the default argument of `fixtureLayout(html:fontSize:)`,
+    // and default-argument expressions are evaluated outside the suite's actor.
+    nonisolated static let fixedFixtureHTML = """
     <html><head><style>\(fixedFixtureCSS)</style></head>
     <body style="zy-fontsize-adjust: fixed">
       <div class="k1"><div class="k2"><h2 class="chapter">測試標題</h2></div></div>
@@ -502,7 +507,11 @@ struct RedChamberProductionRenderingRegressionTests {
             directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("prod-\(UUID().uuidString)")
         )
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
-        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
+        // `mode:` is explicit: the shipping default is `.legacy`, which would
+        // route this whole test through the legacy delegate and pass vacuously.
+        let engine = BrowserLayoutPageEngine(
+            resource: resource, delegate: delegate, settings: settings, mode: .browserAuto
+        )
         await engine.start(renderSize: Self.viewport, bookId: "fixture")
         await engine.preloadChapter(at: 0)
         guard let layout = engine.testLayout(for: 0) else {

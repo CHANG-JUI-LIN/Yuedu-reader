@@ -392,9 +392,12 @@ final class EPUBPageRenderer: ObservableObject {
         if BrowserLayoutFeature.browserEnabled,
            session.epubWritingMode != .verticalRL,
            session.layoutMode != .prePaginated {
-            // Debug A/B: browser chapters render with the browser engine,
-            // everything else falls back to the legacy engine inside the
-            // adapter. Release builds compile `browserEnabled` to false.
+            // Off in every shipping build: `BrowserLayoutFeature.mode` is
+            // `.legacy` (the browser engine is feature-incomplete), so this
+            // branch is dead unless a DEBUG build is launched with
+            // `-browser-mode browserAuto|browserForced`. Under that flag,
+            // browser-capable chapters render with the browser engine and
+            // everything else falls back to `newEngine` via the delegate.
             let resourceAdapter = EPUBBrowserLayoutResourceAdapter(session: session)
             let browserEngine = BrowserLayoutPageEngine(
                 resource: resourceAdapter,

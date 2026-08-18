@@ -176,22 +176,22 @@ struct FileImportTab: View {
                                         try Task.checkCancellation()
                                         _ = try await store.importLocalAudiobook(url: audiobookURL, title: t, author: a)
                                         try Task.checkCancellation()
-                                        try? FileManager.default.removeItem(at: audiobookURL)
+                                        Self.removeStagedFile(at: audiobookURL)
                                     } else if let mangaURL = mangaURLForImport {
                                         try Task.checkCancellation()
                                         _ = try await store.importLocalManga(url: mangaURL, title: t, author: a)
                                         try Task.checkCancellation()
-                                        try? FileManager.default.removeItem(at: mangaURL)
+                                        Self.removeStagedFile(at: mangaURL)
                                     } else if let pdfURL = pdfURLForImport {
                                         try Task.checkCancellation()
                                         _ = try await store.importLocalPDF(url: pdfURL, title: t, author: a)
                                         try Task.checkCancellation()
-                                        try? FileManager.default.removeItem(at: pdfURL)
+                                        Self.removeStagedFile(at: pdfURL)
                                     } else if let epubURL = epubURLForImport {
                                         try Task.checkCancellation()
                                         _ = try await store.importEpub(url: epubURL, title: t, author: a)
                                         try Task.checkCancellation()
-                                        try? FileManager.default.removeItem(at: epubURL)
+                                        Self.removeStagedFile(at: epubURL)
                                     } else if let markdownURL = markdownURLForImport {
                                         try Task.checkCancellation()
                                         _ = try store.importMarkdown(url: markdownURL, title: t, author: a)
@@ -418,11 +418,8 @@ struct FileImportTab: View {
             let name = url.deletingPathExtension().lastPathComponent
             let markdownTempURL: URL?
             if isMarkdownFile, text != nil {
-                let tempURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString + ".\(ext == "markdown" ? "markdown" : "md")")
                 do {
-                    try FileManager.default.copyItem(at: url, to: tempURL)
-                    markdownTempURL = tempURL
+                    markdownTempURL = try Self.stagedCopy(of: url)
                 } catch {
                     markdownTempURL = nil
                     await MainActor.run {
@@ -471,10 +468,9 @@ struct FileImportTab: View {
                 importTrace("importEPUB stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
             }
             let ok = url.startAccessingSecurityScopedResource()
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString + ".epub")
+            let tempURL: URL
             do {
-                try FileManager.default.copyItem(at: url, to: tempURL)
+                tempURL = try Self.stagedCopy(of: url)
             } catch {
                 if ok { url.stopAccessingSecurityScopedResource() }
                 await MainActor.run {
@@ -501,7 +497,7 @@ struct FileImportTab: View {
             }
 
             if Task.isCancelled {
-                try? FileManager.default.removeItem(at: tempURL)
+                Self.removeStagedFile(at: tempURL)
                 return
             }
 
@@ -512,7 +508,7 @@ struct FileImportTab: View {
                     isCancelled: Task.isCancelled
                 ) else {
                     importTrace("importEPUB stage=staleDiscarded session=\(sessionID)")
-                    try? FileManager.default.removeItem(at: tempURL)
+                    Self.removeStagedFile(at: tempURL)
                     return
                 }
 
@@ -538,11 +534,9 @@ struct FileImportTab: View {
                 importTrace("importManga stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
             }
             let ok = url.startAccessingSecurityScopedResource()
-            let ext = url.pathExtension.lowercased() == "zip" ? "zip" : "cbz"
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString + ".\(ext)")
+            let tempURL: URL
             do {
-                try FileManager.default.copyItem(at: url, to: tempURL)
+                tempURL = try Self.stagedCopy(of: url)
             } catch {
                 if ok { url.stopAccessingSecurityScopedResource() }
                 await MainActor.run {
@@ -573,10 +567,9 @@ struct FileImportTab: View {
                 importTrace("importPDF stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
             }
             let ok = url.startAccessingSecurityScopedResource()
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString + ".pdf")
+            let tempURL: URL
             do {
-                try FileManager.default.copyItem(at: url, to: tempURL)
+                tempURL = try Self.stagedCopy(of: url)
             } catch {
                 if ok { url.stopAccessingSecurityScopedResource() }
                 await MainActor.run {
@@ -608,7 +601,7 @@ struct FileImportTab: View {
         do {
             let info = try LocalPDFArchive.inspect(url: tempURL)
             if Task.isCancelled {
-                try? FileManager.default.removeItem(at: tempURL)
+                Self.removeStagedFile(at: tempURL)
                 return
             }
 
@@ -619,7 +612,7 @@ struct FileImportTab: View {
                     isCancelled: Task.isCancelled
                 ) else {
                     importTrace("\(tracePrefix) stage=staleDiscarded session=\(sessionID)")
-                    try? FileManager.default.removeItem(at: tempURL)
+                    Self.removeStagedFile(at: tempURL)
                     return
                 }
 
@@ -634,7 +627,7 @@ struct FileImportTab: View {
                 )
             }
         } catch {
-            try? FileManager.default.removeItem(at: tempURL)
+            Self.removeStagedFile(at: tempURL)
             await MainActor.run {
                 guard AddBookImportGuard.shouldApplyResult(
                     activeSessionID: activeSessionID,
@@ -659,11 +652,9 @@ struct FileImportTab: View {
                 importTrace("importAudiobook stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
             }
             let ok = url.startAccessingSecurityScopedResource()
-            let ext = LocalAudiobookArchive.supports(url) ? url.pathExtension.lowercased() : "zip"
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString + ".\(ext)")
+            let tempURL: URL
             do {
-                try FileManager.default.copyItem(at: url, to: tempURL)
+                tempURL = try Self.stagedCopy(of: url)
             } catch {
                 if ok { url.stopAccessingSecurityScopedResource() }
                 await MainActor.run {
@@ -693,10 +684,9 @@ struct FileImportTab: View {
                 importTrace("importZip stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
             }
             let ok = url.startAccessingSecurityScopedResource()
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString + ".zip")
+            let tempURL: URL
             do {
-                try FileManager.default.copyItem(at: url, to: tempURL)
+                tempURL = try Self.stagedCopy(of: url)
             } catch {
                 if ok { url.stopAccessingSecurityScopedResource() }
                 await MainActor.run {
@@ -737,7 +727,7 @@ struct FileImportTab: View {
         do {
             let info = try await LocalMangaArchive.inspect(url: tempURL)
             if Task.isCancelled {
-                try? FileManager.default.removeItem(at: tempURL)
+                Self.removeStagedFile(at: tempURL)
                 return
             }
 
@@ -748,7 +738,7 @@ struct FileImportTab: View {
                     isCancelled: Task.isCancelled
                 ) else {
                     importTrace("\(tracePrefix) stage=staleDiscarded session=\(sessionID)")
-                    try? FileManager.default.removeItem(at: tempURL)
+                    Self.removeStagedFile(at: tempURL)
                     return
                 }
 
@@ -763,7 +753,7 @@ struct FileImportTab: View {
                 )
             }
         } catch {
-            try? FileManager.default.removeItem(at: tempURL)
+            Self.removeStagedFile(at: tempURL)
             await MainActor.run {
                 guard AddBookImportGuard.shouldApplyResult(
                     activeSessionID: activeSessionID,
@@ -788,7 +778,7 @@ struct FileImportTab: View {
         do {
             let info = try await LocalAudiobookArchive.inspect(url: tempURL)
             if Task.isCancelled {
-                try? FileManager.default.removeItem(at: tempURL)
+                Self.removeStagedFile(at: tempURL)
                 return
             }
 
@@ -799,7 +789,7 @@ struct FileImportTab: View {
                     isCancelled: Task.isCancelled
                 ) else {
                     importTrace("\(tracePrefix) stage=staleDiscarded session=\(sessionID)")
-                    try? FileManager.default.removeItem(at: tempURL)
+                    Self.removeStagedFile(at: tempURL)
                     return
                 }
 
@@ -815,7 +805,7 @@ struct FileImportTab: View {
                 )
             }
         } catch {
-            try? FileManager.default.removeItem(at: tempURL)
+            Self.removeStagedFile(at: tempURL)
             await MainActor.run {
                 guard AddBookImportGuard.shouldApplyResult(
                     activeSessionID: activeSessionID,
@@ -829,6 +819,41 @@ struct FileImportTab: View {
                 errorMsg = localized("匯入失敗：") + error.localizedDescription
             }
         }
+    }
+
+    // MARK: - Staging
+    //
+    // A picked file is copied out of its security-scoped location before it is
+    // inspected, and the inspectors fall back to the *file's name* when the document
+    // carries no title of its own. Staging as `<UUID>.pdf` therefore put a UUID on
+    // the shelf instead of the name the user gave the file, so each import gets its
+    // own temp directory and keeps the real filename inside it.
+
+    static func stagedCopy(of url: URL) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let name = url.lastPathComponent
+        let destination = directory.appendingPathComponent(
+            name.isEmpty ? UUID().uuidString : name
+        )
+        try FileManager.default.copyItem(at: url, to: destination)
+        return destination
+    }
+
+    /// Remove a staged file together with the directory created to hold it.
+    ///
+    /// Deleting a parent directory is only safe for a URL this type staged, so the
+    /// shape is verified rather than assumed: one UUID-named directory directly
+    /// inside the temp directory. Anything else deletes just the file.
+    static func removeStagedFile(at url: URL) {
+        let directory = url.deletingLastPathComponent()
+        let isStagingDirectory = UUID(uuidString: directory.lastPathComponent) != nil
+            && directory.deletingLastPathComponent().standardizedFileURL
+                == FileManager.default.temporaryDirectory.standardizedFileURL
+
+        try? FileManager.default.removeItem(at: isStagingDirectory ? directory : url)
     }
 
     private func nextSessionID() -> UUID {
@@ -846,31 +871,31 @@ struct FileImportTab: View {
 
     private func cleanupPendingEpubTempFile() {
         if let url = pendingEpubURL {
-            try? FileManager.default.removeItem(at: url)
+            Self.removeStagedFile(at: url)
         }
     }
 
     private func cleanupPendingMarkdownTempFile() {
         if let url = pendingMarkdownURL {
-            try? FileManager.default.removeItem(at: url)
+            Self.removeStagedFile(at: url)
         }
     }
 
     private func cleanupPendingMangaTempFile() {
         if let url = pendingMangaURL {
-            try? FileManager.default.removeItem(at: url)
+            Self.removeStagedFile(at: url)
         }
     }
 
     private func cleanupPendingPDFTempFile() {
         if let url = pendingPDFURL {
-            try? FileManager.default.removeItem(at: url)
+            Self.removeStagedFile(at: url)
         }
     }
 
     private func cleanupPendingAudiobookTempFile() {
         if let url = pendingAudiobookURL {
-            try? FileManager.default.removeItem(at: url)
+            Self.removeStagedFile(at: url)
         }
     }
 

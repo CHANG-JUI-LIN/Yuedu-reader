@@ -258,12 +258,59 @@ struct LegadoFullSourceFixtureTests {
         "/Users/zhangruilin/Desktop/Test document/RULE/七猫四合一本地版（同人）.json"
     private static let shuqiDefaultPath =
         "/Users/zhangruilin/Desktop/Test document/RULE/书旗（同人）.json"
+    private static let qingtianQidianDefaultPath =
+        "/Users/zhangruilin/Desktop/Test document/RULE/晴天起点.json"
 
-    private func loadSource(environmentKey: String, defaultPath: String) throws -> BookSource {
+    /// `named` picks one source out of a multi-source export by a substring of its name; without
+    /// it the first entry wins (which is what the single-source fixtures want).
+    private func loadSource(
+        environmentKey: String,
+        defaultPath: String,
+        named: String? = nil
+    ) throws -> BookSource {
         let path = ProcessInfo.processInfo.environment[environmentKey] ?? defaultPath
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
-        if let source = try? JSONDecoder().decode(BookSource.self, from: data) { return source }
-        return try #require(JSONDecoder().decode([BookSource].self, from: data).first)
+        if named == nil, let source = try? JSONDecoder().decode(BookSource.self, from: data) {
+            return source
+        }
+        let sources = try JSONDecoder().decode([BookSource].self, from: data)
+        guard let named else { return try #require(sources.first) }
+        return try #require(sources.first { $0.bookSourceName.contains(named) })
+    }
+
+    /// 晴天起点 (`🔅企点小说`) builds its 段評/熱評/本章说 markup differently per runtime, and both
+    /// probes run against our bridge:
+    ///
+    /// ```js
+    /// let deviceType = '安卓';
+    /// try { java.deviceID(); deviceType = '苹果' } catch {}
+    /// function paraContent(c) { return deviceType == '苹果' ? paraForiOS(c) : paraForAndroid(c) }
+    /// ```
+    ///
+    /// `paraForiOS` passes `createGod` an ABSOLUTE url (`sb + ident`); `paraForAndroid` passes the
+    /// site-relative ident and lets `showCmt` resolve it. `checkEnv()` separately decides whether
+    /// the click config lands in `click` (legado-改版) or `js` (everything else). Which pair we get
+    /// decides what `reviewTarget(forLegadoAction:)` has to parse, so pin it.
+    @Test("晴天起点 resolves to the iOS review branch with a js-keyed click config")
+    func qingtianQidianReviewBranch() throws {
+        let source = try loadSource(
+            environmentKey: "QINGTIAN_QIDIAN_SOURCE_JSON",
+            defaultPath: Self.qingtianQidianDefaultPath,
+            named: "企点小说"
+        )
+        let bridge = ModernParserBridge(source: source)
+
+        let deviceType = bridge.evaluateSourceScript("""
+        var __dev = '安卓';
+        try { java.deviceID(); __dev = '苹果' } catch (e) {}
+        __dev
+        """)
+        #expect(bridge.lastSourceScriptError == nil)
+        #expect(deviceType == "苹果", "source takes paraForAndroid, whose showCmt url is relative")
+
+        let env = bridge.evaluateSourceScript("checkEnv()")
+        #expect(bridge.lastSourceScriptError == nil)
+        #expect(env == "轻阅读")
     }
 
     @Test("unchanged Shuqi jsLib compiles and builds a signed URL from response cookies")

@@ -1074,7 +1074,11 @@ struct CoreTextWritingModeTests {
             at: location,
             effectiveRange: nil
         ) else { return nil }
-        return raw as! CTRubyAnnotation
+        // Forced, and bound to an explicitly non-optional local: `as?` on a
+        // CoreFoundation type is an error ("will always succeed"), and casting
+        // straight into the optional return type warns for the same reason.
+        let annotation: CTRubyAnnotation = raw as! CTRubyAnnotation
+        return annotation
     }
 
     private func rubyText(_ annotation: CTRubyAnnotation) -> String? {

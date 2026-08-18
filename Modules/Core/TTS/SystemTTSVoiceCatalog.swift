@@ -79,6 +79,70 @@ enum SystemTTSVoiceCatalog {
         voice.voiceTraits.contains(.isPersonalVoice)
     }
 
+    /// Novelty voices (Trinoids, Bells, Bad News…) exist only in en-US and are
+    /// joke instruments rather than readable voices. Flagged, not hidden — the
+    /// user can still pick one.
+    static func isNoveltyVoice(_ voice: AVSpeechSynthesisVoice) -> Bool {
+        voice.voiceTraits.contains(.isNoveltyVoice)
+    }
+
+    // MARK: - Preview text
+
+    /// A sample line in the *voice's own* language.
+    ///
+    /// A voice only speaks text its language can pronounce: previewing an English
+    /// voice with a Chinese sentence produces silence, which is why every voice
+    /// except the Chinese ones appeared to be broken. Falls back to English, the
+    /// one script essentially every installed voice can render.
+    static func sampleText(for voice: AVSpeechSynthesisVoice) -> String {
+        let language = voice.language.lowercased()
+        if language.hasPrefix("zh") {
+            let isTraditional = language.contains("hant")
+                || language.contains("tw")
+                || language.contains("hk")
+                || language.contains("mo")
+            return isTraditional
+                ? "這是一段試聽文字，用來確認語音音色。"
+                : "这是一段试听文字，用来确认语音音色。"
+        }
+        return sampleTextsByBaseLanguage[baseLanguage(language)]
+            ?? "This is a sample sentence for previewing this voice."
+    }
+
+    /// Keyed by base language, so every regional variant (en-US / en-AU / en-IN…)
+    /// gets the same line. Anything missing falls back to English above rather
+    /// than to the app's UI language.
+    private static let sampleTextsByBaseLanguage: [String: String] = [
+        "ar": "هذه جملة تجريبية للاستماع إلى هذا الصوت.",
+        "cs": "Toto je ukázková věta pro poslech tohoto hlasu.",
+        "da": "Dette er en prøvesætning til at lytte til denne stemme.",
+        "de": "Dies ist ein Beispielsatz, um diese Stimme anzuhören.",
+        "el": "Αυτή είναι μια δοκιμαστική πρόταση για αυτή τη φωνή.",
+        "en": "This is a sample sentence for previewing this voice.",
+        "es": "Esta es una frase de ejemplo para escuchar esta voz.",
+        "fi": "Tämä on näytelause tämän äänen kuuntelemiseen.",
+        "fr": "Voici une phrase d'exemple pour écouter cette voix.",
+        "he": "זהו משפט לדוגמה להאזנה לקול הזה.",
+        "hi": "यह इस आवाज़ को सुनने के लिए एक नमूना वाक्य है।",
+        "hu": "Ez egy mintamondat ennek a hangnak a meghallgatásához.",
+        "id": "Ini adalah kalimat contoh untuk mendengarkan suara ini.",
+        "it": "Questa è una frase di esempio per ascoltare questa voce.",
+        "ja": "これは音声を確認するためのサンプル文です。",
+        "ko": "이것은 이 음성을 미리 들어보기 위한 예문입니다.",
+        "nl": "Dit is een voorbeeldzin om deze stem te beluisteren.",
+        "no": "Dette er en eksempelsetning for å høre denne stemmen.",
+        "pl": "To jest przykładowe zdanie do odsłuchania tego głosu.",
+        "pt": "Esta é uma frase de exemplo para ouvir esta voz.",
+        "ro": "Aceasta este o propoziție de probă pentru această voce.",
+        "ru": "Это пример предложения для прослушивания этого голоса.",
+        "sk": "Toto je ukážková veta na vypočutie tohto hlasu.",
+        "sv": "Detta är en exempelmening för att lyssna på den här rösten.",
+        "th": "นี่คือประโยคตัวอย่างสำหรับฟังเสียงนี้",
+        "tr": "Bu, bu sesi dinlemek için örnek bir cümledir.",
+        "uk": "Це приклад речення для прослуховування цього голосу.",
+        "vi": "Đây là câu ví dụ để nghe thử giọng đọc này.",
+    ]
+
     // MARK: - Selection
 
     /// The voice the user picked for `language`, or nil to let the system decide.

@@ -72,7 +72,7 @@ struct DiscoverShowcaseView: View {
             // it lives in 書源編輯 → 基本, which nobody looking at an empty 發現頁
             // will find — so offer it here. See `AndroidIdentityRecovery`.
             if discover.androidIdentityRepairSource != nil {
-                Button(localized("開啟 Android 身分並重試")) {
+                Button(localized("提供裝置識別碼並重試")) {
                     discover.enableAndroidIdentityAndReload()
                 }
                 .buttonStyle(.borderedProminent)

@@ -242,7 +242,7 @@ struct BrowserLayoutABHarnessTests {
         let similarity = textSimilarity(browserVisible, legacyText)
         if bookPath.contains("洪武") {
             try? """
-            spine=\(spine) accepted=\(scan.supported) browserPages=\(browserPages) legacyPages=\(legacyPages)
+            spine=\(spine) accepted=\(scan.supported) elapsedMs=\(Int(elapsedMs)) browserPages=\(browserPages) legacyPages=\(legacyPages)
             browserLen=\(browserVisible.count) legacyLen=\(legacyText.count) similarity=\(similarity)
             browserPrefix=\(String(browserVisible.prefix(60)))
             legacyPrefix=\(String(legacyText.prefix(60)))

@@ -170,7 +170,7 @@ extension ReaderView {
                 Button {
                     enableAndroidIdentityAndRetry(source: repairSource)
                 } label: {
-                    Text(localized("開啟 Android 身分並重試"))
+                    Text(localized("提供裝置識別碼並重試"))
                         .font(DSFont.body.weight(.semibold))
                         .padding(.horizontal, DSSpacing.lg)
                 }
@@ -201,7 +201,7 @@ extension ReaderView {
         }
     }
 
-    /// The book's source when 以 Android 身分回報 is the plausible repair for this
+    /// The book's source when 提供裝置識別碼 is the plausible repair for this
     /// failure — the only case where the failure card offers more than 重試.
     func androidIdentityRepairCandidate(failureMessage: String) -> BookSource? {
         guard let book, book.isOnline,

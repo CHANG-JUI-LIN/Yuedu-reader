@@ -8,6 +8,7 @@ private final class CallRecorder {
     var jsonPayloads: [Data] = []
     var fetchedURLs: [URL] = []
     var importedBookFileExtensions: [String] = []
+    var importedBookFilenames: [String] = []
 }
 
 @MainActor
@@ -172,6 +173,69 @@ struct SharedImportQueueDrainerTests {
         #expect(outcome.importedBookSourceCount == 0)
         #expect(outcome.failureCount == 0)
         #expect(recorder.importedBookFileExtensions == ["json"])
+    }
+
+    /// A document with no title of its own is titled after its file, so a payload
+    /// staged under a generated name put a UUID on the shelf instead of the name it
+    /// was shared with.
+    @Test("a shared file reaches the importer under the name it was shared with")
+    func sharedFileKeepsItsName() async throws {
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let payloadDirectory = try makePayloadDirectory()
+        defer { try? FileManager.default.removeItem(at: payloadDirectory) }
+
+        // The share extension stores payloads under a generated relative path.
+        let storedName = "\(UUID().uuidString).pdf"
+        try Data("%PDF-1.4\n".utf8).write(to: payloadDirectory.appendingPathComponent(storedName))
+        try queuePayload(
+            .init(storageKind: .file, relativePath: storedName, suggestedFilename: "假期計畫.pdf"),
+            in: defaults
+        )
+
+        struct WrongRoute: Error {}
+        let recorder = CallRecorder()
+        let drainer = SharedImportQueueDrainer(
+            defaults: defaults,
+            payloadDirectoryURL: payloadDirectory,
+            importData: { _ in throw WrongRoute() },
+            fetchURL: { _ in Data() },
+            importBookFile: { url in
+                recorder.importedBookFilenames.append(url.lastPathComponent)
+                return 1
+            },
+            importOPMLData: { _ in throw WrongRoute() },
+            importLegadoRSSData: { _ in throw WrongRoute() },
+            importReplaceRuleData: { _ in throw WrongRoute() }
+        )
+
+        let outcome = await drainer.drain()
+
+        #expect(outcome.importedBookCount == 1)
+        #expect(recorder.importedBookFilenames == ["假期計畫.pdf"])
+    }
+
+    @Test("a payload with no filename still gets a usable extension")
+    func stagedFilenameFallsBackToGeneratedName() {
+        #expect(
+            SharedImportPayloadClassifier.stagedFilename(
+                suggestedFilename: "紅樓夢.pdf",
+                fileExtension: "pdf"
+            ) == "紅樓夢.pdf"
+        )
+        #expect(
+            SharedImportPayloadClassifier.stagedFilename(
+                suggestedFilename: "紅樓夢",
+                fileExtension: "pdf"
+            ) == "紅樓夢.pdf"
+        )
+        let generated = SharedImportPayloadClassifier.stagedFilename(
+            suggestedFilename: nil,
+            fileExtension: "pdf"
+        )
+        #expect(generated.hasSuffix(".pdf"))
+        #expect(UUID(uuidString: (generated as NSString).deletingPathExtension) != nil)
     }
 
     @Test("generic remote URL fetches then routes Legado RSS JSON")

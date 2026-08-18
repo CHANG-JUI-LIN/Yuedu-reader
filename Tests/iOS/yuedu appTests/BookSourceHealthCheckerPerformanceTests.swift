@@ -4,7 +4,9 @@ import Testing
 
 @MainActor
 struct BookSourceHealthCheckerPerformanceTests {
-    private static let liveCorpusEnabled =
+    // `nonisolated`: read from `.enabled(if:)`, which is a Sendable closure
+    // evaluated outside the suite's actor.
+    nonisolated private static let liveCorpusEnabled =
         ProcessInfo.processInfo.environment["RUN_HEALTH_CHECK_LIVE_TESTS"] == "1"
             || ProcessInfo.processInfo.environment["TEST_RUNNER_RUN_HEALTH_CHECK_LIVE_TESTS"] == "1"
 

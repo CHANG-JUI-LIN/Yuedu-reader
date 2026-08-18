@@ -66,13 +66,17 @@ enum LocalPDFArchive {
     static func inspect(url: URL) throws -> LocalPDFImportInfo {
         let document = try openDocument(at: url)
         let attributes = document.documentAttributes ?? [:]
-        let fallbackTitle = cleanTitle(url.deletingPathExtension().lastPathComponent)
 
+        // The filename wins over the PDF's own /Title, unlike EPUB or ComicInfo
+        // metadata: a PDF's /Title is whatever produced it ("Microsoft Word -
+        // Document1", "untitled", a print template), while the filename is the name
+        // the user gave the file. Same rule Books and Preview follow.
+        let filenameTitle = cleanTitle(url.deletingPathExtension().lastPathComponent)
         let embeddedTitle = string(attributes[PDFDocumentAttribute.titleAttribute])
         let embeddedAuthor = string(attributes[PDFDocumentAttribute.authorAttribute])
 
         return LocalPDFImportInfo(
-            title: embeddedTitle.isEmpty ? fallbackTitle : embeddedTitle,
+            title: filenameTitle.isEmpty ? embeddedTitle : filenameTitle,
             author: embeddedAuthor.isEmpty ? localized("未知作者") : embeddedAuthor,
             pageCount: document.pageCount,
             sections: sections(in: document)
@@ -140,7 +144,10 @@ enum LocalPDFArchive {
     }
 
     private static func cleanTitle(_ title: String) -> String {
-        title
+        // A payload shared without any filename is staged under a generated one; a
+        // bare UUID is not a title, so let the embedded metadata answer instead.
+        guard UUID(uuidString: title) == nil else { return "" }
+        return title
             .replacingOccurrences(of: "_", with: " ")
             .trimmingCharacters(in: CharacterSet(charactersIn: " \t\r\n-,"))
     }

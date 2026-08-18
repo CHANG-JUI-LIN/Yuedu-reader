@@ -1,33 +1,26 @@
 import Foundation
 
-/// What to do when a book source wants a device id this device cannot give it.
+/// Whether a failing book source is one the reader can repair by turning on
+/// 提供裝置識別碼, so the failure surfaces can offer it as a button.
 ///
-/// Two answers live here, one automatic and one offered:
+/// `java.androidId()` answers by default (see `BookSource.presentsAndroidIdentity`
+/// for why the default is ON and what the escape hatch is for), so this only ever
+/// applies to a source the user deliberately turned OFF and then hit a backend that
+/// refuses the request without a device id — 知秋番茄's `x-android-id`, 企点's
+/// `&device=`. The switch lives in 書源編輯 → 基本, where a reader who just hit the
+/// error will never look, so the failure surfaces offer it back.
 ///
-/// - **`handlesMissingAndroidId`** — the source wrote its own recovery around the
-///   call, so `LegadoJSBridge.androidId()` raises instead of answering empty and
-///   the source's `deviceID()` branch takes over. Nothing to ask the user.
-/// - **`canRepair`** — the source calls bare and its API refused the request, so
-///   the failure surfaces offer 以 Android 身分回報 as a button.
+/// Raising a JS exception instead of answering empty was tried and reverted: it is a
+/// per-call-site decision (does *this* call sit inside a `try`?) that the bridge can
+/// only ever answer per-source, so one guarded call anywhere would licence throwing
+/// into a bare one — and a bare `java.androidId()` inside a `<js>` searchUrl aborts
+/// the whole script. Do not reintroduce it.
 ///
-/// `java.androidId()` hands back an empty string unless the source opted in via
-/// `BookSource.presentsAndroidIdentity`, and that default is deliberate: most
-/// sources call it to ask *which platform they are on* — 书山聚合's `deviceType()`
-/// reads any non-empty answer as proof of Android — so answering everyone broke
-/// its `X-Device-Type` header and every chapter with it. The minority that use the
-/// value as a real device key (知秋番茄's `x-android-id`) therefore get nothing, and
-/// their backend refuses the request. There is no third answer *in the return
-/// value*: the API is named `androidId`, so "I am iOS, and here is my id" cannot be
-/// expressed in it — which is why the sources that wrote a `catch` get told the
-/// truth out-of-band, as an exception.
-///
-/// The toggle that resolves the rest per source lives in 書源編輯 → 基本, where a
-/// reader who just hit the error will never look, so the failure surfaces offer it.
-/// Nothing here flips it by itself — answering "yes" only earns the offer; the user
-/// still taps.
+/// Nothing here flips anything by itself — answering "yes" only earns the offer; the
+/// user still taps.
 enum AndroidIdentityRecovery {
 
-    /// Whether 以 Android 身分回報 is worth offering for `source` right now.
+    /// Whether 提供裝置識別碼 is worth offering for `source` right now.
     ///
     /// All three conditions must hold, and each rules out a different way the offer
     /// would be wrong:
@@ -80,87 +73,32 @@ enum AndroidIdentityRecovery {
         return BookSourceStore.shared.sources.first { $0.id == id }
     }
 
-    // MARK: - What the source's own JS says it wants
-
-    /// Whether the source wrote its own recovery for a device id it cannot get.
-    ///
-    /// 晴天起点 (`🔅企点小说`) does exactly this in its request wrapper:
-    ///
-    /// ```js
-    /// let device = '';
-    /// try { device = java.androidId(); }
-    /// catch { try { device = java.deviceID(); } catch {} }
-    /// ```
-    ///
-    /// A source that writes this is telling us two things: it wants *a device id*,
-    /// not proof of Android (`deviceID()` answers on Android too, so falling back to
-    /// it settles nothing about the platform), and it can absorb a thrown error at
-    /// that call site. `LegadoJSBridge.androidId()` therefore raises a JS exception
-    /// for these sources instead of the empty string — see the note there for why
-    /// empty is still the answer for everyone else.
-    static func handlesMissingAndroidId(_ source: BookSource) -> Bool {
-        shape(of: source).handlesMissing
-    }
+    // MARK: - Does this source ask for a device id at all?
 
     /// `androidId` appears in the source's rules — either as the `java.androidId()`
     /// call or as the key the source caches it under (知秋番茄 does
     /// `source.put('androidId', …)`). The whole encoded source is searched because
     /// the call can live in any of a dozen rule fields, `jsLib`, or `header`.
+    ///
+    /// Only the boolean is cached — a source's JSON runs to hundreds of kilobytes,
+    /// so keeping the text would cost megabytes for no gain.
     private static func requestsAndroidId(_ source: BookSource) -> Bool {
-        shape(of: source).requestsId
-    }
-
-    private struct Shape {
-        let requestsId: Bool
-        let handlesMissing: Bool
-    }
-
-    /// Both answers come from one pass over the encoded source, and only the two
-    /// booleans are kept — a source's JSON runs to hundreds of kilobytes, so caching
-    /// the text itself would cost megabytes for no gain.
-    private static func shape(of source: BookSource) -> Shape {
         let key = "\(source.bookSourceUrl)#\(source.lastUpdateTime)"
-        if let cached = cacheLock.withLock({ shapeCache[key] }) { return cached }
+        if let cached = cacheLock.withLock({ requestsCache[key] }) { return cached }
         let encoded = (try? JSONEncoder().encode(source)) ?? Data()
-        let text = String(decoding: encoded, as: UTF8.self)
-        let shape = Shape(
-            requestsId: text.range(of: "androidid", options: .caseInsensitive) != nil,
-            handlesMissing: fallsBackToDeviceID(in: text)
-        )
+        let answer = String(decoding: encoded, as: UTF8.self)
+            .range(of: "androidid", options: .caseInsensitive) != nil
         cacheLock.withLock {
             // Bounded: one entry per (source, edit), and only sources the user is
             // actually parsing ever get asked about.
-            if shapeCache.count >= 64 { shapeCache.removeAll() }
-            shapeCache[key] = shape
+            if requestsCache.count >= 64 { requestsCache.removeAll() }
+            requestsCache[key] = answer
         }
-        return shape
-    }
-
-    /// A `catch` that reaches for `deviceID`, close behind an `androidId` call.
-    ///
-    /// The window is deliberately short: the two have to be part of the same
-    /// recovery, not merely both present somewhere in a 250KB source. 晴天起点's
-    /// span is under 100 characters even with the JSON escaping.
-    private static func fallsBackToDeviceID(in text: String) -> Bool {
-        let window = 400
-        var searchFrom = text.startIndex
-        while let call = text.range(
-            of: "androidId", options: .caseInsensitive, range: searchFrom..<text.endIndex
-        ) {
-            let end = text.index(call.upperBound, offsetBy: window, limitedBy: text.endIndex)
-                ?? text.endIndex
-            if let rescue = text.range(of: "catch", range: call.upperBound..<end),
-               text.range(of: "deviceID", options: .caseInsensitive,
-                          range: rescue.upperBound..<end) != nil {
-                return true
-            }
-            searchFrom = call.upperBound
-        }
-        return false
+        return answer
     }
 
     private static let cacheLock = NSLock()
-    private nonisolated(unsafe) static var shapeCache: [String: Shape] = [:]
+    private nonisolated(unsafe) static var requestsCache: [String: Bool] = [:]
 
     // MARK: - Condition 3: is the failure about a device identifier?
 

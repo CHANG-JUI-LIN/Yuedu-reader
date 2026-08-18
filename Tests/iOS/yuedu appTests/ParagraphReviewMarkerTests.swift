@@ -180,6 +180,78 @@ struct ParagraphReviewMarkerTests {
         #expect(marker.title == "起點段評")
     }
 
+    /// 晴天起点 (`🔅企点小说`) builds its 熱評 card in `createGod`, and outside legado-改版 the tap
+    /// lands in the **`js`** key, not `click`:
+    ///
+    /// ```js
+    /// var jc = 'js'; if (this.checkEnv() == "改版") jc = 'click'
+    /// let cz = `{"${jc}":"showCmt('${url}','段评' )","style":"FULL"}`
+    /// ```
+    ///
+    /// The destination is the first argument and `stype` is only the sheet's title, so the
+    /// two-argument spelling has to resolve exactly like the one-argument 段評 bubble does
+    /// (`showCmt` itself: `if (!url.includes('http')) url = sb + url`). It did not, which showed
+    /// up in the field as `⟐ reviewRewrite image imgTags=45 reviewImages=40 cleanedOnly=5` —
+    /// the five cards had their config stripped and no anchor put back, so tapping one opened the
+    /// image viewer. 本章说 is the same shape through `endclick`, with single-quoted siblings.
+    @Test("rewrites a js-keyed FULL hot-review card into a review anchor")
+    func rewritesJSKeyedFullHotReviewCard() throws {
+        let svg = #"<svg width="720" height="88"><text y="60">熱評</text></svg>"#
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let raw = #"<div rs-native><img src="data:image/svg+xml;base64,\#(base64),{"js":"showCmt('/comments?bookId=123&chapterId=456&paragraphId=7','段评' )","style":"FULL"}"></div>"#
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "🔅企点小说(禁止🚫分享)",
+                sourceURL: "https://m.qidian.com#禁止外传"
+            )
+        )
+
+        #expect(cleaned.contains(#"class="yd-review-image" data-yd-review-style="full""#))
+        let href = try #require(firstHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url == "https://sb.shazi.tk/comments?bookId=123&chapterId=456&paragraphId=7")
+        #expect(marker.title == "段评")
+    }
+
+    @Test("rewrites a js-keyed FULL 本章说 card into a review anchor")
+    func rewritesJSKeyedChapterSayCard() throws {
+        let raw = #"<p><img src="data:image/svg+xml;base64,PHN2Zy8+,{'type':'qd',"js":"showCmt('/chapterComments?bookId=123&chapterId=456','本章说' )",'style':'FULL'}"></p>"#
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "🔅企点小说(禁止🚫分享)",
+                sourceURL: "https://m.qidian.com#禁止外传"
+            )
+        )
+
+        let href = try #require(firstHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url == "https://sb.shazi.tk/chapterComments?bookId=123&chapterId=456")
+        #expect(marker.title == "本章说")
+    }
+
+    /// An absolute first argument keeps working through the same route (aggregated sources emit
+    /// `showCmt('<absolute url>','<source name>')`).
+    @Test("keeps resolving an absolute two-argument showCmt")
+    func keepsResolvingAbsoluteTwoArgumentShowCmt() throws {
+        let raw = #"<p><img src="data:image/svg+xml;base64,PHN2Zy8+,{"js":"showCmt('https://sb.shazi.tk/comments?bookId=1','段评' )","style":"FULL"}"></p>"#
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "🔅企点小说(禁止🚫分享)",
+                sourceURL: "https://m.qidian.com#禁止外传"
+            )
+        )
+
+        let href = try #require(firstHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url == "https://sb.shazi.tk/comments?bookId=1")
+    }
+
     @Test("normalizes Qidian dimensionless FULL god-review SVGs")
     func normalizesQidianDimensionlessFullGodReviewSVG() throws {
         let reviewText = String(repeating: "評", count: 32)
@@ -196,8 +268,8 @@ struct ParagraphReviewMarkerTests {
         )
         #expect(cleaned.contains(#"class="yd-review-image" data-yd-review-style="full""#))
         #expect(!cleaned.contains(#"<div data-yd-review-style="full">"#))
-        let srcRegex = try #require(
-            try NSRegularExpression(pattern: #"src="data:image/svg\+xml;base64,([^"]+)""#)
+        let srcRegex = try NSRegularExpression(
+            pattern: #"src="data:image/svg\+xml;base64,([^"]+)""#
         )
         let ns = cleaned as NSString
         let match = try #require(
@@ -226,8 +298,8 @@ struct ParagraphReviewMarkerTests {
                 sourceURL: "https://example.com"
             )
         )
-        let srcRegex = try #require(
-            try NSRegularExpression(pattern: #"src="data:image/svg\+xml;base64,([^"]+)""#)
+        let srcRegex = try NSRegularExpression(
+            pattern: #"src="data:image/svg\+xml;base64,([^"]+)""#
         )
         let ns = cleaned as NSString
         let match = try #require(

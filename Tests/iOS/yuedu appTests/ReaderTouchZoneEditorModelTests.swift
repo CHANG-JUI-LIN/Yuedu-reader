@@ -18,7 +18,7 @@ struct ReaderTouchZoneEditorModelTests {
         #expect(saved == nil)
 
         #expect(model.save(isProActive: true))
-        #expect(saved?.zones[0] == .none)
+        #expect(saved?.zones[0] == TouchAction.none)
         #expect(disabledGlobalPaging)
     }
 

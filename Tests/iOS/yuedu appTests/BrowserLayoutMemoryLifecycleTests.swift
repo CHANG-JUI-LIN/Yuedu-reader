@@ -5,6 +5,10 @@ import UIKit
 /// Phase 2B memory lifecycle: retained RSS must NOT grow monotonically with
 /// page turns or chapter count, and the memory tracker must show per-type
 /// retain/release balance after eviction.
+/// `.serialized` belongs on the suite: as a trait on a non-parameterized `@Test`
+/// function it is silently ignored, and these three share `MemoryTracker`'s
+/// global counters, so they must not interleave.
+@Suite(.serialized)
 @MainActor
 struct BrowserLayoutMemoryLifecycleTests {
 
@@ -17,7 +21,7 @@ struct BrowserLayoutMemoryLifecycleTests {
 
     /// Simulates paging through a chapter: the same layout is laid out,
     /// walked page-by-page (sessions), and released — six consecutive runs.
-    @Test(.serialized) func retainedRSSDoesNotGrowAcrossRepeatedLayouts() async throws {
+    @Test func retainedRSSDoesNotGrowAcrossRepeatedLayouts() async throws {
         MemoryTracker.reset()
         let text = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 80)
         let html = "<html><body><p>\(text)</p></body></html>"
@@ -46,7 +50,7 @@ struct BrowserLayoutMemoryLifecycleTests {
 
     /// The memory tracker must release chapter artifacts on eviction: after a
     /// chapter is laid out AND evicted, retained per-type bytes return to ~0.
-    @Test(.serialized) func trackerReleasesOnEviction() async throws {
+    @Test func trackerReleasesOnEviction() async throws {
         MemoryTracker.reset()
         let text = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 40)
         let html = "<html><body><p>\(text)</p></body></html>"
@@ -83,7 +87,7 @@ struct BrowserLayoutMemoryLifecycleTests {
 
     /// The engine's DisplayList window cache keeps only ±2 pages and rebuilds
     /// the rest on demand with identical output.
-    @Test(.serialized) func displayListWindowCacheEvictsAndRebuilds() async throws {
+    @Test func displayListWindowCacheEvictsAndRebuilds() async throws {
         MemoryTracker.reset()
         let text = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 100)
         let html = "<html><body><p>\(text)</p></body></html>"

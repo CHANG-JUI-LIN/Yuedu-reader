@@ -267,20 +267,31 @@ struct BookSource: Identifiable, Codable {
     /// chapter HTML (`ReaderViewModel.recordParagraphReviewsIfPresent`), which no flag
     /// gates. Kept for round-tripping and for `source.enabledReview` in rule JS.
     var enabledReview: Bool = false
-    /// Whether `java.androidId()` hands this source an Android device identifier.
+    /// Whether `java.androidId()` hands this source a device identifier.
     ///
-    /// Off by default, because on iOS there is no ANDROID_ID and most sources
-    /// call `androidId()` only to ask *which platform they are on*: 书山聚合's
-    /// `deviceType()` treats any non-empty answer as proof of Android, so
-    /// answering broke its `X-Device-Type` header and every chapter with it.
-    /// Six of the seven sources on hand probe exactly like that; only 知秋's
-    /// family uses the value as a real device key (`x-android-id`), and it
-    /// caches what it gets via `source.put('androidId', …)`, so turning this on
-    /// once is enough — no re-login.
+    /// **On by default**, matching upstream: Legado's `androidId()` returns
+    /// `Settings.Secure.ANDROID_ID` unconditionally and falls back to the string
+    /// `"null"` — never empty, never absent, no per-source switch. Sources are
+    /// written against that guarantee, so 知秋番茄's `x-android-id` and 企点's
+    /// `&device=` get a value the way their authors assumed.
+    ///
+    /// It defaulted to OFF for one release on the theory that answering broke
+    /// 书山聚合, whose `deviceType()` reads any non-empty answer as proof of
+    /// Android. That was observed while `androidId()` still returned
+    /// `identifierForVendor` — a 36-character uppercase UUID, not an ANDROID_ID —
+    /// and the same commit that fixed the format also added the opt-in, so the
+    /// theory was never retested against the corrected value. Retested since: 书山
+    /// works either way, because its `deviceType()` reaches `deviceID()` on the
+    /// second branch and its server accepts both `X-Device-Type` values. Off was
+    /// protecting a source that did not need protecting, at the cost of every
+    /// source that did.
+    ///
+    /// The switch stays as an escape hatch with the meaning reversed: turn it OFF
+    /// for a source that genuinely must not be taken for Android.
     ///
     /// Optional in the decoder: archives written before this field exists must
-    /// keep loading.
-    var presentsAndroidIdentity: Bool = false
+    /// keep loading, and they take the new default.
+    var presentsAndroidIdentity: Bool = true
     var searchUrl: String = ""
     var exploreUrl: String = ""       // Discover/category page URL (common Legado field)
     var concurrentRate: String = ""   // Concurrency rate limit
@@ -353,7 +364,7 @@ struct BookSource: Identifiable, Codable {
         enabled          = c.safeBool(forKey: .enabled, defaultValue: true)
         enabledExplore   = c.safeBool(forKey: .enabledExplore, defaultValue: true)
         enabledCookieJar = c.safeBool(forKey: .enabledCookieJar, defaultValue: false)
-        presentsAndroidIdentity = c.safeBool(forKey: .presentsAndroidIdentity, defaultValue: false)
+        presentsAndroidIdentity = c.safeBool(forKey: .presentsAndroidIdentity, defaultValue: true)
         enabledReview    = c.safeBool(forKey: .enabledReview, defaultValue: false)
         // Rule structures: Legado may use objects or JSON strings (double-encoded during backup)
         ruleSearch   = c.decodeRule(SearchRule.self,   forKey: .ruleSearch)   ?? SearchRule()

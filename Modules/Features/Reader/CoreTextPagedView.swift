@@ -133,10 +133,21 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         if let commit = visibleRefreshCommit,
            commit.mode == .paged,
            context.coordinator.lastAppliedRefreshTransactionID != commit.transactionID {
+            // `applyVisibleRefresh` acknowledges synchronously, and this method runs
+            // *inside* SwiftUI's view update. `onVisibleRefreshFinished` clears the
+            // renderer's `@Published pendingVisibleRefreshCommit`, so completing inline
+            // publishes mid-update — "Publishing changes from within view updates is not
+            // allowed, this will cause undefined behavior." Hand the outcome back on the
+            // next main-queue turn, the same treatment `clearExternalTargetPosition` gets
+            // below; the UIKit page swap still happens now, so the page is right this
+            // frame, and the coordinator's own transaction bookkeeping is unaffected.
+            let finish = onVisibleRefreshFinished
             context.coordinator.applyVisibleRefresh(
                 commit,
                 on: uiViewController,
-                completion: onVisibleRefreshFinished
+                completion: { transactionID, outcome in
+                    DispatchQueue.main.async { finish(transactionID, outcome) }
+                }
             )
             return
         }

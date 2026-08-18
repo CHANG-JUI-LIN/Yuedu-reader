@@ -69,5 +69,32 @@
 	<true/>
 	<key>UIPrefersShowingLanguageSettings</key>
 	<true/>
+	<!-- `.yuedustyle` is this app's own reader-style package: a zip holding manifest.json
+	     plus the referenced assets (see ReaderStylePackage). The UTType(exportedAs:) in
+	     ReaderStylePackage.swift only names the identifier — the declaration has to live
+	     here, or UniformTypeIdentifiers logs "was expected to be declared and exported in
+	     the Info.plist" at launch and leaves the type provisional, so ShareLink exports and
+	     .fileImporter filters degrade to public.data. Keep the identifier, the conformance,
+	     and the extension in sync with that UTType extension. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>app.yuedu.reader-style</string>
+			<key>UTTypeDescription</key>
+			<string>Yuedu Reader Style</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>yuedustyle</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

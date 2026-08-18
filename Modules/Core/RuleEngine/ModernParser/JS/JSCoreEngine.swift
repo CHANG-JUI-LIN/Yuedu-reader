@@ -247,12 +247,6 @@ class JSCoreEngine {
         bridge.presentsAndroidIdentityProvider = { [weak self] in
             self?.bookSource?.presentsAndroidIdentity ?? false
         }
-        // Answers from the source's own JS shape, so it needs no user decision.
-        // Cached per (source, edit) inside `AndroidIdentityRecovery`.
-        bridge.handlesMissingAndroidIdProvider = { [weak self] in
-            guard let source = self?.bookSource else { return false }
-            return AndroidIdentityRecovery.handlesMissingAndroidId(source)
-        }
     }
 
     private static func clampedRequestTimeoutSeconds(_ respondTimeMilliseconds: Int64) -> TimeInterval {

@@ -207,8 +207,8 @@ struct BookSourceEditView: View {
                 // to the source's JS — only the misleading control is gone.
                 Toggle(isOn: $source.presentsAndroidIdentity) {
                     VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                        Text(localized("以 Android 身分回報"))
-                        Text(localized("僅在書源要求 Android 裝置碼時開啟。多數書源用它判斷平台，開啟會被誤認為 Android。"))
+                        Text(localized("提供裝置識別碼"))
+                        Text(localized("預設開啟，書源要裝置碼時才拿得到。只有在某個書源不能被當成 Android 時才關閉。"))
                             .font(DSFont.caption)
                             .foregroundStyle(DSColor.textSecondary)
                     }

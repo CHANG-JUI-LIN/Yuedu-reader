@@ -152,7 +152,6 @@ enum BoxTreeBuilder {
         parentWidth: CGFloat,
         config: BrowserLayoutConfig
     ) -> CGFloat {
-        let ctx = LayoutContext(rootFontSize: config.rootFontSize, percentBase: parentWidth)
         let resolved = CSSLengthResolver.resolve(node.style.width, emBase: node.style.fontSize, remBase: config.rootFontSize, percentBase: parentWidth)
         guard case .auto = node.style.width, resolved == nil else {
             return min(max(resolved ?? parentWidth, 0), parentWidth)
@@ -286,7 +285,7 @@ enum BoxTreeBuilder {
     /// scanner and the box tree can never disagree about which SVGs are
     /// renderable.
     static func svgWrappedImageSource(_ element: Element) -> String? {
-        guard (try? element.tagName())?.lowercased() == "svg" else { return nil }
+        guard element.tagName().lowercased() == "svg" else { return nil }
         guard let images = try? element.select("image").array(), images.count == 1,
               let image = images.first else { return nil }
         let drawable = (try? element.select(

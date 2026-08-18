@@ -522,6 +522,97 @@ struct OnlineReaderPipelineUnificationTests {
         #expect(!NSLocationInRange(cardLocation, badgeParagraph))
     }
 
+    /// A 熱評 card is only tappable if its `ydreview://` href survives all the way to the
+    /// `RenderedAttachment` the page's tap handler hit-tests: `CoreTextPageView.handleTap`
+    /// reads `attachment.linkTarget(at:)`, and an attachment without one falls through to the
+    /// full-screen image preview — which is exactly what a broken 熱評 looks like on screen
+    /// (the card draws, the tap zooms the picture).
+    ///
+    /// The three stages are asserted separately so a failure names the layer that dropped it:
+    /// sanitizing (anchor), attributed-string build (link attribute), pagination (attachment).
+    /// Shape is 晴天起点's `createGod` FULL card — `js`-keyed click config, the site-relative
+    /// `showCmt(url, stype)` its jsLib resolves itself, wrapped in a `<div rs-native>`.
+    @Test("a FULL hot-review card stays tappable through to its page attachment")
+    func fullHotReviewCardStaysTappableThroughPagination() async throws {
+        let cardSVG = #"<svg width="720" height="88" xmlns="http://www.w3.org/2000/svg"><text x="12" y="60">熱評內容</text></svg>"#
+        let base64 = Data(cardSVG.utf8).base64EncodedString()
+        let clickConfig = #"{"js":"showCmt('/comments?bookId=123&chapterId=456&paragraphId=7','段评' )","style":"FULL"}"#
+        let card = "<img src=\"data:image/svg+xml;base64,\(base64),\(clickConfig)\">"
+        let reviewContext = ReaderHTMLUtilities.LegadoReviewContext(
+            sourceName: "🔅企点小说(禁止🚫分享)",
+            sourceURL: "https://m.qidian.com#禁止外传"
+        )
+
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第一章",
+            plainTextContent: "一段正文。",
+            rawHTMLContent: "<div rs-native>一段正文。</div><div rs-native>\(card)</div>",
+            reviewContext: reviewContext
+        )
+
+        // Stage 1 — sanitizing produced the review anchor.
+        #expect(
+            normalizedHTML.contains(#"class="yd-review-image""#),
+            "sanitizer dropped the review anchor: \(normalizedHTML.prefix(400))"
+        )
+
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第一章",
+                plainText: "一段正文。",
+                body: .html(normalizedHTML),
+                sourceHref: "https://m.qidian.com/chapter/123/456"
+            )
+        ])
+        let renderSize = CGSize(width: 360, height: 640)
+        let attributed = try await OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: renderSize
+        ).buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: .label,
+            themeBackgroundColor: .systemBackground
+        ).attributedString
+
+        // Stage 2 — the anchor became an internal-link attribute on the card's placeholder.
+        var attributedReviewHrefs: [String] = []
+        attributed.enumerateAttribute(
+            HTMLAttributedStringBuilder.internalLinkAttribute,
+            in: NSRange(location: 0, length: attributed.length)
+        ) { value, _, _ in
+            guard let href = value as? String,
+                  ReaderHTMLUtilities.reviewTarget(fromHref: href) != nil
+            else { return }
+            attributedReviewHrefs.append(href)
+        }
+        #expect(!attributedReviewHrefs.isEmpty, "the attributed string carries no review link")
+
+        // Stage 3 — the attachment the tap handler hit-tests still carries the link.
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: attributed,
+            renderSize: renderSize,
+            fontSize: Self.settings.fontSize,
+            lineSpacing: Self.settings.lineSpacing,
+            paragraphSpacing: Self.settings.paragraphSpacing,
+            letterSpacing: Self.settings.letterSpacing
+        )
+        let attachments = layout.inlineAttachments.values.flatMap { $0 }
+            + layout.blockAttachments.values.flatMap { $0 }
+            + layout.blockRenderables.values.flatMap { $0 }.compactMap(\.imageAttachment)
+        #expect(!attachments.isEmpty, "the card produced no attachment at all")
+        let tappable = attachments.filter { attachment in
+            guard let href = attachment.linkHref else { return false }
+            return ReaderHTMLUtilities.reviewTarget(fromHref: href) != nil
+        }
+        #expect(
+            !tappable.isEmpty,
+            "the card reached the page as a plain image — a tap opens the image viewer instead of the review sheet"
+        )
+    }
+
     @Test("FULL review cards preserve newline paragraph geometry")
     func fullReviewCardsPreserveNewlineParagraphGeometry() async throws {
         func card(_ text: String, paragraphID: Int) -> String {

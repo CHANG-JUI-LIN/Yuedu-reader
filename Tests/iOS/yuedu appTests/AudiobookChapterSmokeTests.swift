@@ -284,7 +284,7 @@ struct AudiobookChapterSmokeTests {
         }
 
         guard let data = FileManager.default.contents(atPath: Self.jsonPath),
-              var source = (try? JSONDecoder().decode([BookSource].self, from: data))?.first
+              let source = (try? JSONDecoder().decode([BookSource].self, from: data))?.first
         else {
             print("⏭️  Skipping offline replay: \(Self.jsonPath) not found")
             return

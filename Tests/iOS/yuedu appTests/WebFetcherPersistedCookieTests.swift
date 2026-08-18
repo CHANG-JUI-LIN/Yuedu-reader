@@ -36,7 +36,7 @@ struct WebFetcherPersistedCookieTests {
     }
 }
 
-private final class PersistedCookieURLProtocol: URLProtocol, @unchecked Sendable {
+private final class PersistedCookieURLProtocol: URLProtocol {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var storedCookieHeader: String?
 

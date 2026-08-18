@@ -63,7 +63,15 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
            commit.mode == .scroll,
            context.coordinator.lastRefreshTransactionID != commit.transactionID {
             context.coordinator.lastRefreshTransactionID = commit.transactionID
-            collectionVC.applyVisibleRefresh(commit, completion: onVisibleRefreshFinished)
+            // Same hazard as the paged host: `applyVisibleRefresh`'s viewport-unavailable
+            // branch acknowledges synchronously, and this runs inside SwiftUI's view
+            // update, where clearing the renderer's `@Published pendingVisibleRefreshCommit`
+            // trips "Publishing changes from within view updates". Defer the ack by one
+            // main-queue turn; the reslice path already completes from a `Task`.
+            let finish = onVisibleRefreshFinished
+            collectionVC.applyVisibleRefresh(commit) { transactionID, outcome in
+                DispatchQueue.main.async { finish(transactionID, outcome) }
+            }
         }
     }
 

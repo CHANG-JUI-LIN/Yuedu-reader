@@ -124,11 +124,13 @@ struct RuleEditorSheet: View {
 
 /// Shared reference to the underlying `UITextView` so chips can insert at the
 /// live cursor position (SwiftUI `TextEditor` exposes no selection API).
-/// MainActor-isolated: the default `ObservableObject.objectWillChange` is
-/// MainActor-isolated since iOS 17, so a non-isolated class no longer conforms
-/// in Swift 6 mode.
+/// MainActor-isolated because it hands out a `UITextView`. `ObservableObject`
+/// predates concurrency and declares `objectWillChange` non-isolated, so the
+/// conformance is `@preconcurrency`: SwiftUI only touches the publisher from the
+/// main actor anyway, and the alternative (a `nonisolated` stored publisher)
+/// isn't expressible — `ObservableObjectPublisher` is not `Sendable`.
 @MainActor
-final class RuleTextViewBridge: ObservableObject {
+final class RuleTextViewBridge: @preconcurrency ObservableObject {
     /// No `@Published` properties, so the default publisher is not synthesized —
     /// provide it explicitly.
     let objectWillChange = ObservableObjectPublisher()

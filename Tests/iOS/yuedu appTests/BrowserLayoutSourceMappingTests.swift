@@ -39,7 +39,7 @@ struct BrowserLayoutSourceMappingTests {
         let html = """
         <html><body><p class="alpha">First</p><p class="beta">Second</p></body></html>
         """
-        let (pages, doc) = try await BrowserLayoutTestSupport.layout(html)
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(html)
         let fragments = BrowserLayoutTestSupport.allTextFragments(pages)
         #expect(fragments.count == 2)
         // The two paragraphs are distinct DOM nodes → distinct node IDs.
@@ -75,7 +75,7 @@ struct BrowserLayoutSourceMappingTests {
         let html = """
         <html><body><p><a href="http://example.com/long">\(inner)</a></p></body></html>
         """
-        let (pages, doc) = try await BrowserLayoutTestSupport.layout(html, width: 180, height: 50)
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(html, width: 180, height: 50)
         #expect(pages.count >= 2)
         let fragments = BrowserLayoutTestSupport.allTextFragments(pages)
         let linked = fragments.filter { $0.linkTarget != nil }

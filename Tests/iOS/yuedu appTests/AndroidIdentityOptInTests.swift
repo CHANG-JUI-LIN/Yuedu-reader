@@ -47,12 +47,22 @@ struct AndroidIdentityOptInTests {
         #expect(bridge(optedIn: true).androidId().isEmpty == false)
     }
 
-    /// Archives written before the field existed must keep decoding, and must
-    /// decode as opted OUT so a stale source cannot silently keep claiming
-    /// Android.
-    @Test("a source JSON without the field decodes as opted out")
-    func decodesMissingFieldAsOff() throws {
+    /// Legado source JSON never carries this field — it is ours — and upstream
+    /// `androidId()` always answers. So an imported source must decode as opted IN,
+    /// or every source that uses the value as a real device key silently gets
+    /// nothing. See `BookSource.presentsAndroidIdentity` for why the default flipped.
+    @Test("a source JSON without the field decodes as opted in")
+    func decodesMissingFieldAsOn() throws {
         let json = #"{"bookSourceName":"x","bookSourceUrl":"https://example.com"}"#
+        let source = try JSONDecoder().decode(BookSource.self, from: Data(json.utf8))
+        #expect(source.presentsAndroidIdentity)
+    }
+
+    /// The escape hatch still has to survive a round trip: a source the user turned
+    /// OFF must not come back on after an export/import cycle.
+    @Test("an explicit false survives a decode round trip")
+    func decodesExplicitFalse() throws {
+        let json = #"{"bookSourceName":"x","bookSourceUrl":"https://example.com","presentsAndroidIdentity":false}"#
         let source = try JSONDecoder().decode(BookSource.self, from: Data(json.utf8))
         #expect(source.presentsAndroidIdentity == false)
     }

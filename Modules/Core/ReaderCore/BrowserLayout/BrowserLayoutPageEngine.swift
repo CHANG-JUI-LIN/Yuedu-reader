@@ -920,7 +920,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     func readingPosition(forPage page: Int) -> CoreTextReadingPosition? {
-        let (spine, local) = localPosition(for: page)
+        let (spine, _) = localPosition(for: page)
         let offset = charOffset(forPage: page).charOffset
         return CoreTextReadingPosition(spineIndex: spine, charOffset: offset)
     }

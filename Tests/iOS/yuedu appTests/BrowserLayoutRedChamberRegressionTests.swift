@@ -715,7 +715,7 @@ struct BrowserLayoutRedChamberRegressionTests {
         if !scan.supported {
             var reasons = scan.unsupportedFeatures.map(\.description)
             if let doc = try? SwiftSoup.parse(html) {
-                let tags = ((try? doc.select("body, div, h2, span, br, p, a").array().map { (try? $0.tagName()) ?? "" }) ?? [])
+                let tags = ((try? doc.select("body, div, h2, span, br, p, a").array().map { $0.tagName() }) ?? [])
                 reasons.append("dom=\(Set(tags).sorted())")
             }
             Issue.record("scanner rejected cover chapter: \(reasons)")

@@ -3,6 +3,13 @@ import UIKit
 
 /// What the browser-layout engine needs from a book. Implemented by an EPUB
 /// adapter (Core layer); the engine never touches Readium or UI types.
+///
+/// MainActor-isolated because every implementation already is — the EPUB adapter
+/// drives a `PublicationSession`, and `BrowserLayoutPageEngine`, its only caller,
+/// is MainActor too. Declaring it here keeps the conformances from crossing an
+/// isolation boundary (a Swift 6 error) without moving any work off the main
+/// actor that wasn't already there.
+@MainActor
 protocol BrowserLayoutResourceProviding: AnyObject {
     var chapterCount: Int { get }
     func chapterTitle(at index: Int) -> String

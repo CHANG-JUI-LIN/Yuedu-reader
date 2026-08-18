@@ -4,13 +4,14 @@ import UIKit
 @testable import yuedu_app
 
 struct BrowserLayoutFeatureTests {
-    /// The shipping mode is `browserAuto`: the browser engine runs, and any
-    /// chapter it cannot render falls back to legacy. `browserForced` must NEVER
-    /// be the default — it suppresses that fallback and would ship diagnostic
-    /// pages to readers.
-    @Test func defaultModeIsBrowserAutoNotForced() {
-        #expect(BrowserLayoutFeature.mode == .browserAuto)
-        #expect(BrowserLayoutFeature.browserEnabled)
+    /// The shipping mode is `legacy`: the browser engine is feature-incomplete
+    /// and switched off (2026-08-17), so every EPUB chapter renders through
+    /// `CoreTextPageEngine` and `EPUBPageRenderer` never constructs the browser
+    /// engine at all. Flipping this default back on is a deliberate release
+    /// decision, not an incidental edit — this test is the tripwire.
+    @Test func defaultModeIsLegacy() {
+        #expect(BrowserLayoutFeature.mode == .legacy)
+        #expect(!BrowserLayoutFeature.browserEnabled)
     }
 }
 
@@ -91,7 +92,7 @@ extension ComputedStyle {
 
 struct ComputedStyleTreeTests {
     func parseBody(_ html: String) async -> Element? {
-        try? await HTMLBuilderDOMParser().parse(
+        await HTMLBuilderDOMParser().parse(
             html: html,
             collectStyles: { _ in [] },
             stylesheetCache: nil

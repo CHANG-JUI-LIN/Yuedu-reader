@@ -964,7 +964,7 @@ enum ReaderHTMLUtilities {
         guard textMatches.count == 1,
               let textRange = Range(textMatches[0].range(at: 1), in: svg) else { return tag }
 
-        var text = String(svg[textRange])
+        let text = String(svg[textRange])
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1174,21 +1174,21 @@ enum ReaderHTMLUtilities {
                     context: context
                 )
             }
-            // 企點: paragraph bubbles emit a single-argument `showCmt('<url>')`. The argument is the
-            // comment-page URL, often a relative path the jsLib resolves against `sb`
-            // (`https://sb.shazi.tk`). Resolve it the same way so the bubble becomes tappable.
-            if args.count == 1 {
-                var url = cleanLegadoArgument(args[0])
-                if !(url.hasPrefix("http://") || url.hasPrefix("https://")),
-                   let decoded = url.removingPercentEncoding,
-                   decoded.hasPrefix("http://") || decoded.hasPrefix("https://") {
-                    url = decoded
-                }
-                if !(url.hasPrefix("http://") || url.hasPrefix("https://")), usesShaziQidianEndpoint(context) {
-                    url = "https://sb.shazi.tk" + (url.hasPrefix("/") ? url : "/" + url)
-                }
-                guard url.hasPrefix("http://") || url.hasPrefix("https://") else { return nil }
-                return ReviewTarget(url: url, title: "段評")
+            // 企點: the destination is the FIRST argument, and the source's own `showCmt(url, stype)`
+            // treats every later argument as the sheet's title — never as part of the destination:
+            //
+            //   段評    `showCmt('<path>')`                 (jsLib createSvg)
+            //   熱評    `showCmt('<path>','段评' )`          (jsLib createGod)
+            //   本章说  `showCmt('<path>','本章说' )`        (jsLib endclick)
+            //
+            // The path is site-relative and the jsLib resolves it itself
+            // (`if (!url.includes('http')) url = sb + url`). Resolving it only for the
+            // one-argument spelling meant the 熱評 and 本章说 cards had their click config
+            // stripped but no `ydreview://` anchor put back, so the card drew as a plain image
+            // and a tap opened the image viewer instead of the review sheet.
+            if let url = shaziReviewURL(from: args.first, context: context) {
+                let stype = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
+                return ReviewTarget(url: url, title: stype.isEmpty ? "段評" : stype)
             }
         }
 
@@ -1474,6 +1474,24 @@ enum ReaderHTMLUtilities {
             url = decoded
         }
         return (url.hasPrefix("http://") || url.hasPrefix("https://")) ? url : nil
+    }
+
+    /// A 企點 `showCmt` destination, resolved the way the source's own jsLib resolves it:
+    /// `const sb = 'https://sb.shazi.tk'; if (!url.includes('http')) url = sb + url`.
+    /// An integer argument is 起點's numeric `showCmt(bookId, chapterId, paragraphId, …)`
+    /// signature — derived by `qidianReviewTarget`, never concatenated onto a host — and an
+    /// absolute URL has already been taken by `absoluteReviewURL` before this is reached.
+    private static func shaziReviewURL(
+        from value: String?,
+        context: LegadoReviewContext?
+    ) -> String? {
+        guard let value else { return nil }
+        let path = cleanLegadoArgument(value)
+        guard !path.isEmpty,
+              !isIntegerLegadoArgument(path),
+              usesShaziQidianEndpoint(context)
+        else { return nil }
+        return "https://sb.shazi.tk" + (path.hasPrefix("/") ? path : "/" + path)
     }
 
     private static func isIntegerLegadoArgument(_ value: String) -> Bool {

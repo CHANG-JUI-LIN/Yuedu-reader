@@ -68,34 +68,31 @@ final class WebViewCookieMirror: @unchecked Sendable {
     }
 
     private func primeIfNeeded() async {
-        lock.lock()
-        if isPrimed {
-            lock.unlock()
-            return
+        // Decide under the lock, await outside it. `NSLock.lock()` is `noasync`
+        // precisely because holding it across a suspension is a deadlock waiting
+        // to happen; `withLock` makes the critical section un-suspendable.
+        let pending: Task<Void, Never>? = lock.withLock {
+            if isPrimed { return nil }
+            if let existing = primingTask { return existing }
+            let task = Task { [weak self] in
+                await self?.observer.install()
+                await self?.refresh()
+            }
+            primingTask = task
+            return task
         }
-        if let existing = primingTask {
-            lock.unlock()
-            await existing.value
-            return
-        }
-        let task = Task { [weak self] in
-            await self?.observer.install()
-            await self?.refresh()
-        }
-        primingTask = task
-        lock.unlock()
-        await task.value
+        await pending?.value
     }
 
     /// Re-reads the whole jar. Called once at prime time and thereafter only when
     /// WebKit signals that a cookie changed.
     fileprivate func refresh() async {
         let cookies = await Self.readJar()
-        lock.lock()
-        snapshot = cookies
-        isPrimed = true
-        primingTask = nil
-        lock.unlock()
+        lock.withLock {
+            snapshot = cookies
+            isPrimed = true
+            primingTask = nil
+        }
     }
 
     @MainActor

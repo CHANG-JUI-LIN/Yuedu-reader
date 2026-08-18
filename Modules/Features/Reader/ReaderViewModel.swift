@@ -399,10 +399,36 @@ final class ReaderViewModel: ObservableObject {
                 domain: "ReaderViewModel", code: -1,
                 userInfo: [NSLocalizedDescriptionKey: localized("找不到書源")])
         }
+        // A search result almost never carries a tocUrl: it belongs to the book's
+        // DETAIL page, so `parseSearchResults` leaves it empty on purpose (an empty
+        // rule would otherwise resolve to the site root and we'd scrape the homepage
+        // as a TOC — see the guard in `ModernParserBridge.parseBookInfo`). Handing
+        // that empty string to `fetchTOCPackage` fails `safeURL` and every tapped
+        // origin came back as `Invalid URL:` with nothing after the colon.
+        //
+        // Legado closes the same gap in `ChangeBookSourceViewModel.getToc`:
+        //
+        //     if (book.tocUrl.isEmpty()) { WebBook.getBookInfoAwait(source, book) }
+        //     val toc = WebBook.getChapterListAwait(source, book).getOrThrow()
+        //
+        // Same shape here — fetch the detail page only when the TOC url is missing,
+        // and carry its runtime variables forward, because that request is what a
+        // source's bookInfo JS uses to stash chapter-list state.
+        var tocUrl = origin.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        var tocRuntimeVariables = origin.runtimeVariables
+        if tocUrl.isEmpty {
+            let info = try await bookSourceFetcher.fetchBookInfoPackage(
+                url: origin.bookUrl,
+                source: source,
+                runtimeVariables: origin.runtimeVariables
+            )
+            tocUrl = info.tocUrl
+            tocRuntimeVariables = info.runtimeVariables ?? tocRuntimeVariables
+        }
         let package = try await bookSourceFetcher.fetchTOCPackage(
-            tocUrl: origin.tocUrl,
+            tocUrl: tocUrl,
             source: source,
-            runtimeVariables: origin.runtimeVariables
+            runtimeVariables: tocRuntimeVariables
         )
         // An empty TOC means this source's rules matched nothing. Fail here, before the
         // commit: the sheet stays open, the origin gets flagged, and the book keeps the
@@ -411,7 +437,10 @@ final class ReaderViewModel: ObservableObject {
         guard !package.chapters.isEmpty else {
             AppLogger.parse("⟐ changeSource empty TOC", context: [
                 "source": origin.sourceName,
-                "tocUrl": String(origin.tocUrl.prefix(120)),
+                // The RESOLVED url, not `origin.tocUrl` — that one is empty for most
+                // sources and would make every one of these log lines look identical.
+                "tocUrl": String(tocUrl.prefix(120)),
+                "fromDetailPage": origin.tocUrl.isEmpty,
             ])
             throw NSError(
                 domain: "ReaderViewModel", code: -2,

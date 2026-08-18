@@ -17,10 +17,15 @@ struct LocalPDFArchiveTests {
     private static func makePDF(
         pageCount: Int,
         pageSize: CGSize = CGSize(width: 400, height: 600),
-        filename: String = "fixture.pdf"
+        filename: String = "fixture.pdf",
+        embeddedTitle: String? = nil
     ) throws -> URL {
         let bounds = CGRect(origin: .zero, size: pageSize)
-        let data = UIGraphicsPDFRenderer(bounds: bounds).pdfData { context in
+        let format = UIGraphicsPDFRendererFormat()
+        if let embeddedTitle {
+            format.documentInfo = [kCGPDFContextTitle as String: embeddedTitle]
+        }
+        let data = UIGraphicsPDFRenderer(bounds: bounds, format: format).pdfData { context in
             for index in 0..<pageCount {
                 context.beginPage()
                 let text = "Page \(index + 1)"
@@ -58,28 +63,69 @@ struct LocalPDFArchiveTests {
         #expect(info.sections.isEmpty)
     }
 
-    @Test("A PDF with no embedded title falls back to a cleaned-up filename")
-    func titleFallsBackToFilename() throws {
-        let url = try Self.makePDF(pageCount: 1, filename: "My_Manual.pdf")
-        defer { Self.cleanup(url) }
+    @Test("The filename is the book title, even when the PDF carries its own")
+    func filenameWinsOverEmbeddedTitle() throws {
+        let plain = try Self.makePDF(pageCount: 1, filename: "My_Manual.pdf")
+        defer { Self.cleanup(plain) }
+        #expect(try LocalPDFArchive.inspect(url: plain).title == "My Manual")
 
-        let document = try #require(PDFDocument(url: url))
-        let embeddedTitle = (document.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String) ?? ""
-        try #require(embeddedTitle.isEmpty)
+        // A PDF's /Title is whatever produced the file, so it must not outrank the
+        // name the user gave it — this is what put "Microsoft Word - Document1" on
+        // the shelf instead of the imported filename.
+        let stamped = try Self.makePDF(
+            pageCount: 1,
+            filename: "紅樓夢.pdf",
+            embeddedTitle: "Microsoft Word - Document1"
+        )
+        defer { Self.cleanup(stamped) }
+        #expect(try LocalPDFArchive.inspect(url: stamped).title == "紅樓夢")
 
-        #expect(try LocalPDFArchive.inspect(url: url).title == "My Manual")
+        // A payload shared with no filename at all is staged under a generated name;
+        // a bare UUID is not a title, so the embedded one answers instead.
+        let unnamed = try Self.makePDF(
+            pageCount: 1,
+            filename: "\(UUID().uuidString).pdf",
+            embeddedTitle: "Shared Report"
+        )
+        defer { Self.cleanup(unnamed) }
+        #expect(try LocalPDFArchive.inspect(url: unnamed).title == "Shared Report")
     }
 
-    @Test("A non-PDF file is rejected before anything else runs")
-    func rejectsWrongExtension() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(UUID().uuidString).txt")
-        try "not a pdf".write(to: url, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: url) }
+    @Test("A picked file is staged under its real name, not a UUID")
+    func stagingKeepsTheFilename() throws {
+        let source = try Self.makePDF(pageCount: 1, filename: "假期計畫.pdf")
+        defer { Self.cleanup(source) }
 
-        #expect(throws: LocalPDFArchiveError.self) {
-            try LocalPDFArchive.inspect(url: url)
-        }
+        let staged = try FileImportTab.stagedCopy(of: source)
+        // The inspectors read the title off this URL; a `<UUID>.pdf` staging name
+        // is what used to end up on the shelf.
+        #expect(staged.lastPathComponent == "假期計畫.pdf")
+        #expect(staged.path != source.path)
+        #expect(try LocalPDFArchive.inspect(url: staged).title == "假期計畫")
+
+        FileImportTab.removeStagedFile(at: staged)
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+        #expect(!FileManager.default.fileExists(atPath: staged.deletingLastPathComponent().path))
+    }
+
+    /// Cleanup deletes the directory it created — and nothing else. A URL that isn't
+    /// staged must never take its parent directory down with it.
+    @Test("Cleaning up a file outside the staging layout leaves its directory alone")
+    func removingAnUnstagedFileSparesItsDirectory() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("not-staging-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let file = directory.appendingPathComponent("book.pdf")
+        let sibling = directory.appendingPathComponent("keep-me.txt")
+        try Data("pdf".utf8).write(to: file)
+        try Data("keep".utf8).write(to: sibling)
+
+        FileImportTab.removeStagedFile(at: file)
+
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(FileManager.default.fileExists(atPath: sibling.path))
     }
 
     // MARK: Outline

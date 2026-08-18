@@ -26,7 +26,11 @@ struct BrowserLayoutSelectionContractTests {
         let store = CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("bl-\(UUID().uuidString)"))
         let settings = makeSettings()
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
-        let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings)
+        // `mode:` is explicit: the shipping default is `.legacy`, which would
+        // route this whole test through the legacy delegate and pass vacuously.
+        let engine = BrowserLayoutPageEngine(
+            resource: resource, delegate: delegate, settings: settings, mode: .browserAuto
+        )
         await engine.start(renderSize: CGSize(width: 300, height: 160), bookId: "t")
         return (engine, resource.chapters[0].html)
     }

@@ -15,7 +15,7 @@ struct BrowserLayoutImageTests {
         let html = """
         <html><body><p>Before <img src="dot.png"> after</p></body></html>
         """
-        let (pages, doc) = try await BrowserLayoutTestSupport.layout(
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
             html, imageLoader: loader(["dot.png": img])
         )
         let images = BrowserLayoutTestSupport.allImageFragments(pages)
@@ -401,7 +401,7 @@ struct BrowserLayoutImageTests {
         </div>
         </body></html>
         """
-        let (pages, doc) = try await BrowserLayoutTestSupport.layout(
+        let (pages, _) = try await BrowserLayoutTestSupport.layout(
             html, width: 392, height: 842,
             imageLoader: { ["p1.jpg": img, "p2.jpg": img, "p3.jpg": img][$0] }
         )

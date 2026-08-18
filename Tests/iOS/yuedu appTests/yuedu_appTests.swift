@@ -2213,6 +2213,7 @@ struct yuedu_appTests {
         #expect(abs(firstRenderable.rect.width - 280) < 2.0)
     }
 
+    @MainActor
     @Test func coreTextEngineRendersActualPart0010BodyText() async throws {
         guard let sourceURL = testEPUBURL else { return }
         #expect(FileManager.default.fileExists(atPath: sourceURL.path))
@@ -2298,6 +2299,7 @@ struct yuedu_appTests {
     }
 
 
+    @MainActor
     @Test func coreTextEngineRendersActualPart0009TitleCardAboveLowerHalf() async throws {
         guard let sourceURL = testEPUBURL else { return }
         let session = try await PublicationSession.open(sourceURL: sourceURL)
@@ -2416,6 +2418,7 @@ struct yuedu_appTests {
         #expect(bluePixelCount > max(20, sampledPixelCount / 20))
     }
 
+    @MainActor
     @Test func coreTextEngineRendersActualPart0009VisibleTitleTextInsideCard() async throws {
         guard let sourceURL = testEPUBURL else { return }
         let session = try await PublicationSession.open(sourceURL: sourceURL)
@@ -3147,6 +3150,7 @@ struct yuedu_appTests {
         )
     }
 
+    @MainActor
     @Test func coreTextPageViewDrawBlockRenderableTextDrawsVisibleGlyphs() async throws {
         let font = UIFont.systemFont(ofSize: 28, weight: .bold)
         let paragraph = NSMutableParagraphStyle()
@@ -3214,6 +3218,7 @@ struct yuedu_appTests {
         #expect(foundBrightPixel, "Expected bright white glyphs inside the blue title card")
     }
 
+    @MainActor
     @Test func coreTextPageViewRenderPageKeepsPart0009TitleVisibleWhenBoundsDifferFromLayoutSize() async throws {
         guard let sourceURL = testEPUBURL else { return }
         let session = try await PublicationSession.open(sourceURL: sourceURL)

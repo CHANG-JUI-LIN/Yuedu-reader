@@ -533,7 +533,7 @@ struct JSCoreEngineIntegrationTests {
         engine.putData = { key, val in storage[key] = val }
         engine.getData = { key in storage[key] }
 
-        engine.evaluate("java.put('myKey', 'myValue')")
+        _ = engine.evaluate("java.put('myKey', 'myValue')")
         let result = engine.evaluate("java.get('myKey')")
         #expect(result == "myValue")
         #expect(storage["myKey"] == "myValue")
@@ -595,7 +595,7 @@ struct JSCoreEngineIntegrationTests {
     @Test("JS reset clears state")
     func jsReset() {
         let engine = JSCoreEngine()
-        engine.evaluate("var myVar = 42")
+        _ = engine.evaluate("var myVar = 42")
         let before = engine.evaluate("myVar")
         #expect(before == "42")
 
@@ -1010,7 +1010,7 @@ struct CrossComponentWiringTests {
         jsEngine.getData = { key in ruleData.getVariable(key: key) }
 
         // Store via JS
-        jsEngine.evaluate("java.put('testKey', 'testValue')")
+        _ = jsEngine.evaluate("java.put('testKey', 'testValue')")
 
         // Retrieve via engine
         let result = engine.get(key: "testKey")

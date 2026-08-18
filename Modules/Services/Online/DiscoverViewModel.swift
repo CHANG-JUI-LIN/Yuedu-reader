@@ -415,7 +415,7 @@ final class DiscoverViewModel: ObservableObject {
         return source
     }
 
-    /// Turn 以 Android 身分回報 on for the selected source and load 發現 again.
+    /// Turn 提供裝置識別碼 on for the selected source and load 發現 again.
     ///
     /// `refreshSources()` before the reload is required, not cosmetic:
     /// `exploreSources` is a snapshot taken before the edit, and reloading against

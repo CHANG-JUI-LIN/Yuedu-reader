@@ -186,7 +186,7 @@ struct LiveBookSourceFetcher: BookSourceFetching {
         tocUrl: String,
         source: BookSource
     ) async -> TOCPackage? {
-        await bookSourceFetcher.cachedTOCPackage(tocUrl: tocUrl, source: source)
+        bookSourceFetcher.cachedTOCPackage(tocUrl: tocUrl, source: source)
     }
 
     func fetchBookInfoPackage(

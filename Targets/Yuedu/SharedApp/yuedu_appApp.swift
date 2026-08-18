@@ -48,7 +48,10 @@ struct yuedu_appApp: App {
         // before this ran would come up with an empty shelf.
         StorageMigration.runIfNeeded()
         #if DEBUG
-        // Debug-only engine selection via launch arguments (UI tests / driver):
+        // Debug-only engine selection via launch arguments (UI tests / driver).
+        // The default is `.legacy` in every build — the browser engine is
+        // feature-incomplete and off; these flags are the only way to turn it
+        // back on, for development and the browser-layout UI tests.
         //   -browser-mode browserForced | browserAuto | legacy
         //   -browser-overlay 1        (show engine badge + geometry overlay)
         let args = ProcessInfo.processInfo.arguments

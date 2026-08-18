@@ -1256,7 +1256,10 @@ class BookStore: ObservableObject, BookProvider {
         }
         books[idx].coverImagePath = filename
         books[idx].customCoverUrl = customCoverUrl
-        saveMeta()
+        // Picking a cover is a user-confirmed metadata transaction, like a source
+        // switch: it must survive leaving 書籍資訊 and an immediate suspension. The
+        // 2-second debounce is for high-frequency progress/TOC writes.
+        saveMetaImmediately()
         return true
     }
 
@@ -1278,13 +1281,16 @@ class BookStore: ObservableObject, BookProvider {
            FileManager.default.fileExists(atPath: StorageLocations.coverFile(originalPath).path) {
             books[idx].coverImagePath = originalPath
             if let customPath, customPath != originalPath { removeCoverFile(customPath) }
-            saveMeta()
+            // Immediate for the same reason as `storeCustomCover`, and because the
+            // custom file is already deleted — a lost write would leave the book
+            // pointing at a cover that no longer exists.
+            saveMetaImmediately()
             return
         }
 
         books[idx].coverImagePath = nil
         if let customPath { removeCoverFile(customPath) }
-        saveMeta()
+        saveMetaImmediately()
         downloadCoverIfNeeded(
             bookId: bookId,
             coverUrl: books[idx].coverUrl ?? "",

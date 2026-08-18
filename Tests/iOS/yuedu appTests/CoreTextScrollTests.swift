@@ -109,7 +109,7 @@ struct CoreTextScrollTests {
             UIColor.black.setFill()
             context.cgContext.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
         }
-        cell.drawView.layer.contents = try #require(image.cgImage)
+        cell.drawView.layer.contents = image.cgImage
 
         cell.prepareForReuse()
 
@@ -405,7 +405,7 @@ struct CoreTextScrollTests {
         #expect(engine.isReady)
         #expect(engine.chunks.count == oldCount)
 
-        await resliceTask.value
+        _ = await resliceTask.value
         #expect(engine.isReady)
         #expect(!engine.chunks.isEmpty)
     }

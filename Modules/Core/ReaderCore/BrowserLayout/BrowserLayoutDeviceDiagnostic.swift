@@ -171,7 +171,7 @@ enum BrowserLayoutDeviceDiagnostic {
         var docOrigin = CGPoint.zero
         while let box = current {
             chain.append((box, docOrigin))
-            if let parent = box.parentBox {
+            if box.parentBox != nil {
                 // Accumulate this box's border-box offset within the parent
                 // content, plus the parent's own border+padding.
                 docOrigin.x += box.frame.minX + box.borders.left + box.padding.left
@@ -246,7 +246,7 @@ enum BrowserLayoutDeviceDiagnostic {
             }
         }
         walk(root)
-        if var b = best {
+        if let b = best {
             var origin = CGPoint.zero
             var cursor: BlockBox? = b.box
             while let box = cursor, let parent = box.parentBox {

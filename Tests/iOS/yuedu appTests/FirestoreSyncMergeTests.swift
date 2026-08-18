@@ -253,12 +253,59 @@ struct FirestoreSyncMergeTests {
         let advanced = ICloudSyncManager.updatedShadowEntry(
             existing: shadow(100, hash: "old"),
             currentHash: "new",
-            fallbackUpdatedAt: Date(timeIntervalSince1970: 300)
+            fallbackUpdatedAt: Date(timeIntervalSince1970: 300),
+            now: Date(timeIntervalSince1970: 250)
         )
 
         #expect(advanced?.updatedAt == Date(timeIntervalSince1970: 300))
         #expect(advanced?.hash == "new")
         #expect(advanced?.deleted == false)
+    }
+
+    @Test("shadow entry advances past the last sync when the item's own clock stood still")
+    func shadowEntryAdvancesWhenDomainClockStoodStill() {
+        // 換封面 changes the book record but not its `lastOpenedDate`, so the
+        // fallback clock is still the timestamp the last sync uploaded.
+        let advanced = ICloudSyncManager.updatedShadowEntry(
+            existing: shadow(100, hash: "source-cover"),
+            currentHash: "custom-cover",
+            fallbackUpdatedAt: Date(timeIntervalSince1970: 100),
+            now: Date(timeIntervalSince1970: 500)
+        )
+
+        #expect(advanced?.updatedAt == Date(timeIntervalSince1970: 500))
+        #expect(advanced?.hash == "custom-cover")
+    }
+
+    @Test("an edit that does not move the item's own clock survives the next merge")
+    func editWithUnchangedDomainClockSurvivesMerge() {
+        // The 換封面 revert, end to end: the shadow and the remote record both
+        // carry the book's `lastOpenedDate`, so before the shadow advanced past
+        // it the merge's `record.updatedAt >= localEntry.updatedAt` handed the
+        // pre-edit cloud copy back and the custom cover disappeared on relaunch.
+        let lastOpened = Date(timeIntervalSince1970: 1_000)
+        let synced = Item(id: "book", value: "source-cover")
+        let edited = Item(id: "book", value: "custom-cover")
+
+        var shadowStore = ["book": shadow(1_000, hash: synced.value)]
+        shadowStore["book"] = ICloudSyncManager.updatedShadowEntry(
+            existing: shadowStore["book"],
+            currentHash: edited.value,
+            fallbackUpdatedAt: lastOpened,
+            now: Date(timeIntervalSince1970: 5_000)
+        )
+
+        let result = FirestoreSyncMerge.merge(
+            local: [edited],
+            remote: [FirestoreSyncRecord(id: "book", value: synced, updatedAt: lastOpened, deleted: false)],
+            shadow: shadowStore,
+            id: { $0.id },
+            hash: { $0.value },
+            fallbackUpdatedAt: { _ in lastOpened }
+        )
+
+        #expect(result.values == [edited])
+        #expect(result.shadow["book"]?.updatedAt == Date(timeIntervalSince1970: 5_000))
     }
 
     @Test("shadow entry stays untouched when nothing changed")

@@ -79,6 +79,7 @@ open Yuedu-Reader.xcodeproj
 
 ### 使用指南
 
+- **书源（Legado 格式）指南：** [简体中文总览](docs/book-source/quickstart.zh-Hans.md) · [规则语法速查](docs/book-source/rule-syntax.zh-Hans.md) · [与 Legado 的差异](docs/book-source/legado-differences.zh-Hans.md) · [常见症状对照表](docs/book-source/troubleshooting.zh-Hans.md) — 导入、五阶段验证、规则调试器、语法速查、与 Legado 的差异、症状→解法对照。
 - **电量 SVG 模板：** [简体中文](docs/reader-overlay/BatterySVG.zh-Hans.md) · [繁體中文](docs/reader-overlay/BatterySVG.zh-Hant.md) · [English](docs/reader-overlay/BatterySVG.en.md) — 模板格式、动态标记、支持的 SVG 子集与导入故障排查。
 
 ### 开发者参考

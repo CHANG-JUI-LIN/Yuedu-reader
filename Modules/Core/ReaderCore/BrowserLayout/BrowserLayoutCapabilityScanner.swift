@@ -134,7 +134,7 @@ enum BrowserLayoutCapabilityScanner {
                             if !matchedAnyUnsupported, let first = matchedElements.first {
                                 unsupportedDeclarations.append(UnsupportedDeclaration(
                                     feature: feature, selector: rule.selector.debugDescription,
-                                    tag: (try? first.tagName()) ?? "", classes: ((try? first.classNames().map { $0 }) ?? []),
+                                    tag: first.tagName(), classes: ((try? first.classNames().map { $0 }) ?? []),
                                     property: property
                                 ))
                                 matchedAnyUnsupported = true

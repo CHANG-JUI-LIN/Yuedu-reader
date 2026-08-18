@@ -428,9 +428,9 @@ final class ICloudSyncManager: ObservableObject {
             shadow[key] = SyncShadowEntry(updatedAt: now, hash: "", deleted: true)
         }
         // Local edits since last sync (hash changed) must advance the item's merge
-        // timestamp to its own modified time (e.g. a book's lastOpenedDate), or
-        // newest-wins would keep treating it as the stale, last-synced version and
-        // let an older remote copy overwrite the fresh local one.
+        // timestamp past the last-synced one, or newest-wins would keep treating it
+        // as the stale, last-synced version and let the older remote copy overwrite
+        // the fresh local one.
         for value in local {
             let key = id(value)
             guard let updated = Self.updatedShadowEntry(
@@ -557,10 +557,19 @@ final class ICloudSyncManager: ObservableObject {
     /// the deletion. The bubble-selection record has a constant id, so clearing
     /// and re-picking hits the re-creation case — without the revival the
     /// tombstone timestamp would pin the record as deleted forever.
+    ///
+    /// A local edit is stamped `now` unless the item's own clock already runs
+    /// ahead. Stamping only that clock was wrong: a book's is `lastOpenedDate`,
+    /// which 換封面 / 改書名 / 改分組 never move, so the entry kept the timestamp
+    /// the last sync uploaded, `merge` saw `record.updatedAt >= localEntry
+    /// .updatedAt` against the identical remote stamp, and the pre-edit cloud
+    /// copy overwrote the edit on the next launch. Detection time is the honest
+    /// clock for "changed since the last sync".
     static func updatedShadowEntry(
         existing: SyncShadowEntry?,
         currentHash: String,
-        fallbackUpdatedAt: Date
+        fallbackUpdatedAt: Date,
+        now: Date = Date()
     ) -> SyncShadowEntry? {
         guard let existing else { return nil }
         if existing.deleted {
@@ -568,7 +577,11 @@ final class ICloudSyncManager: ObservableObject {
             return SyncShadowEntry(updatedAt: fallbackUpdatedAt, hash: currentHash, deleted: false)
         }
         guard existing.hash != currentHash else { return nil }
-        return SyncShadowEntry(updatedAt: fallbackUpdatedAt, hash: currentHash, deleted: false)
+        return SyncShadowEntry(
+            updatedAt: max(fallbackUpdatedAt, now),
+            hash: currentHash,
+            deleted: false
+        )
     }
 
     static func encodeCloudSyncRecords<T: Codable>(_ records: [CloudSyncRecord<T>]) throws -> Data {
