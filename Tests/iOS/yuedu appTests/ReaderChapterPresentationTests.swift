@@ -37,20 +37,11 @@ struct ReaderChapterPresentationTests {
         #expect(ReaderChapterPresentation.overlayState(isContentAvailable: false, loadState: .failed(reason: "network")) == ReaderChapterOverlayState.failed(message: "network"))
     }
 
-    @Test("ready on current triggers correct refresh action")
-    func readyOnCurrentTriggersCorrectRefreshAction() {
-        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 3, currentChapterIndex: 3, usesCoreText: true, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.notifyChapterDataChanged(3))
-        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 4, currentChapterIndex: 4, usesCoreText: false, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.rebuildPages)
-    }
-
-    @Test("ready without validated content does not auto-refetch")
-    func readyWithoutValidatedContentDoesNotAutoRefetch() {
-        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 5, currentChapterIndex: 5, usesCoreText: true, newState: .ready, isContentAvailable: false) == ReaderChapterRefreshAction.none)
-    }
-
-    @Test("different indices return none")
-    func differentIndicesReturnNone() {
-        #expect(ReaderChapterPresentation.refreshAction(changedChapterIndex: 2, currentChapterIndex: 3, usesCoreText: true, newState: .ready, isContentAvailable: true) == ReaderChapterRefreshAction.none)
+    @Test("cancelled shows the loading surface, never a failure")
+    func cancelledShowsLoadingSurface() {
+        // A preempted fetch answered nothing about the chapter. Painting 章節載入失敗 for it
+        // is the spurious failure users cleared by refreshing.
+        #expect(ReaderChapterPresentation.overlayState(isContentAvailable: false, loadState: .cancelled) == ReaderChapterOverlayState.loading)
     }
 
     @Test("ready but missing content shows recoverable failure")

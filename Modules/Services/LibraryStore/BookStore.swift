@@ -541,7 +541,7 @@ class BookStore: ObservableObject, BookProvider {
                 do {
                     try FileManager.default.removeItem(at: destURL)
                 } catch {
-                    Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove item at \(destURL): \(error)")
+                    AppLogger.cache("Failed to remove item at \(destURL): \(error)")
                 }
             }
             if let coverFilename {
@@ -550,7 +550,7 @@ class BookStore: ObservableObject, BookProvider {
                     do {
                         try FileManager.default.removeItem(at: coverURL)
                     } catch {
-                        Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove cover image at \(coverURL): \(error)")
+                        AppLogger.cache("Failed to remove cover image at \(coverURL): \(error)")
                     }
                 }
             }
@@ -588,7 +588,7 @@ class BookStore: ObservableObject, BookProvider {
                         try jpegData.write(to: coverURL)
                         coverFilename = coverName
                     } catch {
-                        Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to write cover image at \(coverURL): \(error)")
+                        AppLogger.cache("Failed to write cover image at \(coverURL): \(error)")
                     }
                 }
             }
@@ -967,7 +967,7 @@ class BookStore: ObservableObject, BookProvider {
         do {
             try rawText.write(to: fileURL, atomically: true, encoding: .utf8)
         } catch {
-            Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to write raw text chapter to \(fileURL): \(error)")
+            AppLogger.cache("Failed to write raw text chapter to \(fileURL): \(error)")
         }
     }
 
@@ -1022,20 +1022,20 @@ class BookStore: ObservableObject, BookProvider {
                 do {
                     try FileManager.default.removeItem(at: cacheDir)
                 } catch {
-                    Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove cache directory \(cacheDir): \(error)")
+                    AppLogger.cache("Failed to remove cache directory \(cacheDir): \(error)")
                 }
             } else {
                 do {
                     let fileUrl = documentsURL(for: book.contentFilename)
                     try FileManager.default.removeItem(at: fileUrl)
                 } catch {
-                    Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove document file \(book.contentFilename): \(error)")
+                    AppLogger.cache("Failed to remove document file \(book.contentFilename): \(error)")
                 }
                 if book.resolvedPipelineKind == .manga || book.resolvedPipelineKind == .fixedPage {
                     do {
                         try FileManager.default.removeItem(at: LocalMangaArchive.bookDirectory(bookId: book.id))
                     } catch {
-                        Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove local manga directory for \(book.id): \(error)")
+                        AppLogger.cache("Failed to remove local manga directory for \(book.id): \(error)")
                     }
                 }
                 TXTChapterParser.deleteCachedIndexes(bookId: bookId)
@@ -1047,7 +1047,7 @@ class BookStore: ObservableObject, BookProvider {
                         let assetsUrl = documentsURL(for: assetsDir)
                         try FileManager.default.removeItem(at: assetsUrl)
                     } catch {
-                        Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to remove assets directory \(assetsDir): \(error)")
+                        AppLogger.cache("Failed to remove assets directory \(assetsDir): \(error)")
                     }
                 }
             }
@@ -1877,7 +1877,7 @@ class BookStore: ObservableObject, BookProvider {
             markMetadataPersisted(data)
             syncWidgetData()
         } catch {
-            Logger(subsystem: "com.yuedu.app", category: "BookStore").error("Failed to write metadata: \(error)")
+            AppLogger.cache("Failed to write metadata: \(error)")
         }
     }
 

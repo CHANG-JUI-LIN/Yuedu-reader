@@ -22,7 +22,7 @@ struct CacheManagementServiceTests {
             to: fixture.roots.covers.appendingPathComponent("cover.jpg")
         )
 
-        let snapshot = CacheManagementService(roots: fixture.roots).snapshot()
+        let snapshot = CacheManagementService(roots: fixture.roots, diagnosticLog: nil).snapshot()
 
         #expect(snapshot.chapters == 3)
         #expect(snapshot.ttsAudio == 5)
@@ -41,7 +41,7 @@ struct CacheManagementServiceTests {
         try Data("chapter".utf8).write(to: chapter)
         try Data("cover".utf8).write(to: cover)
 
-        try CacheManagementService(roots: fixture.roots).clear(.chapters)
+        try CacheManagementService(roots: fixture.roots, diagnosticLog: nil).clear(.chapters)
 
         #expect(!FileManager.default.fileExists(atPath: chapter.path))
         #expect(FileManager.default.fileExists(atPath: cover.path))
@@ -58,8 +58,8 @@ struct CacheManagementServiceTests {
             try Data(repeating: UInt8(index), count: index + 1).write(to: file)
         }
 
-        try CacheManagementService(roots: fixture.roots).clearAll()
-        let snapshot = CacheManagementService(roots: fixture.roots).snapshot()
+        try CacheManagementService(roots: fixture.roots, diagnosticLog: nil).clearAll()
+        let snapshot = CacheManagementService(roots: fixture.roots, diagnosticLog: nil).snapshot()
 
         #expect(snapshot.total == 0)
         for category in CacheCategory.allCases {
@@ -74,7 +74,8 @@ struct CacheManagementServiceTests {
             chapters: container.appendingPathComponent("chapters", isDirectory: true),
             ttsAudio: container.appendingPathComponent("tts", isDirectory: true),
             mangaImages: container.appendingPathComponent("manga", isDirectory: true),
-            covers: container.appendingPathComponent("covers", isDirectory: true)
+            covers: container.appendingPathComponent("covers", isDirectory: true),
+            diagnostics: container.appendingPathComponent("diagnostics", isDirectory: true)
         )
         for category in CacheCategory.allCases {
             try FileManager.default.createDirectory(

@@ -164,6 +164,68 @@ struct ReaderViewModelChapterStateTests {
         await waitForFailure("empty", in: viewModel, chapterIndex: 0)
     }
 
+    @Test("a cancelled fetch is not reported as a failure")
+    func cancelledFetchIsNotAFailure() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+
+        await fetcher.enqueuePending(chapterIndex: 0)
+        await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
+        await waitForState(.loading, in: viewModel, chapterIndex: 0)
+        await waitUntil { await fetcher.hasPendingRequest(for: 0) }
+
+        // -999 is how a URLSession task or a WKWebView navigation reports being torn down.
+        // It used to reach the catch-all and paint 章節載入失敗 over a chapter that fetched
+        // fine on the next attempt — the failure users cleared by refreshing.
+        await fetcher.resolvePending(chapterIndex: 0, with: .failure(URLError(.cancelled)))
+        await waitForState(.cancelled, in: viewModel, chapterIndex: 0)
+
+        #expect(!viewModel.isChapterContentAvailable(at: 0))
+        #expect(
+            ReaderChapterPresentation.overlayState(
+                isContentAvailable: viewModel.isChapterContentAvailable(at: 0),
+                loadState: viewModel.chapterState(for: 0)
+            ) == .loading
+        )
+    }
+
+    @Test("a directly thrown CancellationError also lands on cancelled")
+    func cancellationErrorLandsOnCancelled() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+
+        await fetcher.enqueuePending(chapterIndex: 0)
+        await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
+        await waitForState(.loading, in: viewModel, chapterIndex: 0)
+        await waitUntil { await fetcher.hasPendingRequest(for: 0) }
+
+        await fetcher.resolvePending(chapterIndex: 0, with: .failure(CancellationError()))
+        await waitForState(.cancelled, in: viewModel, chapterIndex: 0)
+    }
+
+    @Test("a cancelled chapter re-enters loading when it is requested again")
+    func cancelledChapterReEntersLoading() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook()
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+
+        await fetcher.enqueuePending(chapterIndex: 0)
+        await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .immediate, store: nil)
+        await waitForState(.loading, in: viewModel, chapterIndex: 0)
+        await waitUntil { await fetcher.hasPendingRequest(for: 0) }
+        await fetcher.resolvePending(chapterIndex: 0, with: .failure(URLError(.cancelled)))
+        await waitForState(.cancelled, in: viewModel, chapterIndex: 0)
+
+        await fetcher.enqueuePending(chapterIndex: 0)
+        await viewModel.ensureChapterReady(book: book, chapterIndex: 0, priority: .jump, store: nil)
+        await waitForState(.loading, in: viewModel, chapterIndex: 0)
+        // The fetch runs in its own task; count it only once it has actually started.
+        await waitUntil { await fetcher.hasPendingRequest(for: 0) }
+        #expect(await fetcher.fetchCount(for: 0) == 2)
+    }
+
     @Test("duplicate requests do not start a second fetch")
     func duplicateRequestsDeduplicate() async throws {
         let fetcher = MockChapterFetcher()

@@ -6,11 +6,10 @@ import os
 /// occurred…" string; the real reason (e.g. a provider not enabled in the console)
 /// lives inside the NSError userInfo. This digs it out for display + logging.
 enum AuthErrorReporter {
-    private static let logger = Logger(subsystem: "com.zhangruilin.yuedureader", category: "Auth")
 
     static func describe(_ error: Error) -> String {
         let ns = error as NSError
-        logger.error("sign-in failed: domain=\(ns.domain, privacy: .public) code=\(ns.code) userInfo=\(ns.userInfo, privacy: .public)")
+        AppLogger.network("sign-in failed: domain=\(ns.domain) code=\(ns.code) userInfo=\(ns.userInfo)", level: .error)
 
         if let server = serverMessage(from: ns) {
             if server.contains("CONFIGURATION_NOT_FOUND") || server.contains("OPERATION_NOT_ALLOWED") {

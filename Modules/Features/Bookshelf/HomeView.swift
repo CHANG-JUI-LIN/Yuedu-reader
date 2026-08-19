@@ -840,7 +840,7 @@ struct EditBookSheet: View {
         case .push:
             // Pushed from the shelf: the back button is the way out, so no 關閉.
             editorContent
-                .toolbarTitleDisplayMode(.inlineLarge)
+                .toolbarTitleDisplayMode(.inline)
                 .toolbar { saveToolbarItem }
         }
     }

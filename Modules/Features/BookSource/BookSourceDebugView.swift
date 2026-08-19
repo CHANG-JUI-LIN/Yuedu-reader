@@ -1,33 +1,60 @@
 import SwiftUI
+import UIKit
 
+/// 書源除錯大師 — the HTTP exchanges behind one book source.
+///
+/// Presented as a sheet from the book-source editor and the login sheet, so
+/// `.inline` title mode and `xmark` leading (docs/design.md §2.2).
 struct BookSourceDebugView: View {
-    @StateObject private var debugger = WebCrawlerDebugger.shared
-    @Environment(\.dismiss) var dismiss
-    @ObservedObject private var gs = GlobalSettings.shared
+    @ObservedObject private var debugger = WebCrawlerDebugger.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var typeFilter: WebCrawlerDebugger.LogEntry.LogType?
+    @State private var showCopiedAlert = false
+
+    private var filteredLogs: [WebCrawlerDebugger.LogEntry] {
+        guard let typeFilter else { return debugger.logs.reversed() }
+        return debugger.logs.reversed().filter { $0.type == typeFilter }
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Toolbar
-                HStack {
+            Form {
+                Section {
                     Toggle(localized("啟用網路除錯錄製"), isOn: $debugger.isRecording)
-                        .padding()
-                    Spacer()
-                    Button(localized("清空紀錄")) {
-                        debugger.clear()
-                    }
-                    .padding()
-                    .foregroundColor(.red)
+                    Toggle(localized("包含規則比對"), isOn: $debugger.includesParseEvents)
+                        .disabled(!debugger.isRecording)
+                } header: {
+                    Text(localized("錄製"))
+                } footer: {
+                    Text(localized("開啟後重新搜索或開啟章節，就會記下每一次請求與回應。規則比對數量遠多於網路請求，預設不收。"))
                 }
-                .background(Color(.systemGray6))
+                .interfaceSectionSurface()
 
-                List {
-                    ForEach(debugger.logs) { log in
-                        LogEntryRow(entry: log)
-                            .interfaceSectionSurface()
+                Section {
+                    Picker(localized("類型"), selection: $typeFilter) {
+                        Text(localized("全部")).tag(WebCrawlerDebugger.LogEntry.LogType?.none)
+                        ForEach(WebCrawlerDebugger.LogEntry.LogType.allCases, id: \.self) { type in
+                            Text(type.localizedName)
+                                .tag(WebCrawlerDebugger.LogEntry.LogType?.some(type))
+                        }
                     }
+                } header: {
+                    Text(localized("篩選"))
                 }
-                .listStyle(.plain)
+                .interfaceSectionSurface()
+
+                Section {
+                    if filteredLogs.isEmpty {
+                        emptyState
+                    } else {
+                        ForEach(filteredLogs) { entry in
+                            BookSourceDebugLogRow(entry: entry)
+                        }
+                    }
+                } header: {
+                    Text(localized("紀錄"))
+                }
+                .interfaceSectionSurface()
             }
             .navigationTitle(localized("書源除錯大師"))
             .toolbarTitleDisplayMode(.inline)
@@ -38,90 +65,197 @@ struct BookSourceDebugView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
+                            .accessibilityHidden(true)
                     }
+                    .accessibilityLabel(localized("關閉"))
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        ShareLink(
+                            item: exportText,
+                            preview: SharePreview(localized("書源除錯大師"))
+                        ) {
+                            Label(localized("匯出紀錄"), systemImage: "square.and.arrow.up")
+                        }
+                        Button {
+                            UIPasteboard.general.string = exportText
+                            showCopiedAlert = true
+                        } label: {
+                            Label(localized("複製全部"), systemImage: "doc.on.doc")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            debugger.clear()
+                        } label: {
+                            Label(localized("清空紀錄"), systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .accessibilityHidden(true)
+                    }
+                    .accessibilityLabel(localized("更多動作"))
+                    .disabled(debugger.logs.isEmpty)
+                }
+            }
+            .alert(localized("已複製"), isPresented: $showCopiedAlert) {
+                Button(localized("好"), role: .cancel) {}
+            } message: {
+                Text(localized("除錯紀錄已複製到剪貼簿。"))
             }
         }
     }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label(localized("沒有紀錄"), systemImage: "antenna.radiowaves.left.and.right.slash")
+        } description: {
+            Text(debugger.isRecording
+                 ? localized("錄製中。回到書源做一次搜索或開啟章節，請求就會出現在這裡。")
+                 : localized("先打開上面的錄製開關，再回到書源操作一次。"))
+        }
+    }
+
+    /// Built on demand — the toolbar `Menu` is constructed eagerly with its parent,
+    /// so formatting hundreds of entries here on every layout pass would be wasted
+    /// work. Same reasoning as `BookSourceExportFile`.
+    private var exportText: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        let body = debugger.logs.map { entry -> String in
+            var line = "\(formatter.string(from: entry.timestamp)) [\(entry.type.rawValue)] \(entry.message)"
+            if let url = entry.url { line += "\n    url: \(url)" }
+            switch entry.detail {
+            case .headers(let headers):
+                line += headers.sorted { $0.key < $1.key }
+                    .map { "\n    \($0.key): \($0.value)" }.joined()
+            case .body(let text), .text(let text):
+                line += "\n" + text.split(separator: "\n", omittingEmptySubsequences: false)
+                    .map { "    \($0)" }.joined(separator: "\n")
+            case .none:
+                break
+            }
+            return line
+        }.joined(separator: "\n")
+        // Book-source requests carry tokens in the query string and in headers, and
+        // this text is about to leave the device.
+        return DiagnosticRedactor.redact(body)
+    }
 }
 
-struct LogEntryRow: View {
+/// Its own `View` struct so `List`/`Form` defers building the expanded detail until
+/// the row scrolls in — see the note at the top of `BookSourceRowViews.swift`.
+struct BookSourceDebugLogRow: View {
     let entry: WebCrawlerDebugger.LogEntry
     @State private var isExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var hasDetail: Bool { entry.detail != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(icon(for: entry.type))
-                    .font(DSFont.headline)
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+                Image(systemName: entry.type.symbolName)
+                    .font(DSFont.footnote)
+                    .foregroundStyle(entry.type.tint)
+                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading) {
-                    Text(entry.message)
-                        .font(DSFont.subheadline)
-                        .bold()
-                        .lineLimit(isExpanded ? nil : 2)
-
-                    if let url = entry.url {
-                        Text(url)
-                            .font(DSFont.caption)
-                            .foregroundColor(DSColor.accent)
-                            .lineLimit(isExpanded ? nil : 1)
-                    }
-                }
-                Spacer()
+                Text(entry.message)
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .lineLimit(isExpanded ? nil : 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(entry.timestamp, style: .time)
                     .font(DSFont.caption2)
-                    .foregroundColor(.gray)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation { isExpanded.toggle() }
+                    .foregroundStyle(DSColor.textSecondary)
             }
 
-            if isExpanded, let meta = entry.metadata {
-                Divider()
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(meta.keys.sorted(), id: \.self) { key in
-                        if let dict = meta[key] as? [String: String] {
-                            Text("\(key):").font(DSFont.caption).bold()
-                            ForEach(dict.keys.sorted(), id: \.self) { hKey in
-                                Text("  \(hKey): \(dict[hKey] ?? "")")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundColor(.gray)
-                            }
-                        } else if let str = meta[key] as? String {
-                            Text("\(key):").font(DSFont.caption).bold()
-                            Text(str)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundColor(.gray)
-                                .lineLimit(10)
-                        } else {
-                            Text("\(key): \(String(describing: meta[key]!))")
-                                .font(DSFont.caption)
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-                .padding(.leading, 24)
+            if let url = entry.url {
+                Text(url)
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.accent)
+                    .lineLimit(isExpanded ? nil : 1)
+            }
+
+            if isExpanded, let detail = entry.detail {
+                detailView(detail)
+                    .padding(.top, DSSpacing.xs)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DSSpacing.xs)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard hasDetail else { return }
+            if reduceMotion {
+                isExpanded.toggle()
+            } else {
+                withAnimation(DSAnimation.fast) { isExpanded.toggle() }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(entry.type.localizedName)，\(entry.message)")
+        .accessibilityValue(entry.url ?? "")
+        .accessibilityHint(hasDetail ? localized("點兩下展開詳細內容") : "")
+        .accessibilityAddTraits(hasDetail ? .isButton : [])
     }
 
-    private func icon(for type: WebCrawlerDebugger.LogEntry.LogType) -> String {
-        switch type {
-        case .info: return "ℹ️"
-        case .request: return "🌐"
-        case .response: return "📄"
-        case .parseEvent: return "🔍"
-        case .error: return "❌"
+    @ViewBuilder
+    private func detailView(_ detail: WebCrawlerDebugger.LogEntry.Detail) -> some View {
+        switch detail {
+        case .headers(let headers):
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(headers.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                    Text("\(key): \(value)")
+                        .font(DSFont.monospaced(size: 11))
+                        .foregroundStyle(DSColor.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case .body(let text), .text(let text):
+            Text(text)
+                .font(DSFont.monospaced(size: 11))
+                .foregroundStyle(DSColor.textSecondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
-struct BookSourceDebugView_Previews: PreviewProvider {
-    static var previews: some View {
-        BookSourceDebugView()
+extension WebCrawlerDebugger.LogEntry.LogType {
+    var localizedName: String {
+        switch self {
+        case .info:       return localized("資訊")
+        case .request:    return localized("請求")
+        case .response:   return localized("回應")
+        case .parseEvent: return localized("規則比對")
+        case .error:      return localized("錯誤")
+        }
     }
+
+    /// SF Symbol rather than an emoji: emoji do not follow Dynamic Type or the
+    /// accent tint, and VoiceOver reads them aloud as their CLDR name.
+    var symbolName: String {
+        switch self {
+        case .info:       return "info.circle"
+        case .request:    return "arrow.up.circle"
+        case .response:   return "arrow.down.circle"
+        case .parseEvent: return "scope"
+        case .error:      return "xmark.octagon"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .info:       return DSColor.textSecondary
+        case .request:    return DSColor.accent
+        case .response:   return DSColor.success
+        case .parseEvent: return DSColor.warning
+        case .error:      return DSColor.destructive
+        }
+    }
+}
+
+#Preview {
+    BookSourceDebugView()
 }

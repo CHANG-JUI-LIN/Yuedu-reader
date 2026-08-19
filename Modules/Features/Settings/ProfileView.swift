@@ -16,6 +16,9 @@ struct SettingsView: View {
     @State private var showLegadoMigration = false
     @State private var showTTSSettings = false
     @State private var showNetworkSettings = false
+    #if DEBUG
+    @State private var autoOpenDiagnostics = false
+    #endif
     private let feedbackEmail = "r3212239269@gmail.com"
     private let officialQQGroupID = "1107613783"
     private let telegramGroupURL = URL(string: "https://t.me/+ZWmmgMwwJ3JiN2Rl")
@@ -180,6 +183,18 @@ struct SettingsView: View {
                     }
                     .interfaceSectionSurface()
 
+                    // ── Advanced ──
+                    Section(header: Text(localized("進階"))) {
+                        NavigationLink {
+                            DiagnosticsView()
+                        } label: {
+                            Label(localized("診斷與回報"), systemImage: "stethoscope")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                        }
+                    }
+                    .interfaceSectionSurface()
+
                     // ── About ──
                     Section(header: Text(localized("關於"))) {
                         NavigationLink {
@@ -210,11 +225,25 @@ struct SettingsView: View {
                 }
             .themedAppSurface(for: .settings)
             .navigationTitle(localized("設定"))
-            .toolbarTitleDisplayModeInlineLarge()
+            .toolbarTitleDisplayModeInlineLargeOrInline()
             .navigationDestination(isPresented: pushedSourceListBinding) {
                 BookSourceListView(embedsNavigationStack: false)
                     .environmentObject(store)
             }
+            #if DEBUG
+            // Screenshot/driver hook: `-open-diagnostics` pushes 診斷與回報 straight
+            // from launch, so its appearance can be inspected without driving the tab
+            // bar. Same shape as the `-browser-overlay` launch flags in
+            // `yuedu_appApp.init()`, and compiled out of Release.
+            .navigationDestination(isPresented: $autoOpenDiagnostics) {
+                DiagnosticsView()
+            }
+            .onAppear {
+                if ProcessInfo.processInfo.arguments.contains("-open-diagnostics") {
+                    autoOpenDiagnostics = true
+                }
+            }
+            #endif
             .sheet(isPresented: sheetSourceListBinding) {
                 BookSourceListView()
                     .environmentObject(store)

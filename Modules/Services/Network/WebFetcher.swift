@@ -57,11 +57,9 @@ actor WebFetcher {
             headers: headers, baseURL: baseURL, bodyCharset: bodyCharset
         )
 
-        Task { @MainActor in
-            WebCrawlerDebugger.shared.logRequest(
-                url: url.absoluteString, method: method, headers: request.allHTTPHeaderFields ?? [:]
-            )
-        }
+        WebCrawlerDebugger.logRequest(
+            url: url.absoluteString, method: method, headers: request.allHTTPHeaderFields ?? [:]
+        )
 
         let host = url.host ?? "default"
         let fetchStart = CFAbsoluteTimeGetCurrent()
@@ -100,13 +98,11 @@ actor WebFetcher {
                 )
             }
 
-            Task { @MainActor in
-                WebCrawlerDebugger.shared.logResponse(
-                    url: url.absoluteString,
-                    statusCode: (response as? HTTPURLResponse)?.statusCode ?? 200,
-                    htmlBody: html
-                )
-            }
+            WebCrawlerDebugger.logResponse(
+                url: url.absoluteString,
+                statusCode: (response as? HTTPURLResponse)?.statusCode ?? 200,
+                htmlBody: html
+            )
             ReaderTelemetry.shared.log(
                 "fetch_done",
                 attributes: [
@@ -119,9 +115,7 @@ actor WebFetcher {
             return html
 
         } catch {
-            Task { @MainActor in
-                WebCrawlerDebugger.shared.logError(error, url: url.absoluteString)
-            }
+            WebCrawlerDebugger.logError(error, url: url.absoluteString)
             throw error
         }
     }
@@ -208,9 +202,7 @@ actor WebFetcher {
     ) async throws -> String {
         let isCFError = (statusCode == 503 || statusCode == 403) && allowCFChallenge
         if isCFError {
-            Task { @MainActor in
-                WebCrawlerDebugger.shared.logError(FetchError.httpError(statusCode), url: url.absoluteString)
-            }
+            WebCrawlerDebugger.logError(FetchError.httpError(statusCode), url: url.absoluteString)
             guard let challengeHandler = cloudflareChallengeHandler else {
                 throw FetchError.cloudflareChallengeRequired(url.absoluteString)
             }
@@ -220,9 +212,7 @@ actor WebFetcher {
         }
 
         let err = FetchError.httpError(statusCode)
-        Task { @MainActor in
-            WebCrawlerDebugger.shared.logError(err, url: url.absoluteString)
-        }
+        WebCrawlerDebugger.logError(err, url: url.absoluteString)
         ReaderTelemetry.shared.log(
             "fetch_error",
             attributes: [

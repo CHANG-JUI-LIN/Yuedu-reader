@@ -2296,41 +2296,6 @@ final class CoreTextImagePreviewController: UIViewController, UIScrollViewDelega
 }
 extension CoreTextPageViewController: CoreTextReadingPositionProviding {}
 
-/// Snapshot ViewController for cross-chapter page-turn animation handoff.
-/// Displays a pre-rendered UIImage; the Coordinator swaps it out for the actual CoreTextPageViewController after the animation completes.
-final class SnapshotPageViewController: UIViewController {
-    private let imageView = UIImageView()
-    private(set) var globalPageIndex: Int
-    private(set) var coreTextReadingPosition: CoreTextReadingPosition?
-
-    init(
-        image: UIImage,
-        globalPage: Int,
-        backgroundColor: UIColor,
-        readingPosition: CoreTextReadingPosition? = nil
-    ) {
-        self.globalPageIndex = globalPage
-        self.coreTextReadingPosition = readingPosition
-        super.init(nibName: nil, bundle: nil)
-        imageView.image = image
-        imageView.contentMode = .scaleAspectFill
-        imageView.clipsToBounds = true
-        view.backgroundColor = backgroundColor
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        imageView.frame = view.bounds
-        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(imageView)
-    }
-}
-
-extension SnapshotPageViewController: PageIndexProviding {}
-extension SnapshotPageViewController: CoreTextReadingPositionProviding {}
-
 /// Mirrored back of the same logical page for UIKit's double-sided curl.
 final class PageBackViewController: UIViewController {
     let virtualIndex: Int

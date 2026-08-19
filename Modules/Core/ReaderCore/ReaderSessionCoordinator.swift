@@ -84,8 +84,8 @@ final class ReaderSessionCoordinator: ObservableObject {
         return [.clearExternalTarget]
     }
 
-    func beginInteractivePageTransition() {
-        transitionQueue.beginInteractiveTransition()
+    func beginInteractivePageTransition(target: Int? = nil) {
+        transitionQueue.beginInteractiveTransition(target: target)
     }
 
     func resetPageTransitionQueue() {

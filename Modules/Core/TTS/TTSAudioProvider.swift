@@ -183,6 +183,51 @@ enum TTSSourceJSONParser {
     }
 }
 
+/// Byte-level judgements about a TTS provider's response body, shared by the provider that
+/// fetches it and the engine that plays it. One place, because both had to agree on what
+/// counts as audio and neither could see the other's answer.
+enum TTSAudioPayload {
+    /// Whether the bytes open with a container `AVAudioFile` can actually decode.
+    ///
+    /// The same magic numbers `TTSChunkAudioPlayer.fileExtension(for:)` reads to pick a file
+    /// extension — it just never used them to say no, defaulting anything unrecognised to
+    /// "mp3" and letting AVFoundation discover the truth at playback time. Deciding it here
+    /// keeps a bad payload out of the segment cache, so the failure is attributed to the
+    /// request that produced it rather than to a segment several minutes of audio later.
+    static func looksLikeAudioContainer(_ data: Data) -> Bool {
+        let header = [UInt8](data.prefix(12))
+        guard header.count >= 12 else { return false }
+        // RIFF….WAVE
+        if header[0] == 0x52, header[1] == 0x49, header[2] == 0x46, header[3] == 0x46 { return true }
+        // ….ftyp (MPEG-4 / m4a / aac)
+        if header[4] == 0x66, header[5] == 0x74, header[6] == 0x79, header[7] == 0x70 { return true }
+        // fLaC
+        if header[0] == 0x66, header[1] == 0x4C, header[2] == 0x61, header[3] == 0x43 { return true }
+        // OggS
+        if header[0] == 0x4F, header[1] == 0x67, header[2] == 0x67, header[3] == 0x53 { return true }
+        // ID3-tagged MP3
+        if header[0] == 0x49, header[1] == 0x44, header[2] == 0x33 { return true }
+        // Bare MPEG audio frame sync (11 set bits)
+        if header[0] == 0xFF, header[1] & 0xE0 == 0xE0 { return true }
+        // AIFF/AIFC
+        if header[0] == 0x46, header[1] == 0x4F, header[2] == 0x52, header[3] == 0x4D { return true }
+        // CAF
+        if header[0] == 0x63, header[1] == 0x61, header[2] == 0x66, header[3] == 0x66 { return true }
+        return false
+    }
+
+    /// Hex plus printable ASCII of the first bytes. On a device this is the only record of
+    /// what a provider actually sent when it did not send audio — an error page, a JSON
+    /// quota notice, a truncated body all look identical in a decode failure otherwise.
+    static func diagnosticHead(of data: Data, limit: Int = 32) -> String {
+        let head = [UInt8](data.prefix(limit))
+        let hex = head.map { String(format: "%02x", $0) }.joined()
+        let ascii = String(head.map { (0x20...0x7E).contains($0) ? Character(UnicodeScalar($0)) : "." })
+        return "bytes=\(data.count) hex=\(hex) ascii=\(ascii)"
+    }
+
+}
+
 protocol TTSAudioProvider: AnyObject {
     var displayName: String { get }
     func audioData(for text: String, title: String, rate: Float) async throws -> Data
@@ -322,6 +367,9 @@ enum TTSAudioProviderError: LocalizedError {
     case emptyData
     case badStatus(Int)
     case responsePostProcessingFailed
+    /// 200 OK, not obviously text, but not a container AVFoundation can open either —
+    /// a truncated body, or a format the provider was not asked for.
+    case unrecognisedAudioPayload
 
     var errorDescription: String? {
         switch self {
@@ -339,6 +387,8 @@ enum TTSAudioProviderError: LocalizedError {
             return "TTS provider returned HTTP \(status)"
         case .responsePostProcessingFailed:
             return "TTS provider response did not contain usable audio data"
+        case .unrecognisedAudioPayload:
+            return "TTS provider response was not recognisable audio"
         }
     }
 }
@@ -420,9 +470,22 @@ final class CustomHTTPProvider: TTSAudioProvider {
                 ttsLog("[TTS][Provider] loginCheckJs extracted \(processed.count) bytes of audio")
                 return processed
             }
-            if responseLooksLikeTextPayload(data: data, contentType: responseContentType) {
-                throw TTSAudioProviderError.responsePostProcessingFailed
-            }
+        }
+
+        // Applies to EVERY source, not just those carrying a `loginCheckJs`. This check used
+        // to live inside that branch, so for the ordinary source a rate-limit or quota page
+        // served with HTTP 200 was accepted as audio, cached, and only blew up in
+        // `AVAudioFile(forReading:)` several segments later as
+        // `kAudioFileError_InvalidFile` ('dta?', 1685348671). Three of those in a row ends
+        // the listening session — the "朗讀失敗：第 N 段語音無法下載" report. Rejecting here
+        // instead lets the existing retry → skip → three-strikes policy do its job.
+        if responseLooksLikeTextPayload(data: data, contentType: responseContentType) {
+            ttsLog("[TTS][Provider] rejected non-audio payload contentType=\(responseContentType) head=\(TTSAudioPayload.diagnosticHead(of: data))")
+            throw TTSAudioProviderError.responsePostProcessingFailed
+        }
+        if !TTSAudioPayload.looksLikeAudioContainer(data) {
+            ttsLog("[TTS][Provider] rejected unrecognised audio container contentType=\(responseContentType) bytes=\(data.count) head=\(TTSAudioPayload.diagnosticHead(of: data))")
+            throw TTSAudioProviderError.unrecognisedAudioPayload
         }
 
         return data

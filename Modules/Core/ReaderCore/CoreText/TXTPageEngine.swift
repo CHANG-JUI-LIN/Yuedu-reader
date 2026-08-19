@@ -8,7 +8,6 @@ final class TXTPageEngine: PageRenderingProvider {
     private(set) var currentPage: Int = 0
 
     private(set) var layouts: [Int: CoreTextPaginator.ChapterLayout] = [:]
-    private var chapterSnapshots: [Int: UIImage] = [:]
     private var spinePageOffsets: [Int] = []
     private(set) var renderSize: CGSize = .zero
     private var preloadTasks: [Int: Task<Void, Never>] = [:]
@@ -114,16 +113,7 @@ final class TXTPageEngine: PageRenderingProvider {
                 readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
             )
         }
-        chapterSnapshots.removeAll()
         onChapterReady?(nil)
-        for spineIndex in layouts.keys {
-            if let layout = layouts[spineIndex] {
-                Task { [weak self] in
-                    guard let self else { return }
-                    self.chapterSnapshots[spineIndex] = self.renderImage(layout: layout, pageIndex: 0)
-                }
-            }
-        }
     }
 
     func start(renderSize: CGSize, bookId: String) async {
@@ -207,6 +197,24 @@ final class TXTPageEngine: PageRenderingProvider {
         return spineIndex
     }
 
+    // MARK: - PagePositionWalking
+
+    func positionAfter(_ position: CoreTextReadingPosition) -> CoreTextReadingPosition? {
+        CoreTextReadingPositionMapper.positionAfter(
+            position,
+            layouts: layouts,
+            chapterCount: chapterCount
+        )
+    }
+
+    func positionBefore(_ position: CoreTextReadingPosition) -> CoreTextReadingPosition? {
+        CoreTextReadingPositionMapper.positionBefore(
+            position,
+            layouts: layouts,
+            chapterCount: chapterCount
+        )
+    }
+
     func readingPosition(forPage page: Int) -> CoreTextReadingPosition? {
         let (spineIndex, localPage) = localPosition(for: page)
         guard let layout = layouts[spineIndex],
@@ -260,7 +268,6 @@ final class TXTPageEngine: PageRenderingProvider {
     func notifyChapterDataChanged(at spineIndex: Int) async {
         guard (0..<chapterCount).contains(spineIndex) else { return }
         layouts.removeValue(forKey: spineIndex)
-        chapterSnapshots.removeValue(forKey: spineIndex)
         await preloadChapter(at: spineIndex)
         rebuildPageOffsets()
         onChapterReady?(spineIndex)
@@ -305,9 +312,6 @@ final class TXTPageEngine: PageRenderingProvider {
             readerStyleAppearance: renderSettings.readerStyleAppearance,
             readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
         )
-        if let l = layouts[spineIndex], !l.pageRanges.isEmpty {
-            chapterSnapshots[spineIndex] = renderImage(layout: l, pageIndex: 0)
-        }
         rebuildPageOffsets()
     }
 
@@ -317,7 +321,6 @@ final class TXTPageEngine: PageRenderingProvider {
         let currentRecord = CharOffsetRecord(bookId: currentBookId ?? "", spineIndex: charOffset(forPage: currentPage).spineIndex, charOffset: charOffset(forPage: currentPage).charOffset, timestamp: Date())
         
         layouts.removeAll()
-        chapterSnapshots.removeAll()
         rebuildPageOffsets()
         
         await preloadChapter(at: currentRecord.spineIndex)
@@ -332,7 +335,6 @@ final class TXTPageEngine: PageRenderingProvider {
         let keep = Set(max(0, spine - 1)...min(spine + 1, chapterCount - 1))
         for key in layouts.keys where !keep.contains(key) {
             layouts.removeValue(forKey: key)
-            chapterSnapshots.removeValue(forKey: key)
         }
         rebuildPageOffsets()
 
@@ -362,18 +364,6 @@ final class TXTPageEngine: PageRenderingProvider {
             if spinePageOffsets[mid] <= globalPage { lo = mid } else { hi = mid - 1 }
         }
         return (lo, max(0, globalPage - spinePageOffsets[lo]))
-    }
-
-    func snapshotViewController(at index: Int) -> UIViewController? {
-        let (spine, local) = localPosition(for: index)
-        guard local == 0, let image = chapterSnapshots[spine] else { return nil }
-        let pos = CoreTextReadingPosition(spineIndex: spine, charOffset: 0)
-        return SnapshotPageViewController(
-            image: image,
-            globalPage: index,
-            backgroundColor: themeBackgroundColor,
-            readingPosition: pos
-        )
     }
 
     func plainText(forPage page: Int) -> String {

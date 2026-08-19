@@ -36,12 +36,30 @@ extension ReaderView {
             if newState == .ready {
                 prefetchAdjacentChapters(around: chapterIndex)
             }
+            if newState == .cancelled {
+                reissueCancelledChapterFetch(chapterIndex)
+            }
             if case .failed = newState,
                manuallyRefreshingChapterIndex == chapterIndex {
                 manuallyRefreshingChapterIndex = nil
             }
             applyChapterRefreshAction(for: chapterIndex, newState: newState)
         }
+    }
+
+    /// A cancelled fetch answered nothing, so the chapter is still wanted. Ask again rather
+    /// than leaving the reader on a loading surface nothing will ever resolve — that was the
+    /// second way 載入中 became permanent, and unlike the placeholder one it left no trace.
+    ///
+    /// This cannot loop: `ensureChapterReady` returns early while a request is in flight, and
+    /// the only remaining canceller is a same-chapter priority upgrade, which installs its
+    /// replacement in the same step. Limited to chapters somebody is actually waiting on —
+    /// a cancelled prefetch for a chapter nobody has reached is work that should stay dropped.
+    func reissueCancelledChapterFetch(_ chapterIndex: Int) {
+        guard chapterIndex == currentChapterIndex || chapterIndex == ttsPendingChapterIndex
+        else { return }
+        AppLogger.render("⟐ chapter fetch cancelled, re-requesting ch=\(chapterIndex)")
+        ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
     }
 
     func applyChapterRefreshAction(for chapterIndex: Int, newState: ChapterLoadState) {
@@ -107,11 +125,41 @@ extension ReaderView {
         )
     }
 
+    /// Hands a chapter's newly available content to the renderer, then — only for the
+    /// chapter on screen — asks for the visible page to be re-placed against it.
+    ///
+    /// Supply and visible refresh are deliberately separate. A refresh transaction is
+    /// latest-wins: `beginRefreshTransaction` cancels the previous preparation task and
+    /// calls `engine.cancelPendingWork()`. Driving the supply from inside one therefore let
+    /// a chapter's arrival cancel its neighbour's mid-load — and `notifyChapterDataChanged`
+    /// clears the old layout *before* rebuilding it, so the victim was left with no layout,
+    /// no `onChapterReady`, and nothing that would ever ask again. The visible chapter then
+    /// sat on its 載入中 placeholder until the book was reopened or the chapter re-entered
+    /// from another one. Opening an online book triggers this every time: N, N-1 and N+1
+    /// land together and each used to submit its own refresh.
+    ///
+    /// The scroll engine was already fixed this way; this is the paged half of the rule.
     func submitChapterContentRefresh(chapterIndex: Int) {
         guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else { return }
+        let renderer = epubRenderer
+        let pagedEngine = epubRenderer.engine
+        // Snapshot before any await: the request carries position, settings and viewport
+        // as they are at the moment the chapter arrived.
         let request = chapterContentRefreshRequest(chapterIndex: chapterIndex)
+        let isVisibleChapter = chapterIndex == currentChapterIndex
         Task { @MainActor in
-            let result = await epubRenderer.refresh(request)
+            // Per-chapter, idempotent, outside every transaction: no other chapter can
+            // cancel it.
+            if let pagedEngine {
+                await pagedEngine.notifyChapterDataChanged(at: chapterIndex)
+            }
+            guard isVisibleChapter else {
+                if manuallyRefreshingChapterIndex == chapterIndex {
+                    manuallyRefreshingChapterIndex = nil
+                }
+                return
+            }
+            let result = await renderer.refresh(request)
             guard manuallyRefreshingChapterIndex == chapterIndex else { return }
             switch result {
             case .completed, .failed:

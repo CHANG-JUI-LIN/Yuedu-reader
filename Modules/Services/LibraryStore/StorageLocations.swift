@@ -132,6 +132,20 @@ enum StorageLocations {
         directory("txt_chapter_cache")
     }
 
+    /// Diagnostic logs shown in 設定 → 診斷與回報, and the crash/hang payloads
+    /// MetricKit hands back on the launch after the event.
+    ///
+    /// Excluded from backup on purpose. Application Support is backed up by
+    /// default, and this directory is pure telemetry the user can regenerate by
+    /// using the app — paying backup bandwidth and iCloud quota for it would be
+    /// strictly a cost. It also keeps the log out of the still-open
+    /// "auto-sync dirtied 1 GB" investigation's blast radius.
+    static var diagnostics: URL {
+        let url = directory("diagnostics")
+        excludeFromBackup(url)
+        return url
+    }
+
     // MARK: - Helpers
 
     /// Every internal subdirectory is created on first access, so callers never have
@@ -140,6 +154,22 @@ enum StorageLocations {
         let url = support.appendingPathComponent(name, isDirectory: true)
         ensureDirectory(url)
         return url
+    }
+
+    /// Marks a directory as regenerable so it never enters an iCloud or iTunes
+    /// backup. Idempotent, and cheap enough to call on every access: the resource
+    /// value is already cached by the URL machinery once set.
+    private static func excludeFromBackup(_ url: URL) {
+        do {
+            let current = try url.resourceValues(forKeys: [.isExcludedFromBackupKey])
+            guard current.isExcludedFromBackup != true else { return }
+            var mutable = url
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try mutable.setResourceValues(values)
+        } catch {
+            AppLogger.error("StorageLocations could not exclude \(url.lastPathComponent) from backup", error: error)
+        }
     }
 
     private static func ensureDirectory(_ url: URL) {

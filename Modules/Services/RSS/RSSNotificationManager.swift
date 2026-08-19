@@ -17,7 +17,6 @@ final class RSSNotificationManager {
         static let maxBodyLength = 300
     }
 
-    private let logger = Logger(subsystem: "com.yuedu.rss", category: "NotificationManager")
     private var isStarted = false
 
     private init() {}
@@ -191,6 +190,10 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        // Also handled by the scenePhase observer in `yuedu_appApp`; both fire, and
+        // the write is idempotent. Keeping this one means the flush still happens if
+        // the SwiftUI scene is torn down before its observer runs.
+        DiagnosticLog.shared.noteEnteredBackground()
         RSSNotificationManager.shared.updateBadge(unreadCount: RSSStore.shared.totalUnreadCount())
         scheduleBackgroundFeedRefresh()
     }
@@ -210,8 +213,10 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            Logger(subsystem: "com.yuedu.rss", category: "BackgroundTask")
-                .warning("Failed to schedule background refresh: \(error.localizedDescription)")
+            AppLogger.network(
+                "Failed to schedule background refresh: \(error.localizedDescription)",
+                level: .warning
+            )
         }
     }
 

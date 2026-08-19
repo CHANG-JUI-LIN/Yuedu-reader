@@ -28,7 +28,10 @@ public enum ReaderChapterPresentation {
         if isContentAvailable { return .hidden }
         guard let loadState = loadState else { return .loading }
         switch loadState {
-        case .idle, .loading:
+        case .idle, .loading, .cancelled:
+            // `.cancelled` shows the loading surface, not a failure: the fetch was
+            // preempted rather than answered, and `handleChapterStateChanges` re-requests
+            // it. Painting 章節載入失敗 here is the bug users worked around by refreshing.
             return .loading
         case .failed(let reason):
             return .failed(message: reason)
@@ -40,21 +43,6 @@ public enum ReaderChapterPresentation {
         }
     }
 
-    public static func refreshAction(
-        changedChapterIndex: Int,
-        currentChapterIndex: Int,
-        usesCoreText: Bool,
-        newState: ChapterLoadState?,
-        isContentAvailable: Bool
-    ) -> ReaderChapterRefreshAction {
-        guard changedChapterIndex == currentChapterIndex else { return .none }
-        guard isContentAvailable, newState == .ready else { return .none }
-        if usesCoreText {
-            return .notifyChapterDataChanged(currentChapterIndex)
-        } else {
-            return .rebuildPages
-        }
-    }
 
     /// Reconciles chapter-entry state with the renderer.
     ///

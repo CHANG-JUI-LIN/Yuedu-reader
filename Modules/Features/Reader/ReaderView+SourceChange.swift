@@ -820,6 +820,11 @@ extension ReaderView {
             ttsLog("[TTS][Reader] chapter wait failed chapter=\(chapterIndex) reason=\(reason)")
             ttsPendingChapterIndex = nil
             ttsCoordinator.abortWaitingForNextChapter(reason: reason)
+        case .cancelled:
+            // Preempted, not refused. `reissueCancelledChapterFetch` asks again; ending the
+            // session here stopped narration at a chapter boundary over a fetch that was
+            // never carried to a verdict — the lock-screen "stops for no reason" report.
+            ttsLog("[TTS][Reader] chapter wait fetch cancelled chapter=\(chapterIndex); awaiting re-request")
         case .idle, .loading:
             break
         }

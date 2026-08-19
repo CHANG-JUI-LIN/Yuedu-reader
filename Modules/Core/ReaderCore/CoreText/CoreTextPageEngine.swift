@@ -613,7 +613,14 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         Task { [weak self] in
             guard let self else { return }
             await self.preloadChapter(at: spineIndex)
-            guard _layouts[spineIndex] != nil else { return }
+            guard _layouts[spineIndex] != nil else {
+                // The placeholder this page is standing in for will not be replaced by
+                // this attempt. Legitimate while an online chapter is still being
+                // fetched; anything else is the 載入中 page getting stuck, and this is
+                // the only line that says which.
+                AppLogger.render("[FlipTrace] pageVC placeholder unresolved spine=\(spineIndex) pending=\(preloadTasks.keys.sorted())")
+                return
+            }
             self.onChapterReady?(spineIndex)
         }
         return placeholder
@@ -650,6 +657,24 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
             for: position,
             layouts: layouts,
             spinePageOffsets: spinePageOffsets
+        )
+    }
+
+    // MARK: - PagePositionWalking
+
+    func positionAfter(_ position: CoreTextReadingPosition) -> CoreTextReadingPosition? {
+        CoreTextReadingPositionMapper.positionAfter(
+            position,
+            layouts: layouts,
+            chapterCount: chapterCount
+        )
+    }
+
+    func positionBefore(_ position: CoreTextReadingPosition) -> CoreTextReadingPosition? {
+        CoreTextReadingPositionMapper.positionBefore(
+            position,
+            layouts: layouts,
+            chapterCount: chapterCount
         )
     }
 
@@ -697,7 +722,10 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         Task { [weak self] in
             guard let self else { return }
             await self.preloadChapter(at: position.spineIndex)
-            guard _layouts[position.spineIndex] != nil else { return }
+            guard _layouts[position.spineIndex] != nil else {
+                AppLogger.render("[FlipTrace] positionVC placeholder unresolved position=\(position) pending=\(preloadTasks.keys.sorted())")
+                return
+            }
             self.onChapterReady?(position.spineIndex)
         }
         return placeholder
@@ -711,18 +739,38 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
             AppLogger.render("[FlipTrace] preload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
             return
         }
-        if let existing = preloadTasks[spineIndex] {
-            AppLogger.render("[FlipTrace] preload await existing spine=\(spineIndex) generation=\(layoutGeneration)")
-            await existing.value
-            return
-        }
 
-        let generation = layoutGeneration
-        let task = installPreloadTask(
-            spineIndex: spineIndex,
-            generation: generation
-        )
-        await task.value
+        // Joining an in-flight task used to end the method outright, which reported
+        // success with no layout whenever that task had been abandoned by
+        // `cancelPendingWork` — it bumps the generation, and every task built for the
+        // old one returns without laying anything out. Callers read that as "nothing
+        // more to do": a placeholder's notify `Task` gives up, TTS stops waiting, and
+        // nothing ever asks again, so the 載入中 page stays up until the chapter is
+        // re-entered. Retry against the generation that superseded us instead.
+        //
+        // Bounded at two rounds: a retry is justified only by a *newer* generation, and
+        // an engine being invalidated faster than it can paginate is better served by an
+        // honest "no layout" than by a loop that never settles.
+        for _ in 0..<2 {
+            let generation = layoutGeneration
+            if let existing = preloadTasks[spineIndex] {
+                AppLogger.render("[FlipTrace] preload await existing spine=\(spineIndex) generation=\(generation)")
+                await existing.value
+            } else {
+                await installPreloadTask(
+                    spineIndex: spineIndex,
+                    generation: generation
+                ).value
+            }
+
+            // Laid out — done.
+            guard _layouts[spineIndex]?.isPartial != false else { return }
+            // Still nothing, but nobody superseded us: the chapter genuinely cannot be
+            // laid out yet (an online chapter whose content has not been fetched). That
+            // is the fetch's job, not ours; retrying here would spin.
+            guard layoutGeneration != generation else { return }
+            AppLogger.render("[FlipTrace] preload retry superseded spine=\(spineIndex) oldGeneration=\(generation) generation=\(layoutGeneration)")
+        }
     }
 
     func notifyChapterDataChanged(at spineIndex: Int) async {
@@ -764,6 +812,27 @@ _layouts[spineIndex] = nil
     /// first-page pass is installed (and shown) while full pagination continues
     /// in the background. Short chapters paginate fully in one pass.
     private static let partialFirstPageThreshold = 20_000
+
+    /// The single door a chapter layout comes through.
+    ///
+    /// Installing a layout and announcing it are one act, not two. Every consumer of
+    /// `layouts` — the paged data source, TTS text extraction, progress — learns that a
+    /// chapter became renderable only through `onChapterReady`; a layout that lands
+    /// silently is invisible to all of them. Two of the three exits that installed one
+    /// used to return without announcing (a paginator-cache hit, and the full-pagination
+    /// pass), so a chapter laid out while its placeholder was on screen stayed a
+    /// placeholder until something unrelated rebuilt the page — leaving the book, or
+    /// re-entering the chapter from another one. Keeping the three steps together makes
+    /// forgetting the announcement impossible rather than merely unlikely.
+    private func installLayout(
+        _ layout: CoreTextPaginator.ChapterLayout,
+        for spineIndex: Int
+    ) {
+        _layouts[spineIndex] = layout
+        generateSnapshot(for: spineIndex)
+        rebuildPageOffsets()
+        onChapterReady?(spineIndex)
+    }
 
     private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {
         guard (0..<chapterCount).contains(spineIndex),
@@ -840,9 +909,7 @@ _layouts[spineIndex] = nil
                     readerStyleAppearance: renderSettings.readerStyleAppearance,
                     readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
                 )
-                _layouts[spineIndex] = firstPageLayout
-                generateSnapshot(for: spineIndex)
-                rebuildPageOffsets()
+                installLayout(firstPageLayout, for: spineIndex)
                 if firstPageLayout.isPartial {
                     SourcePerfTrace.record(
                         "coreText.firstPage", "spine=\(spineIndex)", since: firstPageStart
@@ -859,7 +926,6 @@ _layouts[spineIndex] = nil
                         )
                     )
                     AppLogger.render("[FlipTrace] preload partial spine=\(spineIndex) estPages=\(firstPageLayout.displayPageCount) generation=\(generation)")
-                    onChapterReady?(spineIndex)
                 } else {
                     // Paginator cache hit — the layout is already complete.
                     ReaderPerfTrace.end(
@@ -891,17 +957,18 @@ _layouts[spineIndex] = nil
             since: fullLayoutStart
         )
 
-        _layouts[spineIndex] = layout.withUpdatedAppearance(
-            textColor: themeTextColor,
-            backgroundColor: themeBackgroundColor,
-            readerBackgroundImage: currentReaderBackgroundImage(),
-            regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
-            readerStyleAppearance: renderSettings.readerStyleAppearance,
-            readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
+        installLayout(
+            layout.withUpdatedAppearance(
+                textColor: themeTextColor,
+                backgroundColor: themeBackgroundColor,
+                readerBackgroundImage: currentReaderBackgroundImage(),
+                regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
+                readerStyleAppearance: renderSettings.readerStyleAppearance,
+                readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
+            ),
+            for: spineIndex
         )
         AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
-        generateSnapshot(for: spineIndex)
-        rebuildPageOffsets()
     }
 
     func invalidateLayout(newSize: CGSize) async {
@@ -1012,28 +1079,6 @@ _layouts.removeAll()
         if localPage < threshold && spineIndex > 0 && layouts[spineIndex - 1] == nil {
             schedulePreloadChapter(at: spineIndex - 1)
         }
-    }
-
-    func snapshotViewController(at index: Int) -> UIViewController? {
-        let (spineIndex, localPage) = localPosition(for: index)
-        // Snapshots are only used for chapter boundary handoff. Page 0 key is (spineIndex << 1)
-        guard localPage == 0 else {
-            AppLogger.render("[FlipTrace] snapshotVC MISS nonFirstPage page=\(index) spine=\(spineIndex) local=\(localPage)")
-            return nil
-        }
-        let key = NSNumber(value: (spineIndex << 1))
-        guard let snapshot = chapterSnapshots.object(forKey: key) else {
-            AppLogger.render("[FlipTrace] snapshotVC MISS noSnapshot page=\(index) spine=\(spineIndex) key=\(key) layouts=\(_layouts.keys.sorted())")
-            return nil
-        }
-        AppLogger.render("[FlipTrace] snapshotVC HIT page=\(index) spine=\(spineIndex) key=\(key)")
-        let bgColor = _layouts[spineIndex]?.backgroundColor ?? .systemBackground
-        return SnapshotPageViewController(
-            image: snapshot,
-            globalPage: index,
-            backgroundColor: bgColor,
-            readingPosition: readingPosition(forPage: index)
-        )
     }
 
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {

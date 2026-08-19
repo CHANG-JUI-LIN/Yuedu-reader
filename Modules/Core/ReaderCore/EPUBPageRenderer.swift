@@ -142,7 +142,14 @@ final class EPUBPageRenderer: ObservableObject {
                     content: nil
                 )
             case .chapterContent(let chapterIndex):
-                await engine.notifyChapterDataChanged(at: chapterIndex)
+                // Chapter *supply* deliberately does not happen here — same rule as
+                // `prepareScroll`. This closure runs inside a latest-wins transaction whose
+                // successor cancels it and calls `cancelPendingWork()`, so loading a chapter
+                // from in here let one chapter's arrival kill another's mid-load. Because
+                // `notifyChapterDataChanged` clears the layout before rebuilding it, the
+                // victim was left with nothing and no announcement, stranding the visible
+                // chapter on its placeholder forever. `submitChapterContentRefresh` feeds
+                // the engine directly and this intent only re-places the visible page.
                 coverage = RefreshRevisionCoverage(
                     layout: nil,
                     appearance: nil,

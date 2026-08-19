@@ -52,7 +52,7 @@ struct ExploreHomeView: View {
             .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
             .pageBackgroundToolbar(for: .explore)
             .navigationTitle(localized("探索"))
-            .toolbarTitleDisplayModeInlineLarge()
+            .toolbarTitleDisplayModeInlineLargeOrInline()
             .toolbar {
                 if tab == .discover, discover.hasExploreSource {
                     ToolbarItem(placement: .topBarTrailing) { sourceMenu }

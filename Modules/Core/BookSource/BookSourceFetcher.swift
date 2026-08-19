@@ -215,42 +215,145 @@ struct CachedChapterMetadata: Codable {
 
 // MARK: - Debugger for testing book sources during development
 
-/// A global debugging environment for BookSourceFetcher to broadcast events
-class WebCrawlerDebugger: ObservableObject {
+/// Captures the HTTP exchanges (and optionally the rule matches) behind one book
+/// source, for 書源除錯大師.
+///
+/// **Off by default and cheap when off.** The capture points sit on the request path
+/// of every source fetch and on every rule evaluation — `logParse` fires once per
+/// matched rule, which during an aggregate search is tens of thousands of calls. The
+/// gate below is therefore read *before* anything is allocated: the static entry
+/// points take one uncontended lock and return. They previously took a
+/// `Task { @MainActor in … }` at each call site, which allocated a task per request
+/// and per rule match to reach four empty method bodies.
+///
+/// Published state is `@MainActor`; the gate is not. That split is the point — a
+/// background parse thread must never touch `@Published`.
+@MainActor
+final class WebCrawlerDebugger: ObservableObject {
+
     static let shared = WebCrawlerDebugger()
 
-    struct LogEntry: Identifiable {
+    /// Entries kept. Bounded because a single aggregate search can produce thousands,
+    /// and the interesting ones are always the most recent.
+    private static let entryLimit = 500
+    /// Response bodies are truncated to this before being held. A chapter body can be
+    /// megabytes; the head is what identifies a wrong response.
+    private static let bodyLimit = 8 * 1024
+
+    struct LogEntry: Identifiable, Sendable {
         let id = UUID()
         let timestamp = Date()
         let type: LogType
         let message: String
         let url: String?
-        let metadata: [String: Any]?
+        let detail: Detail?
 
-        enum LogType {
+        enum LogType: String, Sendable, CaseIterable {
             case info
             case request
             case response
             case parseEvent
             case error
         }
+
+        /// Typed rather than `[String: Any]`, which was neither `Sendable` nor
+        /// renderable without casting at the view.
+        enum Detail: Sendable {
+            case headers([String: String])
+            case body(String)
+            case text(String)
+        }
     }
 
-    @Published var logs: [LogEntry] = []
-    @Published var isRecording: Bool = false
+    @Published private(set) var logs: [LogEntry] = []
+
+    @Published var isRecording: Bool = false {
+        didSet { Self.gate.set(network: isRecording) }
+    }
+
+    /// Rule matches are a second, far noisier stream — a single search emits orders
+    /// of magnitude more of them than network exchanges, so leaving them on would
+    /// evict every request from the buffer. Per-rule debugging has its own screen
+    /// (`BookSourceRuleDebugView`); this is here for the cases where you need to see
+    /// a match against the exact response that produced it.
+    @Published var includesParseEvents: Bool = false {
+        didSet { Self.gate.set(parse: includesParseEvents) }
+    }
 
     private init() {}
 
-    @MainActor
     func clear() {
         logs.removeAll()
     }
 
-    func logRequest(url: String, method: String, headers: [String: String]) {}
+    // MARK: - Gate
 
-    func logResponse(url: String, statusCode: Int, htmlBody: String) {}
+    /// The thread-safe half. Two bools, read from every network and parse call.
+    private final class Gate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var network = false
+        private var parse = false
 
-    func logParse(rule: String, matchCount: Int, url: String) {}
+        var isCapturingNetwork: Bool { lock.withLock { network } }
+        var isCapturingParse: Bool { lock.withLock { network && parse } }
 
-    func logError(_ error: Error, url: String? = nil) {}
+        func set(network value: Bool) { lock.withLock { network = value } }
+        func set(parse value: Bool) { lock.withLock { parse = value } }
+    }
+
+    private static let gate = Gate()
+
+    // MARK: - Capture points
+    //
+    // `nonisolated static` so the network and parse layers can call them directly.
+    // Each returns before allocating anything when capture is off.
+
+    nonisolated static func logRequest(url: String, method: String, headers: [String: String]) {
+        guard gate.isCapturingNetwork else { return }
+        append(.init(type: .request, message: method, url: url, detail: .headers(headers)))
+    }
+
+    nonisolated static func logResponse(url: String, statusCode: Int, htmlBody: String) {
+        guard gate.isCapturingNetwork else { return }
+        append(.init(
+            type: .response,
+            message: "HTTP \(statusCode) · \(htmlBody.utf8.count) B",
+            url: url,
+            detail: .body(String(htmlBody.prefix(bodyLimit)))
+        ))
+    }
+
+    nonisolated static func logParse(rule: String, matchCount: Int, url: String) {
+        guard gate.isCapturingParse else { return }
+        append(.init(
+            type: .parseEvent,
+            message: "\(matchCount) match(es) · \(rule)",
+            url: url.isEmpty ? nil : url,
+            detail: nil
+        ))
+    }
+
+    nonisolated static func logError(_ error: Error, url: String? = nil) {
+        guard gate.isCapturingNetwork else { return }
+        append(.init(
+            type: .error,
+            message: error.localizedDescription,
+            url: url,
+            detail: .text(String(describing: error))
+        ))
+    }
+
+    nonisolated static func logInfo(_ message: String, url: String? = nil) {
+        guard gate.isCapturingNetwork else { return }
+        append(.init(type: .info, message: message, url: url, detail: nil))
+    }
+
+    private nonisolated static func append(_ entry: LogEntry) {
+        Task { @MainActor in
+            shared.logs.append(entry)
+            if shared.logs.count > entryLimit {
+                shared.logs.removeFirst(shared.logs.count - entryLimit)
+            }
+        }
+    }
 }

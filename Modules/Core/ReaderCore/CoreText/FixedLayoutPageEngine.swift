@@ -178,9 +178,5 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
         pageViewController(at: max(0, min(position.spineIndex, totalPages - 1)))
     }
 
-    func snapshotViewController(at index: Int) -> UIViewController? {
-        pageViewController(at: max(0, min(index, totalPages - 1)))
-    }
-
     func renderSnapshot(forPage globalPage: Int) -> UIImage? { nil }
 }

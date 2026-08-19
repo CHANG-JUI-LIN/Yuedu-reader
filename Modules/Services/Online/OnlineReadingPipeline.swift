@@ -226,6 +226,15 @@ actor ChapterFetchManager {
         return nil
     }
 
+    /// Errors that mean "this request was torn down", not "this chapter cannot be read".
+    /// `URLError.cancelled` (-999) is how a URLSession task or a WKWebView navigation
+    /// reports the same thing a `CancellationError` does.
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
+    }
+
     func fetchChapter(
         book: ReadingBook,
         chapterIndex: Int,
@@ -319,8 +328,23 @@ actor ChapterFetchManager {
                 generationTokens.removeValue(forKey: taskKey)
                 states[taskKey] = .missing
             } else {
-                let result = try await existing.value
-                return result
+                do {
+                    return try await existing.value
+                } catch let error where Self.isCancellation(error) {
+                    // Someone else's task was torn down. This caller was not cancelled and
+                    // learned nothing about the chapter, yet inheriting that error made it
+                    // report a load failure for a fetch it never owned — the spurious
+                    // 章節載入失敗 that a refresh always cleared. Run our own request instead.
+                    guard !Task.isCancelled else { throw CancellationError() }
+                    AppLogger.parse("⟐ chapterFetch shared task cancelled, restarting", context: [
+                        "index": chapterIndex,
+                    ])
+                    if tasks[taskKey] == existing {
+                        tasks.removeValue(forKey: taskKey)
+                        priorities.removeValue(forKey: taskKey)
+                        generationTokens.removeValue(forKey: taskKey)
+                    }
+                }
             }
         }
 
@@ -329,17 +353,14 @@ actor ChapterFetchManager {
         let myToken = UUID()
         generationTokens[taskKey] = myToken
 
-        // High-priority preemption: on a jump, cancel other in-flight fetches for
-        // the same book to free WKWebView slots.
-        if priority == .jump {
-            let prefix = "\(book.id.uuidString)#"
-            for (otherKey, otherTask) in tasks where otherKey != taskKey && otherKey.hasPrefix(prefix) {
-                otherTask.cancel()
-                tasks.removeValue(forKey: otherKey)
-                generationTokens.removeValue(forKey: otherKey)
-                states[otherKey] = .missing
-            }
-        }
+        // A jump used to cancel every other in-flight fetch for this book "to free
+        // WKWebView slots". It was a workaround for contention the pool already handles —
+        // `acquireWebView` has a waiting queue on top of poolSize × overflowMultiplier
+        // leases — and it was the main manufacturer of cancellations in this pipeline:
+        // every preempted sibling surfaced as 章節載入失敗 on a chapter that fetched fine
+        // when asked again, and stopped narration outright at a chapter boundary. Chapter
+        // fetches are few (the visible chapter plus its neighbours), so queuing is the
+        // correct way to express "wait your turn". Do not reintroduce preemption here.
 
         states[taskKey] = .loading
         if let bookRuntime = book.runtimeVariables, !bookRuntime.isEmpty {
@@ -507,6 +528,19 @@ actor ChapterFetchManager {
             return package
         } catch is CancellationError {
             // Generation token invalidated or task cancelled: clean up without recording failure
+            clearRequestTracking(for: taskKey, token: myToken)
+            throw CancellationError()
+        } catch let error where Self.isCancellation(error) {
+            // -999 from a URLSession task or a WKWebView navigation torn down mid-flight
+            // means exactly what the case above means. Letting it fall through to the
+            // generic handler was worse than a mislabelled state: `handleFetchFailure`
+            // persists a failure artifact, so the cache went on answering 章節載入失敗 for
+            // a chapter that was never actually tried — and it counted against the book's
+            // failure budget. Normalise to `CancellationError` so callers classify it once.
+            AppLogger.parse("⟐ chapterFetch cancelled mid-flight", context: [
+                "index": chapterIndex,
+                "code": (error as? URLError)?.errorCode ?? 0,
+            ])
             clearRequestTracking(for: taskKey, token: myToken)
             throw CancellationError()
         } catch {

@@ -738,6 +738,6 @@ struct DiscoverCategoryView: View {
     return NavigationStack {
         DiscoverShowcaseView(discover: vm)
             .navigationTitle("探索")
-            .toolbarTitleDisplayModeInlineLarge()
+            .toolbarTitleDisplayMode(.inline)
     }
 }

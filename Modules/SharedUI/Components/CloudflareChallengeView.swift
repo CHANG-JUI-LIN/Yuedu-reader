@@ -26,7 +26,7 @@ struct CloudflareChallengeView: View {
                     .edgesIgnoringSafeArea(.bottom)
             }
             .navigationTitle(localized("網站安全驗證"))
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inline)
             .navigationBarItems(leading: Button(localized("放棄")) { onCancel() })
         }
     }

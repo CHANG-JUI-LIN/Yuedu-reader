@@ -2745,20 +2745,10 @@ struct yuedu_appTests {
 
         let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
         await engine.preloadChapter(at: chapterIndex)
-        let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
         let globalPage = await MainActor.run { engine.pageIndex(forSpine: chapterIndex, charOffset: 0) }
-        let snapshotVC = try #require(await MainActor.run { engine.snapshotViewController(at: globalPage) as? SnapshotPageViewController })
-
-        let image = await MainActor.run { () -> UIImage in
-            snapshotVC.view.frame = CGRect(origin: .zero, size: layout.renderSize)
-            snapshotVC.loadViewIfNeeded()
-            let rendered = UIGraphicsImageRenderer(size: layout.renderSize).image { context in
-                snapshotVC.view.drawHierarchy(in: snapshotVC.view.bounds, afterScreenUpdates: true)
-            }
-            if let data = rendered.pngData() {
-                try? data.write(to: URL(fileURLWithPath: "/tmp/part0009-snapshot.png"))
-            }
-            return rendered
+        let image = try #require(await MainActor.run { engine.renderSnapshot(forPage: globalPage) })
+        if let data = image.pngData() {
+            try? data.write(to: URL(fileURLWithPath: "/tmp/part0009-snapshot.png"))
         }
 
         guard let cgImage = image.cgImage,
@@ -2822,15 +2812,7 @@ struct yuedu_appTests {
         let layout = try #require(await MainActor.run { engine.layouts[chapterIndex] })
         let titleRenderable = try #require(layout.blockRenderables[0]?.first)
         let globalPage = await MainActor.run { engine.pageIndex(forSpine: chapterIndex, charOffset: 0) }
-        let snapshotVC = try #require(await MainActor.run { engine.snapshotViewController(at: globalPage) as? SnapshotPageViewController })
-
-        let image = await MainActor.run { () -> UIImage in
-            snapshotVC.view.frame = CGRect(origin: .zero, size: layout.renderSize)
-            snapshotVC.loadViewIfNeeded()
-            return UIGraphicsImageRenderer(size: layout.renderSize).image { _ in
-                snapshotVC.view.drawHierarchy(in: snapshotVC.view.bounds, afterScreenUpdates: true)
-            }
-        }
+        let image = try #require(await MainActor.run { engine.renderSnapshot(forPage: globalPage) })
 
         guard let cgImage = image.cgImage,
               let providerData = cgImage.dataProvider?.data else {
@@ -2877,58 +2859,6 @@ struct yuedu_appTests {
 
         #expect(foundContrastPixel, "Expected visible snapshot title glyph pixels inside the title card rect. fill=\(baseFill) rect=\(titleRenderable.rect)")
         #expect(foundBrightGlyphPixel, "Expected bright snapshot title glyph pixels inside the title card rect. fill=\(baseFill) rect=\(titleRenderable.rect)")
-    }
-
-    @Test @MainActor
-    func snapshotPageViewControllerFillsBoundsInsteadOfLetterboxing() throws {
-        let expected = (Int(0.15 * 255.0), Int(0.35 * 255.0), Int(0.75 * 255.0))
-        let sourceImage = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 100)).image { ctx in
-            UIColor(red: 0.15, green: 0.35, blue: 0.75, alpha: 1).setFill()
-            ctx.fill(CGRect(x: 0, y: 0, width: 200, height: 100))
-        }
-        let snapshotVC = SnapshotPageViewController(
-            image: sourceImage,
-            globalPage: 0,
-            backgroundColor: .white
-        )
-        snapshotVC.view.frame = CGRect(x: 0, y: 0, width: 300, height: 300)
-        snapshotVC.loadViewIfNeeded()
-
-        let rendered = UIGraphicsImageRenderer(size: snapshotVC.view.bounds.size).image { _ in
-            snapshotVC.view.drawHierarchy(in: snapshotVC.view.bounds, afterScreenUpdates: true)
-        }
-
-        guard let cgImage = rendered.cgImage,
-              let providerData = cgImage.dataProvider?.data else {
-            Issue.record("Unable to inspect snapshot image data")
-            return
-        }
-        let data = providerData as Data
-        let bytesPerPixel = 4
-        let bytesPerRow = cgImage.bytesPerRow
-
-        func sample(_ x: Int, _ y: Int) -> (Int, Int, Int)? {
-            let idx = y * bytesPerRow + x * bytesPerPixel
-            guard idx + 2 < data.count else { return nil }
-            return (Int(data[idx + 2]), Int(data[idx + 1]), Int(data[idx]))
-        }
-
-        let topLeft = try #require(sample(10, 10))
-        let bottomRight = try #require(sample(cgImage.width - 10, cgImage.height - 10))
-
-        func isNonBackground(_ rgb: (Int, Int, Int)) -> Bool {
-            !(rgb.0 > 240 && rgb.1 > 240 && rgb.2 > 240)
-        }
-
-        func isNear(_ lhs: (Int, Int, Int), _ rhs: (Int, Int, Int)) -> Bool {
-            abs(lhs.0 - rhs.0) < 20 &&
-            abs(lhs.1 - rhs.1) < 20 &&
-            abs(lhs.2 - rhs.2) < 20
-        }
-
-        #expect(isNonBackground(topLeft), "Expected snapshot image to fill top-left. pixel=\(topLeft), expected=\(expected)")
-        #expect(isNonBackground(bottomRight), "Expected snapshot image to fill bottom-right. pixel=\(bottomRight), expected=\(expected)")
-        #expect(isNear(topLeft, bottomRight), "Expected filled corners to come from the same image. topLeft=\(topLeft), bottomRight=\(bottomRight)")
     }
 
     @Test func coreTextPageViewLiveRenderShowsActualPart0009TitleGlyphsInsideCard() async throws {

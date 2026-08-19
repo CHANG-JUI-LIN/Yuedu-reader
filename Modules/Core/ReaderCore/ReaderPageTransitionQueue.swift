@@ -43,7 +43,11 @@ struct ReaderPageTransitionQueue {
         return .startImmediately
     }
 
-    mutating func beginInteractiveTransition() {
+    /// - Parameter target: the page the gesture is headed for, when it is exactly
+    ///   known. Nil while the destination chapter is still paginating — an estimate
+    ///   would corrupt the re-anchoring in `transitionFinished(showing:)` rather
+    ///   than improve it.
+    mutating func beginInteractiveTransition(target: Int? = nil) {
         if isTransitioning {
             // Watchdog: a stuck transition (dropped completion) must not block
             // new interactive gestures forever. Under the timeout, ignore the
@@ -53,7 +57,7 @@ struct ReaderPageTransitionQueue {
             AppLogger.render("⟐ pageTurn watchdog fired during interactive begin after \(String(format: "%.1f", elapsed))s")
         }
         isTransitioning = true
-        inFlightTarget = nil
+        inFlightTarget = target
         transitionStartTime = CFAbsoluteTimeGetCurrent()
     }
 
@@ -78,9 +82,9 @@ struct ReaderPageTransitionQueue {
         if let inFlightTarget {
             resolvedPage = visiblePage + (queuedPage - inFlightTarget)
         } else {
-            // Interactive turn: nothing knew where it was headed, so the absolute
-            // target is all we have. Remove this branch if gesture settles ever
-            // start reporting their destination up front.
+            // The turn never reported a destination — an interactive gesture whose
+            // far side was still paginating when it began. The absolute target is all
+            // we have.
             resolvedPage = queuedPage
         }
         guard resolvedPage != visiblePage else {

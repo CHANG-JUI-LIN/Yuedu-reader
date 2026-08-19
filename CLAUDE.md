@@ -24,6 +24,11 @@ xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destinatio
 
 Use `-quiet` to suppress build output. Tests are in `Tests/iOS/yuedu appTests/`. UI tests in `Tests/iOS-UI/`.
 
+**Two simulator gotchas, both learned the hard way (2026-08-18).**
+
+- `-destination 'platform=iOS Simulator,name=…'` matches by name and picks silently. With an iOS 26.5 and an iOS 27.0 runtime installed, `name=iPhone 17 Pro Max` resolved to the iOS 27 device, and renaming that device to `iPhone 17 Pro Max (iOS 27)` did *not* change the choice — xcodebuild still matched it. Add `,OS=<version>` or `id=<UDID>` when the runtime actually matters; never assume which one you got.
+- `xcodebuild test` can die in a retry loop on `FBSOpenApplicationServiceErrorDomain Code=1 RequestDenied` while launching the UI-test runner, before a single unit test executes. This is CoreSimulator state, not configuration: the same command passed afterwards with no config change at all. `xcrun simctl shutdown all` (and deleting stale `Clone N of …` devices) clears it. While diagnosing, ignore `IDELaunchParametersSnapshot: no debugger version` — it appears in passing runs too and is not the cause; the only meaningful signal is `RequestDenied`.
+
 ## Targets
 
 | Target | Purpose |
@@ -75,7 +80,7 @@ Import/Export: OPML 2.0 and Legado JSON formats
 - **Reading position**: `(spineIndex, charOffset)`, never global page index. Pages shift when chapters load.
 - **Localization**: Every user-facing string via `localized("Key")`. Keys must exist in all three `.lproj` files under `Resources/`: `zh-Hant`, `zh-Hans`, `en`.
 - **Design tokens**: Use `DSColor`, `DSFont`, `DSSpacing` for all UI styling. Never hardcode colors or fonts.
-- **UI design**: All views must follow `docs/design.md` (HIG-native, not web UI). Title rule: pushed pages with a nav title use `.toolbarTitleDisplayMode(.inlineLarge)`; modal sheets use `.inline` (never `.inlineLarge`/`.large`). The `yuedu-ios-design` skill enforces this when touching UI.
+- **UI design**: All views must follow `docs/design.md` (HIG-native, not web UI). Title rule: only the four tab roots (`HomeView`, `ExploreHomeView`, `RSSListView`, `SettingsView`) use `.inlineLarge`, and only via `toolbarTitleDisplayModeInlineLargeOrInline()`; every pushed page and modal sheet uses `.inline` (never `.automatic`/`.large`/a bare `.inlineLarge`). The `yuedu-ios-design` skill enforces this when touching UI.
 - **Accessibility**: A view isn't done until VoiceOver reads it correctly — this app has blind users, and every VoiceOver defect so far reached them because the label was never checked, not because it was hard. `docs/design.md` §7 is the checklist; §7.1 lists the SwiftUI traps that have already shipped bugs. The three that recur: accessibility modifiers on a **container** propagate to every child (label each `Button`, never the enclosing `HStack`); decorative `Image(systemName:)` is focusable and speaks its raw symbol name, so it needs `.accessibilityHidden(true)`; `Slider` has no label and announces a fraction of its range, so give it `.accessibilityLabel` + `.accessibilityValue` sharing the on-screen value's computed property.
 - **Dependency injection**: `AppDependencies` + `@Environment` for services. Singletons only for caches and shared managers.
 - **CSS properties**: Adding to `ResolvedStyle` requires mirroring in `RenderStyle`, updating `RenderStyle.from`, and handling both rendering paths.

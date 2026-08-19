@@ -7,7 +7,6 @@ import os
 /// (filter subsystem `com.yuedu.app`, category `webdav`). Every HTTP call logs
 /// its method, path, and either the status code or the URLError code, so a
 /// transport-layer failure (-1005 etc.) is diagnosable without guessing.
-private let webdavLog = Logger(subsystem: "com.yuedu.app", category: "webdav")
 
 // MARK: - WebDAV Error Types
 
@@ -139,7 +138,7 @@ final class WebDAVManager: ObservableObject {
             return try await Self.session.data(for: request)
         } catch {
             guard Self.isTransientConnectionError(error) else { throw error }
-            webdavLog.notice("retry \(request.httpMethod ?? "GET", privacy: .public) \(request.url?.path ?? "", privacy: .public) after transient \(String(describing: (error as? URLError)?.code), privacy: .public)")
+            AppLogger.sync("retry \(request.httpMethod ?? "GET") \(request.url?.path ?? "") after transient \(String(describing: (error as? URLError)?.code))", level: .notice)
             return try await Self.session.data(for: request)
         }
     }
@@ -305,10 +304,10 @@ final class WebDAVManager: ObservableObject {
         do {
             let (_, response) = try await send(request)
             guard let http = response as? HTTPURLResponse else { return false }
-            webdavLog.notice("PROPFIND \(path, privacy: .public) → \(http.statusCode)")
+            AppLogger.sync("PROPFIND \(path) → \(http.statusCode)", level: .notice)
             return http.statusCode == 200 || http.statusCode == 207
         } catch {
-            webdavLog.error("PROPFIND \(path, privacy: .public) failed: \(String(describing: (error as? URLError)?.code), privacy: .public) \(error.localizedDescription, privacy: .public)")
+            AppLogger.sync("PROPFIND \(path) failed: \(String(describing: (error as? URLError)?.code)) \(error.localizedDescription)", level: .error)
             throw error
         }
     }
@@ -321,14 +320,14 @@ final class WebDAVManager: ObservableObject {
         do {
             let (_, response) = try await send(request)
             guard let http = response as? HTTPURLResponse else { return }
-            webdavLog.notice("MKCOL \(path, privacy: .public) → \(http.statusCode)")
+            AppLogger.sync("MKCOL \(path) → \(http.statusCode)", level: .notice)
             if http.statusCode != 201 && http.statusCode != 405 && http.statusCode != 200 {
                 throw WebDAVError.connectionFailed(http.statusCode)
             }
         } catch let error as WebDAVError {
             throw error
         } catch {
-            webdavLog.error("MKCOL \(path, privacy: .public) failed: \(String(describing: (error as? URLError)?.code), privacy: .public) \(error.localizedDescription, privacy: .public)")
+            AppLogger.sync("MKCOL \(path) failed: \(String(describing: (error as? URLError)?.code)) \(error.localizedDescription)", level: .error)
             throw error
         }
     }
@@ -343,7 +342,7 @@ final class WebDAVManager: ObservableObject {
         do {
             let (_, response) = try await send(request)
             guard let http = response as? HTTPURLResponse else { return }
-            webdavLog.notice("PUT \(path, privacy: .public) \(data.count)B → \(http.statusCode)")
+            AppLogger.sync("PUT \(path) \(data.count)B → \(http.statusCode)", level: .notice)
             if http.statusCode == 401 { throw WebDAVError.authenticationFailed }
             if !(200...299).contains(http.statusCode) {
                 throw WebDAVError.connectionFailed(http.statusCode)
@@ -351,7 +350,7 @@ final class WebDAVManager: ObservableObject {
         } catch let error as WebDAVError {
             throw error
         } catch {
-            webdavLog.error("PUT \(path, privacy: .public) \(data.count)B failed: \(String(describing: (error as? URLError)?.code), privacy: .public) \(error.localizedDescription, privacy: .public)")
+            AppLogger.sync("PUT \(path) \(data.count)B failed: \(String(describing: (error as? URLError)?.code)) \(error.localizedDescription)", level: .error)
             throw error
         }
     }
@@ -364,7 +363,7 @@ final class WebDAVManager: ObservableObject {
         do {
             let (data, response) = try await send(request)
             guard let http = response as? HTTPURLResponse else { throw WebDAVError.noData }
-            webdavLog.notice("GET \(path, privacy: .public) → \(http.statusCode) \(data.count)B")
+            AppLogger.sync("GET \(path) → \(http.statusCode) \(data.count)B", level: .notice)
             if http.statusCode == 401 { throw WebDAVError.authenticationFailed }
             if http.statusCode == 404 { throw WebDAVError.fileNotFound }
             if !(200...299).contains(http.statusCode) {
@@ -374,7 +373,7 @@ final class WebDAVManager: ObservableObject {
         } catch let error as WebDAVError {
             throw error
         } catch {
-            webdavLog.error("GET \(path, privacy: .public) failed: \(String(describing: (error as? URLError)?.code), privacy: .public) \(error.localizedDescription, privacy: .public)")
+            AppLogger.sync("GET \(path) failed: \(String(describing: (error as? URLError)?.code)) \(error.localizedDescription)", level: .error)
             throw error
         }
     }

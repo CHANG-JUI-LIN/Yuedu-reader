@@ -38,7 +38,7 @@ struct RSSArticleReaderView: View {
                 )
                 .ignoresSafeArea(.container, edges: .bottom)
                 .navigationTitle(navigationTitle(for: article))
-                .toolbarTitleDisplayMode(.large)
+                .toolbarTitleDisplayMode(.inline)
                 .pageBackgroundToolbar(for: .rss)
                 .toolbar(.hidden, for: .tabBar)
                 .toolbar {

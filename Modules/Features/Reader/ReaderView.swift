@@ -762,6 +762,11 @@ struct ReaderView: View {
                 bookId: book?.id.uuidString ?? bookId.uuidString
             )
             readerSessionCoordinator = ReaderSessionCoordinator(navigator: navigator)
+            // One book per session coordinator, so this is the per-book reset point.
+            // Positions from the previous book share no coordinate space with this
+            // one; carrying `lastCommitted` across would report an anomaly at every
+            // book open.
+            ReaderPositionSentry.shared.beginBook(label: book?.title ?? bookId.uuidString)
             return
         }
         readerSessionCoordinator?.send(.updateAppearance(currentReaderPresentationState.appearance))
@@ -781,6 +786,7 @@ struct ReaderView: View {
     ) {
         ensureReaderNavigator(initialPosition: position)
         recordReadingStatsPosition(position, source: source)
+        declarePositionIntent(for: source, target: position)
         switch source {
         case .settledPage:
             readerSessionCoordinator?.send(.settlePage(
@@ -821,6 +827,35 @@ struct ReaderView: View {
                 isEstimated: true
             ))
         }
+    }
+
+    /// Tells `ReaderPositionSentry` that this move was asked for, so its
+    /// unexplained-jump guard does not flag a legitimate destination.
+    ///
+    /// Hooked here because `moveReaderSession` is already the single funnel every
+    /// deliberate move passes through — TOC taps, internal links, restore, TTS
+    /// alignment and mode switches all arrive as a `ReaderLocation.Source`. Declaring
+    /// at each of those call sites instead would leave the next one added silently
+    /// unguarded.
+    ///
+    /// `settledPage` and `scrollCommit` are excluded deliberately: they report where
+    /// the reader *ended up*, they do not ask it to go anywhere. Treating them as
+    /// intent would vouch for exactly the jumps this is meant to catch.
+    private func declarePositionIntent(for source: ReaderLocation.Source, target: CoreTextReadingPosition) {
+        let intent: ReaderPositionSentry.JumpIntent
+        switch source {
+        case .settledPage, .scrollCommit:
+            return
+        case .restored:
+            intent = .openRestore
+        case .jump, .placeholder:
+            intent = .tocJump
+        case .internalLink:
+            intent = .contentLink
+        case .modeSwitch:
+            intent = .userSeek
+        }
+        ReaderPositionSentry.shared.declareIntent(intent, target: target)
     }
 
     func setCoreTextExternalTarget(_ position: CoreTextReadingPosition) {

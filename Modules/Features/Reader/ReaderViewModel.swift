@@ -152,6 +152,9 @@ final class ReaderViewModel: ObservableObject {
         if case .failed = chapterStates[chapterIndex] {
             chapterStates[chapterIndex] = .loading
         }
+        if chapterStates[chapterIndex] == .cancelled {
+            chapterStates[chapterIndex] = .loading
+        }
 
         if await chapterFetcher.isChapterCached(book: book, chapterIndex: chapterIndex) {
             setChapterState(.ready, for: chapterIndex, contentAvailable: true)
@@ -663,7 +666,10 @@ final class ReaderViewModel: ObservableObject {
                     priority: priority,
                     store: store
                 )
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.clearInFlight(chapterIndex: chapterIndex, token: token)
+                    return
+                }
                 let result: ChapterLoadState = package.state == .cached && !package.content.isEmpty
                     ? .ready
                     : .failed(reason: package.failureReason ?? "empty")
@@ -687,10 +693,17 @@ final class ReaderViewModel: ObservableObject {
                     }
                 }
                 self.finishFetch(chapterIndex: chapterIndex, token: token, result: result)
-            } catch is CancellationError {
-                self.clearInFlight(chapterIndex: chapterIndex, token: token)
             } catch {
-                guard !Task.isCancelled else { return }
+                // Cancellation is not a verdict on the chapter, and it arrives in more than
+                // one shape: `CancellationError` thrown directly, and `URLError.cancelled`
+                // (-999) from a URLSession or WKWebView navigation torn down mid-flight.
+                // Only the first was recognised, so the second reached the catch-all below
+                // and surfaced as 章節載入失敗 on a chapter that fetched fine the moment it
+                // was asked again — the failure users worked around by refreshing.
+                if Self.isCancellation(error) || Task.isCancelled {
+                    self.clearInFlight(chapterIndex: chapterIndex, token: token)
+                    return
+                }
                 // os_log, not print: this is the end of the online chapter pipeline,
                 // and on a device it's the only record of *why* a chapter failed.
                 AppLogger.parse("⟐ chapter fetch failed", error: error, context: [
@@ -717,11 +730,21 @@ final class ReaderViewModel: ObservableObject {
         setChapterState(result, for: chapterIndex, contentAvailable: result == .ready)
     }
 
+    /// Errors that mean "this request was torn down", not "this chapter cannot be read".
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
+    }
+
     private func clearInFlight(chapterIndex: Int, token: UUID) {
         guard inFlightRequests[chapterIndex]?.token == token else { return }
         inFlightRequests.removeValue(forKey: chapterIndex)
         if chapterStates[chapterIndex] == .loading {
-            setChapterState(.idle, for: chapterIndex, contentAvailable: false)
+            // `.idle` reads as "never asked" and had nothing driving a retry, so a preempted
+            // chapter sat on the loading surface forever. `.cancelled` says a re-request is
+            // owed; `handleChapterStateChanges` issues it.
+            setChapterState(.cancelled, for: chapterIndex, contentAvailable: false)
         }
     }
 }

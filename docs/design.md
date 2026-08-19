@@ -35,7 +35,7 @@
 
 | # | 規則 | 正確 | 錯誤 |
 |---|------|------|------|
-| H1 | title mode 必須依導航層級與呈現情境選擇，不得全域套用 `.inlineLarge` | 見 §2 矩陣 | 不分析 hierarchy / overflow 就統一指定模式 |
+| H1 | title mode：僅主界面根目錄（Tab 根頁）使用 `.inlineLarge`（經 `toolbarTitleDisplayModeInlineLargeOrInline()`），其餘一律 `.inline` | 見 §2 矩陣 | 在 pushed / sheet 用 `.inlineLarge`，或使用 `.automatic` / `.large` / 裸 `.inlineLarge` |
 | H2 | 所有對使用者顯示的文字走 `localized("…")`，且三個 lproj 同步 | `Text(localized("書架"))` | `Text("Bookshelf")` |
 | H3 | 顏色、字級、間距、圓角、動畫一律用 `DS*` token | `DSColor.textSecondary` | `Color.gray` / 寫死 hex |
 | H4 | 圖示優先 SF Symbols，且與文字字重/字級一致 | `Image(systemName: "trash")` | 自製 PNG icon |
@@ -52,17 +52,18 @@
 
 ### 2.1 標題模式矩陣
 
-先判斷畫面在資訊架構中的角色，再選 title mode；toolbar 是否存在不是決定條件。
+先判斷畫面是否為「主界面根目錄」（Tab 根頁）；規則只有兩種狀態，toolbar 是否存在不是決定條件。
 
 | 情境 | title mode | 原因 / 注意事項 |
 |------|------------|-----------------|
-| Top-level（Tab 根頁、主要目的地） | `.automatic` 或 `.large` | 讓系統依容器與捲動行為呈現層級；明確需要大標題時才指定 `.large`。 |
+| **主界面根目錄**（Tab 根頁） | `.inlineLarge` | 唯一允許 `.inlineLarge` 的層級。統一經 `toolbarTitleDisplayModeInlineLargeOrInline()`（iOS 18+ 顯示 `.inlineLarge`，iOS 17 退回 `.inline`）。 |
 | Pushed detail（導航堆疊內的詳情、設定子頁） | `.inline` | 維持清楚的返回層級，為導覽與動作保留空間。 |
 | Sheet / modal task | `.inline` | 標題精簡，leading / trailing 分別容納取消與完成。 |
-| Reader / immersive surface | context-specific | 依沉浸狀態、chrome 是否顯示與可讀性決定；不可直接套用一般清單頁規則。 |
-| Yuedu 特例 | `.inlineLarge` | 僅在產品明確需要較醒目的 inline 標題、且已驗證各尺寸與本地化時使用；`inlineLarge` 會讓 leading / center items 移入 overflow，因此必須先確認動作仍可發現且不影響主要流程。 |
+| Reader / immersive surface | `.inline` | 依沉浸狀態與 chrome 顯示需求決定呈現；不使用 `.inlineLarge`。 |
 
-`.inlineLarge` 是 **[Yuedu] 例外**，不是全域預設。採用時需在設計或 PR 說明 hierarchy、可用寬度、toolbar item 的 overflow 行為，以及為何 `.automatic`、`.large` 或 `.inline` 不適合。
+**主界面根目錄白名單**：書架 `HomeView`、探索 `ExploreHomeView`、RSS `RSSListView`、設定 `SettingsView`（搜尋 tab 根頁目前為 `.inline`，不在此列）。名單以外的頁面一律 `.inline`。
+
+`.inlineLarge` 是主界面根目錄的固定樣式（App Store / Apple Maps 式的大型標題、同時保留完整 toolbar），**不是全域預設**：根目錄以外任何層級都禁用。注意 iOS 17 沒有 `.inlineLarge`，因此必須透過 `toolbarTitleDisplayModeInlineLargeOrInline()`；**禁止裸用 `.toolbarTitleDisplayMode(.inlineLarge)`**（舊系統無退化行為）。`inlineLarge` 會讓 leading / center items 移入 overflow，根頁若有此類 item 仍需驗證可用寬度與本地化。
 
 ### 2.2 Toolbar 動作位置與語意
 
@@ -171,10 +172,12 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 |------|-----|--------|
 | 頁面導航 | `NavigationStack` + `navigationDestination` | 自刻 push 動畫 |
 | 主分頁 | `TabView`（底部 Tab Bar） | 自刻底部列 / 側欄 |
-| 清單 / 設定 | `List`（`.plain` 或 `.insetGrouped`） | `ScrollView`+手刻 row、網頁表單 |
+| 清單 / 設定 | `List`（`.plain` 或 `.insetGrouped`）+ `Section` + `ForEach` row | `ScrollView`+`VStack`/`HStack` 手刻 row、網頁表單 |
+| 設定行內容 | `Toggle` / `Picker` / `Stepper` / `NavigationLink` / `Slider` | 自刻開關、自刻下拉 |
 | 短流程 / 次要任務 | `.sheet`（可加 `.presentationDetents`） | 全螢幕擋住 |
 | 重任務 / 沉浸（閱讀器） | `.fullScreenCover` | sheet 硬塞 |
 | 就地選擇 | `Menu` / `Picker` | 自刻下拉 |
+| 工具列 / 頁面動作 | `.toolbar { ToolbarItem }` | 自刻按鈕列、`ZStack` overlay 偽工具列 |
 | 長按操作 | `.contextMenu` | 自刻浮層 |
 | 列項滑動操作 | `.swipeActions` | 自刻手勢 |
 | 破壞性確認 | `.confirmationDialog` / `.alert` | 自刻彈窗 |
@@ -206,6 +209,8 @@ ItemRow(item: item)
     .listRowBackground(DSColor.surface)
 ```
 
+Review 時同時檢視 surface 層級是否「從背景中看得出」：容器色必須明顯區分於頁背景與兄弟容器，幾乎同色的容器等於沒有層級（曾發生審查沒抓到、bubble 與背景同色的真實案例）。
+
 ---
 
 ## 5. 排版與字級
@@ -217,6 +222,9 @@ ItemRow(item: item)
 - SF Symbols 跟隨相鄰語義字級與 Dynamic Type scaling，不用固定 frame 鎖死圖示；固定尺寸的 toolbar icon 是需單獨驗證的例外，不代表自動支援 Dynamic Type。
 - 三行以上的文字避免 tight leading；正文與說明文字需保留足以掃讀的行距。
 - 對齊與留白勝過分隔線；分隔線只在 `List` 語義需要時出現。
+- 字級數量克制：同一畫面維持 ≤5 種不同字級，層級靠字重與字軸建立，不是堆疊更多尺寸；`tracking` 最多 2 種值且只用於大寫標籤。
+- 需要字體對比時優先使用 SF 字軸（`.fontDesign(.serif)` / `.rounded` / `.monospaced`）建立層次（如標題用 serif、數值用 monospaced），不要為此引入自訂字體；自訂字體仍必須以語義 metrics 縮放。
+- 不要用 `minimumScaleFactor` 硬縮文字救版面；讓容器重排或換行。
 
 ---
 
@@ -280,6 +288,12 @@ Text("\(localized("當前速度"))：\(speechRateText)")
 - **錯誤可復原**：錯誤訊息說明「發生什麼 + 怎麼修」。
 - **說明文件**：必要處提供輕量提示，不喧賓奪主。
 
+補充準則（跨框架通用，源於外部 skill 審計，詳見參考章節）：
+- **權限請求**：在功能發生的當下才請求權限，絕不在啟動時一起問；系統對話框前先用說明畫面解釋原因與用途；被拒後提供前往系統設定的路徑，並設計被拒後的降級體驗。
+- **回饋強度匹配**：`alert` / `confirmationDialog` 只用於需要使用者決定的關鍵時刻（2 鍵為佳，最多 3 鍵）；非關鍵提示用 inline 提示、banner 或狀態列呈現，不要用 alert 打斷。
+- **手勢有替代**：任何自訂手勢（滑動、長按、雙擊）必須同時有可見的按鈕或選單入口；系統手勢（左緣返回、下拉通知/控制中心）不得攔截。
+- **觸覺與數字回饋**：重要動作（儲存、刪除、完成、狀態翻轉）給 `.sensoryFeedback`；變動中的數字用 `.contentTransition(.numericText())` 呈現；兩者皆遵守 Reduce Motion。
+
 ---
 
 ## 9. 狀態設計（每頁必備三態）
@@ -291,6 +305,9 @@ Text("\(localized("當前速度"))：\(speechRateText)")
 | **錯誤 Error** | 發生什麼 + 如何修 + 重試入口 | 「載入失敗：網路逾時 / 重試」 |
 
 空狀態不可只是一片空白；錯誤不可只 print log。可參考既有 `TTSSettingsView` 的 `emptyView`、`TTSPanelView` 的提示列寫法。
+
+- 空狀態優先 `ContentUnavailableView`（iOS 17+）＋本地化 CTA。
+- 長任務（TTS、下載、同步、匯入）除三態外，還需涵蓋 **offline / 慢網路 / 權限被拒 / 中斷恢復**：播放與同步類任務要驗證完整生命週期（啟動→播放/下載→暫停→背景→中斷（電話/通知）→恢復→完成），恢復後進度不丟失。
 
 ---
 
@@ -319,20 +336,26 @@ Text("\(localized("當前速度"))：\(speechRateText)")
 - 翻頁/捲動動畫要穩定、不彈跳；位置以 `(spineIndex, charOffset)` 為準（見 CLAUDE.md）。
 - 背景紋理/透明度不得降低文字對比；深色模式有專屬閱讀背景，不直接拿系統色硬套。
 - 朗讀（TTS）高亮以「段」為單位與正文同步，不閃爍。
+- 中斷恢復：TTS 播放與下載任務在背景、電話、通知中斷後恢復時，保持章節與進度不丟；閱讀位置一律以 `(spineIndex, charOffset)` 恢復（見 CLAUDE.md）。
 
 ---
 
 ## 12. 設計產出檢查清單
+
+動手前先寫一句**設計方向**（產品對象、主要使用者流程、視覺語言、「使用者最常做的一件事」），再進入以下產出。
 
 每次提出 UI 設計或實作，輸出必含：
 1. **頁面目的**（屬於哪種原型）
 2. **資訊架構**（主要區塊與層級）
 3. **iOS 元件選型**（為何選這些原生元件）
 4. **互動流程**（進入 → 操作 → 結果 → 返回）
-5. **空 / 載入 / 錯誤** 三態
+5. **空 / 載入 / 錯誤** 三態（長任務另涵蓋 offline / 權限被拒 / 中斷恢復，見 §9）
 6. **深色模式** 注意事項
 7. **無障礙**（Dynamic Type / VoiceOver / 點擊區 / 對比）
 8. **SwiftUI 實作建議**（依 §2 選擇情境正確的 title mode，並使用 `DS*` token、`localized()`）
+9. **使用者模擬走查**：以三種視角各走一遍流程——主要目標使用者、受限使用者（最大 Dynamic Type / VoiceOver / 單手）、邊緣資料使用者（超長書名、空書架、壞檔）——再判定畫面完成。
+10. **渲染證據**：以模擬器/真機截圖驗證各狀態與斷點（三態、深色、最大字級、長本地化字串、鍵盤彈出），不只依賴代碼審查。
+11. **可持久修復**：重複出現的設計失敗要沉澱回本文件或檢查規則，不要每次當新問題重講。
 
 ---
 
@@ -345,7 +368,13 @@ Text("\(localized("當前速度"))：\(speechRateText)")
 - ❌ 忽略 iOS 導航 / 返回 / Sheet / Tab Bar 慣例。
 - ❌ 寫死顏色/字體/間距（繞過 `DS*` token）。
 - ❌ 寫死字串（繞過 `localized()`）。
-- ❌ 未分析 navigation hierarchy、可用寬度與 toolbar overflow，就把 `.inlineLarge` 全域套用。
+- ❌ 在非主界面根目錄層級使用 `.inlineLarge`；裸用 `.toolbarTitleDisplayMode(.inlineLarge)`（iOS 17 不支援，無退化行為）；使用 `.automatic` / `.large` title mode。
+- ❌ 用 `ScrollView`+`VStack`/`HStack` 自刻 list / Form row、自刻 toolbar 或按鈕列、自刻 Toggle / Picker / 彈窗（見 §4）。
+- ❌ 互斥選項做成多個獨立 `Toggle`（該用單一選取值的 `Picker` / 單選）；`Toggle` 用內建 label，不要 `.labelsHidden()` + 手刻 HStack。
+- ❌ 過度裝飾卡片：22pt+ 圓角、裝飾性漸層/邊框、自訂 Divider；卡片分層用語意表面色與 `DSRadius`（見 §4.1）。
+- ❌ 全螢幕 blocking spinner（用骨架或內嵌 `ProgressView`，長任務可取消）。
+- ❌ 啟動時一次請求所有權限（見 §8）。
+- ❌ 用 `minimumScaleFactor` 縮字救版面（見 §5）。
 
 ---
 
@@ -364,3 +393,20 @@ Text("\(localized("當前速度"))：\(speechRateText)")
 - Nielsen 10 Usability Heuristics — https://www.nngroup.com/articles/ten-usability-heuristics/
 - 本專案設計 token：`Modules/SharedUI/DesignSystem/DesignTokens.swift`
 - 在地化規則：見 `yuedu-tour` skill 的 Localization 章節
+
+### 外部設計 skill 參考（知識交叉比對，非本專案規則來源）
+
+社群 app UI/UX agent skill 的**可操作準則已提煉並整合進本文件**（§4/§5/§8/§9/§11/§12/§13）；下表是來源與適用範圍，作為設計決策的交叉比對與靈感來源。任何衝突仍以 [Apple] > [Yuedu] > [建議] 為準（見 §0）。星數為 2026-08 查詢時約略值。
+
+| Skill | 說明 | 適用 |
+|-------|------|------|
+| [razor-ai/platform-design-skills](https://github.com/razor-ai/platform-design-skills) | 官方 Apple HIG / Material 3 / WCAG 2.2 濃縮成 300+ 條規則，附 Apple HIG PDF | SwiftUI / UIKit / Compose / Web |
+| [dickwu/apple-design-skill](https://github.com/dickwu/apple-design-skill)（57★） | Apple HIG 通用化設計審查與改進，53 份指南，框架無關 | Flutter / SwiftUI / RN / Electron |
+| [arjitj2/swiftui-design-principles](https://github.com/arjitj2/swiftui-design-principles)（15★） | SwiftUI 原生感抛光原則（間距系統、語意色、原生分組、NavigationStack） | SwiftUI |
+| [hamen/material-3-skill](https://github.com/hamen/material-3-skill)（1235★） | MD3 token / 元件 / theming / 10 類審計，次級支援 Flutter | Jetpack Compose / Flutter |
+| [flutter/skills](https://github.com/flutter/skills)（2627★，官方） | Flutter 官方 agent skills（響應式佈局、測試、本地化等 workflow） | Flutter |
+| [SwiggitySwerve/ux-toolkit](https://github.com/SwiggitySwerve/ux-toolkit) | 25 個通用 UX skill（Nielsen、WCAG、頁面型態審查），支援 OpenCode | 通用（任何框架） |
+| [AjnasNB/mobile-app-ux-auditor-skill](https://github.com/AjnasNB/mobile-app-ux-auditor-skill) | 行動 app UX 審計（導航、三態、無障礙、平台適配），含靜態掃描 | Flutter / RN / Swift / Compose |
+| [vermont42/iOS-Design-Agent-Skill](https://github.com/vermont42/iOS-Design-Agent-Skill)（8★） | iOS/SwiftUI 反-slop 審美審查（排版、色彩、空間、動態、深度） | SwiftUI |
+| [weiping/ixd-design-skill](https://github.com/weiping/ixd-design-skill) | 互動設計 8 階段流程（IA→流程→頁面規格→原型→交付） | 通用（產品設計流程） |
+| [EnchStyle/ui-ux-audit-skill](https://github.com/EnchStyle/ui-ux-audit-skill) | 15 類別評分制 UI/UX 審計（含防 AI 常見失敗與三態檢查） | 通用（web / mobile） |

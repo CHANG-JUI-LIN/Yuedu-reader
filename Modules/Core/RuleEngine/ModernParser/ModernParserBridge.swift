@@ -121,6 +121,16 @@ class ModernParserBridge {
             body: body,
             timedOut: timedOut
         )
+        // Third reader of the same exchange: 書源除錯大師, when the user has capture
+        // on. `WebFetcher`'s capture points miss everything here — rule fetches and
+        // `java.ajax` go through `URLSession` directly, not through `WebFetcher`.
+        if timedOut {
+            WebCrawlerDebugger.logInfo("timeout", url: url)
+        } else {
+            WebCrawlerDebugger.logResponse(
+                url: url ?? "-", statusCode: statusCode ?? -1, htmlBody: body ?? ""
+            )
+        }
     }
 
     // MARK: - Source Headers
@@ -2367,6 +2377,11 @@ class ModernParserBridge {
         // indefinitely. The per-source search already has its own timeout in the
         // aggregator, but individual TOC/book-info fetches do not.
         request.timeoutInterval = 30
+        WebCrawlerDebugger.logRequest(
+            url: request.url?.absoluteString ?? analyzeUrl.url,
+            method: request.httpMethod ?? "GET",
+            headers: request.allHTTPHeaderFields ?? [:]
+        )
         let (data, response): (Data, URLResponse)
         do {
             // Honor the source's `concurrentRate` budget (per-source anti-ban
@@ -2395,6 +2410,7 @@ class ModernParserBridge {
                 requestUrl: request.url?.absoluteString,
                 statusCode: nil, body: nil, timedOut: true
             )
+            WebCrawlerDebugger.logInfo("timeout after 30s", url: request.url?.absoluteString)
             throw ModernParserBridgeError.timeout
         }
 
@@ -2425,6 +2441,11 @@ class ModernParserBridge {
             requestUrl: request.url?.absoluteString,
             statusCode: (response as? HTTPURLResponse)?.statusCode,
             body: body
+        )
+        WebCrawlerDebugger.logResponse(
+            url: request.url?.absoluteString ?? analyzeUrl.url,
+            statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1,
+            htmlBody: body
         )
 
         let transformedBody = try applyResponseBodyScript(

@@ -7,7 +7,6 @@ import UIKit
 
 /// Diagnostic log for backup/restore. Watch on device via Console.app
 /// (filter subsystem `com.yuedu.app`, category `iCloudSync`).
-private let iCloudSyncLog = Logger(subsystem: "com.yuedu.app", category: "iCloudSync")
 
 struct ICloudSyncPayloadFile: Equatable {
     let recordName: String
@@ -236,7 +235,7 @@ final class ICloudSyncManager: ObservableObject {
         CrashContext.breadcrumb("iCloud sync start: \(reason)")
         defer { CrashContext.setKey("icloud_syncing", false) }
 
-        iCloudSyncLog.notice("sync(\(reason, privacy: .public)): start")
+        AppLogger.sync("sync(\(reason)): start", level: .notice)
         do {
             // 1. Book sources (singleton store).
             let (localSources, sourceMutationRevision) = await MainActor.run {
@@ -388,16 +387,16 @@ final class ICloudSyncManager: ObservableObject {
             if changedRemote {
                 try await saveManifest(await makeManifest(date: date))
             } else {
-                iCloudSyncLog.notice("sync(\(reason, privacy: .public)): no remote changes; manifest unchanged")
+                AppLogger.sync("sync(\(reason)): no remote changes; manifest unchanged", level: .notice)
             }
             await MainActor.run {
                 lastSyncDate = date
                 statusMessage = localized("iCloud 同步成功")
             }
-            iCloudSyncLog.notice("sync(\(reason, privacy: .public)): done — \(sourceMerge.values.count) sources, \(ruleMerge.values.count) rules, uploadedBookFiles=\(uploadedBookFileCount)")
+            AppLogger.sync("sync(\(reason)): done — \(sourceMerge.values.count) sources, \(ruleMerge.values.count) rules, uploadedBookFiles=\(uploadedBookFileCount)", level: .notice)
         } catch {
             await MainActor.run { statusMessage = error.localizedDescription }
-            iCloudSyncLog.error("sync(\(reason, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
+            AppLogger.sync("sync(\(reason)) failed: \(error.localizedDescription)", level: .error)
             throw error
         }
     }
@@ -455,7 +454,7 @@ final class ICloudSyncManager: ObservableObject {
             remotePayloadHash: remote.payloadHash
         )
         let shouldApplyLocally = localFingerprint != Self.collectionFingerprint(result.values, id: id, hash: hash)
-        iCloudSyncLog.notice("merge \(recordName, privacy: .public): local=\(local.count) remote=\(remote.records.count) → \(result.values.count), uploaded=\(uploaded)")
+        AppLogger.sync("merge \(recordName): local=\(local.count) remote=\(remote.records.count) → \(result.values.count), uploaded=\(uploaded)", level: .notice)
         return CloudSyncMergeResult(values: result.values, shouldApplyLocally: shouldApplyLocally, uploaded: uploaded)
     }
 
@@ -508,7 +507,7 @@ final class ICloudSyncManager: ObservableObject {
         }
         let shouldUpload = try Self.shouldUploadCloudSyncRecords(records, remotePayloadHash: remotePayloadHash)
         if !shouldUpload {
-            iCloudSyncLog.notice("upload \(recordName, privacy: .public): unchanged; skipped")
+            AppLogger.sync("upload \(recordName): unchanged; skipped", level: .notice)
             return false
         }
         let data = try Self.encodeCloudSyncRecords(records)
@@ -522,7 +521,7 @@ final class ICloudSyncManager: ObservableObject {
             .appendingPathComponent("yuedu-icloud-\(recordName)-\(UUID().uuidString)")
             .appendingPathExtension("json")
         try data.write(to: tempURL, options: .atomic)
-        iCloudSyncLog.notice("⟐ diskwrite uploadData \(recordName, privacy: .public): \(data.count) bytes")
+        AppLogger.sync("⟐ diskwrite uploadData \(recordName): \(data.count) bytes", level: .notice)
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
         let recordID = fileRecordID(recordName)
@@ -619,12 +618,12 @@ final class ICloudSyncManager: ObservableObject {
         for file in files {
             let attrs = try? FileManager.default.attributesOfItem(atPath: file.localURL.path)
             let size = (attrs?[.size] as? NSNumber)?.intValue ?? -1
-            iCloudSyncLog.notice("backup: \(file.recordName, privacy: .public) localSize=\(size)")
+            AppLogger.sync("backup: \(file.recordName) localSize=\(size)", level: .notice)
             try await uploadFileIfExists(file)
         }
 
         let bookFiles = dynamicBookFilePayloads()
-        iCloudSyncLog.notice("backup: \(bookFiles.count) book file(s) to consider (content+covers)")
+        AppLogger.sync("backup: \(bookFiles.count) book file(s) to consider (content+covers)", level: .notice)
         _ = try await uploadBookFiles()
 
         let date = Date()
@@ -729,7 +728,7 @@ final class ICloudSyncManager: ObservableObject {
            hasLocalSyncableData(files: ICloudSyncPayload.defaultFiles())
         {
             let localSync = await MainActor.run { lastSyncDate }
-            iCloudSyncLog.notice("restore: conflict — remote device differs and local data exists; deferring to user choice (nothing downloaded yet)")
+            AppLogger.sync("restore: conflict — remote device differs and local data exists; deferring to user choice (nothing downloaded yet)", level: .notice)
             await MainActor.run {
                 pendingConflict = ICloudSyncConflict(remote: remoteManifest, localLastSync: localSync)
                 statusMessage = localized("偵測到衝突，請選擇要使用哪個版本")
@@ -737,7 +736,7 @@ final class ICloudSyncManager: ObservableObject {
             return
         }
 
-        iCloudSyncLog.notice("restore: downloading default files (book_sources/books_meta/replace_rules)")
+        AppLogger.sync("restore: downloading default files (book_sources/books_meta/replace_rules)", level: .notice)
         for file in ICloudSyncPayload.defaultFiles() {
             try await downloadFileIfExists(file)
         }
@@ -813,16 +812,16 @@ final class ICloudSyncManager: ObservableObject {
         )
         try data.write(to: file.localURL, options: .atomic)
 
-        iCloudSyncLog.notice("restore: downloaded \(file.recordName, privacy: .public) bytes=\(data.count)")
+        AppLogger.sync("restore: downloaded \(file.recordName) bytes=\(data.count)", level: .notice)
 
         if file.recordName == "book_sources" {
             if let decoded = try? JSONDecoder().decode([BookSource].self, from: data) {
-                iCloudSyncLog.notice("restore: decoded \(decoded.count) book source(s)")
+                AppLogger.sync("restore: decoded \(decoded.count) book source(s)", level: .notice)
                 await MainActor.run {
                     BookSourceStore.shared.sources = decoded
                 }
             } else {
-                iCloudSyncLog.error("restore: book_sources downloaded but FAILED to decode [BookSource]")
+                AppLogger.sync("restore: book_sources downloaded but FAILED to decode [BookSource]", level: .error)
             }
         }
 
@@ -882,7 +881,7 @@ final class ICloudSyncManager: ObservableObject {
                 uploaded += 1
             }
         }
-        iCloudSyncLog.notice("⟐ bookfiles: \(payloads.count) candidate(s), re-uploaded \(uploaded)")
+        AppLogger.sync("⟐ bookfiles: \(payloads.count) candidate(s), re-uploaded \(uploaded)", level: .notice)
         return uploaded
     }
 
@@ -902,7 +901,7 @@ final class ICloudSyncManager: ObservableObject {
         record[Field.filename] = file.localURL.lastPathComponent as NSString
         record[Field.updatedAt] = Date() as NSDate
         record[Field.asset] = CKAsset(fileURL: file.localURL)
-        iCloudSyncLog.notice("⟐ diskwrite bookfile UPLOAD \(file.localURL.lastPathComponent, privacy: .public): \(size) bytes (marker miss)")
+        AppLogger.sync("⟐ diskwrite bookfile UPLOAD \(file.localURL.lastPathComponent): \(size) bytes (marker miss)", level: .notice)
         try await saveRecord(record)
         rememberUploadedBookFileMarker(marker)
         return true
@@ -910,7 +909,7 @@ final class ICloudSyncManager: ObservableObject {
 
     private func downloadMissingBookFiles() async throws {
         let missing = dynamicBookFilePayloads().filter { !FileManager.default.fileExists(atPath: $0.localURL.path) }
-        iCloudSyncLog.notice("restore: \(missing.count) book file(s) missing locally; fetching (content+covers)")
+        AppLogger.sync("restore: \(missing.count) book file(s) missing locally; fetching (content+covers)", level: .notice)
         var fetched = 0
         for file in missing {
             do {
@@ -929,7 +928,7 @@ final class ICloudSyncManager: ObservableObject {
                 throw error
             }
         }
-        iCloudSyncLog.notice("restore: fetched \(fetched) book file(s)")
+        AppLogger.sync("restore: fetched \(fetched) book file(s)", level: .notice)
     }
 
     private var uploadedBookFileMarkers: Set<String> {

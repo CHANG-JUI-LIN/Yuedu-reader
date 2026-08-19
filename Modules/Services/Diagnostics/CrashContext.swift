@@ -2,7 +2,8 @@ import Foundation
 import os
 import FirebaseCrashlytics
 
-/// Thin, thread-safe wrapper over Crashlytics for breadcrumbs, persistent context
+/// Thin, thread-safe wrapper over Crashlytics **and `DiagnosticLog`** for
+/// breadcrumbs, persistent context
 /// keys, and non-fatals — so a crash report (or a MetricKit diagnostic, see
 /// `MetricKitDiagnosticReporter`) says *what the app was doing*, not just an
 /// anonymous stack. Crashlytics' own API is thread-safe, so these are safe to call
@@ -16,6 +17,7 @@ enum CrashContext {
     static func breadcrumb(_ message: String) {
         Crashlytics.crashlytics().log(message)
         log.debug("🍞 \(message, privacy: .public)")
+        DiagnosticLog.shared.record(severity: .info, category: .general, message: "🍞 \(message)")
     }
 
     /// A persistent key/value attached to every subsequent report (overwrites the
@@ -45,5 +47,11 @@ enum CrashContext {
         for (key, value) in extra { info[key] = value }
         Crashlytics.crashlytics().record(error: NSError(domain: domain, code: code, userInfo: info))
         log.error("⚠️ non-fatal [\(domain, privacy: .public)] \(message, privacy: .public)")
+        DiagnosticLog.shared.record(
+            severity: .error,
+            category: .general,
+            message: "⚠️ non-fatal [\(domain)] \(message)",
+            detail: extra.isEmpty ? nil : extra.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "\n")
+        )
     }
 }

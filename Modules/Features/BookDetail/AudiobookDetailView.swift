@@ -203,7 +203,7 @@ struct AudiobookDetailView: View {
         .scrollIndicators(.hidden)
         .background(PageBackgroundView(scope: .global).ignoresSafeArea())
         .pageBackgroundToolbar(for: .global)
-        .toolbarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))
         .safeAreaInset(edge: .bottom) { bottomBar }

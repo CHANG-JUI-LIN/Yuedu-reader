@@ -137,6 +137,13 @@ struct ContentView: View {
         }
         .onAppear {
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
+            #if DEBUG
+            // Pairs with `-open-diagnostics` in `SettingsView`: land on 設定 so the
+            // pushed diagnostics page can be screenshotted straight from launch.
+            if ProcessInfo.processInfo.arguments.contains("-open-diagnostics") {
+                selectedRootTab = .settings
+            }
+            #endif
         }
         .onChange(of: gs.rootTabVisibleIDs) { _, _ in
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)

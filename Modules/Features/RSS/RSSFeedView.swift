@@ -97,7 +97,7 @@ struct RSSSmartFeedView: View {
                 .listStyle(.plain)
             }
         }
-        .toolbarTitleDisplayModeInlineLargeOrInline()
+        .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .rss)
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedArticleID) { articleID in
@@ -320,7 +320,7 @@ struct RSSFeedView: View {
         .sheet(item: $presentedWebPageURL) { url in
             SafariView(url: url)
         }
-        .toolbarTitleDisplayModeInlineLargeOrInline()
+        .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .rss)
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedArticleID) { articleID in

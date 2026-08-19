@@ -6,7 +6,6 @@ import FirebaseStorage
 import Foundation
 import os
 
-private let firestoreSyncLog = Logger(subsystem: "com.yuedu.app", category: "iCloudSync")
 
 @MainActor
 final class FirestoreSyncManager: ObservableObject {
@@ -103,7 +102,7 @@ final class FirestoreSyncManager: ObservableObject {
         bookStore?.reloadFromDisk()
         BookSourceStore.shared.reloadFromDisk()
         ReplaceRuleStore.shared.reloadFromDisk()
-        firestoreSyncLog.notice("adopt: reloaded local stores from restored files")
+        AppLogger.sync("adopt: reloaded local stores from restored files", level: .notice)
 
         guard Self.dataSyncEnabled, FirebaseAuthManager.shared.isAuthenticated, !isSyncing else { return }
         isSyncing = true
@@ -113,10 +112,10 @@ final class FirestoreSyncManager: ObservableObject {
             state = .syncing
             try await pushAll()
             markSynced()
-            firestoreSyncLog.notice("adopt: force-pushed restored data to Firestore as authoritative")
+            AppLogger.sync("adopt: force-pushed restored data to Firestore as authoritative", level: .notice)
         } catch {
             state = .failed(error.localizedDescription)
-            firestoreSyncLog.error("adopt: force-push failed: \(error.localizedDescription, privacy: .public)")
+            AppLogger.sync("adopt: force-push failed: \(error.localizedDescription)", level: .error)
         }
     }
 
@@ -297,7 +296,7 @@ final class FirestoreSyncManager: ObservableObject {
 
         // Data lives in iCloud; Firestore keeps only the account profile (above).
         guard Self.dataSyncEnabled else {
-            firestoreSyncLog.notice("pull: data sync disabled — profile only, leaving local data (iCloud is source of truth)")
+            AppLogger.sync("pull: data sync disabled — profile only, leaving local data (iCloud is source of truth)", level: .notice)
             return
         }
 

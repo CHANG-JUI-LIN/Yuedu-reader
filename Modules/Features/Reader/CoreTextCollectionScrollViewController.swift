@@ -1285,6 +1285,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         guard !isApplyingReadingPosition else { return }
         guard let pos = visibleCanonicalPosition() else { return }
         readingPosition = pos
+        ReaderPositionSentry.shared.observeCommit(pos, source: .scrollSettle)
         AppLogger.render(
             "[ProgressTrace][ScrollVC] commit spine=\(pos.spineIndex) charOffset=\(pos.charOffset)"
         )

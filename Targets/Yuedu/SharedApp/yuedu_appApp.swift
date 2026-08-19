@@ -47,6 +47,10 @@ struct yuedu_appApp: App {
         // every store below reads from the new locations. A launch that touched a store
         // before this ran would come up with an empty shelf.
         StorageMigration.runIfNeeded()
+        // Immediately after the migration and before anything else can log: every
+        // `AppLogger` call from here on is captured for 設定 → 診斷與回報, and the
+        // session record is what tells the next launch whether this one survived.
+        DiagnosticLog.shared.beginSession()
         #if DEBUG
         // Debug-only engine selection via launch arguments (UI tests / driver).
         // The default is `.legacy` in every build — the browser engine is
@@ -160,6 +164,14 @@ struct yuedu_appApp: App {
                     }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
+                    // Diagnostics session bookkeeping: reaching the background is
+                    // this app's definition of "survived", and is also the last
+                    // reliable moment to get buffered log lines onto disk.
+                    switch newPhase {
+                    case .background: DiagnosticLog.shared.noteEnteredBackground()
+                    case .active: DiagnosticLog.shared.noteBecameActive()
+                    default: break
+                    }
                     // Pick up sources shared while the app was backgrounded.
                     if newPhase == .active {
                         Task { await subscriptionStore.refreshAllEntitlements() }

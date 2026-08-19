@@ -5,6 +5,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
     case ttsAudio
     case mangaImages
     case covers
+    case diagnostics
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .ttsAudio: return "聽書音頻快取"
         case .mangaImages: return "漫畫圖片快取"
         case .covers: return "封面圖片快取"
+        case .diagnostics: return "診斷紀錄"
         }
     }
 
@@ -23,6 +25,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .ttsAudio: return "清除音頻快取"
         case .mangaImages: return "清除漫畫快取"
         case .covers: return "清除封面快取"
+        case .diagnostics: return "清除診斷紀錄"
         }
     }
 
@@ -32,6 +35,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .ttsAudio: return "TTS 合成的音頻文件快取"
         case .mangaImages: return "漫畫頁面圖片的離線快取"
         case .covers: return "書籍封面圖片的快取"
+        case .diagnostics: return "設定 → 診斷與回報 顯示的日誌與崩潰記錄"
         }
     }
 
@@ -41,6 +45,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .ttsAudio: return "waveform"
         case .mangaImages: return "photo.on.rectangle.angled"
         case .covers: return "photo"
+        case .diagnostics: return "stethoscope"
         }
     }
 }
@@ -50,13 +55,15 @@ struct CacheStorageRoots: Equatable, Sendable {
     var ttsAudio: URL
     var mangaImages: URL
     var covers: URL
+    var diagnostics: URL
 
     static var live: CacheStorageRoots {
         CacheStorageRoots(
             chapters: StorageLocations.onlineCache,
             ttsAudio: StorageLocations.ttsAudioCache,
             mangaImages: StorageLocations.mangaCache,
-            covers: StorageLocations.covers
+            covers: StorageLocations.covers,
+            diagnostics: StorageLocations.diagnostics
         )
     }
 
@@ -66,6 +73,7 @@ struct CacheStorageRoots: Equatable, Sendable {
         case .ttsAudio: return ttsAudio
         case .mangaImages: return mangaImages
         case .covers: return covers
+        case .diagnostics: return diagnostics
         }
     }
 }
@@ -75,6 +83,7 @@ struct CacheStorageSnapshot: Equatable, Sendable {
     var ttsAudio: Int64 = 0
     var mangaImages: Int64 = 0
     var covers: Int64 = 0
+    var diagnostics: Int64 = 0
 
     subscript(category: CacheCategory) -> Int64 {
         switch category {
@@ -82,11 +91,12 @@ struct CacheStorageSnapshot: Equatable, Sendable {
         case .ttsAudio: return ttsAudio
         case .mangaImages: return mangaImages
         case .covers: return covers
+        case .diagnostics: return diagnostics
         }
     }
 
     var total: Int64 {
-        chapters + ttsAudio + mangaImages + covers
+        chapters + ttsAudio + mangaImages + covers + diagnostics
     }
 }
 
@@ -109,13 +119,19 @@ enum CacheManagementError: LocalizedError, Equatable {
 final class CacheManagementService: @unchecked Sendable {
     private let fileManager: FileManager
     private let roots: CacheStorageRoots
+    /// The live writer behind the diagnostics directory, when there is one. Tests
+    /// pass `nil` so clearing stays inside their own fixture instead of reaching
+    /// through the singleton to the real device log.
+    private let diagnosticLog: DiagnosticLog?
 
     init(
         fileManager: FileManager = .default,
-        roots: CacheStorageRoots = .live
+        roots: CacheStorageRoots = .live,
+        diagnosticLog: DiagnosticLog? = .shared
     ) {
         self.fileManager = fileManager
         self.roots = roots
+        self.diagnosticLog = diagnosticLog
     }
 
     func snapshot() -> CacheStorageSnapshot {
@@ -123,11 +139,19 @@ final class CacheManagementService: @unchecked Sendable {
             chapters: byteCount(in: roots.chapters),
             ttsAudio: byteCount(in: roots.ttsAudio),
             mangaImages: byteCount(in: roots.mangaImages),
-            covers: byteCount(in: roots.covers)
+            covers: byteCount(in: roots.covers),
+            diagnostics: byteCount(in: roots.diagnostics)
         )
     }
 
     func clear(_ category: CacheCategory) throws {
+        // The diagnostics directory has a live writer behind it. Deleting the files
+        // from under it would race the batched append; `DiagnosticLog.clear()` does
+        // the same work on the queue that owns those files.
+        if category == .diagnostics, let diagnosticLog {
+            diagnosticLog.clear()
+            return
+        }
         do {
             try clearDirectory(roots[category])
             if category == .covers {

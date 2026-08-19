@@ -1033,10 +1033,6 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         delegate.setTextAnnotations(annotations)
     }
 
-    func snapshotViewController(at index: Int) -> UIViewController? {
-        nil
-    }
-
     func renderSnapshot(forPage globalPage: Int) -> UIImage? {
         let (spine, local) = localPosition(for: globalPage)
         switch choices[spine] ?? .browser {

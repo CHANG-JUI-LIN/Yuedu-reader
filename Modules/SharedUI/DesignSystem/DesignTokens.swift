@@ -341,21 +341,9 @@ enum DSAnimation {
 
 extension View {
     /// Applies `.inlineLarge` toolbar title display mode on iOS 18+,
-    /// falling back to `.large` on earlier versions where `.inlineLarge` is unavailable.
-    @ViewBuilder
-    func toolbarTitleDisplayModeInlineLarge() -> some View {
-        if #available(iOS 18, *) {
-            self.toolbarTitleDisplayMode(.inlineLarge)
-        } else {
-            self.toolbarTitleDisplayMode(.large)
-        }
-    }
-
-    /// Like `toolbarTitleDisplayModeInlineLarge()`, but falls back to `.inline`
-    /// on iOS 17 instead of `.large`. Use on views that also apply `.refreshable`
-    /// — combining `.large` with SwiftUI's `.refreshable` on iOS 17 triggers an
-    /// infinite layout recursion in `_UINavigationBarLayout` +
-    /// `_UINavigationControllerRefreshControlHost` (`EXC_BAD_ACCESS`).
+    /// falling back to `.inline` on iOS 17 where `.inlineLarge` is unavailable.
+    /// Per the title-mode rule (docs/design.md §2.1), this is allowed only on
+    /// the main root screens; everything else uses `.inline` directly.
     @ViewBuilder
     func toolbarTitleDisplayModeInlineLargeOrInline() -> some View {
         if #available(iOS 18, *) {

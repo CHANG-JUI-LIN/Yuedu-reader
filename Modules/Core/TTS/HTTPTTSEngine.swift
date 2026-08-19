@@ -538,7 +538,12 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             // The bytes for this one segment are not decodable audio (a provider that answered
             // with an error page, a truncated payload). Same class as a failed download: move
             // on rather than ending the session.
-            ttsLog("[TTS][HTTPEngine] player init failed index=\(index) error=\(error.localizedDescription)")
+            // The bytes, not just the error: a rate-limit page, a JSON quota notice and a
+            // truncated body all surface as the same opaque `kAudioFileError_InvalidFile`
+            // ('dta?', 1685348671). `TTSAudioProvider` now rejects non-audio payloads before
+            // they are cached, so reaching here means something got past that — and this is
+            // the only line that can say what, on a device, from a locked screen.
+            ttsLog("[TTS][HTTPEngine] player init failed index=\(index) error=\(error.localizedDescription) payload=\(TTSAudioPayload.diagnosticHead(of: data))")
             audioCache[index] = nil
             skipOrFailCurrentChunk(index: index, token: token, error: error)
         }

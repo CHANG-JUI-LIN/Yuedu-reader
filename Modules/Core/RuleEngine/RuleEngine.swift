@@ -562,9 +562,7 @@ enum RuleEngine {
             current = applyJsoupSegment(nodes: current, segment: seg)
         }
         let result = current
-        Task { @MainActor in
-            WebCrawlerDebugger.shared.logParse(rule: rule, matchCount: result.count, url: baseURL)
-        }
+        WebCrawlerDebugger.logParse(rule: rule, matchCount: result.count, url: baseURL)
         return result
     }
 
@@ -675,9 +673,7 @@ enum RuleEngine {
         }
 
         // --- Debug Hook: Parse Event ---
-        Task { @MainActor in
-            WebCrawlerDebugger.shared.logParse(rule: rule, matchCount: nodes.count, url: baseURL)
-        }
+        WebCrawlerDebugger.logParse(rule: rule, matchCount: nodes.count, url: baseURL)
 
         return nodes
     }
@@ -757,10 +753,7 @@ enum RuleEngine {
         let finalValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // --- Debug Hook: Parse Event ---
-        Task { @MainActor in
-            WebCrawlerDebugger.shared.logParse(
-                rule: rule, matchCount: finalValue.isEmpty ? 0 : 1, url: baseURL)
-        }
+        WebCrawlerDebugger.logParse(rule: rule, matchCount: finalValue.isEmpty ? 0 : 1, url: baseURL)
 
         return finalValue
     }
@@ -1446,9 +1439,7 @@ enum RuleEngine {
         let result = value == nil ? [] : ((value as? [Any]) ?? [value!])
 
         // --- Debug Hook: Parse Event ---
-        Task { @MainActor in
-            WebCrawlerDebugger.shared.logParse(rule: rule, matchCount: result.count, url: "")
-        }
+        WebCrawlerDebugger.logParse(rule: rule, matchCount: result.count, url: "")
 
         return result
     }

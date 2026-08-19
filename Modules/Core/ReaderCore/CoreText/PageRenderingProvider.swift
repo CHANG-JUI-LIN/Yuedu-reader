@@ -61,6 +61,40 @@ extension StablePositionResolving {
     func charOffset(forSpine spineIndex: Int, fragment: String) -> Int? { nil }
 }
 
+/// Steps one page forward or backward in **position** space.
+///
+/// This is the identity the `UIPageViewController` data source walks. A global
+/// page index is only meaningful inside the pagination that produced it — a
+/// chapter laying out mid-turn renumbers every page after it — so handing UIKit
+/// an index to hold on to is how "turned one page too far" keeps coming back.
+/// `(spineIndex, charOffset)` survives repagination untouched.
+///
+/// Returns nil at the ends of the book, and whenever the engine cannot answer
+/// honestly (the current page has no layout). UIKit reads nil as "no page that
+/// way", which is the correct thing to show for an unmeasured neighbour.
+@MainActor
+protocol PagePositionWalking: AnyObject {
+    func positionAfter(_ position: CoreTextReadingPosition) -> CoreTextReadingPosition?
+    func positionBefore(_ position: CoreTextReadingPosition) -> CoreTextReadingPosition?
+}
+
+extension PagePositionWalking where Self: StablePositionResolving & LayoutLifecycle {
+    /// Index-derived fallback for engines whose page space is not driven by
+    /// `ChapterLayout.pageRanges` — today the fixed-layout and browser-layout
+    /// engines. Fixed layout never renumbers, so the derivation is exact there.
+    /// The result is still converted straight back to a position, so nothing
+    /// outside this method ever holds an index.
+    func positionAfter(_ position: CoreTextReadingPosition) -> CoreTextReadingPosition? {
+        guard let page = pageIndex(for: position), page + 1 < totalPages else { return nil }
+        return readingPosition(forPage: page + 1)
+    }
+
+    func positionBefore(_ position: CoreTextReadingPosition) -> CoreTextReadingPosition? {
+        guard let page = pageIndex(for: position), page > 0 else { return nil }
+        return readingPosition(forPage: page - 1)
+    }
+}
+
 @MainActor
 protocol ProgressResolving: AnyObject {
     func plainText(forPage page: Int) -> String
@@ -112,14 +146,16 @@ protocol AnnotationApplying: AnyObject {
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation])
 }
 
+/// Rasterised pixels of a page, for animation overlays only — the cover
+/// transition's incoming/outgoing image views and the curl back face.
+/// Deliberately NOT a way to stand in for a page in the data source: a page's
+/// identity is its reading position, and an image cannot carry one.
 @MainActor
 protocol SnapshotRenderable: AnyObject {
-    func snapshotViewController(at index: Int) -> UIViewController?
     func renderSnapshot(forPage globalPage: Int) -> UIImage?
 }
 
 extension SnapshotRenderable {
-    func snapshotViewController(at index: Int) -> UIViewController? { nil }
     func renderSnapshot(forPage globalPage: Int) -> UIImage? { nil }
 }
 
@@ -141,6 +177,7 @@ extension PageViewControllerVending where Self: StablePositionResolving {
 typealias PagedReaderEngine =
     LayoutLifecycle
     & StablePositionResolving
+    & PagePositionWalking
     & ProgressResolving
     & InternalLinkResolving
     & ThemeUpdatable

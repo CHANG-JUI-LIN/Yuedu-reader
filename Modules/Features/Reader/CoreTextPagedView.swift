@@ -193,12 +193,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         // 1) Position command: Navigator-owned external target (TOC jump, restore,
         //    mode switch, TTS anchor). One-shot — cleared once applied to a real page.
-        if externalTargetPosition != nil, !context.coordinator.isTransitioning {
-            // A stack write on top of UIKit's in-flight interactive curl corrupts
-            // its pending transition state. `isTransitioning` only covers our own
-            // programmatic transitions; an interactive pan needs
-            // `isGestureInProgress`. Replay the target when the gesture settles.
-            if context.coordinator.isGestureInProgress {
+        if externalTargetPosition != nil {
+            // A stack write on top of an in-flight transition — UIKit's interactive
+            // one or ours — corrupts its pending state. Park the target and replay it
+            // when the stack comes free.
+            if context.coordinator.isStackWriteBlocked {
                 context.coordinator.deferExternalTarget()
                 return
             }
@@ -260,7 +259,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         direction: direction,
                         on: uiViewController
                     )
-                } else if !context.coordinator.isTransitioning {
+                } else if !context.coordinator.isAnimatingTransition {
                     let targetVC = context.coordinator.displayViewController(at: target)
                     _ = context.coordinator.setPage(targetVC, on: uiViewController, direction: direction, layoutNow: true)
                 }
@@ -352,27 +351,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let target: NavigationTarget
         }
 
-        private enum NavigationMode {
-            case jump
-            case interactiveTurn
-
-            var allowsPlaceholder: Bool {
-                self == .jump
-            }
-        }
-
-        private var activeCurlTransitionCount = 0
-        private var hasDeferredChapterReady = false
-        private var lastCurlBeginTime: CFAbsoluteTime = 0
-        private static let curlWatchdogTimeout: CFAbsoluteTime = 2.5
-        /// Set during `willTransitionTo`/`didFinishAnimating`. When true,
-        /// `handleChapterReady` defers its `setViewControllers` call to avoid
-        /// corrupting UIPageViewController's internal gesture state.
-        fileprivate private(set) var isGestureInProgress = false
-        /// An external target (TOC jump, restore, TTS anchor) arrived while an
-        /// interactive page turn was in flight and was held back — see
-        /// `replayDeferredExternalTargetIfNeeded`.
-        private var hasDeferredExternalTarget = false
+        /// The one owner of "may the page stack be rewritten right now?", shared by
+        /// every page-turn style. See `ReaderStackWriteGate`.
+        private var stackWriteGate = ReaderStackWriteGate()
         /// Snapshot of the page count used by UIKit's cached double-sided neighbours.
         /// Hold a shrinking count until the next stack write so an in-flight curl
         /// never loses a controller that UIKit already requested.
@@ -410,7 +391,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private let swipeUpExitHaptic = UIImpactFeedbackGenerator(style: .medium)
         private weak var callbackEngineObject: AnyObject?
         private var callbackEngineIdentifier: ObjectIdentifier?
-        fileprivate var isTransitioning = false
 
         var isPageTransitioning: Bool {
             sessionCoordinator?.isPageTransitioning ?? false
@@ -474,66 +454,56 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return activeTurnSpeed
         }
 
-        private func beginCurlTransitionIfNeeded() {
-            guard pageTurnStyle == .curl else { return }
-            resetCurlCountIfStale()
-            activeCurlTransitionCount += 1
-            lastCurlBeginTime = CFAbsoluteTimeGetCurrent()
+        /// True while UIKit or one of our animations owns the page stack.
+        fileprivate var isStackWriteBlocked: Bool { stackWriteGate.isBusy }
+        fileprivate var isAnimatingTransition: Bool { stackWriteGate.isAnimatingTransition }
+
+        fileprivate func beginAnimatedTransition() {
+            stackWriteGate.beginTransition()
         }
 
-        private func deferChapterReadyIfCurlIsAnimating() -> Bool {
-            guard pageTurnStyle == .curl else { return false }
-            guard activeCurlTransitionCount > 0 else { return false }
-            hasDeferredChapterReady = true
-            AppLogger.render("[CurlTrace] defer handleChapterReady during curl transition count=\(activeCurlTransitionCount)")
-            return true
-        }
-
-        /// A dropped UIPageViewController completion leaks the counter, which would
-        /// defer chapter-ready refreshes forever (snapshot pages never swap to real
-        /// content). Real curl animations finish well under 2.5s, so a positive count
-        /// older than that is a leak — reset it at the next page-turn begin. The turn's
-        /// own finish then reaches zero and replays the owed `hasDeferredChapterReady`
-        /// via the existing didFinish/completion path (safe: never mid-gesture).
-        private func resetCurlCountIfStale() {
-            guard activeCurlTransitionCount > 0,
-                  CFAbsoluteTimeGetCurrent() - lastCurlBeginTime >= Self.curlWatchdogTimeout else { return }
-            AppLogger.render("⟐ curl watchdog: resetting leaked count=\(activeCurlTransitionCount)")
-            activeCurlTransitionCount = 0
-        }
-
-        private func finishCurlTransitionIfNeeded(on pageViewController: UIPageViewController) {
-            guard pageTurnStyle == .curl else { return }
-            guard activeCurlTransitionCount > 0 else { return }
-            activeCurlTransitionCount -= 1
-            guard activeCurlTransitionCount == 0 else { return }
-            let shouldRefresh = hasDeferredChapterReady
-            hasDeferredChapterReady = false
-            if shouldRefresh {
-                handleChapterReady(on: pageViewController)
-            }
-        }
-
-        private func replayDeferredChapterReadyIfNeeded(on pageViewController: UIPageViewController) {
-            guard hasDeferredChapterReady else { return }
-            guard !isGestureInProgress else { return }
-            hasDeferredChapterReady = false
-            handleChapterReady(on: pageViewController)
+        /// Ends the animation window and hands any owed stack write to `drainStackWrites`.
+        fileprivate func endAnimatedTransition(on pageViewController: UIPageViewController) {
+            stackWriteGate.endTransition()
+            drainStackWrites(on: pageViewController)
         }
 
         fileprivate func deferExternalTarget() {
-            hasDeferredExternalTarget = true
-            AppLogger.render("[CurlTrace] defer externalTarget during interactive gesture")
+            _ = stackWriteGate.request(.externalTarget)
         }
 
-        /// Applies an external target that arrived mid-gesture. A cancelled turn can
-        /// settle on the page it started from, which publishes no binding change and
-        /// therefore no further `updateUIViewController` pass — without this replay the
-        /// jump would be stranded until the next unrelated re-render.
-        private func replayDeferredExternalTargetIfNeeded(on pageViewController: UIPageViewController) {
-            guard hasDeferredExternalTarget else { return }
-            guard !isGestureInProgress, !isTransitioning else { return }
-            hasDeferredExternalTarget = false
+        /// Replays the one write owed after UIKit gave the stack back.
+        ///
+        /// Always on the next runloop turn, never inline: a `setViewControllers` inside
+        /// `didFinishAnimating` (or inside a transition completion) re-seeds
+        /// `_UIQueuingScrollView` while it is still unwinding the just-finished scroll,
+        /// which is how a slide page turn at a chapter boundary used to land a page too
+        /// far. Same reasoning as `continueQueuedTransitionIfNeeded`.
+        private func drainStackWrites(on pageViewController: UIPageViewController) {
+            guard stackWriteGate.hasPendingWrites, !stackWriteGate.isBusy else { return }
+            DispatchQueue.main.async { [weak self, weak pageViewController] in
+                guard let self, let pageViewController else { return }
+                guard let write = self.stackWriteGate.drain() else { return }
+                AppLogger.render("[FlipTrace] stackWrite replay \(write)")
+                switch write {
+                case .chapterReady:
+                    // A deferred write is already owed; the spine that prompted it is not
+                    // recorded because the placement is driven by the current position.
+                    self.handleChapterReady(nil, on: pageViewController)
+                case .link(let page):
+                    self.applyLinkNavigation(to: page, on: pageViewController)
+                case .externalTarget:
+                    self.applyDeferredExternalTarget(on: pageViewController)
+                }
+            }
+        }
+
+        /// Applies an external target that arrived while the stack was owned elsewhere.
+        /// A cancelled turn can settle on the page it started from, which publishes no
+        /// binding change and therefore no further `updateUIViewController` pass —
+        /// without this replay the jump would be stranded until the next unrelated
+        /// re-render.
+        private func applyDeferredExternalTarget(on pageViewController: UIPageViewController) {
             guard let position = externalTargetPosition else { return }
             let targetVC = displayViewController(for: position)
             setPage(targetVC, on: pageViewController, layoutNow: true)
@@ -692,15 +662,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             callbackEngineObject = engine as AnyObject
             callbackEngineIdentifier = identifier
 
-            engine.onChapterReady = { [weak self, weak pageViewController] _ in
+            engine.onChapterReady = { [weak self, weak pageViewController] spineIndex in
                 DispatchQueue.main.async {
                     guard let self, let pageViewController else { return }
                     guard self.callbackEngineIdentifier == identifier else { return }
                     let line =
-                        "[StartupTrace][ReaderView.Coordinator] onChapterReady currentPage=\(self.currentPage) enginePage=\(engine.currentPage) totalPages=\(engine.totalPages)"
+                        "[StartupTrace][ReaderView.Coordinator] onChapterReady spine=\(spineIndex.map(String.init) ?? "all") currentPage=\(self.currentPage) enginePage=\(engine.currentPage) totalPages=\(engine.totalPages)"
                     AppLogger.render(line)
                     NSLog("%@", line)
-                    self.handleChapterReady(on: pageViewController)
+                    self.handleChapterReady(spineIndex, on: pageViewController)
                 }
             }
 
@@ -909,13 +879,35 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
         }
 
-        private func handleChapterReady(on pageViewController: UIPageViewController) {
-            guard !deferChapterReadyIfCurlIsAnimating() else { return }
-            guard !isGestureInProgress else {
-                hasDeferredChapterReady = true
-                AppLogger.render("[CurlTrace] defer handleChapterReady during interactive gesture")
+        /// `spineIndex` is the chapter whose layout landed, or nil for a change that
+        /// affects the whole book (page offsets rebuilt, appearance applied).
+        ///
+        /// Every layout install announces itself, neighbours included, so most calls here
+        /// concern a chapter the reader is not looking at. Such a chapter changes only where
+        /// the visible page falls in the global numbering — `spinePageOffsets` shifted — so
+        /// republish that index for the footer and leave the stack alone. Rewriting it would
+        /// re-create the visible page controller once per preloaded chapter, while the reader
+        /// is simply reading.
+        ///
+        /// A placeholder must never take that shortcut: `committedReadingPosition` refuses to
+        /// guess a position for one, which is exactly the stuck-載入中 case this path exists
+        /// to resolve.
+        private func handleChapterReady(
+            _ spineIndex: Int?,
+            on pageViewController: UIPageViewController
+        ) {
+            if let spineIndex,
+               pendingNavigation == nil,
+               externalTargetPosition == nil,
+               let visible = pageViewController.viewControllers?.first,
+               let visiblePosition = committedReadingPosition(of: visible),
+               visiblePosition.spineIndex != spineIndex {
+                if let page = currentEngine.pageIndex(for: visiblePosition) {
+                    handleNavigate(to: page)
+                }
                 return
             }
+            guard stackWriteGate.request(.chapterReady) == .performNow else { return }
             let engine = currentEngine
             let fallbackPage = max(0, min(currentPage, max(engine.totalPages - 1, 0)))
             let freshVC: UIViewController
@@ -1002,10 +994,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// binding against the page view controller between commands.
         private func handleLinkNavigate(to page: Int, on pageViewController: UIPageViewController) {
             let clamped = max(0, min(page, max(currentEngine.totalPages - 1, 0)))
-            guard !isTransitioning else {
-                pendingNavigation = PendingNavigation(target: .page(clamped))
-                return
-            }
+            guard stackWriteGate.request(.link(page: clamped)) == .performNow else { return }
+            applyLinkNavigation(to: clamped, on: pageViewController)
+        }
+
+        private func applyLinkNavigation(to clamped: Int, on pageViewController: UIPageViewController) {
             let targetVC = displayViewController(at: clamped)
             guard !isPlaceholderDisplay(targetVC) else {
                 // Chapter layout not ready yet — park the target; handleChapterReady
@@ -1121,10 +1114,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 } else {
                     self.continueQueuedTransitionIfNeeded(on: pageViewController, showing: targetPage)
                 }
-                self.finishCurlTransitionIfNeeded(on: pageViewController)
+                self.endAnimatedTransition(on: pageViewController)
             }
-            if pageTurnStyle == .curl, animated {
-                beginCurlTransitionIfNeeded()
+            if animated {
+                beginAnimatedTransition()
             }
 
             func runTransition(
@@ -1247,6 +1240,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             if let position = readingPosition(from: viewController) {
                 currentCoreTextPosition = position
+                ReaderPositionSentry.shared.observeCommit(
+                    position,
+                    source: .pagedTurn,
+                    isPlaceholder: isPlaceholderDisplay(viewController)
+                )
 
                 if let resolvedPage = currentEngine.pageIndex(for: position) {
                     publishCurrentPage(resolvedPage, position: position, notify: true)
@@ -1269,6 +1267,20 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             return nil
+        }
+
+        /// The position a page can be stepped from.
+        ///
+        /// Unlike `readingPosition(from:)` this refuses to guess: a placeholder that
+        /// cannot name its own offset is a page nobody has measured, and stepping from
+        /// the chapter-start fallback would walk to the wrong neighbour. UIKit reads
+        /// nil as "no page that way", which is the honest answer while a chapter is
+        /// still paginating.
+        private func committedReadingPosition(of viewController: UIViewController) -> CoreTextReadingPosition? {
+            if isPlaceholderDisplay(viewController) {
+                return (viewController as? CoreTextReadingPositionProviding)?.coreTextReadingPosition
+            }
+            return readingPosition(from: viewController)
         }
 
         private func readingPosition(from viewController: UIViewController) -> CoreTextReadingPosition? {
@@ -1297,48 +1309,26 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
         }
 
-        private func navigationViewController(
-            for target: NavigationTarget,
-            mode: NavigationMode
-        ) -> UIViewController? {
+        /// Vends a neighbour page for the data source.
+        ///
+        /// Deliberately free of coordinator state: UIKit calls this speculatively, at
+        /// times of its own choosing, for pages the reader may never turn to. Recording
+        /// navigation intent here made a prefetch indistinguishable from a commit.
+        /// Intent is recorded where the turn actually lands — `didFinishAnimating`.
+        ///
+        /// A placeholder is returned rather than nil: the data source MUST NOT return
+        /// nil during an interactive gesture, which raises NSInvalidArgumentException.
+        /// It is replaced once the chapter layout completes.
+        private func neighbourViewController(for target: NavigationTarget) -> UIViewController? {
             let viewController: UIViewController
-            let pageDescription: String
             switch target {
             case .position(let position):
                 viewController = displayViewController(for: position)
-                pageDescription = "\(position)"
             case .page(let page):
                 viewController = displayViewController(at: page)
-                pageDescription = "page=\(page)"
             }
-
-            if isPlaceholderDisplay(viewController) {
-                if mode.allowsPlaceholder || allowsInteractiveChapterEndPlaceholder(target, mode: mode) {
-                    pendingNavigation = PendingNavigation(target: target)
-                    AppLogger.render("[FlipTrace] navigation \(mode) placeholder target=\(pageDescription)")
-                    return viewController
-                }
-                // UIPageViewController data source MUST NOT return nil during an interactive
-                // gesture — that raises NSInvalidArgumentException.  Return the placeholder
-                // anyway; it will be replaced when the chapter layout completes.
-                if mode == .interactiveTurn {
-                    return viewController
-                }
-                return nil
-            }
-
-            pendingNavigation = nil
             applyPlaybackHighlight(to: viewController)
             return viewController
-        }
-
-        private func allowsInteractiveChapterEndPlaceholder(
-            _ target: NavigationTarget,
-            mode: NavigationMode
-        ) -> Bool {
-            guard mode == .interactiveTurn else { return false }
-            guard case .position(let position) = target else { return false }
-            return position.charOffset == .max
         }
 
         // MARK: - UIPageViewControllerDataSource
@@ -1367,10 +1357,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         private func pageBackward(from viewController: UIViewController) -> UIViewController? {
             if let backPage = viewController as? PageBackViewController {
-                return navigationViewController(
-                    for: .page(backPage.logicalPageIndex),
-                    mode: .interactiveTurn
-                )
+                return neighbourViewController(for: .page(backPage.logicalPageIndex))
             }
 
             guard let vc = viewController as? any PageIndexProviding & UIViewController,
@@ -1378,79 +1365,47 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             if isDoublePageSpread {
                 guard let targetPage = previousDisplayPage(before: vc.globalPageIndex) else { return nil }
-                return navigationViewController(for: .page(targetPage), mode: .interactiveTurn)
+                return neighbourViewController(for: .page(targetPage))
             }
 
             if usesCurlBackPages {
                 return curlBackPage(logicalPageIndex: vc.globalPageIndex - 1)
             }
 
-            let (currentSpine, currentLocal) = currentEngine.localPosition(for: vc.globalPageIndex)
-            if currentLocal == 0 && currentSpine > 0 {
-                AppLogger.render("[FlipTrace] pageBackward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine - 1)")
-                let targetPosition = CoreTextReadingPosition.chapterEnd(currentSpine - 1)
-                let previousVC = navigationViewController(
-                    for: .position(targetPosition),
-                    mode: .interactiveTurn
-                )
-                AppLogger.render("[FlipTrace] pageBackward landing type=\(previousVC.map { "\(type(of: $0))" } ?? "nil") page=\((previousVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
-                return previousVC
-            }
-            let previousVC = navigationViewController(
-                for: .page(vc.globalPageIndex - 1),
-                mode: .interactiveTurn
-            )
-            AppLogger.render("[FlipTrace] pageBackward sameChapter fromPage=\(vc.globalPageIndex) landingType=\(previousVC.map { "\(type(of: $0))" } ?? "nil") page=\(vc.globalPageIndex - 1)")
+            // Position space from here down: see `PagePositionWalking`. The index the
+            // page is showing under right now is not an identity UIKit may hold.
+            guard let current = committedReadingPosition(of: vc),
+                  let previous = currentEngine.positionBefore(current) else { return nil }
+            let previousVC = neighbourViewController(for: .position(previous))
+            AppLogger.render("[FlipTrace] pageBackward from=\(current) to=\(previous) landingType=\(previousVC.map { "\(type(of: $0))" } ?? "nil")")
             return previousVC
         }
 
         private func pageForward(from viewController: UIViewController) -> UIViewController? {
             if let backPage = viewController as? PageBackViewController {
                 guard backPage.logicalPageIndex + 1 < curlNeighbourPageCount else { return nil }
-                return navigationViewController(
-                    for: .page(backPage.logicalPageIndex + 1),
-                    mode: .interactiveTurn
-                )
+                return neighbourViewController(for: .page(backPage.logicalPageIndex + 1))
             }
 
             guard let vc = viewController as? any PageIndexProviding & UIViewController else { return nil }
 
             if isDoublePageSpread {
                 guard let targetPage = nextDisplayPage(after: vc.globalPageIndex) else { return nil }
-                return navigationViewController(for: .page(targetPage), mode: .interactiveTurn)
+                return neighbourViewController(for: .page(targetPage))
             }
 
             if usesCurlBackPages {
                 return curlBackPage(logicalPageIndex: vc.globalPageIndex)
             }
 
-            guard vc.globalPageIndex < currentEngine.totalPages - 1 else { return nil }
-            let (currentSpine, _) = currentEngine.localPosition(for: vc.globalPageIndex)
-            if let lastPage = currentEngine.lastPageIndex(ofChapter: currentSpine),
-               vc.globalPageIndex == lastPage {
-                AppLogger.render("[FlipTrace] pageForward crossing chapter fromSpine=\(currentSpine) page=\(vc.globalPageIndex) toSpine=\(currentSpine + 1)")
-                let nextPosition = CoreTextReadingPosition.chapterStart(currentSpine + 1)
-                if pageTurnStyle != .curl,
-                   let targetPage = currentEngine.pageIndex(for: nextPosition),
-                   let snapVC = currentEngine.snapshotViewController(at: targetPage) {
-                    AppLogger.render("[FlipTrace] pageForward snapshot landing page=\(targetPage) type=\(type(of: snapVC))")
-                    return snapVC
-                }
-                let nextVC = navigationViewController(
-                    for: .position(nextPosition),
-                    mode: .interactiveTurn
-                )
-                AppLogger.render("[FlipTrace] pageForward realOrPlaceholder landing type=\(nextVC.map { "\(type(of: $0))" } ?? "nil") page=\((nextVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
-                return nextVC
-            }
-            let nextIndex = vc.globalPageIndex + 1
-            if pageTurnStyle != .curl,
-               let snapVC = currentEngine.snapshotViewController(at: nextIndex) {
-                AppLogger.render("[FlipTrace] pageForward snapshot landing page=\(nextIndex) type=\(type(of: snapVC))")
-                return snapVC
-            }
-            let nextVC = navigationViewController(for: .page(nextIndex), mode: .interactiveTurn)
-            AppLogger.render("[FlipTrace] pageForward sameChapter fromPage=\(vc.globalPageIndex) landingType=\(nextVC.map { "\(type(of: $0))" } ?? "nil") page=\(nextIndex)")
+            // Position space from here down: see `PagePositionWalking`. Crossing a
+            // chapter boundary no longer depends on `lastPageIndex(ofChapter:)` (which
+            // goes silent while a chapter is partially paginated) or on `totalPages`
+            // (which is re-derived every time any chapter's layout lands).
+            guard let current = committedReadingPosition(of: vc),
+                  let next = currentEngine.positionAfter(current) else { return nil }
+            let nextVC = neighbourViewController(for: .position(next))
+            AppLogger.render("[FlipTrace] pageForward from=\(current) to=\(next) landingType=\(nextVC.map { "\(type(of: $0))" } ?? "nil")")
             return nextVC
         }
 
@@ -1474,9 +1429,28 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             _ pvc: UIPageViewController,
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
-            isGestureInProgress = true
-            sessionCoordinator?.beginInteractivePageTransition()
-            beginCurlTransitionIfNeeded()
+            stackWriteGate.beginGesture()
+            // Invariant G1's start line. Recorded here rather than in the data source
+            // on purpose: `viewControllerBefore/After` are speculative queries UIKit
+            // makes for pages the reader may never reach, and writing coordinator
+            // state from them is what invariant 3 of `Technotes/ReaderPagingContract.md`
+            // forbids. `willTransitionTo` is a real transition starting.
+            if let visible = pvc.viewControllers?.first,
+               let start = committedReadingPosition(of: visible) {
+                ReaderPositionSentry.shared.expectGesture(
+                    from: start,
+                    before: currentEngine.positionBefore(start),
+                    after: currentEngine.positionAfter(start)
+                )
+            }
+            // Report the destination when it is exactly known, so a tap queued during
+            // this swipe can be re-anchored against a real page rather than replayed as
+            // a stale absolute index. Nil while the far side is still paginating — an
+            // estimate would make the re-anchoring worse than not doing it.
+            let interactiveTarget = (pendingViewControllers.first as? CoreTextReadingPositionProviding)?
+                .coreTextReadingPosition
+                .flatMap { currentEngine.pageIndex(for: $0) }
+            sessionCoordinator?.beginInteractivePageTransition(target: interactiveTarget)
         }
 
         func pageViewController(
@@ -1485,16 +1459,17 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
-            isGestureInProgress = false
+            stackWriteGate.endGesture()
             AppLogger.render("[CurlTrace] didFinish completed=\(completed) visible=\((pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1) binding=\(currentPage)")
 
-            defer {
-                finishCurlTransitionIfNeeded(on: pvc)
-                replayDeferredChapterReadyIfNeeded(on: pvc)
-                replayDeferredExternalTargetIfNeeded(on: pvc)
-            }
+            // Any write owed while UIKit held the stack is replayed on the next
+            // runloop turn — never inline here. See `drainStackWrites`.
+            defer { drainStackWrites(on: pvc) }
 
             guard completed else {
+                // The swipe was abandoned and UIKit put the original page back. There
+                // is no landing to judge.
+                ReaderPositionSentry.shared.cancelExpectation()
                 let settledPage = (pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex
                     ?? currentPage
                 continueQueuedTransitionIfNeeded(on: pvc, showing: settledPage)
@@ -1513,29 +1488,24 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return
             }
 
-            // Snapshot replacement is unsafe for curl: the page curl animation internally
-            // uses current/target/back side/under-page views, and replacing during or
-            // immediately after curl can corrupt the transition state.
-            if pageTurnStyle != .curl,
-               let snapVC = pvc.viewControllers?.first as? SnapshotPageViewController {
-                AppLogger.render("[FlipTrace] didFinish landing SNAPSHOT page=\(snapVC.globalPageIndex)")
-                let realVC: UIViewController
-                if let position = snapVC.coreTextReadingPosition {
-                    realVC = currentEngine.pageViewController(for: position)
-                } else {
-                    realVC = currentEngine.pageViewController(at: snapVC.globalPageIndex)
-                }
-                AppLogger.render("[FlipTrace] didFinish replaceSnapshot realType=\(type(of: realVC)) page=\((realVC as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1)")
-                if let resolvedPage = setPage(realVC, on: pvc, notifyFallback: false) {
-                    continueQueuedTransitionIfNeeded(on: pvc, showing: resolvedPage)
-                } else {
-                    continueQueuedTransitionIfNeeded(on: pvc, showing: snapVC.globalPageIndex)
-                }
-                return
-            }
-
+            // No stack write happens here. `setViewControllers` inside this delegate
+            // callback re-seeds `_UIQueuingScrollView` while it is still unwinding the
+            // just-finished scroll — the same hazard `continueQueuedTransitionIfNeeded`
+            // hops a runloop to avoid. The chapter-boundary snapshot handoff that used
+            // to force one is gone: a snapshot only ever existed once the chapter was
+            // laid out, so the real page was always available anyway.
             guard let vc = pvc.viewControllers?.first as? any PageIndexProviding & UIViewController else { return }
             AppLogger.render("[FlipTrace] didFinish landing type=\(type(of: vc)) page=\(vc.globalPageIndex)")
+            // The turn committed, so this IS navigation intent — unlike the speculative
+            // data-source queries that produced the page. Landing on a placeholder parks
+            // the destination so `handleChapterReady` swaps in the real content instead
+            // of snapping back to where the turn started.
+            if isPlaceholderDisplay(vc),
+               let settledPosition = (vc as? CoreTextReadingPositionProviding)?.coreTextReadingPosition {
+                pendingNavigation = PendingNavigation(target: .position(settledPosition))
+            } else {
+                pendingNavigation = nil
+            }
             if let resolvedPage = syncStablePosition(afterShowing: vc, notifyFallback: false) {
                 continueQueuedTransitionIfNeeded(on: pvc, showing: resolvedPage)
             } else {
@@ -1604,7 +1574,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                   let pvc = instantPanPageViewController,
                   let view = gesture.view else { return }
 
-            if gesture.state == .began && (isTransitioning || isPageTransitioning) {
+            if gesture.state == .began && (isAnimatingTransition || isPageTransitioning) {
                 gesture.state = .cancelled
                 return
             }
@@ -1659,7 +1629,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         @objc func handleCoverPan(_ gesture: UIPanGestureRecognizer) {
             guard let view = gesture.view else { return }
-            if gesture.state == .began && isTransitioning {
+            if gesture.state == .began && isAnimatingTransition {
                 gesture.state = .cancelled
                 return
             }
@@ -1737,7 +1707,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 let motion = ReaderCoverPageMotion(direction: coverDirection, isRTL: isRTL)
                 let progress = min(max(abs(translationX) / width, 0), 1)
                 let shouldCommit = progress > GestureConstants.commitProgressRatio || abs(velocityX) > GestureConstants.commitVelocityThreshold
-                isTransitioning = true
+                beginAnimatedTransition()
 
                 UIView.animate(withDuration: GestureConstants.settleAnimationDuration, delay: 0, options: [.curveEaseOut]) {
                     let destX = motion.settledX(width: width, shouldCommit: shouldCommit)
@@ -1769,7 +1739,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         self.warmUpNext(currentGlobalPage: targetPage)
                     }
                     self.resetCoverOverlay()
-                    self.isTransitioning = false
+                    if let pvc = self.coverPageViewController {
+                        self.endAnimatedTransition(on: pvc)
+                    }
                 }
 
             default:
@@ -1785,7 +1757,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             direction: UIPageViewController.NavigationDirection,
             on pvc: UIPageViewController
         ) {
-            guard !isTransitioning else { return }
+            guard !isAnimatingTransition else { return }
             guard let view = pvc.view else { return }
             
             // Boundary protection
@@ -1803,7 +1775,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 }
             }
             
-            isTransitioning = true
+            beginAnimatedTransition()
             let width = max(view.bounds.width, 1)
 
             // Clean up any lingering animation state.
@@ -1845,7 +1817,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.warmUpNext(currentGlobalPage: latestPage)
 
                     self.resetCoverOverlay()
-                    self.isTransitioning = false
+                    self.endAnimatedTransition(on: pvc)
                 }
             } else {
                 guard let targetSnapshot = renderSnapshotForDisplayPage(targetPage) else {
@@ -1863,7 +1835,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     )
                     self.warmUpNext(currentGlobalPage: latestPage)
                     self.resetCoverOverlay()
-                    self.isTransitioning = false
+                    self.endAnimatedTransition(on: pvc)
                     return
                 }
                 coverCurrentImageView.image = renderSnapshotForDisplayPage(oldPage)
@@ -1890,7 +1862,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.warmUpNext(currentGlobalPage: latestPage)
 
                     self.resetCoverOverlay()
-                    self.isTransitioning = false
+                    self.endAnimatedTransition(on: pvc)
                 }
             }
         }
@@ -2081,7 +2053,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
                   let view = pan.view,
                   GlobalSettings.shared.readerSwipeUpToExit,
-                  !isTransitioning, !isPageTransitioning else { return false }
+                  !isAnimatingTransition, !isPageTransitioning else { return false }
             return ReaderSwipeUpExitMotion.shouldBegin(velocity: pan.velocity(in: view))
         }
 
