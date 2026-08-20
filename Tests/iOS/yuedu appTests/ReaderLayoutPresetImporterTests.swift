@@ -152,7 +152,7 @@ struct ReaderLayoutPresetImporterTests {
         #expect(component.style.fontSize == 72)
         #expect(component.style.opacity == 0.1)
         #expect(component.configuration.svgAssetID == assetID)
-        #expect(layout.contentReservations == ReaderOverlayContentReservations(top: 120, bottom: 0))
+        #expect(layout.contentReservations == ReaderOverlayContentReservations(top: 150, bottom: 0))
     }
 
     @Test("falls back to legacy fields when the new overlay payload is malformed")

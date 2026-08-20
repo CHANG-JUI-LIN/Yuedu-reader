@@ -698,9 +698,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     // MARK: - Cover
 
     private static func loadCover(_ filename: String?) -> UIImage? {
-        guard let filename, !filename.isEmpty else { return nil }
-        guard let data = try? Data(contentsOf: StorageLocations.coverFile(filename)) else { return nil }
-        return UIImage(data: data)
+        BookCoverLoader.localImage(filename: filename)
     }
 
     private func loadRemoteCoverIfNeeded(for id: UUID, fallback: CoverFallback) {

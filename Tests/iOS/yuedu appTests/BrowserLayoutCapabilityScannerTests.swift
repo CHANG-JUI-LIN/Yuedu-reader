@@ -119,17 +119,63 @@ extension BrowserLayoutCapabilityScannerTests {
         #expect(result.supported)
     }
 
-    @Test func realFloatStillRejectsChapterUntilFloatLayoutLands() {
-        // Guard: this MUST keep rejecting until FloatContext exists. Flipping it
-        // early would silently lay out floated boxes in flow.
+    @Test func explicitWidthFloatIsAccepted() {
         for value in ["left", "right", "LEFT", "  right  "] {
             let result = BrowserLayoutCapabilityScanner.scan(
                 html: "<html><body><div class=\"f\">x</div></body></html>",
-                cssTexts: ["div.f { float: \(value); }"]
+                cssTexts: ["div.f { float: \(value); width: 120px; }"]
             )
-            #expect(!result.supported, "float: \(value) must still reject")
-            #expect(result.unsupportedFeatures.contains(.float))
+            #expect(result.supported, "float: \(value) with fixed width must be supported")
         }
+    }
+
+    @Test func laterFloatNoneWinsCascade() {
+        let result = BrowserLayoutCapabilityScanner.scan(
+            html: "<html><body><div class=\"f\">x</div></body></html>",
+            cssTexts: [".f { float: left; } .f { float: none; }"]
+        )
+        #expect(result.supported)
+    }
+
+    @Test func inlineWidthAutoOverridesStylesheetWidth() {
+        let result = BrowserLayoutCapabilityScanner.scan(
+            html: "<html><body><div class=\"f\" style=\"float: left; width: auto\">x</div></body></html>",
+            cssTexts: [".f { width: 120px; }"]
+        )
+        #expect(!result.supported)
+        #expect(result.unsupportedFeatures.contains(.float))
+    }
+
+    @Test func maxWidthDoesNotReplaceFloatShrinkToFit() {
+        let result = BrowserLayoutCapabilityScanner.scan(
+            html: "<html><body><div style=\"float: left; width: auto; max-width: 120px\">x</div></body></html>",
+            cssTexts: []
+        )
+        #expect(!result.supported)
+        #expect(result.unsupportedFeatures.contains(.float))
+    }
+
+    @Test func nestedFloatsFallBackAsComplexFloatLayout() {
+        let html = """
+        <html><body>
+        <div style="float: left; width: 160px">
+          <img style="float: right" src="cover.jpg">
+        </div>
+        </body></html>
+        """
+        let result = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: [])
+        #expect(!result.supported)
+        #expect(result.unsupportedFeatures.contains(.float))
+    }
+
+    @Test func styleElementParticipatesInFloatClassification() {
+        let html = """
+        <html><head><style>.f { float: left; }</style></head>
+        <body><div class="f">x</div></body></html>
+        """
+        let result = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: [])
+        #expect(!result.supported)
+        #expect(result.unsupportedFeatures.contains(.float))
     }
 
     @Test func floatParserSharesOneWhitelist() {

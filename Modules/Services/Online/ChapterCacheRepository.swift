@@ -234,36 +234,6 @@ struct ChapterCacheRepository: Sendable {
         return filename
     }
 
-    func saveFailureMarker(
-        bookId: UUID,
-        chapterIndex: Int,
-        sourceURL: String? = nil,
-        tocTitle: String? = nil,
-        extractedTitle: String? = nil,
-        reason: String? = nil
-    ) {
-        let dir = cacheDir(for: bookId)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-
-        clearChapterCache(bookId: bookId, chapterIndex: chapterIndex)
-
-        let metadata = CachedChapterMetadata(
-            sourceURL: sourceURL,
-            tocTitle: tocTitle,
-            extractedTitle: extractedTitle,
-            contentChecksum: "",
-            savedAt: Date(),
-            state: .failed,
-            failureReason: reason
-        )
-        if let data = try? JSONEncoder().encode(metadata) {
-            try? data.write(
-                to: cacheMetadataPath(bookId: bookId, chapterIndex: chapterIndex),
-                options: .atomic
-            )
-        }
-    }
-
     func loadCachedChapterMetadataSync(bookId: UUID, chapterIndex: Int) -> CachedChapterMetadata? {
         let url = cacheMetadataPath(bookId: bookId, chapterIndex: chapterIndex)
         guard let data = try? Data(contentsOf: url) else { return nil }

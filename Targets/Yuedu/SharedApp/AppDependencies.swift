@@ -147,12 +147,29 @@ protocol ChapterFetching: Sendable {
     func cancelChapter(bookId: UUID, chapterIndex: Int) async
 
     func cancelAll(for bookId: UUID) async
+
+    /// Clears a book's accumulated quarantine budget. See `ChapterFetchManager`.
+    func resetFailureBudget(for bookId: UUID) async
 }
 
 extension ChapterFetching {
     func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) async -> ChapterPackage? {
         nil
     }
+
+    /// - Parameter includingDownloads: `false` spares offline-download fetches. The reader
+    ///   and the downloader share one fetch manager, so closing the reader used to cancel a
+    ///   download running on the same book — silently, because `runBook` treats cancellation
+    ///   as a clean exit.
+    ///
+    /// Defaulted rather than required: only the live fetcher knows a request's priority, and
+    /// a fetcher with no download queue has nothing to spare.
+    func cancelAll(for bookId: UUID, includingDownloads: Bool) async {
+        await cancelAll(for: bookId)
+    }
+
+    /// Fetchers with no failure budget of their own have nothing to reset.
+    func resetFailureBudget(for bookId: UUID) async {}
 }
 
 struct LiveWebContentFetcher: WebContentFetching {
@@ -314,7 +331,18 @@ struct LiveChapterFetcher: ChapterFetching {
     }
 
     func cancelAll(for bookId: UUID) async {
-        await chapterFetchManager.cancelAll(for: bookId)
+        await cancelAll(for: bookId, includingDownloads: true)
+    }
+
+    func cancelAll(for bookId: UUID, includingDownloads: Bool) async {
+        await chapterFetchManager.cancelAll(
+            for: bookId,
+            includingDownloads: includingDownloads
+        )
+    }
+
+    func resetFailureBudget(for bookId: UUID) async {
+        await chapterFetchManager.resetFailureBudget(for: bookId)
     }
 }
 

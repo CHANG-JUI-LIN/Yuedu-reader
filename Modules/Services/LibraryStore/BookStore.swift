@@ -51,6 +51,8 @@ class BookStore: ObservableObject, BookProvider {
     // Legacy UserDefaults key kept only for one-time migration.
     private let legacyMetaKey = "yd_books_meta"
     private var saveWorkItem: DispatchWorkItem?
+    /// When the oldest still-unwritten edit was requested. Drives the debounce ceiling.
+    private var firstPendingSaveRequestedAt: Date?
     private var saveGeneration = 0
     private let metadataFileURL: URL
     private var lastPersistedMetadataData: Data?
@@ -722,6 +724,20 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
     }
 
+    /// Lifts an automatic quarantine, leaving every deliberate choice alone.
+    ///
+    /// `.quarantined` is written by the chapter fetcher after five cumulative failures and
+    /// persisted, and nothing ever wrote it back — so a burst of failures (cancelling a
+    /// download cancels many chapters at once) downgraded the book's renderer for good.
+    /// Only the automatic value is cleared: `.forcedLegacy` / `.forcedWeb` are the user's.
+    func clearAutomaticQuarantine(bookId: UUID) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }),
+              books[idx].compatibilityState == .quarantined
+        else { return }
+        books[idx].compatibilityState = .defaultWeb
+        saveMeta()
+    }
+
     func setCompatibilityState(bookId: UUID, state: BookCompatibilityState) {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         books[idx].compatibilityState = state
@@ -771,6 +787,10 @@ class BookStore: ObservableObject, BookProvider {
         case .none, .downloading:
             targetsChanged ? saveMetaImmediately() : saveMeta()
         }
+        // The single write funnel for download progress, and therefore the only place the
+        // Live Activity needs to hear from. Observing `$books` instead would fire for every
+        // unrelated shelf edit.
+        DownloadLiveActivityController.refresh(books: books)
     }
 
     func clearOfflineDownloadTask(bookId: UUID) {
@@ -1369,7 +1389,19 @@ class BookStore: ObservableObject, BookProvider {
         bookId: UUID,
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore()
     ) async throws {
-        guard books.contains(where: { $0.id == bookId }) else { return }
+        guard let removing = books.first(where: { $0.id == bookId }) else { return }
+        // Every chapter is about to go back to the network for the first time since the
+        // download was made. Doing that against a table of contents the cache has been
+        // replaying unchanged — it is keyed by `(sourceId, url)` and outlives the book — is
+        // what turned 移除下載 into "the whole book fails and only 換源 fixes it".
+        if let sourceId = removing.bookSourceId,
+           let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId }) {
+            BookSourceFetcher.shared.clearTOCAndBookInfoCache(
+                tocUrl: removing.tocURL,
+                bookURL: removing.bookInfoURL,
+                source: source
+            )
+        }
         try await offlineChapterStore.removeBook(bookId: bookId)
         // `books` can be mutated while the artifact removal is in flight (imports
         // insert at 0, deletions remove rows), so the row has to be located again:
@@ -1385,6 +1417,7 @@ class BookStore: ObservableObject, BookProvider {
         books[idx].offlineDownloadState = .none
         books[idx].downloadedChapterCount = 0
         books[idx].offlineDownloadTask = nil
+        DownloadLiveActivityController.refresh(books: books)
         // The cache was already removed from disk; persist the matching state
         // now so a quick relaunch cannot resurrect a stale completed download.
         saveMetaImmediately()
@@ -1469,7 +1502,10 @@ class BookStore: ObservableObject, BookProvider {
             try await offlineChapterStore.reconcileBook(
                 bookId: bookId,
                 oldRefs: oldRefs,
-                newRefs: tocPackage.chapters
+                newRefs: tocPackage.chapters,
+                // A confirmed rebinding to a different source: the old source's chapter
+                // bytes are genuinely worthless here, and the user asked for it.
+                disposition: .deleteMismatched
             )
         }
         await MainActor.run {
@@ -1566,11 +1602,23 @@ class BookStore: ObservableObject, BookProvider {
                 guard let self else { return }
                 Task { @MainActor in
                     guard let idx = self.books.firstIndex(where: { $0.id == bookId }) else { return }
+                    guard OnlineTOCCommitPolicy.decide(
+                        refreshedCount: firstChapters.count
+                    ) == .commit else {
+                        AppLogger.network("⟐ TOC first page came back empty, not committing", context: [
+                            "bookId": bookId.uuidString,
+                        ])
+                        return
+                    }
 
                     let previousTitle = self.books[idx].title
                     let previousAuthor = self.books[idx].author
                     let existingChapters = self.books[idx].onlineChapters ?? []
-                    let mergedChapters = self.mergeOnlineChapters(existing: existingChapters, refreshed: firstChapters)
+                    let mergedChapters = self.mergeOnlineChapters(
+                        existing: existingChapters,
+                        refreshed: firstChapters,
+                        preservingExistingTail: true
+                    )
                     let chaptersChanged = self.chapterListChanged(existing: existingChapters, refreshed: firstChapters)
                     let tocChanged = self.normalizedOnlineValue(self.books[idx].tocURL) != progressiveTOCURL
                     let runtimeChanged = (self.books[idx].runtimeVariables ?? [:]) != (progressiveRuntimeVariables ?? [:])
@@ -1615,6 +1663,17 @@ class BookStore: ObservableObject, BookProvider {
 
         let updateResult = await MainActor.run { () -> (ReadingBook, [OnlineChapterRef], [OnlineChapterRef])? in
             guard let idx = books.firstIndex(where: { $0.id == bookId }) else {
+                return nil
+            }
+            // Returning nil here leaves `onlineChapters` — and therefore the reconcile that
+            // reads it — completely untouched. See `OnlineTOCCommitPolicy`.
+            guard OnlineTOCCommitPolicy.decide(
+                refreshedCount: tocPackage.chapters.count
+            ) == .commit else {
+                AppLogger.network("⟐ TOC refresh came back empty, keeping existing chapters", context: [
+                    "bookId": bookId.uuidString,
+                    "existing": books[idx].onlineChapters?.count ?? 0,
+                ])
                 return nil
             }
 
@@ -1670,7 +1729,13 @@ class BookStore: ObservableObject, BookProvider {
             try await offlineChapterStore.reconcileBook(
                 bookId: bookId,
                 oldRefs: oldRefs,
-                newRefs: newRefs
+                newRefs: newRefs,
+                // A refresh asks about chapter *lists*; it is never a request to discard
+                // chapter *bytes*. `reconcileOfflineTaskMetadata` below still nulls
+                // `cachedFilename` and re-pends every mismatched index, so those chapters
+                // are refetched on demand — the files just stop being deleted behind the
+                // user's back.
+                disposition: .preserveContent
             )
         } catch {
             await reconcileOfflineTaskMetadata(
@@ -1780,21 +1845,36 @@ class BookStore: ObservableObject, BookProvider {
         return FileManager.default.fileExists(atPath: direct.path) ? direct : nil
     }
 
+    /// Longest a pending metadata write may be deferred, however many times the debounce is
+    /// re-armed. Cancel-and-reschedule with no ceiling starves the write entirely whenever
+    /// edits arrive faster than the debounce window — a download completing a chapter every
+    /// second never persisted a single one, so an app kill lost the whole run.
+    private static let metadataSaveMaximumDelay: TimeInterval = 10
+
     private func saveMeta() {
         saveWorkItem?.cancel()
         saveGeneration += 1
         let generation = saveGeneration
 
+        let now = Date()
+        if firstPendingSaveRequestedAt == nil {
+            firstPendingSaveRequestedAt = now
+        }
+
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             guard self.saveGeneration == generation else { return }
             self.saveWorkItem = nil
+            self.firstPendingSaveRequestedAt = nil
             self.persistMetadataIfChanged()
         }
 
         saveWorkItem = workItem
-        // Debounce writes by 2 seconds to avoid frequent UI stalls
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+        // Debounce writes by 2 seconds to avoid frequent UI stalls, but never let the oldest
+        // unwritten edit sit longer than `metadataSaveMaximumDelay`.
+        let elapsed = now.timeIntervalSince(firstPendingSaveRequestedAt ?? now)
+        let delay = max(0, min(2.0, Self.metadataSaveMaximumDelay - elapsed))
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     func replaceBooksFromSync(_ syncedBooks: [ReadingBook]) {
@@ -1819,6 +1899,7 @@ class BookStore: ObservableObject, BookProvider {
         saveWorkItem?.cancel()
         saveGeneration += 1
         saveWorkItem = nil
+        firstPendingSaveRequestedAt = nil
         persistMetadataIfChanged()
     }
 
@@ -1998,12 +2079,21 @@ class BookStore: ObservableObject, BookProvider {
         return trimmed.lowercased()
     }
 
+    /// - Parameter preservingExistingTail: keep chapters the refreshed list does not reach.
+    ///   Required for the progressive `onFirstPageReady` commit, which carries **only the
+    ///   first page** of the table of contents: replacing a 3000-chapter list with those 50
+    ///   truncates the book, and any `saveMetaImmediately()` racing that window — every
+    ///   completed download chapter issues one — persists the truncation. A later reconcile
+    ///   then reads the short list as "these chapters are gone". The final commit passes
+    ///   false, because by then the refreshed list is the whole thing and a genuine deletion
+    ///   upstream should be reflected.
     private func mergeOnlineChapters(
         existing: [OnlineChapterRef],
-        refreshed: [OnlineChapterRef]
+        refreshed: [OnlineChapterRef],
+        preservingExistingTail: Bool = false
     ) -> [OnlineChapterRef] {
         let existingByIndex = Dictionary(uniqueKeysWithValues: existing.map { ($0.index, $0) })
-        return refreshed.map { chapter in
+        var merged = refreshed.map { chapter in
             var merged = chapter
             guard let current = existingByIndex[chapter.index] else {
                 return merged
@@ -2019,6 +2109,10 @@ class BookStore: ObservableObject, BookProvider {
             }
             return merged
         }
+        if preservingExistingTail, existing.count > merged.count {
+            merged.append(contentsOf: existing[merged.count...])
+        }
+        return merged
     }
 
     private func chapterListChanged(

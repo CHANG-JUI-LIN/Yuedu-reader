@@ -198,8 +198,10 @@ private struct LegadoReadConfig: Decodable {
     var migratedLegacyOverlayLayout: ReaderOverlayLayout? {
         guard containsLegacyOverlayFields else { return nil }
 
-        let headerVisible = readerHeaderVisible ?? headerMode.map { $0 != 0 } ?? true
-        let footerVisible = readerFooterVisible ?? true
+        let headerVisible = readerHeaderVisible
+            ?? headerMode.map { $0 != 0 }
+            ?? containsLegacyHeaderFields
+        let footerVisible = readerFooterVisible ?? containsLegacyFooterFields
         let headerTopPadding = Double(readerHeaderTopPadding ?? ReaderLayoutMetrics.defaultHeaderTopPadding)
         let headerTextGap = Double(readerHeaderTextGap ?? ReaderLayoutMetrics.defaultHeaderTextGap)
         let footerBottomPadding = Double(
@@ -249,18 +251,25 @@ private struct LegadoReadConfig: Decodable {
     }
 
     private var containsLegacyOverlayFields: Bool {
+        containsLegacyHeaderFields || containsLegacyFooterFields
+    }
+
+    private var containsLegacyHeaderFields: Bool {
         readerHeaderVisible != nil
-            || readerFooterVisible != nil
             || readerHeaderFieldPositions != nil
             || readerHeaderTopPadding != nil
             || readerHeaderTextGap != nil
             || readerHeaderHorizontalPadding != nil
+            || topContentReservation != nil
+    }
+
+    private var containsLegacyFooterFields: Bool {
+        readerFooterVisible != nil
             || footerBottomPadding != nil
             || footerTextGap != nil
             || footerPaddingBottom != nil
             || footerPaddingTop != nil
             || readerFooterHorizontalPadding != nil
-            || topContentReservation != nil
             || bottomContentReservation != nil
     }
 

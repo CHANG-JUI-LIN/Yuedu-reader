@@ -101,7 +101,7 @@ struct OfflineChapterStoreTests {
         let oldRefs = [OnlineChapterRef(index: 0, title: "One", url: "https://x/1")]
         let newRefs = oldRefs + [OnlineChapterRef(index: 1, title: "Two", url: "https://x/2")]
 
-        try await store.reconcileBook(bookId: bookId, oldRefs: oldRefs, newRefs: newRefs)
+        try await store.reconcileBook(bookId: bookId, oldRefs: oldRefs, newRefs: newRefs, disposition: .deleteMismatched)
 
         #expect(FileManager.default.fileExists(atPath: textFile.path))
         #expect(FileManager.default.fileExists(atPath: mangaDirectory.path))
@@ -124,7 +124,7 @@ struct OfflineChapterStoreTests {
             OnlineChapterRef(index: $0, title: "新 \($0)", url: "https://new.example/\($0)")
         }
 
-        try await store.reconcileBook(bookId: bookId, oldRefs: oldRefs, newRefs: newRefs)
+        try await store.reconcileBook(bookId: bookId, oldRefs: oldRefs, newRefs: newRefs, disposition: .deleteMismatched)
 
         #expect(
             !FileManager.default.fileExists(
@@ -152,7 +152,8 @@ struct OfflineChapterStoreTests {
         try await store.reconcileBook(
             bookId: bookId,
             oldRefs: [OnlineChapterRef(index: 0, title: "One", url: "https://x/1")],
-            newRefs: [OnlineChapterRef(index: 0, title: "Different", url: "https://x/changed")]
+            newRefs: [OnlineChapterRef(index: 0, title: "Different", url: "https://x/changed")],
+            disposition: .deleteMismatched
         )
 
         #expect(!FileManager.default.fileExists(atPath: textFile.path))
@@ -186,24 +187,62 @@ struct OfflineChapterStoreTests {
         #expect(state == .complete)
     }
 
-    @Test("a failed-chapter marker is not a downloaded chapter")
-    func failureMarkerIsIncomplete() async throws {
+    @Test("a preserving reconcile keeps downloaded content even when every index mismatches")
+    func preservingReconcileKeepsDownloadedContent() async throws {
+        let roots = try makeRoots()
+        defer { try? FileManager.default.removeItem(at: roots.container) }
+        let bookId = UUID()
+        let textFile = roots.storage.textBookDirectory(bookId: bookId)
+            .appendingPathComponent("0.txt")
+        try FileManager.default.createDirectory(
+            at: textFile.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("text".utf8).write(to: textFile)
+        let store = OfflineChapterStore(roots: roots.storage, imageDownloader: StubImageDownloader())
+
+        // The shape of a background refresh that went wrong: the source answered with a
+        // table of contents that matches nothing the book had. Under `.deleteMismatched`
+        // this erases the download; a refresh nobody asked for must not be able to do that.
+        let oldRefs = [OnlineChapterRef(index: 0, title: "One", url: "https://x/1")]
+        let newRefs = [OnlineChapterRef(index: 0, title: "Other", url: "https://y/9")]
+
+        try await store.reconcileBook(
+            bookId: bookId,
+            oldRefs: oldRefs,
+            newRefs: newRefs,
+            disposition: .preserveContent
+        )
+
+        #expect(FileManager.default.fileExists(atPath: textFile.path))
+
+        // …and the user-initiated form still cleans up, so 換源 does not leave the old
+        // source's bytes lying around.
+        try await store.reconcileBook(
+            bookId: bookId,
+            oldRefs: oldRefs,
+            newRefs: newRefs,
+            disposition: .deleteMismatched
+        )
+        #expect(!FileManager.default.fileExists(atPath: textFile.path))
+    }
+
+    @Test("invalidating a chapter leaves no artifact and never re-creates the book directory")
+    func invalidatingChapterLeavesNothingBehind() async throws {
         let roots = try makeRoots()
         defer { try? FileManager.default.removeItem(at: roots.container) }
         let bookId = UUID()
         let repository = ChapterCacheRepository(rootDirectory: roots.storage.textRoot)
-        repository.saveFailureMarker(
-            bookId: bookId,
-            chapterIndex: 0,
-            sourceURL: "https://example.com/1",
-            tocTitle: "第一章",
-            reason: "network"
-        )
-        let store = OfflineChapterStore(roots: roots.storage, imageDownloader: StubImageDownloader())
 
-        // The package loader hands failure markers back as `.failed` packages with
-        // an empty body. Counting one as downloaded let a download skip the chapter
-        // entirely and still report 完成.
+        // A failed fetch used to write a `.failed` marker, and writing it began with
+        // `createDirectory(withIntermediateDirectories:)`. A fetch failing just after
+        // 移除下載 therefore re-created the directory removal had deleted and refilled it,
+        // which is why removing a download mid-flight left the book unreadable.
+        let bookDirectory = roots.storage.textBookDirectory(bookId: bookId)
+        repository.clearChapterCache(bookId: bookId, chapterIndex: 0)
+        #expect(!FileManager.default.fileExists(atPath: bookDirectory.path))
+
+        let store = OfflineChapterStore(roots: roots.storage, imageDownloader: StubImageDownloader())
         let state = await store.validationState(
             bookId: bookId,
             chapterIndex: 0,

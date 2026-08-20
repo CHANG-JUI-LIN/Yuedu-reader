@@ -2,8 +2,7 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-/// Phase 3 step 1 — `float` / `clear` COMPUTED VALUES only. Nothing consumes
-/// them yet, so these tests pin parsing, not layout.
+/// `float` / `clear` computed values and their horizontal-layout integration.
 ///
 /// The load-bearing case is `float: center`. 红楼梦 declares
 /// `div.duokan-float-center { float: center }` on 51 of its 57 float-classed
@@ -128,20 +127,23 @@ struct BrowserLayoutFloatStyleTests {
         #expect(child.cssClear == .none, "clear must not inherit")
     }
 
-    /// Nothing reads `cssFloat` yet, so a floated box must still lay out exactly
-    /// like the ordinary block it is today. This is the guard that Phase 3
-    /// step 1 changed no geometry.
-    @Test func floatDeclarationChangesNoGeometryYet() async throws {
+    /// Phase 4B consumes `cssFloat`: a right float is removed from normal flow,
+    /// aligned to the right edge, and the following paragraph occupies the
+    /// available band beside it.
+    @Test func floatDeclarationChangesGeometry() async throws {
         let plain = """
-        <html><body><div><p>浮動前的內容</p></div><p>之後</p></body></html>
+        <html><body style="margin:0"><div style="width:100px"><p>浮動內容</p></div><p>之後</p></body></html>
         """
         let floated = """
-        <html><body><div style="float: right"><p>浮動前的內容</p></div><p>之後</p></body></html>
+        <html><body style="margin:0"><div style="float:right;width:100px"><p>浮動內容</p></div><p>之後</p></body></html>
         """
         let (a, _) = try await BrowserLayoutTestSupport.layout(plain, width: 300, height: 400)
         let (b, _) = try await BrowserLayoutTestSupport.layout(floated, width: 300, height: 400)
         let ra = BrowserLayoutTestSupport.allTextFragments(a).map(\.rect.rawValue)
         let rb = BrowserLayoutTestSupport.allTextFragments(b).map(\.rect.rawValue)
-        #expect(ra == rb, "step 1 must not move anything: \(ra) vs \(rb)")
+        #expect(ra.count == 2)
+        #expect(rb.count == 2)
+        #expect(rb[0].minX > ra[0].minX + 150, "right float must align to the right: \(ra) vs \(rb)")
+        #expect(rb[1].minY < ra[1].minY, "following text must wrap beside the float: \(ra) vs \(rb)")
     }
 }

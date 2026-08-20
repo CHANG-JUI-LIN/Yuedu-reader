@@ -39,6 +39,10 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     private var activeChapterIndices: [UUID: Int] = [:]
     private var waitingBooks: [WaitingBook] = []
     private var isReconciling = false
+    /// The store each running book is downloading into, so the background-expiry handler can
+    /// pause them without being handed one.
+    private var runningStores: [UUID: BookStore] = [:]
+    private var hasInstalledBackgroundExpiryHandler = false
     /// Attempts spent per chapter, `bookId → chapterIndex → count`. In memory only, like
     /// Legado's `errorDownloadMap`: a relaunch is a fresh set of attempts.
     private var chapterAttempts: [UUID: [Int: Int]] = [:]
@@ -173,10 +177,17 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         waitingBooks.removeAll { $0.book.id == bookId }
         let job = bookJobs[bookId]
         job?.cancel()
-        if let chapterIndex = activeChapterIndices[bookId] {
-            await chapterFetcher.cancelChapter(bookId: bookId, chapterIndex: chapterIndex)
-        }
+        // Every fetch for this book, not just the one index `activeChapterIndices` happens to
+        // hold: the reader is usually open on the same book and has its own requests in
+        // flight, and any of them landing after the directory is deleted writes into a book
+        // the user just cleared.
+        await chapterFetcher.cancelAll(for: bookId, includingDownloads: true)
         await job?.value
+        // Cancelling a download cancels many chapters at once. Each one that surfaced as a
+        // failure counted against the book's quarantine budget, which only ever reset on a
+        // success — so removing a download could quarantine the book permanently.
+        await chapterFetcher.resetFailureBudget(for: bookId)
+        await MainActor.run { store.clearAutomaticQuarantine(bookId: bookId) }
         try await store.clearOnlineDownload(
             bookId: bookId,
             offlineChapterStore: chapterStore
@@ -197,6 +208,20 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         }
         for book in books {
             guard let refs = book.onlineChapters else { continue }
+            // A reconcile validates; it never destroys. With an empty table of contents every
+            // requested index falls outside `refs.indices`, so the merge below would drop them
+            // all, leave an empty task, and `derivedState` would answer `.none` — the book
+            // silently reverts to "never downloaded", flushed immediately because the targets
+            // changed. Nothing here can tell "this book lost its chapters" apart from "the TOC
+            // fetch failed", so it must not act on either. `OnlineTOCCommitPolicy` keeps an
+            // empty list from being committed in the first place; this is the second lock.
+            guard !refs.isEmpty else {
+                AppLogger.cache("⟐ reconcile skipped, empty TOC", context: [
+                    "bookId": book.id.uuidString,
+                    "title": book.title,
+                ])
+                continue
+            }
             let requestedIndices = await MainActor.run {
                 store.books.first(where: { $0.id == book.id })?.offlineDownloadTask?.requestedIndices
             }
@@ -292,8 +317,11 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                 since: waiting.enqueuedAt
             )
             let bookId = waiting.book.id
+            runningStores[bookId] = waiting.store
             bookJobs[bookId] = Task { [weak self] in
+                await self?.beginBackgroundAssertion()
                 await self?.runBook(waiting.book, store: waiting.store)
+                await MainActor.run { OfflineDownloadBackgroundTask.shared.release() }
             }
         }
     }
@@ -493,7 +521,38 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         activeChapterIndices.removeValue(forKey: bookId)
         chapterAttempts.removeValue(forKey: bookId)
         bookJobs.removeValue(forKey: bookId)
+        runningStores.removeValue(forKey: bookId)
         startWaitingBooksIfPossible()
+    }
+
+    /// Takes the shared background assertion for this job, installing the expiry handler the
+    /// first time. See `OfflineDownloadBackgroundTask` for what the assertion does and does
+    /// not buy — it is a clean stop, not background downloading.
+    private func beginBackgroundAssertion() async {
+        let needsHandler = !hasInstalledBackgroundExpiryHandler
+        hasInstalledBackgroundExpiryHandler = true
+        await MainActor.run { [weak self] in
+            if needsHandler {
+                OfflineDownloadBackgroundTask.shared.onExpiration = {
+                    Task { await self?.pauseForBackgroundExpiry() }
+                }
+            }
+            OfflineDownloadBackgroundTask.shared.acquire()
+        }
+    }
+
+    /// iOS is about to reclaim the assertion. Stop where we are and write it down: a paused
+    /// task is a state the next foreground resumes from, whereas being frozen mid-chapter
+    /// leaves the reconcile to reconstruct one.
+    private func pauseForBackgroundExpiry() async {
+        let running = runningStores
+        guard !running.isEmpty else { return }
+        AppLogger.cache("⟐ pausing offline downloads for background expiry", context: [
+            "books": running.count,
+        ])
+        for (bookId, store) in running {
+            await pause(bookId: bookId, store: store)
+        }
     }
 
     private func failureCategory(for error: Error) -> OfflineChapterFailure.Category {

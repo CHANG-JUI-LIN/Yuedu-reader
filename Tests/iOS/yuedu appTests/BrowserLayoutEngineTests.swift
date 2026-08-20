@@ -310,10 +310,12 @@ struct PageFragmentationTests {
         let block = BlockBox(style: style, boxType: .block, lines: lines)
         _ = BlockLayout.layOut(root: block, containerWidth: 300)
         let pages = PageFragmentation.fragment(box: block, pageSize: CGSize(width: 300, height: 100))
-        #expect(pages.count == 4)                      // 400pt content / 100pt pages
+        #expect(pages.count == 5)
         // Whole line boxes move to the next page when they don't fit the
-        // remaining space: lines 0,1 | 2,3,4 | 5,6 | 7,8,9.
-        #expect(pages.map(\.fragments.count) == [2, 3, 2, 3])
+        // remaining space. With 40pt atomic lines in 100pt fragmentainers,
+        // each page fits exactly two lines; the unused 20pt cannot be reused by
+        // overlapping a line that was moved from the previous page.
+        #expect(pages.map(\.fragments.count) == [2, 2, 2, 2, 2])
         for page in pages {
             #expect(page.index >= 0)
             #expect(!page.fragments.isEmpty)
@@ -349,6 +351,58 @@ struct BrowserLayoutDocumentTests {
         let doc = BrowserLayoutDocument(html: "<html><body></body></html>", cssTexts: [], config: BrowserLayoutConfig())
         let pages = try await doc.renderPages(containerSize: CGSize(width: 300, height: 400))
         #expect(pages.isEmpty)
+    }
+
+    @Test func documentUsesInjectedCSSFrontendBoundary() throws {
+        let frontend = RecordingCSSFrontend()
+        let doc = BrowserLayoutDocument(
+            html: "<html><body><p>Boundary</p></body></html>",
+            cssTexts: [],
+            config: BrowserLayoutConfig(),
+            frontend: frontend
+        )
+
+        _ = try doc.makeLayout(containerSize: CGSize(width: 300, height: 400))
+
+        #expect(frontend.callCount == 1)
+    }
+
+    @Test func legacyFrontendPreservesExistingStylesheetOrdering() throws {
+        let doc = BrowserLayoutDocument(
+            html: "<html><body style=\"margin: 0\"><div class=\"f\">Floated</div></body></html>",
+            cssTexts: [
+                ".unmatched { color: red; } .f { float: left; width: 100px; }",
+                ".f { float: none; width: auto; }",
+            ],
+            config: BrowserLayoutConfig()
+        )
+
+        let layout = try doc.makeLayout(containerSize: CGSize(width: 300, height: 400))
+
+        // Phase 4A wraps the existing frontend; it must not silently repair or
+        // otherwise alter the historical zero-based per-stylesheet ordering.
+        #expect(layout.rootBox.children[0].isFloated)
+        #expect(layout.rootBox.children[0].frame.width == 100)
+    }
+}
+
+private final class RecordingCSSFrontend: CSSFrontend {
+    private let underlying = LegacyCSSFrontend()
+    private(set) var callCount = 0
+
+    func buildStyleTree(
+        html: String,
+        cssTexts: [String],
+        config: BrowserLayoutConfig,
+        metrics: inout LayoutMetrics
+    ) throws -> CSSFrontendResult {
+        callCount += 1
+        return try underlying.buildStyleTree(
+            html: html,
+            cssTexts: cssTexts,
+            config: config,
+            metrics: &metrics
+        )
     }
 }
 

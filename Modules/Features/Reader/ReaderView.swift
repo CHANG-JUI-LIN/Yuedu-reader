@@ -96,6 +96,11 @@ struct ReaderView: View {
     /// on disk. Bounds `recoverInconsistentChapterOnce` so a genuinely broken chapter still
     /// reaches the failure overlay instead of refetching forever.
     @State var chapterConsistencyRecoveryAttempts: [Int: Int] = [:]
+    /// Distinct chapters that have failed since the last success or table-of-contents
+    /// revalidation. See `noteChapterFailureForStaleTOC`.
+    @State var chaptersFailedSinceTOCCheck: Set<Int> = []
+    /// One forced table-of-contents revalidation per reader session.
+    @State var didRevalidateTOCForFailures = false
 
     /// Top safe area (points), passed to EPUB engine as minimum margin-top.
     @State var readerSafeAreaTop: CGFloat = 59

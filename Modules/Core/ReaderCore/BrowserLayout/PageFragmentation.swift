@@ -116,9 +116,16 @@ struct PageWalker {
 
     /// Document-space step emitted by `nextStep` (BEFORE paging).
     enum Step {
+        case floatBoundary(StepFloat)
         case fill(StepFill)
         case text(StepText)
         case image(StepImage)
+    }
+
+    struct StepFloat {
+        let marginRect: DocumentRect
+        let nodeID: Int
+        let isReplaced: Bool
     }
 
     struct StepText {
@@ -165,6 +172,7 @@ struct PageWalker {
         var lineIndex = 0
         var runIndex = 0
         var fillsEmitted = false
+        var floatBoundaryEmitted = false
         /// The root (html/body) frame. Its background belongs to the CANVAS,
         /// not to the box — see the paint guard in `nextStep`.
         var isRoot = false
@@ -296,6 +304,26 @@ struct PageWalker {
         #endif
         while !stack.isEmpty {
             let index = stack.count - 1
+            if stack[index].box.isFloated, !stack[index].floatBoundaryEmitted {
+                stack[index].floatBoundaryEmitted = true
+                let frame = stack[index]
+                let borderRect = CGRect(
+                    x: frame.borderX,
+                    y: frame.borderY,
+                    width: frame.box.frame.width,
+                    height: frame.box.frame.height
+                )
+                return .floatBoundary(StepFloat(
+                    marginRect: DocumentRect(rawValue: CGRect(
+                        x: borderRect.minX - frame.box.margins.left,
+                        y: borderRect.minY - frame.box.margins.top,
+                        width: borderRect.width + frame.box.margins.horizontal,
+                        height: borderRect.height + frame.box.margins.vertical
+                    )),
+                    nodeID: frame.box.debugNodeID,
+                    isReplaced: frame.box.imageAttachment != nil
+                ))
+            }
             if !stack[index].fillsEmitted {
                 stack[index].fillsEmitted = true
                 let frame = stack[index]
@@ -323,7 +351,7 @@ struct PageWalker {
                         borderBottom: Self.edge(frame.box.borders.bottom, frame.box.style.borderBottomStyle, frame.box.style.borderColor),
                         borderLeft: Self.edge(frame.box.borders.left, frame.box.style.borderLeftStyle, frame.box.style.borderColor),
                         borderRight: Self.edge(frame.box.borders.right, frame.box.style.borderRightStyle, frame.box.style.borderColor),
-                        nodeID: -1,
+                        nodeID: frame.box.debugNodeID,
                         writingMode: writingMode
                     ))
                 }
@@ -340,7 +368,7 @@ struct PageWalker {
                         borderBottom: Self.edge(frame.box.borders.bottom, frame.box.style.borderBottomStyle, frame.box.style.borderColor),
                         borderLeft: Self.edge(frame.box.borders.left, frame.box.style.borderLeftStyle, frame.box.style.borderColor),
                         borderRight: Self.edge(frame.box.borders.right, frame.box.style.borderRightStyle, frame.box.style.borderColor),
-                        nodeID: -1,
+                        nodeID: frame.box.debugNodeID,
                         writingMode: writingMode
                     ))
                 }
@@ -470,6 +498,8 @@ struct PageWalker {
         // bytes of *accounting*, which is exactly the monotonic growth
         // MemoryTracker exists to disprove. One owner per artifact type.
         switch step {
+        case .floatBoundary(let marker):
+            return placeFloatBoundary(marker)
         case .fill(let frag):
             return placeFill(frag)
         case .text(let frag):
@@ -477,6 +507,26 @@ struct PageWalker {
         case .image(let frag):
             return placeImage(frag)
         }
+    }
+
+    /// A float that fits a full fragmentainer is atomic. The structural marker
+    /// is emitted before any of the float's paint/content, so one flowShift
+    /// relocates the complete float and every following sibling together.
+    /// Oversized replaced floats stay on the generic image scale-to-fit path;
+    /// non-replaced oversized/complex floats are rejected by the scanner.
+    private mutating func placeFloatBoundary(_ step: StepFloat) -> PageFragments? {
+        guard !isContinuous else { return nil }
+
+        let shiftedY = step.marginRect.minY + flowShift
+        var target = max(0, Int(floor(shiftedY / pageHeight)))
+        let pageLocalY = shiftedY - CGFloat(target) * pageHeight
+        if step.marginRect.height <= pageHeight,
+           pageLocalY + step.marginRect.height > pageHeight + 0.001 {
+            target += 1
+            let movedY = CGFloat(target) * pageHeight
+            flowShift += movedY - shiftedY
+        }
+        return advanceToPage(target)
     }
 
     /// Walks until the next page completes. Returns the page, or nil when the

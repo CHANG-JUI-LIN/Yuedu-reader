@@ -77,6 +77,8 @@ final class BlockBox {
     let boxType: BlockBoxType
     var children: [BlockBox]
     var lines: [LayoutLine]
+    /// Raw unformatted inline runs before line layout with FloatContext.
+    var inlineRuns: [InlineRun] = []
     /// Non-nil when this box IS a replaced element (block-level image).
     var imageAttachment: AtomicInline? = nil
     /// Border-box rect in PARENT content-local coordinates (Phase 2C contract).
@@ -102,11 +104,22 @@ final class BlockBox {
     /// Debug-only: cached document-absolute origin (set by diagnostics).
     var documentOrigin: CGPoint = .zero
 
-    init(style: ComputedStyle, boxType: BlockBoxType = .block, children: [BlockBox] = [], lines: [LayoutLine] = []) {
+    var isFloated: Bool {
+        style.cssFloat == .left || style.cssFloat == .right
+    }
+
+    init(
+        style: ComputedStyle,
+        boxType: BlockBoxType = .block,
+        children: [BlockBox] = [],
+        lines: [LayoutLine] = [],
+        inlineRuns: [InlineRun] = []
+    ) {
         self.style = style
         self.boxType = boxType
         self.children = children
         self.lines = lines
+        self.inlineRuns = inlineRuns
     }
 
     /// Border-box width (content + padding + border).

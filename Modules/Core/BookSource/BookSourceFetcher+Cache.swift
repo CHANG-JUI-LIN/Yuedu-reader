@@ -13,7 +13,14 @@ extension BookSourceFetcher {
         StorageLocations.bookInfoCache
     }
 
-    nonisolated func loadTOCPackageSync(tocUrl: String, source: BookSource) -> TOCPackage? {
+    /// - Parameter maximumAge: reject a package older than this. Defaults to
+    ///   `AppConfig.tocCacheTTL`; pass `nil` only where a stale list is genuinely better than
+    ///   none. See `AppConfig.tocCacheTTL` for why serving these forever was a bug.
+    nonisolated func loadTOCPackageSync(
+        tocUrl: String,
+        source: BookSource,
+        maximumAge: TimeInterval? = AppConfig.tocCacheTTL
+    ) -> TOCPackage? {
         let path = tocPackagePath(tocUrl: tocUrl, source: source)
         guard let data = try? Data(contentsOf: path),
             let package = try? JSONDecoder().decode(TOCPackage.self, from: data),
@@ -22,16 +29,48 @@ extension BookSourceFetcher {
         else {
             return nil
         }
+        if let maximumAge, Date().timeIntervalSince(package.savedAt) > maximumAge {
+            return nil
+        }
         return package
     }
 
-    nonisolated func loadBookInfoPackageSync(url: String, source: BookSource) -> BookInfoPackage? {
+    /// Drops the cached table of contents and book info for one book's source binding.
+    ///
+    /// Required wherever a book's cached *content* is discarded: after 移除下載 every chapter
+    /// goes back to the network for the first time in however long, and doing that against
+    /// chapter URLs the cache has been replaying since they were first fetched is what made a
+    /// removal take the whole book down with it.
+    nonisolated func clearTOCAndBookInfoCache(
+        tocUrl: String?,
+        bookURL: String?,
+        source: BookSource
+    ) {
+        let manager = FileManager.default
+        if let tocUrl, !tocUrl.isEmpty {
+            try? manager.removeItem(at: tocPackagePath(tocUrl: tocUrl, source: source))
+            try? manager.removeItem(at: tocRawHTMLPath(tocUrl: tocUrl, source: source))
+        }
+        if let bookURL, !bookURL.isEmpty {
+            try? manager.removeItem(at: bookInfoPackagePath(url: bookURL, source: source))
+            try? manager.removeItem(at: bookInfoRawHTMLPath(url: bookURL, source: source))
+        }
+    }
+
+    nonisolated func loadBookInfoPackageSync(
+        url: String,
+        source: BookSource,
+        maximumAge: TimeInterval? = AppConfig.tocCacheTTL
+    ) -> BookInfoPackage? {
         let path = bookInfoPackagePath(url: url, source: source)
         guard let data = try? Data(contentsOf: path),
             let package = try? JSONDecoder().decode(BookInfoPackage.self, from: data),
             normalizedURLKey(package.bookURL) == normalizedURLKey(url),
             package.sourceId == source.id
         else {
+            return nil
+        }
+        if let maximumAge, Date().timeIntervalSince(package.savedAt) > maximumAge {
             return nil
         }
         return package

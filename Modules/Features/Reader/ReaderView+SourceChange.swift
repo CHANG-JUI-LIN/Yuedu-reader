@@ -286,6 +286,11 @@ extension ReaderView {
                 // source switch. They belong to the source we just left; drop them.
                 readerViewModel.resetAllChapterStates()
                 chapterConsistencyRecoveryAttempts.removeAll()
+                // The failure budget and any automatic quarantine were earned by the source
+                // we just left. Neither used to be reset by anything short of deleting the
+                // book and adding it again.
+                await dependencies.chapterFetcher.resetFailureBudget(for: bookId)
+                store.clearAutomaticQuarantine(bookId: bookId)
 
                 let newRefs = store.books.first(where: { $0.id == bookId })?.onlineChapters ?? []
                 var mappedPosition: CoreTextReadingPosition?

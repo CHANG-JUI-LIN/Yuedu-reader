@@ -33,6 +33,7 @@ final class BrowserLayoutDocument {
     private let cssTexts: [String]
     private let config: BrowserLayoutConfig
     private let imageLoader: (String) -> UIImage?
+    private let frontend: CSSFrontend
 
     /// The collapsed source text of the last `renderPages` run.
     private(set) var lastSourceText = ""
@@ -47,12 +48,14 @@ final class BrowserLayoutDocument {
         html: String,
         cssTexts: [String],
         config: BrowserLayoutConfig,
-        imageLoader: ((String) -> UIImage?)? = nil
+        imageLoader: ((String) -> UIImage?)? = nil,
+        frontend: CSSFrontend = LegacyCSSFrontend()
     ) {
         self.html = html
         self.cssTexts = cssTexts
         self.config = config
         self.imageLoader = imageLoader ?? { _ in nil }
+        self.frontend = frontend
     }
 
     func renderPages(containerSize: CGSize) async throws -> [PageFragments] {
@@ -65,7 +68,22 @@ final class BrowserLayoutDocument {
     /// implementation, no parallel paths.
     func makeLayout(containerSize: CGSize) throws -> BrowserLayoutPipelineResult {
         var discarded = LayoutMetrics()
-        return try makeLayout(containerSize: containerSize, metrics: &discarded)
+        return try makeLayout(containerSize: containerSize, metrics: &discarded, fragmentHeight: nil)
+    }
+
+    /// Paged counterpart used by batch and incremental pagination. Continuous
+    /// scroll intentionally calls the public overload above so page-only image
+    /// fit policy never changes its document geometry.
+    func makeLayout(
+        containerSize: CGSize,
+        fragmentHeight: CGFloat
+    ) throws -> BrowserLayoutPipelineResult {
+        var discarded = LayoutMetrics()
+        return try makeLayout(
+            containerSize: containerSize,
+            metrics: &discarded,
+            fragmentHeight: fragmentHeight
+        )
     }
 
     /// Per-stage timings go into `metrics`. The stage names are a contract:
@@ -75,25 +93,18 @@ final class BrowserLayoutDocument {
     /// breakdown disappear once already.
     func makeLayout(
         containerSize: CGSize,
-        metrics: inout LayoutMetrics
+        metrics: inout LayoutMetrics,
+        fragmentHeight: CGFloat? = nil
     ) throws -> BrowserLayoutPipelineResult {
-        let fullCSS = metrics.time("cssCollect") { cssTexts + extractInlineStyles(html) }
-        let document = try metrics.time("htmlParse") { try SwiftSoup.parse(html) }
-        guard let body = document.body() else {
-            throw BrowserLayoutError.emptyBody
-        }
-        let rules = metrics.time("cssParse") {
-            fullCSS.flatMap { CSSParser.parse(css: $0, orderOffset: 0) }
-        }
-        let builder = ComputedStyleTreeBuilder(rules: rules, config: config)
-        var linkAnchors: [Int: LinkAnchorInfo] = [:]
-        let rootNode = metrics.time("styleTree") {
-            let tree = builder.buildTree(body: body)
-            // Link identity/semantics belong to the style tree stage: they are
-            // DOM facts, resolved once, and every later stage only carries them.
-            linkAnchors = ComputedStyleTreeBuilder.collectLinkAnchors(tree)
-            return tree
-        }
+        let frontendResult = try frontend.buildStyleTree(
+            html: html,
+            cssTexts: cssTexts,
+            config: config,
+            metrics: &metrics
+        )
+        let rootNode = frontendResult.rootNode
+        let linkAnchors = frontendResult.linkAnchors
+
         var sourceText = SourceTextBuilder()
         var anchors: [String: Int] = [:]
         let rootBox = metrics.time("boxTree") {
@@ -110,17 +121,31 @@ final class BrowserLayoutDocument {
                 root: rootBox,
                 containerWidth: contentWidth,
                 rootFontSize: config.rootFontSize,
-                writingMode: config.writingMode
+                writingMode: config.writingMode,
+                sourceText: sourceText.text,
+                fontResolver: config.fontResolver,
+                fragmentHeight: fragmentHeight
             )
+        }
+        if let fragmentHeight,
+           let oversized = Self.firstOversizedNonReplacedFloat(
+                in: rootBox,
+                fragmentHeight: fragmentHeight
+           ) {
+            // Phase 4B support boundary: a non-replaced float may not split
+            // across fragmentainers. This precise post-layout trigger makes
+            // browserAuto fall back for the whole chapter; replaced images were
+            // already fitted atomically by BlockLayout above.
+            throw BrowserLayoutError.unsupportedFloatFragmentation(nodeID: oversized.debugNodeID)
         }
         return BrowserLayoutPipelineResult(
             rootBox: rootBox,
             sourceText: sourceText.text,
             anchorOffsets: anchors,
             contentSize: CGSize(width: contentWidth, height: contentHeight),
-            nodeCount: rootNode.nodeID,
+            nodeCount: frontendResult.nodeCount,
             boxCount: BoxTreeBuilder.countBoxes(in: rootBox),
-            footnotes: Self.collectFootnotes(in: document),
+            footnotes: frontendResult.footnotes,
             linkAnchors: linkAnchors
         )
     }
@@ -146,6 +171,27 @@ final class BrowserLayoutDocument {
 
     enum BrowserLayoutError: Error {
         case emptyBody
+        case unsupportedFloatFragmentation(nodeID: Int)
+    }
+
+    private static func firstOversizedNonReplacedFloat(
+        in box: BlockBox,
+        fragmentHeight: CGFloat
+    ) -> BlockBox? {
+        if box.isFloated,
+           box.imageAttachment == nil,
+           box.frame.height + box.margins.vertical > fragmentHeight + 0.001 {
+            return box
+        }
+        for child in box.children {
+            if let match = firstOversizedNonReplacedFloat(
+                in: child,
+                fragmentHeight: fragmentHeight
+            ) {
+                return match
+            }
+        }
+        return nil
     }
 
     /// 多看 popup-footnote payload: `<ol class="duokan-footnote-content">
@@ -263,7 +309,14 @@ final class BrowserLayoutDocument {
 
         // Sub-stages are recorded individually; wrapping them in an outer span
         // as well would double-count them in `total`.
-        let pipeline = try makeLayout(containerSize: containerSize, metrics: &metrics)
+        let pipeline = try makeLayout(
+            containerSize: containerSize,
+            metrics: &metrics,
+            fragmentHeight: max(
+                1,
+                containerSize.height - config.contentInsets.top - config.contentInsets.bottom
+            )
+        )
         peakFootprint = max(peakFootprint, MemoryStats.currentFootprint())
 
         var pages: [PageFragments] = []
@@ -366,12 +419,6 @@ final class BrowserLayoutDocument {
         return ns.substring(with: range)
     }
 
-    private func extractInlineStyles(_ html: String) -> [String] {
-        guard let doc = try? SwiftSoup.parse(html),
-              let head = doc.head() else { return [] }
-        let styleTags = (try? head.select("style").array()) ?? []
-        return styleTags.compactMap { try? $0.html() }.filter { !$0.isEmpty }
-    }
 }
 
 /// phys_footprint sampling via task_info — the metric for "peak memory".

@@ -111,6 +111,20 @@ enum BookCoverLoader {
         return UIImage(cgImage: cgImage)
     }
 
+    /// The cover already saved for a book, read from `ReadingBook.coverImagePath`.
+    ///
+    /// The one reader of the on-disk cover. `StorageLocations.coverFile` routes between
+    /// `Covers` and `CustomCovers` by the filename marker, so callers must not join that path
+    /// themselves — two of them used to, and any change to the routing had to be found in
+    /// three places instead of one.
+    static func localImage(filename: String?) -> UIImage? {
+        guard let filename, !filename.isEmpty else { return nil }
+        guard let data = try? Data(contentsOf: StorageLocations.coverFile(filename)) else {
+            return nil
+        }
+        return UIImage(data: data)
+    }
+
     private static func bitmapCost(of image: UIImage) -> Int {
         guard let cgImage = image.cgImage else { return 1 }
         return cgImage.bytesPerRow * cgImage.height

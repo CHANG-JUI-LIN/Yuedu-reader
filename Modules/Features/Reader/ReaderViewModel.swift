@@ -120,6 +120,11 @@ final class ReaderViewModel: ObservableObject {
         }
         inFlightRequests.removeAll()
         chapterStates.removeAll()
+        // The single-chapter form (`resetChapterState`) drops this too. Leaving it behind
+        // made every chapter keep claiming "content available" against a cache that 移除下載
+        // had just emptied, and `overlayState` consults it first — so the reader painted
+        // 資料不一致 over chapters it could simply have refetched.
+        availableChapterIndexes.removeAll()
     }
 
     // MARK: - Chapter Loading
@@ -209,9 +214,14 @@ final class ReaderViewModel: ObservableObject {
 
     // MARK: - Chapter Cancellation
 
-    /// Cancels all in-flight chapter requests for the given book.
+    /// Cancels the reader's in-flight chapter requests for the given book.
+    ///
+    /// Offline downloads are deliberately spared: the reader and the downloader share one
+    /// fetch manager, so closing the reader used to cancel a download running on the same
+    /// book. `runBook` treats cancellation as a clean exit, so the download simply stopped —
+    /// no error, no queue, state still `.downloading`.
     func cancelAll(for bookId: UUID) async {
-        await chapterFetcher.cancelAll(for: bookId)
+        await chapterFetcher.cancelAll(for: bookId, includingDownloads: false)
     }
 
     // MARK: - Download Actions

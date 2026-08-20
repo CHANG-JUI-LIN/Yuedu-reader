@@ -106,6 +106,10 @@ struct ComputedStyle: Equatable {
     /// Used `clear`. Same strict rule.
     var cssClear: CSSClear = .none
 
+    var isFloated: Bool {
+        cssFloat == .left || cssFloat == .right
+    }
+
     // Inline text
     var fontSize: CGFloat
     var fontFamilies: [String]

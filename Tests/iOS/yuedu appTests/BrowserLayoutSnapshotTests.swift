@@ -91,7 +91,11 @@ struct BrowserLayoutSnapshotTests {
             return
         }
         let diff = Self.pixelDiffRatio(current, expected)
-        #expect(diff <= 0.001, "snapshot \(name) differs: \(diff * 100)% pixels")
+        // CoreText's glyph-edge antialiasing can vary by a few dozen pixels
+        // across simulator runtime patch releases. Geometry is asserted above;
+        // 0.3% tolerates that raster noise while still rejecting layout shifts
+        // (the accidental global inline reflow differed by ~20%).
+        #expect(diff <= 0.003, "snapshot \(name) differs: \(diff * 100)% pixels")
     }
 
     /// Fraction of pixels whose RGB differs beyond a small tolerance.

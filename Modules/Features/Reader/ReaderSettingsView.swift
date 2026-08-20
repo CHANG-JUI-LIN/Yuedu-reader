@@ -352,7 +352,7 @@ struct ReaderSettingsView: View {
                         Int(settings.readerOverlayLayout.contentReservations.top)
                     ),
                     value: overlayReservationBinding(\.top),
-                    range: 0...120,
+                    range: 0...ReaderOverlayContentReservations.topMaximum,
                     step: 1
                 )
 
@@ -364,7 +364,7 @@ struct ReaderSettingsView: View {
                         Int(settings.readerOverlayLayout.contentReservations.bottom)
                     ),
                     value: overlayReservationBinding(\.bottom),
-                    range: 0...120,
+                    range: 0...ReaderOverlayContentReservations.bottomMaximum,
                     step: 1
                 )
             }

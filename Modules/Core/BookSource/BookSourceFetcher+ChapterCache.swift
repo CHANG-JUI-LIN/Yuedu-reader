@@ -91,24 +91,6 @@ extension BookSourceFetcher {
         )
     }
 
-    nonisolated func saveFailureMarker(
-        bookId: UUID,
-        chapterIndex: Int,
-        sourceURL: String? = nil,
-        tocTitle: String? = nil,
-        extractedTitle: String? = nil,
-        reason: String? = nil
-    ) {
-        Self.chapterCacheRepository.saveFailureMarker(
-            bookId: bookId,
-            chapterIndex: chapterIndex,
-            sourceURL: sourceURL,
-            tocTitle: tocTitle,
-            extractedTitle: extractedTitle,
-            reason: reason
-        )
-    }
-
     nonisolated func loadCachedChapterMetadataSync(bookId: UUID, chapterIndex: Int) -> CachedChapterMetadata? {
         Self.chapterCacheRepository.loadCachedChapterMetadataSync(
             bookId: bookId,

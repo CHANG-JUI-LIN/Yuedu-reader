@@ -47,20 +47,9 @@ struct BrowserLayoutCapabilityResult: Equatable {
 /// DOM-aware capability scanner. Runs BEFORE any browser-engine layout and
 /// decides, per chapter, whether the browser engine can render it correctly.
 ///
-/// Phase 2A accepts: horizontal reflowable EPUB, block/inline, the supported
-/// box model, supported white-space, plain text, links, anchors, basic images.
-///
-/// A shared stylesheet may declare unsupported features (float, ruby, calc…)
-/// for OTHER chapters. The scanner therefore judges capability from what
-/// actually APPLIES to this chapter's DOM:
-///   - CSS rules are matched against the real DOM elements; only declarations
-///     of MATCHED selectors are considered (unmatched rules are ignored).
-///   - element inline `style` attributes are checked directly.
-///   - DOM-level markers (script, MathML, ruby, table, svg) are checked on the
-///     actual markup.
-///   - paint-only unsupported properties (background-image, text-shadow,
-///     border-radius, background-attachment…) do NOT affect layout and are
-///     allowed — they are paint degradation at worst, never a layout rejection.
+/// Phase 4B accepts: horizontal reflowable EPUB, block/inline, supported CSS Float
+/// (replaced images, explicit/percent width boxes, clear: left/right/both),
+/// supported box model, supported white-space, plain text, links, anchors, basic images.
 enum BrowserLayoutCapabilityScanner {
 
     /// A matched declaration that would change layout and is not implemented.
@@ -90,6 +79,7 @@ enum BrowserLayoutCapabilityScanner {
 
         // DOM-level checks (script, MathML, SVG semantics, table/float/flex in markup).
         if let doc = try? SwiftSoup.parse(html) {
+            let fullCSS = cssTexts + LegacyCSSFrontendSupport.inlineStyles(in: doc)
             func hasAny(_ selector: String) -> Bool {
                 ((try? doc.select(selector).isEmpty()) ?? true) == false
             }
@@ -105,9 +95,6 @@ enum BrowserLayoutCapabilityScanner {
             if hasAny("table, thead, tbody, tr, td, th, colgroup") {
                 reasons.append(.table)
             }
-            // An SVG used purely to wrap one raster image (the standard EPUB
-            // cover) is renderable — only real vector content is unsupported.
-            // Same predicate as the box tree, so the two cannot disagree.
             let svgs = (try? doc.select("svg").array()) ?? []
             if svgs.contains(where: { BoxTreeBuilder.svgWrappedImageSource($0) == nil }) {
                 reasons.append(.unsupportedSVG)
@@ -116,7 +103,10 @@ enum BrowserLayoutCapabilityScanner {
             // CSS rules: match selectors against the real DOM. Only declarations
             // from selectors that match at least one element are judged.
             let elements = (try? doc.getAllElements().array()) ?? []
-            for css in cssTexts {
+            for css in LegacyCSSFrontendSupport.inlineStyles(in: doc) {
+                if cssContainsMediaQuery(css) { reasons.append(.mediaQueries) }
+            }
+            for css in fullCSS {
                 var matchedAnyUnsupported = false
                 for rule in CSSParser.parse(css: css, orderOffset: 0) {
                     let matchedElements = elements.filter { element in
@@ -125,8 +115,6 @@ enum BrowserLayoutCapabilityScanner {
                     }
                     guard !matchedElements.isEmpty else { continue }  // unmatched rule → ignore
 
-                    // Source order, not dictionary order: the reported
-                    // reason list must be stable across runs.
                     for property in rule.declarationOrder {
                         guard let value = rule.declarations[property] else { continue }
                         if let feature = layoutAffectingDeclaration(key: property, value: value) {
@@ -164,6 +152,18 @@ enum BrowserLayoutCapabilityScanner {
                     }
                 }
             }
+
+            // Float classification must use the SAME resolved cascade as layout.
+            // Replaying declarations here used to get `float: none`, inline
+            // priority, specificity, !important, and width:auto resets wrong.
+            if let body = doc.body() {
+                let rules = LegacyCSSFrontendSupport.parseRules(in: fullCSS)
+                let styleTree = ComputedStyleTreeBuilder(
+                    rules: rules,
+                    config: BrowserLayoutConfig()
+                ).buildTree(body: body)
+                validateFloats(in: styleTree, hasFloatedAncestor: false, reasons: &reasons)
+            }
         }
 
         return BrowserLayoutCapabilityResult(
@@ -172,10 +172,36 @@ enum BrowserLayoutCapabilityScanner {
         )
     }
 
+    private static func validateFloats(
+        in node: ComputedStyleNode,
+        hasFloatedAncestor: Bool,
+        reasons: inout [UnsupportedFeature]
+    ) {
+        let isFloated = node.style.isFloated
+        if isFloated {
+            let isReplaced = node.tag == "img"
+                || (node.tag == "svg" && node.element.flatMap(BoxTreeBuilder.svgWrappedImageSource) != nil)
+            // Non-replaced floats with width:auto need CSS shrink-to-fit, which
+            // Phase 4B deliberately does not guess. max-width alone does not
+            // turn width:auto into a definite used width.
+            if (!isReplaced && node.style.width == .auto) || hasFloatedAncestor {
+                reasons.append(.float)
+            }
+        }
+
+        for child in node.children {
+            guard case .element(let childNode) = child else { continue }
+            validateFloats(
+                in: childNode,
+                hasFloatedAncestor: hasFloatedAncestor || isFloated,
+                reasons: &reasons
+            )
+        }
+    }
+
     // MARK: - CSS text scanning (media queries only)
 
     private static func cssContainsMediaQuery(_ css: String) -> Bool {
-        // Strip comments first so a commented-out @media cannot trigger.
         let cleaned = css.replacingOccurrences(of: #"(?s)/\*.*?(?:\*/|\z)"#, with: "", options: .regularExpression)
         return regexMatch(#"@media\b"#, in: cleaned)
     }
@@ -188,13 +214,9 @@ enum BrowserLayoutCapabilityScanner {
     private static func layoutAffectingDeclaration(key: String, value: String) -> UnsupportedFeature? {
         let k = key.lowercased()
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        // Reject only for a float that actually takes a box out of flow.
-        // `float: none` is a no-op, and an invalid token (`center`, a typo) is
-        // a DROPPED declaration that computes to `none` — neither needs float
-        // layout, so neither may cost the chapter the browser engine. Parsed
-        // through the same whitelist the cascade uses so the two cannot drift.
-        if k == "float" {
-            return CSSFloat.parse(v) == .left || CSSFloat.parse(v) == .right ? .float : nil
+        if k == "float" || k == "clear" {
+            // Float is validated at the element level (supported for images / explicit widths)
+            return nil
         }
         if k == "position" && (v.contains("absolute") || v.contains("fixed") || v.contains("sticky")) {
             return .positioned

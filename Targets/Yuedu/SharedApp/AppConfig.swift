@@ -13,6 +13,14 @@ enum AppConfig {
     /// Reasonable range: 3–10; too low risks false positives, too high wastes network resources.
     static let chapterFetchQuarantineThreshold: Int = 5
 
+    /// Distinct chapters of one book that must fail before the reader suspects the table of
+    /// contents rather than the chapters.
+    ///
+    /// Chapters fail one at a time; a stale TOC fails all of them, so the count is the signal
+    /// no single failure can give. Deliberately below `chapterFetchQuarantineThreshold`:
+    /// revalidating the TOC has to get its chance before the same failures quarantine the book.
+    static let staleTOCSuspicionThreshold: Int = 3
+
     // MARK: - Startup Auto-Refresh
 
     /// Maximum concurrent bookshelf refreshes at app launch.
@@ -24,6 +32,18 @@ enum AppConfig {
     /// this. Prevents hammering book sources when the app is switched in and out
     /// rapidly. Reasonable range: 120–600.
     static let autoRefreshMinInterval: TimeInterval = 300
+
+    /// How long a cached table of contents / book-info package may be served without
+    /// going back to the source.
+    ///
+    /// It used to be forever. The cache is keyed by `(sourceId, url)` rather than by book, so
+    /// it outlived the books that created it: deleting a book and re-adding it from 發現
+    /// replayed the same chapter URLs, and nothing in the app could clear it. A source whose
+    /// chapter URLs carry a token or a signature therefore produced "every chapter fails and
+    /// only 換源 fixes it" — 換源 being the one action that changes the key. Reasonable range:
+    /// hours to a day; the "check for new chapters" path passes `forceRefresh: true` and is
+    /// unaffected either way.
+    static let tocCacheTTL: TimeInterval = 6 * 60 * 60
 
     // MARK: - WebView Pool
 

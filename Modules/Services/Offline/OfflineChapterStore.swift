@@ -131,7 +131,8 @@ protocol OfflineChapterStoring: Sendable {
     func reconcileBook(
         bookId: UUID,
         oldRefs: [OnlineChapterRef],
-        newRefs: [OnlineChapterRef]
+        newRefs: [OnlineChapterRef],
+        disposition: OfflineContentDisposition
     ) async throws
     func storageByteCount(bookId: UUID?) async -> Int64
 }
@@ -361,8 +362,14 @@ actor OfflineChapterStore: OfflineChapterStoring {
     func reconcileBook(
         bookId: UUID,
         oldRefs: [OnlineChapterRef],
-        newRefs: [OnlineChapterRef]
+        newRefs: [OnlineChapterRef],
+        disposition: OfflineContentDisposition
     ) async throws {
+        // The caller still nulls `cachedFilename` and re-pends every mismatched index
+        // (`BookStore.reconcileOfflineTaskMetadata`), so preserving the files costs nothing
+        // but disk: those chapters are refetched on demand either way. Deleting them is what
+        // turned one bad automatic refresh into "my whole download disappeared".
+        guard disposition == .deleteMismatched else { return }
         let maximumCount = max(oldRefs.count, newRefs.count)
         guard maximumCount > 0 else { return }
 

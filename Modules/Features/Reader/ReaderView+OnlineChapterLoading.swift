@@ -34,16 +34,83 @@ extension ReaderView {
             // Narration stalled at a chapter boundary waits on exactly this signal.
             handleTTSChapterWaitStateChange(newState, at: chapterIndex)
             if newState == .ready {
+                // A chapter that loads proves the chapter URLs are usable, so the run of
+                // failures that would have implicated the table of contents is over.
+                chaptersFailedSinceTOCCheck.removeAll()
                 prefetchAdjacentChapters(around: chapterIndex)
             }
             if newState == .cancelled {
                 reissueCancelledChapterFetch(chapterIndex)
             }
-            if case .failed = newState,
-               manuallyRefreshingChapterIndex == chapterIndex {
-                manuallyRefreshingChapterIndex = nil
+            if case .failed = newState {
+                noteChapterFailureForStaleTOC(chapterIndex)
+                if manuallyRefreshingChapterIndex == chapterIndex {
+                    manuallyRefreshingChapterIndex = nil
+                }
             }
             applyChapterRefreshAction(for: chapterIndex, newState: newState)
+        }
+    }
+
+    /// Chapters fail one at a time; a stale table of contents fails all of them. Counting
+    /// distinct failures is the only way to tell those apart — no single failure can.
+    func noteChapterFailureForStaleTOC(_ chapterIndex: Int) {
+        guard book?.isOnline == true else { return }
+        chaptersFailedSinceTOCCheck.insert(chapterIndex)
+        guard StaleTOCSuspicion.decide(
+            distinctFailedChapters: chaptersFailedSinceTOCCheck.count,
+            alreadyRevalidated: didRevalidateTOCForFailures
+        ) == .revalidateTableOfContents else { return }
+        revalidateTOCOnceForFailures()
+    }
+
+    /// Refetches the table of contents, then retries the chapters that failed against the old
+    /// one. Once per reader session.
+    ///
+    /// The TOC cache is keyed by `(sourceId, url)` — it belongs to the source, not the book —
+    /// so it outlives the book: deleting a book and re-adding it from 發現頁 hands back the
+    /// same possibly-expired chapter URLs, which is why 移除下載 could leave a whole book
+    /// failing and only 換源 (a different `sourceId`, therefore a different key) fixed it.
+    /// `refreshOnlineBookMetadata` already bypasses that cache unconditionally.
+    ///
+    /// Strictly one shot: if a freshly fetched TOC still fails, the failure is real and the
+    /// failure overlay is the honest answer. Retrying past that is the avalanche this
+    /// codebase keeps having to delete.
+    func revalidateTOCOnceForFailures() {
+        guard !didRevalidateTOCForFailures else { return }
+        guard let currentBook = book, currentBook.isOnline else { return }
+        didRevalidateTOCForFailures = true
+
+        let failedChapters = chaptersFailedSinceTOCCheck
+        let bookId = currentBook.id
+        AppLogger.network("⟐ several chapters failed, revalidating TOC", context: [
+            "bookId": bookId.uuidString,
+            "failedChapters": failedChapters.count,
+        ])
+        Task { @MainActor in
+            do {
+                // `forceInfoRefresh` too: the TOC URL itself comes from the book record, so a
+                // site that moved its chapter URLs may well have moved that as well.
+                _ = try await store.refreshOnlineBookMetadata(
+                    bookId: bookId,
+                    forceInfoRefresh: true,
+                    bookSourceFetcher: dependencies.bookSourceFetcher,
+                    offlineChapterStore: dependencies.offlineChapterStore
+                )
+            } catch {
+                AppLogger.network("⟐ TOC revalidation failed", error: error, context: [
+                    "bookId": bookId.uuidString,
+                ])
+                return
+            }
+            // The budget was spent on URLs that are now replaced; leaving it would quarantine
+            // the book for failures the new table of contents may well not repeat.
+            await dependencies.chapterFetcher.resetFailureBudget(for: bookId)
+            chaptersFailedSinceTOCCheck.removeAll()
+            for index in failedChapters {
+                readerViewModel.resetChapterState(for: index)
+            }
+            ensureChapterReady(chapterIndex: currentChapterIndex, priority: .jump)
         }
     }
 
@@ -275,6 +342,16 @@ extension ReaderView {
         // means the previous attempt's verdict is no longer the last word.
         chapterConsistencyRecoveryAttempts[currentChapterIndex] = nil
         AppLogger.render("⟐ chapter retry tapped ch=\(currentChapterIndex)")
+        // The quarantine budget is cumulative across chapters and only ever cleared by a
+        // success, so a book that once failed five times carries that verdict forever. An
+        // explicit tap says the verdict is stale. Only the manual button does this — the
+        // automatic recovery below must not, or the threshold would never mean anything.
+        if let bookId = book?.id {
+            Task { @MainActor in
+                await dependencies.chapterFetcher.resetFailureBudget(for: bookId)
+                store.clearAutomaticQuarantine(bookId: bookId)
+            }
+        }
         refetchChapter(at: currentChapterIndex)
     }
 

@@ -54,6 +54,12 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<!-- The offline-download Live Activity (Dynamic Island + Lock Screen). Updates are
+	     pushed by the app process only; there is no ActivityKit push token and no
+	     aps-environment entitlement, so progress holds at its last value while the app is
+	     suspended and catches up when it runs again. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

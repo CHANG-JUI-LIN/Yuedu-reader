@@ -158,6 +158,15 @@ struct yuedu_appApp: App {
                     // Finish any book-source imports the Share Extension queued
                     // (it can only stash the payload; the merge must happen here).
                     Task { await SharedImportQueueDrainer.shared.drain() }
+                    // The download Live Activity's pause button records a request rather than
+                    // calling the downloader; this is the end that applies it.
+                    DownloadActivityCommandApplier.start(
+                        store: bookStore,
+                        manager: AppDependencies.live.offlineDownloadManager
+                    )
+                    #if DEBUG
+                    DownloadActivityDebugHarness.startIfRequested()
+                    #endif
                     // Seamless iCloud: merge with the cloud on launch.
                     if GlobalSettings.shared.iCloudAutoSync {
                         Task { try? await ICloudSyncManager.shared.sync(reason: "launch") }
@@ -176,6 +185,8 @@ struct yuedu_appApp: App {
                     if newPhase == .active {
                         Task { await subscriptionStore.refreshAllEntitlements() }
                         Task { await SharedImportQueueDrainer.shared.drain() }
+                        // A button tap while the app was suspended is waiting in the queue.
+                        Task { await DownloadActivityCommandApplier.drainObserved() }
                         Task {
                             await AppDependencies.live.offlineDownloadManager
                                 .reconcileInterruptedDownloads(store: bookStore)

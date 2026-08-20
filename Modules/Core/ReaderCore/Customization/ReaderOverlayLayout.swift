@@ -301,16 +301,19 @@ struct ReaderOverlayContentReservations: Codable, Equatable, Sendable {
         self.bottom = bottom
     }
 
+    static let topMaximum: Double = 150
+    static let bottomMaximum: Double = 120
+
     var normalized: ReaderOverlayContentReservations {
         ReaderOverlayContentReservations(
-            top: Self.clamp(top),
-            bottom: Self.clamp(bottom)
+            top: Self.clamp(top, maximum: Self.topMaximum),
+            bottom: Self.clamp(bottom, maximum: Self.bottomMaximum)
         )
     }
 
-    private static func clamp(_ value: Double) -> Double {
+    private static func clamp(_ value: Double, maximum: Double) -> Double {
         guard value.isFinite else { return 0 }
-        return min(max(value, 0), 120)
+        return min(max(value, 0), maximum)
     }
 
     private enum CodingKeys: String, CodingKey {

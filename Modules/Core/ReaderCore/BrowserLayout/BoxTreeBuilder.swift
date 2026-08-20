@@ -95,7 +95,7 @@ enum BoxTreeBuilder {
                 } else if elementNode.tag == "img" {
                     registerAnchors(&anchorStack, ownID: elementNode.anchorID,
                                     anchors: &anchors, at: sourceText.currentOffset)
-                    if elementNode.style.display == .block {
+                    if elementNode.style.isFloated || elementNode.style.display == .block {
                         flushGroup(&pendingInline, style: node.style, config: config,
                                    containerWidth: containerWidth,
                                    sourceText: &sourceText, into: &kids)
@@ -108,7 +108,7 @@ enum BoxTreeBuilder {
                         appendImageRun(elementNode, to: &pendingInline, sourceText: &sourceText,
                                        config: config, imageLoader: imageLoader)
                     }
-                } else if elementNode.style.display == .block {
+                } else if elementNode.style.isFloated || elementNode.style.display == .block {
                     flushGroup(&pendingInline, style: node.style, config: config,
                                containerWidth: containerWidth,
                                sourceText: &sourceText, into: &kids)
@@ -136,7 +136,9 @@ enum BoxTreeBuilder {
         let box = BlockBox(style: node.style, boxType: .block, children: kids)
         Self.attachDebugIdentity(box, node: node)
         if !pendingInline.isEmpty {
-            if let lines = layoutRuns(pendingInline, style: node.style, config: config,
+            let visible = visibleRuns(pendingInline)
+            box.inlineRuns = visible
+            if let lines = layoutRuns(visible, style: node.style, config: config,
                                       containerWidth: containerWidth, sourceText: &sourceText) {
                 box.lines = lines
             }
@@ -393,13 +395,16 @@ enum BoxTreeBuilder {
         sourceText: inout SourceTextBuilder,
         into kids: inout [BlockBox]
     ) {
-        guard let lines = layoutRuns(runs, style: style, config: config,
-                                     containerWidth: containerWidth, sourceText: &sourceText) else {
+        let visible = visibleRuns(runs)
+        guard !visible.isEmpty else {
             runs = []
             return
         }
-        let box = BlockBox(style: style, boxType: .anonymous)
-        box.lines = lines
+        let box = BlockBox(style: style, boxType: .anonymous, inlineRuns: visible)
+        if let lines = layoutRuns(visible, style: style, config: config,
+                                  containerWidth: containerWidth, sourceText: &sourceText) {
+            box.lines = lines
+        }
         kids.append(box)
         runs = []
     }
@@ -413,13 +418,7 @@ enum BoxTreeBuilder {
         containerWidth: CGFloat,
         sourceText: inout SourceTextBuilder
     ) -> [LayoutLine]? {
-        var visible = runs
-        while let last = visible.last,
-              last.atomic == nil,
-              !last.isHardBreak,
-              last.text.allSatisfy({ $0 == " " || $0 == "\t" }) {
-            visible.removeLast()
-        }
+        let visible = visibleRuns(runs)
         guard !visible.isEmpty else { return nil }
         return InlineLayout.layoutLines(
             runs: visible,
@@ -429,6 +428,17 @@ enum BoxTreeBuilder {
             sourceText: sourceText.text,
             fontResolver: config.fontResolver
         )
+    }
+
+    private static func visibleRuns(_ runs: [InlineRun]) -> [InlineRun] {
+        var visible = runs
+        while let last = visible.last,
+              last.atomic == nil,
+              !last.isHardBreak,
+              last.text.allSatisfy({ $0 == " " || $0 == "\t" }) {
+            visible.removeLast()
+        }
+        return visible
     }
 }
 

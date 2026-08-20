@@ -433,7 +433,8 @@ private actor TestOfflineChapterStore: OfflineChapterStoring {
     func reconcileBook(
         bookId: UUID,
         oldRefs: [OnlineChapterRef],
-        newRefs: [OnlineChapterRef]
+        newRefs: [OnlineChapterRef],
+        disposition: OfflineContentDisposition
     ) async throws {}
 
     func storageByteCount(bookId: UUID?) async -> Int64 { 0 }

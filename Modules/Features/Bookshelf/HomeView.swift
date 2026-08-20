@@ -5,8 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - Bookshelf Home
 enum BookshelfCoverLoader {
     static func load(filename: String) -> UIImage? {
-        guard let data = try? Data(contentsOf: StorageLocations.coverFile(filename)) else { return nil }
-        return UIImage(data: data)
+        BookCoverLoader.localImage(filename: filename)
     }
 }
 

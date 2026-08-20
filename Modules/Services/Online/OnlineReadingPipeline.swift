@@ -171,7 +171,13 @@ actor ChapterFetchManager {
         if bookSourceFetcher.isChapterCached(bookId: bookId, chapterIndex: chapterIndex) {
             return .cached
         }
-        return states[key(bookId: bookId, chapterIndex: chapterIndex)] ?? .missing
+        // Disk is the truth — the same rule legado applies with `BookHelp.hasContent`. A
+        // stored `.cached` that the probe above just contradicted is stale: 移除下載 deletes
+        // the files without telling this map, and `prefetchChapters` skips anything that is
+        // not `.missing`/`.failed`, so believing it killed prefetch for the entire book until
+        // the next relaunch.
+        let stored = states[key(bookId: bookId, chapterIndex: chapterIndex)] ?? .missing
+        return stored == .cached ? .missing : stored
     }
 
     func isChapterCached(book: ReadingBook, chapterIndex: Int) -> Bool {
@@ -569,15 +575,38 @@ actor ChapterFetchManager {
         }
     }
 
-    func cancelAll(for bookId: UUID) {
+    /// - Parameter includingDownloads: `false` leaves offline-download fetches running.
+    ///   The reader and the downloader share one fetch manager, so closing the reader
+    ///   cancelled the download for the same book — silently, since `runBook` treats
+    ///   cancellation as a clean exit. The download then sat at `.downloading` with pending
+    ///   chapters and no queue until something else happened to reconcile it.
+    /// Clears a book's accumulated failure budget.
+    ///
+    /// `bookFailureCounts` only ever fell back to zero on a *successful* fetch, and five
+    /// cumulative failures quarantine the book (`AppConfig.chapterFetchQuarantineThreshold`).
+    /// Cancelling a download cancels many chapters at once, so one 移除下載 could push a book
+    /// over the line — and `.quarantined` is persisted with nothing to lift it, not 移除下載
+    /// and not 換源. Deleting and re-adding the book was the only cure.
+    func resetFailureBudget(for bookId: UUID) {
+        bookFailureCounts[bookId] = 0
+    }
+
+    func cancelAll(for bookId: UUID, includingDownloads: Bool = true) {
         let prefix = "\(bookId.uuidString)#"
+        var survivingKeys: Set<String> = []
         for (taskKey, task) in tasks where taskKey.hasPrefix(prefix) {
+            if !includingDownloads, priorities[taskKey] == .download {
+                survivingKeys.insert(taskKey)
+                continue
+            }
             task.cancel()
             tasks.removeValue(forKey: taskKey)
             priorities.removeValue(forKey: taskKey)
             states[taskKey] = .missing
         }
-        generationTokens = generationTokens.filter { !$0.key.hasPrefix(prefix) }
+        generationTokens = generationTokens.filter {
+            !$0.key.hasPrefix(prefix) || survivingKeys.contains($0.key)
+        }
     }
 
     func cancelFetch(bookId: UUID, chapterIndex: Int) {
@@ -621,13 +650,18 @@ actor ChapterFetchManager {
         reason: String,
         pipelineKind: String
     ) async {
-        bookSourceFetcher.saveFailureMarker(
-            bookId: bookId,
-            chapterIndex: chapterIndex,
-            sourceURL: sourceURL,
-            tocTitle: tocTitle,
-            reason: reason
-        )
+        // Invalidate what was cached for this chapter — and stop there. Writing a
+        // `.failed` marker used to be the way this was expressed, but the marker bought
+        // nothing: `loadChapterPackageSync` turns it into a package `isReusableCachedPackage`
+        // rejects, which is exactly what "no metadata at all" already does, and every reader
+        // of it (`validationState`, `fetchChapter`) treats the two identically. What it did
+        // buy was a bug — `saveFailureMarker` called `createDirectory(withIntermediateDirectories:)`
+        // first, so a fetch failing just after 移除下載 re-created the directory that removal
+        // had deleted and refilled it. Failures now live in memory only, like legado's
+        // `errorDownloadMap`.
+        _ = sourceURL
+        _ = tocTitle
+        bookSourceFetcher.clearChapterCache(bookId: bookId, chapterIndex: chapterIndex)
 
         let failCount = (bookFailureCounts[bookId] ?? 0) + 1
         bookFailureCounts[bookId] = failCount

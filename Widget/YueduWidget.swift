@@ -101,7 +101,17 @@ struct BookProgressWidgetView: View {
 
 // MARK: - Widget Configuration
 
+/// The extension's single entry point. A `WidgetBundle` rather than a bare `Widget` because
+/// the target now ships two: the home-screen reading-progress widget and the offline-download
+/// Live Activity.
 @main
+struct YueduWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        YueduWidget()
+        DownloadLiveActivityWidget()
+    }
+}
+
 struct YueduWidget: Widget {
     let kind: String = "BookProgressWidget"
 

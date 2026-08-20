@@ -25,81 +25,107 @@ final class CoreTextLineBreaker {
         let total = attributed.length
         var index = 0
         while charIndex < total {
-            MemoryTracker.record(.ctLineRun, bytes: 192)  // ~192B per CTLine (estimate)
-            var count = CTTypesetterSuggestLineBreak(typesetter, charIndex, maxWidth)
-
-            // CTTypesetter can suggest a break inside a grapheme cluster
-            // (emoji ZWJ sequences, combining marks) when the cluster is wider
-            // than maxWidth. Snap the suggested count DOWN to the cluster
-            // boundary so lines never cut a cluster.
-            count = snapToCluster(nsString, count: count, charIndex: charIndex)
-            if count <= 0 {
-                // Nothing (or no whole cluster) fits: force the first grapheme
-                // cluster onto the line — overflow accepted (CSS overflow).
-                let cluster = nsString.rangeOfComposedCharacterSequence(at: charIndex)
-                count = min(cluster.location + cluster.length, total) - charIndex
-                guard count > 0 else { break }
-                let line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
-                let (width, ascent, descent) = metrics(for: line)
-                lines.append(LineBreak(range: NSRange(location: charIndex, length: count),
-                                       width: width, ascent: ascent, descent: descent,
-                                       line: line))
-                charIndex += count
-                index += 1
-                if index > 10_000 { break }
-                continue
+            guard let lineBreak = breakNextLine(
+                typesetter: typesetter,
+                charIndex: &charIndex,
+                maxWidth: maxWidth,
+                attributed: attributed,
+                nsString: nsString,
+                total: total
+            ) else {
+                break
             }
-
-            var line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
-            var (width, ascent, descent) = metrics(for: line)
-            // CTTypesetterSuggestLineBreak fits glyphs up to the last
-            // non-whitespace glyph, but the returned count can include a
-            // trailing space whose advance pushes CTLineGetTypographicBounds
-            // past maxWidth (measured 103.6 at maxWidth 100 for SF 16pt).
-            // Trim until the line truly fits: the breaker's contract is that
-            // returned lines never exceed maxWidth.
-            let originalCount = count
-            while width > maxWidth && count > 1 {
-                count -= 1
-                line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
-                (width, ascent, descent) = metrics(for: line)
-            }
-            // The trim above can land inside a grapheme cluster — snap down again.
-            let snapped = snapToCluster(nsString, count: count, charIndex: charIndex)
-            if snapped <= 0 {
-                // The trim cut into a cluster wider than the line: force the
-                // whole cluster onto the line (overflow accepted).
-                let cluster = nsString.rangeOfComposedCharacterSequence(at: charIndex)
-                count = min(cluster.location + cluster.length, total) - charIndex
-                guard count > 0 else { break }
-                line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
-                (width, ascent, descent) = metrics(for: line)
-            } else if snapped != count {
-                count = snapped
-                line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
-                (width, ascent, descent) = metrics(for: line)
-            }
-            // If the trim removed ONLY trailing whitespace, keep it in the
-            // RANGE (the space is part of the line's rendered advance and keeps
-            // source parity exact) — WITHOUT re-measuring, so the width stays
-            // within maxWidth.
-            if count < originalCount {
-                let removed = (attributed.string as NSString).substring(
-                    with: NSRange(location: charIndex + count, length: originalCount - count)
-                )
-                if removed.allSatisfy({ $0 == " " || $0 == "\t" }) {
-                    count = originalCount
-                }
-            }
-            guard count > 0 else { break }
-            lines.append(LineBreak(range: NSRange(location: charIndex, length: count),
-                                   width: width, ascent: ascent, descent: descent,
-                                   line: line))
-            charIndex += count
+            lines.append(lineBreak)
             index += 1
             if index > 10_000 { break } // defensive: never infinite-loop on glyph-less input
         }
         return lines
+    }
+
+    func breakNextLine(
+        typesetter: CTTypesetter,
+        charIndex: inout Int,
+        maxWidth: CGFloat,
+        attributed: NSAttributedString,
+        nsString: NSString,
+        total: Int,
+        recordMemory: Bool = true
+    ) -> LineBreak? {
+        guard charIndex < total else { return nil }
+        if recordMemory {
+            MemoryTracker.record(.ctLineRun, bytes: 192)  // ~192B per retained CTLine (estimate)
+        }
+        var count = CTTypesetterSuggestLineBreak(typesetter, charIndex, maxWidth)
+
+        // CTTypesetter can suggest a break inside a grapheme cluster
+        // (emoji ZWJ sequences, combining marks) when the cluster is wider
+        // than maxWidth. Snap the suggested count DOWN to the cluster
+        // boundary so lines never cut a cluster.
+        count = snapToCluster(nsString, count: count, charIndex: charIndex)
+        if count <= 0 {
+            // Nothing (or no whole cluster) fits: force the first grapheme
+            // cluster onto the line — overflow accepted (CSS overflow).
+            let cluster = nsString.rangeOfComposedCharacterSequence(at: charIndex)
+            count = min(cluster.location + cluster.length, total) - charIndex
+            guard count > 0 else { return nil }
+            let line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
+            let (width, ascent, descent) = metrics(for: line)
+            charIndex += count
+            return LineBreak(
+                range: NSRange(location: charIndex - count, length: count),
+                width: width, ascent: ascent, descent: descent,
+                line: line
+            )
+        }
+
+        var line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
+        var (width, ascent, descent) = metrics(for: line)
+        // CTTypesetterSuggestLineBreak fits glyphs up to the last
+        // non-whitespace glyph, but the returned count can include a
+        // trailing space whose advance pushes CTLineGetTypographicBounds
+        // past maxWidth (measured 103.6 at maxWidth 100 for SF 16pt).
+        // Trim until the line truly fits: the breaker's contract is that
+        // returned lines never exceed maxWidth.
+        let originalCount = count
+        while width > maxWidth && count > 1 {
+            count -= 1
+            line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
+            (width, ascent, descent) = metrics(for: line)
+        }
+        // The trim above can land inside a grapheme cluster — snap down again.
+        let snapped = snapToCluster(nsString, count: count, charIndex: charIndex)
+        if snapped <= 0 {
+            // The trim cut into a cluster wider than the line: force the
+            // whole cluster onto the line (overflow accepted).
+            let cluster = nsString.rangeOfComposedCharacterSequence(at: charIndex)
+            count = min(cluster.location + cluster.length, total) - charIndex
+            guard count > 0 else { return nil }
+            line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
+            (width, ascent, descent) = metrics(for: line)
+        } else if snapped != count {
+            count = snapped
+            line = CTTypesetterCreateLine(typesetter, CFRange(location: charIndex, length: count))
+            (width, ascent, descent) = metrics(for: line)
+        }
+        // If the trim removed ONLY trailing whitespace, keep it in the
+        // RANGE (the space is part of the line's rendered advance and keeps
+        // source parity exact) — WITHOUT re-measuring, so the width stays
+        // within maxWidth.
+        if count < originalCount {
+            let removed = nsString.substring(
+                with: NSRange(location: charIndex + count, length: originalCount - count)
+            )
+            if removed.allSatisfy({ $0 == " " || $0 == "\t" }) {
+                count = originalCount
+            }
+        }
+        guard count > 0 else { return nil }
+        charIndex += count
+        return LineBreak(
+            range: NSRange(location: charIndex - count, length: count),
+            width: width, ascent: ascent, descent: descent,
+            line: line
+        )
     }
 
     /// Snaps a (suggested or trimmed) line length down to a grapheme-cluster

@@ -307,7 +307,10 @@ final class BrowserLayoutSession {
         #if DEBUG
         BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE sessionEnsure start spine=\(diagnosticSpine) htmlLen=\(html.count) cssCount=\(cssTexts.count)")
         #endif
-        let result = try document.makeLayout(containerSize: canvasSize)
+        let result = try document.makeLayout(
+            containerSize: canvasSize,
+            fragmentHeight: config.renderHeight
+        )
         #if DEBUG
         BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE sessionEnsure makeLayoutDone spine=\(diagnosticSpine) boxes=\(result.boxCount) content=\(result.contentSize)")
         #endif
