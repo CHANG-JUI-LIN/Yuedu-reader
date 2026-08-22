@@ -73,7 +73,15 @@ struct DiagnosticReportBundle: Transferable {
     let uncleanSessions: [DiagnosticSession]
 
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(exportedContentType: .plainText) { bundle in
+        // `.data`, not `.plainText`, and this is the whole reason the export works.
+        //
+        // `public.plain-text` conforms to `public.text`, so a share target that accepts
+        // text — QQ, WeChat, Messages — asks the item provider for the *string* instead
+        // of the file, then chops it into one message per chunk. A 3 MB log arrives as
+        // several hundred messages. Advertising only `public.data` leaves a receiver no
+        // text representation to take, so it has to accept the file. The name still ends
+        // in `.txt`, so saving it and opening it are unchanged.
+        FileRepresentation(exportedContentType: .data) { bundle in
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent(bundle.filename)
             try Data(bundle.render().utf8).write(to: url, options: .atomic)

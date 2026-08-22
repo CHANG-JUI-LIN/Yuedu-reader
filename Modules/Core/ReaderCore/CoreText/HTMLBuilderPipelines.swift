@@ -6,7 +6,17 @@ import YueduCoreText
 /// Publication-scoped cache for immutable CSS parse results. The processed stylesheet text is
 /// already cached by the EPUB/online resource builders; this second layer avoids reparsing the
 /// same rules every time a new chapter creates an HTMLAttributedStringBuilder.
-final class HTMLStylesheetCache {
+///
+/// **Accessed from more than one thread, so the dictionary is locked.** One instance is held by
+/// the `@MainActor` `EPUBAttributedStringBuilder` / `OnlineProviderAttributedStringBuilder` and
+/// shared by every chapter that builder produces. `buildStyledAST` and `HTMLBuilderDOMParser.parse`
+/// are nonisolated `async`, so awaiting them from the main actor hops to the concurrent executor —
+/// and while one chapter build is suspended there, `ChapterDocumentStore` is free to start the
+/// next one. Two adjacent chapters preloading at once therefore reach this dictionary on two
+/// threads. Unsynchronised, that is a `Dictionary` being resized under a concurrent read: a real
+/// device sent back a SIGSEGV inside `parsedStylesheet` from exactly that stack.
+final class HTMLStylesheetCache: @unchecked Sendable {
+    /// Immutable once built, so handing the same instance to several threads is safe.
     final class ParsedStylesheet {
         let regularRules: [CSSRule]
         let firstLetterRules: [CSSRule]
@@ -17,20 +27,38 @@ final class HTMLStylesheetCache {
         }
     }
 
+    private let lock = NSLock()
     private var entries: [String: ParsedStylesheet] = [:]
 
     func parsedStylesheet(css: String, orderOffset: Int) -> ParsedStylesheet {
         let key = "\(orderOffset)|\(css)"
-        if let cached = entries[key] {
+        if let cached = lock.withLock({ entries[key] }) {
             return cached
         }
+
+        // Parsed outside the lock deliberately. CSS parsing is the dominant cost of building a
+        // chapter on a stylesheet-heavy book, and holding the lock across it would serialise
+        // every concurrent chapter build behind whichever one got here first — undoing the
+        // reason chapters are preloaded in parallel at all.
+        //
+        // The cost is that two threads can parse the same stylesheet at the same time. That is
+        // harmless: `CSSParser` is an `enum` of pure functions with no shared state, and
+        // `ParsedStylesheet` is immutable, so the two results are interchangeable.
         let parsed = CSSParser.parseWithFirstLetter(css: css, orderOffset: orderOffset)
         let result = ParsedStylesheet(
             regularRules: parsed.regular,
             firstLetterRules: parsed.firstLetter
         )
-        entries[key] = result
-        return result
+
+        return lock.withLock {
+            // Whoever landed first wins, so a given key always resolves to one shared instance
+            // and callers can compare rule identity.
+            if let winner = entries[key] {
+                return winner
+            }
+            entries[key] = result
+            return result
+        }
     }
 }
 
