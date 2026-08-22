@@ -615,7 +615,8 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
             globalPage: index,
             readingPosition: readingPosition,
             themeBackgroundColor: themeBackgroundColor,
-            themeTextColor: themeTextColor
+            themeTextColor: themeTextColor,
+            readerBackgroundImage: currentReaderBackgroundImage()
         )
         Task { [weak self] in
             guard let self else { return }
@@ -724,7 +725,8 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
             globalPage: estimated,
             readingPosition: position,
             themeBackgroundColor: themeBackgroundColor,
-            themeTextColor: themeTextColor
+            themeTextColor: themeTextColor,
+            readerBackgroundImage: currentReaderBackgroundImage()
         )
         Task { [weak self] in
             guard let self else { return }

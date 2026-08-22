@@ -152,7 +152,10 @@ final class TXTPageEngine: PageRenderingProvider {
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
             globalPage: estimatedGlobalPage,
-            readingPosition: position
+            readingPosition: position,
+            themeBackgroundColor: themeBackgroundColor,
+            themeTextColor: themeTextColor,
+            readerBackgroundImage: currentReaderBackgroundImage()
         )
         
         Task { [weak self] in
@@ -240,7 +243,10 @@ final class TXTPageEngine: PageRenderingProvider {
         let placeholder = PlaceholderPageViewController(
             chapterTitle: title,
             globalPage: estimatedGlobalPage,
-            readingPosition: position
+            readingPosition: position,
+            themeBackgroundColor: themeBackgroundColor,
+            themeTextColor: themeTextColor,
+            readerBackgroundImage: currentReaderBackgroundImage()
         )
         Task { [weak self] in
             guard let self else { return }

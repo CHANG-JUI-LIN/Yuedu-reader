@@ -371,6 +371,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private var settings: ReaderRenderSettings
     private var themeTextColor: UIColor
     private var themeBackgroundColor: UIColor
+    private var cachedReaderBackgroundImageURL: URL?
+    private var cachedReaderBackgroundImage: UIImage?
 
     // MARK: - Per-chapter state
 
@@ -1012,6 +1014,17 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     // MARK: - ThemeUpdatable / AnnotationApplying / SnapshotRenderable
 
+    /// Same one-entry cache as `CoreTextPageEngine`: the placeholder page needs the
+    /// artwork a laid-out page draws for itself, and decoding it per page turn is not
+    /// something a loading screen should pay for.
+    private func currentReaderBackgroundImage() -> UIImage? {
+        let url = settings.readerBackgroundImageURL
+        guard cachedReaderBackgroundImageURL != url else { return cachedReaderBackgroundImage }
+        cachedReaderBackgroundImageURL = url
+        cachedReaderBackgroundImage = url.flatMap { UIImage(contentsOfFile: $0.path) }
+        return cachedReaderBackgroundImage
+    }
+
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {
         delegate.applyThemeChange(textColor: textColor, backgroundColor: backgroundColor)
         themeTextColor = textColor
@@ -1161,7 +1174,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             globalPage: globalPage,
             readingPosition: position,
             themeBackgroundColor: themeBackgroundColor,
-            themeTextColor: themeTextColor
+            themeTextColor: themeTextColor,
+            readerBackgroundImage: currentReaderBackgroundImage()
         )
         Task { [weak self] in
             guard let self else { return }
@@ -1213,7 +1227,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 globalPage: estimated,
                 readingPosition: position,
                 themeBackgroundColor: themeBackgroundColor,
-                themeTextColor: themeTextColor
+                themeTextColor: themeTextColor,
+                readerBackgroundImage: currentReaderBackgroundImage()
             )
             Task { [weak self] in
                 guard let self else { return }

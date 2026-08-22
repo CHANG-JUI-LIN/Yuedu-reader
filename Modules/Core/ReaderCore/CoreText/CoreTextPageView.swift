@@ -319,9 +319,14 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                 self?.presentEmphasisEditMenu()
             }
         ))
+        // 沒訂閱時項目照樣留著，只換成鎖頭：點下去 ReaderView 會開付費牆。
+        // 「這一點該開編輯頁還是付費牆」的判斷只有 ReaderView 那一處，這裡純顯示。
+        let canEditNote = ReaderPremiumVisibilityPolicy(
+            isProActive: SubscriptionStore.shared.isProActive
+        ).allowsParagraphNoteEditing
         actions.append(UIAction(
             title: localized(noteMenuTitleIsEdit ? "編輯筆記" : "筆記"),
-            image: UIImage(systemName: "note.text"),
+            image: UIImage(systemName: canEditNote ? "note.text" : "lock.fill"),
             handler: { [weak self] _ in
                 self?.requestNoteEdit()
             }
@@ -2545,18 +2550,24 @@ final class PlaceholderPageViewController: UIViewController {
 
     private let themeBackgroundColor: UIColor
     private let themeTextColor: UIColor
+    /// The reader background artwork, when one is set. A laid-out page draws it
+    /// itself (`CoreTextPageView.draw`), so without it here the 載入中 page was the
+    /// one surface in the book still painted a flat colour.
+    private let readerBackgroundImage: UIImage?
 
     init(
         chapterTitle: String = "",
         globalPage: Int = 0,
         readingPosition: CoreTextReadingPosition? = nil,
         themeBackgroundColor: UIColor = .systemBackground,
-        themeTextColor: UIColor = .label
+        themeTextColor: UIColor = .label,
+        readerBackgroundImage: UIImage? = nil
     ) {
         self.globalPageIndex = globalPage
         self.coreTextReadingPosition = readingPosition
         self.themeBackgroundColor = themeBackgroundColor
         self.themeTextColor = themeTextColor
+        self.readerBackgroundImage = readerBackgroundImage
         super.init(nibName: nil, bundle: nil)
         titleLabel.text = chapterTitle
     }
@@ -2568,6 +2579,7 @@ final class PlaceholderPageViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = themeBackgroundColor
+        installBackgroundImageIfNeeded()
 
         titleLabel.font = .systemFont(ofSize: 16, weight: .medium)
         titleLabel.textColor = themeTextColor.withAlphaComponent(0.5)
@@ -2590,6 +2602,24 @@ final class PlaceholderPageViewController: UIViewController {
         ])
         spinner.startAnimating()
         configureAccessibility()
+    }
+
+    /// Aspect-fill and centred, matching `CoreTextPageView.backgroundImageRect`
+    /// exactly so the artwork does not jump when the real page replaces this one.
+    private func installBackgroundImageIfNeeded() {
+        guard let readerBackgroundImage else { return }
+        let imageView = UIImageView(image: readerBackgroundImage)
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.isAccessibilityElement = false
+        view.addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: view.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
     }
 
     /// Read as one element so VoiceOver announces "<chapter> 載入中…" instead of

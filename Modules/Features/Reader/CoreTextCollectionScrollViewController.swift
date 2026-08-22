@@ -217,9 +217,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 self?.presentEmphasisEditMenu()
             }
         ))
+        // 同分頁模式：沒訂閱時換鎖頭，實際分流在 ReaderView。
+        let canEditNote = ReaderPremiumVisibilityPolicy(
+            isProActive: SubscriptionStore.shared.isProActive
+        ).allowsParagraphNoteEditing
         actions.append(UIAction(
             title: localized(selectionHasNote ? "編輯筆記" : "筆記"),
-            image: UIImage(systemName: "note.text"),
+            image: UIImage(systemName: canEditNote ? "note.text" : "lock.fill"),
             handler: { [weak self] _ in
                 self?.requestNoteEdit()
             }

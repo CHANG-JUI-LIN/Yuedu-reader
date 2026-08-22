@@ -1153,6 +1153,10 @@
 "簡潔" = "Compact";
 "沉浸" = "Immersive";
 "選擇閱讀界面的工具列與控制方式。" = "Choose the reader toolbar and control style.";
+"圓形按鈕底色" = "Circle Button Fill";
+"圓形按鈕圖示顏色" = "Circle Button Icon Color";
+"跟隨閱讀主題" = "Follow Reading Theme";
+"調整浮在正文上那四顆圓形按鈕（刷新／換源／下載／聽書）的顏色。未調整時跟隨目前的閱讀主題。" = "Recolor the four circle buttons floating above the page (Refresh, Change Source, Download, Listen). Left alone, they follow the current reading theme.";
 "界面效果" = "Interface Effects";
 "光暈" = "Glow";
 "光暈強度" = "Glow Intensity";
@@ -2177,3 +2181,6 @@
 "筆記內容" = "Note Text";
 "筆記：%@" = "Note: %@";
 "翻頁動畫跑完但頁面沒有前進" = "A completed swipe left the reader on the same page";
+"段落筆記" = "Paragraph Notes";
+"在劃線的段落上寫筆記，隨時回頭查看" = "Write notes on highlighted passages and revisit them any time";
+"訂閱 Pro 繼續編輯筆記" = "Subscribe to Pro to keep editing notes";

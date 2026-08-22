@@ -7,6 +7,7 @@ import Foundation
 /// UI can render per-feature rows, and so a future tiered plan can map features
 /// to different entitlements without touching call sites.
 enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
+    case paragraphNote
     case customFonts
     case touchZoneEditor
     case dialogueHighlight
@@ -34,6 +35,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
     /// SF Symbol used in the Pro settings feature list and paywall.
     var iconName: String {
         switch self {
+        case .paragraphNote: return "note.text"
         case .customFonts: return "textformat"
         case .touchZoneEditor: return "hand.tap"
         case .dialogueHighlight: return "text.bubble"
@@ -49,6 +51,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
     /// Localization key for the short feature title.
     var titleKey: String {
         switch self {
+        case .paragraphNote: return "段落筆記"
         case .customFonts: return "字體導入"
         case .touchZoneEditor: return "翻頁區塊編輯"
         case .dialogueHighlight: return "正則高亮"
@@ -64,6 +67,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable, Hashable {
     /// Localization key for the one-line feature description.
     var subtitleKey: String {
         switch self {
+        case .paragraphNote: return "在劃線的段落上寫筆記，隨時回頭查看"
         case .customFonts: return "匯入並切換自訂字體"
         case .touchZoneEditor: return "自訂 3×3 翻頁點擊區塊"
         case .dialogueHighlight: return "使用自訂正則、文字樣式與背景效果標示閱讀內容"

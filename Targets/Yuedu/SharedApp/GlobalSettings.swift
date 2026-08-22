@@ -485,6 +485,8 @@ class GlobalSettings: ObservableObject {
     private static let appearanceBoundLightReaderThemeKey = "yd_appearance_bound_light_reader_theme"
     private static let appearanceBoundDarkReaderThemeKey = "yd_appearance_bound_dark_reader_theme"
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
+    private static let readerClassicCircleFillHexKey = "yd_reader_classic_circle_fill_hex"
+    private static let readerClassicCircleIconHexKey = "yd_reader_classic_circle_icon_hex"
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
     private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
     private static let interfaceGlassTransparencyKey = "yd_interface_glass_transparency"
@@ -1038,6 +1040,42 @@ class GlobalSettings: ObservableObject {
     }
     @Published var appearanceReaderInterface: AppearanceReaderInterface {
         didSet { UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey) }
+    }
+
+    // MARK: - 經典閱讀介面自定義配色
+
+    /// Fill of the four floating circle buttons the 經典 reader stacks above its
+    /// control bar (刷新／換源／下載／聽書). nil = follow the reading theme's bar
+    /// colour, which is what they painted before this setting existed.
+    @Published var readerClassicCircleFillHex: UInt32? {
+        didSet {
+            if let readerClassicCircleFillHex {
+                UserDefaults.standard.set(Int(readerClassicCircleFillHex), forKey: Self.readerClassicCircleFillHexKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.readerClassicCircleFillHexKey)
+            }
+        }
+    }
+
+    /// Symbol (and hairline border) colour of those same four buttons.
+    /// nil = follow the reading theme's text colour.
+    @Published var readerClassicCircleIconHex: UInt32? {
+        didSet {
+            if let readerClassicCircleIconHex {
+                UserDefaults.standard.set(Int(readerClassicCircleIconHex), forKey: Self.readerClassicCircleIconHexKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.readerClassicCircleIconHexKey)
+            }
+        }
+    }
+
+    var hasReaderClassicCircleOverride: Bool {
+        readerClassicCircleFillHex != nil || readerClassicCircleIconHex != nil
+    }
+
+    func clearReaderClassicCircleColors() {
+        readerClassicCircleFillHex = nil
+        readerClassicCircleIconHex = nil
     }
 
     // MARK: - 界面效果 (Interface Effects)
@@ -1612,6 +1650,16 @@ class GlobalSettings: ObservableObject {
         launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
         let rawReaderInterface = UserDefaults.standard.string(forKey: Self.appearanceReaderInterfaceKey) ?? ""
         appearanceReaderInterface = AppearanceReaderInterface(rawValue: rawReaderInterface) ?? .classic
+        if let savedCircleFill = UserDefaults.standard.object(forKey: Self.readerClassicCircleFillHexKey) as? Int {
+            readerClassicCircleFillHex = UInt32(clamping: savedCircleFill)
+        } else {
+            readerClassicCircleFillHex = nil
+        }
+        if let savedCircleIcon = UserDefaults.standard.object(forKey: Self.readerClassicCircleIconHexKey) as? Int {
+            readerClassicCircleIconHex = UInt32(clamping: savedCircleIcon)
+        } else {
+            readerClassicCircleIconHex = nil
+        }
         interfaceGlowIntensity = Self.sanitizedInterfaceGlowIntensity(
             (UserDefaults.standard.object(forKey: Self.interfaceGlowIntensityKey) as? Double)
                 ?? Self.defaultInterfaceGlowIntensity

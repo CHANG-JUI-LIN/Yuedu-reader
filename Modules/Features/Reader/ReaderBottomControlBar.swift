@@ -1,5 +1,34 @@
 import SwiftUI
 
+/// Resolved colours of the four circle buttons 經典 floats above its control bar
+/// (刷新／換源／下載／聽書). 外觀 → 閱讀界面 → 經典 → 自定義 can override them; with no
+/// override they follow the reading theme exactly as they did before that section
+/// existed. One type owns the fallback so the settings preview and the reader
+/// itself can never disagree about what a picked colour looks like.
+struct ReaderClassicCircleButtonPalette {
+    let fill: Color
+    let icon: Color
+    let border: Color
+
+    init(theme: ReaderTheme, settings: GlobalSettings) {
+        if let hex = settings.readerClassicCircleFillHex {
+            fill = Color(uiColor: AppearanceThemePreset.hex(hex))
+        } else {
+            fill = theme.barColor
+        }
+        if let hex = settings.readerClassicCircleIconHex {
+            // A hand-picked symbol colour is used exactly as picked — the 0.9 fade
+            // only exists to soften the theme's body-text colour into chrome.
+            let picked = Color(uiColor: AppearanceThemePreset.hex(hex))
+            icon = picked
+            border = picked.opacity(0.35)
+        } else {
+            icon = theme.textColor.opacity(0.9)
+            border = theme.textColor.opacity(0.35)
+        }
+    }
+}
+
 struct ReaderBottomControlBar: View {
     @Binding var readerTheme: ReaderTheme
     let overlayContentMaxWidth: CGFloat
@@ -23,6 +52,8 @@ struct ReaderBottomControlBar: View {
     let onOpenTOC: () -> Void
     let onOpenBookmarks: () -> Void
     let onOpenSettings: () -> Void
+
+    @ObservedObject private var settings = GlobalSettings.shared
 
     @State private var chapterSliderDraft: Double? = nil
 
@@ -88,12 +119,17 @@ struct ReaderBottomControlBar: View {
         }
     }
 
+    private var circlePalette: ReaderClassicCircleButtonPalette {
+        ReaderClassicCircleButtonPalette(theme: readerTheme, settings: settings)
+    }
+
     /// A floating secondary action, sitting directly on top of the CoreText page —
     /// unlike the tool row below, it has no bar behind it. The fill must therefore stay
     /// opaque: with `Color.clear` the body text (and 段評 bubbles) showed straight
     /// through the circles and the icons were unreadable against any paragraph behind
-    /// them. `barColor` matches the control bar underneath, so the row reads as one
-    /// piece of chrome.
+    /// them. The default fill (`barColor`) matches the control bar underneath, so the
+    /// row reads as one piece of chrome; an override from 自定義 replaces it wholesale
+    /// — see `ReaderClassicCircleButtonPalette`.
     ///
     /// That is also why this takes 光暈 alone rather than the full `floatingSurface`:
     /// letting 毛玻璃 reach these circles would put the body text back behind the icons.
@@ -102,11 +138,11 @@ struct ReaderBottomControlBar: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(DSFont.fixed(size: 18))
-                .foregroundColor(readerTheme.textColor.opacity(0.9))
+                .foregroundColor(circlePalette.icon)
                 .frame(width: 40, height: 40)
-                .background(readerTheme.barColor, in: Circle())
+                .background(circlePalette.fill, in: Circle())
                 .interfaceGlow(in: Circle())
-                .overlay(Circle().stroke(readerTheme.textColor.opacity(0.35), lineWidth: 1))
+                .overlay(Circle().stroke(circlePalette.border, lineWidth: 1))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                 // The symbol stayed a focusable element of its own next to the button, so
                 // VoiceOver read 「換源」 out as "arrow.left.and.right" — the button's label

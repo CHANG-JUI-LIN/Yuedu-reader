@@ -87,10 +87,12 @@ struct ReaderView: View {
     @State var noteEditorRoute: ReaderNoteEditorRoute?
     /// 待確認的筆記刪除（alert 由這個值驅動）。
     @State var noteDeleteRoute: ReaderNoteDeleteRoute?
-    /// 在筆記編輯頁裡按了刪除：alert 要等編輯頁真的關掉才彈，否則 iOS 17 會在
-    /// sheet 還在收的時候把 alert 吃掉（Technotes/iOS17MenuModalPresentation.md 的同一類問題）。
-    @State private var noteDeleteAfterEditorDismissal =
-        DismissalSequencedPresentation<ReaderNoteDeleteRoute>()
+    /// 在筆記編輯頁裡按了刪除／續訂：alert 與付費牆都要等編輯頁真的關掉才彈，否則 iOS 17
+    /// 會在 sheet 還在收的時候把它吃掉（Technotes/iOS17MenuModalPresentation.md 的同一類問題）。
+    @State private var noteEditorFollowUp =
+        DismissalSequencedPresentation<ReaderNoteEditorFollowUp>()
+    /// 開著的付費牆；`nil` 表示沒開。
+    @State var paywallFeature: PremiumFeature?
     @State var showTouchZoneEditor = false
     @State var readerHeaderFooterEditorModel: ReaderHeaderFooterEditorModel?
     @State var readerOverlaySVGAssetStore: ReaderOverlaySVGAssetStore?
@@ -2161,8 +2163,10 @@ struct ReaderView: View {
         .sheet(
             item: $noteEditorRoute,
             onDismiss: {
-                if let pending = noteDeleteAfterEditorDismissal.consumeAfterDismissal() {
-                    noteDeleteRoute = pending
+                switch noteEditorFollowUp.consumeAfterDismissal() {
+                case .confirmDelete(let route): noteDeleteRoute = route
+                case .paywall: paywallFeature = .paragraphNote
+                case nil: break
                 }
             }
         ) { route in
@@ -2171,19 +2175,31 @@ struct ReaderView: View {
                 note: route.note,
                 date: route.date,
                 showsDelete: !route.note.isEmpty,
+                isEditable: route.isEditable,
                 onSave: { saveNote($0, for: route) },
                 onDelete: {
-                    noteDeleteAfterEditorDismissal.select(
-                        ReaderNoteDeleteRoute(
-                            position: route.position,
-                            length: route.length,
-                            style: route.style,
-                            color: route.color
+                    noteEditorFollowUp.select(
+                        .confirmDelete(
+                            ReaderNoteDeleteRoute(
+                                position: route.position,
+                                length: route.length,
+                                style: route.style,
+                                color: route.color
+                            )
                         )
                     )
                     noteEditorRoute = nil
-                }
+                },
+                onUpgrade: {
+                    noteEditorFollowUp.select(.paywall)
+                    noteEditorRoute = nil
+                },
+                onClose: { noteEditorRoute = nil }
             )
+        }
+        .sheet(item: $paywallFeature) { feature in
+            PaywallView(highlightedFeature: feature)
+                .environmentObject(subscriptionStore)
         }
         .alert(
             localized("刪除筆記"),
