@@ -400,6 +400,12 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         // The boundary-order repair that used to live here is gone: `insert` now places by
         // chapter index, which is the general form of what it was approximating for the two
         // cases where the pending chapter had drifted outside the rendered range.
+        ChapterRetryLog.record(
+            .scrollPlaceholderStuck,
+            chapter: chapterIndex,
+            bookId: nil,
+            detail: "still on its placeholder after the first load"
+        )
         await loadChapter(chapterIndex)
         return loadedChapters.contains(chapterIndex)
     }

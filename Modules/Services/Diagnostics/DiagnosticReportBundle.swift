@@ -28,6 +28,11 @@ enum DiagnosticRedactor {
             (#"(https?://[^\s"'<>]+?)\?[^\s"'<>]*"#, "$1?<redacted>"),
             // `Bearer abc123`
             (#"(?i)\bBearer\s+[A-Za-z0-9._\-~+/=]+"#, "Bearer <redacted>"),
+            // Quoted JSON values need their own rule. The generic key/value rules
+            // below deliberately stop at punctuation, which used to leave a real
+            // `"cookie":"a=b; c=d"` value untouched in exported source context.
+            (#"(?i)"(cookie|set-cookie|authorization|access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|apikey|secret|password|passwd|pwd|session[_-]?id)"\s*:\s*"[^"]*""#,
+             #""$1":"<redacted>""#),
             // Header-ish and JSON-ish `key: value` / `key=value` pairs.
             (#"(?i)\b(cookie|set-cookie|authorization)\b\s*[:=]\s*[^\s,;}]+"#, "$1=<redacted>"),
             (#"(?i)\b(access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|apikey|secret|password|passwd|pwd|session[_-]?id)\b"#
@@ -54,10 +59,9 @@ enum DiagnosticRedactor {
 
 /// The plain-text report handed to `ShareLink`.
 ///
-/// `ShareLink` rather than `.fileExporter`, matching `BookSourceExportFile`: a
-/// document picker opened from a SwiftUI `Menu` hits the iOS 17 menu-dismissal race
-/// in `Technotes/iOS17MenuModalPresentation.md`, and the only workaround in this repo
-/// for that pairing is an `asyncAfter` delay, which the project bans.
+/// `ShareLink` rather than `.fileExporter` so the system share sheet owns file
+/// destinations. The link itself must remain a direct page control: on iOS 17,
+/// launching even a share sheet from a still-dismissing SwiftUI `Menu` can be lost.
 ///
 /// Holds the entries and renders on demand. `Menu` content is built eagerly with its
 /// parent, so formatting several thousand lines at construction time would run on

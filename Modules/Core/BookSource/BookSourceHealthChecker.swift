@@ -32,9 +32,111 @@ protocol BookSourceHealthCheckFetching: Sendable {
         source: BookSource,
         chapterReferer: String?
     ) async throws -> String
+    func fetchBookInfoPackage(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> BookInfoPackage
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        runPreUpdateJs: Bool
+    ) async throws -> TOCPackage
+    func fetchChapterPackage(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource,
+        chapterReferer: String?
+    ) async throws -> ChapterPackage
 }
 
 extension BookSourceFetcher: BookSourceHealthCheckFetching {}
+
+extension BookSourceHealthCheckFetching {
+    func fetchBookInfoPackage(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> BookInfoPackage {
+        let book = try await fetchBookInfo(
+            url: url,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+        return BookInfoPackage(
+            sourceId: source.id,
+            sourceName: source.bookSourceName,
+            bookURL: book.bookUrl,
+            name: book.name,
+            author: book.author,
+            intro: book.intro,
+            coverUrl: book.coverUrl,
+            tocUrl: book.tocUrl,
+            wordCount: book.wordCount,
+            lastChapter: book.lastChapter,
+            kind: book.kind,
+            runtimeVariables: book.runtimeVariables,
+            rawHTMLFilename: nil,
+            savedAt: Date()
+        )
+    }
+
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        runPreUpdateJs: Bool
+    ) async throws -> TOCPackage {
+        let chapters = try await fetchTOC(
+            tocUrl: tocUrl,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+        onFirstPageReady?(chapters)
+        return TOCPackage(
+            sourceId: source.id,
+            sourceName: source.bookSourceName,
+            tocURL: tocUrl,
+            runtimeVariables: runtimeVariables,
+            chapters: chapters,
+            rawHTMLFilename: nil,
+            savedAt: Date()
+        )
+    }
+
+    func fetchChapterPackage(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource,
+        chapterReferer: String?
+    ) async throws -> ChapterPackage {
+        let content = try await fetchChapter(
+            ref: ref,
+            bookId: bookId,
+            source: source,
+            chapterReferer: chapterReferer
+        )
+        return ChapterPackage(
+            bookId: bookId,
+            chapterIndex: ref.index,
+            sourceURL: ref.url,
+            tocTitle: ref.title,
+            canonicalTitle: nil,
+            content: content,
+            contentChecksum: "",
+            rawHTMLFilename: nil,
+            normalizedHTMLFilename: nil,
+            savedAt: Date(),
+            state: .cached,
+            failureReason: nil
+        )
+    }
+}
 
 /// What to do with sources that fail / are too slow, chosen by the user before a run.
 struct BookSourceCheckPolicy: Equatable {
@@ -66,7 +168,7 @@ struct BookSourceCheckPolicy: Equatable {
     var checkSearch = true
     /// 檢查發現（發現頁第一個分類）
     var checkDiscovery = true
-    /// 檢查詳情（僅當結果缺少目錄地址時請求）——Legado 中它同時控制目錄/正文檢查
+    /// 檢查詳情（實際請求並解析詳情頁）——同時控制目錄/正文檢查
     var checkInfo = true
     /// 檢查目錄（前兩章；關閉時正文也不再檢查，與 Legado 一致）
     var checkCategory = true
@@ -121,7 +223,7 @@ enum ValidationStage: Int, CaseIterable, Identifiable {
         switch self {
         case .search:    return localized("用測試關鍵字搜索並解析結果")
         case .discovery: return localized("解析發現頁第一個分類的書單")
-        case .detail:    return localized("僅當結果缺少目錄地址時獲取書籍詳情")
+        case .detail:    return localized("獲取並解析書籍詳情")
         case .toc:       return localized("解析第一本書的章節目錄（前兩章）")
         case .content:   return localized("獲取第一章正文內容")
         }
@@ -703,7 +805,7 @@ final class BookSourceHealthChecker: ObservableObject {
         let toc = await runTrackStage(at: index, stage: .toc, track: track) {
             await self.probeTOC(book: resolvedBook, source: source)
         }
-        let chapter: OnlineChapterRef
+        let chapter: ValidatedChapter
         switch toc {
         case .success(let value):
             chapter = value
@@ -857,19 +959,31 @@ final class BookSourceHealthChecker: ObservableObject {
         }
     }
 
+    private struct ValidatedChapter {
+        let ref: OnlineChapterRef
+        let tocURL: String
+    }
+
     private func probeDetail(book: OnlineBook, source: BookSource) async -> ProbeResult<OnlineBook> {
-        let tocUrl = book.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard tocUrl.isEmpty else {
-            return .success(book, localized("詳情已含目錄地址"))
-        }
         do {
-            let info = try await fetcher.fetchBookInfo(
+            let package = try await fetcher.fetchBookInfoPackage(
                 url: book.bookUrl,
                 source: source,
                 runtimeVariables: book.runtimeVariables
             )
+            var info = package.onlineBook
             let name = info.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return .failure(.ruleMissing, localized("詳情為空")) }
+            if info.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                info.tocUrl = book.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? book.bookUrl
+                    : book.tocUrl
+            }
+            var mergedVariables = book.runtimeVariables ?? [:]
+            for (key, value) in package.runtimeVariables ?? [:] {
+                mergedVariables[key] = value
+            }
+            info.runtimeVariables = mergedVariables.isEmpty ? nil : mergedVariables
             return .success(info, "《\(name)》")
         } catch {
             return .failure(.siteError, error.localizedDescription)
@@ -877,36 +991,61 @@ final class BookSourceHealthChecker: ObservableObject {
     }
 
     /// Returns the first loadable (non-volume-separator) chapter of the TOC.
-    private func probeTOC(book: OnlineBook, source: BookSource) async -> ProbeResult<OnlineChapterRef> {
+    private func probeTOC(book: OnlineBook, source: BookSource) async -> ProbeResult<ValidatedChapter> {
+        let tocURL = book.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tocURL.isEmpty else {
+            return .failure(.ruleMissing, localized("目錄地址為空"))
+        }
         do {
-            let chapters = try await fetcher.fetchTOC(
-                tocUrl: book.tocUrl,
+            let package = try await fetcher.fetchTOCPackage(
+                tocUrl: tocURL,
                 source: source,
-                runtimeVariables: book.runtimeVariables
+                runtimeVariables: book.runtimeVariables,
+                onFirstPageReady: nil,
+                forceRefresh: true,
+                runPreUpdateJs: true
             )
-            guard let first = chapters.first(where: {
+            guard var first = package.chapters.first(where: {
                 !$0.shouldRenderAsVolumeSeparator && $0.hasLoadableContentURL
             }) else {
                 return .failure(.tocEmpty, localized("目錄失效"))
             }
-            return .success(first, "\(localized("章節")) \(chapters.count) \(localized("章"))")
+            var mergedVariables = book.runtimeVariables ?? [:]
+            for (key, value) in package.runtimeVariables ?? [:] {
+                mergedVariables[key] = value
+            }
+            for (key, value) in first.runtimeVariables ?? [:] {
+                mergedVariables[key] = value
+            }
+            first.runtimeVariables = mergedVariables.isEmpty ? nil : mergedVariables
+            return .success(
+                ValidatedChapter(ref: first, tocURL: package.tocURL),
+                "\(localized("章節")) \(package.chapters.count) \(localized("章"))"
+            )
         } catch {
             return .failure(.siteError, error.localizedDescription)
         }
     }
 
     private func probeContent(
-        chapter: OnlineChapterRef, source: BookSource
+        chapter: ValidatedChapter, source: BookSource
     ) async -> ProbeResult<Int> {
+        let bookID = UUID()
+        defer { BookSourceFetcher.shared.clearAllChapterCache(bookId: bookID) }
         do {
-            let text = try await fetcher.fetchChapter(
-                ref: chapter,
-                bookId: UUID(),
+            let package = try await fetcher.fetchChapterPackage(
+                ref: chapter.ref,
+                bookId: bookID,
                 source: source,
-                chapterReferer: nil
+                chapterReferer: chapter.tocURL
             )
+            let text = package.content
             let count = text.trimmingCharacters(in: .whitespacesAndNewlines).count
             guard count > 0 else { return .failure(.contentEmpty, localized("正文失效")) }
+            try ChapterFetcher.shared.validateResolvedContent(text)
+            guard !ChapterFetchManager.isSuspiciousChapterContent(text) else {
+                return .failure(.contentEmpty, localized("正文疑似包含多章內容"))
+            }
             return .success(count, "\(localized("抓取")) \(count) \(localized("字"))")
         } catch {
             return .failure(.siteError, error.localizedDescription)

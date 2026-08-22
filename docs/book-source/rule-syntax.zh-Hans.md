@@ -157,9 +157,25 @@ https://example.com/search?q={{key}},{"charset":"gbk"}
 https://example.com/search,{"method":"POST","body":"key={{key}}&page={{page}}","charset":"gbk"}
 ```
 
-支持的选项：`method`、`body`、`charset`（如 `"gbk"`）、`headers`、`webView`（非空时用无头 WebView 载入）、`type`、`js`、`retry`。请求头字段本身也可用 `<js>` 返回 JSON 字符串。
+支持的选项：`method`、`body`、`charset`（如 `"gbk"`）、`headers`、`webView`／`useWebView`（使用无头 WebView）、`webJs`、`bodyJs`、`webViewDelayTime`、`type`、`js`。请求头字段本身也可用 `<js>` 返回 JSON 字符串。`retry` 与 `serverID` 当前只会被解析以保持格式兼容，**不会自动重发或切换服务器**。
 
 **规则字符串里**的 `{{…}}` 语义不同：`{{@…}}`、`{{$.…}}`、`{{//…}}` 开头＝嵌入另一条规则；其余＝当 JS 执行（可用的变量只有 `baseUrl`／`baseURL`／`nextChapterUrl`／`src`／`result`）。URL 专用的 `{{key}}` 在这里**不是**变量——需要搜索词时请在 URL 层面处理（如 `{{key}}` 放在搜索 URL），别在规则字符串里用。
+
+### 9.1 正文图片点击与段评页
+
+Legado 正文常在图片 URL 后附 `,{...}` 点击配置。Yuedu 支持 `click`、`action`，以及兼容分支使用的 `js` 键；点击时会在**原书源的同一个 session** 执行原始 JS，并恢复当时的 `book`、`chapter`、`result`、`src`、`baseUrl` 与非敏感运行变量。像 `showCmt(bookId, chapterId, paragraphId)` 这种参数不是 URL，App 不会自行猜测 API 路径。
+
+来源调用 `java.showBrowser(baseUrl, html, preloadJS, configJSON)` 时，第四参数支持：
+
+| 配置 | 说明 |
+| --- | --- |
+| `heightPercentage` | 展开高度，范围 0–1 |
+| `skipCollapsed` | 跳过中等高度，直接使用展开高度 |
+| `isHideable` | 是否允许下拉关闭 |
+| `expandedCornersRadius` | 展开状态圆角，0–120 |
+| `hardwareAccelerated` | 接受但不另行切换；WKWebView 本身使用加速合成 |
+
+书源／登录浏览器会把 `java.copyText`、`navigator.clipboard.writeText` 与 `document.execCommand('copy')` 接到 iOS 系统剪贴板。
 
 ## 10. 字段对照：编辑器分页 ↔ Legado JSON 字段
 

@@ -4,13 +4,15 @@
 
 On iOS 17.7, tapping an import action can leave the current screen unchanged
 without presenting the requested sheet, document picker, or photo picker.
-There are three presentation boundaries:
+There are four presentation boundaries:
 
 1. A SwiftUI `Menu` can still be dismissing when its action requests a modal.
 2. Book-source management was itself a sheet and tried to present its import
    UI as a nested sheet.
 3. Reader settings was itself a sheet and tried to present its font document
    picker from that nested presenter.
+4. A `ShareLink` inside a toolbar `Menu` still asks for a share sheet while the
+   menu controller is dismissing; UIKit ownership does not remove that boundary.
 
 The empty-book-source button is a direct `Button`, not a `Menu`, and it also
 failed. That evidence disproved the original menu-only diagnosis.
@@ -25,8 +27,10 @@ requested presentation can be dropped:
 - while the menu's private controller is dismissing; or
 - while book-source management is already the presented sheet and asks SwiftUI
   to find a presenter for a second sheet; or
+- while book-source management's import sheet asks for a document picker; or
 - while reader settings asks its already-presented sheet host to resolve the
-  document picker's presenter.
+  document picker's presenter; or
+- while a toolbar menu is dismissing and its `ShareLink` requests the share sheet.
 
 iOS 18 changed menu dismissal and gesture behavior, so the native menu path is
 retained there.
@@ -42,6 +46,12 @@ presented only from the chooser sheet's `onDismiss` callback.
 management from Settings and Explore on iOS 17. Its import, add, edit, login,
 and validation destinations therefore become first-level presentations. iOS
 18 retains the original book-source management sheet.
+
+`BookSourceImportPresentationPolicy` covers the remaining nested boundary inside
+book-source management. On iOS 17, choosing a JSON file first dismisses the import
+sheet, retains the document route, and opens the picker only from that sheet's real
+`onDismiss` callback. The picker and pasted-JSON routes still converge on the same
+`doImportData` / store import path. iOS 18 keeps the picker inside the import sheet.
 
 `BookInfoEditPresentationPolicy` pushes 書籍資訊 (book info / cover editing) from
 the bookshelf on iOS 17 for the same reason: it owns the 選擇圖片 photo and file
@@ -63,9 +73,11 @@ via `onOpenStyleImporter` (iOS 17). Either presenter attaches the one
 `readerStyleImportPresentation` modifier, so there is a single picker, a single
 parse route (`ReaderSettingsImportService`), and a single apply.
 
-Exports do **not** use this path: `ShareLink` hands presentation to UIKit, so
-匯出閱讀設定 / 匯出規則 / 匯出樣式檔案 are safe even from inside a ⋯ menu inside the
-sheet. `.fileExporter` is not — it is a document picker like any other.
+`ShareLink` avoids the document-picker path used by `.fileExporter`, but it is
+only presentation-safe when the link itself is a direct page or sheet control.
+It must not be launched from a still-dismissing `Menu` on iOS 17. 診斷與回報
+therefore keeps its export link directly in the Form and leaves only non-presenting
+actions in the toolbar menu.
 
 Both sequenced flows use an event boundary, not a guessed duration:
 
@@ -82,6 +94,7 @@ state, and OS patch version.
 The compatibility path covers menu-launched imports in:
 
 - Book sources: local and network import
+- Book-source JSON file selection: first-level picker after the import sheet dismisses
 - Bookshelf: local files, WebDAV, and OPDS
 - RSS: source/folder creation, OPML, and JSON
 - TTS sources: local and network import
@@ -91,11 +104,13 @@ The compatibility path covers menu-launched imports in:
 - Appearance background images: Photos and Files
 - Bottom-tab custom icons
 - 書籍資訊 cover images (pushed from the bookshelf on iOS 17)
+- Diagnostics export (direct Form `ShareLink`, never toolbar Menu → share sheet)
 
 Direct import buttons remain unchanged unless their owner is book-source
 management or reader settings. Book-source management changes navigation
-ownership on iOS 17; reader settings dismisses before handing font import to
-the reader's first-level presenter.
+ownership and dismisses its local-import sheet before the file picker on iOS 17;
+reader settings dismisses before handing font import to the reader's first-level
+presenter.
 
 ## Removal Condition
 
@@ -104,7 +119,8 @@ the app's minimum deployment target reaches iOS 18. Until then, new modal or
 document-picker actions must not be launched directly from a SwiftUI `Menu` on
 iOS 17, book-source management and 書籍資訊 must not be changed back to sheets
 there, and reader font import and the 閱讀設定 style importers must keep their
-first-level presenter handoff.
+first-level presenter handoff. Presentation-producing `ShareLink`s must also stay
+out of SwiftUI `Menu`s on iOS 17.
 
 ## Regression Checks
 

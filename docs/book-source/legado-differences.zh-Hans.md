@@ -3,7 +3,7 @@
 > 其他章节：[快速开始](quickstart.zh-Hans.md) · [规则语法速查](rule-syntax.zh-Hans.md) · [常见症状对照表](troubleshooting.zh-Hans.md)
 > 繁體中文：[與 Legado 的差異](legado-differences.zh-Hant.md)
 
-Yuedu 的书源格式与 Legado 3.0 完全相容，但**底层引擎不同**。多数书源可以直接用，少数依赖 Legado 特有 API 或语法的书源会失效。改书源之前，先看这一页——书源坏掉的主因 80% 集中在这里。
+Yuedu 可直接导入 Legado 3.0 的书源 JSON 数据模型，但**不代表所有运行时 API 都已兼容**。多数书源可以直接使用，依赖 Android／Java 特有 API 或不同语法语义的书源仍可能失效；实际能力以本页清单为准。
 
 ## 0. 一句话总结
 
@@ -23,29 +23,34 @@ Yuedu 的书源格式与 Legado 3.0 完全相容，但**底层引擎不同**。�
 
 | API | 说明 |
 | --- | --- |
-| `java.ajax(url)`、`java.ajaxAll([urls])` | 网络请求；`ajaxAll` 回传数组（取内容用 `.body()`） |
-| `java.get(url, headers)`、`java.post(url, body, headers)` | 带标头的请求 |
+| `java.ajax(url)`、`java.ajaxAll([urls])` | 网络请求；`ajaxAll` 回传 `StrResponse` 数组（取内容用 `.body()`） |
+| `java.get(url, headers)`、`java.post(url, body, headers[, timeout])`、`java.connect(url[, headers, timeout])`、`java.head(url, headers[, timeout])` | 带标头的请求；timeout 单位为毫秒；回传 `StrResponse`，可读 `.body()`、`.headers()`、`.cookies()`、`.statusCode()`／`.code()`、`.statusMessage()`／`.message()`、`.url()` |
 | `java.get(变量名)` | **单参数**＝读取先前存的变量（双参数才是 HTTP GET） |
 | `java.getString(rule)`、`java.getStringList(rule)`、`java.getElements(rule)`、`java.setContent(content, baseUrl)` | 在 JS 内再跑一条规则 |
 | `java.base64Encode(s)`、`java.base64Decode(s)`、`java.base64DecodeToByteArray(s)` | Base64 |
 | `java.md5Encode(s)`、`java.md5Encode16(s)` | MD5（32 位小写 hex／中间 16 位） |
-| `java.HMacBase64(content, "SHA1|SHA256|SHA384|SHA512", key)` | HMAC，回传 Base64 字符串 |
+| `java.HMacBase64(...)`、`java.HMacHex(...)` | 真正的 HMAC-SHA1／224／256／384／512，回传 Base64／hex；不可用普通 hash 代替 HMAC |
+| `java.digestHex(content, algorithm)`、`java.digestBase64Str(content, algorithm)` | MD5／SHA1／224／256／384／512 摘要 |
 | `java.aesEncryptHex(transformation, keyHex, ivHex, dataHex)`、`java.aesDecryptHex(...)` | AES/DES/3DES 加解密（hex 进出）——仅支持 ECB/CBC + PKCS5/PKCS7/NoPadding，其他组合回传空字符串 |
 | `java.createSymmetricCrypto(...)`、`java.aesBase64Decode(...)`、`java.aesBase64DecodeToString(...)` | hutool 风格 AES 工具 |
-| `java.hexEncodeToString(s)`、`java.hexDecodeToString(s)` | hex 编码／解码 |
+| `java.hexEncodeToString(s)`、`java.hexDecodeToString(s)`、`java.hexDecodeToByteArray(s)` | hex 编码／解码 |
+| `java.strToBytes(s, charset)`、`java.bytesToStr(bytes, charset)` | UTF-8／GBK 等字符集的字符串与 byte 数组互转 |
 | `java.encodeURI(s)`、`java.encodeURIComponent(s)` | URI 编码 |
 | `java.htmlFormat(s)` | HTML entity 解码 |
 | `java.t2s(s)`、`java.s2t(s)` | 繁简转换 |
 | `java.timeFormat(ts)`、`java.timeFormatUTC(ts)` | 时间戳格式化 |
+| `java.randomUUID()`、`java.toNumChapter(title)`、`java.urlParts(url, baseUrl)` | UUID、中文章序号标准化、URL 结构解析 |
 | `java.getCookie(url)`、`java.getCookie(url, key)` | 读 cookie（写入请用 `cookie.set`，见下） |
 | `java.androidId()`、`java.deviceID()` | 设备识别码。注意：**不是真 ANDROID_ID**，是一串 16 位小写 hex（SHA256 派生），细节见下方说明 |
-| `java.startBrowser(url)`、`java.startBrowserAwait(url)` | 开内置浏览器（等待返回）；`java.webView(url)` 是**无头** WebView（载入后把 cookie 存下来，不提供互动） |
+| `java.startBrowser(url)`、`java.startBrowserAwait(url)`、`java.showBrowser(baseUrl, html, preloadJS, configJSON)` | 开内置浏览器；四参数 `showBrowser` 支持高度、折叠、下拉关闭与圆角设置 |
+| `java.webView(...)`、`java.webViewGetSource(...)`、`java.webViewGetOverrideUrl(...)` | 无头 WebView 执行页面 JS，或按完整正则取得资源 URL／跳转 URL |
 | `java.log(msg)`、`java.toast(msg)`、`java.longToast(msg)` | 调试输出／提示（`log` 会进「网络日志」） |
 | `java.importScript(url)` | 引入远端 JS |
 | `java.searchBook(name)`、`java.open(url, "search")` | 交棒到搜索（其他 target 无动作） |
 | `java.setResponseBase64(b64)` | 设定响应内容（TTS 登录检查用） |
 | `java.upLoginData(url)`、`java.reLoginView()` | 登录流程 |
 | `java.axja(code)` | aaencode 混淆解码 |
+| `java.copyText(text)` | 复制到系统剪贴板；登录／书源浏览器内的 `navigator.clipboard.writeText`、`document.execCommand('copy')` 也会转接到系统剪贴板 |
 | `java.utf8ToGbk` — **没有**（见下方清单） | — |
 
 ### 不存在／缺损（书源报 `ERROR` 的来源）
@@ -56,10 +61,10 @@ Yuedu 的书源格式与 Legado 3.0 完全相容，但**底层引擎不同**。�
 | --- | --- | --- |
 | `java2js` | 不存在 | 直接写 JS |
 | `java.appVersion` | 不存在 | 自己写死版本字符串 |
-| `java.sha1`、`java.sha256`（单独函数） | 不存在 | `java.HMacBase64(x, "SHA256", key)` 或改用其他签名 |
+| `java.sha1`、`java.sha256`（单独函数） | 名称不同 | 用 `java.digestHex(x, "SHA1|SHA256")`；HMAC 必须用 `HMacHex`／`HMacBase64`，两者不能互换 |
 | `java.md5` | 不存在 | 用 `java.md5Encode`（名称不同！） |
 | `java.rsa…`／RSA 加解密 | 整个 RSA 不存在 | 无替代，此类书源无法使用 |
-| `java.gzipDecode`／gzip 工具 | 不存在 | 无替代 |
+| `java.gzipDecode` | 不存在 | 当前支持压缩：`java.gzipBytes(value)` 或 `Packages.cn.hutool.core.util.ZipUtil.gzip(value)`；不支持解压 |
 | `java.downloadFile` | 不存在 | 无替代 |
 | `java.queryTTF`／`queryBase64TTF`／`replaceFont` | 不存在 | 无替代 |
 | `java.getZipStringContent`／`getZipByteArrayContent` | 不存在 | 无替代 |
@@ -67,7 +72,6 @@ Yuedu 的书源格式与 Legado 3.0 完全相容，但**底层引擎不同**。�
 | `java.getFile`／`readFile`／`readTxtFile`／`unzipFile`／`getTxtInFolder` | 不存在 | 无替代（本地文件 API） |
 | `java.aesDecodeToByteArray`／`aesDecodeToString`／`aesEncodeToBase64…` | 名称不同 | 用 `java.aesDecryptHex`／`aesEncryptHex`／`aesBase64Decode` |
 | `java.qread()` | **刻意 no-op** | 回传空、不报错。依赖它的书源会静默失败而非报 ERROR |
-| `java.copyText` | stub（不实际复制） | — |
 | `java.refreshExplore`／`refreshBookInfo`／`refreshBookToc`／`refreshContent` | no-op | — |
 | `java.openVideoPlayer` | 退化成开浏览器 | — |
 
@@ -84,6 +88,8 @@ java.util：HashMap、LinkedHashMap、TreeMap、Hashtable、Properties、
 android.util.Base64（DEFAULT/NO_PADDING/NO_WRAP/CRLF/URL_SAFE、encodeToString/decode）
 javax.crypto.Cipher（走 AES hex 通道）、javax.crypto.spec.SecretKeySpec、IvParameterSpec
 cn.hutool：DigestUtil.md5Hex、StrUtil.reverse、Base64.encode/decode
+           ZipUtil.gzip
+okhttp3：MediaType.parse、RequestBody.create、Request.Builder、OkHttpClient
 ```
 
 `org.jsoup.*` 也有 polyfill，但**有损**：`Element.first()/last()` 回 null、`Connection.Response.headers()` 回 null、`statusCode()` 恒为 200。依赖 jsoup 面向对象操作的书源请改用规则引擎本身的功能。
@@ -105,7 +111,7 @@ cn.hutool：DigestUtil.md5Hex、StrUtil.reverse、Base64.encode/decode
 - 写：`cookie.set(url, "k=v; k2=v2")`、`cookie.setCookie(...)`、`cookie.replaceCookie(...)`（合并语义）
 - 删：`cookie.remove(url)`、`java.removeCookie(url)`
 - **Cookie 罐永远启用**：书源的 `enabledCookieJar` 开关只是「承载并透明化」字段，没有实际作用——所有书源的 cookie 都会自动保存、自动带上。请求没带 Cookie 时，引擎会自动附上该域已存的 cookie。
-- `loginCheckJs`：搜索取得 HTML 后执行，回传 true＝判定需要登录。搭配「登录页 URL」＋「Cookie 验证登录」使用。
+- `loginCheckJs`：每次顶层网络响应后执行，`result` 是 Legado `StrResponse`，可读 body／状态／标头／cookie，也可调用 `source.putLoginHeader()` 更新登录标头。保存后，同一次 JS 执行里的下一个 `java.*`／`okhttp3` 请求就会带上新标头。
 
 ## 5. 正则差异（ICU ≠ Java）
 
@@ -157,7 +163,7 @@ cn.hutool：DigestUtil.md5Hex、StrUtil.reverse、Base64.encode/decode
 
 ## 9. 书源坏掉的最常见 4 大原因
 
-1. **JS 调用了白名单外的 API**（RSA／`java2js`／`sha256`／`gzipDecode`／文件 API…）→ 调试日志出现 `ERROR: UnsupportedLegadoAPIError` 或 `ERROR:`
+1. **JS 调用了白名单外的 API**（RSA／`java2js`／`gzipDecode`／文件 API…）→ 调试日志出现 `ERROR: UnsupportedLegadoAPIError` 或 `ERROR:`
 2. **规则字符串里用了 `{{key}}` 等 URL 专用变量** → 得到空字符串或 `undefined`
 3. **用了 `{{js:…}}` 前缀** → JS 语法错误
 4. **正则／JSONPath 用了 Java-only 语法** → 结果与 Legado 不同或为空

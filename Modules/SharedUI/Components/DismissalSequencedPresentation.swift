@@ -41,6 +41,26 @@ enum BookSourceManagementPresentationPolicy {
     }
 }
 
+/// Book-source management is pushed on iOS 17, but its local-import UI is still
+/// a sheet. Opening a document picker from that sheet recreates the same nested
+/// presentation boundary and can be dropped. Dismiss the import sheet first and
+/// let management present the picker from the sheet's real `onDismiss` callback.
+/// iOS 18 keeps the picker inside the import sheet. Delete when the deployment
+/// target reaches iOS 18.
+enum BookSourceImportPresentationPolicy {
+    static func requiresFirstLevelImporter(
+        osMajorVersion: Int
+    ) -> Bool {
+        osMajorVersion < 18
+    }
+
+    static var requiresFirstLevelImporter: Bool {
+        requiresFirstLevelImporter(
+            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        )
+    }
+}
+
 /// 書籍資訊 (book info / cover editing) presents the photo and file pickers for
 /// 選擇圖片. As a sheet it is the same shape iOS 17 drops: a presented sheet asked
 /// to resolve a presenter for a picker. Push it from the bookshelf on iOS 17 so

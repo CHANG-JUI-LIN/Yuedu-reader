@@ -198,7 +198,59 @@ enum LegadoJavaInteropRuntime {
         };
         var DigestUtil = { md5Hex: function (s) { return java.md5Encode(String(s)); } };
         var StrUtil = { reverse: function (s) { return String(s).split('').reverse().join(''); } };
+        var ZipUtil = { gzip: function (value) { return java.gzipBytes(value); } };
         var HutoolBase64 = { encode: function (s) { return java.base64Encode(String(s)); }, decode: function (s) { return java.base64Decode(String(s)); } };
+
+        function MediaType(value) { this.value = String(value || ''); }
+        MediaType.parse = function (value) { return new MediaType(value); };
+        var RequestBody = {
+            create: function (a, b) {
+                var body = a instanceof MediaType ? b : a;
+                var mediaType = a instanceof MediaType ? a : b;
+                return { body: body == null ? '' : String(body), mediaType: mediaType || null };
+            }
+        };
+        function RequestBuilder() {
+            this._url = ''; this._method = 'GET'; this._body = ''; this._headers = {};
+        }
+        RequestBuilder.prototype.url = function (value) { this._url = String(value || ''); return this; };
+        RequestBuilder.prototype.get = function () { this._method = 'GET'; this._body = ''; return this; };
+        RequestBuilder.prototype.head = function () { this._method = 'HEAD'; this._body = ''; return this; };
+        RequestBuilder.prototype.post = function (value) { this._method = 'POST'; this._body = value || { body: '' }; return this; };
+        RequestBuilder.prototype.method = function (method, value) { this._method = String(method || 'GET').toUpperCase(); this._body = value || { body: '' }; return this; };
+        RequestBuilder.prototype.addHeader = function (name, value) { this._headers[String(name)] = String(value); return this; };
+        RequestBuilder.prototype.header = RequestBuilder.prototype.addHeader;
+        RequestBuilder.prototype.build = function () {
+            if (this._body && this._body.mediaType && !this._headers['Content-Type']) {
+                this._headers['Content-Type'] = String(this._body.mediaType.value || this._body.mediaType);
+            }
+            return { url: this._url, method: this._method, body: (this._body && this._body.body) || '', headers: this._headers };
+        };
+        var Request = { Builder: RequestBuilder };
+        function OkHttpResponse(nativeResponse) { this._native = nativeResponse; }
+        OkHttpResponse.prototype.body = function () {
+            var nativeResponse = this._native;
+            return { string: function () { return nativeResponse.body(); } };
+        };
+        OkHttpResponse.prototype.headers = function () {
+            var nativeHeaders = this._native.headers();
+            return {
+                names: function () { return nativeHeaders.keySet(); },
+                get: function (name) { return nativeHeaders.get(String(name)); }
+            };
+        };
+        OkHttpResponse.prototype.code = function () { return this._native.code(); };
+        OkHttpResponse.prototype.message = function () { return this._native.message(); };
+        OkHttpResponse.prototype.isSuccessful = function () { return this._native.isSuccessful(); };
+        function OkHttpClient() {}
+        OkHttpClient.prototype.newCall = function (request) {
+            return {
+                execute: function () {
+                    var response = java.httpExecute(request.method, request.url, request.body, request.headers);
+                    return new OkHttpResponse(response);
+                }
+            };
+        };
 
         java.createSymmetricCrypto = function (transformation, key, iv) {
             var t = String(transformation || 'AES');
@@ -228,6 +280,11 @@ enum LegadoJavaInteropRuntime {
             return hexToBytes(java.aesDecryptHex(String(transformation || 'AES'), bytesToHex(getBytes(key || '', 'UTF-8')), bytesToHex(getBytes(iv || '', 'UTF-8')), bytesToHex(decode64(data))));
         };
         java.aesBase64DecodeToString = function () { return bytesToString(java.aesBase64Decode.apply(java, arguments), 'UTF-8'); };
+        java.toURL = function (url, baseUrl) {
+            var value = java.urlParts(String(url || ''), baseUrl == null ? null : String(baseUrl));
+            value.searchParams = __yueduJavaMap(value.searchParams || {});
+            return value;
+        };
 
         var members = {
             'java.lang': { String: JavaString, System: System },
@@ -236,8 +293,9 @@ enum LegadoJavaInteropRuntime {
             'javax.crypto': { Cipher: Cipher },
             'javax.crypto.spec': { SecretKeySpec: SecretKeySpec, IvParameterSpec: IvParameterSpec },
             'cn.hutool.crypto.digest': { DigestUtil: DigestUtil },
-            'cn.hutool.core.util': { StrUtil: StrUtil },
-            'cn.hutool.core.codec': { Base64: HutoolBase64 }
+            'cn.hutool.core.util': { StrUtil: StrUtil, ZipUtil: ZipUtil },
+            'cn.hutool.core.codec': { Base64: HutoolBase64 },
+            'okhttp3': { MediaType: MediaType, RequestBody: RequestBody, Request: Request, OkHttpClient: OkHttpClient }
         };
         function unsupported(path) {
             var c = global.__yueduLegadoErrorContext || {};

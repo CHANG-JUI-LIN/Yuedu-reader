@@ -99,7 +99,7 @@ extension BookSourceFetcher {
         }
         let mergedHeaders = source.parsedHeaders.merging(requestSpec.headers) { _, new in new }
 
-        let html: String
+        var html: String
         do {
             if source.needsWebView || requestSpec.useWebView {
                 let jsWait = requestSpec.webViewDelayMs > 0 ? TimeInterval(requestSpec.webViewDelayMs) / 1000.0 : nil
@@ -130,10 +130,11 @@ extension BookSourceFetcher {
             return []
         }
 
-        // Legado loginCheckJs: evaluate via JSCore; skip parsing if login is required
-        if pipeline.checkLoginRequired(html: html, baseURL: url.absoluteString, source: source) {
-            return []
-        }
+        html = pipeline.applyLoginCheck(
+            html: html,
+            baseURL: url.absoluteString,
+            source: source
+        )
 
         let books: [OnlineBook]
         do {

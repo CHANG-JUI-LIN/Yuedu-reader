@@ -239,7 +239,7 @@ extension BookSourceFetcher {
             initialURL: url,
             initialBaseURL: url.absoluteString,
             replaceRuleScope: source.bookSourceUrl,
-            reviewContext: source.legadoReviewContext,
+            reviewContext: source.legadoReviewContext.withChapter(ref),
             parsePage: parsePage,
             extractNextURLs: extractNextPages
         ) { nextPageURL in
@@ -311,9 +311,9 @@ extension BookSourceFetcher {
             title: effectiveTitle,
             plainTextContent: content,
             rawHTMLContent: parsed.content,
-            reviewContext: source.legadoReviewContext.withRuntimeVariables(
-                parsed.runtimeVariables ?? ref.runtimeVariables
-            )
+            reviewContext: source.legadoReviewContext
+                .withRuntimeVariables(parsed.runtimeVariables ?? ref.runtimeVariables)
+                .withChapter(ref)
         )
         let checksum = SHA256.hash(data: Data(content.utf8)).map {
             String(format: "%02x", $0)

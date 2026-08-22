@@ -469,6 +469,13 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private func skipOrFailCurrentChunk(index: Int, token: UUID, error: Error) {
         consecutiveChunkFailures += 1
         guard !Self.shouldEndSessionAfterSkips(consecutiveFailures: consecutiveChunkFailures) else {
+            // Playback is about to stop with the user listening. Skipping a segment is
+            // ordinary; giving up is the thing they will report.
+            AppLogger.anomaly(
+                localized("朗讀因連續取得失敗而停止"),
+                category: .tts,
+                detail: "index=\(index)\nconsecutiveFailures=\(consecutiveChunkFailures)\nerror=\(error)"
+            )
             failPlayback(
                 TTSPlaybackError.chunkUnavailable(index: index, underlying: error),
                 token: token

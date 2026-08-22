@@ -1539,7 +1539,7 @@
 "正文內容" = "Chapter Content";
 "獲取第一章正文內容" = "Fetches the first chapter's body text";
 "書籍詳情" = "Book Detail";
-"僅當結果缺少目錄地址時獲取書籍詳情" = "Fetches book detail only when the TOC URL is missing";
+"獲取並解析書籍詳情" = "Fetch and parse book details";
 "詳情已含目錄地址" = "TOC URL already present";
 "開始驗證" = "Start Validation";
 "驗證包含網絡請求，可能需要較長時間，請耐心等待" = "Validation performs network requests and may take a while";
@@ -2160,3 +2160,5 @@
 "請求" = "Request";
 "回應" = "Response";
 "規則比對" = "Rule Match";
+"章節反覆重試" = "Chapter is retrying repeatedly";
+"朗讀因連續取得失敗而停止" = "Speech stopped after repeated segment failures";

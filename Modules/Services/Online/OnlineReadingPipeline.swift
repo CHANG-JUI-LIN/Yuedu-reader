@@ -345,6 +345,9 @@ actor ChapterFetchManager {
                     AppLogger.parse("⟐ chapterFetch shared task cancelled, restarting", context: [
                         "index": chapterIndex,
                     ])
+                    ChapterRetryLog.record(
+                        .inheritedCancellation, chapter: chapterIndex, bookId: book.id.uuidString
+                    )
                     if tasks[taskKey] == existing {
                         tasks.removeValue(forKey: taskKey)
                         priorities.removeValue(forKey: taskKey)

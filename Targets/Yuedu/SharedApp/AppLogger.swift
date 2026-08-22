@@ -33,22 +33,22 @@ enum AppLogger {
 
     static func network(_ message: String, error: Error? = nil, context: [String: Any] = [:], level: DiagnosticSeverity? = nil) {
         log(logger: networkLog, level: .error, message: message, error: error, context: context,
-            category: .network, severity: level)
+            category: .network, severity: level, defaultSeverity: .notice)
     }
 
     static func parse(_ message: String, error: Error? = nil, context: [String: Any] = [:], level: DiagnosticSeverity? = nil) {
         log(logger: parseLog, level: .error, message: message, error: error, context: context,
-            category: .parse, severity: level)
+            category: .parse, severity: level, defaultSeverity: .notice)
     }
 
     static func render(_ message: String, error: Error? = nil, context: [String: Any] = [:], level: DiagnosticSeverity? = nil) {
         log(logger: renderLog, level: .error, message: message, error: error, context: context,
-            category: .reader, severity: level)
+            category: .reader, severity: level, defaultSeverity: .notice)
     }
 
     static func cache(_ message: String, error: Error? = nil, context: [String: Any] = [:], level: DiagnosticSeverity? = nil) {
         log(logger: cacheLog, level: .error, message: message, error: error, context: context,
-            category: .cache, severity: level)
+            category: .cache, severity: level, defaultSeverity: .notice)
     }
 
     /// iCloud / Firestore / WebDAV. These subsystems used to hold their own
@@ -56,22 +56,22 @@ enum AppLogger {
     /// meant none of their output reached the in-app log.
     static func sync(_ message: String, error: Error? = nil, context: [String: Any] = [:], level: DiagnosticSeverity? = nil) {
         log(logger: syncLog, level: .error, message: message, error: error, context: context,
-            category: .sync, severity: level)
+            category: .sync, severity: level, defaultSeverity: .notice)
     }
 
     static func security(_ message: String, context: [String: Any] = [:], level: DiagnosticSeverity? = nil) {
         log(logger: securityLog, level: .fault, message: message, error: nil, context: context,
-            category: .security, severity: level)
+            category: .security, severity: level, defaultSeverity: .fault)
     }
 
     static func info(_ message: String, context: [String: Any] = [:], level: DiagnosticSeverity? = nil) {
         log(logger: generalLog, level: .info, message: message, error: nil, context: context,
-            category: .general, severity: level)
+            category: .general, severity: level, defaultSeverity: .info)
     }
 
     static func error(_ message: String, error: Error? = nil, context: [String: Any] = [:], level: DiagnosticSeverity? = nil) {
         log(logger: generalLog, level: .error, message: message, error: error, context: context,
-            category: .general, severity: level)
+            category: .general, severity: level, defaultSeverity: .error)
     }
 
     /// An invariant the code guarantees did not hold.
@@ -92,52 +92,66 @@ enum AppLogger {
         context: [String: Any] = [:]
     ) {
         log(logger: generalLog, level: .fault, message: message, error: nil, context: context,
-            category: category, severity: .anomaly, detail: detail)
+            category: category, severity: .anomaly, defaultSeverity: .anomaly, detail: detail)
     }
 
     // MARK: - Severity inference
 
-    /// Markers this codebase already uses as de-facto level tags.
+    /// How a line's severity is decided when the caller did not say.
     ///
-    /// ⚠️ **This is a documented heuristic, not a guess.** `AppLogger.render` alone
-    /// has ~150 call sites and every one of them is implicitly `.error`, but most
-    /// carry `[FlipTrace]` breadcrumbs describing normal page turns. Without this
-    /// mapping the diagnostics screen's "anomalies" count would equal "all reader
-    /// logs" and the report banner would mean nothing.
+    /// ⚠️ **Documented heuristic.** The six category functions (`render`, `parse`,
+    /// `cache`, `network`, …) name a *subsystem*, not a severity — but every one of
+    /// them has always logged at `.error`. Taken literally that makes ~300 call sites
+    /// "errors", including every `[FlipTrace]` breadcrumb describing a normal page
+    /// turn, which would leave the diagnostics screen's severity filter meaningless.
     ///
-    /// **The real fix is an explicit `level:` at each call site** (~50 of them carry
-    /// these prefixes). This encodes the existing convention so that work can happen
-    /// gradually instead of as a prerequisite.
+    /// So severity is read from two structural signals plus the house marker
+    /// convention, in order:
     ///
-    /// **Delete this — and the `severity == nil` branch that uses it — once those
-    /// call sites pass `level:` explicitly.**
-    private static let tracePrefixes = ["[FlipTrace]", "[ProgressTrace]", "⏱"]
+    /// 1. A `⏱` prefix, or a `[SomethingTrace]` / `[SomethingDebug]` tag — these
+    ///    families are step-by-step narration by construction, and matching on the
+    ///    suffix keeps the next one somebody adds classified without a code change.
+    /// 2. **The caller passed an `Error`.** That is the caller stating that something
+    ///    failed, and it is the one signal here that is not a naming convention.
+    /// 3. A `⟐` structured-probe marker → `.notice`.
+    /// 4. Otherwise the function's own level: `security` is a fault, `error` is an
+    ///    error, and a bare subsystem line with no `Error` attached is a `.notice`.
+    ///
+    /// **The real fix is an explicit `level:` at each call site**, which every one of
+    /// these functions now accepts. **Delete this, and the `severity == nil` branch
+    /// that calls it, once the call sites carry their own level.**
     private static let noticePrefix = "⟐"
+    private static let timingPrefix = "⏱"
+    private static let traceTagSuffixes = ["trace]", "debug]"]
 
-    /// TTS spans several files that all log through `render`/`error`, so the
-    /// category is read off the message's own prefix rather than asking 160-odd call
-    /// sites to move to a new function. Same bargain as `tracePrefixes` above, and
-    /// it goes away the same way.
+    /// Exposed for tests; not meant to be called directly.
+    static func resolvedSeverity(
+        message: String,
+        default fallback: DiagnosticSeverity,
+        carriesError: Bool = false
+    ) -> DiagnosticSeverity {
+        let text = body(of: message)
+
+        if text.hasPrefix(timingPrefix) { return .trace }
+        if text.hasPrefix("["), let close = text.firstIndex(of: "]") {
+            let tag = text[text.startIndex...close].lowercased()
+            if traceTagSuffixes.contains(where: { tag.hasSuffix($0) }) { return .trace }
+        }
+
+        if carriesError { return max(fallback, .error) }
+        if text.hasPrefix(noticePrefix) { return max(fallback, .notice) }
+        return fallback
+    }
+
+    /// TTS spans several files that all log through `render`/`error`, so the category
+    /// is read off the message's own prefix rather than asking 160-odd call sites to
+    /// move to a new function. Same bargain as above, and it goes away the same way.
     private static let ttsPrefix = "[TTS]"
 
     /// The category a message belongs to, which is the calling function's category
     /// unless the message tags itself as something more specific.
     static func resolvedCategory(message: String, declared: DiagnosticCategory) -> DiagnosticCategory {
         body(of: message).hasPrefix(ttsPrefix) ? .tts : declared
-    }
-
-    /// Exposed for tests; not meant to be called directly.
-    static func resolvedSeverity(message: String, implied: OSLogType) -> DiagnosticSeverity {
-        let text = body(of: message)
-        if tracePrefixes.contains(where: { text.hasPrefix($0) }) { return .trace }
-        if text.hasPrefix(noticePrefix) { return .notice }
-
-        switch implied {
-        case .fault: return .fault
-        case .error: return .error
-        case .info:  return .info
-        default:     return .trace
-        }
     }
 
     /// The message with any leading spaces skipped, as a view rather than a copy.
@@ -155,6 +169,8 @@ enum AppLogger {
 
     // MARK: - Private
 
+    /// `true` for the two functions whose names are severities rather than
+    /// subsystems. Only these keep `.error`/`.fault` with no `Error` attached.
     private static func log(
         logger: Logger,
         level: OSLogType,
@@ -163,6 +179,7 @@ enum AppLogger {
         context: [String: Any],
         category: DiagnosticCategory,
         severity: DiagnosticSeverity?,
+        defaultSeverity: DiagnosticSeverity,
         detail: String? = nil
     ) {
         var parts = [message]
@@ -187,7 +204,9 @@ enum AppLogger {
         }
 
         DiagnosticLog.shared.record(
-            severity: severity ?? resolvedSeverity(message: message, implied: level),
+            severity: severity ?? resolvedSeverity(
+                message: message, default: defaultSeverity, carriesError: error != nil
+            ),
             category: resolvedCategory(message: message, declared: category),
             message: fullMessage,
             detail: detail

@@ -421,6 +421,11 @@ final class SVGWebViewRasterizer: NSObject {
             guard let self, let item, let worker, !item.finished, worker.currentItem === item else { return }
             self.drainTimeouts += 1
             AppLogger.render("⟐ svgRaster TIMEOUT", context: ["size": "\(Int(item.size.width))x\(Int(item.size.height))"])
+            // Releasing the lane without stopping its timed-out navigation leaves
+            // WebKit loading the old SVG underneath the next `loadHTMLString` call.
+            // That poisoned later work and turned isolated bad SVGs into a chain of
+            // seven-second waits, which is visible in exported diagnostics.
+            worker.webView.stopLoading()
             self.finishItem(item, on: worker, image: nil)
         }
     }
@@ -560,9 +565,24 @@ extension SVGWebViewRasterizer: WKNavigationDelegate {
 
     nonisolated func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         Task { @MainActor in
+            self.finishFailedNavigation(webView: webView, navigation: navigation)
+        }
+    }
+
+    nonisolated func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        Task { @MainActor in
+            self.finishFailedNavigation(webView: webView, navigation: navigation)
+        }
+    }
+
+    nonisolated func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        Task { @MainActor in
             guard let worker = self.workers.first(where: { $0.webView === webView }),
                   let item = worker.currentItem,
-                  navigation == worker.currentNavigation,
                   !item.finished else {
                 return
             }
@@ -599,6 +619,19 @@ private final class SVGWorkItem {
 }
 
 private extension SVGWebViewRasterizer {
+    private func finishFailedNavigation(
+        webView: WKWebView,
+        navigation: WKNavigation?
+    ) {
+        guard let worker = workers.first(where: { $0.webView === webView }),
+              let item = worker.currentItem,
+              navigation == worker.currentNavigation,
+              !item.finished else {
+            return
+        }
+        finishItem(item, on: worker, image: nil)
+    }
+
     private func finishItem(_ item: SVGWorkItem, on worker: Worker, image: UIImage?) {
         // Guard against double-finish: the watchdog and a late didFinish can both fire.
         guard !item.finished else { return }

@@ -80,12 +80,26 @@ final class SourceAPIErrorLog: @unchecked Sendable {
                 endpoint: endpoint
             )
         }
-        queue.sync {
+        let previous: Failure? = queue.sync {
+            let previous = failures[sourceUrl]
             if let failure {
                 failures[sourceUrl] = failure
             } else {
                 failures.removeValue(forKey: sourceUrl)
             }
+            return previous
+        }
+
+        // This type deliberately keeps only the *current* failure per source, in memory,
+        // because a stale one would misattribute an unrelated empty screen (see the note
+        // at the top). The diagnostic log has the opposite job — it is history — so a new
+        // failure is mirrored there once, when it appears rather than on every repeat.
+        if let failure, failure.displayText != previous?.displayText {
+            AppLogger.network(
+                "⟐ source API failure \(failure.displayText)",
+                context: ["source": sourceUrl],
+                level: .warning
+            )
         }
     }
 

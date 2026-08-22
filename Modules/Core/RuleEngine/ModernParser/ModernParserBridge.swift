@@ -365,8 +365,8 @@ class ModernParserBridge {
         }
 
         // ── AnalyzeUrl handler for java.ajax() ──
-        engine.analyzeUrlHandler = { [weak self] urlStr in
-            guard let self else { return nil }
+        engine.analyzeUrlHandler = { [weak self, weak engine] urlStr in
+            guard let self, let engine else { return nil }
             let analyzeUrl = AnalyzeUrl(
                 ruleUrl: urlStr,
                 sourceHeader: self.sourceRuleData.source.header,
@@ -413,6 +413,25 @@ class ModernParserBridge {
                 if !jar.isEmpty {
                     request.setValue(jar, forHTTPHeaderField: "Cookie")
                 }
+            }
+            // AnalyzeUrl options (for example `url,{"headers":...}`) are still
+            // source-JS network requests. Keep them behind the same injectable
+            // transport boundary as plain `java.ajax`/`java.get`; otherwise fixture
+            // regressions silently escape to the live service and cannot verify the
+            // exact request headers/body produced by the source runtime.
+            if let injectedTransport = engine.networkHandler {
+                let injected = injectedTransport(request)
+                    ?? .bodyOnly(request: request, body: "")
+                self.recordJSNetwork(
+                    url: injected.finalURL.absoluteString,
+                    statusCode: injected.statusCode,
+                    timedOut: false,
+                    body: injected.body
+                )
+                return transformResponse(
+                    injected.body,
+                    baseURL: injected.finalURL.absoluteString
+                )
             }
             let sem = DispatchSemaphore(value: 0)
             var result: String?
@@ -860,6 +879,50 @@ class ModernParserBridge {
         evaluateJsLibIfNeeded()
         return jsEngine.withExecutionStage("sourceScript") {
             jsEngine.evaluate(trimmed, bindings: bindings)
+        }
+    }
+
+    /// Evaluates a persisted image click action against the chapter snapshot that
+    /// produced it. Source sessions are intentionally shared, so restoring these
+    /// bindings is required before every tap to prevent a later chapter parse from
+    /// changing `book`, `chapter`, `result`, or `src` underneath an older page.
+    func evaluateSourceAction(
+        _ action: ReaderHTMLUtilities.LegadoSourceActionContext
+    ) -> String? {
+        guard action.version == ReaderHTMLUtilities.LegadoSourceActionContext.currentVersion,
+              action.sourceURL == sourceRuleData.source.bookSourceUrl else { return nil }
+        evaluateJsLibIfNeeded()
+        loadRuntimeVariables(action.runtimeVariables)
+        var bookVariables = action.runtimeVariables
+        bookVariables["book.durChapterIndex"] = "\(action.book.durChapterIndex)"
+        bookVariables["book.durChapterTitle"] = action.book.durChapterTitle
+        bookVariables["book.order"] = "\(action.book.order)"
+        bookVariables["book.type"] = "\(action.book.type)"
+        bookVariables["book.imageStyle"] = action.book.imageStyle
+        bookVariables["book.name"] = action.book.name
+        bookVariables["book.author"] = action.book.author
+        bookVariables["book.coverUrl"] = action.book.coverURL
+        bookVariables["book.bookUrl"] = action.book.bookURL
+        bookVariables["book.tocUrl"] = action.book.tocURL
+        bookVariables["book.abstract"] = action.book.abstract
+        setBookContext(runtimeVariables: bookVariables)
+        jsEngine.setChapterBridge(LegadoChapterBridge(
+            index: action.chapter.index,
+            title: action.chapter.title,
+            order: action.chapter.order,
+            url: action.chapter.url,
+            isVip: action.chapter.isVip
+        ))
+        return jsEngine.withExecutionStage("sourceAction") {
+            jsEngine.evaluate(
+                action.script,
+                result: action.result,
+                bindings: [
+                    "src": action.result,
+                    "baseUrl": action.baseURL,
+                    "baseURL": action.baseURL,
+                ]
+            )
         }
     }
 
@@ -2221,23 +2284,17 @@ class ModernParserBridge {
 
     // MARK: - Network fetch using AnalyzeUrl
 
-    func checkLoginRequired(
-        html: String,
-        baseURL: String
-    ) -> Bool {
-        // Cheap exit first. This guard used to sit *after* the engine was built and
-        // the whole response was installed on it — work every search of every source
-        // paid, while the overwhelming majority declare no loginCheckJs at all.
+    func applyLoginCheck(html: String, baseURL: String) -> String {
         let js = sourceRuleData.source.loginCheckJs
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !js.isEmpty else { return false }
-
-        let engine = makeEngine()
-        engine.setContent(html, baseUrl: baseURL)
-
-        let result = engine.getString(ruleStr: js)
-        let lower = result.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        return lower == "true" || lower == "1" || lower == "yes"
+        guard !js.isEmpty else { return html }
+        evaluateJsLibIfNeeded()
+        let response = LegadoStrResponse(url: baseURL, body: html)
+        return jsEngine.evaluateResponseScript(
+            js,
+            response: response,
+            bindings: ["baseUrl": baseURL, "baseURL": baseURL]
+        ).body()
     }
 
     /// Prime a site cookie that a source's discover endpoints read inline but never set themselves.
@@ -2415,10 +2472,32 @@ class ModernParserBridge {
         }
 
         let encoding = Self.encodingFromCharset(analyzeUrl.charset)
-        let body = String(data: data, encoding: encoding)
+        let decodedBody = String(data: data, encoding: encoding)
             ?? String(data: data, encoding: .utf8) ?? ""
-        let finalUrl = (response as? HTTPURLResponse)?.url?.absoluteString
-            ?? analyzeUrl.url
+        let capturedResult = LegadoHTTPResult.make(request: request, data: data, response: response)
+        let sourceResponse = LegadoStrResponse(result: LegadoHTTPResult(
+            requestURL: capturedResult.requestURL,
+            finalURL: capturedResult.finalURL,
+            statusCode: capturedResult.statusCode,
+            statusMessage: capturedResult.statusMessage,
+            headers: capturedResult.headers,
+            cookies: capturedResult.cookies,
+            body: decodedBody
+        ))
+        let loginCheck = sourceRuleData.source.loginCheckJs
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let checkedResponse = loginCheck.isEmpty
+            ? sourceResponse
+            : jsEngine.evaluateResponseScript(
+                loginCheck,
+                response: sourceResponse,
+                bindings: [
+                    "baseUrl": sourceResponse.url,
+                    "baseURL": sourceResponse.url,
+                ]
+            )
+        let body = checkedResponse.body()
+        let finalUrl = checkedResponse.url
         if sourceRuleData.source.exploreUrl.contains("_csrfToken"),
            let path = request.url?.path,
            path.contains("/majax/") {

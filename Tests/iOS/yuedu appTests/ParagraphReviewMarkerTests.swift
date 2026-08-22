@@ -141,7 +141,7 @@ struct ParagraphReviewMarkerTests {
         #expect(target.title == "QQ阅读段评")
     }
 
-    @Test("rewrites qidian image click config into source-image review link")
+    @Test("keeps numeric qidian image click config in its source runtime")
     func rewritesQidianImageClickConfig() throws {
         let raw = #"<p>段落<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","type":"qd","click":"showCmt(123, 456, 7, 999,'ios','改版')"}"></p>"#
         let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
@@ -158,11 +158,12 @@ struct ParagraphReviewMarkerTests {
 
         let href = try #require(firstHref(in: cleaned))
         let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
-        #expect(marker.url == "https://sb.shazi.tk/comments?bookId=123&chapterId=456&paragraphId=7")
-        #expect(marker.title == "起點段評")
+        #expect(marker.url.isEmpty)
+        #expect(marker.sourceJS == "showCmt(123, 456, 7, 999,'ios','改版')")
+        #expect(marker.actionContext?.version == ReaderHTMLUtilities.LegadoSourceActionContext.currentVersion)
     }
 
-    @Test("rewrites api qidian image click config with source token")
+    @Test("does not freeze qidian credentials into a numeric click target")
     func rewritesAPIQidianImageClickConfigWithToken() throws {
         let raw = #"<p>段落<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","type":"qd","click":"showCmt(123,456,7,999)"}"></p>"#
         let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
@@ -176,8 +177,27 @@ struct ParagraphReviewMarkerTests {
 
         let href = try #require(firstHref(in: cleaned))
         let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
-        #expect(marker.url == "https://api-x.shrtxs.cn/qidth/?bookId=123&chapterId=456&paragraphId=7&token=tok-1")
-        #expect(marker.title == "起點段評")
+        #expect(marker.url.isEmpty)
+        #expect(marker.sourceJS == "showCmt(123,456,7,999)")
+        #expect(!href.contains("tok-1"))
+    }
+
+    @Test("numeric showCmt stays a source action instead of synthesizing an endpoint")
+    func numericShowCmtStaysASourceAction() throws {
+        let raw = #"<p>段落<img src="data:image/svg+xml;base64,PHN2Zy8+,{"style":"text","click":"showCmt('123','456','7')"}"></p>"#
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "番茄四合一（OE•八）",
+                sourceURL: "http://47.116.199.133:8020/"
+            )
+        )
+
+        let href = try #require(firstReviewHref(in: cleaned))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
+        #expect(marker.url.isEmpty)
+        #expect(marker.sourceJS == "showCmt('123','456','7')")
+        #expect(!href.contains("comments"))
     }
 
     /// 晴天起点 (`🔅企点小说`) builds its 熱評 card in `createGod`, and outside legado-改版 the tap
@@ -211,7 +231,8 @@ struct ParagraphReviewMarkerTests {
         #expect(cleaned.contains(#"class="yd-review-image" data-yd-review-style="full""#))
         let href = try #require(firstHref(in: cleaned))
         let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
-        #expect(marker.url == "https://sb.shazi.tk/comments?bookId=123&chapterId=456&paragraphId=7")
+        #expect(marker.url.isEmpty)
+        #expect(marker.sourceJS.contains("/comments?bookId=123"))
         #expect(marker.title == "段评")
     }
 
@@ -229,7 +250,8 @@ struct ParagraphReviewMarkerTests {
 
         let href = try #require(firstHref(in: cleaned))
         let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
-        #expect(marker.url == "https://sb.shazi.tk/chapterComments?bookId=123&chapterId=456")
+        #expect(marker.url.isEmpty)
+        #expect(marker.sourceJS.contains("/chapterComments?bookId=123"))
         #expect(marker.title == "本章说")
     }
 
@@ -381,8 +403,7 @@ struct ParagraphReviewMarkerTests {
         let href = try #require(firstReviewHref(in: cleaned))
         let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
         #expect(marker.url.isEmpty)
-        #expect(marker.sourceJS.contains("startCommentBrowser.call"))
-        #expect(marker.sourceJS.contains("buildCommentUrl.call"))
+        #expect(marker.sourceJS.hasPrefix("showCmt("))
         #expect(marker.sourceJS.contains("7636702239288986649"))
         #expect(marker.sourceJS.contains("752123"))
         #expect(marker.sourceURL == "https://v1.vossc.com")
@@ -391,6 +412,32 @@ struct ParagraphReviewMarkerTests {
     @Test("paragraph review browser presentation hides app title and toolbar")
     func paragraphReviewBrowserHidesAppChrome() {
         #expect(ParagraphReviewBrowserPresentationPolicy.hidesToolbar)
+    }
+
+    @Test("four-argument browser configuration parses the supported presentation subset")
+    func sourceBrowserConfigurationParsesSupportedSubset() {
+        let configuration = SourceBrowserPresentationConfiguration(json: #"""
+        {
+          "heightPercentage": 0.8,
+          "skipCollapsed": true,
+          "isHideable": false,
+          "expandedCornersRadius": 18,
+          "hardwareAccelerated": true,
+          "futureOption": "ignored"
+        }
+        """#)
+
+        #expect(configuration.heightPercentage == 0.8)
+        #expect(configuration.skipCollapsed)
+        #expect(!configuration.isHideable)
+        #expect(configuration.expandedCornersRadius == 18)
+
+        let invalid = SourceBrowserPresentationConfiguration(
+            json: #"{"heightPercentage":2,"expandedCornersRadius":-1}"#
+        )
+        #expect(invalid.heightPercentage == nil)
+        #expect(invalid.expandedCornersRadius == nil)
+        #expect(invalid.isHideable)
     }
 
     /// The source-JS fallback must stay a *function call* gate — a click config carrying prose,
@@ -429,8 +476,9 @@ struct ParagraphReviewMarkerTests {
         #expect(cleaned.contains(#"data-yd-imgstyle="text""#))
         let href = try #require(firstHref(in: cleaned))
         let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
-        #expect(marker.url == "https://shenmoxs.top/comments?bookId=123&chapterId=456&paragraphId=-1")
-        #expect(marker.title == "起點段評")
+        #expect(marker.url.isEmpty)
+        #expect(marker.sourceJS.contains("123, 456, -1"))
+        #expect(ReaderHTMLUtilities.isTitleReviewHref(href))
     }
 
     @Test("paged adapter rewrites raw cached review markers before rendering")

@@ -129,6 +129,14 @@ final class ReaderViewModel: ObservableObject {
 
     // MARK: - Chapter Loading
 
+    /// The book the chapter states currently describe.
+    ///
+    /// `setChapterState` is reached from paths that never carried the book
+    /// (`finishFetch`, `clearInFlight`), and the retry log keys on it. Recorded here,
+    /// at the one entry point every chapter request passes through, rather than
+    /// widening four signatures for a diagnostic.
+    private var currentBookId: String?
+
     func ensureChapterReady(
         book: ReadingBook?,
         chapterIndex: Int,
@@ -138,6 +146,7 @@ final class ReaderViewModel: ObservableObject {
         guard let book, let refs = book.onlineChapters, refs.indices.contains(chapterIndex) else {
             return
         }
+        currentBookId = book.id.uuidString
 
         // Volume headers (作品相关 / 第N卷 …) have no fetchable content. Mark ready immediately so
         // the builder renders a divider page instead of spinning forever on an empty fetch.
@@ -495,6 +504,8 @@ final class ReaderViewModel: ObservableObject {
     func stopChangeSourceSearch() {
         changeSourceSearchTask?.cancel()
         changeSourceSearchTask = nil
+        tocWarmTask?.cancel()
+        tocWarmTask = nil
         changeSourceLoading = false
     }
 
@@ -657,7 +668,41 @@ final class ReaderViewModel: ObservableObject {
         } else {
             availableChapterIndexes.remove(chapterIndex)
         }
+        let previous = chapterStates[chapterIndex]
         chapterStates[chapterIndex] = state
+        recordChapterStateTransition(
+            from: previous, to: state, chapter: chapterIndex, contentAvailable: contentAvailable
+        )
+    }
+
+    /// The chapter-supply story, in the log.
+    ///
+    /// Every long-running complaint in this area — 無限加載中, 莫名其妙章節載入失敗,
+    /// 鎖屏聽書停止 — was a question about which state a chapter ended up in and how it
+    /// got there (`Technotes/ReaderChapterSupply.md`). That was only answerable with a
+    /// Mac attached. This is the single funnel every state change passes through.
+    private func recordChapterStateTransition(
+        from previous: ChapterLoadState?,
+        to state: ChapterLoadState,
+        chapter: Int,
+        contentAvailable: Bool
+    ) {
+        guard previous != state else { return }
+        let severity: DiagnosticSeverity
+        switch state {
+        case .failed:    severity = .error
+        case .cancelled: severity = .notice
+        default:         severity = .trace
+        }
+        AppLogger.render(
+            "⟐ chapterState ch=\(chapter) \(previous.map { "\($0)" } ?? "nil") → \(state) content=\(contentAvailable)",
+            level: severity
+        )
+        // A chapter that finally arrived is no longer retrying, so its history must not
+        // carry into an unrelated later failure.
+        if state == .ready, contentAvailable {
+            ChapterRetryLog.noteSuccess(chapter: chapter, bookId: currentBookId)
+        }
     }
 
     private func startFetchTask(

@@ -140,6 +140,29 @@ struct LegadoConnectionResponseTests {
         #expect(engine.evaluate("java.put('key', 'value'); java.get('key')") == "value")
         #expect(requestCount == 0)
     }
+
+    @Test("connect overloads and HEAD retain response metadata")
+    func connectAndHeadResponses() {
+        let engine = JSCoreEngine()
+        var requests: [URLRequest] = []
+        engine.networkHandler = { request in
+            requests.append(request)
+            return LegadoHTTPResult(
+                requestURL: request.url!, finalURL: request.url!, statusCode: 204,
+                statusMessage: "No Content", headers: ["X-Method": request.httpMethod ?? ""],
+                cookies: [:], body: request.value(forHTTPHeaderField: "X-Test") ?? ""
+            )
+        }
+
+        #expect(engine.evaluate("var r=java.connect('https://example.com/a'); [r.code(),r.message()].join('|')") == "204|No Content")
+        #expect(engine.evaluate("java.connect('https://example.com/b', {\"X-Test\":\"yes\"}, 2500).body()") == "yes")
+        #expect(engine.evaluate("var r=java.head('https://example.com/c', {\"X-Test\":\"head\"}); [r.code(),r.headers().get('X-Method')].join('|')") == "204|HEAD")
+        #expect(engine.evaluate("java.head('https://example.com/d', {}, 1200).code()") == "204")
+        #expect(engine.evaluate("java.post('https://example.com/e', 'body', {}, 1300).code()") == "204")
+        #expect(requests.map(\.httpMethod) == ["GET", "GET", "HEAD", "HEAD", "POST"])
+        #expect(requests[3].timeoutInterval == 1.2)
+        #expect(requests[4].timeoutInterval == 1.3)
+    }
 }
 
 @Suite("Legado Java Interop Runtime", .serialized)
@@ -198,6 +221,53 @@ struct LegadoJavaInteropRuntimeTests {
         let engine = JSCoreEngine()
         #expect(engine.evaluate("new Packages.java.lang.String([65], 'UTF-8').toString()") == "A")
         #expect(engine.evaluate("new Packages.java.util.HashMap().size()") == "0")
+    }
+
+    @Test("common java utility APIs match Legado contracts")
+    func commonJavaUtilities() {
+        let engine = JSCoreEngine()
+        #expect(engine.evaluate("JSON.stringify(java.strToBytes('中', 'UTF-8'))") == "[228,184,173]")
+        #expect(engine.evaluate("java.bytesToStr([228,184,173], 'UTF-8')") == "中")
+        #expect(engine.evaluate("JSON.stringify(java.hexDecodeToByteArray('00ff10'))") == "[0,255,16]")
+        #expect(engine.evaluate("java.toNumChapter('第十二章 標題')") == "第12章 標題")
+        #expect(engine.evaluate("var u=java.toURL('../c?q=%E4%B8%AD','https://example.com/a/b'); [u.host,u.origin,u.pathname,u.searchParams.get('q')].join('|')") == "example.com|https://example.com|/c|中")
+        #expect(engine.evaluate("java.digestHex('abc','SHA-256')") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        #expect(engine.evaluate("java.digestBase64Str('abc','SHA-256')") == "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=")
+        #expect(engine.evaluate("java.HMacHex('The quick brown fox jumps over the lazy dog','HmacSHA256','key')") == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8")
+        #expect(engine.evaluate("java.HMacHex('The quick brown fox jumps over the lazy dog','HmacSHA224','key')") == "88ff8b54675d39b8f72322e65ff945c52d96379988ada25639747e69")
+        let uuid = engine.evaluate("java.randomUUID()") ?? ""
+        #expect(uuid.range(of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#, options: .regularExpression) != nil)
+        #expect(engine.evaluate("var z=Packages.cn.hutool.core.util.ZipUtil.gzip('abc',''); [z[0],z[1],z.length>10].join('|')") == "31|139|true")
+    }
+
+    @Test("bounded okhttp3 builder executes through the source network session")
+    func okhttpBuilder() {
+        let engine = JSCoreEngine()
+        var captured: URLRequest?
+        engine.networkHandler = { request in
+            captured = request
+            return LegadoHTTPResult(
+                requestURL: request.url!, finalURL: request.url!, statusCode: 200,
+                statusMessage: "OK", headers: ["X-Reply": "yes"], cookies: [:],
+                body: #"{"ok":true}"#
+            )
+        }
+        let value = engine.evaluate("""
+        var importer = new JavaImporter();
+        importer.importPackage(Packages.okhttp3);
+        with (importer) {
+          var media = MediaType.parse('application/json');
+          var request = new Request.Builder().url('https://example.com/post')
+            .post(RequestBody.create('{\"a\":1}', media)).addHeader('X-Test','ok').build();
+          var response = new OkHttpClient().newCall(request).execute();
+          [response.body().string(), response.headers().names()[0], response.headers().get('x-reply')].join('|');
+        }
+        """)
+        #expect(value == #"{"ok":true}|X-Reply|yes"#)
+        #expect(captured?.httpMethod == "POST")
+        #expect(captured?.value(forHTTPHeaderField: "X-Test") == "ok")
+        #expect(String(data: captured?.httpBody ?? Data(), encoding: .utf8) == #"{"a":1}"#)
+        #expect(captured?.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
 }
 
@@ -340,6 +410,46 @@ struct LegadoFullSourceFixtureTests {
         #expect(url?.contains("sign=") == true)
     }
 
+    @Test("Shuqi auth error refreshes its bearer before the next source request")
+    func shuqiLoginCheckRefreshesBearerImmediately() throws {
+        let source = try loadSource(
+            environmentKey: "SHUQI_SOURCE_JSON",
+            defaultPath: Self.shuqiDefaultPath
+        )
+        LoginManager.shared.storeLoginHeader(
+            sourceUrl: source.bookSourceUrl,
+            raw: #"{"authorization":"Bearer stale-fixture"}"#
+        )
+        defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
+
+        var oceanAuthorization: String?
+        var requestedHosts: [String] = []
+        let bridge = ModernParserBridge(source: source)
+        bridge.sourceScriptNetworkHandler = { request in
+            requestedHosts.append(request.url?.host ?? "<nil>")
+            if request.url?.host == "t.shuqi.com" {
+                return LegadoHTTPResult(
+                    requestURL: request.url!, finalURL: request.url!, statusCode: 200,
+                    statusMessage: "OK", headers: ["Set-Cookie": "shuqi_token=fresh-fixture"],
+                    cookies: ["shuqi_token": "fresh-fixture", "z": "1"], body: "fixture"
+                )
+            }
+            oceanAuthorization = request.value(forHTTPHeaderField: "Authorization")
+            return .bodyOnly(request: request, body: #"{"data":[]}"#)
+        }
+
+        let authError = #"{"message":"Api Gateway Auth ERROR","status":"10003"}"#
+        #expect(bridge.applyLoginCheck(html: authError, baseURL: source.bookSourceUrl) == authError)
+        #expect(requestedHosts == ["t.shuqi.com"])
+        #expect(bridge.lastSourceScriptError == nil)
+        #expect(
+            bridge.evaluateSourceScript(
+                "java.ajax(GetUrl('/webapi/bcspub/openapi/book/chapterlist','bookId=1'))"
+            ) == #"{"data":[]}"#
+        )
+        #expect(oceanAuthorization == "Bearer fresh-fixture")
+    }
+
     @Test("unchanged Qimao jsLib builds device and signing inputs")
     func qimaoFixture() throws {
         let source = try loadSource(environmentKey: "QIMAO_SOURCE_JSON", defaultPath: Self.qimaoDefaultPath)
@@ -475,5 +585,31 @@ struct LegadoParserBridgeContractTests {
         #expect(requestCount == 1)
         #expect(capturedHeaders["X-Source"] == "source-value")
         #expect(capturedHeaders["X-Call"] == "call-value")
+    }
+
+    @Test("putLoginHeader affects the next java request in the same JS evaluation")
+    func loginHeaderIsImmediatelyVisibleToNetwork() {
+        var source = BookSource()
+        source.bookSourceUrl = "https://login-header.example"
+        source.header = #"{"X-Source":"source-value","Authorization":"Bearer stale"}"#
+        LoginManager.shared.removeLoginHeader(sourceUrl: source.bookSourceUrl)
+        defer { LoginManager.shared.removeLoginHeader(sourceUrl: source.bookSourceUrl) }
+
+        var capturedHeaders: [String: String] = [:]
+        let bridge = ModernParserBridge(source: source)
+        bridge.sourceScriptNetworkHandler = { request in
+            capturedHeaders = request.allHTTPHeaderFields ?? [:]
+            return .bodyOnly(request: request, body: "fixture-body")
+        }
+
+        let response = bridge.evaluateSourceScript("""
+        source.putLoginHeader(JSON.stringify({Authorization:'Bearer fixture'}));
+        java.ajax('https://login-header.example/data');
+        """)
+
+        #expect(response == "fixture-body")
+        #expect(bridge.lastSourceScriptError == nil)
+        #expect(capturedHeaders["X-Source"] == "source-value")
+        #expect(capturedHeaders["Authorization"] == "Bearer fixture")
     }
 }

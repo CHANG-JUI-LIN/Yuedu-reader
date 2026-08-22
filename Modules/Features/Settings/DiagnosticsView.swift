@@ -21,7 +21,7 @@ struct DiagnosticsView: View {
     @State private var showCopiedAlert = false
     /// Fixed once per visit. `filename()` stamps the current time, so recomputing it
     /// inside `body` would hand SwiftUI a different value on every render and make
-    /// the two `ShareLink`s disagree about what the file is called.
+    /// the export control point at a different filename after state updates.
     @State private var exportFilename = DiagnosticReportBundle.filename()
 
     enum SeverityFilter: String, CaseIterable, Identifiable {
@@ -80,18 +80,25 @@ struct DiagnosticsView: View {
 
     var body: some View {
         Form {
-            if reportableCount > 0 {
-                Section {
+            Section {
+                if reportableCount > 0 {
                     DiagnosticAnomalyBanner(count: reportableCount)
-                    ShareLink(item: exportBundle, preview: SharePreview(exportBundle.filename)) {
-                        Label(localized("匯出並回報"), systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel(localized("匯出並回報"))
                 }
-                .interfaceSectionSurface()
+
+                ShareLink(item: exportBundle, preview: SharePreview(exportBundle.filename)) {
+                    Label(
+                        reportableCount > 0 ? localized("匯出並回報") : localized("匯出紀錄"),
+                        systemImage: "square.and.arrow.up"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel(
+                    reportableCount > 0 ? localized("匯出並回報") : localized("匯出紀錄")
+                )
+                .accessibilityIdentifier("diagnostics_export_button")
             }
+            .interfaceSectionSurface()
 
             if !model.uncleanSessions.isEmpty {
                 Section {
@@ -157,9 +164,6 @@ struct DiagnosticsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    ShareLink(item: exportBundle, preview: SharePreview(exportBundle.filename)) {
-                        Label(localized("匯出紀錄"), systemImage: "square.and.arrow.up")
-                    }
                     Button {
                         UIPasteboard.general.string = exportBundle.render()
                         showCopiedAlert = true
@@ -174,11 +178,12 @@ struct DiagnosticsView: View {
                     #if DEBUG
                     Button {
                         MetricKitDiagnosticReporter.shared.injectSampleDiagnosticForTesting()
-                        AppLogger.anomaly(
-                            "測試用異常",
-                            category: .reader,
-                            detail: "injected from the diagnostics screen (DEBUG only)"
-                        )
+                        // A realistic retry loop, so the escalation and its reason
+                        // sequence can be seen without waiting for a source to misbehave.
+                        ChapterRetryLog.resetForTesting()
+                        ChapterRetryLog.record(.fetchCancelled, chapter: 42, bookId: "sample")
+                        ChapterRetryLog.record(.fetchCancelled, chapter: 42, bookId: "sample")
+                        ChapterRetryLog.record(.cacheInconsistent, chapter: 42, bookId: "sample")
                         model.reload()
                     } label: {
                         Label("Inject sample anomaly", systemImage: "ladybug")

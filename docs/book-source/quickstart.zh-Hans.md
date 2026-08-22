@@ -30,9 +30,9 @@ Yuedu 直接读取 **Legado 格式的书源 JSON**（`ruleBookSource` 结构）�
 | --- | --- |
 | 检查搜索 | 用测试关键字搜索，解析 `ruleSearch.bookList` |
 | 检查发现 | 解析 `exploreUrl` 与 `ruleExplore.bookList` |
-| 检查详情 | 进入第一本书的详情页，解析 `ruleBookInfo` |
-| 检查目录 | 抓取目录页，解析 `ruleToc` |
-| 检查正文 | 抓取第一章正文，解析 `ruleContent` |
+| 检查详情 | 实际抓取第一本书的详情页并解析 `ruleBookInfo`；搜索结果即使已有目录 URL 也不会跳过 |
+| 检查目录 | 使用详情阶段产生的 URL 与运行变量抓取目录，验证至少有可加载章节并检查常见 API 错误包装 |
+| 检查正文 | 抓取并解析第一个可加载章节，验证实际正文不为空 |
 
 验证结果页会显示五个阶段各自的通过／失败状态（⚪ 绿＝通过，红＝失败）、每阶段耗时（毫秒），失败的阶段再按 `FailureCategory` 分类：
 

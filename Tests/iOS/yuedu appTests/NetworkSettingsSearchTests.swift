@@ -151,6 +151,60 @@ struct NetworkSettingsSearchTests {
         #expect(fetcher.searchCallCount == 1)
     }
 
+    @MainActor
+    @Test("stopping source search also cancels background TOC warm-up")
+    func stoppingSearchCancelsTOCWarmup() async throws {
+        let previousLoadTOC = GlobalSettings.shared.changeSourceLoadToc
+        let previousCacheDays = GlobalSettings.shared.searchCacheDays
+        let previousSources = BookSourceStore.shared.sources
+        var book = ReadingBook(title: "Warm", author: "Author", contentFilename: "")
+        book.isOnline = true
+        let bookId = book.id
+        defer {
+            GlobalSettings.shared.changeSourceLoadToc = previousLoadTOC
+            GlobalSettings.shared.searchCacheDays = previousCacheDays
+            BookSourceStore.shared.sources = previousSources
+            ChangeSourceCache.shared.clear(for: bookId)
+        }
+
+        GlobalSettings.shared.changeSourceLoadToc = true
+        GlobalSettings.shared.searchCacheDays = 1
+        let source = makeSource(name: "Warm", url: "https://example.com/warm")
+        BookSourceStore.shared.sources = [source]
+        let origin = BookOrigin(
+            sourceId: source.id,
+            sourceName: source.bookSourceName,
+            bookUrl: "https://example.com/warm/book",
+            tocUrl: "https://example.com/warm/toc",
+            coverUrl: "",
+            intro: "",
+            lastChapter: "",
+            wordCount: "",
+            kind: "",
+            runtimeVariables: nil
+        )
+        ChangeSourceCache.shared.store(origins: [origin], for: bookId)
+
+        let fetcher = CancellableTOCFetcher()
+        let viewModel = ReaderViewModel(
+            chapterFetcher: NoopChapterFetcher(),
+            bookCoordinator: NoopOnlineBookCoordinator(),
+            bookSourceFetcher: fetcher
+        )
+        viewModel.loadOtherOrigins(
+            book: book,
+            currentSourceId: UUID(),
+            enabledSources: [source],
+            store: BookStore()
+        )
+        try await waitUntilAsync { await fetcher.didStartTOCRequest }
+
+        viewModel.stopChangeSourceSearch()
+
+        try await waitUntilAsync { await fetcher.didCancelTOCRequest }
+        #expect(await fetcher.didCancelTOCRequest)
+    }
+
     private func makeSource(name: String, url: String) -> BookSource {
         var source = BookSource()
         source.bookSourceName = name
@@ -196,6 +250,91 @@ struct NetworkSettingsSearchTests {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         Issue.record("Timed out waiting for condition")
+    }
+
+    private func waitUntilAsync(
+        timeout: TimeInterval = 2,
+        condition: @escaping () async -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await condition() { return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        Issue.record("Timed out waiting for async condition")
+    }
+}
+
+private actor CancellableTOCFetcher: BookSourceFetching {
+    private(set) var didStartTOCRequest = false
+    private(set) var didCancelTOCRequest = false
+
+    nonisolated func fetchBookInfoPackage(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> BookInfoPackage {
+        throw NSError(domain: "CancellableTOCFetcher", code: 1)
+    }
+
+    nonisolated func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool
+    ) async throws -> TOCPackage {
+        await markTOCStarted()
+        do {
+            try await Task.sleep(nanoseconds: 60_000_000_000)
+        } catch {
+            if Task.isCancelled || error is CancellationError {
+                await markTOCCancelled()
+            }
+            throw error
+        }
+        throw NSError(domain: "CancellableTOCFetcher", code: 2)
+    }
+
+    private func markTOCStarted() {
+        didStartTOCRequest = true
+    }
+
+    private func markTOCCancelled() {
+        didCancelTOCRequest = true
+    }
+
+    nonisolated func isChapterCached(
+        bookId: UUID,
+        chapterIndex: Int,
+        expectedSourceURL: String?,
+        expectedTOCTitle: String?
+    ) -> Bool {
+        false
+    }
+
+    nonisolated func clearChapterCache(bookId: UUID, chapterIndex: Int) {}
+    nonisolated func clearAllChapterCache(bookId: UUID) {}
+    nonisolated func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
+        []
+    }
+
+    nonisolated func loadChapterPackageSync(
+        bookId: UUID,
+        chapterIndex: Int,
+        expectedSourceURL: String?,
+        expectedTOCTitle: String?
+    ) -> ChapterPackage? {
+        nil
+    }
+
+    nonisolated func loadNormalizedChapterHTMLSync(
+        bookId: UUID,
+        chapterIndex: Int,
+        expectedSourceURL: String?,
+        expectedTOCTitle: String?
+    ) -> String? {
+        nil
     }
 }
 

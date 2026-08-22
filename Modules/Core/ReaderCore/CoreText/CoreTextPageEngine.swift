@@ -190,6 +190,13 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
+                // A jetsam kill shows up only as a session that never reached the
+                // background. This is the one warning the app gets first, so it is the
+                // only thing that can explain one after the fact.
+                AppLogger.render(
+                    "⟐ memory warning — dropping every cached layout and snapshot",
+                    level: .warning
+                )
                 MemoryFootprint.log("warning-before")
                 self?.chapterSnapshots.removeAllObjects()
                 self?._layouts.trim(keeping: 0)
@@ -770,6 +777,12 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
             // is the fetch's job, not ours; retrying here would spin.
             guard layoutGeneration != generation else { return }
             AppLogger.render("[FlipTrace] preload retry superseded spine=\(spineIndex) oldGeneration=\(generation) generation=\(layoutGeneration)")
+            ChapterRetryLog.record(
+                .layoutSuperseded,
+                chapter: spineIndex,
+                bookId: nil,
+                detail: "oldGeneration=\(generation) generation=\(layoutGeneration)"
+            )
         }
     }
 

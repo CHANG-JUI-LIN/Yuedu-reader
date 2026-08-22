@@ -126,6 +126,12 @@ extension ReaderView {
         guard chapterIndex == currentChapterIndex || chapterIndex == ttsPendingChapterIndex
         else { return }
         AppLogger.render("⟐ chapter fetch cancelled, re-requesting ch=\(chapterIndex)")
+        ChapterRetryLog.record(
+            .fetchCancelled,
+            chapter: chapterIndex,
+            bookId: book?.id.uuidString,
+            detail: chapterIndex == ttsPendingChapterIndex ? "waiter=tts" : "waiter=reader"
+        )
         ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
     }
 
@@ -331,17 +337,18 @@ extension ReaderView {
     /// retry would replay the error the source already stored.
     func enableAndroidIdentityAndRetry(source: BookSource) {
         AndroidIdentityRecovery.enable(source)
-        retryCurrentChapterLoad()
+        retryCurrentChapterLoad(reason: .androidIdentityEnabled)
     }
 
     /// Surgical retry for the failed chapter only: removes that chapter's
     /// invalid artifact, clears its state, and refetches it. Other readable
     /// chapters are never purged.
-    func retryCurrentChapterLoad() {
+    func retryCurrentChapterLoad(reason: ChapterRetryLog.Reason = .userTapped) {
         // An explicit tap re-arms the automatic recovery below: the user asking again
         // means the previous attempt's verdict is no longer the last word.
         chapterConsistencyRecoveryAttempts[currentChapterIndex] = nil
         AppLogger.render("⟐ chapter retry tapped ch=\(currentChapterIndex)")
+        ChapterRetryLog.record(reason, chapter: currentChapterIndex, bookId: book?.id.uuidString)
         // The quarantine budget is cumulative across chapters and only ever cleared by a
         // success, so a book that once failed five times carries that verdict forever. An
         // explicit tap says the verdict is stale. Only the manual button does this — the
@@ -367,6 +374,12 @@ extension ReaderView {
         AppLogger.cache("⟐ chapterState/cache mismatch, auto refetch", context: [
             "index": chapterIndex,
         ])
+        ChapterRetryLog.record(
+            .cacheInconsistent,
+            chapter: chapterIndex,
+            bookId: book?.id.uuidString,
+            detail: "state=.ready but nothing readable on disk"
+        )
         refetchChapter(at: chapterIndex)
     }
 

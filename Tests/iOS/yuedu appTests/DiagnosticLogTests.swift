@@ -167,24 +167,52 @@ struct DiagnosticLogTests {
 @Suite("AppLogger severity classification")
 struct DiagnosticSeverityClassifierTests {
 
-    @Test("house marker prefixes are read as levels")
-    func markerPrefixesMapToLevels() {
-        #expect(AppLogger.resolvedSeverity(message: "[FlipTrace] pageForward from=x", implied: .error) == .trace)
-        #expect(AppLogger.resolvedSeverity(message: "[ProgressTrace][ScrollVC] commit", implied: .error) == .trace)
-        #expect(AppLogger.resolvedSeverity(message: "⏱ toc.parse 12ms", implied: .error) == .trace)
-        #expect(AppLogger.resolvedSeverity(message: "⟐ scrollEngine created #2", implied: .error) == .notice)
+    @Test("timing and *Trace / *Debug tags are narration, not errors")
+    func traceFamiliesAreDetected() {
+        #expect(AppLogger.resolvedSeverity(message: "⏱ toc.parse 12ms", default: .notice) == .trace)
+        #expect(AppLogger.resolvedSeverity(message: "[FlipTrace] pageForward", default: .notice) == .trace)
+        #expect(AppLogger.resolvedSeverity(message: "[ProgressTrace][ScrollVC] commit", default: .notice) == .trace)
+        // Matching on the suffix keeps the next one somebody adds classified without a
+        // code change — these three were all missed by an explicit list.
+        #expect(AppLogger.resolvedSeverity(message: "[StartupTrace][Engine] byteScan", default: .notice) == .trace)
+        #expect(AppLogger.resolvedSeverity(message: "[CurlTrace] didFinish", default: .notice) == .trace)
+        #expect(AppLogger.resolvedSeverity(message: "[StateDebug] applyRefreshAction", default: .notice) == .trace)
     }
 
-    @Test("anything unmarked keeps the level its category implies")
-    func unmarkedFallsBackToCategory() {
-        #expect(AppLogger.resolvedSeverity(message: "could not fetch chapter", implied: .error) == .error)
-        #expect(AppLogger.resolvedSeverity(message: "book opened", implied: .info) == .info)
-        #expect(AppLogger.resolvedSeverity(message: "keychain unreadable", implied: .fault) == .fault)
+    /// The one signal here that is not a naming convention: the caller handed us an
+    /// `Error`, which is them saying something failed.
+    @Test("an attached Error outranks the subsystem default")
+    func attachedErrorEscalates() {
+        #expect(AppLogger.resolvedSeverity(message: "could not fetch", default: .notice, carriesError: true) == .error)
+        #expect(AppLogger.resolvedSeverity(message: "keychain unreadable", default: .fault, carriesError: true) == .fault)
+    }
+
+    /// A subsystem line with nothing attached is not an error just because it went
+    /// through `AppLogger.render`. Before this, ~300 call sites read as errors and the
+    /// severity filter meant nothing.
+    @Test("a bare subsystem line is not an error")
+    func bareSubsystemLineIsNotAnError() {
+        #expect(AppLogger.resolvedSeverity(message: "[CoreTextEngine] laid out 12 pages", default: .notice) == .notice)
+        #expect(AppLogger.resolvedSeverity(message: "scrollEngine created", default: .notice) == .notice)
+    }
+
+    @Test("structured probes are notices")
+    func probeMarkerIsNotice() {
+        #expect(AppLogger.resolvedSeverity(message: "⟐ scrollEngine created #2", default: .notice) == .notice)
+        // A probe marker never downgrades something already more severe.
+        #expect(AppLogger.resolvedSeverity(message: "⟐ something bad", default: .error) == .error)
+    }
+
+    @Test("functions that name a severity keep it")
+    func severityNamingFunctionsKeepTheirLevel() {
+        #expect(AppLogger.resolvedSeverity(message: "book opened", default: .info) == .info)
+        #expect(AppLogger.resolvedSeverity(message: "generic failure", default: .error) == .error)
+        #expect(AppLogger.resolvedSeverity(message: "tampering detected", default: .fault) == .fault)
     }
 
     @Test("leading whitespace does not hide a marker")
     func leadingWhitespaceIsTolerated() {
-        #expect(AppLogger.resolvedSeverity(message: "  [FlipTrace] x", implied: .error) == .trace)
+        #expect(AppLogger.resolvedSeverity(message: "  [FlipTrace] x", default: .notice) == .trace)
     }
 
     @Test("TTS lines are filed under their own category wherever they are logged from")
@@ -219,6 +247,18 @@ struct DiagnosticRedactorTests {
             let redacted = DiagnosticRedactor.redact(line)
             #expect(redacted.contains("<redacted>"), "not redacted: \(line) -> \(redacted)")
         }
+    }
+
+    @Test("quoted JSON cookie values are masked in exported source context")
+    func quotedJSONCookiesAreMasked() {
+        let raw = #"context={"source":{"cookie":"session=deadbeef; user=42","name":"Example"}}"#
+
+        let redacted = DiagnosticRedactor.redact(raw)
+
+        #expect(!redacted.contains("deadbeef"))
+        #expect(!redacted.contains("user=42"))
+        #expect(redacted.contains(#""cookie":"<redacted>""#))
+        #expect(redacted.contains(#""name":"Example""#))
     }
 
     @Test("bearer tokens are masked")

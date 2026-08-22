@@ -205,6 +205,10 @@ final class EPUBStyleResolver {
         let normalizedFamilies = families
             .map(Self.normalizeFontName)
             .filter { !$0.isEmpty }
+        // No CSS font-family means "use the reader default", not a failed embedded
+        // font lookup. Logging this normal path produced hundreds of false ERROR
+        // entries per chapter in exported diagnostics.
+        guard !normalizedFamilies.isEmpty else { return nil }
 
         for family in normalizedFamilies {
             guard let matchedFace = bestVariant(for: family, weight: weight, italic: italic) else { continue }
@@ -232,11 +236,11 @@ final class EPUBStyleResolver {
             // Did the bold/italic request actually land on a face? `withSymbolicTraits` returns nil when
             // the embedded family has no matching face (e.g. only an upright file registered). Compare
             // requested vs. delivered so we can see whether the embedded font silently dropped the trait.
-            AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont req families=\(families) weight=\(weight) italic=\(italic) -> picked alias=\(family) pickedFaceWeight=\(matchedFace.weight) pickedFaceItalic=\(matchedFace.isItalic) ps=\(matchedFace.postScriptName) | withTraitsOK=\(traitApplied != nil) finalFont=\(result.fontName) finalBold=\(finalTraits.contains(.traitBold)) finalItalic=\(finalTraits.contains(.traitItalic)) (wantedBold=\(wantBold) wantedItalic=\(italic))")
+            AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont req families=\(families) weight=\(weight) italic=\(italic) -> picked alias=\(family) pickedFaceWeight=\(matchedFace.weight) pickedFaceItalic=\(matchedFace.isItalic) ps=\(matchedFace.postScriptName) | withTraitsOK=\(traitApplied != nil) finalFont=\(result.fontName) finalBold=\(finalTraits.contains(.traitBold)) finalItalic=\(finalTraits.contains(.traitItalic)) (wantedBold=\(wantBold) wantedItalic=\(italic))", level: .trace)
             return addFontFallbacks(to: result, size: size)
         }
 
-        AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont NO VARIANT families=\(families) weight=\(weight) italic=\(italic) registeredAliases=\(registeredFontVariants.keys.sorted()) variantsPerAlias=\(registeredFontVariants.mapValues { $0.map { "w\($0.weight)\($0.isItalic ? "i" : "n")/\($0.familyName)" } })")
+        AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont NO VARIANT families=\(families) weight=\(weight) italic=\(italic) registeredAliases=\(registeredFontVariants.keys.sorted()) variantsPerAlias=\(registeredFontVariants.mapValues { $0.map { "w\($0.weight)\($0.isItalic ? "i" : "n")/\($0.familyName)" } })", level: .trace)
         return nil
     }
 

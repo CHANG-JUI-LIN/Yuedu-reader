@@ -439,6 +439,13 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                         "attempt": attempts,
                         "category": category.rawValue,
                     ])
+                    ChapterRetryLog.record(
+                        .offlineDownload,
+                        chapter: index,
+                        bookId: book.id.uuidString,
+                        attempt: attempts,
+                        detail: "category=\(category.rawValue)"
+                    )
                     activeChapterIndices.removeValue(forKey: book.id)
                     let backoff = retryBackoff * Double(attempts)
                     if backoff > 0 {

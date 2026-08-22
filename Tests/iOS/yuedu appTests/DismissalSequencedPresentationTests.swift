@@ -29,6 +29,20 @@ struct DismissalSequencedPresentationTests {
         )
     }
 
+    @Test("iOS 17 dismisses book-source import before opening the document picker")
+    func iOS17UsesFirstLevelBookSourceImporter() {
+        #expect(
+            BookSourceImportPresentationPolicy.requiresFirstLevelImporter(
+                osMajorVersion: 17
+            )
+        )
+        #expect(
+            !BookSourceImportPresentationPolicy.requiresFirstLevelImporter(
+                osMajorVersion: 18
+            )
+        )
+    }
+
     @Test("iOS 17 pushes 書籍資訊 so its cover pickers are first-level")
     func iOS17PushesBookInfoEdit() {
         #expect(

@@ -9,6 +9,42 @@ enum ParagraphReviewBrowserPresentationPolicy {
     static let hidesToolbar = true
 }
 
+struct SourceBrowserPresentationConfiguration: Equatable {
+    var heightPercentage: Double?
+    var skipCollapsed = false
+    var isHideable = true
+    var expandedCornersRadius: Double?
+
+    init(json: String) {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+        if let value = object["heightPercentage"] as? NSNumber,
+           value.doubleValue > 0,
+           value.doubleValue <= 1 {
+            heightPercentage = value.doubleValue
+        }
+        if let value = object["skipCollapsed"] as? Bool { skipCollapsed = value }
+        if let value = object["isHideable"] as? Bool { isHideable = value }
+        if let value = object["expandedCornersRadius"] as? NSNumber,
+           value.doubleValue >= 0,
+           value.doubleValue <= 120 {
+            expandedCornersRadius = value.doubleValue
+        }
+        // `hardwareAccelerated` is accepted as a no-op: WKWebView already uses
+        // accelerated compositing and iOS exposes no per-page switch for it.
+    }
+
+    var detents: Set<PresentationDetent> {
+        guard let heightPercentage else { return [.medium, .large] }
+        let expanded: PresentationDetent = heightPercentage >= 1
+            ? .large
+            : .fraction(heightPercentage)
+        return skipCollapsed ? [expanded] : [.medium, expanded]
+    }
+}
+
 // Modal WebView launched by `java.startBrowser` / `java.startBrowserAwait`.
 // Shows a loading state (spinner + top progress bar) while the page loads so
 // slow login/key servers don't appear as a frozen blank sheet, plus an error
@@ -178,7 +214,8 @@ struct LegadoReviewBrowserView: View {
     let onDismiss: (_ body: String?) -> Void
 
     var body: some View {
-        if let page = target.sourceBrowserPage {
+        Group {
+            if let page = target.sourceBrowserPage {
             JsBridgeBrowserView(
                 urlString: page.baseURL,
                 title: target.title,
@@ -188,19 +225,35 @@ struct LegadoReviewBrowserView: View {
                 sourceRunHandler: { script in
                     try await LegadoReviewActionRunner.shared.runSourcePageScript(
                         script,
-                        sourceURL: page.sourceURL
+                        sourceURL: page.sourceURL,
+                        actionContext: page.actionContext
                     )
                 },
                 onDismiss: onDismiss
             )
-        } else {
-            JsBridgeBrowserView(
-                urlString: target.url,
-                title: target.title,
-                hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar,
-                onDismiss: onDismiss
-            )
+            } else {
+                JsBridgeBrowserView(
+                    urlString: target.url,
+                    title: target.title,
+                    hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar,
+                    onDismiss: onDismiss
+                )
+            }
         }
+        .presentationDetents(presentationConfiguration.detents)
+        .presentationDragIndicator(
+            presentationConfiguration.skipCollapsed ? .hidden : .visible
+        )
+        .interactiveDismissDisabled(!presentationConfiguration.isHideable)
+        .presentationCornerRadius(
+            presentationConfiguration.expandedCornersRadius.map { CGFloat($0) }
+        )
+    }
+
+    private var presentationConfiguration: SourceBrowserPresentationConfiguration {
+        SourceBrowserPresentationConfiguration(
+            json: target.sourceBrowserPage?.configurationJSON ?? ""
+        )
     }
 }
 
@@ -253,6 +306,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         // A captcha/OAuth widget that opens itself (not from a tap) is blocked before
         // the UI delegate is ever consulted unless script-opened windows are allowed.
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        context.coordinator.clipboardBridge.install(in: config.userContentController)
         context.coordinator.sourceRunHandler = sourceRunHandler
         if sourceRunHandler != nil {
             config.userContentController.addScriptMessageHandler(
@@ -312,6 +366,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             forName: Coordinator.sourceRunMessageName,
             contentWorld: .page
         )
+        coordinator.clipboardBridge.remove(from: uiView.configuration.userContentController)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandlerWithReply {
@@ -323,6 +378,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         var sourceRunHandler: ((String) async throws -> String)?
         /// Strongly held: `WKWebView.uiDelegate` is weak.
         let uiDelegate = SourceWebUIDelegate()
+        let clipboardBridge = SourceWebClipboardBridge()
         private var keyboardHideObserver: NSObjectProtocol?
 
         /// WKWebView keeps the tapped `<input>` as `document.activeElement` after the keyboard is

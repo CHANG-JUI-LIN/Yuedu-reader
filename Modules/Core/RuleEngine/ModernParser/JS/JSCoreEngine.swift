@@ -204,6 +204,18 @@ class JSCoreEngine {
         }
     }
 
+    /// Headers visible to `java.*` requests. Legado's request layer merges the
+    /// source header rule with the payload stored by `source.putLoginHeader()`;
+    /// the latter wins when both declare the same field.
+    func resolvedRequestHeaders() -> [String: String] {
+        var headers = resolvedSourceHeaders()
+        guard let sourceUrl = bookSource?.bookSourceUrl,
+              let loginHeaders = LoginManager.shared.getLoginHeaderMap(sourceUrl: sourceUrl)
+        else { return headers }
+        headers.merge(loginHeaders) { _, loginValue in loginValue }
+        return headers
+    }
+
     private func currentLoginInfoRevision() -> UInt64 {
         guard let sourceUrl = bookSource?.bookSourceUrl else { return 0 }
         return LoginManager.shared.loginInfoRevision(sourceUrl: sourceUrl)
@@ -240,7 +252,7 @@ class JSCoreEngine {
         // headers per request; resolve them lazily so a `@js:` rule runs after
         // jsLib is in place (and only once — see `resolvedSourceHeaders`).
         bridge.sourceHeadersProvider = { [weak self] in
-            self?.resolvedSourceHeaders() ?? [:]
+            self?.resolvedRequestHeaders() ?? [:]
         }
         // Read live rather than snapshotted: the toggle can change while a
         // source stays attached, and the next request must see it.
@@ -388,6 +400,35 @@ class JSCoreEngine {
         }) {
         case .completed(let r): return r
         case .timedOut: return nil
+        }
+    }
+
+    /// Executes `loginCheckJs` with Legado's response-shaped `result`. When the
+    /// script returns another StrResponse, use it; scalar/undefined completion
+    /// values mean the script only performed side effects (for example refreshing
+    /// a login header), so the original response remains authoritative.
+    func evaluateResponseScript(
+        _ script: String,
+        response: LegadoStrResponse,
+        bindings: [String: Any] = [:]
+    ) -> LegadoStrResponse {
+        switch onJSQueueWithTimeout({ [self] in
+            lastError = nil
+            setResult(response)
+            for (key, value) in bindings {
+                context.setObject(value, forKeyedSubscript: key as NSString)
+            }
+            guard let value = context.evaluateScript(Self.prepareSourceJS(script)),
+                  lastError == nil,
+                  !value.isUndefined,
+                  !value.isNull,
+                  let replacement = value.toObject() as? LegadoStrResponse else {
+                return response
+            }
+            return replacement
+        }) {
+        case .completed(let result): return result
+        case .timedOut: return response
         }
     }
 
@@ -1000,6 +1041,8 @@ class JSCoreEngine {
         // Shadows the exported method with a dispatcher (verified: an own property on
         // a JSExport-backed object wins over its prototype).
         Self.installJavaGetOverload(in: ctx)
+        Self.installJavaConnectOverload(in: ctx)
+        Self.installJavaHeadAndPostOverloads(in: ctx)
 
         // Install the authoritative registry-backed Java/Android contract.
         LegadoJavaInteropRuntime.install(in: ctx)
@@ -1204,6 +1247,50 @@ class JSCoreEngine {
                 return arguments.length >= 2 ? httpGet(String(a), b) : storeGet(String(a));
             };
             java.__yueduGetOverloaded = true;
+        })();
+        """)
+    }
+
+    private static func installJavaConnectOverload(in ctx: JSContext) {
+        ctx.evaluateScript("""
+        (function () {
+            if (typeof java === 'undefined' || typeof java.connectWithOptions !== 'function') { return; }
+            if (java.__yueduConnectOverloaded) { return; }
+            var simpleConnect = java.connect.bind(java);
+            var optionConnect = java.connectWithOptions.bind(java);
+            java.connect = function (url, headers, timeout) {
+                return arguments.length === 1
+                    ? simpleConnect(String(url))
+                    : optionConnect(String(url), headers == null ? null : headers, timeout == null ? null : timeout);
+            };
+            java.__yueduConnectOverloaded = true;
+        })();
+        """)
+    }
+
+    private static func installJavaHeadAndPostOverloads(in ctx: JSContext) {
+        ctx.evaluateScript("""
+        (function () {
+            if (typeof java === 'undefined' || java.__yueduHeadPostOverloaded) { return; }
+            if (typeof java.headWithOptions === 'function') {
+                var simpleHead = java.head.bind(java);
+                var optionHead = java.headWithOptions.bind(java);
+                java.head = function (url, headers, timeout) {
+                    return arguments.length < 3
+                        ? simpleHead(String(url), headers)
+                        : optionHead(String(url), headers, timeout);
+                };
+            }
+            if (typeof java.postWithOptions === 'function') {
+                var simplePost = java.post.bind(java);
+                var optionPost = java.postWithOptions.bind(java);
+                java.post = function (url, body, headers, timeout) {
+                    return arguments.length < 4
+                        ? simplePost(String(url), String(body), headers)
+                        : optionPost(String(url), String(body), headers, timeout);
+                };
+            }
+            java.__yueduHeadPostOverloaded = true;
         })();
         """)
     }

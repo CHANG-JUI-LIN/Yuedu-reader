@@ -17,6 +17,7 @@ enum LegadoRuntimeCapabilityRegistry {
         .init(path: "Packages", kind: .namespace),
         .init(path: "Packages.java.lang", kind: .namespace),
         .init(path: "Packages.java.lang.String", kind: .constructor),
+        .init(path: "Packages.java.lang.Thread", kind: .namespace),
         .init(path: "Packages.java.lang.System.nanoTime", kind: .method),
         .init(path: "Packages.java.lang.System.currentTimeMillis", kind: .method),
         .init(path: "Packages.java.util", kind: .namespace),
@@ -45,8 +46,14 @@ enum LegadoRuntimeCapabilityRegistry {
         .init(path: "Packages.javax.crypto.spec.IvParameterSpec", kind: .constructor),
         .init(path: "Packages.cn.hutool.crypto.digest.DigestUtil.md5Hex", kind: .method),
         .init(path: "Packages.cn.hutool.core.util.StrUtil.reverse", kind: .method),
+        .init(path: "Packages.cn.hutool.core.util.ZipUtil.gzip", kind: .method),
         .init(path: "Packages.cn.hutool.core.codec.Base64.encode", kind: .method),
         .init(path: "Packages.cn.hutool.core.codec.Base64.decode", kind: .method),
+        .init(path: "Packages.okhttp3", kind: .namespace),
+        .init(path: "Packages.okhttp3.MediaType.parse", kind: .method),
+        .init(path: "Packages.okhttp3.RequestBody.create", kind: .method),
+        .init(path: "Packages.okhttp3.Request.Builder", kind: .constructor),
+        .init(path: "Packages.okhttp3.OkHttpClient", kind: .constructor),
     ]
 
     static func contains(_ path: String) -> Bool {

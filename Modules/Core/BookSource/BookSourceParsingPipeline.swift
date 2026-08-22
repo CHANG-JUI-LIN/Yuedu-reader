@@ -143,19 +143,19 @@ struct BookSourceParsingPipeline {
 
     // MARK: - loginCheckJs
 
-    /// Evaluate `loginCheckJs` against the raw HTML using JSCoreEngine.
-    /// Returns `true` when the rule signals that a login is required.
-    func checkLoginRequired(
+    /// Executes Legado `loginCheckJs` against a response-shaped `result` and
+    /// returns the original or source-replaced body after its side effects.
+    func applyLoginCheck(
         html: String,
         baseURL: String,
         source: BookSource
-    ) -> Bool {
+    ) -> String {
         // Most sources declare no loginCheckJs; skipping the session lookup and its
         // parse lock keeps them off the bridge entirely on the search hot path.
         guard !source.loginCheckJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return false }
+        else { return html }
         return BookSourceSession.session(for: source).withBridge { bridge in
-            bridge.checkLoginRequired(html: html, baseURL: baseURL)
+            bridge.applyLoginCheck(html: html, baseURL: baseURL)
         }
     }
 }

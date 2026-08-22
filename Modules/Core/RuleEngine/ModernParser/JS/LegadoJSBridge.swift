@@ -3,6 +3,7 @@ import JavaScriptCore
 import CryptoKit
 import CommonCrypto
 import UIKit
+import zlib
 
 /// A source-authored browser page passed through Legado's four-argument
 /// `java.showBrowser(url, html, injectedJS, configuration)` contract.
@@ -79,14 +80,21 @@ struct LegadoHTTPResult {
     func ajax(_ urlStr: String) -> String
     func axja(_ urlStr: String) -> String
     func ajaxAll(_ urlArray: [String]) -> [LegadoStrResponse]
-    func connect(_ urlStr: String) -> String
+    func connect(_ urlStr: String) -> LegadoStrResponse
+    func connectWithOptions(_ urlStr: String, _ headers: JSValue, _ timeout: JSValue) -> LegadoStrResponse
+    func head(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse
+    func headWithOptions(_ urlStr: String, _ headers: JSValue, _ timeout: JSValue) -> LegadoStrResponse
     func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse
+    func postWithOptions(_ urlStr: String, _ body: String, _ headers: JSValue, _ timeout: JSValue) -> LegadoStrResponse
+    func httpExecute(_ method: String, _ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse
     /// Backs the two-argument `java.get(url, headers)`; see `installJavaGetOverload`.
     func httpGet(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse
     func importScript(_ url: String) -> String
 
     // Headless WebView (Legado java.webView(html, url, js) — runs js after load, returns result)
     func webView(_ html: JSValue, _ url: JSValue, _ js: JSValue) -> String
+    func webViewGetSource(_ html: JSValue, _ url: JSValue, _ js: JSValue, _ sourceRegex: String) -> String
+    func webViewGetOverrideUrl(_ html: JSValue, _ url: JSValue, _ js: JSValue, _ overrideUrlRegex: String) -> String
 
     // Cookie helpers (used by sources like 光遇)
     func getCookie(_ url: String) -> String
@@ -136,7 +144,13 @@ struct LegadoHTTPResult {
     func base64Decode(_ str: String) -> String
     func base64Encode(_ str: String) -> String
     func HMacBase64(_ content: String, _ algorithm: String, _ key: String) -> String
+    func HMacHex(_ content: String, _ algorithm: String, _ key: String) -> String
+    func digestHex(_ content: String, _ algorithm: String) -> String
+    func digestBase64Str(_ content: String, _ algorithm: String) -> String
+    func strToBytes(_ str: String, _ charset: JSValue) -> [Int]
+    func bytesToStr(_ bytes: JSValue, _ charset: JSValue) -> String
     func base64DecodeToByteArray(_ str: String) -> [Int]
+    func hexDecodeToByteArray(_ hex: String) -> [Int]
     func md5Encode(_ str: String) -> String
     func md5Encode16(_ str: String) -> String
     func hexDecodeToString(_ hex: String) -> String
@@ -148,6 +162,10 @@ struct LegadoHTTPResult {
     func encodeURI(_ str: String) -> String
     func encodeURIComponent(_ str: String) -> String
     func htmlFormat(_ str: String) -> String
+    func randomUUID() -> String
+    func toNumChapter(_ title: String) -> String
+    func urlParts(_ url: String, _ baseURL: JSValue) -> NSDictionary
+    func gzipBytes(_ value: JSValue) -> [Int]
 
     // Chinese character conversion
     func t2s(_ text: String) -> String
@@ -580,21 +598,95 @@ struct LegadoHTTPResult {
         return flags.isEmpty ? "text" : flags.joined(separator: "|")
     }
 
-    func connect(_ urlStr: String) -> String {
+    func connect(_ urlStr: String) -> LegadoStrResponse {
         let started = Date()
-        let body = performRequest(urlStr)
+        let result = performRequestResult(urlStr)
         recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
-        return body
+        return LegadoStrResponse(result: result)
+    }
+
+    /// Header/timeout overload used by Legado-E and MD3. A JavaScript dispatcher
+    /// installed by `JSCoreEngine` preserves the one-argument original contract.
+    func connectWithOptions(
+        _ urlStr: String,
+        _ headers: JSValue,
+        _ timeout: JSValue
+    ) -> LegadoStrResponse {
+        let started = Date()
+        let timeoutSeconds = Self.timeoutSeconds(from: timeout)
+        let result = performGet(
+            urlStr,
+            headers: Self.headerDict(from: headers),
+            timeoutOverride: timeoutSeconds
+        )
+        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
+        return LegadoStrResponse(result: result)
+    }
+
+    /// Legado `java.head(url, headers)` — a response-shaped HEAD request.
+    func head(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse {
+        headWithOptions(urlStr, headers, JSValue(undefinedIn: headers.context))
+    }
+
+    func headWithOptions(
+        _ urlStr: String,
+        _ headers: JSValue,
+        _ timeout: JSValue
+    ) -> LegadoStrResponse {
+        let started = Date()
+        let result = performSimpleRequest(
+            method: "HEAD",
+            urlStr: urlStr,
+            body: nil,
+            headers: Self.headerDict(from: headers),
+            timeoutOverride: Self.timeoutSeconds(from: timeout)
+        )
+        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
+        return LegadoStrResponse(result: result)
     }
 
     /// Legado `java.post(url, body, headers)` — HTTP POST returning a `StrResponse` (`.body()`).
     /// `body` is sent verbatim; `headers` is a JS object. Defaults to
     /// `application/x-www-form-urlencoded` when no Content-Type is supplied.
     func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse {
+        postWithOptions(urlStr, body, headers, JSValue(undefinedIn: headers.context))
+    }
+
+    func postWithOptions(
+        _ urlStr: String,
+        _ body: String,
+        _ headers: JSValue,
+        _ timeout: JSValue
+    ) -> LegadoStrResponse {
         let started = Date()
-        let response = performPost(urlStr, body: body, headers: Self.headerDict(from: headers))
+        let response = performPost(
+            urlStr,
+            body: body,
+            headers: Self.headerDict(from: headers),
+            timeoutOverride: Self.timeoutSeconds(from: timeout)
+        )
         recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
         return response
+    }
+
+    /// Native execution primitive for the bounded okhttp3 compatibility surface.
+    func httpExecute(
+        _ method: String,
+        _ urlStr: String,
+        _ body: String,
+        _ headers: JSValue
+    ) -> LegadoStrResponse {
+        let started = Date()
+        let normalizedMethod = method.uppercased()
+        let result = performSimpleRequest(
+            method: normalizedMethod,
+            urlStr: urlStr,
+            body: normalizedMethod == "GET" || normalizedMethod == "HEAD" ? nil : body,
+            headers: Self.headerDict(from: headers),
+            timeoutOverride: nil
+        )
+        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
+        return LegadoStrResponse(result: result)
     }
 
     /// Legado `java.importScript(url)` — fetch a remote JS library and return its text.
@@ -905,6 +997,22 @@ struct LegadoHTTPResult {
         switch normalized {
         case "HMACSHA1", "SHA1":
             return Data(HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+        case "HMACSHA224", "SHA224":
+            var digest = [UInt8](repeating: 0, count: Int(CC_SHA224_DIGEST_LENGTH))
+            let keyData = Data(key.utf8)
+            keyData.withUnsafeBytes { keyBuffer in
+                message.withUnsafeBytes { messageBuffer in
+                    CCHmac(
+                        CCHmacAlgorithm(kCCHmacAlgSHA224),
+                        keyBuffer.baseAddress,
+                        keyBuffer.count,
+                        messageBuffer.baseAddress,
+                        messageBuffer.count,
+                        &digest
+                    )
+                }
+            }
+            return Data(digest).base64EncodedString()
         case "HMACSHA256", "SHA256":
             return Data(HMAC<SHA256>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
         case "HMACSHA384", "SHA384":
@@ -920,12 +1028,44 @@ struct LegadoHTTPResult {
         }
     }
 
+    func HMacHex(_ content: String, _ algorithm: String, _ key: String) -> String {
+        guard let data = Data(base64Encoded: HMacBase64(content, algorithm, key)) else { return "" }
+        return data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    func digestHex(_ content: String, _ algorithm: String) -> String {
+        Self.digestData(Data(content.utf8), algorithm: algorithm)?.map {
+            String(format: "%02x", $0)
+        }.joined() ?? ""
+    }
+
+    func digestBase64Str(_ content: String, _ algorithm: String) -> String {
+        Self.digestData(Data(content.utf8), algorithm: algorithm)?.base64EncodedString() ?? ""
+    }
+
+    func strToBytes(_ str: String, _ charset: JSValue) -> [Int] {
+        let encoding = Self.stringEncoding(Self.optionalString(charset) ?? "UTF-8")
+        return (str.data(using: encoding, allowLossyConversion: false) ?? Data()).map(Int.init)
+    }
+
+    func bytesToStr(_ bytes: JSValue, _ charset: JSValue) -> String {
+        let data = Data(Self.byteArray(from: bytes))
+        return String(
+            data: data,
+            encoding: Self.stringEncoding(Self.optionalString(charset) ?? "UTF-8")
+        ) ?? ""
+    }
+
     func base64DecodeToByteArray(_ str: String) -> [Int] {
         guard let data = Data(base64Encoded: str, options: .ignoreUnknownCharacters) else {
             AppLogger.parse("Legado bridge rejected invalid Base64 byte-array input")
             return []
         }
         return data.map(Int.init)
+    }
+
+    func hexDecodeToByteArray(_ hex: String) -> [Int] {
+        Self.bytesFromHex(hex)?.map(Int.init) ?? []
     }
 
     func md5Encode(_ str: String) -> String {
@@ -963,6 +1103,45 @@ struct LegadoHTTPResult {
     /// Encode a string to lowercase hex. Example: `"Hello"` → `"48656c6c6f"`.
     func hexEncodeToString(_ str: String) -> String {
         str.data(using: .utf8)?.map { String(format: "%02x", $0) }.joined() ?? ""
+    }
+
+    private static func digestData(_ data: Data, algorithm: String) -> Data? {
+        switch algorithm.uppercased().filter({ $0.isLetter || $0.isNumber }) {
+        case "MD5": return Data(Insecure.MD5.hash(data: data))
+        case "SHA1": return Data(Insecure.SHA1.hash(data: data))
+        case "SHA224":
+            var digest = [UInt8](repeating: 0, count: Int(CC_SHA224_DIGEST_LENGTH))
+            data.withUnsafeBytes { buffer in
+                _ = CC_SHA224(buffer.baseAddress, CC_LONG(data.count), &digest)
+            }
+            return Data(digest)
+        case "SHA256": return Data(SHA256.hash(data: data))
+        case "SHA384": return Data(SHA384.hash(data: data))
+        case "SHA512": return Data(SHA512.hash(data: data))
+        default:
+            AppLogger.parse("Legado bridge rejected unsupported digest algorithm", context: [
+                "algorithm": algorithm
+            ])
+            return nil
+        }
+    }
+
+    private static func stringEncoding(_ charset: String) -> String.Encoding {
+        let normalized = charset.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cfEncoding = CFStringConvertIANACharSetNameToEncoding(normalized as CFString)
+        guard cfEncoding != kCFStringEncodingInvalidId else { return .utf8 }
+        return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cfEncoding))
+    }
+
+    private static func byteArray(from value: JSValue) -> [UInt8] {
+        if value.isString {
+            return Array((value.toString() ?? "").utf8)
+        }
+        return (value.toArray() ?? []).compactMap { item in
+            if let number = item as? NSNumber { return UInt8(truncating: number) }
+            if let int = item as? Int { return UInt8(truncatingIfNeeded: int) }
+            return nil
+        }
     }
 
     // MARK: - Symmetric Crypto
@@ -1081,6 +1260,133 @@ struct LegadoHTTPResult {
         str.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? str
     }
 
+    func randomUUID() -> String {
+        UUID().uuidString.lowercased()
+    }
+
+    func toNumChapter(_ title: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"第(.+?)章"#),
+              let match = regex.firstMatch(
+                in: title,
+                range: NSRange(title.startIndex..<title.endIndex, in: title)
+              ),
+              let numberRange = Range(match.range(at: 1), in: title)
+        else { return title }
+        let rawNumber = String(title[numberRange])
+        guard let number = Self.chapterNumber(rawNumber) else { return title }
+        var result = title
+        result.replaceSubrange(numberRange, with: String(number))
+        return result
+    }
+
+    func urlParts(_ url: String, _ baseURL: JSValue) -> NSDictionary {
+        let base = Self.optionalString(baseURL).flatMap(URL.init(string:))
+        guard let resolved = URL(string: url, relativeTo: base)?.absoluteURL,
+              let components = URLComponents(url: resolved, resolvingAgainstBaseURL: true),
+              let scheme = components.scheme,
+              let host = components.host else { return [:] }
+        let origin = scheme + "://" + host + (components.port.map { ":\($0)" } ?? "")
+        let query = (components.queryItems ?? []).reduce(into: [String: String]()) {
+            $0[$1.name] = $1.value ?? ""
+        }
+        return [
+            "host": host,
+            "origin": origin,
+            "pathname": components.path,
+            "searchParams": query,
+        ]
+    }
+
+    func gzipBytes(_ value: JSValue) -> [Int] {
+        Self.gzip(Data(Self.byteArray(from: value))).map(Int.init)
+    }
+
+    private static func chapterNumber(_ input: String) -> Int? {
+        let halfWidth = String(input.unicodeScalars.map { scalar -> Character in
+            switch scalar.value {
+            case 0xFF10...0xFF19:
+                return Character(UnicodeScalar(scalar.value - 0xFEE0)!)
+            case 0x3000:
+                return " "
+            default:
+                return Character(scalar)
+            }
+        }).filter { !$0.isWhitespace }
+        if let value = Int(halfWidth) { return value }
+
+        let digits: [Character: Int] = [
+            "零": 0, "〇": 0, "一": 1, "壹": 1, "二": 2, "两": 2, "兩": 2,
+            "贰": 2, "貳": 2, "三": 3, "叁": 3, "參": 3, "四": 4, "肆": 4,
+            "五": 5, "伍": 5, "六": 6, "陆": 6, "陸": 6, "七": 7, "柒": 7,
+            "八": 8, "捌": 8, "九": 9, "玖": 9,
+        ]
+        let units: [Character: Int] = [
+            "十": 10, "拾": 10, "百": 100, "佰": 100, "千": 1_000, "仟": 1_000,
+            "万": 10_000, "萬": 10_000, "亿": 100_000_000, "億": 100_000_000,
+        ]
+        guard !halfWidth.isEmpty,
+              halfWidth.allSatisfy({ digits[$0] != nil || units[$0] != nil }) else { return nil }
+        if halfWidth.count > 1, halfWidth.allSatisfy({ digits[$0] != nil }) {
+            return halfWidth.reduce(0) { $0 * 10 + (digits[$1] ?? 0) }
+        }
+        var total = 0
+        var section = 0
+        var currentDigit = 0
+        for character in halfWidth {
+            if let digit = digits[character] {
+                currentDigit = digit
+                continue
+            }
+            guard let unit = units[character] else { return nil }
+            if unit < 10_000 {
+                section += max(1, currentDigit) * unit
+            } else {
+                section += currentDigit
+                total += max(1, section) * unit
+                section = 0
+            }
+            currentDigit = 0
+        }
+        return total + section + currentDigit
+    }
+
+    private static func gzip(_ data: Data) -> Data {
+        guard !data.isEmpty else { return Data() }
+        var stream = z_stream()
+        let initialized = deflateInit2_(
+            &stream,
+            Z_DEFAULT_COMPRESSION,
+            Z_DEFLATED,
+            MAX_WBITS + 16,
+            MAX_MEM_LEVEL,
+            Z_DEFAULT_STRATEGY,
+            ZLIB_VERSION,
+            Int32(MemoryLayout<z_stream>.size)
+        )
+        guard initialized == Z_OK else { return Data() }
+        defer { deflateEnd(&stream) }
+
+        var output = Data()
+        let chunkSize = 16_384
+        data.withUnsafeBytes { rawBuffer in
+            stream.next_in = UnsafeMutablePointer<Bytef>(
+                mutating: rawBuffer.bindMemory(to: Bytef.self).baseAddress
+            )
+            stream.avail_in = uInt(data.count)
+            var chunk = [UInt8](repeating: 0, count: chunkSize)
+            repeat {
+                let produced = chunk.withUnsafeMutableBytes { chunkBuffer -> Int in
+                    stream.next_out = chunkBuffer.bindMemory(to: Bytef.self).baseAddress
+                    stream.avail_out = uInt(chunkSize)
+                    _ = deflate(&stream, Z_FINISH)
+                    return chunkSize - Int(stream.avail_out)
+                }
+                if produced > 0 { output.append(contentsOf: chunk.prefix(produced)) }
+            } while stream.avail_out == 0
+        }
+        return output
+    }
+
     // MARK: - HTML Formatting
 
     /// Decode common HTML entities to plain text.
@@ -1176,11 +1482,12 @@ struct LegadoHTTPResult {
         startBrowser(url, title)
     }
 
-    /// Copies text to clipboard (stub).
+    /// Legado `java.copyText`: UIKit owns the system pasteboard, so marshal the
+    /// write to the main actor even when source JS is running on its serial queue.
     func copyText(_ text: String) {
-        #if DEBUG
-        print("[JSBridge] copyText(\(text.prefix(50))) called")
-        #endif
+        Task { @MainActor in
+            UIPasteboard.general.string = text
+        }
     }
 
     /// Returns a device identifier. Used by sources like 光遇 for `checkEnv()`.
@@ -1270,6 +1577,65 @@ struct LegadoHTTPResult {
         return box.value
     }
 
+    func webViewGetSource(
+        _ html: JSValue,
+        _ url: JSValue,
+        _ js: JSValue,
+        _ sourceRegex: String
+    ) -> String {
+        runHeadlessWebView(
+            html: html,
+            url: url,
+            js: js,
+            sourceRegex: sourceRegex,
+            overrideURLRegex: nil
+        )
+    }
+
+    func webViewGetOverrideUrl(
+        _ html: JSValue,
+        _ url: JSValue,
+        _ js: JSValue,
+        _ overrideUrlRegex: String
+    ) -> String {
+        runHeadlessWebView(
+            html: html,
+            url: url,
+            js: js,
+            sourceRegex: nil,
+            overrideURLRegex: overrideUrlRegex
+        )
+    }
+
+    private func runHeadlessWebView(
+        html: JSValue,
+        url: JSValue,
+        js: JSValue,
+        sourceRegex: String?,
+        overrideURLRegex: String?
+    ) -> String {
+        let htmlArg = Self.optionalString(html)
+        let urlArg = Self.optionalString(url)
+        let jsArg = Self.optionalString(js) ?? ""
+        let ua = sourceHeaders.first { $0.key.lowercased() == "user-agent" }?.value ?? getWebViewUA()
+        let sem = DispatchSemaphore(value: 0)
+        let box = WebViewResultBox()
+        Task { @MainActor in
+            box.value = await LegadoHeadlessWebView.run(
+                html: htmlArg,
+                url: urlArg,
+                js: jsArg,
+                userAgent: ua,
+                timeout: 30,
+                sourceRegex: sourceRegex,
+                overrideURLRegex: overrideURLRegex
+            )
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 35)
+        return box.value
+    }
+
     /// Extract a non-empty String from a JS argument, treating undefined/null/"null" as nil.
     private static func optionalString(_ value: JSValue) -> String? {
         guard !value.isUndefined, !value.isNull else { return nil }
@@ -1279,6 +1645,13 @@ struct LegadoHTTPResult {
 
     /// Convert a JS headers object into a `[String: String]` dictionary.
     private static func headerDict(from value: JSValue) -> [String: String] {
+        if value.isString,
+           let raw = value.toString()?.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] {
+            return dict.reduce(into: [String: String]()) { result, pair in
+                result[pair.key] = String(describing: pair.value)
+            }
+        }
         guard !value.isUndefined, !value.isNull, value.isObject,
               let dict = value.toDictionary() as? [String: Any] else { return [:] }
         var result: [String: String] = [:]
@@ -1288,6 +1661,15 @@ struct LegadoHTTPResult {
             else { result[key] = "\(val)" }
         }
         return result
+    }
+
+    private static func timeoutSeconds(from value: JSValue) -> TimeInterval? {
+        guard !value.isUndefined, !value.isNull else { return nil }
+        let milliseconds = value.isNumber
+            ? value.toDouble()
+            : Double(value.toString() ?? "")
+        guard let milliseconds, milliseconds > 0 else { return nil }
+        return min(120, max(1, milliseconds / 1000))
     }
 
     // MARK: - UTC Time Formatting
@@ -1319,7 +1701,11 @@ struct LegadoHTTPResult {
     /// Do not encode the headers as AnalyzeUrl options here: that path returns only
     /// a transformed body string, which discards the metadata required by Legado's
     /// `StrResponse` contract.
-    private func performGet(_ urlStr: String, headers: [String: String]) -> LegadoHTTPResult {
+    private func performGet(
+        _ urlStr: String,
+        headers: [String: String],
+        timeoutOverride: TimeInterval? = nil
+    ) -> LegadoHTTPResult {
         let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackURL = URL(string: "about:blank")!
         guard let url = URL(string: trimmed) else {
@@ -1327,7 +1713,7 @@ struct LegadoHTTPResult {
             return .bodyOnly(request: URLRequest(url: fallbackURL), body: "")
         }
 
-        let timeoutSeconds = max(15, requestTimeoutSeconds)
+        let timeoutSeconds = timeoutOverride ?? max(15, requestTimeoutSeconds)
         var request = URLRequest(
             url: url,
             cachePolicy: .reloadIgnoringLocalCacheData,
@@ -1358,12 +1744,62 @@ struct LegadoHTTPResult {
         return responseResult ?? .bodyOnly(request: request, body: "")
     }
 
+    private func performSimpleRequest(
+        method: String,
+        urlStr: String,
+        body: String?,
+        headers: [String: String],
+        timeoutOverride: TimeInterval?
+    ) -> LegadoHTTPResult {
+        let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackURL = URL(string: "about:blank")!
+        guard let url = URL(string: trimmed) else {
+            AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmed.prefix(200))])
+            return .bodyOnly(request: URLRequest(url: fallbackURL), body: "")
+        }
+        let timeoutSeconds = timeoutOverride ?? max(15, requestTimeoutSeconds)
+        var request = URLRequest(
+            url: url,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: timeoutSeconds
+        )
+        request.httpMethod = method
+        request.httpBody = body?.data(using: .utf8)
+        request.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
+            forHTTPHeaderField: "User-Agent"
+        )
+        sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+
+        if let handler = networkHandler {
+            return handler(request) ?? .bodyOnly(request: request, body: "")
+        }
+
+        var responseResult: LegadoHTTPResult?
+        let semaphore = DispatchSemaphore(value: 0)
+        let task = Self.requestSession.dataTask(with: request) { data, response, _ in
+            defer { semaphore.signal() }
+            responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
+        }
+        task.resume()
+        if semaphore.wait(timeout: .now() + timeoutSeconds) == .timedOut {
+            task.cancel()
+        }
+        return responseResult ?? .bodyOnly(request: request, body: "")
+    }
+
     /// Synchronous HTTP POST used by `java.post`. Blocks the calling (JS serial queue) thread.
-    private func performPost(_ urlStr: String, body: String, headers: [String: String]) -> LegadoStrResponse {
+    private func performPost(
+        _ urlStr: String,
+        body: String,
+        headers: [String: String],
+        timeoutOverride: TimeInterval? = nil
+    ) -> LegadoStrResponse {
         guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             return LegadoStrResponse(url: urlStr, body: "")
         }
-        let timeoutSeconds = max(15, requestTimeoutSeconds)
+        let timeoutSeconds = timeoutOverride ?? max(15, requestTimeoutSeconds)
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeoutSeconds)
         request.httpMethod = "POST"
         request.httpBody = body.data(using: .utf8)
@@ -1599,10 +2035,13 @@ struct LegadoHTTPResult {
     func body() -> String
     func cookies() -> LegadoJavaMap
     func headers() -> LegadoJavaMap
+    func code() -> Int
+    func message() -> String
     func statusCode() -> Int
     func statusMessage() -> String
     func urlString() -> String
     func isSuccessful() -> Bool
+    func toString() -> String
     var url: String { get }
 }
 
@@ -1634,10 +2073,14 @@ struct LegadoHTTPResult {
     func body() -> String { result.body }
     func cookies() -> LegadoJavaMap { LegadoJavaMap(result.cookies) }
     func headers() -> LegadoJavaMap { LegadoJavaMap(result.headers, caseInsensitive: true) }
+    func code() -> Int { result.statusCode }
+    func message() -> String { result.statusMessage }
     func statusCode() -> Int { result.statusCode }
     func statusMessage() -> String { result.statusMessage }
     func urlString() -> String { url }
     func isSuccessful() -> Bool { (200..<300).contains(result.statusCode) }
+    func toString() -> String { "Response{code=\(result.statusCode), url=\(url)}" }
+    override var description: String { toString() }
 }
 
 // MARK: - Browser Await Completion

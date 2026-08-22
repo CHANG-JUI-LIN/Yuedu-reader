@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Resolves a 段評 bubble whose review page only exists once the source's own JS has run.
 ///
@@ -58,27 +59,38 @@ actor LegadoReviewActionRunner {
                 completion(nil)
             }
             bridge.browserPagePresentHandler = { request in
-                sink.record(page: request, sourceURL: source.bookSourceUrl)
+                sink.record(
+                    page: request,
+                    sourceURL: source.bookSourceUrl,
+                    actionContext: target.actionContext
+                )
             }
             defer {
                 bridge.browserPresentHandler = previous
                 bridge.browserPagePresentHandler = previousPage
             }
-            _ = bridge.evaluateSourceScript(js)
+            if let actionContext = target.actionContext {
+                _ = bridge.evaluateSourceAction(actionContext)
+            } else {
+                // Compatibility for v1 normalized chapters. Render artifact v3
+                // invalidates these on the normal reader path; keep this only for
+                // an already-open page during an in-place app update.
+                _ = bridge.evaluateSourceScript(js)
+            }
             return sink.first
         }.value
 
         guard let captured else {
             AppLogger.parse("⟐ reviewAction no destination", context: [
                 "source": source.bookSourceName,
-                "js": String(js.prefix(120))
+                "actionHash": Self.actionHash(js)
             ])
             throw ResolveError.noDestination(sourceName: source.bookSourceName)
         }
 
         AppLogger.parse("⟐ reviewAction resolved", context: [
             "source": source.bookSourceName,
-            "js": String(js.prefix(80)),
+            "actionHash": Self.actionHash(js),
             "host": URL(string: captured.url)?.host ?? "",
             "sourcePage": captured.page == nil ? "no" : "yes"
         ])
@@ -89,17 +101,29 @@ actor LegadoReviewActionRunner {
         )
     }
 
+    private static func actionHash(_ script: String) -> String {
+        SHA256.hash(data: Data(script.utf8)).prefix(8).map {
+            String(format: "%02x", $0)
+        }.joined()
+    }
+
     /// Executes one `window.run(...)` request from a source-authored review page in the
     /// same per-source session that produced the chapter and review bubble.
-    func runSourcePageScript(_ script: String, sourceURL: String) throws -> String {
+    func runSourcePageScript(
+        _ script: String,
+        sourceURL: String,
+        actionContext: ReaderHTMLUtilities.LegadoSourceActionContext?
+    ) throws -> String {
         guard let source = BookSourceStore.shared.sources.first(
             where: { $0.bookSourceUrl == sourceURL }
         ) else {
             throw ResolveError.sourceUnavailable
         }
-        return BookSourceSession.session(for: source)
-            .bridgeForAsyncOperations
-            .evaluateSourceScript(script) ?? ""
+        let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
+        if let actionContext {
+            return bridge.evaluateSourceAction(actionContext.replacingScript(script)) ?? ""
+        }
+        return bridge.evaluateSourceScript(script) ?? ""
     }
 }
 
@@ -121,7 +145,11 @@ private final class BrowserRequestSink: @unchecked Sendable {
         if value == nil { value = Value(url: url, title: title, page: nil) }
     }
 
-    func record(page request: LegadoBrowserPageRequest, sourceURL: String) {
+    func record(
+        page request: LegadoBrowserPageRequest,
+        sourceURL: String,
+        actionContext: ReaderHTMLUtilities.LegadoSourceActionContext?
+    ) {
         lock.lock()
         defer { lock.unlock() }
         guard value == nil else { return }
@@ -130,7 +158,8 @@ private final class BrowserRequestSink: @unchecked Sendable {
             html: request.html,
             injectedJavaScript: request.injectedJavaScript,
             configurationJSON: request.configurationJSON,
-            sourceURL: sourceURL
+            sourceURL: sourceURL,
+            actionContext: actionContext
         )
         value = Value(url: request.baseURL, title: "", page: page)
     }

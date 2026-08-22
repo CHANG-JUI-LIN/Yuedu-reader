@@ -2706,6 +2706,93 @@ struct JSCoreEngineTests {
         #expect(captured?.configurationJSON == #"{"heightPercentage":0.8}"#)
     }
 
+    @Test("source action restores its captured book chapter and result bindings")
+    func sourceActionRestoresCapturedBindings() {
+        var source = BookSource(
+            bookSourceUrl: "https://action-context.example",
+            bookSourceName: "action context fixture"
+        )
+        source.jsLib = #"""
+        function openReview() {
+          java.showBrowser(
+            'https://reviews.example/',
+            '<html>' + book.name + '|' + chapter.title + '|' + result + '</html>',
+            '',
+            '{"heightPercentage":0.8}'
+          );
+        }
+        """#
+        let bridge = ModernParserBridge(source: source)
+        var captured: LegadoBrowserPageRequest?
+        bridge.browserPagePresentHandler = { captured = $0 }
+        _ = bridge.evaluateSourceScript(
+            "book.name='wrong book'; chapter.title='wrong chapter'; result='wrong result'"
+        )
+        let action = ReaderHTMLUtilities.LegadoSourceActionContext(
+            version: ReaderHTMLUtilities.LegadoSourceActionContext.currentVersion,
+            sourceURL: source.bookSourceUrl,
+            script: "openReview()",
+            result: "captured result",
+            baseURL: "https://chapters.example/1",
+            runtimeVariables: [:],
+            book: .init(
+                durChapterIndex: 3,
+                durChapterTitle: "captured chapter",
+                order: 3,
+                type: 0,
+                imageStyle: "",
+                name: "captured book",
+                author: "",
+                coverURL: "",
+                bookURL: "https://books.example/1",
+                tocURL: "https://books.example/1/toc",
+                abstract: ""
+            ),
+            chapter: .init(
+                index: 3,
+                title: "captured chapter",
+                order: 3,
+                url: "https://chapters.example/1",
+                isVip: true
+            )
+        )
+
+        _ = bridge.evaluateSourceAction(action)
+
+        #expect(captured?.html == "<html>captured book|captured chapter|captured result</html>")
+        #expect(captured?.configurationJSON == #"{"heightPercentage":0.8}"#)
+    }
+
+    @Test("loginCheckJs receives StrResponse and keeps the response after side effects")
+    func loginCheckJSReceivesStrResponse() {
+        var source = BookSource(
+            bookSourceUrl: "login-check-fixture-\(UUID().uuidString)",
+            bookSourceName: "login check fixture"
+        )
+        source.loginCheckJs = #"""
+        if (JSON.parse(result.body()).message === 'refresh') {
+          source.putLoginHeader('{"authorization":"Bearer refreshed"}');
+        } else {
+          result;
+        }
+        """#
+        defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
+        let bridge = ModernParserBridge(source: source)
+        let body = #"{"message":"refresh","data":null}"#
+
+        let checked = bridge.applyLoginCheck(
+            html: body,
+            baseURL: "https://example.com/catalog"
+        )
+        let authorization = bridge.evaluateSourceScript(
+            "source.getLoginHeaderMap().get('authorization')"
+        )
+
+        #expect(bridge.lastSourceScriptError == nil)
+        #expect(checked == body)
+        #expect(authorization == "Bearer refreshed")
+    }
+
     @Test("source-authored browser page routes qmRun to the native reply bridge")
     func sourceBrowserPageRunBridge() throws {
         let context = try #require(JSContext())

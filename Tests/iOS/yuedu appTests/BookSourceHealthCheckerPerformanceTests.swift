@@ -201,6 +201,11 @@ struct BookSourceHealthCheckerPerformanceTests {
         #expect(checker.items[0].searchBook?.name == "text result")
         #expect(checker.items[0].overallPass)
         #expect(await fetcher.detailURLs == ["https://mixed-content.example/text"])
+        #expect(await fetcher.chapterReferers == ["https://mixed-content.example/text/toc"])
+        let contentVariables = (await fetcher.contentRuntimeVariables).first ?? nil
+        #expect(contentVariables?["detail.scope"] == "detail")
+        #expect(contentVariables?["toc.scope"] == "toc")
+        #expect(contentVariables?["chapter.scope"] == "chapter")
     }
 
     @Test("validation candidate selection respects declared and unknown content types")
@@ -484,6 +489,8 @@ private actor HealthCheckKeywordCaptureFetcher: BookSourceHealthCheckFetching {
 
 private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
     private(set) var detailURLs: [String] = []
+    private(set) var chapterReferers: [String?] = []
+    private(set) var contentRuntimeVariables: [[String: String]?] = []
 
     func search(
         query: String,
@@ -503,6 +510,7 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
             book(
                 name: "text result",
                 url: "https://mixed-content.example/text",
+                tocURL: "https://mixed-content.example/text/embedded-toc",
                 type: "8",
                 source: source
             ),
@@ -550,6 +558,86 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         source: BookSource,
         chapterReferer: String?
     ) async throws -> String { "content" }
+
+    func fetchBookInfoPackage(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> BookInfoPackage {
+        let info = try await fetchBookInfo(
+            url: url,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+        var variables = info.runtimeVariables ?? [:]
+        variables["detail.scope"] = "detail"
+        return BookInfoPackage(
+            sourceId: source.id,
+            sourceName: source.bookSourceName,
+            bookURL: info.bookUrl,
+            name: info.name,
+            author: info.author,
+            intro: info.intro,
+            coverUrl: info.coverUrl,
+            tocUrl: info.tocUrl,
+            wordCount: info.wordCount,
+            lastChapter: info.lastChapter,
+            kind: info.kind,
+            runtimeVariables: variables,
+            rawHTMLFilename: nil,
+            savedAt: Date()
+        )
+    }
+
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        runPreUpdateJs: Bool
+    ) async throws -> TOCPackage {
+        var chapters = try await fetchTOC(
+            tocUrl: tocUrl,
+            source: source,
+            runtimeVariables: runtimeVariables
+        )
+        chapters[0].runtimeVariables = ["chapter.scope": "chapter"]
+        onFirstPageReady?(chapters)
+        return TOCPackage(
+            sourceId: source.id,
+            sourceName: source.bookSourceName,
+            tocURL: tocUrl,
+            runtimeVariables: ["toc.scope": "toc"],
+            chapters: chapters,
+            rawHTMLFilename: nil,
+            savedAt: Date()
+        )
+    }
+
+    func fetchChapterPackage(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource,
+        chapterReferer: String?
+    ) async throws -> ChapterPackage {
+        chapterReferers.append(chapterReferer)
+        contentRuntimeVariables.append(ref.runtimeVariables)
+        return ChapterPackage(
+            bookId: bookId,
+            chapterIndex: ref.index,
+            sourceURL: ref.url,
+            tocTitle: ref.title,
+            canonicalTitle: nil,
+            content: "content",
+            contentChecksum: "",
+            rawHTMLFilename: nil,
+            normalizedHTMLFilename: nil,
+            savedAt: Date(),
+            state: .cached,
+            failureReason: nil
+        )
+    }
 
     private func book(
         name: String,

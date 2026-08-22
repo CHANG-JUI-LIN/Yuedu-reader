@@ -9,6 +9,10 @@ private enum BookSourceImportPresentationRoute: Hashable {
     case network
 }
 
+private enum BookSourceFileImportRoute: Hashable {
+    case document
+}
+
 // MARK: - Book Source List (Legado Style)
 
 struct BookSourceListView: View {
@@ -21,6 +25,9 @@ struct BookSourceListView: View {
     @State private var editingSource: BookSource? = nil
     @State private var showImport = false
     @State private var showImportFile = false
+    @State private var showFirstLevelImportFile = false
+    @State private var bookSourceFileImportSequence =
+        DismissalSequencedPresentation<BookSourceFileImportRoute>()
     @State private var importJSON = ""
     @State private var importError: String? = nil
     @State private var importSuccess: String? = nil
@@ -350,11 +357,19 @@ struct BookSourceListView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showImport) {
+            .sheet(
+                isPresented: $showImport,
+                onDismiss: presentBookSourceFileImporterAfterSheetDismissal
+            ) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
                     importSheet
                 }
             }
+            .fileImporter(
+                isPresented: $showFirstLevelImportFile,
+                allowedContentTypes: bookSourceImportContentTypes,
+                onCompletion: handleBookSourceImportFile
+            )
             .sheet(isPresented: $showNetworkImport) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
                     networkImportSheet
@@ -1108,7 +1123,7 @@ struct BookSourceListView: View {
                     .frame(maxHeight: 280)
 
                 Button {
-                    showImportFile = true
+                    requestBookSourceFileImport()
                 } label: {
                     Label(localized("從文件選取 .json"), systemImage: "doc.badge.plus")
                         .frame(maxWidth: .infinity).padding()
@@ -1127,6 +1142,7 @@ struct BookSourceListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
+                        bookSourceFileImportSequence.cancel()
                         showImport = false
                         importJSON = ""
                     } label: {
@@ -1145,23 +1161,53 @@ struct BookSourceListView: View {
         }
         .fileImporter(
             isPresented: $showImportFile,
-            allowedContentTypes: [UTType.json, UTType.plainText,
-                                  UTType(filenameExtension: "yds") ?? .data,
-                                  UTType(filenameExtension: "xbs") ?? .data,
-                                  UTType(filenameExtension: "mrs") ?? .data]
-        ) { result in
-            switch result {
-            case .success(let url):
-                let ok = url.startAccessingSecurityScopedResource()
-                defer { if ok { url.stopAccessingSecurityScopedResource() } }
-                if let data = try? Data(contentsOf: url) {
-                    doImportData(data, ext: url.pathExtension)
-                } else {
-                    importError = localized("無法讀取文件")
+            allowedContentTypes: bookSourceImportContentTypes,
+            onCompletion: handleBookSourceImportFile
+        )
+    }
+
+    private var bookSourceImportContentTypes: [UTType] {
+        [
+            .json,
+            .plainText,
+            UTType(filenameExtension: "yds") ?? .data,
+            UTType(filenameExtension: "xbs") ?? .data,
+            UTType(filenameExtension: "mrs") ?? .data,
+        ]
+    }
+
+    private func requestBookSourceFileImport() {
+        if BookSourceImportPresentationPolicy.requiresFirstLevelImporter {
+            bookSourceFileImportSequence.select(.document)
+            showImport = false
+        } else {
+            showImportFile = true
+        }
+    }
+
+    private func presentBookSourceFileImporterAfterSheetDismissal() {
+        guard bookSourceFileImportSequence.consumeAfterDismissal() == .document else {
+            return
+        }
+        showFirstLevelImportFile = true
+    }
+
+    private func handleBookSourceImportFile(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            let isSecurityScoped = url.startAccessingSecurityScopedResource()
+            defer {
+                if isSecurityScoped {
+                    url.stopAccessingSecurityScopedResource()
                 }
-            case .failure(let err):
-                importError = err.localizedDescription
             }
+            guard let data = try? Data(contentsOf: url) else {
+                importError = localized("無法讀取文件")
+                return
+            }
+            doImportData(data, ext: url.pathExtension)
+        case .failure(let error):
+            importError = error.localizedDescription
         }
     }
 

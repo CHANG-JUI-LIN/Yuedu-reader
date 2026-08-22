@@ -40,7 +40,8 @@ final class CookieStore {
     /// then falls back to the persistent store if the session storage is empty.
     func get(url: String) -> String {
         // HTTPCookieStorage (session / system managed)
-        if let cookieURL = URL(string: url), let host = cookieURL.host {
+        if let cookieURL = URL(string: url), let rawHost = cookieURL.host {
+            let host = rawHost.lowercased()
             var collected: [String: String] = [:]
             // 1) Standard match for this exact URL (host-only + parent-domain cookies).
             for c in HTTPCookieStorage.shared.cookies(for: cookieURL) ?? [] {
@@ -53,7 +54,8 @@ final class CookieStore {
             //    siblings, so `getKey("qidian.com")` came back empty → discover URL param unresolved
             //    → 起点 rejected the request. Match on a label boundary so `a.com` ≠ `evil-a.com`.
             for c in HTTPCookieStorage.shared.cookies ?? [] where collected[c.name] == nil {
-                let d = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                let d = (c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain)
+                    .lowercased()
                 if d == host || d.hasSuffix("." + host) || host.hasSuffix("." + d) {
                     collected[c.name] = c.value
                 }
@@ -144,17 +146,18 @@ final class CookieStore {
               let cookieURL = URL(string: Self.normalizedURLString(url)),
               let host = cookieURL.host
         else { return }
+        let normalizedHost = host.lowercased()
 
         let domainMatches: (String) -> Bool = { rawDomain in
-            let domain = rawDomain.hasPrefix(".")
+            let domain = (rawDomain.hasPrefix(".")
                 ? String(rawDomain.dropFirst())
-                : rawDomain
+                : rawDomain).lowercased()
             if includingRelatedDomains {
-                return domain == host
-                    || domain.hasSuffix("." + host)
-                    || host.hasSuffix("." + domain)
+                return domain == normalizedHost
+                    || domain.hasSuffix("." + normalizedHost)
+                    || normalizedHost.hasSuffix("." + domain)
             }
-            return domain == host
+            return domain == normalizedHost
         }
 
         for cookie in HTTPCookieStorage.shared.cookies ?? []
@@ -216,7 +219,7 @@ final class CookieStore {
     // MARK: - Private: Helpers
 
     private func canonicalDomain(for urlString: String) -> String {
-        URL(string: urlString)?.host ?? urlString
+        (URL(string: urlString)?.host ?? urlString).lowercased()
     }
 
     /// Parse a `name=value; name2=value2` string into HTTPCookie objects.

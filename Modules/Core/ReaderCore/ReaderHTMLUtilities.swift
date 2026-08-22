@@ -115,13 +115,16 @@ enum ReaderHTMLUtilities {
     /// Wraps newline-separated segments in `<p>` when the HTML has no block-level structure.
     ///
     /// Online sources frequently deliver chapter bodies as plain-text paragraphs joined by "\n"
-    /// with only *inline* markup mixed in (links, 段評 bubble `<img>`s). Handed straight to
-    /// SwiftSoup, the newlines collapse to whitespace and the whole chapter renders as a single
-    /// run-on block. This restores paragraph breaks generically (not per-source): if the content
-    /// already contains block tags (`<p>`/`<div>`/`<br>`/…) it is returned unchanged, except
-    /// for literal source newlines inside a `<p>`, which are promoted to separate paragraphs.
+    /// or by `<br>`, with only *inline* markup mixed in (links, 段評 bubble `<img>`s). Handed
+    /// straight to SwiftSoup, those breaks collapse to whitespace (or to a soft break inside one
+    /// block) and the whole chapter renders as a single run-on paragraph. This restores paragraph
+    /// breaks generically (not per-source): content that already carries its own block structure
+    /// (`<p>`/`<div>`/…) is returned unchanged, except for literal source newlines inside a `<p>`,
+    /// which are promoted to separate paragraphs.
     static func wrapNewlineParagraphsIfNeeded(_ html: String) -> String {
-        let paragraphNormalized = splitNewlineSeparatedParagraphContents(in: html)
+        let paragraphNormalized = promoteBreakSeparatedParagraphs(
+            in: splitNewlineSeparatedParagraphContents(in: html)
+        )
         guard !containsBlockLevelTag(paragraphNormalized) else { return paragraphNormalized }
         let segments = paragraphNormalized
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -194,15 +197,47 @@ enum ReaderHTMLUtilities {
         return result
     }
 
-    private static func containsBlockLevelTag(_ html: String) -> Bool {
+    /// Turns `<br>` into a real paragraph boundary when it is the *only* structure a source gives
+    /// a chapter (`段落一<br>段落二<br>…` — 书旗's decoded chapter body, and the shape its own 段評 JS
+    /// assumes when it splits the content on `/(<br\s*\/?>)/i`).
+    ///
+    /// Legado does this unconditionally: `HtmlFormatter.format` rewrites
+    /// `</?(?:div|p|br|hr|h\d|article|dd|dl)[^>]*>` to "\n", and `BookContent.analyzeContent` then
+    /// makes one indented paragraph per line. SwiftSoup instead keeps `<br>` as an inline break, so
+    /// such a chapter reaches CoreText as a single paragraph: only its very first line receives
+    /// `text-indent`, and every following paragraph sits flush against the margin with no
+    /// paragraph spacing.
+    ///
+    /// Deliberately narrower than legado: a `<br>` inside authored block markup is a genuine soft
+    /// break (verse, address lines) and must stay one, so this only fires for fragments that carry
+    /// no block container of their own.
+    private static func promoteBreakSeparatedParagraphs(in html: String) -> String {
+        let breakTag = #"(?i)<br\b[^>]*>"#
+        guard html.range(of: breakTag, options: .regularExpression) != nil,
+              !containsBlockContainerTag(html)
+        else { return html }
+        return html.replacingOccurrences(
+            of: breakTag,
+            with: "\n",
+            options: .regularExpression
+        )
+    }
+
+    /// Tags that give a fragment paragraph structure of its own. `<br>` is deliberately absent —
+    /// it is a break *inside* a block, not a container (see `promoteBreakSeparatedParagraphs`).
+    private static func containsBlockContainerTag(_ html: String) -> Bool {
         let lower = html.lowercased()
-        let blockTags = [
-            "<p", "<div", "<br", "<li", "<ul", "<ol", "<h1", "<h2", "<h3", "<h4", "<h5", "<h6",
+        let containerTags = [
+            "<p", "<div", "<li", "<ul", "<ol", "<h1", "<h2", "<h3", "<h4", "<h5", "<h6",
             "<blockquote", "<section", "<article", "<table", "<figure", "<pre", "<dl", "<dd", "<dt",
             // A raw inline <svg> document may contain internal newlines — never split it into <p>.
             "<svg"
         ]
-        return blockTags.contains { lower.contains($0) }
+        return containerTags.contains { lower.contains($0) }
+    }
+
+    private static func containsBlockLevelTag(_ html: String) -> Bool {
+        html.lowercased().contains("<br") || containsBlockContainerTag(html)
     }
 
     static func bodyParagraphs(fromPlainText text: String, excludingLeadingTitle title: String) -> [String] {
@@ -255,12 +290,14 @@ enum ReaderHTMLUtilities {
             let injectedJavaScript: String
             let configurationJSON: String
             let sourceURL: String
+            let actionContext: LegadoSourceActionContext?
         }
 
         let url: String
         let title: String
         let sourceJS: String
         let sourceURL: String
+        let actionContext: LegadoSourceActionContext?
         let sourceBrowserPage: SourceBrowserPage?
 
         init(
@@ -268,12 +305,14 @@ enum ReaderHTMLUtilities {
             title: String,
             sourceJS: String = "",
             sourceURL: String = "",
+            actionContext: LegadoSourceActionContext? = nil,
             sourceBrowserPage: SourceBrowserPage? = nil
         ) {
             self.url = url
             self.title = title
             self.sourceJS = sourceJS
             self.sourceURL = sourceURL
+            self.actionContext = actionContext
             self.sourceBrowserPage = sourceBrowserPage
         }
 
@@ -288,23 +327,78 @@ enum ReaderHTMLUtilities {
         }
     }
 
+    /// Immutable v2 snapshot used when an image click action is evaluated later.
+    /// It restores the same Legado `result`/`src`, `book`, `chapter`, and rule variables
+    /// that existed while the chapter was normalized, instead of trusting whichever
+    /// chapter last happened to use the source's shared JS session.
+    struct LegadoSourceActionContext: Codable, Hashable {
+        static let currentVersion = 2
+
+        struct BookSnapshot: Codable, Hashable {
+            let durChapterIndex: Int
+            let durChapterTitle: String
+            let order: Int
+            let type: Int
+            let imageStyle: String
+            let name: String
+            let author: String
+            let coverURL: String
+            let bookURL: String
+            let tocURL: String
+            let abstract: String
+        }
+
+        struct ChapterSnapshot: Codable, Hashable {
+            let index: Int
+            let title: String
+            let order: Int
+            let url: String
+            let isVip: Bool
+        }
+
+        let version: Int
+        let sourceURL: String
+        let script: String
+        let result: String
+        let baseURL: String
+        let runtimeVariables: [String: String]
+        let book: BookSnapshot
+        let chapter: ChapterSnapshot
+
+        func replacingScript(_ script: String) -> LegadoSourceActionContext {
+            LegadoSourceActionContext(
+                version: version,
+                sourceURL: sourceURL,
+                script: script,
+                result: result,
+                baseURL: baseURL,
+                runtimeVariables: runtimeVariables,
+                book: book,
+                chapter: chapter
+            )
+        }
+    }
+
     /// Minimal source context needed to recover Legado image click-configs into tappable review links.
     struct LegadoReviewContext: Hashable {
         let sourceName: String
         let sourceURL: String
         let sourceVariableJSON: String?
         let runtimeVariables: [String: String]?
+        let chapter: LegadoSourceActionContext.ChapterSnapshot?
 
         init(
             sourceName: String,
             sourceURL: String,
             sourceVariableJSON: String? = nil,
-            runtimeVariables: [String: String]? = nil
+            runtimeVariables: [String: String]? = nil,
+            chapter: LegadoSourceActionContext.ChapterSnapshot? = nil
         ) {
             self.sourceName = sourceName
             self.sourceURL = sourceURL
             self.sourceVariableJSON = sourceVariableJSON
             self.runtimeVariables = runtimeVariables
+            self.chapter = chapter
         }
 
         func withRuntimeVariables(_ runtimeVariables: [String: String]?) -> LegadoReviewContext {
@@ -312,8 +406,70 @@ enum ReaderHTMLUtilities {
                 sourceName: sourceName,
                 sourceURL: sourceURL,
                 sourceVariableJSON: sourceVariableJSON,
-                runtimeVariables: runtimeVariables ?? self.runtimeVariables
+                runtimeVariables: runtimeVariables ?? self.runtimeVariables,
+                chapter: chapter
             )
+        }
+
+        func withChapter(_ ref: OnlineChapterRef) -> LegadoReviewContext {
+            LegadoReviewContext(
+                sourceName: sourceName,
+                sourceURL: sourceURL,
+                sourceVariableJSON: sourceVariableJSON,
+                runtimeVariables: runtimeVariables,
+                chapter: .init(
+                    index: ref.index,
+                    title: ref.title,
+                    order: ref.index,
+                    url: ref.url,
+                    isVip: ref.isVip
+                )
+            )
+        }
+
+        fileprivate func actionContext(script: String, result: String) -> LegadoSourceActionContext {
+            let variables = Self.safeActionVariables(runtimeVariables ?? [:])
+            return LegadoSourceActionContext(
+                version: LegadoSourceActionContext.currentVersion,
+                sourceURL: sourceURL,
+                script: script,
+                result: result,
+                baseURL: chapter?.url ?? variables["book.bookUrl"] ?? sourceURL,
+                runtimeVariables: variables,
+                book: .init(
+                    durChapterIndex: Int(variables["book.durChapterIndex"] ?? "") ?? chapter?.index ?? 0,
+                    durChapterTitle: variables["book.durChapterTitle"] ?? chapter?.title ?? "",
+                    order: Int(variables["book.order"] ?? "") ?? chapter?.order ?? 0,
+                    type: Int(variables["book.type"] ?? "") ?? 0,
+                    imageStyle: variables["book.imageStyle"] ?? "",
+                    name: variables["book.name"] ?? "",
+                    author: variables["book.author"] ?? "",
+                    coverURL: variables["book.coverUrl"] ?? "",
+                    bookURL: variables["book.bookUrl"] ?? "",
+                    tocURL: variables["book.tocUrl"] ?? "",
+                    abstract: variables["book.abstract"] ?? ""
+                ),
+                chapter: chapter ?? .init(index: 0, title: "", order: 0, url: "", isVip: false)
+            )
+        }
+
+        /// Review hrefs are persisted in normalized chapter HTML. Never freeze credentials
+        /// into that artifact: login data is read live from `source` when the action runs.
+        private static func safeActionVariables(_ variables: [String: String]) -> [String: String] {
+            let sensitive = ["token", "secret", "password", "passwd", "authorization", "cookie", "session", "apikey", "api_key", "密钥", "密碼", "密码"]
+            var result: [String: String] = [:]
+            var byteCount = 0
+            for key in variables.keys.sorted() {
+                let lower = key.lowercased()
+                guard !sensitive.contains(where: lower.contains),
+                      let value = variables[key],
+                      value.utf8.count <= 16_384,
+                      byteCount + key.utf8.count + value.utf8.count <= 65_536 else { continue }
+                result[key] = value
+                byteCount += key.utf8.count + value.utf8.count
+                if result.count == 128 { break }
+            }
+            return result
         }
     }
 
@@ -326,13 +482,22 @@ enum ReaderHTMLUtilities {
         let title: String
         let sourceJS: String
         let sourceURL: String
+        let actionContext: LegadoSourceActionContext?
 
-        init(count: String, url: String, title: String, sourceJS: String = "", sourceURL: String = "") {
+        init(
+            count: String,
+            url: String,
+            title: String,
+            sourceJS: String = "",
+            sourceURL: String = "",
+            actionContext: LegadoSourceActionContext? = nil
+        ) {
             self.count = count
             self.url = url
             self.title = title
             self.sourceJS = sourceJS
             self.sourceURL = sourceURL
+            self.actionContext = actionContext
         }
     }
 
@@ -679,6 +844,10 @@ enum ReaderHTMLUtilities {
         else { return nil }
         let url = obj["u"] ?? ""
         let sourceJS = obj["j"] ?? ""
+        let actionContext: LegadoSourceActionContext? = obj["x"].flatMap { encoded in
+            guard let contextData = base64URLDecode(encoded) else { return nil }
+            return try? JSONDecoder().decode(LegadoSourceActionContext.self, from: contextData)
+        }
         // A marker is meaningful with either a ready URL or a source-JS action to run.
         guard !url.isEmpty || !sourceJS.isEmpty else { return nil }
         return ReviewMarker(
@@ -686,7 +855,8 @@ enum ReaderHTMLUtilities {
             url: url,
             title: obj["t"] ?? "",
             sourceJS: sourceJS,
-            sourceURL: obj["s"] ?? ""
+            sourceURL: obj["s"] ?? "",
+            actionContext: actionContext
         )
     }
 
@@ -697,7 +867,8 @@ enum ReaderHTMLUtilities {
             url: marker.url,
             title: marker.title,
             sourceJS: marker.sourceJS,
-            sourceURL: marker.sourceURL
+            sourceURL: marker.sourceURL,
+            actionContext: marker.actionContext
         )
     }
 
@@ -705,9 +876,11 @@ enum ReaderHTMLUtilities {
     /// target lets the chapter normalizer move only that leading bubble into the `<h1>` while
     /// leaving ordinary paragraph and chapter-card images in the body.
     static func isTitleReviewHref(_ href: String) -> Bool {
-        guard let marker = decodeReviewHref(href),
-              let components = URLComponents(string: marker.url)
-        else { return false }
+        guard let marker = decodeReviewHref(href) else { return false }
+        if reviewDiagnosticTargetKey(fromAction: marker.sourceJS)?.hasSuffix("/-1") == true {
+            return true
+        }
+        guard let components = URLComponents(string: marker.url) else { return false }
         return components.queryItems?.contains {
             $0.name.caseInsensitiveCompare("paragraphId") == .orderedSame && $0.value == "-1"
         } == true
@@ -870,6 +1043,10 @@ enum ReaderHTMLUtilities {
         }
 
         let clickStyle = legadoClickStyle(fromConfigSuffix: suffix)?.lowercased()
+        let imageSource = firstCapture(
+            in: tag,
+            pattern: #"\bsrc\s*=\s*[\"']([^\"']*)[\"']"#
+        ).map(unescapeHTMLEntities) ?? ""
 
         // Honor the click-config `style:"text"` directive: render the bubble inline at text size
         // (a small icon at the line end) instead of the SVG's intrinsic 180×144. We carry it as a
@@ -893,20 +1070,24 @@ enum ReaderHTMLUtilities {
               let target = reviewTarget(
                 forLegadoAction: action,
                 context: reviewContext,
-                // Only a genuine click directive may be handed back to the source runtime on tap.
-                // `js` is in `legadoClickAction`'s key list because some sources put the review
-                // call there, but it is also Legado's *render* option (`UrlOption.js`, which
-                // produces the image URL) — running that on tap would just redraw the bubble.
-                allowsSourceJSFallback: legadoConfigHasClickDirective(suffix)
-                    || usesShushanCommentRuntime(reviewContext)
+                sourceResult: imageSource,
+                // The original app uses `click`, while compatible Android forks also emit the
+                // image tap handler as `js`. Only a single function call is executable here:
+                // arbitrary URL-transform snippets remain render-only and never reach the
+                // source runtime on tap.
+                allowsSourceJSFallback: legadoAllowsSourceActionFallback(
+                    configSuffix: suffix,
+                    action: action
+                )
               ),
               let href = reviewHref(
                 count: "",
                 url: target.url,
                 title: target.title,
                 sourceJS: target.sourceJS,
-                sourceURL: target.sourceURL
-              )
+                sourceURL: target.sourceURL,
+                actionContext: target.actionContext
+            )
         else { return cleanedTag }
 
         // Keep FULL as inline HTML through newline normalization. Injecting a `<div>` here made
@@ -1101,7 +1282,11 @@ enum ReaderHTMLUtilities {
 
     private static func legadoClickAction(fromConfigSuffix suffix: String) -> String? {
         guard let object = legadoClickConfigObject(fromConfigSuffix: suffix) else { return nil }
-        for key in ["click", "js", "action"] {
+        // Legado-E / MD3-compatible sources use `click` or `action`; older source
+        // helpers targeting the original/"light reading" runtime use `js` for the
+        // same image tap contract. The caller applies a strict function-call gate
+        // before any value is handed back to the source runtime.
+        for key in ["click", "action", "js"] {
             if let value = object[key] as? String {
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { return trimmed }
@@ -1110,21 +1295,35 @@ enum ReaderHTMLUtilities {
         return nil
     }
 
-    /// Whether a `,{json}` click-config carries an explicit click directive (as opposed to only
-    /// the `js` render option).
-    private static func legadoConfigHasClickDirective(_ suffix: String) -> Bool {
-        guard let object = legadoClickConfigObject(fromConfigSuffix: suffix) else { return false }
-        return ["click", "action"].contains {
-            ((object[$0] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    private static func legadoAllowsSourceActionFallback(
+        configSuffix suffix: String,
+        action: String
+    ) -> Bool {
+        guard isSourceFunctionCall(action),
+              let object = legadoClickConfigObject(fromConfigSuffix: suffix)
+        else { return false }
+        if ["click", "action"].contains(where: {
+            ((object[$0] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == action
+        }) {
+            return true
         }
+        // `js` is normally UrlOption's render transform. Fork-authored paragraph
+        // review images also put these established tap calls there; keep that
+        // bounded set without treating arbitrary image transforms as taps.
+        return [
+            "showCmt", "androidshowCmt", "showChapterComments",
+            "androidshowChapterComments", "createSvg",
+        ].contains { legadoFunctionArgs(named: $0, in: action) != nil }
     }
 
     private static func reviewTarget(
         forLegadoAction action: String,
         context: LegadoReviewContext?,
+        sourceResult: String = "",
         allowsSourceJSFallback: Bool = false
     ) -> ReviewTarget? {
         let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
+        var sourceActionTitle: String?
         if let args = legadoFunctionArgs(named: "showCmt", in: trimmed)
             ?? legadoFunctionArgs(named: "androidshowCmt", in: trimmed) {
             // Aggregated sources can emit `showCmt(url, source, ...)`: arg[0] is already the
@@ -1133,62 +1332,11 @@ enum ReaderHTMLUtilities {
                 let sources = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
                 return ReviewTarget(url: url, title: sources.isEmpty ? "段評" : "\(sources)段評")
             }
-            // 书山 uses the same numeric `showCmt(bid,cid,para,date)` spelling as
-            // Qidian, but its jsLib builds `/idea_comment` with the current 番茄
-            // session. Static Qidian URL derivation loses both endpoint and login;
-            // run this source-owned action in its existing session instead.
-            if allowsSourceJSFallback,
-               usesShushanCommentRuntime(context),
-               let context,
-               args.count >= 3,
-               isIntegerLegadoArgument(args[0]),
-               isIntegerLegadoArgument(args[1]),
-               isIntegerLegadoArgument(args[2]) {
-                let bookId = cleanLegadoArgument(args[0])
-                let chapterId = cleanLegadoArgument(args[1])
-                let paragraphId = cleanLegadoArgument(args[2])
-                // Shushan's showCmt first-tap guard deliberately returns before
-                // opening anything. Invoke its URL builder/browser functions
-                // directly so one native bubble tap has one deterministic result,
-                // while the source still supplies the live 番茄 session.
-                let directAction = """
-                startCommentBrowser.call(this,buildCommentUrl.call(this,'fq','\(bookId)','\(chapterId)','\(paragraphId)'),'番茄段评')
-                """
-                return ReviewTarget(
-                    url: "",
-                    title: "番茄段評",
-                    sourceJS: directAction,
-                    sourceURL: context.sourceURL
-                )
-            }
-            // 起點: showCmt(bookId, chapterId, paragraphId, …) → build the qidian review URL.
-            if args.count >= 3,
-               isIntegerLegadoArgument(args[0]),
-               isIntegerLegadoArgument(args[1]),
-               isIntegerLegadoArgument(args[2]) {
-                return qidianReviewTarget(
-                    kind: .paragraph,
-                    bookId: args[0],
-                    chapterId: args[1],
-                    paragraphId: args[2],
-                    context: context
-                )
-            }
-            // 企點: the destination is the FIRST argument, and the source's own `showCmt(url, stype)`
-            // treats every later argument as the sheet's title — never as part of the destination:
-            //
-            //   段評    `showCmt('<path>')`                 (jsLib createSvg)
-            //   熱評    `showCmt('<path>','段评' )`          (jsLib createGod)
-            //   本章说  `showCmt('<path>','本章说' )`        (jsLib endclick)
-            //
-            // The path is site-relative and the jsLib resolves it itself
-            // (`if (!url.includes('http')) url = sb + url`). Resolving it only for the
-            // one-argument spelling meant the 熱評 and 本章说 cards had their click config
-            // stripped but no `ydreview://` anchor put back, so the card drew as a plain image
-            // and a tap opened the image viewer instead of the review sheet.
-            if let url = shaziReviewURL(from: args.first, context: context) {
-                let stype = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
-                return ReviewTarget(url: url, title: stype.isEmpty ? "段評" : stype)
+            if args.count >= 2 {
+                let authoredTitle = cleanLegadoArgument(args[1])
+                if !authoredTitle.isEmpty, !isIntegerLegadoArgument(authoredTitle) {
+                    sourceActionTitle = authoredTitle
+                }
             }
         }
 
@@ -1198,17 +1346,7 @@ enum ReaderHTMLUtilities {
                 let sources = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
                 return ReviewTarget(url: url, title: sources.isEmpty ? "本章討論" : "\(sources)本章討論")
             }
-            if args.count >= 2,
-               isIntegerLegadoArgument(args[0]),
-               isIntegerLegadoArgument(args[1]) {
-                return qidianReviewTarget(
-                    kind: .chapter,
-                    bookId: args[0],
-                    chapterId: args[1],
-                    paragraphId: nil,
-                    context: context
-                )
-            }
+            sourceActionTitle = "本章討論"
         }
 
         // Legado never special-cases the click action: it evaluates the click-config JS in the
@@ -1219,8 +1357,19 @@ enum ReaderHTMLUtilities {
         // shared token, so nothing here could reconstruct it. Returning nil dropped all 67 bubbles
         // per chapter: not tappable, and — because the 氣泡設定 entry is gated on the chapter
         // carrying review links — the bubble settings screen never appeared either.
-        if allowsSourceJSFallback, let context, isSourceFunctionCall(trimmed) {
-            return ReviewTarget(url: "", title: "段評", sourceJS: trimmed, sourceURL: context.sourceURL)
+        if allowsSourceJSFallback,
+           let context,
+           !trimmed.isEmpty,
+           trimmed.count <= 16_384 {
+            let actionContext = context.actionContext(script: trimmed, result: sourceResult)
+            return ReviewTarget(
+                url: "",
+                title: sourceActionTitle
+                    ?? (trimmed.localizedCaseInsensitiveContains("chapter") ? "本章討論" : "段評"),
+                sourceJS: trimmed,
+                sourceURL: context.sourceURL,
+                actionContext: actionContext
+            )
         }
 
         return nil
@@ -1533,13 +1682,18 @@ enum ReaderHTMLUtilities {
         url: String,
         title: String,
         sourceJS: String = "",
-        sourceURL: String = ""
+        sourceURL: String = "",
+        actionContext: LegadoSourceActionContext? = nil
     ) -> String? {
         guard !url.isEmpty || !sourceJS.isEmpty else { return nil }
         var payload: [String: String] = ["c": count, "u": url, "t": title]
         if !sourceJS.isEmpty {
             payload["j"] = sourceJS
             payload["s"] = sourceURL
+            if let actionContext,
+               let contextData = try? JSONEncoder().encode(actionContext) {
+                payload["x"] = base64URLEncode(contextData)
+            }
         }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let encoded = base64URLEncode(data)

@@ -13,6 +13,85 @@ struct ShuqiReaderLiveRegressionTests {
     private static let sourcePath =
         "/Users/zhangruilin/Desktop/Test document/RULE/书旗（同人）.json"
 
+    @Test("original TOC arrow-function parameter stays in lexical scope")
+    func originalTOCArrowFunctionParameterStaysInScope() throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: Self.sourcePath))
+        var source = try #require(JSONDecoder().decode([BookSource].self, from: data).first)
+        source.id = UUID()
+        source.lastUpdateTime = Int64(Date().timeIntervalSince1970 * 1_000)
+        let response = try JSONSerialization.data(withJSONObject: [
+            "data": [
+                "chargeContUrlPrefix": "https://chapter.example/paid/",
+                "freeContUrlPrefix": "https://chapter.example/free/",
+                "shortContUrlPrefix": "https://chapter.example/short/",
+                "chapterList": [[
+                    "volumeName": "正文",
+                    "volumeList": [[
+                        "contUrlSuffix": "100",
+                        "shortContUrlSuffix": "100",
+                        "chapterId": "200",
+                        "chapterName": "第一章",
+                        "chapterUpdateTime": 1_700_000_000,
+                        "wordCount": 1234,
+                        "chapterPrice": "0",
+                        "isFreeRead": true,
+                        "isBuy": false,
+                    ]],
+                ]],
+            ],
+        ])
+        let html = try #require(String(data: response, encoding: .utf8))
+
+        let parsed = try BookSourceParsingPipeline().parseTOCResult(
+            html: html,
+            baseURL: "https://ocean.shuqireader.com/webapi/bcspub/openapi/book/chapterlist?bookId=8961399",
+            source: source
+        )
+
+        #expect(parsed.chapters.count == 2)
+        #expect(parsed.chapters[0].shouldRenderAsVolumeSeparator)
+        #expect(parsed.chapters[1].title == "第一章")
+        #expect(parsed.chapters[1].url == "https://chapter.example/free/101")
+        #expect(parsed.runtimeVariables?["sqMetaMap"]?.contains("8961399") == true)
+    }
+
+    @Test("book-info JSONPath template resolves before TOC URL JavaScript")
+    func bookInfoJSONPathTemplateResolvesBeforeTOCURLJavaScript() throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: Self.sourcePath))
+        var source = try #require(JSONDecoder().decode([BookSource].self, from: data).first)
+        source.id = UUID()
+        source.lastUpdateTime = Int64(Date().timeIntervalSince1970 * 1_000)
+        LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl)
+        defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
+        let bridge = ModernParserBridge(source: source)
+        bridge.sourceScriptNetworkHandler = { request in
+            guard request.url?.host == "t.shuqi.com" else { return nil }
+            var result = LegadoHTTPResult.bodyOnly(request: request, body: "")
+            result = LegadoHTTPResult(
+                requestURL: result.requestURL,
+                finalURL: result.finalURL,
+                statusCode: 200,
+                statusMessage: "OK",
+                headers: ["Set-Cookie": "shuqi_token=fixture-token"],
+                cookies: ["shuqi_token": "fixture-token"],
+                body: ""
+            )
+            return result
+        }
+        let html = #"{"data":{"bookId":"8961399","bookName":"測試書","authorName":"作者"}}"#
+
+        let info = try bridge.parseBookInfo(
+            html: html,
+            bookUrl: "https://ocean.shuqireader.com/webapi/bcspub/openapi/book/info",
+            baseURL: "https://ocean.shuqireader.com/webapi/bcspub/openapi/book/info",
+            source: source
+        )
+
+        #expect(bridge.lastSourceScriptError == nil)
+        #expect(info.tocUrl.contains("bookId=8961399"))
+        #expect(info.tocUrl.contains("/book/chapterlist"))
+    }
+
     @Test("TOC list variables stay book-scoped and chapter deltas stay isolated")
     func tocRuntimeVariablesAreCompactedByScope() throws {
         let sharedValue = String(repeating: "book-map-entry;", count: 1_500)

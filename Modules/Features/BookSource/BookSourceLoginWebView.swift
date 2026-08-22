@@ -41,6 +41,7 @@ struct BookSourceLoginWebView: View {
                     } label: {
                         Image(systemName: "xmark")
                     }
+                    .accessibilityLabel(localized("取消"))
                     .disabled(isSyncing)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -55,6 +56,7 @@ struct BookSourceLoginWebView: View {
                         } label: {
                             Image(systemName: "checkmark")
                         }
+                        .accessibilityLabel(localized("完成"))
                     }
                 }
             }
@@ -96,6 +98,7 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         // Same reason as JsBridgeBrowserView: a widget that opens its own window
         // (captcha / OAuth) is blocked before the UI delegate is consulted.
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        context.coordinator.clipboardBridge.install(in: config.userContentController)
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.customUserAgent =
@@ -121,6 +124,10 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.clipboardBridge.remove(from: uiView.configuration.userContentController)
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(source: source) }
 
@@ -157,6 +164,7 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         weak var webView: WKWebView?
         /// Strongly held: `WKWebView.uiDelegate` is weak.
         let uiDelegate = SourceWebUIDelegate()
+        let clipboardBridge = SourceWebClipboardBridge()
         private var progressObservation: NSKeyValueObservation?
         private weak var progressBridge: LoginWebBridge?
 
@@ -217,4 +225,3 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         }
     }
 }
-

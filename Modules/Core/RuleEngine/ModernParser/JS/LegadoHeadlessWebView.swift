@@ -14,16 +14,25 @@ import WebKit
 @MainActor
 final class LegadoHeadlessWebView: NSObject, WKNavigationDelegate {
 
+    private enum CaptureMode {
+        case evaluatedJavaScript
+        case resource(regex: String)
+        case overrideURL(regex: String)
+    }
+
     private var webView: WKWebView?
     private let js: String
+    private let captureMode: CaptureMode
+    private var initialURL: String?
     private var continuation: CheckedContinuation<String, Never>?
     private var finished = false
 
     /// Strong references that keep in-flight runners alive until they resolve.
     private static var retained: [LegadoHeadlessWebView] = []
 
-    private init(js: String) {
+    private init(js: String, captureMode: CaptureMode) {
         self.js = js
+        self.captureMode = captureMode
         super.init()
     }
 
@@ -33,9 +42,19 @@ final class LegadoHeadlessWebView: NSObject, WKNavigationDelegate {
         url: String?,
         js: String,
         userAgent: String?,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        sourceRegex: String? = nil,
+        overrideURLRegex: String? = nil
     ) async -> String {
-        let runner = LegadoHeadlessWebView(js: js)
+        let mode: CaptureMode
+        if let sourceRegex, !sourceRegex.isEmpty {
+            mode = .resource(regex: sourceRegex)
+        } else if let overrideURLRegex, !overrideURLRegex.isEmpty {
+            mode = .overrideURL(regex: overrideURLRegex)
+        } else {
+            mode = .evaluatedJavaScript
+        }
+        let runner = LegadoHeadlessWebView(js: js, captureMode: mode)
         retained.append(runner)
         return await withCheckedContinuation { (cont: CheckedContinuation<String, Never>) in
             runner.continuation = cont
@@ -49,6 +68,7 @@ final class LegadoHeadlessWebView: NSObject, WKNavigationDelegate {
         if let ua = userAgent, !ua.isEmpty { wv.customUserAgent = ua }
         wv.navigationDelegate = self
         webView = wv
+        initialURL = url
 
         // Hard timeout: never leave the JS queue blocked indefinitely.
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
@@ -66,13 +86,44 @@ final class LegadoHeadlessWebView: NSObject, WKNavigationDelegate {
 
     // MARK: - WKNavigationDelegate
 
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        if case .overrideURL(let pattern) = captureMode,
+           let candidate = navigationAction.request.url?.absoluteString,
+           candidate != initialURL,
+           Self.fullyMatches(candidate, pattern: pattern) {
+            persistCookies(from: webView) { [weak self] in self?.finish(candidate) }
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        webView.evaluateJavaScript(js) { [weak self] value, _ in
-            guard let self else { return }
-            // Persist cookies set during the load before returning.
-            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
-                self.finish(Self.stringify(value))
+        switch captureMode {
+        case .evaluatedJavaScript:
+            webView.evaluateJavaScript(js) { [weak self] value, _ in
+                guard let self else { return }
+                self.persistCookies(from: webView) {
+                    self.finish(Self.stringify(value))
+                }
+            }
+        case .resource(let pattern):
+            evaluateSnifferJavaScriptIfNeeded(in: webView) { [weak self] in
+                guard let self else { return }
+                webView.evaluateJavaScript(Self.resourceURLScript) { value, _ in
+                    let candidates = (value as? [Any])?.compactMap { $0 as? String } ?? []
+                    let matched = candidates.first { Self.fullyMatches($0, pattern: pattern) } ?? ""
+                    self.persistCookies(from: webView) { self.finish(matched) }
+                }
+            }
+        case .overrideURL:
+            evaluateSnifferJavaScriptIfNeeded(in: webView) { [weak self] in
+                guard let self else { return }
+                self.persistCookies(from: webView) { self.finish("") }
             }
         }
     }
@@ -86,6 +137,40 @@ final class LegadoHeadlessWebView: NSObject, WKNavigationDelegate {
     }
 
     // MARK: - Helpers
+
+    private func evaluateSnifferJavaScriptIfNeeded(
+        in webView: WKWebView,
+        completion: @escaping () -> Void
+    ) {
+        guard !js.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            completion()
+            return
+        }
+        webView.evaluateJavaScript(js) { _, _ in completion() }
+    }
+
+    private func persistCookies(from webView: WKWebView, completion: @escaping () -> Void) {
+        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
+            completion()
+        }
+    }
+
+    private static func fullyMatches(_ value: String, pattern: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        guard let match = regex.firstMatch(in: value, range: range) else { return false }
+        return match.range == range
+    }
+
+    private static let resourceURLScript = """
+    (() => {
+      const urls = [];
+      try { performance.getEntriesByType('resource').forEach(e => urls.push(String(e.name || ''))); } catch (_) {}
+      try { document.querySelectorAll('[src],[href]').forEach(e => urls.push(String(e.src || e.href || ''))); } catch (_) {}
+      return Array.from(new Set(urls.filter(Boolean)));
+    })()
+    """
 
     private func finish(_ value: String) {
         guard !finished else { return }

@@ -514,9 +514,18 @@ final class LoginManager {
 
     /// Store the raw `putLoginHeader` payload verbatim (Legado semantics).
     func storeLoginHeader(sourceUrl: String, raw: String) {
-        queue.async(flags: .barrier) { [weak self] in
-            self?.headerCache[sourceUrl] = raw
-            self?.persistHeader(sourceUrl: sourceUrl, raw: raw)
+        var changed = false
+        queue.sync(flags: .barrier) {
+            changed = headerCache[sourceUrl] != raw
+            headerCache[sourceUrl] = raw
+            persistHeader(sourceUrl: sourceUrl, raw: raw)
+        }
+        if changed {
+            // Source JS commonly calls `putLoginHeader()` and immediately issues
+            // `java.ajax()` in the same evaluation (书旗's Token/GetUrl flow).
+            // Keep the write synchronous and invalidate credential-dependent
+            // header rules before that next request is constructed.
+            markLoginInfoChanged(sourceUrl: sourceUrl)
         }
     }
 

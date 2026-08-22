@@ -133,6 +133,90 @@ struct OnlineReaderPipelineUnificationTests {
         #expect(lines == ["第一段。", "第二段。", "第三段。", "第四段。"], "actual=>>>\(result.attributedString.string)<<<")
     }
 
+    @Test("br-separated source content renders as indented paragraphs")
+    func breakSeparatedSourceContentRendersIndentedParagraphs() async throws {
+        // 书旗 hands the reader a chapter body whose only structure is `<br>` (its own 段評 JS
+        // splits the same content on `/(<br\s*\/?>)/i`). Legado flattens `<br>` to "\n" and makes
+        // one indented paragraph per line; keeping it as an inline break left the whole chapter as
+        // a single CoreText paragraph, so only the first line was indented.
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第1章 只是吃个面",
+            plainTextContent: "第一段。\n第二段。\n第三段。\n第四段。",
+            rawHTMLContent: "第一段。<br>第二段。<br/>第三段。<BR />第四段。"
+        )
+        #expect(
+            normalizedHTML.components(separatedBy: "<p>").count - 1 == 4,
+            "normalizedHTML=>>>\(normalizedHTML)<<<"
+        )
+        #expect(
+            !normalizedHTML.lowercased().contains("<br"),
+            "normalizedHTML=>>>\(normalizedHTML)<<<"
+        )
+
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: "第1章 只是吃个面",
+                plainText: "第一段。\n第二段。\n第三段。\n第四段。",
+                body: .html(normalizedHTML),
+                sourceHref: "https://example.com/1"
+            )
+        ])
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 320, height: 480)
+        )
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: UIColor.label,
+            themeBackgroundColor: UIColor.systemBackground
+        )
+
+        let attributed = result.attributedString
+        let ns = attributed.string as NSString
+        var bodyParagraphs: [(text: String, indent: CGFloat)] = []
+        var location = 0
+        while location < ns.length {
+            let range = ns.paragraphRange(for: NSRange(location: location, length: 0))
+            location = max(NSMaxRange(range), location + 1)
+            guard range.length > 0 else { continue }
+            let text = ns.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.hasSuffix("段。") else { continue }
+            let style = attributed.attribute(
+                .paragraphStyle, at: range.location, effectiveRange: nil
+            ) as? NSParagraphStyle
+            bodyParagraphs.append((text, style?.firstLineHeadIndent ?? 0))
+        }
+
+        #expect(
+            bodyParagraphs.map(\.text) == ["第一段。", "第二段。", "第三段。", "第四段。"],
+            "actual=>>>\(attributed.string)<<<"
+        )
+        #expect(
+            bodyParagraphs.allSatisfy { $0.indent == Self.settings.fontSize * 2 },
+            "indents=\(bodyParagraphs.map(\.indent))"
+        )
+    }
+
+    @Test("br inside authored block markup stays a soft line break")
+    func breakInsideAuthoredBlockStaysSoftLineBreak() async throws {
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第一章",
+            plainTextContent: "地址第一行\n地址第二行",
+            rawHTMLContent: "<p>地址第一行<br>地址第二行</p>"
+        )
+
+        #expect(
+            normalizedHTML.components(separatedBy: "<p>").count - 1 == 1,
+            "normalizedHTML=>>>\(normalizedHTML)<<<"
+        )
+        #expect(
+            normalizedHTML.lowercased().contains("<br"),
+            "normalizedHTML=>>>\(normalizedHTML)<<<"
+        )
+    }
+
     @Test("leading title review image joins the chapter heading")
     func leadingTitleReviewImageJoinsChapterHeading() async throws {
         let svg = ##"<svg width="850" height="850" xmlns="http://www.w3.org/2000/svg"><rect width="850" height="850" rx="180" fill="#A9A9A9"/><text x="425" y="425">2</text></svg>"##

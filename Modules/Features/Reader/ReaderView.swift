@@ -2188,8 +2188,6 @@ struct ReaderView: View {
             LegadoReviewBrowserView(target: target) { _ in
                 reviewTarget = nil
             }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
         }
         )
         return AnyView(
