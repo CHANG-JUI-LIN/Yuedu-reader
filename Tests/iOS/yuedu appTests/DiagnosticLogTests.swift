@@ -177,6 +177,9 @@ struct DiagnosticSeverityClassifierTests {
         #expect(AppLogger.resolvedSeverity(message: "[StartupTrace][Engine] byteScan", default: .notice) == .trace)
         #expect(AppLogger.resolvedSeverity(message: "[CurlTrace] didFinish", default: .notice) == .trace)
         #expect(AppLogger.resolvedSeverity(message: "[StateDebug] applyRefreshAction", default: .notice) == .trace)
+        // 2656 of the 6000 entries in a real exported log — 44% of the budget spent on
+        // annotation geometry, crowding out the anomalies the export exists to carry.
+        #expect(AppLogger.resolvedSeverity(message: "[ANNOT-DIAG] SELECTION range={1, 2}", default: .notice) == .trace)
     }
 
     /// The one signal here that is not a naming convention: the caller handed us an

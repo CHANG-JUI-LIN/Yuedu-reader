@@ -526,6 +526,7 @@ struct ChapterLayoutTests {
             pageKinds: [.text, .text],
             pageBackgroundImage: pageBackgroundImage,
             authoredBackgroundColor: nil,
+            darkAuthoredBackgroundColor: nil,
             readerBackgroundImage: readerBackgroundImage,
             anchorOffsets: [:],
             renderSize: CGSize(width: 320, height: 568),

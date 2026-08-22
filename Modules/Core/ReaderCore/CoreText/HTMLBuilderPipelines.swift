@@ -98,6 +98,12 @@ final class HTMLBuilderDOMParser {
                 firstLetterRules.append(contentsOf: fl)
             }
         }
+        // Split the dark `@media` palette out once here so the per-element cascade never has to
+        // filter by flag. Dark rules resolve into a separate per-element style (see
+        // HTMLAttributedStringBuilder.resolvedStyles); when there are none the dark pass is
+        // skipped entirely and this costs nothing.
+        let darkRules = regularRules.filter { $0.isDarkMedia }
+        let lightRules = darkRules.isEmpty ? regularRules : regularRules.filter { !$0.isDarkMedia }
         ReaderPerfTrace.end(
             cssParseTrace,
             metadata: ReaderPerfMetadata(
@@ -117,7 +123,8 @@ final class HTMLBuilderDOMParser {
         )
         return HTMLAttributedStringBuilder.ParsedHTML(
             body: parsedDOM.body,
-            rules: regularRules,
+            rules: lightRules,
+            darkRules: darkRules,
             firstLetterRules: firstLetterRules
         )
     }
@@ -128,8 +135,8 @@ final class HTMLBuilderStyleResolver {
         from parsed: HTMLAttributedStringBuilder.ParsedHTML,
         config: HTMLAttributedStringBuilder.Config,
         makeRootStyle: (HTMLAttributedStringBuilder.Config) -> HTMLAttributedStringBuilder.ResolvedStyle,
-        resolveStyle: (Element, HTMLAttributedStringBuilder.ResolvedStyle, [CSSRule], CGFloat, Element?, HTMLAttributedStringBuilder.Config) -> HTMLAttributedStringBuilder.ResolvedStyle,
-        buildChildren: ([Node], HTMLAttributedStringBuilder.ResolvedStyle, [CSSRule], CGFloat, Element?, HTMLAttributedStringBuilder.Config) async -> [HTMLAttributedStringBuilder.ASTNode],
+        resolveStyle: (Element, HTMLAttributedStringBuilder.ResolvedStyle, HTMLAttributedStringBuilder.ResolvedStyle?, [CSSRule], [CSSRule], CGFloat, Element?, HTMLAttributedStringBuilder.Config) -> (light: HTMLAttributedStringBuilder.ResolvedStyle, dark: HTMLAttributedStringBuilder.ResolvedStyle?),
+        buildChildren: ([Node], HTMLAttributedStringBuilder.ResolvedStyle, HTMLAttributedStringBuilder.ResolvedStyle?, [CSSRule], [CSSRule], CGFloat, Element?, HTMLAttributedStringBuilder.Config) async -> [HTMLAttributedStringBuilder.ASTNode],
         makeAttributeMap: (Element) -> [String: String]
     ) async -> HTMLAttributedStringBuilder.ElementNode {
         let cssMatchStart = SourcePerfTrace.now
@@ -141,18 +148,25 @@ final class HTMLBuilderStyleResolver {
                 executor: Thread.isMainThread ? "main" : "background"
             )
         )
-        let bodyStyle = resolveStyle(
+        let rootStyle = makeRootStyle(config)
+        let resolved = resolveStyle(
             parsed.body,
-            makeRootStyle(config),
+            rootStyle,
+            rootStyle,
             parsed.rules,
+            parsed.darkRules,
             config.fontSize,
             nil,
             config
         )
+        let bodyStyle = resolved.light
+        let bodyDarkStyle = resolved.dark
         let astChildren = await buildChildren(
             parsed.body.getChildNodes(),
             bodyStyle,
+            bodyDarkStyle,
             parsed.rules,
+            parsed.darkRules,
             config.fontSize,
             parsed.body,
             config
@@ -163,6 +177,7 @@ final class HTMLBuilderStyleResolver {
             classes: Array((try? parsed.body.classNames()) ?? []),
             attributes: makeAttributeMap(parsed.body),
             resolvedStyle: bodyStyle,
+            resolvedDarkStyle: bodyDarkStyle,
             children: astChildren
         )
         // Covers the whole recursive element walk: selector matching, cascade, and inline-style

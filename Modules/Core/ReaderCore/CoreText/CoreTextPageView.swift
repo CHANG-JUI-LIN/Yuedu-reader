@@ -59,6 +59,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     private var playbackHighlightText: String?
     private var textAnnotations: [CoreTextTextAnnotation] = []
     private var annotationOverlays: [LayerKey: InteractionOverlayView] = [:]
+    private let noteMarkerOverlay = NoteMarkerOverlayView()
+    /// 已縮放到 view 座標的筆記圓圈，供 `handleTap` 命中判定用。
+    private var noteMarkerHitTargets: [(annotationID: UUID, rect: CGRect)] = []
     private var lastOverlayBounds: CGRect = .zero
     private var latestEditMenuSourcePoint: CGPoint?
 
@@ -117,7 +120,11 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         interactionOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         interactionOverlay.fillColor = UIColor.systemYellow.withAlphaComponent(0.30)
         interactionOverlay.handleColor = UIColor(red: 0.63, green: 0.40, blue: 0.00, alpha: 1.0)
+        noteMarkerOverlay.frame = bounds
+        noteMarkerOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(playbackOverlay)
+        // 圓圈必須疊在所有標註層之上，否則會被同一段的螢光筆填色蓋掉。
+        addSubview(noteMarkerOverlay)
         addSubview(interactionOverlay)
 
         addGestureRecognizer(linkTapGesture)
@@ -263,6 +270,10 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             )
         }
 
+        let noteMenuTitleIsEdit = (existingAnnotation ?? annotationCoveringSelection())
+            .flatMap(\.note)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
         let removesExistingUnderline = existingAnnotation == nil && selectedRangeHasExactUnderline()
         let underlineAction = UIAction(
             title: localized(removesExistingUnderline ? "解除下劃線" : "下劃線"),
@@ -306,6 +317,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             image: UIImage(systemName: "highlighter"),
             handler: { [weak self] _ in
                 self?.presentEmphasisEditMenu()
+            }
+        ))
+        actions.append(UIAction(
+            title: localized(noteMenuTitleIsEdit ? "編輯筆記" : "筆記"),
+            image: UIImage(systemName: "note.text"),
+            handler: { [weak self] _ in
+                self?.requestNoteEdit()
             }
         ))
 
@@ -1059,6 +1077,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
               localPageIndex < layout.pageRanges.count
         else { return }
 
+        // 筆記圓圈排在最前面：它畫在正文之上，落在它上面的點擊就是要開筆記，
+        // 不該再往下走連結／圖片／選字那幾條路。
+        if !interactor.selectionManager.hasSelection, requestNoteEditFromMarker(at: point) {
+            return
+        }
+
         if interactor.selectionManager.hasSelection {
             // If tap is on the existing selection, keep it and show menu again
             if let context = makeInteractionContext(),
@@ -1327,6 +1351,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     private func shouldHandleTap(at point: CGPoint) -> Bool {
         if interactor.selectionManager.hasSelection {
+            return true
+        }
+
+        // 這是 linkTapGesture 收不收這個觸控的閘門，回 false 就整個落到閱讀器的
+        // 點擊區（翻頁／選單）。筆記圓圈既不是連結也不是圖片，不在這裡宣告就永遠點不到。
+        if noteMarkerHitTargets.contains(where: { $0.rect.contains(point) }) {
             return true
         }
 
@@ -1657,6 +1687,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
                 overlay.clearSelection()
                 overlay.isHidden = true
             }
+            noteMarkerOverlay.markers = []
+            noteMarkerHitTargets = []
             return
         }
         let pageCFRange = layout.pageRanges[localPageIndex]
@@ -1706,6 +1738,131 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             overlay.isHidden = true
             overlay.clearSelection()
         }
+
+        updateNoteMarkerOverlay(pageRange: pageRange, context: context)
+    }
+
+    private func updateNoteMarkerOverlay(pageRange: NSRange, context: InteractionContext) {
+        guard let layout else { return }
+        let markers = CoreTextAnnotationRenderer.noteMarkers(
+            annotations: textAnnotations,
+            spineIndex: layout.spineIndex,
+            pageCharRange: pageRange,
+            lines: context.lines,
+            lineOrigins: context.origins,
+            contentOffset: CGPoint(x: context.contentPathRect.minX, y: context.contentPathRect.minY),
+            layoutHeight: context.layoutSize.height,
+            writingMode: context.writingMode
+        )
+
+        let scaled = markers.map { marker in
+            CoreTextAnnotationRenderer.NoteMarker(
+                annotationID: marker.annotationID,
+                badgeRect: viewRect(forRenderRect: marker.badgeRect)
+            )
+        }
+
+        noteMarkerOverlay.frame = bounds
+        noteMarkerOverlay.markers = scaled
+        // 標註 overlay 是後來才 addSubview 的，會蓋在圓圈上面；每次更新後把圓圈拉回最上層。
+        bringSubviewToFront(noteMarkerOverlay)
+        noteMarkerHitTargets = scaled.map {
+            ($0.annotationID, NoteMarkerGeometry.tapRect(for: $0.badgeRect))
+        }
+    }
+
+    // MARK: - 筆記
+
+    /// 點在筆記圓圈上 → 開該標註的筆記編輯頁。回傳是否吃掉了這次點擊。
+    private func requestNoteEditFromMarker(at point: CGPoint) -> Bool {
+        guard !noteMarkerHitTargets.isEmpty else { return false }
+        guard let hit = noteMarkerHitTargets.first(where: { $0.rect.contains(point) }),
+              let annotation = textAnnotations.first(where: { $0.id == hit.annotationID })
+        else { return false }
+        postNoteEditRequest(for: annotation)
+        return true
+    }
+
+    /// 選字選單的「筆記」。已有標註就編輯它的筆記；純選取則把選取範圍送出去，
+    /// 由閱讀器補上預設標註後再開編輯頁。
+    private func requestNoteEdit() {
+        if let annotation = interactor.tappedAnnotation
+            ?? annotationCoveringSelection() {
+            postNoteEditRequest(for: annotation)
+            clearSelection()
+            return
+        }
+
+        guard let layout,
+              let range = interactor.selectionManager.selectedRange,
+              range.length > 0,
+              range.location >= 0,
+              range.location + range.length <= layout.attributedString.length
+        else { return }
+
+        let excerpt = interactor.selectedTextForCopy
+            ?? interactor.selectionManager.selectedText(in: layout.attributedString)
+            ?? ""
+        NotificationCenter.default.post(
+            name: .coreTextNoteEditRequested,
+            object: self,
+            userInfo: [
+                "request": CoreTextNoteEditRequest(
+                    position: CoreTextReadingPosition(
+                        spineIndex: layout.spineIndex,
+                        charOffset: range.location
+                    ),
+                    length: range.length,
+                    excerpt: excerpt.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            ]
+        )
+        clearSelection()
+    }
+
+    private func annotationCoveringSelection() -> CoreTextTextAnnotation? {
+        guard let layout,
+              let range = interactor.selectionManager.selectedRange,
+              range.length > 0
+        else { return nil }
+        return AnnotationStore.annotationFullyContaining(
+            spineIndex: layout.spineIndex,
+            range: range,
+            in: textAnnotations
+        )
+    }
+
+    private func postNoteEditRequest(for annotation: CoreTextTextAnnotation) {
+        NotificationCenter.default.post(
+            name: .coreTextNoteEditRequested,
+            object: self,
+            userInfo: [
+                "request": CoreTextNoteEditRequest(
+                    position: CoreTextReadingPosition(
+                        spineIndex: annotation.spineIndex,
+                        charOffset: annotation.startOffset
+                    ),
+                    length: annotation.range.length,
+                    excerpt: annotationExcerpt(annotation),
+                    existingNote: annotation.note ?? "",
+                    style: annotation.style,
+                    color: annotation.color
+                )
+            ]
+        )
+    }
+
+    private func annotationExcerpt(_ annotation: CoreTextTextAnnotation) -> String {
+        guard let layout else { return "" }
+        let clamped = NSIntersectionRange(
+            annotation.range,
+            NSRange(location: 0, length: layout.attributedString.length)
+        )
+        guard clamped.length > 0 else { return "" }
+        return layout.attributedString
+            .attributedSubstring(from: clamped)
+            .string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func selectedRangeHasExactUnderline() -> Bool {
@@ -1720,6 +1877,32 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     private func deleteTappedAnnotation() {
         guard let annotation = interactor.tappedAnnotation else { return }
+
+        // 這段寫過筆記：刪掉標註等於一併丟掉筆記，必須先讓使用者選。引擎層沒有 alert，
+        // 所以只送請求，實際刪除由閱讀器在使用者回答後執行。
+        if let note = annotation.note,
+           !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            NotificationCenter.default.post(
+                name: .coreTextNoteDeleteRequested,
+                object: self,
+                userInfo: [
+                    "request": CoreTextNoteDeleteRequest(
+                        position: CoreTextReadingPosition(
+                            spineIndex: annotation.spineIndex,
+                            charOffset: annotation.startOffset
+                        ),
+                        length: annotation.range.length,
+                        excerpt: annotationExcerpt(annotation),
+                        note: note,
+                        style: annotation.style,
+                        color: annotation.color
+                    )
+                ]
+            )
+            clearSelection()
+            return
+        }
+
         textAnnotations.removeAll { $0.id == annotation.id }
         updateAnnotationOverlay()
         NotificationCenter.default.post(

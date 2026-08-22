@@ -187,7 +187,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             parentIsBlock: resolvedStyle.isBlock,
             whitespacePolicy: whitespacePolicy
         )
-        var style = RenderStyle.from(resolvedStyle: resolvedStyle, parentFontSize: parentFontSize)
+        var style = RenderStyle.from(
+            resolvedStyle: resolvedStyle,
+            darkResolvedStyle: resolvedDarkStyle,
+            parentFontSize: parentFontSize
+        )
         if containsFloatDescendant || classes.contains("tk") {
             style.compactChildBlockSpacing = true
         }
@@ -459,7 +463,11 @@ private extension HTMLAttributedStringBuilder.ElementNode {
 }
 
 private extension RenderStyle {
-    static func from(resolvedStyle s: HTMLAttributedStringBuilder.ResolvedStyle, parentFontSize: CGFloat) -> RenderStyle {
+    static func from(
+        resolvedStyle s: HTMLAttributedStringBuilder.ResolvedStyle,
+        darkResolvedStyle: HTMLAttributedStringBuilder.ResolvedStyle?,
+        parentFontSize: CGFloat
+    ) -> RenderStyle {
         let multiplier: CGFloat = parentFontSize > 0 ? s.fontSize / parentFontSize : 1.0
         return RenderStyle(
             fontSizeMultiplier: multiplier,
@@ -469,6 +477,12 @@ private extension RenderStyle {
             italic: s.isItalic,
             color: s.hasCSSColor ? RenderColor(uiColor: s.textColor) : nil,
             backgroundColor: s.backgroundFillColor.flatMap { RenderColor(uiColor: $0) },
+            darkColor: darkResolvedStyle.flatMap { $0.hasCSSColor ? RenderColor(uiColor: $0.textColor) : nil },
+            darkBackgroundColor: darkResolvedStyle?.backgroundFillColor.flatMap { RenderColor(uiColor: $0) },
+            darkBorderTopColor: darkResolvedStyle?.borderTopColor.flatMap { RenderColor(uiColor: $0) },
+            darkBorderBottomColor: darkResolvedStyle?.borderBottomColor.flatMap { RenderColor(uiColor: $0) },
+            darkBorderLeftColor: darkResolvedStyle?.borderLeftColor.flatMap { RenderColor(uiColor: $0) },
+            darkBorderRightColor: darkResolvedStyle?.borderRightColor.flatMap { RenderColor(uiColor: $0) },
             textIndent: s.textIndent,
             textAlign: .from(nsTextAlignment: s.textAlign),
             baseWritingDirection: s.baseWritingDirection,

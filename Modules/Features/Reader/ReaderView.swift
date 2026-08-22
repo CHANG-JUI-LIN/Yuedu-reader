@@ -82,7 +82,15 @@ struct ReaderView: View {
     @State var showQuickThemePanel = false
     @State var showReaderSearch = false
     @State var showTOC = false
-    @State var readerMenuTab: ReaderMenuView.Tab = .toc
+    @State var showBookmarkList = false
+    /// 目前正在編輯的段落筆記；nil 表示沒有開著編輯頁。
+    @State var noteEditorRoute: ReaderNoteEditorRoute?
+    /// 待確認的筆記刪除（alert 由這個值驅動）。
+    @State var noteDeleteRoute: ReaderNoteDeleteRoute?
+    /// 在筆記編輯頁裡按了刪除：alert 要等編輯頁真的關掉才彈，否則 iOS 17 會在
+    /// sheet 還在收的時候把 alert 吃掉（Technotes/iOS17MenuModalPresentation.md 的同一類問題）。
+    @State private var noteDeleteAfterEditorDismissal =
+        DismissalSequencedPresentation<ReaderNoteDeleteRoute>()
     @State var showTouchZoneEditor = false
     @State var readerHeaderFooterEditorModel: ReaderHeaderFooterEditorModel?
     @State var readerOverlaySVGAssetStore: ReaderOverlaySVGAssetStore?
@@ -1894,6 +1902,19 @@ struct ReaderView: View {
             guard let request = notification.userInfo?["request"] as? CoreTextUnderlineSelectionRequest else { return }
             addUnderlineBookmark(request)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .coreTextNoteEditRequested)) { notification in
+            guard let request = notification.userInfo?["request"] as? CoreTextNoteEditRequest else { return }
+            openNoteEditor(request)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .coreTextNoteDeleteRequested)) { notification in
+            guard let request = notification.userInfo?["request"] as? CoreTextNoteDeleteRequest else { return }
+            noteDeleteRoute = ReaderNoteDeleteRoute(
+                position: request.position,
+                length: request.length,
+                style: request.style,
+                color: request.color
+            )
+        }
         .onReceive(NotificationCenter.default.publisher(for: .coreTextReplaceSelectionRequested)) { notification in
             guard let request = notification.userInfo?["request"] as? CoreTextReplaceSelectionRequest else { return }
             let currentBook = book ?? snapshotBook
@@ -2107,9 +2128,8 @@ struct ReaderView: View {
         }
         .sheet(isPresented: $showTOC) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-                ReaderMenuView(
+                ReaderTOCView(
                     chapters: chapters,
-                    coverImagePath: book?.coverImagePath,
                     bookTitle: book?.title ?? "",
                     currentPage: currentPage,
                     totalPages: renderedPageCount,
@@ -2119,17 +2139,69 @@ struct ReaderView: View {
                     currentIndex: currentChapterIndex,
                     currentChapterID: currentTOCChapterID,
                     onSelectChapter: { jumpToTOCEntry($0) },
-                    bookmarks: book?.bookmarks ?? [],
-                    bookmarkPageNumber: { inChapterPageNumber(for: $0) },
-                    onSelectBookmark: { bm in
-                        showTOC = false
-                        jumpToBookmark(bm)
-                    },
-                    onDeleteBookmark: { deleteBookmarkEntry($0) },
-                    isPresented: $showTOC,
-                    selectedTab: $readerMenuTab
+                    isPresented: $showTOC
                 )
             }
+        }
+        .sheet(isPresented: $showBookmarkList) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                ReaderBookmarkListView(
+                    bookTitle: book?.title ?? "",
+                    bookmarks: book?.bookmarks ?? [],
+                    pageNumber: { inChapterPageNumber(for: $0) },
+                    onSelect: { bm in
+                        showBookmarkList = false
+                        jumpToBookmark(bm)
+                    },
+                    onDelete: { deleteBookmarkEntry($0) },
+                    isPresented: $showBookmarkList
+                )
+            }
+        }
+        .sheet(
+            item: $noteEditorRoute,
+            onDismiss: {
+                if let pending = noteDeleteAfterEditorDismissal.consumeAfterDismissal() {
+                    noteDeleteRoute = pending
+                }
+            }
+        ) { route in
+            ReaderNoteEditorView(
+                excerpt: route.excerpt,
+                note: route.note,
+                date: route.date,
+                showsDelete: !route.note.isEmpty,
+                onSave: { saveNote($0, for: route) },
+                onDelete: {
+                    noteDeleteAfterEditorDismissal.select(
+                        ReaderNoteDeleteRoute(
+                            position: route.position,
+                            length: route.length,
+                            style: route.style,
+                            color: route.color
+                        )
+                    )
+                    noteEditorRoute = nil
+                }
+            )
+        }
+        .alert(
+            localized("刪除筆記"),
+            isPresented: Binding(
+                get: { noteDeleteRoute != nil },
+                set: { if !$0 { noteDeleteRoute = nil } }
+            ),
+            presenting: noteDeleteRoute
+        ) { route in
+            Button(localized("刪除筆記和標註"), role: .destructive) {
+                deleteNote(route, removesAnnotation: true)
+            }
+            Button(localized("只刪除筆記"), role: .destructive) {
+                deleteNote(route, removesAnnotation: false)
+            }
+            Button(localized("取消"), role: .cancel) {}
+        } message: { _ in
+            Text(localized("標註可以保留下來，或是連同筆記一起刪除。"))
         }
         .sheet(isPresented: $showTTSPanel) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
@@ -2325,7 +2397,6 @@ struct ReaderView: View {
                 excerpt: currentPageExcerpt
             )
         case .tableOfContents:
-            readerMenuTab = .toc
             showTOC = true
         }
     }

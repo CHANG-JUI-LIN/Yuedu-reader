@@ -35,6 +35,8 @@ final class DiagnosticLog: @unchecked Sendable {
     private static let sessionHistoryLimit = 10
 
     static let verboseDefaultsKey = "yd_diagnostics_verbose"
+    /// Highest sequence the user has already taken away (exported or copied).
+    private static let acknowledgedKey = "yd_diagnostics_acknowledged_sequence"
 
     // MARK: - State
 
@@ -60,9 +62,18 @@ final class DiagnosticLog: @unchecked Sendable {
     /// nor destroys the real device log.
     private let directoryOverride: URL?
 
+    /// Everything at or below this has already been reported, so it no longer counts
+    /// toward the banner. Persisted: a report the user has sent should not come back
+    /// the next time they open the app.
+    private var acknowledgedSequence: UInt64
+
     init(directory: URL? = nil, verboseOverride: Bool? = nil) {
         directoryOverride = directory
         cachedVerbose = verboseOverride ?? UserDefaults.standard.bool(forKey: Self.verboseDefaultsKey)
+        // A test instance starts with a clean slate rather than inheriting the device's.
+        acknowledgedSequence = directory == nil
+            ? UInt64(max(0, UserDefaults.standard.integer(forKey: Self.acknowledgedKey)))
+            : 0
         ioQueue.setSpecific(key: Self.ioQueueKey, value: ())
     }
 
@@ -94,6 +105,43 @@ final class DiagnosticLog: @unchecked Sendable {
 
     /// Anomalies and faults seen since launch. Cheap — no disk read.
     var reportableCountThisSession: Int { lock.withLock { sessionReportableCount } }
+
+    /// True for an entry the user has not already taken away in an export or a copy.
+    /// The banner counts these, so sending a report silences it until something new
+    /// happens.
+    func isUnreported(_ entry: DiagnosticEntry) -> Bool {
+        guard entry.severity.isReportable else { return false }
+        return entry.sequence > lock.withLock { acknowledgedSequence }
+    }
+
+    /// Marks everything up to `sequence` as reported. Called when the log leaves the
+    /// device — a `ShareLink` export or a copy to the clipboard.
+    func acknowledgeReported(through sequence: UInt64) {
+        let changed: Bool = lock.withLock {
+            guard sequence > acknowledgedSequence else { return false }
+            acknowledgedSequence = sequence
+            return true
+        }
+        guard changed else { return }
+        // The banner is computed from this, so it has to hear about the change. An
+        // event, not a poll: the share sheet does not background the app, so there is
+        // no lifecycle callback to hang the refresh on.
+        NotificationCenter.default.post(name: Self.didAcknowledgeReported, object: nil)
+        guard directoryOverride == nil else { return }
+        UserDefaults.standard.set(Int(sequence), forKey: Self.acknowledgedKey)
+    }
+
+    /// Posted when the log has been exported or copied, so any open view can drop the
+    /// "please report this" prompt.
+    static let didAcknowledgeReported = Notification.Name("DiagnosticLog.didAcknowledgeReported")
+
+    /// Clearing the log clears what was acknowledged too: there is nothing left to have
+    /// reported, and a stale high-water mark would hide the next real anomaly.
+    private func resetAcknowledged() {
+        lock.withLock { acknowledgedSequence = 0 }
+        guard directoryOverride == nil else { return }
+        UserDefaults.standard.removeObject(forKey: Self.acknowledgedKey)
+    }
 
     var currentSession: DiagnosticSession { lock.withLock { session } }
 
@@ -229,6 +277,7 @@ final class DiagnosticLog: @unchecked Sendable {
             pending.removeAll()
             sessionReportableCount = 0
         }
+        resetAcknowledged()
         ioQueue.sync {
             for url in [currentFileURL, previousFileURL, sessionsFileURL] {
                 try? FileManager.default.removeItem(at: url)

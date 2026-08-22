@@ -63,8 +63,12 @@ struct DiagnosticsView: View {
         }
     }
 
+    /// Only anomalies the user has not already sent. Exporting or copying the log
+    /// acknowledges everything in it, so the banner goes quiet until something new
+    /// happens rather than nagging about a report already made.
     private var reportableCount: Int {
-        model.entries.filter { $0.severity.isReportable }.count
+        _ = model.acknowledgementRevision
+        return model.entries.filter { DiagnosticLog.shared.isUnreported($0) }.count
     }
 
     private var exportBundle: DiagnosticReportBundle {
@@ -242,6 +246,11 @@ final class DiagnosticsViewModel: ObservableObject {
     @Published private(set) var entries: [DiagnosticEntry] = []
     @Published private(set) var uncleanSessions: [DiagnosticSession] = []
     @Published private(set) var isLoading = false
+    /// Bumped when the log is exported or copied. Nothing reads the value — publishing
+    /// it is what makes `reportableCount` recompute against the new watermark.
+    @Published private(set) var acknowledgementRevision = 0
+
+    private var acknowledgementObserver: NSObjectProtocol?
 
     @Published var isVerboseEnabled: Bool {
         didSet {
@@ -256,6 +265,19 @@ final class DiagnosticsViewModel: ObservableObject {
 
     init() {
         isVerboseEnabled = DiagnosticLog.shared.isVerboseEnabled
+        acknowledgementObserver = NotificationCenter.default.addObserver(
+            forName: DiagnosticLog.didAcknowledgeReported,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.acknowledgementRevision += 1 }
+        }
+    }
+
+    deinit {
+        if let acknowledgementObserver {
+            NotificationCenter.default.removeObserver(acknowledgementObserver)
+        }
     }
 
     func loadIfNeeded() {

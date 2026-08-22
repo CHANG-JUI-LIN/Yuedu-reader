@@ -7,6 +7,8 @@ struct BookmarkSelectionList: View {
     var primaryLines: Int
     var dateText: (Bookmark) -> String
     var pageText: (Bookmark) -> String?
+    /// 這條標註的筆記；沒有筆記回傳 nil。
+    var noteText: (Bookmark) -> String? = { _ in nil }
     var onSelect: (Bookmark) -> Void
     var onDelete: (Bookmark) -> Void
 
@@ -19,7 +21,8 @@ struct BookmarkSelectionList: View {
                     primary: primaryText(bm),
                     primaryLines: primaryLines,
                     date: dateText(bm),
-                    page: pageText(bm)
+                    page: pageText(bm),
+                    note: noteText(bm)
                 )
             }
             .swipeActions(edge: .trailing) {
@@ -44,6 +47,7 @@ private struct BookmarkRow: View {
     let primaryLines: Int
     let date: String
     let page: String?
+    let note: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
@@ -52,6 +56,13 @@ private struct BookmarkRow: View {
                     .font(DSFont.body)
                     .foregroundStyle(DSColor.textPrimary)
                     .lineLimit(primaryLines)
+                if let note, !note.isEmpty {
+                    Label(note, systemImage: "note.text")
+                        .font(DSFont.footnote)
+                        .foregroundStyle(DSColor.textSecondary)
+                        .lineLimit(2)
+                        .accessibilityLabel(String(format: localized("筆記：%@"), note))
+                }
                 Text(date)
                     .font(DSFont.caption)
                     .foregroundStyle(DSColor.textSecondary)

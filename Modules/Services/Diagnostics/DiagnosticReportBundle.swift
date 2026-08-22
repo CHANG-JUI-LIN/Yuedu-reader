@@ -131,6 +131,13 @@ struct DiagnosticReportBundle: Transferable {
             out.append(contentsOf: Self.format(entry))
         }
 
+        // The log has now left the device, so the banner should stop asking for it.
+        // Done here rather than at the button because both routes out — the ShareLink
+        // file representation and 複製全部 — go through `render()`.
+        if let highest = entries.map(\.sequence).max() {
+            DiagnosticLog.shared.acknowledgeReported(through: highest)
+        }
+
         return DiagnosticRedactor.redact(out.joined(separator: "\n"))
     }
 

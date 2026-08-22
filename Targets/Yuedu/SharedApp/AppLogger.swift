@@ -108,9 +108,12 @@ enum AppLogger {
     /// So severity is read from two structural signals plus the house marker
     /// convention, in order:
     ///
-    /// 1. A `⏱` prefix, or a `[SomethingTrace]` / `[SomethingDebug]` tag — these
-    ///    families are step-by-step narration by construction, and matching on the
-    ///    suffix keeps the next one somebody adds classified without a code change.
+    /// 1. A `⏱` prefix, or a `[SomethingTrace]` / `[SomethingDebug]` / `[Something-DIAG]`
+    ///    tag — these families are step-by-step narration by construction, and matching
+    ///    on the suffix keeps the next one somebody adds classified without a code
+    ///    change. `[ANNOT-DIAG]` earned its place the hard way: it was 2656 of the 6000
+    ///    entries in a real exported log, 44% of the budget, crowding out the anomalies
+    ///    the export existed to carry.
     /// 2. **The caller passed an `Error`.** That is the caller stating that something
     ///    failed, and it is the one signal here that is not a naming convention.
     /// 3. A `⟐` structured-probe marker → `.notice`.
@@ -122,7 +125,7 @@ enum AppLogger {
     /// that calls it, once the call sites carry their own level.**
     private static let noticePrefix = "⟐"
     private static let timingPrefix = "⏱"
-    private static let traceTagSuffixes = ["trace]", "debug]"]
+    private static let traceTagSuffixes = ["trace]", "debug]", "diag]"]
 
     /// Exposed for tests; not meant to be called directly.
     static func resolvedSeverity(

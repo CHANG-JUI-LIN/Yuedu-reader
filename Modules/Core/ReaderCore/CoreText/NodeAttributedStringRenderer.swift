@@ -907,6 +907,7 @@ struct NodeAttributedStringRenderer {
 
         // ── Color ──
         if let c = style.color { newCtx.textColor = c.uiColor; newCtx.hasCSSColor = true }
+        if let c = style.darkColor { newCtx.darkCSSColor = c.uiColor }
 
         // ── Paragraph Style ──
         let para = NSMutableParagraphStyle()
@@ -1029,6 +1030,7 @@ struct NodeAttributedStringRenderer {
         newCtx.fontFamilies = families
         newCtx.fontWeight = weight
         if let c = style.color { newCtx.textColor = c.uiColor; newCtx.hasCSSColor = true }
+        if let c = style.darkColor { newCtx.darkCSSColor = c.uiColor }
         if style.underline { newCtx.underline = true }
         if style.strikethrough { newCtx.strikethrough = true }
         if let ipa = style.ssmlIPA { newCtx.ipaPronunciation = ipa }
@@ -2417,6 +2419,13 @@ struct NodeAttributedStringRenderer {
                 range: range
             )
         }
+        if let darkBackgroundColor = style.darkBackgroundColor?.uiColor {
+            attributedString.addAttribute(
+                HTMLAttributedStringBuilder.blockDarkBackgroundColorAttribute,
+                value: darkBackgroundColor,
+                range: range
+            )
+        }
         guard let blockRenderStyle = makeBlockRenderStyle(
             from: style,
             blockImage: blockImage,
@@ -2462,6 +2471,13 @@ struct NodeAttributedStringRenderer {
             attributedString.addAttribute(
                 HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
                 value: backgroundColor,
+                range: range
+            )
+        }
+        if let darkBackgroundColor = style.darkBackgroundColor?.uiColor {
+            attributedString.addAttribute(
+                HTMLAttributedStringBuilder.blockDarkBackgroundColorAttribute,
+                value: darkBackgroundColor,
                 range: range
             )
         }
@@ -2794,6 +2810,11 @@ struct NodeAttributedStringRenderer {
             borderBottomColor: style.borderBottomColor?.uiColor,
             borderLeftColor: style.borderLeftColor?.uiColor,
             borderRightColor: style.borderRightColor?.uiColor,
+            darkBackgroundFillColor: style.darkBackgroundColor?.uiColor,
+            darkBorderTopColor: style.darkBorderTopColor?.uiColor,
+            darkBorderBottomColor: style.darkBorderBottomColor?.uiColor,
+            darkBorderLeftColor: style.darkBorderLeftColor?.uiColor,
+            darkBorderRightColor: style.darkBorderRightColor?.uiColor,
             width: style.width,
             height: style.height,
             textAlign: nsTextAlignment(from: style.textAlign),
@@ -2868,6 +2889,9 @@ struct NodeAttributedStringRenderer {
         var forceBold: Bool
         var textColor: UIColor
         var hasCSSColor: Bool
+        /// Dark `@media (prefers-color-scheme: dark)` variant of `textColor`, stored on the run via
+        /// `cssSpecifiedDarkForegroundColorAttribute` so appearance changes can swap it in.
+        var darkCSSColor: UIColor? = nil
         var kern: CGFloat
         var paragraphStyle: NSParagraphStyle
         var baselineOffset: CGFloat
@@ -2905,6 +2929,9 @@ struct NodeAttributedStringRenderer {
             ) { _, new in new }
             if hasCSSColor {
                 attrs[HTMLAttributedStringBuilder.cssSpecifiedForegroundColorAttribute] = textColor
+            }
+            if let darkCSSColor {
+                attrs[HTMLAttributedStringBuilder.cssSpecifiedDarkForegroundColorAttribute] = darkCSSColor
             }
             if let href = linkHref {
                 // Tappable. Default link tint is applied in the `.anchor` case (only for links the

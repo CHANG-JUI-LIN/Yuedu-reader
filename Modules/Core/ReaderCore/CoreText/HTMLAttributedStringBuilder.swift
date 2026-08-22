@@ -11,6 +11,8 @@ final class HTMLAttributedStringBuilder {
     static let anchorIDAttribute = NSAttributedString.Key("ReaderAnchorID")
     static let hrDividerAttribute = NSAttributedString.Key("ReaderHRDivider")
     static let blockBackgroundColorAttribute = NSAttributedString.Key("ReaderBlockBackgroundColor")
+    /// Dark `@media (prefers-color-scheme: dark)` variant of `blockBackgroundColorAttribute`.
+    static let blockDarkBackgroundColorAttribute = NSAttributedString.Key("ReaderBlockDarkBackgroundColor")
     static let blockRenderStyleAttribute = NSAttributedString.Key("ReaderBlockRenderStyle")
     static let blockRenderIDAttribute = NSAttributedString.Key("ReaderBlockRenderID")
     /// Marks a range whose block paragraph style is final and must not be flattened by an enclosing
@@ -26,6 +28,10 @@ final class HTMLAttributedStringBuilder {
     static let outerContainerBlockRenderIDAttribute = NSAttributedString.Key("ReaderOuterContainerBlockRenderID")
     /// Marker attribute for CSS-explicit foreground color. Ranges with this attribute are not overwritten by withUpdatedColors().
     static let cssSpecifiedForegroundColorAttribute = NSAttributedString.Key("ReaderCSSSpecifiedForegroundColor")
+    /// Dark `@media (prefers-color-scheme: dark)` variant of `cssSpecifiedForegroundColorAttribute`.
+    /// Applied on top of the light color when the reader appearance is dark; absent ranges keep the
+    /// authored light color, matching the EPUB's own cascade.
+    static let cssSpecifiedDarkForegroundColorAttribute = NSAttributedString.Key("ReaderCSSSpecifiedDarkForegroundColor")
     /// Marker attribute for vertical spacer runs (CTRunDelegate that are NOT image placeholders).
     static let spacerRunAttribute = NSAttributedString.Key("ReaderSpacerRun")
     /// Marker attribute for vertical inline annotation runs (e.g. span.small notes).
@@ -93,7 +99,10 @@ final class HTMLAttributedStringBuilder {
 
     struct ParsedHTML {
         let body: Element
+        /// Light-palette author rules (dark `@media` blocks excluded).
         let rules: [CSSRule]
+        /// Rules from `@media (prefers-color-scheme: dark)` blocks. Empty for most publications.
+        let darkRules: [CSSRule]
         let firstLetterRules: [CSSRule]
     }
 
@@ -345,6 +354,14 @@ final class HTMLAttributedStringBuilder {
         let borderBottomColor: UIColor?
         let borderLeftColor: UIColor?
         let borderRightColor: UIColor?
+        /// Dark `@media (prefers-color-scheme: dark)` variants of the fill and border colors.
+        /// Stored separately so appearance changes swap them in without rebuilding; nil keeps the
+        /// authored light color, matching the EPUB's own cascade.
+        let darkBackgroundFillColor: UIColor?
+        let darkBorderTopColor: UIColor?
+        let darkBorderBottomColor: UIColor?
+        let darkBorderLeftColor: UIColor?
+        let darkBorderRightColor: UIColor?
         let width: CGFloat?
         let height: CGFloat?
         let textAlign: NSTextAlignment
@@ -386,6 +403,54 @@ final class HTMLAttributedStringBuilder {
                 borderBottomColor: borderBottomColor,
                 borderLeftColor: borderLeftColor,
                 borderRightColor: borderRightColor,
+                darkBackgroundFillColor: darkBackgroundFillColor,
+                darkBorderTopColor: darkBorderTopColor,
+                darkBorderBottomColor: darkBorderBottomColor,
+                darkBorderLeftColor: darkBorderLeftColor,
+                darkBorderRightColor: darkBorderRightColor,
+                width: width,
+                height: height,
+                textAlign: textAlign,
+                isHorizontallyCentered: isHorizontallyCentered,
+                paragraphSpacingBefore: paragraphSpacingBefore,
+                visualOffsetBefore: visualOffsetBefore,
+                paddingTop: paddingTop,
+                paddingLeft: paddingLeft,
+                paddingBottom: paddingBottom,
+                paddingRight: paddingRight,
+                blockImage: blockImage,
+                borderRadius: borderRadius,
+                avoidsPageBreakInside: avoidsPageBreakInside,
+                hugsContent: hugsContent,
+                backgroundImage: backgroundImage,
+                borderDash: borderDash
+            )
+        }
+
+        /// Copy with fill/border colors resolved for the given reader appearance. Dark variants
+        /// (from `@media (prefers-color-scheme: dark)`) win in dark mode; otherwise the authored
+        /// light colors stay, matching the EPUB's own cascade.
+        func colorsResolved(for appearance: ReaderStyleAppearance) -> BlockRenderStyle {
+            guard appearance == .dark else { return self }
+            guard darkBackgroundFillColor != nil
+                || darkBorderTopColor != nil || darkBorderBottomColor != nil
+                || darkBorderLeftColor != nil || darkBorderRightColor != nil
+            else { return self }
+            return BlockRenderStyle(
+                backgroundFillColor: darkBackgroundFillColor ?? backgroundFillColor,
+                borderTopWidth: borderTopWidth,
+                borderBottomWidth: borderBottomWidth,
+                borderLeftWidth: borderLeftWidth,
+                borderRightWidth: borderRightWidth,
+                borderTopColor: darkBorderTopColor ?? borderTopColor,
+                borderBottomColor: darkBorderBottomColor ?? borderBottomColor,
+                borderLeftColor: darkBorderLeftColor ?? borderLeftColor,
+                borderRightColor: darkBorderRightColor ?? borderRightColor,
+                darkBackgroundFillColor: darkBackgroundFillColor,
+                darkBorderTopColor: darkBorderTopColor,
+                darkBorderBottomColor: darkBorderBottomColor,
+                darkBorderLeftColor: darkBorderLeftColor,
+                darkBorderRightColor: darkBorderRightColor,
                 width: width,
                 height: height,
                 textAlign: textAlign,
@@ -427,6 +492,10 @@ final class HTMLAttributedStringBuilder {
         let classes: [String]
         let attributes: [String: String]
         let resolvedStyle: ResolvedStyle
+        /// Dark `@media (prefers-color-scheme: dark)` palette for this element, resolved against
+        /// the dark styles of its ancestors. nil when the publication has no dark rules. The dark
+        /// palette is stored, not applied: appearance changes swap it in without rebuilding.
+        let resolvedDarkStyle: ResolvedStyle?
         let children: [ASTNode]
         var svgContent: String?
     }
@@ -486,21 +555,25 @@ final class HTMLAttributedStringBuilder {
                 makeRootStyle: { config in
                     self.makeRootStyle(config: config)
                 },
-                resolveStyle: { element, parent, rules, rootFontSize, parentElement, config in
-                    self.resolvedStyle(
+                resolveStyle: { element, parent, parentDark, rules, darkRules, rootFontSize, parentElement, config in
+                    self.resolvedStyles(
                         for: element,
                         parent: parent,
+                        parentDark: parentDark,
                         rules: rules,
+                        darkRules: darkRules,
                         rootFontSize: rootFontSize,
                         parentElement: parentElement,
                         config: config
                     )
                 },
-                buildChildren: { nodes, parentStyle, rules, rootFontSize, parentElement, config in
+                buildChildren: { nodes, parentStyle, parentDarkStyle, rules, darkRules, rootFontSize, parentElement, config in
                     return await self.buildChildren(
                         from: nodes,
                         parentStyle: parentStyle,
+                        parentDarkStyle: parentDarkStyle,
                         rules: rules,
+                        darkRules: darkRules,
                         rootFontSize: rootFontSize,
                         parentElement: parentElement,
                         config: config
@@ -542,6 +615,16 @@ final class HTMLAttributedStringBuilder {
     /// be painted across the whole page before a potentially transparent background image.
     func pageBackgroundColor(from body: ElementNode) -> UIColor? {
         guard let color = body.resolvedStyle.backgroundFillColor,
+              color.cgColor.alpha > 0
+        else { return nil }
+        return color
+    }
+
+    /// Dark `@media (prefers-color-scheme: dark)` variant of `pageBackgroundColor(from:)`.
+    /// nil when the publication has no dark palette for the body — the light authored fill
+    /// (or the reader theme) then carries over, matching the EPUB's own cascade.
+    func pageBackgroundDarkColor(from body: ElementNode) -> UIColor? {
+        guard let color = body.resolvedDarkStyle?.backgroundFillColor,
               color.cgColor.alpha > 0
         else { return nil }
         return color
@@ -675,7 +758,9 @@ final class HTMLAttributedStringBuilder {
     private func buildChildren(
         from nodes: [Node],
         parentStyle: ResolvedStyle,
+        parentDarkStyle: ResolvedStyle?,
         rules: [CSSRule],
+        darkRules: [CSSRule],
         rootFontSize: CGFloat,
         parentElement: Element?,
         config: Config
@@ -715,10 +800,12 @@ final class HTMLAttributedStringBuilder {
                 } catch {
                     svgString = ""
                 }
-                let style = resolvedStyle(
+                let (style, darkStyle) = resolvedStyles(
                     for: element,
                     parent: parentStyle,
+                    parentDark: parentDarkStyle,
                     rules: rules,
+                    darkRules: darkRules,
                     rootFontSize: rootFontSize,
                     parentElement: parentElement,
                     config: config
@@ -729,7 +816,9 @@ final class HTMLAttributedStringBuilder {
                 let children = await buildChildren(
                     from: element.getChildNodes(),
                     parentStyle: style,
+                    parentDarkStyle: darkStyle,
                     rules: rules,
+                    darkRules: darkRules,
                     rootFontSize: rootFontSize,
                     parentElement: element,
                     config: config
@@ -742,6 +831,7 @@ final class HTMLAttributedStringBuilder {
                             classes: Array((try? element.classNames()) ?? []),
                             attributes: makeAttributeMap(for: element),
                             resolvedStyle: style,
+                            resolvedDarkStyle: darkStyle,
                             children: children,
                             svgContent: svgString
                         )
@@ -750,10 +840,12 @@ final class HTMLAttributedStringBuilder {
                 continue
             }
 
-            let style = resolvedStyle(
+            let (style, darkStyle) = resolvedStyles(
                 for: element,
                 parent: parentStyle,
+                parentDark: parentDarkStyle,
                 rules: rules,
+                darkRules: darkRules,
                 rootFontSize: rootFontSize,
                 parentElement: parentElement,
                 config: config
@@ -776,7 +868,9 @@ final class HTMLAttributedStringBuilder {
             let children = await buildChildren(
                 from: element.getChildNodes(),
                 parentStyle: style,
+                parentDarkStyle: darkStyle,
                 rules: rules,
+                darkRules: darkRules,
                 rootFontSize: rootFontSize,
                 parentElement: element,
                 config: config
@@ -789,6 +883,7 @@ final class HTMLAttributedStringBuilder {
                         classes: Array((try? element.classNames()) ?? []),
                         attributes: makeAttributeMap(for: element),
                         resolvedStyle: style,
+                        resolvedDarkStyle: darkStyle,
                         children: children
                     )
                 )
@@ -798,6 +893,40 @@ final class HTMLAttributedStringBuilder {
             }
         }
         return result
+    }
+
+    /// Resolves the light palette (as always) and, when the publication carries
+    /// `@media (prefers-color-scheme: dark)` rules, the dark palette in the same pass. The dark
+    /// style is resolved against the parent's *dark* style so dark values cascade the same way
+    /// light ones do (e.g. body's dark `color` flows into plain `<p>` children).
+    private func resolvedStyles(
+        for element: Element,
+        parent: ResolvedStyle,
+        parentDark: ResolvedStyle?,
+        rules: [CSSRule],
+        darkRules: [CSSRule],
+        rootFontSize: CGFloat,
+        parentElement: Element?,
+        config: Config
+    ) -> (light: ResolvedStyle, dark: ResolvedStyle?) {
+        let light = resolvedStyle(
+            for: element,
+            parent: parent,
+            rules: rules,
+            rootFontSize: rootFontSize,
+            parentElement: parentElement,
+            config: config
+        )
+        guard !darkRules.isEmpty else { return (light, nil) }
+        let dark = resolvedStyle(
+            for: element,
+            parent: parentDark ?? parent,
+            rules: darkRules,
+            rootFontSize: rootFontSize,
+            parentElement: parentElement,
+            config: config
+        )
+        return (light, dark)
     }
 
 
@@ -2506,6 +2635,11 @@ struct CSSRule {
     let specificity: Int
     /// This rule's position among all rules in the stylesheet.
     let order: Int
+    /// True when the rule came from a `@media (prefers-color-scheme: dark)` block. Dark rules are
+    /// resolved into a separate per-element style and applied only when the reader appearance is
+    /// dark; they never participate in the light cascade (previously the whole block leaked and
+    /// its rules applied unconditionally).
+    let isDarkMedia: Bool
 }
 
 struct CSSSelector {
@@ -2669,48 +2803,116 @@ enum CSSParser {
     }
 
     static func parse(css: String, orderOffset: Int = 0) -> [CSSRule] {
+        // Flat light-palette rules only. `@media (prefers-color-scheme: dark)` blocks are
+        // extracted and dropped here — consumers that support appearance variants (the CoreText
+        // builder) use `parseWithFirstLetter` and read the flagged dark rules.
         let stripped = sanitize(css)
-        guard let regex = try? NSRegularExpression(
-            pattern: #"([^{}]+)\{([^{}]+)\}"#,
-            options: [.dotMatchesLineSeparators]
-        ) else {
-            return []
-        }
-
-        let nsCSS = stripped as NSString
-        return regex.matches(in: stripped, range: NSRange(location: 0, length: nsCSS.length)).enumerated().flatMap { index, match in
-            let selectorText = nsCSS.substring(with: match.range(at: 1))
-            let declarations = parseDeclarationBlock(nsCSS.substring(with: match.range(at: 2)))
-            let selectors = selectorText
-                .split(separator: ",")
-                .compactMap { parseSelector(String($0)) }
-            return selectors.map { selector in
-                CSSRule(
-                    selector: selector,
-                    declarations: declarations.normal,
-                    importantDeclarations: declarations.important,
-                    declarationOrder: declarations.order,
-                    specificity: specificity(of: selector),
-                    order: orderOffset + index
-                )
-            }
-        }
+        let (baseCSS, _) = extractDarkMediaBlocks(from: stripped)
+        return parseRuleList(css: baseCSS, orderOffset: orderOffset, isDarkMedia: false).regular
     }
 
     /// Parses CSS and returns (regular rules, first-letter rules).
     static func parseWithFirstLetter(css: String, orderOffset: Int = 0) -> (regular: [CSSRule], firstLetter: [CSSRule]) {
         let stripped = sanitize(css)
+        let (baseCSS, darkCSS) = extractDarkMediaBlocks(from: stripped)
+        let light = parseRuleList(css: baseCSS, orderOffset: orderOffset, isDarkMedia: false)
+        // Dark :first-letter rules are dropped: the simplified first-letter feature resolves
+        // only the light palette (no EPUB in the wild combines the two).
+        let dark = parseRuleList(css: darkCSS, orderOffset: orderOffset, isDarkMedia: true)
+        return (light.regular + dark.regular, light.firstLetter)
+    }
+
+    /// Splits `@media (prefers-color-scheme: dark) { … }` blocks out of a stylesheet. Returns the
+    /// remaining CSS plus the concatenated inner rule text of the dark blocks.
+    ///
+    /// Every other block at-rule (`@supports`, `@media` with other queries, stray `@page`,
+    /// `@font-face` leftovers) is removed entirely. They used to stay in place, where the
+    /// `([^{}]+)\{([^{}]+)\}` rule regex fused their wrapper with the first inner rule and leaked
+    /// the remaining inner rules as unconditional rules — a book with a dark-mode palette rendered
+    /// washed-out light text on its light background. Statement at-rules (`@import` etc.) were
+    /// already removed by `sanitize`; unrecognized ones without a block are skipped to `;`.
+    private static func extractDarkMediaBlocks(from css: String) -> (remaining: String, dark: String) {
+        let ns = css as NSString
+        let length = ns.length
+        guard let atRuleRegex = try? NSRegularExpression(pattern: #"@([a-zA-Z-]+)"#) else {
+            return (css, "")
+        }
+        var remaining = ""
+        var dark = ""
+        var cursor = 0
+        while cursor < length {
+            guard let match = atRuleRegex.firstMatch(
+                in: css,
+                range: NSRange(location: cursor, length: length - cursor)
+            ) else {
+                remaining += ns.substring(from: cursor)
+                break
+            }
+            remaining += ns.substring(
+                with: NSRange(location: cursor, length: match.range.location - cursor)
+            )
+            let name = ns.substring(with: match.range(at: 1)).lowercased()
+            let afterName = match.range.location + match.range.length
+            let tail = ns.substring(from: afterName)
+            let tailNS = tail as NSString
+
+            var braceIdx: Int?
+            var semiIdx: Int?
+            for i in 0..<tailNS.length {
+                let ch = tailNS.character(at: i)
+                if ch == 0x7B { braceIdx = i; break } // '{'
+                if ch == 0x3B { semiIdx = i; break }  // ';'
+            }
+
+            if let semi = semiIdx, braceIdx == nil || semi < braceIdx! {
+                // Statement at-rule without a block — skip to the semicolon.
+                cursor = afterName + semi + 1
+                continue
+            }
+            guard let open = braceIdx else {
+                // Dangling at-rule with neither brace nor semicolon: drop the rest.
+                break
+            }
+            var depth = 0
+            var closeIdx: Int?
+            for i in open..<tailNS.length {
+                let ch = tailNS.character(at: i)
+                if ch == 0x7B { depth += 1 }
+                else if ch == 0x7D { depth -= 1; if depth == 0 { closeIdx = i; break } } // '}'
+            }
+            guard let close = closeIdx else {
+                // Unbalanced block: consume the rest of the stylesheet.
+                break
+            }
+            let prelude = tailNS.substring(to: open).lowercased()
+            let isDarkMedia = name == "media"
+                && prelude.contains("prefers-color-scheme")
+                && prelude.contains("dark")
+            if isDarkMedia {
+                dark += tailNS.substring(
+                    with: NSRange(location: open + 1, length: close - open - 1)
+                ) + "\n"
+            }
+            cursor = afterName + close + 1
+        }
+        return (remaining, dark)
+    }
+
+    private static func parseRuleList(
+        css: String,
+        orderOffset: Int,
+        isDarkMedia: Bool
+    ) -> (regular: [CSSRule], firstLetter: [CSSRule]) {
         guard let regex = try? NSRegularExpression(
             pattern: #"([^{}]+)\{([^{}]+)\}"#,
             options: [.dotMatchesLineSeparators]
         ) else {
             return ([], [])
         }
-
         var regular: [CSSRule] = []
         var firstLetter: [CSSRule] = []
-        let nsCSS = stripped as NSString
-        for (index, match) in regex.matches(in: stripped, range: NSRange(location: 0, length: nsCSS.length)).enumerated() {
+        let nsCSS = css as NSString
+        for (index, match) in regex.matches(in: css, range: NSRange(location: 0, length: nsCSS.length)).enumerated() {
             let selectorText = nsCSS.substring(with: match.range(at: 1))
             let declarations = parseDeclarationBlock(nsCSS.substring(with: match.range(at: 2)))
             for rawSelector in selectorText.split(separator: ",").map(String.init) {
@@ -2732,7 +2934,8 @@ enum CSSParser {
                     importantDeclarations: declarations.important,
                     declarationOrder: declarations.order,
                     specificity: specificity(of: selector),
-                    order: orderOffset + index
+                    order: orderOffset + index,
+                    isDarkMedia: isDarkMedia
                 )
                 if isFirstLetter {
                     firstLetter.append(rule)

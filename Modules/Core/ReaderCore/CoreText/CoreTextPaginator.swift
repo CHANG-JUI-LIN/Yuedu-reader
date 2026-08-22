@@ -18,6 +18,11 @@ final class CoreTextPaginator {
             borderBottomColor: nil,
             borderLeftColor: nil,
             borderRightColor: nil,
+            darkBackgroundFillColor: nil,
+            darkBorderTopColor: nil,
+            darkBorderBottomColor: nil,
+            darkBorderLeftColor: nil,
+            darkBorderRightColor: nil,
             width: nil,
             height: nil,
             textAlign: .natural,
@@ -200,6 +205,10 @@ final class CoreTextPaginator {
         /// Publication-authored body fill painted beneath its (possibly transparent) background
         /// image. Kept separate so reader theme changes do not erase the authored composition.
         let authoredBackgroundColor: UIColor?
+        /// Dark `@media (prefers-color-scheme: dark)` variant of `authoredBackgroundColor`.
+        /// When present it replaces the light authored fill in dark appearance; nil falls back to
+        /// the light authored fill (or the reader theme), matching the EPUB's own cascade.
+        let darkAuthoredBackgroundColor: UIColor?
         /// Reader-selected image background. Unlike an authored EPUB body
         /// background, this is a user preference and takes precedence at draw time.
         var readerBackgroundImage: UIImage? = nil
@@ -292,6 +301,20 @@ final class CoreTextPaginator {
                     updated.addAttribute(.foregroundColor, value: cssColor, range: effectiveRange)
                 }
             }
+            // Dark `@media (prefers-color-scheme: dark)` palette wins over the light CSS colors
+            // in dark appearance. Ranges without a dark variant keep the authored light color,
+            // matching the EPUB's own cascade (the author only overrides what they overrode).
+            if readerStyleAppearance == .dark {
+                updated.enumerateAttribute(
+                    HTMLAttributedStringBuilder.cssSpecifiedDarkForegroundColorAttribute,
+                    in: fullRange,
+                    options: []
+                ) { value, effectiveRange, _ in
+                    if let cssColor = value as? UIColor {
+                        updated.addAttribute(.foregroundColor, value: cssColor, range: effectiveRange)
+                    }
+                }
+            }
 
             // ── Background color ──
             // A run's `.backgroundColor` is not painted by this pipeline — CoreText's CTLineDraw /
@@ -323,6 +346,21 @@ final class CoreTextPaginator {
                     updated.removeAttribute(.backgroundColor, range: effectiveRange)
                 }
             }
+            if readerStyleAppearance == .dark {
+                updated.enumerateAttribute(
+                    HTMLAttributedStringBuilder.blockDarkBackgroundColorAttribute,
+                    in: fullRange,
+                    options: []
+                ) { value, effectiveRange, _ in
+                    if let darkColor = value as? UIColor {
+                        updated.addAttribute(
+                            HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
+                            value: darkColor,
+                            range: effectiveRange
+                        )
+                    }
+                }
+            }
 
             do {
                 let result = try RegexHighlightEngine.apply(
@@ -349,7 +387,10 @@ final class CoreTextPaginator {
                     guard case let .htmlBlock(sourceText) = item.content else {
                         return item
                     }
-                    let style = item.style
+                    // Resolve the fill/border palette for the current appearance first, then keep
+                    // the existing theme-background swap for image-backed blocks that used the old
+                    // theme color as their fill.
+                    let style = item.style.colorsResolved(for: readerStyleAppearance)
                     let recoloredAttributedText = item.attributedText.map { source in
                         recoloredRegexRenderableText(
                             source,
@@ -363,7 +404,17 @@ final class CoreTextPaginator {
                           let fillColor = style.backgroundFillColor,
                           CoreTextPaginator.colorsApproximatelyEqual(fillColor, oldBackgroundColor)
                     else {
-                        guard recoloredAttributedText != nil else { return item }
+                        // No theme-background swap needed, but the appearance-resolved style must
+                        // still be carried onto the renderable (dark palette swap happens here).
+                        guard recoloredAttributedText != nil else {
+                            return RenderedBlockRenderable(
+                                rect: item.rect,
+                                style: style,
+                                content: item.content,
+                                sourceRanges: item.sourceRanges,
+                                imageAttachment: item.imageAttachment
+                            )
+                        }
                         return RenderedBlockRenderable(
                             rect: item.rect,
                             style: style,
@@ -385,8 +436,16 @@ final class CoreTextPaginator {
             }
 
             let newFramesetter = CoreTextFramesetterFactory.make(for: updated)
+            // Dark appearance prefers the publication's own dark body fill when it has one;
+            // otherwise the light authored fill (or the reader theme) carries over.
+            let authoredFillForAppearance: UIColor?
+            if readerStyleAppearance == .dark {
+                authoredFillForAppearance = darkAuthoredBackgroundColor ?? authoredBackgroundColor
+            } else {
+                authoredFillForAppearance = authoredBackgroundColor
+            }
             let effectiveBackgroundColor = readerBackgroundImage == nil
-                ? (authoredBackgroundColor ?? backgroundColor)
+                ? (authoredFillForAppearance ?? backgroundColor)
                 : backgroundColor
             let updatedArtifacts = CoreTextPaginator.makePageArtifacts(
                 framesetter: newFramesetter,
@@ -413,6 +472,7 @@ final class CoreTextPaginator {
                 pageKinds: pageKinds,
                 pageBackgroundImage: pageBackgroundImage,
                 authoredBackgroundColor: authoredBackgroundColor,
+                darkAuthoredBackgroundColor: darkAuthoredBackgroundColor,
                 readerBackgroundImage: readerBackgroundImage,
                 anchorOffsets: anchorOffsets,
                 renderSize: renderSize,
@@ -456,6 +516,17 @@ final class CoreTextPaginator {
             ) { value, range, _ in
                 if let cssColor = value as? UIColor {
                     updated.addAttribute(.foregroundColor, value: cssColor, range: range)
+                }
+            }
+            if appearance == .dark {
+                updated.enumerateAttribute(
+                    HTMLAttributedStringBuilder.cssSpecifiedDarkForegroundColorAttribute,
+                    in: fullRange,
+                    options: []
+                ) { value, range, _ in
+                    if let cssColor = value as? UIColor {
+                        updated.addAttribute(.foregroundColor, value: cssColor, range: range)
+                    }
                 }
             }
             do {
@@ -617,6 +688,7 @@ final class CoreTextPaginator {
         imagePage: HTMLAttributedStringBuilder.ImagePage? = nil,
         pageBackgroundImage: UIImage? = nil,
         pageBackgroundColor: UIColor? = nil,
+        darkPageBackgroundColor: UIColor? = nil,
         anchorOffsets: [String: Int] = [:],
         renderSize: CGSize,
         fontSize: CGFloat,
@@ -697,6 +769,7 @@ final class CoreTextPaginator {
                                imagePage: imagePage,
                                pageBackgroundImage: pageBackgroundImage,
                                pageBackgroundColor: pageBackgroundColor,
+                               darkPageBackgroundColor: darkPageBackgroundColor,
                                anchorOffsets: anchorOffsets,
                                renderSize: renderSize,
                                fontSize: fontSize,
@@ -723,6 +796,7 @@ final class CoreTextPaginator {
         imagePage: HTMLAttributedStringBuilder.ImagePage? = nil,
         pageBackgroundImage: UIImage? = nil,
         pageBackgroundColor: UIColor? = nil,
+        darkPageBackgroundColor: UIColor? = nil,
         anchorOffsets: [String: Int] = [:],
         renderSize: CGSize,
         fontSize: CGFloat,
@@ -794,6 +868,7 @@ final class CoreTextPaginator {
                                imagePage: nil,
                                pageBackgroundImage: pageBackgroundImage,
                                pageBackgroundColor: pageBackgroundColor,
+                               darkPageBackgroundColor: darkPageBackgroundColor,
                                anchorOffsets: anchorOffsets,
                                renderSize: renderSize,
                                fontSize: fontSize,
@@ -840,6 +915,7 @@ final class CoreTextPaginator {
         imagePage: HTMLAttributedStringBuilder.ImagePage?,
         pageBackgroundImage: UIImage?,
         pageBackgroundColor: UIColor?,
+        darkPageBackgroundColor: UIColor?,
         anchorOffsets: [String: Int],
         renderSize: CGSize,
         fontSize: CGFloat,
@@ -934,6 +1010,7 @@ final class CoreTextPaginator {
                 pageKinds: [.image],
                 pageBackgroundImage: nil,
                 authoredBackgroundColor: pageBackgroundColor,
+                darkAuthoredBackgroundColor: darkPageBackgroundColor,
                 anchorOffsets: anchorOffsets,
                 renderSize: renderSize,
                 fontSize: fontSize,
@@ -1184,6 +1261,7 @@ final class CoreTextPaginator {
             pageKinds: pageKinds,
             pageBackgroundImage: pageBackgroundImage,
             authoredBackgroundColor: pageBackgroundColor,
+            darkAuthoredBackgroundColor: darkPageBackgroundColor,
             anchorOffsets: anchorOffsets,
             renderSize: renderSize,
             fontSize: fontSize,
@@ -1356,6 +1434,65 @@ final class CoreTextPaginator {
                 kCTFrameProgressionAttributeName as String: Int(CTFrameProgression.rightToLeft.rawValue)
             ]
         }
+    }
+
+    /// Scroll-engine appearance recolor, applied to a freshly built document before slicing.
+    ///
+    /// The builder bakes the light CSS palette (`.foregroundColor` per run, `BlockRenderStyle`
+    /// objects inside the decoration attributes) plus the dark `@media` variants stored alongside.
+    /// This swaps the dark palette in for dark appearance without touching the theme text color
+    /// (already baked by the build); scroll mode rebuilds documents on appearance changes, so this
+    /// runs on every build rather than on the cheap recolor path the paged engine uses.
+    static func scrollAppearanceRecolor(
+        _ source: NSAttributedString,
+        appearance: ReaderStyleAppearance
+    ) -> NSAttributedString {
+        guard appearance == .dark, source.length > 0 else { return source }
+        let updated = NSMutableAttributedString(attributedString: source)
+        let fullRange = NSRange(location: 0, length: updated.length)
+
+        // Dark CSS text colors override the light palette baked at build time. Ranges without a
+        // dark variant keep the authored light color, matching the EPUB's own cascade.
+        updated.enumerateAttribute(
+            HTMLAttributedStringBuilder.cssSpecifiedDarkForegroundColorAttribute,
+            in: fullRange,
+            options: []
+        ) { value, effectiveRange, _ in
+            if let cssColor = value as? UIColor {
+                updated.addAttribute(.foregroundColor, value: cssColor, range: effectiveRange)
+            }
+        }
+
+        // Swap fill/border colors inside every block decoration style stored on the string.
+        for styleKey in [
+            HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+            HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+            HTMLAttributedStringBuilder.outerContainerBlockRenderStyleAttribute
+        ] {
+            updated.enumerateAttribute(styleKey, in: fullRange, options: []) { value, effectiveRange, _ in
+                guard let style = value as? HTMLAttributedStringBuilder.BlockRenderStyle else { return }
+                updated.addAttribute(
+                    styleKey,
+                    value: style.colorsResolved(for: .dark),
+                    range: effectiveRange
+                )
+            }
+        }
+
+        updated.enumerateAttribute(
+            HTMLAttributedStringBuilder.blockDarkBackgroundColorAttribute,
+            in: fullRange,
+            options: []
+        ) { value, effectiveRange, _ in
+            if let darkColor = value as? UIColor {
+                updated.addAttribute(
+                    HTMLAttributedStringBuilder.blockBackgroundColorAttribute,
+                    value: darkColor,
+                    range: effectiveRange
+                )
+            }
+        }
+        return updated
     }
 
     private static func pageBackgroundColor(from attrStr: NSAttributedString) -> UIColor {

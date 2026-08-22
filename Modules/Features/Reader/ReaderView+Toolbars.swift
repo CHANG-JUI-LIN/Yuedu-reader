@@ -133,8 +133,8 @@ extension ReaderView {
             onOpenChangeSource: { showChangeSourceSheet = true },
             onDownloadAction: { handleDownloadAction() },
             onOpenTTS: { openPlaybackPanel() },
-            onOpenTOC: { readerMenuTab = .toc; showTOC = true },
-            onOpenBookmarks: { readerMenuTab = .bookmark; showTOC = true },
+            onOpenTOC: { showTOC = true },
+            onOpenBookmarks: { showBookmarkList = true },
             onOpenSettings: { showQuickThemePanel = true }
         )
     }
@@ -243,8 +243,8 @@ extension ReaderView {
             chapterTitleForProgress: { chapterTitle(forProgress: $0) },
             onPrevChapter: { jumpToChapter(currentChapterIndex - 1) },
             onNextChapter: { jumpToChapter(currentChapterIndex + 1) },
-            onOpenTOC: { readerMenuTab = .toc; showTOC = true },
-            onOpenBookmarks: { readerMenuTab = .bookmark; showTOC = true },
+            onOpenTOC: { showTOC = true },
+            onOpenBookmarks: { showBookmarkList = true },
             onOpenSettings: { showQuickThemePanel = true }
         )
     }
@@ -315,7 +315,8 @@ extension ReaderView {
             applyProgress: { applyChapterSliderProgress($0) },
             progressDescription: { chapterTitle(forProgress: $0) },
             secondaryActions: readerSecondaryActions,
-            onOpenTOC: { readerMenuTab = .toc; showTOC = true },
+            onOpenTOC: { showTOC = true },
+            onOpenBookmarks: { showBookmarkList = true },
             onOpenSearch: { showReaderSearch = true },
             onOpenSettings: { showQuickThemePanel = true }
         )

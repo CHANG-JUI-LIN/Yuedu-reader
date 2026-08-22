@@ -565,6 +565,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
 
         if let imagePage = await builder.imagePage(from: ast) {
             let pageBackgroundColor = builder.pageBackgroundColor(from: ast)
+            let darkPageBackgroundColor = builder.pageBackgroundDarkColor(from: ast)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: settings.fontSize),
                 .foregroundColor: themeTextColor,
@@ -575,6 +576,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 imagePage: imagePage,
                 pageBackgroundImage: nil,
                 pageBackgroundColor: pageBackgroundColor,
+                darkPageBackgroundColor: darkPageBackgroundColor,
                 anchorOffsets: [:]
             )
         }
@@ -673,11 +675,13 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         )
         let pageBackgroundImage = await builder.pageBackgroundImage(from: ast)
         let pageBackgroundColor = builder.pageBackgroundColor(from: ast)
+        let darkPageBackgroundColor = builder.pageBackgroundDarkColor(from: ast)
         return AttributedChapterBuildResult(
             attributedString: attributedString,
             imagePage: nil,
             pageBackgroundImage: pageBackgroundImage,
             pageBackgroundColor: pageBackgroundColor,
+            darkPageBackgroundColor: darkPageBackgroundColor,
             anchorOffsets: builder.anchorOffsets(in: attributedString)
         )
     }

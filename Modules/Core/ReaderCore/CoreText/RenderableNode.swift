@@ -102,6 +102,14 @@ public struct RenderStyle: Sendable {
     public var italic: Bool
     public var color: RenderColor?
     public var backgroundColor: RenderColor?
+    /// Dark `@media (prefers-color-scheme: dark)` variants of the color fields, resolved against
+    /// the dark cascade. nil keeps the authored light value in dark mode, matching CSS.
+    public var darkColor: RenderColor?
+    public var darkBackgroundColor: RenderColor?
+    public var darkBorderTopColor: RenderColor?
+    public var darkBorderBottomColor: RenderColor?
+    public var darkBorderLeftColor: RenderColor?
+    public var darkBorderRightColor: RenderColor?
     /// CSS text-indent (em units)
     public var textIndent: CGFloat
     public var textAlign: RenderTextAlignment
@@ -188,6 +196,12 @@ public struct RenderStyle: Sendable {
         italic: Bool = false,
         color: RenderColor? = nil,
         backgroundColor: RenderColor? = nil,
+        darkColor: RenderColor? = nil,
+        darkBackgroundColor: RenderColor? = nil,
+        darkBorderTopColor: RenderColor? = nil,
+        darkBorderBottomColor: RenderColor? = nil,
+        darkBorderLeftColor: RenderColor? = nil,
+        darkBorderRightColor: RenderColor? = nil,
         textIndent: CGFloat = 0,
         textAlign: RenderTextAlignment = .natural,
         baseWritingDirection: NSWritingDirection = .natural,
@@ -245,6 +259,12 @@ public struct RenderStyle: Sendable {
         self.italic = italic
         self.color = color
         self.backgroundColor = backgroundColor
+        self.darkColor = darkColor
+        self.darkBackgroundColor = darkBackgroundColor
+        self.darkBorderTopColor = darkBorderTopColor
+        self.darkBorderBottomColor = darkBorderBottomColor
+        self.darkBorderLeftColor = darkBorderLeftColor
+        self.darkBorderRightColor = darkBorderRightColor
         self.textIndent = textIndent
         self.textAlign = textAlign
         self.baseWritingDirection = baseWritingDirection

@@ -190,6 +190,10 @@ struct BookmarkListSection: View {
                 primaryLines: isBookmark ? 1 : 2,
                 dateText: { Self.relativeDate($0.date) },
                 pageText: { pageNumber($0).map { String($0) } },
+                noteText: { bm in
+                    let note = bm.note.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return note.isEmpty ? nil : note
+                },
                 onSelect: onSelect,
                 onDelete: onDelete
             )

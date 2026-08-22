@@ -30,6 +30,7 @@ struct AppleBooksReaderControls: View {
     let progressDescription: (Double) -> String
     let secondaryActions: [ReaderSecondaryAction]
     let onOpenTOC: () -> Void
+    let onOpenBookmarks: () -> Void
     let onOpenSearch: () -> Void
     let onOpenSettings: () -> Void
 
@@ -94,6 +95,10 @@ struct AppleBooksReaderControls: View {
         VStack(spacing: DSSpacing.sm) {
             VStack(spacing: DSSpacing.sm) {
                 progressMenuRow
+
+                menuRow(localized("書籤"), icon: "bookmark") {
+                    performPanelAction(onOpenBookmarks)
+                }
 
                 menuRow(localized("Search Book"), icon: "magnifyingglass") {
                     performPanelAction(onOpenSearch)
@@ -327,6 +332,7 @@ struct AppleBooksReaderControls: View {
                 )
             ],
             onOpenTOC: {},
+            onOpenBookmarks: {},
             onOpenSearch: {},
             onOpenSettings: {}
         )

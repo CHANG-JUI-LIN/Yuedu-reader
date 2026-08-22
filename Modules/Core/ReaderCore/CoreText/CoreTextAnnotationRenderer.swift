@@ -76,6 +76,63 @@ struct CoreTextAnnotationRenderer {
         }
     }
 
+    // MARK: - Note markers
+
+    /// 一個「有筆記」標註在本頁／本 chunk 上的圓圈標記。
+    struct NoteMarker: Equatable {
+        let annotationID: UUID
+        /// 圓圈本體的 rect（已在 CoreText → UIKit 翻轉後的版面座標，未套用縮放）。
+        let badgeRect: CGRect
+    }
+
+    /// 計算本頁／本 chunk 要畫的筆記圓圈。
+    ///
+    /// 只有「標註起點落在這一段字元範圍內」才畫，跨頁的標註因此不會在每一頁都冒一個圓圈。
+    static func noteMarkers(
+        annotations: [CoreTextTextAnnotation],
+        spineIndex: Int,
+        pageCharRange: NSRange,
+        lines: [CTLine],
+        lineOrigins: [CGPoint],
+        contentOffset: CGPoint = .zero,
+        layoutHeight: CGFloat,
+        writingMode: ReaderWritingMode
+    ) -> [NoteMarker] {
+        guard !annotations.isEmpty, !lines.isEmpty, pageCharRange.length > 0 else { return [] }
+
+        let pageStart = pageCharRange.location
+        let pageEnd = pageCharRange.location + pageCharRange.length
+
+        return annotations.compactMap { annotation -> NoteMarker? in
+            guard annotation.spineIndex == spineIndex,
+                  let note = annotation.note,
+                  !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  annotation.startOffset >= pageStart,
+                  annotation.startOffset < pageEnd
+            else { return nil }
+
+            // 只取標註的第一個字，拿到它所在行的 rect 當錨點。
+            let headRange = NSRange(location: annotation.startOffset, length: 1)
+            let rects = self.rects(
+                forRange: headRange,
+                lines: lines,
+                lineOrigins: lineOrigins,
+                contentOffset: contentOffset,
+                layoutHeight: layoutHeight,
+                writingMode: writingMode
+            )
+            guard let anchor = rects.first else { return nil }
+
+            return NoteMarker(
+                annotationID: annotation.id,
+                badgeRect: NoteMarkerGeometry.badgeRect(
+                    anchoredTo: anchor,
+                    isVertical: writingMode.isVertical
+                )
+            )
+        }
+    }
+
     // MARK: - Raw rects (for selection / playback — no style/color grouping)
 
     /// Computes rects for a single character range. Used by selection highlighting and TTS playback.

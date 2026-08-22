@@ -11,6 +11,8 @@ struct ChapterDocument {
     let imagePage: HTMLAttributedStringBuilder.ImagePage?
     let pageBackgroundImage: UIImage?
     let pageBackgroundColor: UIColor?
+    /// Dark `@media (prefers-color-scheme: dark)` variant of `pageBackgroundColor`.
+    let darkPageBackgroundColor: UIColor?
     let anchorOffsets: [String: Int]
     let revision: ContentRevision
 
@@ -20,6 +22,7 @@ struct ChapterDocument {
         imagePage = buildResult.imagePage
         pageBackgroundImage = buildResult.pageBackgroundImage
         pageBackgroundColor = buildResult.pageBackgroundColor
+        darkPageBackgroundColor = buildResult.darkPageBackgroundColor
         anchorOffsets = buildResult.anchorOffsets
         revision = buildResult.revision
     }

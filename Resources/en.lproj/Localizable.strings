@@ -2162,3 +2162,18 @@
 "規則比對" = "Rule Match";
 "章節反覆重試" = "Chapter is retrying repeatedly";
 "朗讀因連續取得失敗而停止" = "Speech stopped after repeated segment failures";
+
+// MARK: - 段落筆記
+"筆記" = "Note";
+"編輯筆記" = "Edit Note";
+"新增筆記…" = "Add a note…";
+"刪除筆記" = "Delete Note";
+"刪除筆記和標註" = "Delete Note & Highlight";
+"只刪除筆記" = "Delete Note Only";
+"標註可以保留下來，或是連同筆記一起刪除。" = "Keep the highlight, or delete it along with the note.";
+"刪除標註" = "Delete Highlight";
+"搜索章節" = "Search Chapters";
+"標註的原文" = "Highlighted Text";
+"筆記內容" = "Note Text";
+"筆記：%@" = "Note: %@";
+"翻頁動畫跑完但頁面沒有前進" = "A completed swipe left the reader on the same page";

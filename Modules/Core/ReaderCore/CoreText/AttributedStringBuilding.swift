@@ -18,6 +18,9 @@ struct AttributedChapterBuildResult {
     let imagePage: HTMLAttributedStringBuilder.ImagePage?
     let pageBackgroundImage: UIImage?
     let pageBackgroundColor: UIColor?
+    /// Dark `@media (prefers-color-scheme: dark)` variant of `pageBackgroundColor`. nil when the
+    /// publication has no dark body fill — the light authored fill (or reader theme) carries over.
+    let darkPageBackgroundColor: UIColor?
     let anchorOffsets: [String: Int]
     let revision: ContentRevision
 
@@ -26,6 +29,7 @@ struct AttributedChapterBuildResult {
         imagePage: HTMLAttributedStringBuilder.ImagePage?,
         pageBackgroundImage: UIImage?,
         pageBackgroundColor: UIColor? = nil,
+        darkPageBackgroundColor: UIColor? = nil,
         anchorOffsets: [String: Int],
         revision: ContentRevision = ContentRevision()
     ) {
@@ -33,6 +37,7 @@ struct AttributedChapterBuildResult {
         self.imagePage = imagePage
         self.pageBackgroundImage = pageBackgroundImage
         self.pageBackgroundColor = pageBackgroundColor
+        self.darkPageBackgroundColor = darkPageBackgroundColor
         self.anchorOffsets = anchorOffsets
         self.revision = revision
     }

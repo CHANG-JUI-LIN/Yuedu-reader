@@ -83,6 +83,7 @@ struct yuedu_appTests {
             pageKinds: Array(repeating: .text, count: max(ranges.count, 1)),
             pageBackgroundImage: nil,
             authoredBackgroundColor: nil,
+            darkAuthoredBackgroundColor: nil,
             anchorOffsets: [:],
             renderSize: CGSize(width: 320, height: 480),
             fontSize: 18,

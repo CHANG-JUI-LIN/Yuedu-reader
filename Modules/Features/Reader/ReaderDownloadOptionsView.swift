@@ -386,3 +386,99 @@ struct ReaderDownloadOptionsView: View {
         updateChapterCount(Int(chapterCount.rounded()))
     }
 }
+
+// MARK: - Preview
+
+#if DEBUG
+#Preview {
+    ReaderDownloadPreview.canvas(for: .partial)
+}
+
+/// Fake shelf so every download mode can be inspected in the canvas without a
+/// real source or network.
+private enum ReaderDownloadPreview {
+
+    enum State {
+        case range
+        case downloading
+        case partial
+        case completed
+    }
+
+    private static let chapterCount = 120
+
+    private static let books: [State: ReadingBook] = [
+        .range: makeBook(title: "巫師：從合成寶石開始", state: .none, completed: 0),
+        .downloading: makeBook(title: "劍來", state: .downloading, completed: 37),
+        .partial: makeBook(title: "詭祕之主", state: .partial, completed: 80, failed: 3),
+        .completed: makeBook(title: "全職高手", state: .available, completed: chapterCount),
+    ]
+
+    static let store: BookStore = {
+        let store = BookStore(
+            metadataFileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("reader_download_preview_meta.json")
+        )
+        store.books = Array(books.values)
+        return store
+    }()
+
+    @MainActor
+    static func canvas(for state: State) -> some View {
+        let book = books[state] ?? makeBook(title: "預覽", state: .none, completed: 0)
+        return ReaderDownloadOptionsView(
+            bookId: book.id,
+            bookTitle: book.title,
+            currentChapterIndex: 12,
+            totalChapters: chapterCount,
+            onStart: { _, _ in },
+            onPause: {},
+            onResume: {},
+            onSkipFailed: {},
+            onRemove: {},
+            onClose: {}
+        )
+        .environmentObject(store)
+    }
+
+    private static func makeBook(
+        title: String,
+        state: BookOfflineDownloadState,
+        completed: Int,
+        failed: Int = 0
+    ) -> ReadingBook {
+        var book = ReadingBook(title: title, source: "https://example.com", contentFilename: "")
+        book.isOnline = true
+        book.bookSourceId = UUID()
+        book.contentPipelineKind = .html
+        book.onlineChapters = (0..<chapterCount).map { index in
+            OnlineChapterRef(
+                index: index,
+                title: "第 \(index + 1) 章",
+                url: "https://example.com/\(index + 1)"
+            )
+        }
+        if state != .none {
+            var task = BookOfflineDownloadTask(requestedIndices: Set(0..<chapterCount))
+            for index in 0..<completed {
+                task.markCompleted(index)
+            }
+            for index in completed..<(completed + failed) {
+                task.markFailed(
+                    OfflineChapterFailure(
+                        chapterIndex: index,
+                        title: "第 \(index + 1) 章",
+                        category: .network,
+                        message: "preview",
+                        occurredAt: Date()
+                    )
+                )
+            }
+            book.offlineDownloadTask = task
+        }
+        book.offlineDownloadState = state
+        book.downloadedChapterCount = completed
+        return book
+    }
+}
+#endif

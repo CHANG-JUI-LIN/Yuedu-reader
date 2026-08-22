@@ -41,12 +41,100 @@ struct ReaderPositionSentryTests {
         #expect(recorder.anomalies.isEmpty)
     }
 
-    @Test("a gesture that snaps back to where it started is silent")
-    func gestureSnapBackIsClean() {
+    /// An abandoned swipe never reaches `observeCommit` — UIKit reports it with
+    /// `completed == false`, which cancels the expectation. So a *completed* gesture
+    /// landing back on its start is the reported symptom, not a snap-back.
+    @Test("one completed swipe that does not move is noted, not escalated")
+    func singleNoOpTurnIsQuiet() {
         let (sentry, recorder) = makeSentry()
         let start = position(3, 100)
         sentry.expectGesture(from: start, before: position(3, 0), after: position(3, 200))
         sentry.observeCommit(start, source: .pagedTurn)
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// "翻過去有翻頁動畫但還是同一個頁面, 必須重進才顯示正常" — the shape the first
+    /// version of this guard explicitly allowed, so it was the one thing it could
+    /// never catch.
+    @Test("repeated completed swipes that do not move are an anomaly")
+    func repeatedNoOpTurnsEscalate() {
+        let (sentry, recorder) = makeSentry()
+        let start = position(3, 100)
+        for _ in 0..<2 {
+            sentry.expectGesture(from: start, before: position(3, 0), after: position(3, 200))
+            sentry.observeCommit(start, source: .pagedTurn)
+        }
+        #expect(recorder.anomalies.count == 1)
+        #expect(recorder.anomalies.first?.detail.contains("guard=G3") == true)
+        #expect(recorder.anomalies.first?.detail.contains("consecutiveNoOpTurns=2") == true)
+    }
+
+    /// One anomaly per run: somebody hitting this swipes many times before giving up.
+    @Test("a run of no-op turns reports once")
+    func noOpRunReportsOnce() {
+        let (sentry, recorder) = makeSentry()
+        let start = position(3, 100)
+        for _ in 0..<6 {
+            sentry.expectGesture(from: start, before: position(3, 0), after: position(3, 200))
+            sentry.observeCommit(start, source: .pagedTurn)
+        }
+        #expect(recorder.anomalies.count == 1)
+    }
+
+    @Test("a turn that moves clears the no-op run")
+    func movingClearsTheRun() {
+        let (sentry, recorder) = makeSentry()
+        let start = position(3, 100)
+        sentry.expectGesture(from: start, before: position(3, 0), after: position(3, 200))
+        sentry.observeCommit(start, source: .pagedTurn)
+        // It moved.
+        sentry.expectGesture(from: start, before: position(3, 0), after: position(3, 200))
+        sentry.observeCommit(position(3, 200), source: .pagedTurn)
+        // Back to a single no-op — not yet a run.
+        sentry.expectGesture(from: position(3, 200), before: start, after: position(3, 400))
+        sentry.observeCommit(position(3, 200), source: .pagedTurn)
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// Re-placing the reader on the position it already shows is exactly what a chapter
+    /// layout landing does, so a programmatic transition is exempt.
+    @Test("a programmatic transition may legitimately not move")
+    func programmaticNoMoveIsClean() {
+        let (sentry, recorder) = makeSentry()
+        let start = position(3, 100)
+        for _ in 0..<4 {
+            sentry.expectGesture(
+                from: start, before: position(3, 0), after: position(3, 200), isProgrammatic: true
+            )
+            sentry.observeCommit(start, source: .pagedTurn)
+        }
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// `chapterEnd` is the `.max` sentinel: the walker knows the step crosses into that
+    /// chapter but not where, because it is not paginated yet. Every backward turn out
+    /// of a chapter's first page produced this, and every one was reported as an
+    /// anomaly by the first version.
+    @Test("the chapter-end sentinel matches any offset in that chapter")
+    func chapterEndSentinelResolves() {
+        let (sentry, recorder) = makeSentry()
+        let start = position(90, 0)
+        sentry.expectGesture(
+            from: start,
+            before: CoreTextReadingPosition.chapterEnd(89),
+            after: position(90, 316)
+        )
+        sentry.observeCommit(position(89, 4396), source: .pagedTurn)
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// With neither neighbour known there is nothing to check against, so the landing
+    /// is unverifiable rather than wrong.
+    @Test("a landing with no known neighbour is not judged")
+    func unverifiableLandingIsNotAnomaly() {
+        let (sentry, recorder) = makeSentry()
+        sentry.expectGesture(from: position(90, 0), before: nil, after: nil)
+        sentry.observeCommit(position(89, 4396), source: .pagedTurn)
         #expect(recorder.anomalies.isEmpty)
     }
 

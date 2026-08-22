@@ -177,6 +177,10 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         suggestedActions: [UIMenuElement]
     ) -> UIMenu? {
         guard selectedText?.isEmpty == false else { return nil }
+        let selectionHasNote = annotationCoveringSelection()
+            .flatMap(\.note)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
         let colorActions = AnnotationColor.allCases.map { color in
             UIAction(
                 title: emphasisColorName(for: color),
@@ -211,6 +215,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             image: UIImage(systemName: "highlighter"),
             handler: { [weak self] _ in
                 self?.presentEmphasisEditMenu()
+            }
+        ))
+        actions.append(UIAction(
+            title: localized(selectionHasNote ? "編輯筆記" : "筆記"),
+            image: UIImage(systemName: "note.text"),
+            handler: { [weak self] _ in
+                self?.requestNoteEdit()
             }
         ))
         return UIMenu(children: actions)
@@ -293,6 +304,80 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             ]
         )
         clearSelection()
+    }
+
+    // MARK: - 筆記
+
+    private func annotationCoveringSelection() -> CoreTextTextAnnotation? {
+        guard let chapter = selectionChapter,
+              let range = currentSelectionRange,
+              range.length > 0
+        else { return nil }
+        return AnnotationStore.annotationFullyContaining(
+            spineIndex: chapter,
+            range: range,
+            in: textAnnotations
+        )
+    }
+
+    /// 選字選單的「筆記」。已有標註就編輯它的筆記；純選取則把選取範圍送出去，
+    /// 由閱讀器補上預設標註後再開編輯頁。
+    private func requestNoteEdit() {
+        if let annotation = annotationCoveringSelection() {
+            postNoteEditRequest(for: annotation)
+            clearSelection()
+            return
+        }
+        guard let chapter = selectionChapter,
+              let range = currentSelectionRange,
+              range.length > 0
+        else { return }
+        NotificationCenter.default.post(
+            name: .coreTextNoteEditRequested,
+            object: self,
+            userInfo: [
+                "request": CoreTextNoteEditRequest(
+                    position: CoreTextReadingPosition(spineIndex: chapter, charOffset: range.location),
+                    length: range.length,
+                    excerpt: selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                )
+            ]
+        )
+        clearSelection()
+    }
+
+    private func postNoteEditRequest(for annotation: CoreTextTextAnnotation) {
+        NotificationCenter.default.post(
+            name: .coreTextNoteEditRequested,
+            object: self,
+            userInfo: [
+                "request": CoreTextNoteEditRequest(
+                    position: CoreTextReadingPosition(
+                        spineIndex: annotation.spineIndex,
+                        charOffset: annotation.startOffset
+                    ),
+                    length: annotation.range.length,
+                    excerpt: annotationExcerpt(annotation),
+                    existingNote: annotation.note ?? "",
+                    style: annotation.style,
+                    color: annotation.color
+                )
+            ]
+        )
+    }
+
+    private func annotationExcerpt(_ annotation: CoreTextTextAnnotation) -> String {
+        guard let chunk = engine.chunks.first(where: { $0.chapterIndex == annotation.spineIndex })
+        else { return "" }
+        let clamped = NSIntersectionRange(
+            annotation.range,
+            NSRange(location: 0, length: chunk.attributedString.length)
+        )
+        guard clamped.length > 0 else { return "" }
+        return chunk.attributedString
+            .attributedSubstring(from: clamped)
+            .string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @objc override func copy(_ sender: Any?) {
@@ -773,6 +858,15 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         }
 
         let point = gesture.location(in: collectionView)
+
+        // 筆記圓圈畫在正文之上，落在它上面的點擊就是要開筆記，先於連結／圖片處理。
+        if let (cell, _, localPoint) = hitTestChunk(at: point),
+           let annotationID = cell.noteMarkerAnnotationID(atLocalPoint: localPoint),
+           let annotation = textAnnotations.first(where: { $0.id == annotationID }) {
+            postNoteEditRequest(for: annotation)
+            return
+        }
+
         if let (_, chunk, localPoint) = hitTestChunk(at: point),
            let href = attachmentLinkTarget(in: chunk, at: localPoint)?.href {
             if let note = FootnoteStore.text(spineIndex: chunk.chapterIndex, href: href),

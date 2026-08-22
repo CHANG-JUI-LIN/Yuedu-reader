@@ -452,6 +452,10 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
             let prepareStart = CoreTextSliceMetrics.now
             let attrStr: NSAttributedString
+            let appearanceResolvedDocument = CoreTextPaginator.scrollAppearanceRecolor(
+                result.attributedString,
+                appearance: renderSettings.readerStyleAppearance
+            )
             if renderSettings.writingMode.isVertical {
                 attrStr = ReaderPerfTrace.span(
                     .layoutVerticalPrepare,
@@ -462,10 +466,10 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                         executor: Thread.isMainThread ? "main" : "background"
                     )
                 ) {
-                    prepareAttributedString(result.attributedString)
+                    prepareAttributedString(appearanceResolvedDocument)
                 }
             } else {
-                attrStr = prepareAttributedString(result.attributedString)
+                attrStr = prepareAttributedString(appearanceResolvedDocument)
             }
             let prepareSeconds = CoreTextSliceMetrics.now - prepareStart
             chapterCharacterCounts[chapterIndex] = attrStr.length
@@ -474,7 +478,14 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             // A user-selected reader background has the same precedence in scroll mode as it
             // does in paged mode. Otherwise retain both authored layers for correct alpha compositing.
             let usesReaderBackgroundImage = renderSettings.readerBackgroundImageURL != nil
-            let pageBackgroundColor = usesReaderBackgroundImage ? nil : result.pageBackgroundColor
+            let pageBackgroundColor: UIColor?
+            if usesReaderBackgroundImage {
+                pageBackgroundColor = nil
+            } else if renderSettings.readerStyleAppearance == .dark {
+                pageBackgroundColor = result.darkPageBackgroundColor ?? result.pageBackgroundColor
+            } else {
+                pageBackgroundColor = result.pageBackgroundColor
+            }
             let pageBackgroundImage = usesReaderBackgroundImage ? nil : result.pageBackgroundImage
 
             // Single-image page (cover / chapter illustration): builder puts the image in result.imagePage while attrStr is just a placeholder.

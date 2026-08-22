@@ -2,7 +2,118 @@ import SwiftUI
 import UIKit
 import YueduCoreText
 
+// MARK: - 筆記路由
+
+/// 開著的筆記編輯頁。`bookmarkID` 指向筆記真正要寫進去的那一條標註書籤——
+/// 合併後的範圍可能比使用者選的大，所以不能用選取範圍當鍵。
+struct ReaderNoteEditorRoute: Identifiable {
+    let id = UUID()
+    let bookmarkID: UUID
+    let position: CoreTextReadingPosition
+    let length: Int
+    let excerpt: String
+    let note: String
+    let date: Date
+    let style: AnnotationStyle
+    let color: AnnotationColor
+}
+
+/// 待使用者確認的筆記刪除。
+struct ReaderNoteDeleteRoute: Identifiable {
+    let id = UUID()
+    let position: CoreTextReadingPosition
+    let length: Int
+    let style: AnnotationStyle
+    let color: AnnotationColor
+}
+
 extension ReaderView {
+
+    // MARK: - 筆記
+
+    /// 預設的筆記標註樣式：黃色螢光筆。使用者之後可在選字選單改成其他顏色或下劃線，
+    /// 筆記會跟著標註走。
+    private static let defaultNoteAnnotationStyle = AnnotationStyle.highlight
+    private static let defaultNoteAnnotationColor = AnnotationColor.yellow
+
+    /// 開啟筆記編輯頁。選取範圍上還沒有標註時先補一條預設標註——「有筆記的段落一定有標註」
+    /// 是圓圈標記能畫出來的前提。
+    func openNoteEditor(_ request: CoreTextNoteEditRequest) {
+        let position = request.position
+        guard chapters.indices.contains(position.spineIndex), request.length > 0 else { return }
+        let range = NSRange(location: position.charOffset, length: request.length)
+
+        if store.textAnnotationBookmark(
+            bookId: bookId,
+            spineIndex: position.spineIndex,
+            range: range
+        ) == nil {
+            store.addTextAnnotation(
+                bookId: bookId,
+                chapterIndex: position.spineIndex,
+                chapterTitle: bookmarkChapterTitle(for: position.spineIndex),
+                position: position,
+                length: request.length,
+                excerpt: request.excerpt.isEmpty ? currentPageExcerpt : String(request.excerpt.prefix(80)),
+                style: request.style ?? Self.defaultNoteAnnotationStyle,
+                color: request.color ?? Self.defaultNoteAnnotationColor
+            )
+            syncCoreTextTextAnnotations()
+        }
+
+        guard let bookmark = store.textAnnotationBookmark(
+            bookId: bookId,
+            spineIndex: position.spineIndex,
+            range: range
+        ) else {
+            AppLogger.cache("筆記：新增標註後找不到對應書籤 spine=\(position.spineIndex) range=\(range)")
+            return
+        }
+
+        let excerpt = request.excerpt.isEmpty ? bookmark.excerpt : request.excerpt
+        noteEditorRoute = ReaderNoteEditorRoute(
+            bookmarkID: bookmark.id,
+            position: bookmark.position,
+            length: bookmark.length,
+            excerpt: excerpt,
+            note: bookmark.note,
+            date: bookmark.note.isEmpty ? Date() : bookmark.date,
+            style: bookmark.annotationStyle ?? Self.defaultNoteAnnotationStyle,
+            color: bookmark.annotationColor ?? Self.defaultNoteAnnotationColor
+        )
+    }
+
+    func saveNote(_ text: String, for route: ReaderNoteEditorRoute) {
+        store.setTextAnnotationNote(
+            bookId: bookId,
+            bookmarkId: route.bookmarkID,
+            note: text.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        syncCoreTextTextAnnotations()
+        noteEditorRoute = nil
+    }
+
+    /// `removesAnnotation` 為 true 時連標註一起刪；false 只清掉筆記，高亮留著。
+    func deleteNote(_ route: ReaderNoteDeleteRoute, removesAnnotation: Bool) {
+        defer { noteDeleteRoute = nil }
+        if removesAnnotation {
+            store.removeTextAnnotation(
+                bookId: bookId,
+                position: route.position,
+                length: route.length,
+                style: route.style,
+                color: route.color
+            )
+        } else {
+            guard let bookmark = store.textAnnotationBookmark(
+                bookId: bookId,
+                spineIndex: route.position.spineIndex,
+                range: NSRange(location: route.position.charOffset, length: route.length)
+            ) else { return }
+            store.setTextAnnotationNote(bookId: bookId, bookmarkId: bookmark.id, note: "")
+        }
+        syncCoreTextTextAnnotations()
+    }
 
     // MARK: - Logic
     func findChapterFirstPage(_ chapterIdx: Int) -> Int? {

@@ -241,6 +241,10 @@ enum DSLayout {
     static let readerAppleBooksMenuRowHeight: CGFloat = 44
     /// VoiceOver increment/decrement step for the Apple Books progress scrubber.
     static let readerAppleBooksProgressAccessibilityStep: Double = 0.01
+    /// Diameter of the filled circular done button in the paragraph-note editor.
+    static let readerNoteEditorDoneSize: CGFloat = 56
+    /// Width of the quote bar beside the annotated excerpt in the note editor.
+    static let readerNoteQuoteBarWidth: CGFloat = 3
     /// Minimum height of the paragraph-comment SVG editor.
     static let readerSVGEditorHeight: CGFloat = 160
     /// Compact fixed width for a paragraph-comment bubble preview tile.

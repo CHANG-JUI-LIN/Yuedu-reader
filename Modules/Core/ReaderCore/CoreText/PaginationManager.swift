@@ -6,6 +6,7 @@ struct PaginationRequest {
     let imagePage: HTMLAttributedStringBuilder.ImagePage?
     let pageBackgroundImage: UIImage?
     let pageBackgroundColor: UIColor?
+    let darkPageBackgroundColor: UIColor?
     let anchorOffsets: [String: Int]
     let renderSize: CGSize
     let fontSize: CGFloat
@@ -36,6 +37,7 @@ final class PaginationManager {
             imagePage: request.imagePage,
             pageBackgroundImage: request.pageBackgroundImage,
             pageBackgroundColor: request.pageBackgroundColor,
+            darkPageBackgroundColor: request.darkPageBackgroundColor,
             anchorOffsets: request.anchorOffsets,
             renderSize: request.renderSize,
             fontSize: request.fontSize,
@@ -58,6 +60,7 @@ final class PaginationManager {
             imagePage: request.imagePage,
             pageBackgroundImage: request.pageBackgroundImage,
             pageBackgroundColor: request.pageBackgroundColor,
+            darkPageBackgroundColor: request.darkPageBackgroundColor,
             anchorOffsets: request.anchorOffsets,
             renderSize: request.renderSize,
             fontSize: request.fontSize,

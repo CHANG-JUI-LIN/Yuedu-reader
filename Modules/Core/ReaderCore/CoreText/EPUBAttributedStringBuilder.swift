@@ -187,6 +187,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
 
         let pageBackgroundImage = await localBuilder.pageBackgroundImage(from: ast)
         let pageBackgroundColor = localBuilder.pageBackgroundColor(from: ast)
+        let darkPageBackgroundColor = localBuilder.pageBackgroundDarkColor(from: ast)
         let afterBackground = SourcePerfTrace.now
         if pageBackgroundImage == nil, let imagePage = await localBuilder.imagePage(from: ast) {
             let attrs: [NSAttributedString.Key: Any] = [
@@ -209,6 +210,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                 imagePage: imagePage,
                 pageBackgroundImage: nil,
                 pageBackgroundColor: pageBackgroundColor,
+                darkPageBackgroundColor: darkPageBackgroundColor,
                 anchorOffsets: [:]
             )
         }
@@ -311,6 +313,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             imagePage: nil,
             pageBackgroundImage: pageBackgroundImage,
             pageBackgroundColor: pageBackgroundColor,
+            darkPageBackgroundColor: darkPageBackgroundColor,
             anchorOffsets: anchorOffsets
         )
     }

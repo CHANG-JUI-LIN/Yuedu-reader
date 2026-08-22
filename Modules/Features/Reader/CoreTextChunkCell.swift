@@ -190,6 +190,9 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     private var boundLeadingSpacing: CGFloat = 0
     private(set) var currentChunk: CoreTextChunk?
     private var annotationOverlays: [LayerKey: InteractionOverlayView] = [:]
+    private let noteMarkerOverlay = NoteMarkerOverlayView()
+    /// 目前這個 chunk 上的筆記圓圈（座標同 `drawView`），供捲動控制器做命中判定。
+    private(set) var noteMarkers: [CoreTextAnnotationRenderer.NoteMarker] = []
     /// Opens the reader toolbar from VoiceOver — the same sink the centre tap uses.
     /// Without it a VoiceOver user cannot reach the toolbar in scroll mode: the tap
     /// recognizer never fires because VoiceOver consumes the touch.
@@ -211,6 +214,9 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         contentView.addSubview(drawView)
         contentView.addSubview(playbackOverlay)
         contentView.addSubview(overlay)
+        // 標註 overlay 是 `insertSubview(belowSubview: overlay)`，所以圓圈加在最後就會在最上層。
+        noteMarkerOverlay.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(noteMarkerOverlay)
 
         leadingConstraint = drawView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor)
         topConstraint = drawView.topAnchor.constraint(equalTo: contentView.topAnchor)
@@ -229,7 +235,11 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             overlay.leadingAnchor.constraint(equalTo: drawView.leadingAnchor),
             overlay.trailingAnchor.constraint(equalTo: drawView.trailingAnchor),
             overlay.topAnchor.constraint(equalTo: drawView.topAnchor),
-            overlay.bottomAnchor.constraint(equalTo: drawView.bottomAnchor)
+            overlay.bottomAnchor.constraint(equalTo: drawView.bottomAnchor),
+            noteMarkerOverlay.leadingAnchor.constraint(equalTo: drawView.leadingAnchor),
+            noteMarkerOverlay.trailingAnchor.constraint(equalTo: drawView.trailingAnchor),
+            noteMarkerOverlay.topAnchor.constraint(equalTo: drawView.topAnchor),
+            noteMarkerOverlay.bottomAnchor.constraint(equalTo: drawView.bottomAnchor)
         ])
     }
 
@@ -480,6 +490,25 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             overlay.isHidden = true
             overlay.clearSelection()
         }
+
+        noteMarkers = CoreTextAnnotationRenderer.noteMarkers(
+            annotations: annotations,
+            spineIndex: chunk.chapterIndex,
+            pageCharRange: chunkNS,
+            lines: lines,
+            lineOrigins: origins,
+            contentOffset: .zero,
+            layoutHeight: chunk.height,
+            writingMode: chunk.writingMode
+        )
+        noteMarkerOverlay.markers = noteMarkers
+    }
+
+    /// 命中判定：`localPoint` 是 `drawView` 座標。回傳被點到的標註 id。
+    func noteMarkerAnnotationID(atLocalPoint localPoint: CGPoint) -> UUID? {
+        noteMarkers.first {
+            NoteMarkerGeometry.tapRect(for: $0.badgeRect).contains(localPoint)
+        }?.annotationID
     }
 
     private func clearAnnotationOverlays() {
@@ -487,6 +516,8 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             overlay.clearSelection()
             overlay.isHidden = true
         }
+        noteMarkers = []
+        noteMarkerOverlay.markers = []
     }
 
     override func prepareForReuse() {

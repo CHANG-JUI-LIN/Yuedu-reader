@@ -4,7 +4,7 @@ import YueduCoreTextTypography
 
 
 
-// MARK: - Combined Bookmarks & TOC Panel
+// MARK: - Reader TOC Panel
 
 private enum VerticalTOCLayout {
     static let columnWidth: CGFloat = 46
@@ -195,16 +195,13 @@ private struct VerticalTOCView: View {
     }
 }
 
-struct ReaderMenuView: View {
-    enum Tab: Hashable {
-        case toc
-        case bookmark
-        case highlight
-    }
-
-    // 目錄
+/// 閱讀器目錄面板。
+///
+/// 只有目錄——書籤與重點在 `ReaderBookmarkListView`。原本三者共用一個分段控制，
+/// 但目錄本來就由工具列的目錄鈕進入、書籤由書籤鈕進入，分段控制只是把兩個入口
+/// 再混回同一個畫面；拆開後目錄頂端讓給原生搜尋列（下拉才出現）。
+struct ReaderTOCView: View {
     let chapters: [BookChapter]
-    let coverImagePath: String?
     let bookTitle: String
     let currentPage: Int
     let totalPages: Int
@@ -215,141 +212,78 @@ struct ReaderMenuView: View {
     let currentChapterID: UUID?
     let onSelectChapter: (BookChapter) -> Void
 
-    // 書籤／重點
-    let bookmarks: [Bookmark]
-    /// 標註在所屬章節內的頁碼（1-based）；無法解析時回傳 nil。
-    let bookmarkPageNumber: (Bookmark) -> Int?
-    let onSelectBookmark: (Bookmark) -> Void
-    let onDeleteBookmark: (Bookmark) -> Void
-
     @Binding var isPresented: Bool
-    @Binding var selectedTab: Tab
 
-    @State private var selection = Set<UUID>()
-    @State private var editMode: EditMode = .inactive
+    @State private var searchText = ""
 
-    private var bookmarkItems: [Bookmark] {
-        bookmarks.filter { $0.kind == .bookmark }
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var highlightItems: [Bookmark] {
-        bookmarks.filter { $0.kind == .underline || $0.kind == .highlight }
+    private var filteredChapters: [BookChapter] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return chapters }
+        return chapters.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+        }
     }
 
-    private var currentItems: [Bookmark] {
-        selectedTab == .bookmark ? bookmarkItems : highlightItems
-    }
-
-    private var isEditing: Bool {
-        editMode.isEditing
+    /// 直排書的目錄是水平捲動的欄位，沒有垂直捲動可以把搜尋列收起來，
+    /// 所以那個版面固定顯示搜尋列。
+    private var searchPlacement: SearchFieldPlacement {
+        tocLayoutMode == .verticalRTLColumns
+            ? .navigationBarDrawer(displayMode: .always)
+            : .navigationBarDrawer(displayMode: .automatic)
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if totalPages > 0 {
-                    Text(String(format: localized("第 %d 頁（共 %d 頁）"), currentPage + 1, totalPages))
-                        .font(DSFont.fixed(size: 14))
-                        .foregroundColor(.primary)
-                        .padding(.vertical, DSSpacing.md)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-
-                Picker("", selection: $selectedTab) {
-                    Text(localized("目錄")).tag(Tab.toc)
-                    Text(localized("書籤")).tag(Tab.bookmark)
-                    Text(localized("重點")).tag(Tab.highlight)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.vertical, DSSpacing.sm)
-
-                Group {
-                    switch selectedTab {
-                    case .toc:
-                        tocTab
-                    case .bookmark:
-                        BookmarkListSection(
-                            isBookmark: true,
-                            items: bookmarkItems,
-                            pageNumber: bookmarkPageNumber,
-                            onSelect: onSelectBookmark,
-                            onDelete: onDeleteBookmark,
-                            selection: $selection
-                        )
-                    case .highlight:
-                        BookmarkListSection(
-                            isBookmark: false,
-                            items: highlightItems,
-                            pageNumber: bookmarkPageNumber,
-                            onSelect: onSelectBookmark,
-                            onDelete: onDeleteBookmark,
-                            selection: $selection
-                        )
-                    }
-                }
+            content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .navigationTitle(bookTitle)
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if selectedTab != .toc {
-                        editToggleButton
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isPresented = false
-                    } label: {
-                        Image(systemName: "checkmark")
-                    }
-                    .accessibilityLabel(localized("完成"))
-                }
-            }
-            .toolbar {
-                ToolbarItemGroup(placement: .bottomBar) {
-                    if selectedTab != .toc, isEditing {
-                        Text(selectedCountText)
-                            .font(DSFont.subheadline)
-                            .foregroundStyle(DSColor.textSecondary)
-
-                        Spacer()
-
+                .navigationTitle(bookTitle)
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button {
-                            deleteSelected()
+                            isPresented = false
                         } label: {
-                            Image(systemName: "trash")
+                            Image(systemName: "checkmark")
                         }
-                        .disabled(selection.isEmpty)
-                        .accessibilityLabel(localized("刪除"))
+                        .accessibilityLabel(localized("完成"))
                     }
                 }
-            }
-            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
-            .pageBackgroundToolbar(for: .settings)
-            .environment(\.editMode, $editMode)
-            .onChange(of: selectedTab) {
-                selection.removeAll()
-                editMode = .inactive
-            }
-            .onChange(of: editMode) {
-                if !editMode.isEditing {
-                    selection.removeAll()
-                }
-            }
+                .searchable(
+                    text: $searchText,
+                    placement: searchPlacement,
+                    prompt: localized("搜索章節")
+                )
+                .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+                .pageBackgroundToolbar(for: .settings)
         }
     }
 
-    // MARK: - 目錄分頁
+    @ViewBuilder
+    private var content: some View {
+        if tocLayoutMode == .verticalRTLColumns {
+            verticalContent
+        } else {
+            horizontalContent
+        }
+    }
 
     @ViewBuilder
-    private var tocTab: some View {
-        VStack(spacing: 0) {
-            if tocLayoutMode == .verticalRTLColumns {
+    private var verticalContent: some View {
+        if filteredChapters.isEmpty {
+            noMatchesView
+        } else {
+            VStack(spacing: 0) {
+                if totalPages > 0, !isSearching {
+                    pageCountText
+                        .padding(.vertical, DSSpacing.sm)
+                }
+
                 VerticalTOCView(
-                    chapters: chapters,
+                    chapters: filteredChapters,
                     currentIndex: currentIndex,
                     currentChapterID: currentChapterID,
                     pageOffsets: pageOffsets,
@@ -359,35 +293,28 @@ struct ReaderMenuView: View {
                         isPresented = false
                     }
                 )
-            } else {
-                tocContent
             }
         }
     }
 
-    // MARK: - 書籤／重點編輯
+    private var pageCountText: some View {
+        Text(String(format: localized("第 %d 頁（共 %d 頁）"), currentPage + 1, totalPages))
+            .font(DSFont.fixed(size: 14))
+            .foregroundColor(.primary)
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
 
-    private var editToggleButton: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                editMode = editMode.isEditing ? .inactive : .active
-            }
-        } label: {
-            Image(systemName: isEditing ? "xmark" : "checklist")
+    @ViewBuilder
+    private var horizontalContent: some View {
+        if filteredChapters.isEmpty {
+            noMatchesView
+        } else {
+            tocList
         }
-        .accessibilityLabel(localized(isEditing ? "完成" : "編輯"))
     }
 
-    private var selectedCountText: String {
-        let noun = selectedTab == .bookmark ? localized("書籤") : localized("重點")
-        return String(format: localized("已選取 %1$d 個%2$@"), selection.count, noun)
-    }
-
-    private func deleteSelected() {
-        currentItems
-            .filter { selection.contains($0.id) }
-            .forEach(onDeleteBookmark)
-        selection.removeAll()
+    private var noMatchesView: some View {
+        ContentUnavailableView.search(text: searchText)
     }
 
     private func pageNumber(for chapter: BookChapter) -> Int {
@@ -397,57 +324,26 @@ struct ReaderMenuView: View {
         return chapter.index + 1
     }
 
-    private var tocContent: some View {
+    private var tocList: some View {
         ScrollViewReader { proxy in
-            List(chapters) { chapter in
-                Button {
-                    onSelectChapter(chapter)
-                    isPresented = false
-                } label: {
-                    HStack(spacing: 0) {
-                        if chapter.level > 0 {
-                            Color.clear
-                                .frame(width: CGFloat(chapter.level) * 16)
-                        }
-
-                        Text(chapter.title)
-                            .font(
-                                chapter.level == 0
-                                ? .system(size: 14, weight: .semibold)
-                                : .system(size: 12, weight: .regular)
-                            )
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
-
-                        Spacer()
-
-                        if showsPageNumbers {
-                            Text("\(pageNumber(for: chapter))")
-                                .font(DSFont.fixed(size: 18, weight: .regular, design: .monospaced))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .frame(height: 48)
-                    .padding(.horizontal, 30)
-                    .background {
-                        if chapter.id == currentChapterID {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.primary.opacity(0.07))
-                        }
-                    }
+            List {
+                if totalPages > 0, !isSearching {
+                    pageCountText
+                        .padding(.vertical, DSSpacing.sm)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
                 }
-                .buttonStyle(.plain)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden, edges: chapter.id == chapters.first?.id ? .top : [])
-                .listRowSeparator(.visible, edges: .bottom)
-                .listRowSeparatorTint(Color.secondary.opacity(0.18))
-                .id(chapter.index)
+
+                ForEach(filteredChapters) { chapter in
+                    chapterRow(chapter)
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .contentMargins(.top, 0, for: .scrollContent)
             .onAppear {
+                guard !isSearching else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     if chapters.first(where: { $0.index == currentIndex }) != nil {
                         withAnimation {
@@ -458,17 +354,61 @@ struct ReaderMenuView: View {
             }
         }
     }
+
+    private func chapterRow(_ chapter: BookChapter) -> some View {
+        Button {
+            onSelectChapter(chapter)
+            isPresented = false
+        } label: {
+            HStack(spacing: 0) {
+                if chapter.level > 0 {
+                    Color.clear
+                        .frame(width: CGFloat(chapter.level) * 16)
+                }
+
+                Text(chapter.title)
+                    .font(
+                        chapter.level == 0
+                        ? .system(size: 14, weight: .semibold)
+                        : .system(size: 12, weight: .regular)
+                    )
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+
+                Spacer()
+
+                if showsPageNumbers {
+                    Text("\(pageNumber(for: chapter))")
+                        .font(DSFont.fixed(size: 18, weight: .regular, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(height: 48)
+            .padding(.horizontal, 30)
+            .background {
+                if chapter.id == currentChapterID {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.primary.opacity(0.07))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden, edges: chapter.id == filteredChapters.first?.id ? .top : [])
+        .listRowSeparator(.visible, edges: .bottom)
+        .listRowSeparatorTint(Color.secondary.opacity(0.18))
+        .id(chapter.index)
+    }
 }
 
-#Preview {
-    @Previewable @State var tab: ReaderMenuView.Tab = .toc
-    ReaderMenuView(
+#Preview("目錄") {
+    ReaderTOCView(
         chapters: [
             BookChapter(index: 0, title: "第一章 序幕", content: ""),
             BookChapter(index: 1, title: "第二章 啟程", content: ""),
             BookChapter(index: 2, title: "第三章 抉擇", content: ""),
         ],
-        coverImagePath: nil,
         bookTitle: "範例書名",
         currentPage: 1,
         totalPages: 240,
@@ -478,24 +418,6 @@ struct ReaderMenuView: View {
         currentIndex: 0,
         currentChapterID: nil,
         onSelectChapter: { _ in },
-        bookmarks: [
-            Bookmark(
-                chapterIndex: 0,
-                chapterTitle: "第一章 序幕",
-                position: CoreTextReadingPosition(spineIndex: 0, charOffset: 0)
-            ),
-            Bookmark(
-                chapterIndex: 1,
-                chapterTitle: "第二章 啟程",
-                position: CoreTextReadingPosition(spineIndex: 1, charOffset: 420),
-                kind: .highlight,
-                excerpt: "值得記住的一段話"
-            ),
-        ],
-        bookmarkPageNumber: { _ in 18 },
-        onSelectBookmark: { _ in },
-        onDeleteBookmark: { _ in },
-        isPresented: .constant(true),
-        selectedTab: $tab
+        isPresented: .constant(true)
     )
 }

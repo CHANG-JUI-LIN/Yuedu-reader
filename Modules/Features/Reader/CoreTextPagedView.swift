@@ -1440,7 +1440,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 ReaderPositionSentry.shared.expectGesture(
                     from: start,
                     before: currentEngine.positionBefore(start),
-                    after: currentEngine.positionAfter(start)
+                    after: currentEngine.positionAfter(start),
+                    // The gate is already counting animations we started ourselves, so
+                    // it is the one thing here that can tell a user's swipe apart from
+                    // a `setViewControllers(animated: true)` the app issued.
+                    isProgrammatic: stackWriteGate.isAnimatingTransition
                 )
             }
             // Report the destination when it is exactly known, so a tap queued during

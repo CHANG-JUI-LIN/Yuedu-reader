@@ -883,6 +883,7 @@ _layouts[spineIndex] = nil
             imagePage: buildResult.imagePage,
             pageBackgroundImage: buildResult.pageBackgroundImage,
             pageBackgroundColor: buildResult.pageBackgroundColor,
+            darkPageBackgroundColor: buildResult.darkPageBackgroundColor,
             anchorOffsets: buildResult.anchorOffsets,
             renderSize: renderSize,
             fontSize: renderSettings.fontSize,

@@ -875,19 +875,25 @@ class BookStore: ObservableObject, BookProvider {
     ) {
         guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
         let safeLength = max(1, length)
+        let targetRange = NSRange(location: position.charOffset, length: safeLength)
+        let existingAnnotations = books[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
+        // 改顏色／樣式時範圍不變，舊標註會被下面的 removeExact 拿掉；它身上的筆記要接續到
+        // 新標註，否則「換個顏色」會順手把使用者寫的筆記丟掉。
+        let inheritedNote = existingAnnotations.first {
+            $0.spineIndex == position.spineIndex && NSEqualRanges($0.range, targetRange)
+        }?.note
         let newAnnotation = CoreTextTextAnnotation(
             spineIndex: position.spineIndex,
-            range: NSRange(location: position.charOffset, length: safeLength),
+            range: targetRange,
             style: style,
             color: color,
-            note: note
+            note: note ?? inheritedNote
         )
-        let existingAnnotations = books[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
         // 若同一範圍已有標註（改顏色/樣式時範圍不變），先移除舊的，避免新舊兩色並存。
         // 全新選取不會精確命中既有範圍，removeExact 為 no-op。
         let (cleaned, _) = AnnotationStore.removeExact(
             spineIndex: position.spineIndex,
-            range: NSRange(location: position.charOffset, length: safeLength),
+            range: targetRange,
             from: existingAnnotations
         )
         let (merged, _) = AnnotationStore.merge(newAnnotation, into: cleaned)
@@ -907,6 +913,7 @@ class BookStore: ObservableObject, BookProvider {
                 position: CoreTextReadingPosition(spineIndex: ann.spineIndex, charOffset: ann.startOffset),
                 length: ann.range.length,
                 kind: ann.style == .highlight ? .highlight : .underline,
+                note: ann.note ?? "",
                 excerpt: ann.spineIndex == chapterIndex ? excerpt : "",
                 annotationStyle: ann.style,
                 annotationColor: ann.color
@@ -958,6 +965,7 @@ class BookStore: ObservableObject, BookProvider {
                 position: CoreTextReadingPosition(spineIndex: ann.spineIndex, charOffset: ann.startOffset),
                 length: ann.range.length,
                 kind: ann.style == .highlight ? .highlight : .underline,
+                note: ann.note ?? "",
                 excerpt: "",
                 annotationStyle: ann.style,
                 annotationColor: ann.color
@@ -965,6 +973,31 @@ class BookStore: ObservableObject, BookProvider {
             books[idx].bookmarks.append(bm)
         }
         books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
+        saveMeta()
+    }
+
+    /// 找出涵蓋指定範圍的標註書籤。
+    ///
+    /// 新增標註後範圍可能被 `AnnotationStore.merge` 併大，呼叫端不能拿自己送出去的
+    /// range 當結果用——筆記要掛在合併後那一條上，否則下次開啟會對不到。
+    func textAnnotationBookmark(bookId: UUID, spineIndex: Int, range: NSRange) -> Bookmark? {
+        guard let book = books.first(where: { $0.id == bookId }) else { return nil }
+        let start = range.location
+        let end = range.location + range.length
+        return book.bookmarks.first { bm in
+            guard bm.kind == .underline || bm.kind == .highlight else { return false }
+            guard bm.position.spineIndex == spineIndex else { return false }
+            return bm.position.charOffset <= start
+                && bm.position.charOffset + bm.length >= end
+        }
+    }
+
+    /// 寫入／清空一條標註的筆記。傳空字串等於「只刪筆記、保留標註」。
+    func setTextAnnotationNote(bookId: UUID, bookmarkId: UUID, note: String) {
+        guard let idx = books.firstIndex(where: { $0.id == bookId }),
+              let bmIdx = books[idx].bookmarks.firstIndex(where: { $0.id == bookmarkId })
+        else { return }
+        books[idx].bookmarks[bmIdx].note = note
         saveMeta()
     }
 

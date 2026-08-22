@@ -71,9 +71,38 @@ final class ReaderPositionSentry {
 
     private struct Expectation {
         let start: CoreTextReadingPosition
-        /// Positions the turn may legally land on.
-        let allowed: [CoreTextReadingPosition]
+        let before: CoreTextReadingPosition?
+        let after: CoreTextReadingPosition?
+        /// A user swipe, as opposed to an animated `setViewControllers` the app issued.
+        /// Only a swipe is required to move: a programmatic transition legitimately
+        /// re-places the reader on the position it is already showing when a chapter
+        /// layout lands.
+        let isGesture: Bool
         let describedAs: String
+
+        /// False when the walker could not name either neighbour yet — the chapter on
+        /// the far side has not been paginated. Nothing can be judged against an empty
+        /// set, so G1 stays quiet rather than reporting every such landing.
+        var neighboursKnown: Bool { before != nil || after != nil }
+
+        var describedNeighbours: String {
+            [before, after].compactMap { $0 }.map(ReaderPositionSentry.describe).joined(separator: " | ")
+        }
+
+        /// Whether `landing` is one of the two legal neighbours.
+        ///
+        /// A neighbour carrying `charOffset == .max` is the `chapterEnd` sentinel: the
+        /// walker knows the step crosses into that chapter but not where it lands,
+        /// because the chapter is not laid out yet. Any offset inside that chapter is a
+        /// correct resolution of a one-page step, so the comparison is by chapter.
+        /// Comparing the raw offset instead reported every single backward turn out of
+        /// a chapter's first page as an anomaly.
+        func matchesNeighbour(_ landing: CoreTextReadingPosition) -> Bool {
+            [before, after].compactMap { $0 }.contains { expected in
+                guard expected.spineIndex == landing.spineIndex else { return false }
+                return expected.charOffset == .max || expected.charOffset == landing.charOffset
+            }
+        }
     }
 
     private struct Intent {
@@ -84,6 +113,9 @@ final class ReaderPositionSentry {
 
     private var expectation: Expectation?
     private var intent: Intent?
+    /// Completed swipes in a row that landed back on their own starting position.
+    private var consecutiveNoOpTurns = 0
+    private var hasReportedNoOpRun = false
     private var lastCommitted: CoreTextReadingPosition?
     private var trail: [String] = []
     private var bookLabel: String = "-"
@@ -113,6 +145,8 @@ final class ReaderPositionSentry {
         expectation = nil
         intent = nil
         lastCommitted = nil
+        consecutiveNoOpTurns = 0
+        hasReportedNoOpRun = false
         trail.removeAll(keepingCapacity: true)
         bookLabel = label
         note("beginBook \(label)")
@@ -136,22 +170,29 @@ final class ReaderPositionSentry {
         // A deliberate turn ends any outstanding jump episode: the user has moved on,
         // and an intent left standing would suppress the next real anomaly.
         intent = nil
-        expectation = Expectation(start: start, allowed: [destination], describedAs: direction)
+        expectation = Expectation(
+            start: start, before: nil, after: destination, isGesture: false, describedAs: direction
+        )
         note("expect \(direction) from=\(Self.describe(start)) to=\(Self.describe(destination))")
     }
 
     /// A gesture-driven turn. UIKit has not yet decided which way it goes, and it may
     /// also snap back, so all three outcomes are legal.
+    /// - Parameter isProgrammatic: true when the app started this transition itself
+    ///   (`setViewControllers(animated: true)`) rather than the user swiping. Only a
+    ///   swipe is required to move — see `reportNoOpTurn`.
     func expectGesture(
         from start: CoreTextReadingPosition,
         before: CoreTextReadingPosition?,
-        after: CoreTextReadingPosition?
+        after: CoreTextReadingPosition?,
+        isProgrammatic: Bool = false
     ) {
         intent = nil
-        var allowed = [start]
-        if let before { allowed.append(before) }
-        if let after { allowed.append(after) }
-        expectation = Expectation(start: start, allowed: allowed, describedAs: "gesture")
+        expectation = Expectation(
+            start: start, before: before, after: after,
+            isGesture: !isProgrammatic,
+            describedAs: isProgrammatic ? "programmatic" : "gesture"
+        )
         note("expect gesture from=\(Self.describe(start)) before=\(Self.describe(before)) after=\(Self.describe(after))")
     }
 
@@ -182,7 +223,39 @@ final class ReaderPositionSentry {
 
         if let expectation {
             self.expectation = nil
-            guard !expectation.allowed.contains(position) else { return }
+
+            // The turn moved. Whatever else happens, the reader is not stuck.
+            if position != expectation.start {
+                consecutiveNoOpTurns = 0
+                hasReportedNoOpRun = false
+            }
+
+            if position == expectation.start {
+                // A swipe that ran its animation and put the reader back where it
+                // started. This is the reported symptom — "翻過去有翻頁動畫但還是
+                //同一個頁面, 必須重進才顯示正常" — and the previous version of this
+                // guard treated it as legal, so the one shape worth catching was the
+                // one it let through. An abandoned swipe is not this: UIKit reports
+                // that with `completed == false`, which cancels the expectation before
+                // it ever reaches here.
+                //
+                // Programmatic transitions are exempt: re-placing the reader on the
+                // position it already shows is exactly what a chapter layout landing
+                // is supposed to do.
+                guard expectation.isGesture else { return }
+                reportNoOpTurn(at: position, isPlaceholder: isPlaceholder)
+                return
+            }
+
+            if expectation.matchesNeighbour(position) { return }
+
+            // Neither neighbour was known, so there was nothing to check against. Say
+            // so rather than calling an unverifiable landing wrong.
+            guard expectation.neighboursKnown else {
+                note("landing unverifiable (no neighbour known) \(Self.describe(position))")
+                return
+            }
+
             report(
                 localized("翻頁落點與步進目的地不符"),
                 english: "page turn landed off its stepped destination",
@@ -190,7 +263,7 @@ final class ReaderPositionSentry {
                 lines: [
                     "guard=G1 (\(expectation.describedAs))",
                     "start=\(Self.describe(expectation.start))",
-                    "expected=\(expectation.allowed.map(Self.describe).joined(separator: " | "))",
+                    "expected=\(expectation.describedNeighbours)",
                     "landed=\(Self.describe(position))",
                     "placeholder=\(isPlaceholder)",
                 ]
@@ -211,6 +284,36 @@ final class ReaderPositionSentry {
                 "to=\(Self.describe(position))",
                 "spineDelta=\(delta)",
                 "source=\(source.rawValue)",
+                "placeholder=\(isPlaceholder)",
+            ]
+        )
+    }
+
+    /// A completed swipe that did not move.
+    ///
+    /// The first one is only a notice: a single no-op turn can be a page whose far side
+    /// resolved to the same place. A *run* of them is the bug the user sees, and it is
+    /// reported once per run rather than once per swipe — someone hitting this swipes
+    /// many times before giving up, and one anomaly per swipe would bury everything
+    /// else in the log.
+    private func reportNoOpTurn(at position: CoreTextReadingPosition, isPlaceholder: Bool) {
+        consecutiveNoOpTurns += 1
+
+        guard consecutiveNoOpTurns >= 2 else {
+            note("no-op turn at \(Self.describe(position))")
+            return
+        }
+        guard !hasReportedNoOpRun else { return }
+        hasReportedNoOpRun = true
+
+        report(
+            localized("翻頁動畫跑完但頁面沒有前進"),
+            english: "a completed swipe left the reader on the same page",
+            severity: .anomaly,
+            lines: [
+                "guard=G3",
+                "position=\(Self.describe(position))",
+                "consecutiveNoOpTurns=\(consecutiveNoOpTurns)",
                 "placeholder=\(isPlaceholder)",
             ]
         )
