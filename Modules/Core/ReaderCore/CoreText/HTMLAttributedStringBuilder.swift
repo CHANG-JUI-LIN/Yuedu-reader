@@ -2898,6 +2898,9 @@ enum CSSParser {
         return (remaining, dark)
     }
 
+    /// Lower-cased, and without the leading colon a CSS3 selector doubles.
+    private static let firstLetterPseudo = ":first-letter"
+
     private static func parseRuleList(
         css: String,
         orderOffset: Int,
@@ -2917,12 +2920,23 @@ enum CSSParser {
             let declarations = parseDeclarationBlock(nsCSS.substring(with: match.range(at: 2)))
             for rawSelector in selectorText.split(separator: ",").map(String.init) {
                 let trimmed = rawSelector.trimmingCharacters(in: .whitespacesAndNewlines)
-                let isFirstLetter = trimmed.hasSuffix(":first-letter")
+                // Case-insensitive to match the `:first-child` handling in
+                // `parseComponent`; CSS pseudo-element names are not case sensitive.
+                let isFirstLetter = trimmed.lowercased().hasSuffix(Self.firstLetterPseudo)
 
                 let selectorBody: String
                 if isFirstLetter {
-                    let endIndex = trimmed.lastIndex(of: ":") ?? trimmed.endIndex
-                    selectorBody = String(trimmed[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    // Drop the pseudo-element, and the second colon when the stylesheet
+                    // uses the CSS3 `p::first-letter` spelling.
+                    //
+                    // This used to cut at `lastIndex(of: ":")`, which for the CSS3 form
+                    // lands *between* the two colons and leaves `p:` behind.
+                    // `parseComponent` rejects any leftover colon, so the rule was
+                    // dropped entirely and the drop cap silently never rendered — on the
+                    // spelling EPUBs actually use.
+                    var head = trimmed.dropLast(Self.firstLetterPseudo.count)
+                    if head.hasSuffix(":") { head = head.dropLast() }
+                    selectorBody = head.trimmingCharacters(in: .whitespacesAndNewlines)
                 } else {
                     selectorBody = trimmed
                 }
