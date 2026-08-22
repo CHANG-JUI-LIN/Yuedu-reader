@@ -156,6 +156,9 @@ final class SourceAPIErrorLog: @unchecked Sendable {
     /// seeing a short JSON object: a non-empty content-bearing payload always wins, because
     /// some sources intentionally expose JSON as readable chapter text.
     static func chapterErrorEnvelopeMessage(_ body: String?) -> String? {
+        if let message = chapterTransportFailureMessage(body) {
+            return message
+        }
         guard let body, body.utf8.count <= 4096,
               let data = body.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -184,6 +187,63 @@ final class SourceAPIErrorLog: @unchecked Sendable {
         }
         if let message, looksLikeFailureMessage(message) {
             return sanitized(message)
+        }
+        return nil
+    }
+
+    /// Detect transport/proxy failures that a source's JS returned as if they were
+    /// chapter prose. Android deliberately gives `java.ajax` the response body even
+    /// for non-2xx statuses, so rejection belongs at the final chapter boundary—not
+    /// in the HTTP bridge. Keep the signatures conjunctive and bounded to avoid
+    /// rejecting a real novel merely because its prose mentions a server error.
+    private static func chapterTransportFailureMessage(_ body: String?) -> String? {
+        guard let body, body.utf8.count <= 32_768 else { return nil }
+        let collapsed = body
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let normalized = collapsed.lowercased()
+
+        let sourceReportedAllEndpointsFailed =
+            normalized.hasPrefix("请求失败:")
+                || normalized.hasPrefix("请求失败：")
+                || normalized.hasPrefix("請求失敗:")
+                || normalized.hasPrefix("請求失敗：")
+        if sourceReportedAllEndpointsFailed,
+           normalized.contains("所有接口均请求失败")
+                || normalized.contains("所有接口均請求失敗") {
+            return sanitized(collapsed)
+        }
+
+        let cloudflareErrorCodeRange = normalized.range(
+            of: #"error\s*(?:code\s*)?52[0-9]"#,
+            options: .regularExpression
+        )
+        let cloudflareOperationalPhrase =
+            normalized.contains("web server is down")
+                || normalized.contains("origin is unreachable")
+                || normalized.contains("host error")
+        let cloudflarePageFingerprint =
+            normalized.contains("visit cloudflare.com")
+                || normalized.contains("cloudflare ray id")
+                || normalized.contains("cf-ray")
+        let cloudflareOperationalPage = normalized.contains("cloudflare")
+            && cloudflareOperationalPhrase
+            && (cloudflareErrorCodeRange != nil || cloudflarePageFingerprint)
+        if cloudflareOperationalPage {
+            if let codeRange = cloudflareErrorCodeRange {
+                return "Cloudflare " + normalized[codeRange]
+                    .replacingOccurrences(of: "error", with: "")
+                    .replacingOccurrences(of: "code", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return "Cloudflare upstream error"
+        }
+
+        let gatewayErrorPage = normalized.contains("bad gateway")
+            && (normalized.contains("nginx") || normalized.contains("gateway timeout"))
+        if gatewayErrorPage {
+            return "Upstream gateway error"
         }
         return nil
     }

@@ -259,6 +259,9 @@ class JSCoreEngine {
         bridge.presentsAndroidIdentityProvider = { [weak self] in
             self?.bookSource?.presentsAndroidIdentity ?? false
         }
+        bridge.importScriptCacheProvider = { [weak self] in
+            self?.cacheBridge
+        }
     }
 
     private static func clampedRequestTimeoutSeconds(_ respondTimeMilliseconds: Int64) -> TimeInterval {
@@ -1321,6 +1324,23 @@ class JSCoreEngine {
            Self.jsonObjectIfPossible(from: string) != nil,
            let wrapper = context.objectForKeyedSubscript("__yueduWrapJSONResult"),
            let wrapped = wrapper.call(withArguments: [string]),
+           !wrapped.isUndefined {
+            context.setObject(wrapped, forKeyedSubscript: "result" as NSString)
+            return
+        }
+        // Values extracted by Swift rule evaluators arrive here as Foundation
+        // arrays/dictionaries. JavaScriptCore exposes those as Obj-C collection
+        // proxies rather than native JS values, so they do not inherit the
+        // java.util.List compatibility methods installed on Array.prototype.
+        // Legado/Rhino exposes the same intermediate list as a mutable Java List;
+        // rules such as 番茄酱's `result.add("有声书")` must therefore be able to
+        // mutate it. Re-enter through JSON only for JSON-safe value collections;
+        // bridge objects such as LegadoStrResponse keep their native identity.
+        if JSONSerialization.isValidJSONObject(result),
+           let data = try? JSONSerialization.data(withJSONObject: result),
+           let raw = String(data: data, encoding: .utf8),
+           let wrapper = context.objectForKeyedSubscript("__yueduWrapJSONResult"),
+           let wrapped = wrapper.call(withArguments: [raw]),
            !wrapped.isUndefined {
             context.setObject(wrapped, forKeyedSubscript: "result" as NSString)
             return

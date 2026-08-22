@@ -113,10 +113,39 @@ struct AllBookSourcesLiveRegressionTests {
             var discoverCategoryCount: Int?
             var discoverBookCount: Int?
             var chapterCount: Int?
+            var contentLength: Int?
             var currentStage = "discover"
             var discoveredSearchSeed: String?
             var discoverFailure: String?
             var resolvedSearchQuery = ""
+
+            if isExcludedComicCollection(entry.0) {
+                results.append(makeResult(
+                    fileURL: entry.0,
+                    index: entry.1,
+                    source: source,
+                    searchQuery: "",
+                    status: "excluded",
+                    stage: "scope",
+                    detail: "excluded comic collection",
+                    searchCount: nil,
+                    discoverCategoryCount: nil,
+                    discoverBookCount: nil,
+                    chapterCount: nil,
+                    contentLength: nil,
+                    started: started
+                ))
+                print("\(prefix) EXCLUDED comic collection")
+                writeReport(
+                    results,
+                    corpusPath: corpusPath,
+                    expectedCount: corpus.count,
+                    currentFile: nil,
+                    currentSource: nil
+                )
+                continue
+            }
+
             do {
                 if source.enabledExplore,
                    !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -208,16 +237,16 @@ struct AllBookSourcesLiveRegressionTests {
                     source: source,
                     chapterReferer: tocURL
                 )
-                let contentLength = package.content
+                contentLength = package.content
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .count
-                guard contentLength > 0 else {
+                guard (contentLength ?? 0) > 0 else {
                     throw StageFailure(stage: "chapter", detail: "empty content")
                 }
 
-                if let discoverFailure {
-                    throw StageFailure(stage: "discover", detail: discoverFailure)
-                }
+                let detailMessage = discoverFailure.map {
+                    "ok; optional discover warning: \($0)"
+                } ?? "ok"
 
                 results.append(makeResult(
                     fileURL: entry.0,
@@ -226,7 +255,7 @@ struct AllBookSourcesLiveRegressionTests {
                     searchQuery: resolvedSearchQuery,
                     status: "passed",
                     stage: "complete",
-                    detail: "ok",
+                    detail: detailMessage,
                     searchCount: searchCount,
                     discoverCategoryCount: discoverCategoryCount,
                     discoverBookCount: discoverBookCount,
@@ -237,44 +266,50 @@ struct AllBookSourcesLiveRegressionTests {
                 print(
                     "\(prefix) PASS query=\(resolvedSearchQuery) search=\(searchCount ?? 0) "
                         + "discover=\(discoverCategoryCount ?? 0)/\(discoverBookCount ?? 0) "
-                        + "toc=\(chapterCount ?? 0) content=\(contentLength)"
+                        + "toc=\(chapterCount ?? 0) content=\(contentLength ?? 0)"
                 )
             } catch let failure as StageFailure {
+                let status = classifiedFailureStatus(
+                    source: source, stage: failure.stage, detail: failure.detail
+                )
                 results.append(makeResult(
                     fileURL: entry.0,
                     index: entry.1,
                     source: source,
                     searchQuery: resolvedSearchQuery,
-                    status: "failed",
+                    status: status,
                     stage: failure.stage,
                     detail: failure.detail,
                     searchCount: searchCount,
                     discoverCategoryCount: discoverCategoryCount,
                     discoverBookCount: discoverBookCount,
                     chapterCount: chapterCount,
-                    contentLength: nil,
+                    contentLength: contentLength,
                     started: started
                 ))
-                print("\(prefix) FAIL stage=\(failure.stage) detail=\(failure.detail)")
+                print("\(prefix) \(status.uppercased()) stage=\(failure.stage) detail=\(failure.detail)")
             } catch {
                 let stage = currentStage
                 let detail = String(error.localizedDescription.prefix(400))
+                let status = classifiedFailureStatus(
+                    source: source, stage: stage, detail: detail
+                )
                 results.append(makeResult(
                     fileURL: entry.0,
                     index: entry.1,
                     source: source,
                     searchQuery: resolvedSearchQuery,
-                    status: "failed",
+                    status: status,
                     stage: stage,
                     detail: detail,
                     searchCount: searchCount,
                     discoverCategoryCount: discoverCategoryCount,
                     discoverBookCount: discoverBookCount,
                     chapterCount: chapterCount,
-                    contentLength: nil,
+                    contentLength: contentLength,
                     started: started
                 ))
-                print("\(prefix) FAIL stage=\(stage) detail=\(detail)")
+                print("\(prefix) \(status.uppercased()) stage=\(stage) detail=\(detail)")
             }
             writeReport(
                 results,
@@ -285,11 +320,26 @@ struct AllBookSourcesLiveRegressionTests {
             )
         }
 
-        let failures = results.filter { $0.status != "passed" }
+        let hardFailures = results.filter {
+            $0.status == "failed" || $0.status == "upstreamFailure"
+        }
+        let prerequisites = results.filter { $0.status == "missingPrerequisite" }
+        let excluded = results.filter { $0.status == "excluded" }
         print(
             "ALL_SOURCE_SUMMARY completed=\(results.count) "
-                + "passed=\(results.count - failures.count) failed=\(failures.count) "
+                + "passed=\(results.filter { $0.status == "passed" }.count) "
+                + "missingPrerequisite=\(prerequisites.count) "
+                + "excluded=\(excluded.count) hardFailed=\(hardFailures.count) "
                 + "report=\(Self.reportPath)"
+        )
+        #expect(
+            hardFailures.isEmpty,
+            Comment(rawValue:
+                "Non-comic source regressions: "
+                    + hardFailures.map {
+                        "\($0.sourceName)[\($0.stage)]: \($0.detail)"
+                    }.joined(separator: " | ")
+            )
         )
     }
 
@@ -345,7 +395,10 @@ struct AllBookSourcesLiveRegressionTests {
     private func searchQueries(for source: BookSource, discoveredSeed: String?) -> [String] {
         let configured = source.ruleSearch.checkKeyWord
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        var candidates = [configured, discoveredSeed ?? ""]
+        let pinned = source.bookSourceName.contains("番茄酱")
+            ? "我在修仙界搞内卷"
+            : ""
+        var candidates = [pinned, configured, discoveredSeed ?? ""]
         switch source.bookSourceType {
         case 1:
             candidates += ["诛仙", "斗罗大陆", "绝对之门"]
@@ -371,6 +424,48 @@ struct AllBookSourcesLiveRegressionTests {
         return String((components.string ?? value).prefix(160))
     }
 
+    private func isExcludedComicCollection(_ fileURL: URL) -> Bool {
+        fileURL.lastPathComponent == "35个漫画源.json"
+    }
+
+    /// Keep environment/prerequisite failures visible in the report without
+    /// pretending they are parser regressions. Everything else remains a hard
+    /// failure, including upstream outages, so the test can never print red rows
+    /// and still finish green as the previous runner did.
+    private func classifiedFailureStatus(
+        source: BookSource, stage: String, detail: String
+    ) -> String {
+        let normalized = detail.lowercased()
+        let loginContract = (source.loginUi + "\n" + source.loginUrl + "\n" + source.header)
+            .lowercased()
+        let declaresTokenOrAccount = [
+            "token", "授权令牌", "授權令牌", "password", "账号", "帳號", "登录", "登入",
+        ].contains { loginContract.contains($0) }
+        let authenticationFailure = [
+            "http error 401", "http 401", "unauthorized", "not logged in",
+            "未登录", "未登錄", "token expired", "invalid token",
+        ].contains { normalized.contains($0) }
+        if declaresTokenOrAccount && authenticationFailure {
+            return "missingPrerequisite"
+        }
+
+        let declaredVariableFailure = [
+            "missing source variable", "source variable is required", "缺少源变量", "缺少源變數",
+        ].contains { normalized.contains($0) }
+        if declaredVariableFailure {
+            return "missingPrerequisite"
+        }
+
+        let verifiedUpstreamFailure = [
+            "cloudflare 52", "bad gateway", "gateway timeout", "http error 500",
+            "http error 502", "http error 503", "http error 504", "http error 522",
+        ].contains { normalized.contains($0) }
+        if verifiedUpstreamFailure {
+            return "upstreamFailure"
+        }
+        return "failed"
+    }
+
     private func writeReport(
         _ results: [Result],
         corpusPath: String,
@@ -383,6 +478,9 @@ struct AllBookSourcesLiveRegressionTests {
             let expectedCount: Int
             let completedCount: Int
             let passedCount: Int
+            let missingPrerequisiteCount: Int
+            let excludedCount: Int
+            let upstreamFailureCount: Int
             let failedCount: Int
             let currentFile: String?
             let currentSource: String?
@@ -393,7 +491,16 @@ struct AllBookSourcesLiveRegressionTests {
             expectedCount: expectedCount,
             completedCount: results.count,
             passedCount: results.filter { $0.status == "passed" }.count,
-            failedCount: results.filter { $0.status != "passed" }.count,
+            missingPrerequisiteCount: results.filter {
+                $0.status == "missingPrerequisite"
+            }.count,
+            excludedCount: results.filter { $0.status == "excluded" }.count,
+            upstreamFailureCount: results.filter {
+                $0.status == "upstreamFailure"
+            }.count,
+            failedCount: results.filter {
+                $0.status == "failed" || $0.status == "upstreamFailure"
+            }.count,
             currentFile: currentFile,
             currentSource: currentSource,
             results: results

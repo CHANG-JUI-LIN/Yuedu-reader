@@ -59,6 +59,7 @@ struct JsBridgeBrowserView: View {
     let initialHTML: String?
     let injectedJavaScript: String
     let sourceRunHandler: ((String) async throws -> String)?
+    let sourceConfigurationUpdateHandler: ((String) -> Void)?
 
     init(
         urlString: String,
@@ -67,6 +68,7 @@ struct JsBridgeBrowserView: View {
         initialHTML: String? = nil,
         injectedJavaScript: String = "",
         sourceRunHandler: ((String) async throws -> String)? = nil,
+        sourceConfigurationUpdateHandler: ((String) -> Void)? = nil,
         onDismiss: @escaping (_ body: String?) -> Void
     ) {
         self.urlString = urlString
@@ -75,6 +77,7 @@ struct JsBridgeBrowserView: View {
         self.initialHTML = initialHTML
         self.injectedJavaScript = injectedJavaScript
         self.sourceRunHandler = sourceRunHandler
+        self.sourceConfigurationUpdateHandler = sourceConfigurationUpdateHandler
         self.onDismiss = onDismiss
     }
 
@@ -139,6 +142,7 @@ struct JsBridgeBrowserView: View {
                 initialHTML: initialHTML,
                 injectedJavaScript: injectedJavaScript,
                 sourceRunHandler: sourceRunHandler,
+                sourceConfigurationUpdateHandler: sourceConfigurationUpdateHandler,
                 bridge: bridge
             )
                 .edgesIgnoringSafeArea(hidesToolbar ? .all : .bottom)
@@ -212,6 +216,16 @@ struct JsBridgeBrowserView: View {
 struct LegadoReviewBrowserView: View {
     let target: ReaderHTMLUtilities.ReviewTarget
     let onDismiss: (_ body: String?) -> Void
+    @State private var configurationJSON: String
+
+    init(
+        target: ReaderHTMLUtilities.ReviewTarget,
+        onDismiss: @escaping (_ body: String?) -> Void
+    ) {
+        self.target = target
+        self.onDismiss = onDismiss
+        _configurationJSON = State(initialValue: target.sourceBrowserPage?.configurationJSON ?? "")
+    }
 
     var body: some View {
         Group {
@@ -229,6 +243,7 @@ struct LegadoReviewBrowserView: View {
                         actionContext: page.actionContext
                     )
                 },
+                sourceConfigurationUpdateHandler: { configurationJSON = $0 },
                 onDismiss: onDismiss
             )
             } else {
@@ -252,7 +267,7 @@ struct LegadoReviewBrowserView: View {
 
     private var presentationConfiguration: SourceBrowserPresentationConfiguration {
         SourceBrowserPresentationConfiguration(
-            json: target.sourceBrowserPage?.configurationJSON ?? ""
+            json: configurationJSON
         )
     }
 }
@@ -277,18 +292,149 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
     let initialHTML: String?
     let injectedJavaScript: String
     let sourceRunHandler: ((String) async throws -> String)?
+    let sourceConfigurationUpdateHandler: ((String) -> Void)?
     let bridge: JsBridgeBrowserBridge
 
+    static let sourceJavaPromptName = SourceWebUIDelegate.sourceBridgePromptName
+
     static func sourcePageBootstrap(injectedJavaScript: String) -> String {
-        """
+        let unavailableMessage = javaScriptStringLiteral(
+            localized("段評執行環境不可用")
+        )
+        return """
         window.java = window.java || {};
         window.cache = window.cache || {};
         window.source = window.source || {};
+        (function () {
+            if (window.java.__yueduSourceNetworkInstalled) return;
+            function callNative(method, args) {
+                var payload = JSON.stringify({
+                    method: method,
+                    arguments: Array.prototype.slice.call(args)
+                });
+                var value = window.prompt('\(sourceJavaPromptName)', payload);
+                if (value === null) {
+                    throw new Error(\(unavailableMessage) + ': java.' + method);
+                }
+                return value;
+            }
+            ['ajax', 'get', 'post', 'head', 'connect', 'upConfig'].forEach(function (method) {
+                Object.defineProperty(window.java, method, {
+                    configurable: true,
+                    value: function () { return callNative(method, arguments); }
+                });
+            });
+            window.java.__yueduSourceNetworkInstalled = true;
+        })();
         window.run = function (script) {
             return window.webkit.messageHandlers.\(Coordinator.sourceRunMessageName)
                 .postMessage(String(script == null ? '' : script));
         };
         \(injectedJavaScript)
+        """
+    }
+
+    private static func javaScriptStringLiteral(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let encoded = String(data: data, encoding: .utf8) else {
+            return "\"\""
+        }
+        return encoded
+    }
+
+    /// Android exposes `upConfig` on `WebJsExtensions`, not on the parser's
+    /// `JsExtensions`. A source-authored page calls it to update the active
+    /// four-argument `showBrowser` sheet configuration (for example, resizing a
+    /// comments panel after it has measured its content).
+    static func sourceConfigurationJSON(forPromptPayload payload: String) throws -> String? {
+        guard payload.utf8.count <= 256 * 1024,
+              let data = payload.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let method = object["method"] as? String else {
+            throw sourcePageBridgeError()
+        }
+        guard method == "upConfig" else { return nil }
+        guard let arguments = object["arguments"] as? [Any],
+              arguments.count == 1,
+              let configurationJSON = arguments[0] as? String,
+              configurationJSON.utf8.count <= 64 * 1024,
+              let configurationData = configurationJSON.data(using: .utf8),
+              (try? JSONSerialization.jsonObject(with: configurationData)) is [String: Any] else {
+            throw sourcePageBridgeError()
+        }
+        return configurationJSON
+    }
+
+    private static func sourcePageBridgeError() -> NSError {
+        NSError(
+            domain: "SourcePageJavaBridge",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: localized("段評執行環境不可用")]
+        )
+    }
+
+    /// Turns a bounded WebView request into source-runtime JS. Only Android's browser-page
+    /// network surface is accepted; the method name is never interpolated before allowlisting,
+    /// and argument JSON is re-encoded before it reaches JavaScriptCore. The evaluated call then
+    /// travels through the same `ModernParserBridge` / `BookSourceSession` request pipeline as
+    /// chapter parsing, preserving source headers, login headers, cookies, and AnalyzeUrl options.
+    static func sourceJavaScript(forPromptPayload payload: String) throws -> String {
+        guard payload.utf8.count <= 256 * 1024,
+              let data = payload.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let method = object["method"] as? String,
+              ["ajax", "get", "post", "head", "connect"].contains(method),
+              let arguments = object["arguments"] as? [Any],
+              !arguments.isEmpty,
+              arguments.count <= 4,
+              arguments[0] is String,
+              JSONSerialization.isValidJSONObject(arguments),
+              let argumentsData = try? JSONSerialization.data(
+                withJSONObject: arguments,
+                options: [.withoutEscapingSlashes]
+              ),
+              let argumentsJSON = String(data: argumentsData, encoding: .utf8) else {
+            throw sourcePageBridgeError()
+        }
+
+        let call = "java.\(method).apply(java, \(argumentsJSON))"
+        if method == "head" {
+            return """
+            (function () {
+                var response = \(call);
+                var headers = response && typeof response.headers === 'function'
+                    ? response.headers() : response;
+                if (!headers) return '{}';
+                if (typeof headers.keySet === 'function' && typeof headers.get === 'function') {
+                    var object = {};
+                    var keys = headers.keySet();
+                    for (var i = 0; i < keys.length; i++) object[String(keys[i])] = headers.get(keys[i]);
+                    return JSON.stringify(object);
+                }
+                return JSON.stringify(headers);
+            })()
+            """
+        }
+        if method == "connect" {
+            return """
+            (function () {
+                var response = \(call);
+                if (response == null) return '';
+                return typeof response.toString === 'function'
+                    ? String(response.toString()) : String(response);
+            })()
+            """
+        }
+        return """
+        (function () {
+            var response = \(call);
+            if (response == null) return '';
+            if (typeof response.body === 'function') {
+                var body = response.body();
+                return String(body == null ? '' : body);
+            }
+            return String(response);
+        })()
         """
     }
 
@@ -308,7 +454,15 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         context.coordinator.clipboardBridge.install(in: config.userContentController)
         context.coordinator.sourceRunHandler = sourceRunHandler
+        context.coordinator.sourceConfigurationUpdateHandler = sourceConfigurationUpdateHandler
         if sourceRunHandler != nil {
+            context.coordinator.uiDelegate.sourceBridgePromptHandler = { [weak coordinator = context.coordinator] payload, completion in
+                guard let coordinator else {
+                    completion(nil)
+                    return
+                }
+                coordinator.handleSourceJavaPrompt(payload, completion: completion)
+            }
             config.userContentController.addScriptMessageHandler(
                 context.coordinator,
                 contentWorld: .page,
@@ -376,6 +530,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         weak var bridge: JsBridgeBrowserBridge?
         var progressObservation: NSKeyValueObservation?
         var sourceRunHandler: ((String) async throws -> String)?
+        var sourceConfigurationUpdateHandler: ((String) -> Void)?
         /// Strongly held: `WKWebView.uiDelegate` is weak.
         let uiDelegate = SourceWebUIDelegate()
         let clipboardBridge = SourceWebClipboardBridge()
@@ -481,6 +636,52 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
                     replyHandler(try await sourceRunHandler(script), nil)
                 } catch {
                     replyHandler(nil, error.localizedDescription)
+                }
+            }
+        }
+
+        func handleSourceJavaPrompt(
+            _ payload: String,
+            completion: @escaping (String?) -> Void
+        ) {
+            do {
+                if let configurationJSON = try JsBridgeBrowserRepresentable
+                    .sourceConfigurationJSON(forPromptPayload: payload) {
+                    sourceConfigurationUpdateHandler?(configurationJSON)
+                    completion("")
+                    return
+                }
+            } catch {
+                AppLogger.parse("source page upConfig rejected request", context: [
+                    "error": error.localizedDescription
+                ])
+                completion(nil)
+                return
+            }
+            guard let sourceRunHandler else {
+                completion(nil)
+                return
+            }
+            let script: String
+            do {
+                script = try JsBridgeBrowserRepresentable.sourceJavaScript(
+                    forPromptPayload: payload
+                )
+            } catch {
+                AppLogger.parse("source page java bridge rejected request", context: [
+                    "error": error.localizedDescription
+                ])
+                completion(nil)
+                return
+            }
+            Task { @MainActor in
+                do {
+                    completion(try await sourceRunHandler(script))
+                } catch {
+                    AppLogger.parse("source page java bridge failed", context: [
+                        "error": error.localizedDescription
+                    ])
+                    completion(nil)
                 }
             }
         }

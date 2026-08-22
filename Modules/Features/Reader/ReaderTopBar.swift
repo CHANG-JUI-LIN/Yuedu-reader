@@ -12,7 +12,13 @@ struct ReaderTopBar: View {
     let onBack: () -> Void
     let onToggleBookmark: () -> Void
     let onOpenBookDetail: (() -> Void)?
-    
+
+    @ObservedObject private var settings = GlobalSettings.shared
+
+    private var palette: ReaderClassicChromePalette {
+        ReaderClassicChromePalette(theme: theme, settings: settings)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -22,7 +28,7 @@ struct ReaderTopBar: View {
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(DSFont.fixed(size: 17, weight: .medium))
-                            .foregroundColor(theme.textColor)
+                            .foregroundColor(palette.topIcon)
                             .frame(width: 36, height: 36)
                             .accessibilityHidden(true)   // 名稱在按鈕上（見 §7.1）
                     }
@@ -40,7 +46,7 @@ struct ReaderTopBar: View {
                     if titleVisible {
                         Text(chapterTitle)
                             .font(DSFont.fixed(size: titleSize, weight: .medium))
-                            .foregroundColor(theme.textColor)
+                            .foregroundColor(palette.topIcon)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity)
                     } else {
@@ -52,7 +58,7 @@ struct ReaderTopBar: View {
                     } label: {
                         Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                             .font(DSFont.fixed(size: 17, weight: .medium))
-                            .foregroundColor(isBookmarked ? .orange : theme.textColor)
+                            .foregroundColor(isBookmarked ? .orange : palette.topIcon)
                             .scaleEffect(isBookmarked ? 1.15 : 1.0)
                             .frame(width: 36, height: 36)
                             .accessibilityHidden(true)
@@ -68,7 +74,7 @@ struct ReaderTopBar: View {
                             Image(systemName: "ellipsis")
                                 .rotationEffect(.degrees(90))
                                 .font(DSFont.fixed(size: 17, weight: .medium))
-                                .foregroundColor(theme.textColor)
+                                .foregroundColor(palette.topIcon)
                                 .frame(width: 36, height: 36)
                                 .accessibilityHidden(true)
                         }
@@ -80,7 +86,7 @@ struct ReaderTopBar: View {
             .padding(.horizontal, 12)
             .padding(.top, titleTopSpacing)
             .padding(.bottom, titleBottomSpacing)
-            .background(theme.barColor)
+            .background(palette.topFill)
             
             Divider().opacity(0.18)
             Spacer()

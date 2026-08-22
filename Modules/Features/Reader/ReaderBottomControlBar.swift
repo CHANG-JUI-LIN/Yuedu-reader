@@ -1,34 +1,5 @@
 import SwiftUI
 
-/// Resolved colours of the four circle buttons 經典 floats above its control bar
-/// (刷新／換源／下載／聽書). 外觀 → 閱讀界面 → 經典 → 自定義 can override them; with no
-/// override they follow the reading theme exactly as they did before that section
-/// existed. One type owns the fallback so the settings preview and the reader
-/// itself can never disagree about what a picked colour looks like.
-struct ReaderClassicCircleButtonPalette {
-    let fill: Color
-    let icon: Color
-    let border: Color
-
-    init(theme: ReaderTheme, settings: GlobalSettings) {
-        if let hex = settings.readerClassicCircleFillHex {
-            fill = Color(uiColor: AppearanceThemePreset.hex(hex))
-        } else {
-            fill = theme.barColor
-        }
-        if let hex = settings.readerClassicCircleIconHex {
-            // A hand-picked symbol colour is used exactly as picked — the 0.9 fade
-            // only exists to soften the theme's body-text colour into chrome.
-            let picked = Color(uiColor: AppearanceThemePreset.hex(hex))
-            icon = picked
-            border = picked.opacity(0.35)
-        } else {
-            icon = theme.textColor.opacity(0.9)
-            border = theme.textColor.opacity(0.35)
-        }
-    }
-}
-
 struct ReaderBottomControlBar: View {
     @Binding var readerTheme: ReaderTheme
     let overlayContentMaxWidth: CGFloat
@@ -90,7 +61,7 @@ struct ReaderBottomControlBar: View {
                 }
                 .frame(maxWidth: overlayContentMaxWidth)
             }
-            .background(readerTheme.barColor)
+            .background(palette.bottomFill)
             .overlay(alignment: .top) {
                 if let draft = chapterSliderDraft {
                     VStack(spacing: 4) {
@@ -119,9 +90,11 @@ struct ReaderBottomControlBar: View {
         }
     }
 
-    private var circlePalette: ReaderClassicCircleButtonPalette {
-        ReaderClassicCircleButtonPalette(theme: readerTheme, settings: settings)
+    private var palette: ReaderClassicChromePalette {
+        ReaderClassicChromePalette(theme: readerTheme, settings: settings)
     }
+
+    private var isNightTheme: Bool { readerTheme == .night }
 
     /// A floating secondary action, sitting directly on top of the CoreText page —
     /// unlike the tool row below, it has no bar behind it. The fill must therefore stay
@@ -129,7 +102,7 @@ struct ReaderBottomControlBar: View {
     /// through the circles and the icons were unreadable against any paragraph behind
     /// them. The default fill (`barColor`) matches the control bar underneath, so the
     /// row reads as one piece of chrome; an override from 自定義 replaces it wholesale
-    /// — see `ReaderClassicCircleButtonPalette`.
+    /// — see `ReaderClassicChromePalette`.
     ///
     /// That is also why this takes 光暈 alone rather than the full `floatingSurface`:
     /// letting 毛玻璃 reach these circles would put the body text back behind the icons.
@@ -138,11 +111,11 @@ struct ReaderBottomControlBar: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(DSFont.fixed(size: 18))
-                .foregroundColor(circlePalette.icon)
+                .foregroundColor(palette.circleIcon)
                 .frame(width: 40, height: 40)
-                .background(circlePalette.fill, in: Circle())
+                .background(palette.circleFill, in: Circle())
                 .interfaceGlow(in: Circle())
-                .overlay(Circle().stroke(circlePalette.border, lineWidth: 1))
+                .overlay(Circle().stroke(palette.circleBorder, lineWidth: 1))
                 .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                 // The symbol stayed a focusable element of its own next to the button, so
                 // VoiceOver read 「換源」 out as "arrow.left.and.right" — the button's label
@@ -169,7 +142,7 @@ struct ReaderBottomControlBar: View {
                     Text(localized("上一章")).font(DSFont.fixed(size: 14))
                 }
                 .foregroundColor(
-                    canGoPrevChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
+                    canGoPrevChapter ? palette.bottomIcon : palette.bottomIcon.opacity(0.22)
                 )
                 .padding(.leading, 14).padding(.vertical, 18)
             }
@@ -191,7 +164,7 @@ struct ReaderBottomControlBar: View {
                             chapterSliderDraft = nil
                         }
                     }
-                ).accentColor(readerTheme.accentColor)
+                ).accentColor(palette.bottomAccent)
                 // A bare Slider announces a percentage of its 0…1 range and no name at all
                 // (docs/design.md §7.1, third trap). Value shares `progressStatusText` with
                 // the line printed underneath so the two can't drift apart.
@@ -200,7 +173,7 @@ struct ReaderBottomControlBar: View {
 
                 Text(progressStatusText)
                     .font(DSFont.fixed(size: 10).monospacedDigit())
-                    .foregroundColor(readerTheme.textColor.opacity(0.4))
+                    .foregroundColor(palette.bottomIcon.opacity(0.4))
                     .accessibilityHidden(true)   // 已由滑桿的 value 念出
             }.padding(.horizontal, 6)
 
@@ -213,50 +186,71 @@ struct ReaderBottomControlBar: View {
                         .accessibilityHidden(true)
                 }
                 .foregroundColor(
-                    canGoNextChapter ? readerTheme.textColor : readerTheme.textColor.opacity(0.22)
+                    canGoNextChapter ? palette.bottomIcon : palette.bottomIcon.opacity(0.22)
                 )
                 .padding(.trailing, 14).padding(.vertical, 18)
             }
             .disabled(!canGoNextChapter)
             .accessibilityLabel(localized(canGoNextChapter ? "下一章" : "書末頁"))
         }
-        .background(readerTheme.barColor)
+        .background(palette.bottomFill)
     }
 
+    /// Driven by 自定義's visibility list rather than four hardcoded calls, so a
+    /// hidden button leaves the row entirely instead of sitting there disabled.
+    /// The list is sanitized on write and always follows `allCases` order, so this
+    /// cannot reshuffle the row.
     private var toolRow: some View {
         HStack(spacing: 0) {
-            toolBtn(icon: "list.bullet", label: localized("目錄")) { onOpenTOC() }
-            toolBtn(icon: "bookmark", label: localized("書籤")) { onOpenBookmarks() }
-            toolBtn(
-                icon: readerTheme == .night ? "sun.min" : "moon",
-                label: localized(readerTheme == .night ? "白天" : "深色"),
-                active: readerTheme == .night
-            ) {
-                withAnimation(.easeInOut(duration: feedbackDuration)) {
-                    if readerTheme == .night {
-                        let saved = UserDefaults.standard.string(forKey: "lastLightTheme") ?? ReaderTheme.white.rawValue
-                        readerTheme = ReaderTheme(rawValue: saved) ?? .white
-                    } else {
-                        UserDefaults.standard.set(readerTheme.rawValue, forKey: "lastLightTheme")
-                        readerTheme = .night
-                    }
-                }
+            ForEach(settings.visibleReaderClassicToolItems) { item in
+                toolButton(for: item)
             }
-            toolBtn(icon: "gearshape", label: localized("設置")) { onOpenSettings() }
         }
         .padding(.top, 2).padding(.bottom, 14)
-        .background(readerTheme.barColor)
+        .background(palette.bottomFill)
+    }
+
+    @ViewBuilder
+    private func toolButton(for item: ReaderClassicToolItem) -> some View {
+        switch item {
+        case .tableOfContents:
+            toolBtn(item: item, label: localized("目錄")) { onOpenTOC() }
+        case .bookmarks:
+            toolBtn(item: item, label: localized("書籤")) { onOpenBookmarks() }
+        case .nightMode:
+            toolBtn(
+                item: item,
+                label: localized(isNightTheme ? "白天" : "深色"),
+                active: isNightTheme
+            ) {
+                toggleNightTheme()
+            }
+        case .settings:
+            toolBtn(item: item, label: localized("設置")) { onOpenSettings() }
+        }
+    }
+
+    private func toggleNightTheme() {
+        withAnimation(.easeInOut(duration: feedbackDuration)) {
+            if isNightTheme {
+                let saved = UserDefaults.standard.string(forKey: "lastLightTheme") ?? ReaderTheme.white.rawValue
+                readerTheme = ReaderTheme(rawValue: saved) ?? .white
+            } else {
+                UserDefaults.standard.set(readerTheme.rawValue, forKey: "lastLightTheme")
+                readerTheme = .night
+            }
+        }
     }
 
     @ViewBuilder
     private func toolBtn(
-        icon: String, label: String, active: Bool = false, badge: Int? = nil,
+        item: ReaderClassicToolItem, label: String, active: Bool = false, badge: Int? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             VStack(spacing: 2) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: icon).font(DSFont.fixed(size: 20))
+                    toolGlyph(for: item)
                         .accessibilityHidden(true)   // 名稱在按鈕上，符號名不進旁白
                     if let count = badge, count > 0 {
                         Text("\(count)")
@@ -268,12 +262,29 @@ struct ReaderBottomControlBar: View {
                 }
                 Text(label).font(DSFont.fixed(size: 10))
             }
-            .foregroundColor(active ? readerTheme.accentColor : readerTheme.textColor.opacity(0.85))
+            .foregroundColor(active ? palette.bottomAccent : palette.bottomIcon.opacity(0.85))
             .frame(maxWidth: .infinity)
         }
         .accessibilityLabel(label)
         .accessibilityValue(badge.map { "\($0)" } ?? "")
         .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    /// An imported icon is drawn in its own colours — it is artwork the reader
+    /// chose, not a symbol to tint. Only the fallback SF Symbol inherits the row's
+    /// `foregroundColor`, which is why the label under it still recolors either way.
+    @ViewBuilder
+    private func toolGlyph(for item: ReaderClassicToolItem) -> some View {
+        if let custom = settings.readerClassicToolIconImage(for: item) {
+            Image(uiImage: custom)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 22, height: 22)
+        } else {
+            Image(systemName: item.systemImage(isNight: isNightTheme))
+                .font(DSFont.fixed(size: 20))
+        }
     }
 }
 

@@ -152,6 +152,11 @@ struct ReaderView: View {
     @State var showOnlineBookDetail = false
     /// 現代 interface: the card hanging off the cover thumbnail in the top bar.
     @State var showModernBookCard = false
+    /// 書卡裡按下的動作。每個動作都要開 sheet，而 sheet 在 popover 還在收的時候會被系統丟掉
+    /// （聽書就是這樣「面板縮回圓圈、但 sheet 沒出來」），所以先記在這裡，等 popover 真的關掉
+    /// 才開——跟 Technotes/iOS17MenuModalPresentation.md 是同一類邊界。
+    @State var modernBookCardPresentation =
+        DismissalSequencedPresentation<ReaderModernBookCardRoute>()
     /// Cover art for the 現代 chrome, read from disk once instead of on every body
     /// pass (the top bar and the book card both draw it).
     @State var modernCoverImage: UIImage?

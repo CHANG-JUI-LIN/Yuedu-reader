@@ -208,6 +208,10 @@ extension ReaderView {
                         // Keep it a popover on iPhone too — the card belongs to the
                         // cover it hangs off, which a sheet would break.
                         .presentationCompactAdaptation(.popover)
+                        // `.popover` has no `onDismiss`, so the card's own disappearance is
+                        // the dismissal signal the deferred route waits on. Deliberately a
+                        // real lifecycle callback, not a timer.
+                        .onDisappear(perform: presentDeferredModernBookCardRoute)
                 }
             }
         }
@@ -259,19 +263,32 @@ extension ReaderView {
             // Reversed for the same reason the Apple Books menu reverses it: the list is
             // built most-specific-first (聽書 … 刷新) and reads better the other way round.
             actions: readerSecondaryActions.reversed().map { action in
-                // Close the popover before running the action — every one of them opens
-                // its own sheet or panel, and iOS won't present a second modal from a
-                // popover that is still up.
+                // Every one of these opens its own sheet, and iOS won't present a modal from
+                // a popover that is still up — nor from one that is still dismissing, which
+                // is why running the action in the same turn as `showModernBookCard = false`
+                // left 聽書 dead: the card slid back into the thumbnail and no panel came up.
+                // Retain the route and let the popover's real dismissal run it.
                 ReaderSecondaryAction(id: action.id, icon: action.icon, label: action.label) {
+                    modernBookCardPresentation.select(.secondary(action.id))
                     showModernBookCard = false
-                    action.action()
                 }
             },
             onOpenDetail: onlineBookDetail == nil ? nil : {
+                modernBookCardPresentation.select(.bookDetail)
                 showModernBookCard = false
-                showOnlineBookDetail = true
             }
         )
+    }
+
+    /// Opens whatever the 現代 book card was asked for, once the popover is actually gone.
+    func presentDeferredModernBookCardRoute() {
+        guard let route = modernBookCardPresentation.consumeAfterDismissal() else { return }
+        switch route {
+        case .bookDetail:
+            showOnlineBookDetail = true
+        case .secondary(let id):
+            readerSecondaryActions.first { $0.id == id }?.action()
+        }
     }
 
     var modernBookTitle: String {

@@ -487,6 +487,13 @@ class GlobalSettings: ObservableObject {
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
     private static let readerClassicCircleFillHexKey = "yd_reader_classic_circle_fill_hex"
     private static let readerClassicCircleIconHexKey = "yd_reader_classic_circle_icon_hex"
+    private static let readerClassicTopBarFillHexKey = "yd_reader_classic_top_fill_hex"
+    private static let readerClassicTopBarIconHexKey = "yd_reader_classic_top_icon_hex"
+    private static let readerClassicBottomBarFillHexKey = "yd_reader_classic_bottom_fill_hex"
+    private static let readerClassicBottomBarIconHexKey = "yd_reader_classic_bottom_icon_hex"
+    private static let readerClassicBottomBarAccentHexKey = "yd_reader_classic_bottom_accent_hex"
+    private static let readerClassicToolVisibleIDsKey = "yd_reader_classic_tool_visible_ids"
+    static let readerClassicToolIconsKey = "yd_reader_classic_tool_icons"
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
     private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
     private static let interfaceGlassTransparencyKey = "yd_interface_glass_transparency"
@@ -1048,34 +1055,66 @@ class GlobalSettings: ObservableObject {
     /// control bar (刷新／換源／下載／聽書). nil = follow the reading theme's bar
     /// colour, which is what they painted before this setting existed.
     @Published var readerClassicCircleFillHex: UInt32? {
-        didSet {
-            if let readerClassicCircleFillHex {
-                UserDefaults.standard.set(Int(readerClassicCircleFillHex), forKey: Self.readerClassicCircleFillHexKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: Self.readerClassicCircleFillHexKey)
-            }
-        }
+        didSet { Self.persistHex(readerClassicCircleFillHex, forKey: Self.readerClassicCircleFillHexKey) }
     }
 
     /// Symbol (and hairline border) colour of those same four buttons.
     /// nil = follow the reading theme's text colour.
     @Published var readerClassicCircleIconHex: UInt32? {
+        didSet { Self.persistHex(readerClassicCircleIconHex, forKey: Self.readerClassicCircleIconHexKey) }
+    }
+
+    /// Top bar (返回／書籤／書籍詳情) background and symbol colour.
+    /// nil = follow the reading theme, the look these had before 自定義 existed.
+    @Published var readerClassicTopBarFillHex: UInt32? {
+        didSet { Self.persistHex(readerClassicTopBarFillHex, forKey: Self.readerClassicTopBarFillHexKey) }
+    }
+
+    @Published var readerClassicTopBarIconHex: UInt32? {
+        didSet { Self.persistHex(readerClassicTopBarIconHex, forKey: Self.readerClassicTopBarIconHexKey) }
+    }
+
+    /// Bottom bar: the progress row plus the 目錄／書籤／深色／設置 row behind it.
+    @Published var readerClassicBottomBarFillHex: UInt32? {
+        didSet { Self.persistHex(readerClassicBottomBarFillHex, forKey: Self.readerClassicBottomBarFillHexKey) }
+    }
+
+    @Published var readerClassicBottomBarIconHex: UInt32? {
+        didSet { Self.persistHex(readerClassicBottomBarIconHex, forKey: Self.readerClassicBottomBarIconHexKey) }
+    }
+
+    /// Progress slider, and the 深色 button while night mode is on.
+    @Published var readerClassicBottomBarAccentHex: UInt32? {
+        didSet { Self.persistHex(readerClassicBottomBarAccentHex, forKey: Self.readerClassicBottomBarAccentHexKey) }
+    }
+
+    /// Which bottom tool buttons are drawn. Sanitized on write — 設置 can never
+    /// leave, see `ReaderClassicToolItem.isAlwaysVisible`.
+    @Published var readerClassicToolVisibleIDs: [String] {
         didSet {
-            if let readerClassicCircleIconHex {
-                UserDefaults.standard.set(Int(readerClassicCircleIconHex), forKey: Self.readerClassicCircleIconHexKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: Self.readerClassicCircleIconHexKey)
-            }
+            UserDefaults.standard.set(readerClassicToolVisibleIDs, forKey: Self.readerClassicToolVisibleIDsKey)
         }
     }
 
-    var hasReaderClassicCircleOverride: Bool {
-        readerClassicCircleFillHex != nil || readerClassicCircleIconHex != nil
+    /// User-imported replacements for those buttons' symbols.
+    @Published var readerClassicToolIcons: [ReaderClassicToolIconAsset] {
+        didSet { Self.saveReaderClassicToolIcons(readerClassicToolIcons) }
     }
 
-    func clearReaderClassicCircleColors() {
-        readerClassicCircleFillHex = nil
-        readerClassicCircleIconHex = nil
+    /// One writer for every optional hex setting: an absent value must remove the
+    /// key rather than store a sentinel, otherwise "follow the theme" and "black"
+    /// become the same stored state.
+    private static func persistHex(_ value: UInt32?, forKey key: String) {
+        if let value {
+            UserDefaults.standard.set(Int(value), forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private static func loadHex(forKey key: String) -> UInt32? {
+        guard let stored = UserDefaults.standard.object(forKey: key) as? Int else { return nil }
+        return UInt32(clamping: stored)
     }
 
     // MARK: - 界面效果 (Interface Effects)
@@ -1650,16 +1689,18 @@ class GlobalSettings: ObservableObject {
         launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
         let rawReaderInterface = UserDefaults.standard.string(forKey: Self.appearanceReaderInterfaceKey) ?? ""
         appearanceReaderInterface = AppearanceReaderInterface(rawValue: rawReaderInterface) ?? .classic
-        if let savedCircleFill = UserDefaults.standard.object(forKey: Self.readerClassicCircleFillHexKey) as? Int {
-            readerClassicCircleFillHex = UInt32(clamping: savedCircleFill)
-        } else {
-            readerClassicCircleFillHex = nil
-        }
-        if let savedCircleIcon = UserDefaults.standard.object(forKey: Self.readerClassicCircleIconHexKey) as? Int {
-            readerClassicCircleIconHex = UInt32(clamping: savedCircleIcon)
-        } else {
-            readerClassicCircleIconHex = nil
-        }
+        readerClassicCircleFillHex = Self.loadHex(forKey: Self.readerClassicCircleFillHexKey)
+        readerClassicCircleIconHex = Self.loadHex(forKey: Self.readerClassicCircleIconHexKey)
+        readerClassicTopBarFillHex = Self.loadHex(forKey: Self.readerClassicTopBarFillHexKey)
+        readerClassicTopBarIconHex = Self.loadHex(forKey: Self.readerClassicTopBarIconHexKey)
+        readerClassicBottomBarFillHex = Self.loadHex(forKey: Self.readerClassicBottomBarFillHexKey)
+        readerClassicBottomBarIconHex = Self.loadHex(forKey: Self.readerClassicBottomBarIconHexKey)
+        readerClassicBottomBarAccentHex = Self.loadHex(forKey: Self.readerClassicBottomBarAccentHexKey)
+        readerClassicToolVisibleIDs = Self.sanitizedReaderClassicToolVisibleIDs(
+            UserDefaults.standard.stringArray(forKey: Self.readerClassicToolVisibleIDsKey)
+                ?? Self.defaultReaderClassicToolVisibleIDs
+        )
+        readerClassicToolIcons = Self.loadReaderClassicToolIcons()
         interfaceGlowIntensity = Self.sanitizedInterfaceGlowIntensity(
             (UserDefaults.standard.object(forKey: Self.interfaceGlowIntensityKey) as? Double)
                 ?? Self.defaultInterfaceGlowIntensity

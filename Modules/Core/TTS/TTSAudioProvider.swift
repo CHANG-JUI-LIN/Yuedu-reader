@@ -8,6 +8,10 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
     let loginUi: String?
     let loginUrl: String?
     let loginCheckJs: String?
+    /// Legado `HttpTTS.jsLib`: shared helper functions the `url` rule may call. Upstream
+    /// injects it into the scope of every rule evaluation (`BaseSource.evalJS`), which is why
+    /// nothing else needs to be executed to make those helpers exist.
+    let jsLib: String?
     let contentType: String?
     let concurrentRate: String?
 
@@ -19,6 +23,7 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
         loginUi: String? = nil,
         loginUrl: String? = nil,
         loginCheckJs: String? = nil,
+        jsLib: String? = nil,
         contentType: String? = nil,
         concurrentRate: String? = nil
     ) {
@@ -30,6 +35,7 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
         self.loginUi = loginUi
         self.loginUrl = loginUrl
         self.loginCheckJs = loginCheckJs
+        self.jsLib = jsLib
         self.contentType = contentType
         self.concurrentRate = concurrentRate
         let stableID = sourceID?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -38,7 +44,7 @@ struct ImportedTTSSource: Identifiable, Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, urlTemplate, headers
-        case loginUi, loginUrl, loginCheckJs, contentType, concurrentRate
+        case loginUi, loginUrl, loginCheckJs, jsLib, contentType, concurrentRate
     }
 }
 
@@ -70,6 +76,7 @@ enum TTSSourceJSONParser {
             let loginUi = firstString(in: dictionary, keys: ["loginUi"])
             let loginUrl = firstString(in: dictionary, keys: ["loginUrl"])
             let loginCheckJs = firstString(in: dictionary, keys: ["loginCheckJs"])
+            let jsLib = firstString(in: dictionary, keys: ["jsLib"])
             let contentType = firstString(in: dictionary, keys: ["contentType"])
             let concurrentRate = firstString(in: dictionary, keys: ["concurrentRate"])
             let source = ImportedTTSSource(
@@ -80,6 +87,7 @@ enum TTSSourceJSONParser {
                 loginUi: loginUi,
                 loginUrl: loginUrl,
                 loginCheckJs: loginCheckJs,
+                jsLib: jsLib,
                 contentType: contentType,
                 concurrentRate: concurrentRate
             )
@@ -353,7 +361,71 @@ enum DirectChapterAudioResolver {
     }
 }
 
-enum TTSAudioProviderError: LocalizedError {
+/// What a TTS provider actually sent back when it did not send audio.
+///
+/// Reading stops after three failed segments, and the anomaly that records it used to say only
+/// `error=responsePostProcessingFailed` — true, and useless: it cannot tell a quota notice from
+/// a login wall from a truncated body. The provider knows all of that at the moment it rejects
+/// the response, so it is carried on the error and ends up in the anomaly's own detail.
+///
+/// Deliberately bounded and query-free, the same red line the book-source API log holds: the
+/// endpoint without its query string (a TTS URL carries the user's API key there) and 200
+/// characters of body.
+struct TTSResponseDiagnostic: Equatable, Sendable, CustomStringConvertible {
+    let endpoint: String
+    let status: Int
+    let contentType: String
+    let byteCount: Int
+    let bodyExcerpt: String
+
+    static let excerptLimit = 200
+
+    init(request: URLRequest, response: URLResponse?, data: Data) {
+        let url = request.url
+        endpoint = [url?.host, url?.path]
+            .compactMap { $0 }
+            .joined()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        contentType = (response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Type") ?? "-"
+        byteCount = data.count
+        bodyExcerpt = Self.excerpt(of: data)
+    }
+
+    /// The body as something a person can read. Text bodies — the quota notice, the JSON error,
+    /// the login wall — are the whole point, so they are decoded and trimmed; anything else
+    /// falls back to the byte head, which is what identifies a truncated or mislabelled audio
+    /// container.
+    private static func excerpt(of data: Data) -> String {
+        guard let text = String(data: data.prefix(4096), encoding: .utf8) else {
+            return TTSAudioPayload.diagnosticHead(of: data)
+        }
+        let collapsed = text
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else { return TTSAudioPayload.diagnosticHead(of: data) }
+        return collapsed.count > excerptLimit
+            ? String(collapsed.prefix(excerptLimit)) + "…"
+            : collapsed
+    }
+
+    var description: String {
+        "HTTP \(status) · \(endpoint) · \(byteCount) bytes · \(contentType) · \(bodyExcerpt)"
+    }
+
+    var logContext: [String: Any] {
+        [
+            "endpoint": endpoint,
+            "status": status,
+            "contentType": contentType,
+            "bytes": byteCount,
+            "body": bodyExcerpt
+        ]
+    }
+}
+
+enum TTSAudioProviderError: LocalizedError, CustomStringConvertible {
     case emptyTemplate
     case invalidURL
     /// The source's `@js:` template ran but produced nothing — a JS exception, a `null`
@@ -365,11 +437,13 @@ enum TTSAudioProviderError: LocalizedError {
     /// options blob that failed to parse). Carries the head of that string.
     case jsResultNotRequestable(String)
     case emptyData
-    case badStatus(Int)
-    case responsePostProcessingFailed
+    /// Every response-shaped failure carries what came back, so the anomaly that ends the
+    /// listening session names the actual cause instead of its own category.
+    case badStatus(Int, TTSResponseDiagnostic)
+    case responsePostProcessingFailed(TTSResponseDiagnostic)
     /// 200 OK, not obviously text, but not a container AVFoundation can open either —
     /// a truncated body, or a format the provider was not asked for.
-    case unrecognisedAudioPayload
+    case unrecognisedAudioPayload(TTSResponseDiagnostic)
 
     var errorDescription: String? {
         switch self {
@@ -383,14 +457,19 @@ enum TTSAudioProviderError: LocalizedError {
             return "TTS source script returned an unusable URL: \(head)"
         case .emptyData:
             return "TTS provider returned empty audio data"
-        case .badStatus(let status):
-            return "TTS provider returned HTTP \(status)"
-        case .responsePostProcessingFailed:
-            return "TTS provider response did not contain usable audio data"
-        case .unrecognisedAudioPayload:
-            return "TTS provider response was not recognisable audio"
+        case .badStatus(_, let diagnostic):
+            return "TTS provider rejected the request — \(diagnostic)"
+        case .responsePostProcessingFailed(let diagnostic):
+            return "TTS provider sent no usable audio — \(diagnostic)"
+        case .unrecognisedAudioPayload(let diagnostic):
+            return "TTS provider sent unrecognisable audio — \(diagnostic)"
         }
     }
+
+    /// `HTTPTTSEngine` interpolates the error straight into the anomaly's detail, and the
+    /// default enum reflection there would print the case name and a struct dump. Print what
+    /// the reader needs to see instead.
+    var description: String { errorDescription ?? "TTS provider failed" }
 }
 
 final class CustomHTTPProvider: TTSAudioProvider {
@@ -457,11 +536,34 @@ final class CustomHTTPProvider: TTSAudioProvider {
         } else {
             ttsLog("[TTS][Provider] response nonHTTP bytes=\(data.count)")
         }
+
+        /// Records the rejection where the user can read it. `ttsLog` is `NSLog` only: it reaches
+        /// Console on a tethered Mac and nothing else, which is why a stopped listening session
+        /// left no trace in 診斷與回報 beyond the anomaly's own category name. Warning, not error —
+        /// a single rejected segment is skipped and recovered from; the anomaly is what marks the
+        /// run of them that ends playback.
+        func reject(_ reason: String, _ error: TTSAudioProviderError) -> TTSAudioProviderError {
+            let diagnostic = TTSResponseDiagnostic(request: request, response: response, data: data)
+            ttsLog("[TTS][Provider] \(reason) \(diagnostic)")
+            AppLogger.error(
+                "[TTS] 語音段落被拒：\(reason)",
+                context: diagnostic.logContext.merging(["source": source?.name ?? "-"]) { a, _ in a },
+                level: .warning
+            )
+            return error
+        }
+
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw TTSAudioProviderError.badStatus(http.statusCode)
+            throw reject(
+                "HTTP 狀態碼錯誤",
+                .badStatus(
+                    http.statusCode,
+                    TTSResponseDiagnostic(request: request, response: response, data: data)
+                )
+            )
         }
         guard !data.isEmpty else {
-            throw TTSAudioProviderError.emptyData
+            throw reject("回應是空的", .emptyData)
         }
 
         if let source, let loginCheckJs = source.loginCheckJs, !loginCheckJs.isEmpty {
@@ -480,12 +582,20 @@ final class CustomHTTPProvider: TTSAudioProvider {
         // the listening session — the "朗讀失敗：第 N 段語音無法下載" report. Rejecting here
         // instead lets the existing retry → skip → three-strikes policy do its job.
         if responseLooksLikeTextPayload(data: data, contentType: responseContentType) {
-            ttsLog("[TTS][Provider] rejected non-audio payload contentType=\(responseContentType) head=\(TTSAudioPayload.diagnosticHead(of: data))")
-            throw TTSAudioProviderError.responsePostProcessingFailed
+            throw reject(
+                "伺服器回的是文字不是音訊",
+                .responsePostProcessingFailed(
+                    TTSResponseDiagnostic(request: request, response: response, data: data)
+                )
+            )
         }
         if !TTSAudioPayload.looksLikeAudioContainer(data) {
-            ttsLog("[TTS][Provider] rejected unrecognised audio container contentType=\(responseContentType) bytes=\(data.count) head=\(TTSAudioPayload.diagnosticHead(of: data))")
-            throw TTSAudioProviderError.unrecognisedAudioPayload
+            throw reject(
+                "認不出這個音訊格式",
+                .unrecognisedAudioPayload(
+                    TTSResponseDiagnostic(request: request, response: response, data: data)
+                )
+            )
         }
 
         return data
@@ -601,9 +711,30 @@ final class CustomHTTPProvider: TTSAudioProvider {
             LoginManager.shared.storeLoginInfo(sourceUrl: sourceId, info: info)
         }
 
-        // Evaluate loginUrl JS first if present (defines shared functions/variables)
-        if let loginUrl = source?.loginUrl, !loginUrl.isEmpty {
-            _ = engine.evaluate(loginUrl, result: nil, bindings: [:])
+        // Shared helper functions the `url` rule calls live in `jsLib`, which is what Legado
+        // injects into every rule evaluation (`BaseSource.evalJS`).
+        //
+        // This used to evaluate `loginUrl` here instead, and no Legado fork does that: upstream
+        // runs `loginUrl` only from an explicit 登入 action (`BaseSource.login()`, which appends
+        // its own `login()` call and throws `Function login not implements!!!` when there is
+        // none) — never once per speech segment. Login state reaches a synthesis request the
+        // way `AnalyzeUrl` delivers it, through the stored login header, applied below.
+        // Running a login URL (or a JSON login descriptor) as JavaScript per segment produced
+        // 337 `SyntaxError: Unexpected end of script` in one two-minute listening session,
+        // every one of them dropped by a bare `_ =`.
+        if let jsLib = source?.jsLib?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !jsLib.isEmpty {
+            _ = engine.evaluate(jsLib, result: nil, bindings: [:])
+            // A jsLib that only declares functions completes with no value, so `nil` is not a
+            // failure here — `lastError` is. Never silently discard it: a broken jsLib means the
+            // url rule is about to fail with a confusing "produced nothing".
+            if let error = engine.lastError {
+                ttsLog("[TTS][Provider] jsLib failed source=\(source?.name ?? "-") error=\(error)")
+                AppLogger.error("[TTS] 語音源 jsLib 執行失敗", context: [
+                    "source": source?.name ?? "-",
+                    "error": error
+                ])
+            }
         }
 
         // Prepare JS with speakText/speakSpeed bindings
@@ -617,9 +748,14 @@ final class CustomHTTPProvider: TTSAudioProvider {
               !result.isEmpty else {
             // The script itself produced nothing. `JSCoreEngine.evaluate` collapses a JS
             // exception, a null return and its own 30s evaluation timeout into the same nil,
-            // so log the source and text size that reached it — that is what tells these apart
-            // in a device log.
-            ttsLog("[TTS][Provider] JS evaluation returned empty result source=\(source?.name ?? "-") textCount=\(text.count)")
+            // so report `lastError` alongside the source and text size: a thrown exception names
+            // itself there, and its absence means the rule returned nothing or timed out.
+            ttsLog("[TTS][Provider] JS evaluation returned empty result source=\(source?.name ?? "-") textCount=\(text.count) error=\(engine.lastError ?? "none")")
+            AppLogger.error("[TTS] 語音源 url 規則沒有產生請求", context: [
+                "source": source?.name ?? "-",
+                "error": engine.lastError ?? "none",
+                "textCount": text.count
+            ])
             throw TTSAudioProviderError.jsTemplateProducedNothing
         }
 
@@ -628,8 +764,14 @@ final class CustomHTTPProvider: TTSAudioProvider {
             throw TTSAudioProviderError.jsResultNotRequestable(String(result.prefix(80)))
         }
 
-        // Apply login headers captured during JS evaluation
+        // Login state reaches the request as headers, exactly like Legado's
+        // `AnalyzeUrl(hasLoginHeader: true)` → `BaseSource.getHeaderMap` → `getLoginHeaderMap()`.
+        // The stored header goes on first; anything the rule's own JS put there during this
+        // evaluation is fresher and wins.
         var mutableRequest = request
+        for (field, value) in LoginManager.shared.getLoginHeaders(sourceUrl: sourceId) {
+            mutableRequest.setValue(value, forHTTPHeaderField: field)
+        }
         for (field, value) in loginHeaders {
             mutableRequest.setValue(value, forHTTPHeaderField: field)
         }
@@ -672,6 +814,13 @@ final class CustomHTTPProvider: TTSAudioProvider {
         """
 
         _ = engine.evaluate(wrappedJs, result: nil, bindings: [:])
+        // The script is allowed to extract nothing (many sources only refresh a login header),
+        // so an empty result is not an error — a thrown exception is, and it used to vanish here
+        // while the caller reported the response as "not audio".
+        if let error = engine.lastError {
+            ttsLog("[TTS][Provider] loginCheckJs failed error=\(error)")
+            AppLogger.error("[TTS] 語音源 loginCheckJs 執行失敗", context: ["error": error])
+        }
         return extractedData
     }
 

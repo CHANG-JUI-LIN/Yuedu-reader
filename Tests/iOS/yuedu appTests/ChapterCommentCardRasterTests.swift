@@ -85,6 +85,42 @@ struct ChapterCommentCardRasterTests {
         }
     }
 
+    /// The card is authored 1080 units wide with 42-unit text, i.e. ~3.9% of its own width.
+    /// Rasterizing that at an iPad landscape column made its text ~40pt against 20pt prose;
+    /// it must come back sized so the card's own text lands on the reader's body size instead.
+    @Test("a wide column no longer blows the card's text up")
+    func cardIsSizedByReaderTextNotColumnWidth() async {
+        let uri = cardDataURI()
+        let column: CGFloat = 1050
+        let bodyPointSize: CGFloat = 20
+
+        let image = await OnlineImageLoader.load(
+            src: uri, renderWidth: column, bodyPointSize: bodyPointSize, timeout: 12
+        )
+        let card = ReviewCardSVGMetrics.textCard(in: cardSVG())
+        #expect(card != nil)
+        guard let image, let card else { return }
+
+        let expected = ReviewCardSVGMetrics.preferredWidth(
+            for: card, bodyPointSize: bodyPointSize, columnWidth: column
+        )
+        #expect(abs(image.size.width - expected) < 4.0)
+        #expect(image.size.width < column)
+        // The card's own body text now measures the reader's body size.
+        #expect(abs(image.size.width * card.textFraction - bodyPointSize) < 1.0)
+    }
+
+    @Test("a phone column is narrower than the card wants, so it is unchanged")
+    func narrowColumnStillFillsTheColumn() async {
+        let image = await OnlineImageLoader.load(
+            src: cardDataURI(), renderWidth: 360, bodyPointSize: 20, timeout: 12
+        )
+        #expect(image != nil)
+        if let image {
+            #expect(abs(image.size.width - 360) < 4.0)
+        }
+    }
+
     @Test("raw rasterizer at the intrinsic 1080x700 size")
     @MainActor
     func rawRasterizerAtIntrinsicSize() async {

@@ -175,6 +175,8 @@ Legado 正文常在图片 URL 后附 `,{...}` 点击配置。Yuedu 支持 `click
 | `expandedCornersRadius` | 展开状态圆角，0–120 |
 | `hardwareAccelerated` | 接受但不另行切换；WKWebView 本身使用加速合成 |
 
+四参数 `showBrowser` 加载的书源自建页面可同步调用 `java.ajax(url)`、`java.get(url, headers)`、`java.post(url, body, headers)`、`java.head(url, headers)` 与 `java.connect(url[, headers, timeout])`。请求仍走原书源的同一个 session，会应用书源标头、登录标头、cookie 与 URL 选项；返回形状按 Legado-E／MD3 的 `WebJsExtensions`，其中 `ajax`／`get`／`post` 是正文字符串、`head` 是标头 JSON 字符串。页面若要执行其他书源 JS，可使用返回 Promise 的 `run(script)`。
+
 书源／登录浏览器会把 `java.copyText`、`navigator.clipboard.writeText` 与 `document.execCommand('copy')` 接到 iOS 系统剪贴板。
 
 ## 10. 字段对照：编辑器分页 ↔ Legado JSON 字段

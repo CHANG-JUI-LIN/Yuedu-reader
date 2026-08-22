@@ -238,14 +238,18 @@ final class ModernRuleEngine {
         }
 
         guard let finalResult = result else { return [] }
+        // JavaScriptCore crosses native JS arrays back to Swift as a JSON string,
+        // while Android Legado's AnalyzeRule keeps them as a List. Normalize that
+        // bridge representation before converting the final list to strings.
+        let normalizedFinalResult = Self.rehydrateJSListResult(finalResult) ?? finalResult
 
         var stringList: [String]
-        if let str = finalResult as? String {
+        if let str = normalizedFinalResult as? String {
             stringList = str.components(separatedBy: "\n").filter { !$0.isEmpty }
-        } else if let list = finalResult as? [Any] {
+        } else if let list = normalizedFinalResult as? [Any] {
             stringList = list.map { Self.toString($0) }.filter { !$0.isEmpty }
         } else {
-            let str = Self.toString(finalResult)
+            let str = Self.toString(normalizedFinalResult)
             stringList = str.isEmpty ? [] : [str]
         }
 

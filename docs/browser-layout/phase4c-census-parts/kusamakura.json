@@ -1,0 +1,212 @@
+{
+  "books" : [
+    {
+      "chapterCount" : 15,
+      "id" : "official-epub3/kusamakura-japanese-vertical-writing.epub",
+      "origin" : "official-epub3",
+      "scannedChapterCount" : 15,
+      "scannerFallbackChapterCount" : 15,
+      "title" : "Kusamakura"
+    }
+  ],
+  "corpusChapterCount" : 15,
+  "corpusEPUBCount" : 1,
+  "failures" : [
+
+  ],
+  "features" : [
+    {
+      "chapterCount" : 15,
+      "elementHits" : 361,
+      "epubCount" : 1,
+      "feature" : "other-layout",
+      "layers" : [
+        {
+          "chapterCount" : 15,
+          "elementHits" : 361,
+          "epubCount" : 1,
+          "layer" : "layout"
+        }
+      ],
+      "patterns" : [
+        {
+          "chapterCount" : 15,
+          "element" : "<html>",
+          "elementHits" : 15,
+          "epubCount" : 1,
+          "layer" : "layout",
+          "property" : "max-height",
+          "selector" : "html",
+          "value" : "28em"
+        },
+        {
+          "chapterCount" : 13,
+          "element" : "<p>",
+          "elementHits" : 344,
+          "epubCount" : 1,
+          "layer" : "layout",
+          "property" : "text-indent",
+          "selector" : ".main_text > p",
+          "value" : "1em"
+        },
+        {
+          "chapterCount" : 1,
+          "element" : "<div.author_desc>",
+          "elementHits" : 1,
+          "epubCount" : 1,
+          "layer" : "layout",
+          "property" : "max-height",
+          "selector" : ".author_desc",
+          "value" : "100%"
+        },
+        {
+          "chapterCount" : 1,
+          "element" : "<div.author_desc>",
+          "elementHits" : 1,
+          "epubCount" : 1,
+          "layer" : "layout",
+          "property" : "min-width",
+          "selector" : ".author_desc",
+          "value" : "10em"
+        }
+      ]
+    },
+    {
+      "chapterCount" : 15,
+      "elementHits" : 30,
+      "epubCount" : 1,
+      "feature" : "vertical-writing",
+      "layers" : [
+        {
+          "chapterCount" : 15,
+          "elementHits" : 15,
+          "epubCount" : 1,
+          "layer" : "layout"
+        },
+        {
+          "chapterCount" : 15,
+          "elementHits" : 15,
+          "epubCount" : 1,
+          "layer" : "metadata"
+        }
+      ],
+      "patterns" : [
+        {
+          "chapterCount" : 15,
+          "element" : "<html>",
+          "elementHits" : 15,
+          "epubCount" : 1,
+          "layer" : "layout",
+          "property" : "-epub-writing-mode",
+          "selector" : "html",
+          "value" : "vertical-rl"
+        },
+        {
+          "chapterCount" : 13,
+          "element" : "<body.bodymatter>",
+          "elementHits" : 13,
+          "epubCount" : 1,
+          "layer" : "metadata",
+          "property" : "rendition:writing-mode",
+          "selector" : "<package metadata>",
+          "value" : "vertical-rl"
+        },
+        {
+          "chapterCount" : 1,
+          "element" : "<body.backmatter>",
+          "elementHits" : 1,
+          "epubCount" : 1,
+          "layer" : "metadata",
+          "property" : "rendition:writing-mode",
+          "selector" : "<package metadata>",
+          "value" : "vertical-rl"
+        },
+        {
+          "chapterCount" : 1,
+          "element" : "<body.frontmatter>",
+          "elementHits" : 1,
+          "epubCount" : 1,
+          "layer" : "metadata",
+          "property" : "rendition:writing-mode",
+          "selector" : "<package metadata>",
+          "value" : "vertical-rl"
+        }
+      ]
+    },
+    {
+      "chapterCount" : 13,
+      "elementHits" : 9206,
+      "epubCount" : 1,
+      "feature" : "ruby",
+      "layers" : [
+        {
+          "chapterCount" : 13,
+          "elementHits" : 9206,
+          "epubCount" : 1,
+          "layer" : "dom"
+        }
+      ],
+      "patterns" : [
+        {
+          "chapterCount" : 13,
+          "element" : "<rt>",
+          "elementHits" : 4603,
+          "epubCount" : 1,
+          "layer" : "dom",
+          "property" : "element",
+          "selector" : "<DOM ruby, rt, rp>",
+          "value" : "rt"
+        },
+        {
+          "chapterCount" : 13,
+          "element" : "<ruby>",
+          "elementHits" : 4603,
+          "epubCount" : 1,
+          "layer" : "dom",
+          "property" : "element",
+          "selector" : "<DOM ruby, rt, rp>",
+          "value" : "ruby"
+        }
+      ]
+    }
+  ],
+  "ingestionFallbacks" : [
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#0: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#10: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#11: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#12: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#13: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#14: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#1: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#2: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#3: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#4: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#5: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#6: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#7: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#8: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#9: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS"
+  ],
+  "origins" : [
+    {
+      "chapterCount" : 15,
+      "epubCount" : 1,
+      "origin" : "official-epub3",
+      "scannedChapterCount" : 15
+    }
+  ],
+  "scannedChapterCount" : 15,
+  "scannerFallbacks" : [
+    {
+      "chapterCount" : 15,
+      "epubCount" : 1,
+      "reason" : "vertical-writing-mode"
+    },
+    {
+      "chapterCount" : 13,
+      "epubCount" : 1,
+      "reason" : "ruby"
+    }
+  ],
+  "schemaVersion" : 1
+}

@@ -997,7 +997,11 @@ class ModernParserBridge {
             let intro = engine.getString(ruleStr: source.ruleSearch.intro)
             let wordCount = engine.getString(ruleStr: source.ruleSearch.wordCount)
             let lastChapter = engine.getString(ruleStr: source.ruleSearch.lastChapter)
-            let kind = engine.getString(ruleStr: source.ruleSearch.kind)
+            // Android Legado parses `kind` with getStringList and joins the values.
+            // Besides preserving multiple categories, this keeps the intermediate
+            // `result` as a mutable List for trailing JS such as `result.add(...)`.
+            let kind = engine.getStringList(ruleStr: source.ruleSearch.kind)
+                .joined(separator: ",")
 
             books.append(OnlineBook(
                 name: name,
@@ -1081,7 +1085,8 @@ class ModernParserBridge {
         let coverRule = source.ruleBookInfo.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let coverUrl = coverRule.isEmpty ? "" : engine.getString(ruleStr: coverRule, isUrl: true)
         let intro = engine.getString(ruleStr: source.ruleBookInfo.intro)
-        let kind = engine.getString(ruleStr: source.ruleBookInfo.kind)
+        let kind = engine.getStringList(ruleStr: source.ruleBookInfo.kind)
+            .joined(separator: ",")
         let wordCount = engine.getString(ruleStr: source.ruleBookInfo.wordCount)
         let lastChapter = engine.getString(ruleStr: source.ruleBookInfo.lastChapter)
         // Same guard for tocUrl: an empty rule would otherwise resolve to baseUrl (site root) and
@@ -2210,7 +2215,8 @@ class ModernParserBridge {
                     tocUrl: "",
                     wordCount: engine.getString(ruleStr: wordCountRule),
                     lastChapter: engine.getString(ruleStr: lastChapterRule),
-                    kind: engine.getString(ruleStr: kindRule),
+                    kind: engine.getStringList(ruleStr: kindRule)
+                        .joined(separator: ","),
                     sourceId: source.id, sourceName: source.bookSourceName
                 ))
             }

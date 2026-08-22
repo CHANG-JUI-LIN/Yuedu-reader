@@ -452,6 +452,16 @@ final class TTSCoordinator: ObservableObject {
 
     func stop(reason: String = "direct") {
         ttsLog("[TTS][Coordinator] stop requested reason=\(reason) coordinatorPlaying=\(isPlaying) enginePlaying=\(currentEngine.isPlaying)")
+        // Whether the app asked for the stop at all is the first question any "it just stopped"
+        // report has to answer, and the engines' own anomalies cannot answer it. Only log a stop
+        // that actually ended something, so pressing 停止 on an idle player stays quiet.
+        if isPlaying || currentEngine.isPlaying {
+            AppLogger.info(
+                "[TTS] 朗讀停止",
+                context: ["reason": reason, "engine": currentEngine.isPlaying],
+                level: .notice
+            )
+        }
         isStoppingFromCoordinator = true
         currentEngine.stop()
         isStoppingFromCoordinator = false
@@ -876,6 +886,11 @@ final class TTSCoordinator: ObservableObject {
         case .began:
             shouldResumeAfterInterruption = isPlaying
             ttsLog("[TTS][Coordinator] audio interruption began shouldResume=\(shouldResumeAfterInterruption)")
+            // A call, Siri, or another app taking the session. This is the innocent explanation
+            // for "it went quiet", and its absence rules the explanation out.
+            if isPlaying {
+                AppLogger.info("[TTS] 音訊被其他 App 中斷", level: .notice)
+            }
             if isPlaying {
                 pause()
             }
@@ -885,8 +900,16 @@ final class TTSCoordinator: ObservableObject {
             ttsLog("[TTS][Coordinator] audio interruption ended shouldResume=\(shouldResumeAfterInterruption) options=\(options.rawValue)")
             guard shouldResumeAfterInterruption else { return }
             shouldResumeAfterInterruption = false
-            guard options.contains(.shouldResume) else { return }
-            guard activateAudioSession() else { return }
+            guard options.contains(.shouldResume) else {
+                // iOS says the interruption is over but declines to hand playback back. Nothing
+                // resumes and nothing is wrong — except that it looks exactly like a crash.
+                AppLogger.info("[TTS] 中斷結束但系統不允許自動續播", level: .notice)
+                return
+            }
+            guard activateAudioSession() else {
+                AppLogger.error("[TTS] 中斷結束後無法重新啟用音訊工作階段", level: .warning)
+                return
+            }
             resume()
         @unknown default:
             ttsLog("[TTS][Coordinator] audio interruption unknown type=\(type.rawValue)")

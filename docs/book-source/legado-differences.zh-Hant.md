@@ -42,7 +42,7 @@ Yuedu 可直接匯入 Legado 3.0 的書源 JSON 資料模型，但**不代表所
 | `java.randomUUID()`、`java.toNumChapter(title)`、`java.urlParts(url, baseUrl)` | UUID、中文章序號正規化、URL 結構解析 |
 | `java.getCookie(url)`、`java.getCookie(url, key)` | 讀 cookie（寫入請用 `cookie.set`，見下） |
 | `java.androidId()`、`java.deviceID()` | 裝置識別碼。注意：**不是真 ANDROID_ID**，是一串 16 位小寫 hex（SHA256 派生），細節見[快速開始](quickstart.zh-Hant.md)的「提供裝置識別碼」與下方說明 |
-| `java.startBrowser(url)`、`java.startBrowserAwait(url)`、`java.showBrowser(baseUrl, html, preloadJS, configJSON)` | 開內建瀏覽器；四參數 `showBrowser` 支援高度、摺疊、可下拉關閉與圓角設定 |
+| `java.startBrowser(url)`、`java.startBrowserAwait(url)`、`java.showBrowser(baseUrl, html, preloadJS, configJSON)` | 開內建瀏覽器；四參數 `showBrowser` 支援高度、摺疊、可下拉關閉與圓角設定，其頁面內同步 `java.ajax/get/post/head/connect` 會沿用同一書源 session |
 | `java.webView(...)`、`java.webViewGetSource(...)`、`java.webViewGetOverrideUrl(...)` | 無頭 WebView 執行頁面 JS，或依完整正則取得資源 URL／導向 URL |
 | `java.log(msg)`、`java.toast(msg)`、`java.longToast(msg)` | 除錯輸出／提示（`log` 會進「網路日誌」） |
 | `java.importScript(url)` | 引入遠端 JS |

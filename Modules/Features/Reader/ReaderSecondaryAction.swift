@@ -18,3 +18,15 @@ struct ReaderSecondaryAction: Identifiable {
     let label: String
     let action: () -> Void
 }
+
+/// What the 現代 book-card popover was asked to open.
+///
+/// Every one of these opens a sheet, and iOS drops a sheet requested while the popover
+/// it came from is still dismissing — 聽書 was the visible casualty: the card slid back
+/// into the cover thumbnail and no TTS panel ever appeared. So the tap records the route
+/// here and `ReaderView` opens it from the popover's real dismissal, never in the same
+/// turn as `showModernBookCard = false`.
+enum ReaderModernBookCardRoute: Hashable {
+    case secondary(ReaderSecondaryAction.ID)
+    case bookDetail
+}

@@ -1,0 +1,1919 @@
+{
+  "books": [
+    {
+      "chapterCount": 1,
+      "id": "official-epub3/georgia-pls-ssml.epub",
+      "origin": "official-epub3",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 1,
+      "title": "Georgia"
+    },
+    {
+      "chapterCount": 12,
+      "id": "official-epub3/israelsailing.epub",
+      "origin": "official-epub3",
+      "scannedChapterCount": 12,
+      "scannerFallbackChapterCount": 0,
+      "title": "מפליגים בישראל"
+    },
+    {
+      "chapterCount": 15,
+      "id": "official-epub3/kusamakura-japanese-vertical-writing.epub",
+      "origin": "official-epub3",
+      "scannedChapterCount": 15,
+      "scannerFallbackChapterCount": 15,
+      "title": "Kusamakura"
+    },
+    {
+      "chapterCount": 2014,
+      "id": "official-epub3/mahabharata.epub",
+      "origin": "official-epub3",
+      "scannedChapterCount": 2014,
+      "scannerFallbackChapterCount": 0,
+      "title": "Mahabharata"
+    },
+    {
+      "chapterCount": 2,
+      "id": "repo-generated/georgia",
+      "origin": "repo-generated",
+      "scannedChapterCount": 2,
+      "scannerFallbackChapterCount": 0,
+      "title": "Georgia"
+    },
+    {
+      "chapterCount": 1,
+      "id": "repo-generated/israelsailing",
+      "origin": "repo-generated",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 0,
+      "title": "מפליגים בישראל"
+    },
+    {
+      "chapterCount": 1,
+      "id": "repo-generated/linear-algebra",
+      "origin": "repo-generated",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 1,
+      "title": "Linear Algebra"
+    },
+    {
+      "chapterCount": 1,
+      "id": "repo-generated/prose-smoke",
+      "origin": "repo-generated",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 0,
+      "title": "Prose"
+    },
+    {
+      "chapterCount": 1,
+      "id": "repo-generated/quiz-bindings",
+      "origin": "repo-generated",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 1,
+      "title": "Quiz"
+    },
+    {
+      "chapterCount": 1,
+      "id": "repo-regression/block-image-before-paragraph.epub",
+      "origin": "repo-regression",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 0,
+      "title": "Block Image Before Paragraph"
+    },
+    {
+      "chapterCount": 1,
+      "id": "repo-regression/centered-percent-image.epub",
+      "origin": "repo-regression",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 0,
+      "title": "Centered Percent Image"
+    },
+    {
+      "chapterCount": 1,
+      "id": "repo-regression/hr-divider-width-alignment-margins.epub",
+      "origin": "repo-regression",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 0,
+      "title": "HR Divider Width Alignment Margins"
+    },
+    {
+      "chapterCount": 2,
+      "id": "repo-regression/nav-xhtml-basic.epub",
+      "origin": "repo-regression",
+      "scannedChapterCount": 2,
+      "scannerFallbackChapterCount": 0,
+      "title": "Nav XHTML Basic"
+    },
+    {
+      "chapterCount": 1,
+      "id": "repo-regression/paragraph-border-background.epub",
+      "origin": "repo-regression",
+      "scannedChapterCount": 1,
+      "scannerFallbackChapterCount": 0,
+      "title": "Paragraph Border Background"
+    },
+    {
+      "chapterCount": 2,
+      "id": "repo-regression/toc-ncx-basic.epub",
+      "origin": "repo-regression",
+      "scannedChapterCount": 2,
+      "scannerFallbackChapterCount": 0,
+      "title": "TOC NCX Basic"
+    },
+    {
+      "chapterCount": 16,
+      "id": "user-provided-real/AI术语词典-第一册.epub",
+      "origin": "user-provided-real",
+      "scannedChapterCount": 16,
+      "scannerFallbackChapterCount": 16,
+      "title": "AI 术语词典：从聊天机器人到会做事的 AI"
+    },
+    {
+      "chapterCount": 16,
+      "id": "user-provided-real/《全知读者视角01》sing N song(싱숑)著[Hooshaun制作].epub",
+      "origin": "user-provided-real",
+      "scannedChapterCount": 16,
+      "scannerFallbackChapterCount": 12,
+      "title": "全知读者视角01"
+    },
+    {
+      "chapterCount": 1881,
+      "id": "user-provided-real/《全职高手3》作者：蝴蝶蓝.epub",
+      "origin": "user-provided-real",
+      "scannedChapterCount": 1881,
+      "scannerFallbackChapterCount": 2,
+      "title": "全职高手"
+    },
+    {
+      "chapterCount": 1192,
+      "id": "user-provided-real/《全能游戏设计师1》作者：冷陌 & 青衫取醉.epub",
+      "origin": "user-provided-real",
+      "scannedChapterCount": 1192,
+      "scannerFallbackChapterCount": 58,
+      "title": "全能游戏设计师"
+    },
+    {
+      "chapterCount": 458,
+      "id": "user-provided-real/《红楼梦+大观红楼》人民文学出版.epub",
+      "origin": "user-provided-real",
+      "scannedChapterCount": 458,
+      "scannerFallbackChapterCount": 0,
+      "title": "红楼梦（人民文学版本）"
+    },
+    {
+      "chapterCount": 1594,
+      "id": "user-provided-real/《诡秘之主4》作者：爱潜水的乌贼.epub",
+      "origin": "user-provided-real",
+      "scannedChapterCount": 1594,
+      "scannerFallbackChapterCount": 40,
+      "title": "诡秘之主"
+    },
+    {
+      "chapterCount": 44,
+      "id": "user-provided-real/壹▪洪武大帝.epub",
+      "origin": "user-provided-real",
+      "scannedChapterCount": 44,
+      "scannerFallbackChapterCount": 9,
+      "title": "壹▪洪武大帝"
+    },
+    {
+      "chapterCount": 93,
+      "id": "user-provided-real/红楼梦脂评汇校本-繁体竖排版 (BookDNA经典复刻系列) (BookDNA典藏书系) (Traditional Chinese Edition) - 脂砚斋 & 曹雪芹 & 吴铭恩.epub",
+      "origin": "user-provided-real",
+      "scannedChapterCount": 93,
+      "scannerFallbackChapterCount": 92,
+      "title": "红楼梦脂评汇校本-繁体竖排版 (BookDNA经典复刻系列) (BookDNA典藏书系) (Traditional Chinese Edition)"
+    }
+  ],
+  "corpusChapterCount": 7350,
+  "corpusEPUBCount": 23,
+  "failures": [],
+  "features": [
+    {
+      "chapterCount": 4972,
+      "elementHits": 309282,
+      "epubCount": 11,
+      "feature": "other-layout",
+      "layers": [
+        {
+          "chapterCount": 4972,
+          "elementHits": 309282,
+          "epubCount": 11,
+          "layer": "layout"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 4742,
+          "element": "<p>",
+          "elementHits": 288968,
+          "epubCount": 5,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 1181,
+          "element": "<h2.chapter-title>",
+          "elementHits": 1181,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "box-sizing",
+          "selector": "h2.chapter-title",
+          "value": "border-box"
+        },
+        {
+          "chapterCount": 176,
+          "element": "<p.letter2>",
+          "elementHits": 991,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.letter2",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 124,
+          "element": "<p.bodytext-kt-only-np>",
+          "elementHits": 1292,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.bodytext-kt-only-np",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 109,
+          "element": "<p.gt1>",
+          "elementHits": 6050,
+          "epubCount": 2,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.gt1",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 74,
+          "element": "<p.bodytext-kt-first-np>",
+          "elementHits": 160,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.bodytext-kt-first-np",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 74,
+          "element": "<p.bodytext-kt-last-np>",
+          "elementHits": 160,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.bodytext-kt-last-np",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 65,
+          "element": "<div.clear>",
+          "elementHits": 638,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "overflow",
+          "selector": ".clear",
+          "value": "hidden"
+        },
+        {
+          "chapterCount": 58,
+          "element": "<div.forum-post>",
+          "elementHits": 541,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "page-break-inside",
+          "selector": "div.forum-post",
+          "value": "avoid"
+        },
+        {
+          "chapterCount": 58,
+          "element": "<p>",
+          "elementHits": 541,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "page-break-inside",
+          "selector": "div.post-content p",
+          "value": "avoid"
+        },
+        {
+          "chapterCount": 51,
+          "element": "<div.info-container>",
+          "elementHits": 93,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "page-break-inside",
+          "selector": "div.info-container",
+          "value": "avoid"
+        },
+        {
+          "chapterCount": 51,
+          "element": "<p.func-btn-wrap>",
+          "elementHits": 93,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 49,
+          "element": "<p.bodytext-kt-np>",
+          "elementHits": 192,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.bodytext-kt-np",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 46,
+          "element": "<p.xinjian>",
+          "elementHits": 720,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 41,
+          "element": "<p.tt1>",
+          "elementHits": 137,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.tt1",
+          "value": "1em"
+        },
+        {
+          "chapterCount": 37,
+          "element": "<p.right>",
+          "elementHits": 49,
+          "epubCount": 2,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 36,
+          "element": "<p>",
+          "elementHits": 103,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "page-break-inside",
+          "selector": "div.info-content p",
+          "value": "avoid"
+        },
+        {
+          "chapterCount": 36,
+          "element": "<li.duokan-footnote-item>",
+          "elementHits": 49,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "list-style-type",
+          "selector": "li.duokan-footnote-item",
+          "value": "decimal"
+        },
+        {
+          "chapterCount": 31,
+          "element": "<p.bodytext>",
+          "elementHits": 3639,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": ".bodytext",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 26,
+          "element": "<p.textpJ2>",
+          "elementHits": 102,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.textpJ2",
+          "value": "2"
+        },
+        {
+          "chapterCount": 21,
+          "element": "<div.kh>",
+          "elementHits": 26,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": ".kh",
+          "value": "1em"
+        },
+        {
+          "chapterCount": 20,
+          "element": "<p.p_title>",
+          "elementHits": 41,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "page-break-inside",
+          "selector": ".p_title",
+          "value": "avoid"
+        },
+        {
+          "chapterCount": 19,
+          "element": "<div.chat-bubble.chat-bubble-incoming>",
+          "elementHits": 209,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "box-sizing",
+          "selector": ".chat-bubble",
+          "value": "border-box"
+        },
+        {
+          "chapterCount": 19,
+          "element": "<div.chat-item>",
+          "elementHits": 209,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "break-inside",
+          "selector": ".chat-item",
+          "value": "avoid"
+        },
+        {
+          "chapterCount": 19,
+          "element": "<div.chat-bubble.chat-bubble-incoming>",
+          "elementHits": 209,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "min-height",
+          "selector": ".chat-bubble",
+          "value": "36px"
+        },
+        {
+          "chapterCount": 19,
+          "element": "<div.chat-item>",
+          "elementHits": 209,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "overflow",
+          "selector": ".chat-item",
+          "value": "hidden"
+        },
+        {
+          "chapterCount": 19,
+          "element": "<div.chat-item>",
+          "elementHits": 209,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "page-break-inside",
+          "selector": ".chat-item",
+          "value": "avoid"
+        },
+        {
+          "chapterCount": 19,
+          "element": "<p.fs3>",
+          "elementHits": 108,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p",
+          "value": "2em"
+        },
+        {
+          "chapterCount": 18,
+          "element": "<p.gt2>",
+          "elementHits": 100,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "text-indent",
+          "selector": "p.gt2",
+          "value": "1em"
+        },
+        {
+          "chapterCount": 17,
+          "element": "<p>",
+          "elementHits": 96,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "page-break-inside",
+          "selector": "div.info-content1 p",
+          "value": "avoid"
+        }
+      ]
+    },
+    {
+      "chapterCount": 88,
+      "elementHits": 11000,
+      "epubCount": 5,
+      "feature": "ruby",
+      "layers": [
+        {
+          "chapterCount": 88,
+          "elementHits": 10432,
+          "epubCount": 5,
+          "layer": "dom"
+        },
+        {
+          "chapterCount": 54,
+          "elementHits": 568,
+          "epubCount": 3,
+          "layer": "layout"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 88,
+          "element": "<ruby>",
+          "elementHits": 5216,
+          "epubCount": 5,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM ruby, rt, rp>",
+          "value": "ruby"
+        },
+        {
+          "chapterCount": 87,
+          "element": "<rt>",
+          "elementHits": 5213,
+          "epubCount": 5,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM ruby, rt, rp>",
+          "value": "rt"
+        },
+        {
+          "chapterCount": 54,
+          "element": "<ruby>",
+          "elementHits": 568,
+          "epubCount": 3,
+          "layer": "layout",
+          "property": "ruby-align",
+          "selector": "ruby",
+          "value": "center"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<rt.a>",
+          "elementHits": 3,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM ruby, rt, rp>",
+          "value": "rt"
+        }
+      ]
+    },
+    {
+      "chapterCount": 43,
+      "elementHits": 1678,
+      "epubCount": 4,
+      "feature": "table",
+      "layers": [
+        {
+          "chapterCount": 27,
+          "elementHits": 236,
+          "epubCount": 2,
+          "layer": "layout"
+        },
+        {
+          "chapterCount": 25,
+          "elementHits": 1442,
+          "epubCount": 4,
+          "layer": "dom"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 25,
+          "element": "<tr>",
+          "elementHits": 341,
+          "epubCount": 4,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "tr"
+        },
+        {
+          "chapterCount": 24,
+          "element": "<tbody>",
+          "elementHits": 32,
+          "epubCount": 3,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "tbody"
+        },
+        {
+          "chapterCount": 19,
+          "element": "<div.chat-bubble.chat-bubble-incoming>",
+          "elementHits": 209,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".chat-bubble",
+          "value": "inline-table"
+        },
+        {
+          "chapterCount": 12,
+          "element": "<th>",
+          "elementHits": 24,
+          "epubCount": 3,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "th"
+        },
+        {
+          "chapterCount": 10,
+          "element": "<table>",
+          "elementHits": 16,
+          "epubCount": 2,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "table"
+        },
+        {
+          "chapterCount": 9,
+          "element": "<td.a>",
+          "elementHits": 94,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 9,
+          "element": "<td.b>",
+          "elementHits": 94,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 6,
+          "element": "<div.chat-bubble.chat-bubble-outgoing>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".chat-bubble",
+          "value": "inline-table"
+        },
+        {
+          "chapterCount": 5,
+          "element": "<td>",
+          "elementHits": 275,
+          "epubCount": 3,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 5,
+          "element": "<td.asset-num.asset-stat-table__cell>",
+          "elementHits": 69,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 5,
+          "element": "<td.asset-stat-table__cell>",
+          "elementHits": 69,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 5,
+          "element": "<tr.asset-sub-row>",
+          "elementHits": 51,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "tr"
+        },
+        {
+          "chapterCount": 5,
+          "element": "<tr.asset-main-row>",
+          "elementHits": 18,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "tr"
+        },
+        {
+          "chapterCount": 5,
+          "element": "<th.asset-stat-table__header>",
+          "elementHits": 12,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "th"
+        },
+        {
+          "chapterCount": 5,
+          "element": "<thead>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "thead"
+        },
+        {
+          "chapterCount": 5,
+          "element": "<table.asset-stat-table>",
+          "elementHits": 6,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "table"
+        },
+        {
+          "chapterCount": 4,
+          "element": "<td.kuan10>",
+          "elementHits": 65,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 4,
+          "element": "<td.kuan6>",
+          "elementHits": 65,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<thead.sjds>",
+          "elementHits": 3,
+          "epubCount": 2,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "thead"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<td.kuan10-h>",
+          "elementHits": 6,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<td.kuan6-h>",
+          "elementHits": 6,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<table.scbg7>",
+          "elementHits": 2,
+          "epubCount": 2,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "table"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<table.scbg8>",
+          "elementHits": 2,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "table"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<table.scbg8>",
+          "elementHits": 2,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": "table.scbg8",
+          "value": "table"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<td.c1.kuan2>",
+          "elementHits": 37,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<td.kuan0>",
+          "elementHits": 37,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<td.kuan4>",
+          "elementHits": 37,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<td.kuan3>",
+          "elementHits": 24,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<td.dian>",
+          "elementHits": 15,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<td.diank>",
+          "elementHits": 14,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM table, thead, tbody, tfoot, tr, td, th, colgroup, col, caption>",
+          "value": "td"
+        }
+      ]
+    },
+    {
+      "chapterCount": 108,
+      "elementHits": 399,
+      "epubCount": 2,
+      "feature": "vertical-writing",
+      "layers": [
+        {
+          "chapterCount": 108,
+          "elementHits": 108,
+          "epubCount": 2,
+          "layer": "metadata"
+        },
+        {
+          "chapterCount": 107,
+          "elementHits": 291,
+          "epubCount": 2,
+          "layer": "layout"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 92,
+          "element": "<body.calibre>",
+          "elementHits": 92,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "-epub-writing-mode",
+          "selector": ".calibre",
+          "value": "vertical-rl"
+        },
+        {
+          "chapterCount": 92,
+          "element": "<body.calibre>",
+          "elementHits": 92,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "-webkit-writing-mode",
+          "selector": ".calibre",
+          "value": "vertical-rl"
+        },
+        {
+          "chapterCount": 92,
+          "element": "<body.calibre>",
+          "elementHits": 92,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "writing-mode",
+          "selector": ".calibre",
+          "value": "vertical-rl"
+        },
+        {
+          "chapterCount": 92,
+          "element": "<body.calibre>",
+          "elementHits": 92,
+          "epubCount": 1,
+          "layer": "metadata",
+          "property": "rendition:writing-mode",
+          "selector": "<package metadata>",
+          "value": "vertical-rl"
+        },
+        {
+          "chapterCount": 15,
+          "element": "<html>",
+          "elementHits": 15,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "-epub-writing-mode",
+          "selector": "html",
+          "value": "vertical-rl"
+        },
+        {
+          "chapterCount": 13,
+          "element": "<body.bodymatter>",
+          "elementHits": 13,
+          "epubCount": 1,
+          "layer": "metadata",
+          "property": "rendition:writing-mode",
+          "selector": "<package metadata>",
+          "value": "vertical-rl"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<body.backmatter>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "metadata",
+          "property": "rendition:writing-mode",
+          "selector": "<package metadata>",
+          "value": "vertical-rl"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<body.frontmatter>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "metadata",
+          "property": "rendition:writing-mode",
+          "selector": "<package metadata>",
+          "value": "vertical-rl"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<body>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "metadata",
+          "property": "rendition:writing-mode",
+          "selector": "<package metadata>",
+          "value": "vertical-rl"
+        }
+      ]
+    },
+    {
+      "chapterCount": 25,
+      "elementHits": 310,
+      "epubCount": 2,
+      "feature": "unsupported-float-subset",
+      "layers": [
+        {
+          "chapterCount": 25,
+          "elementHits": 310,
+          "epubCount": 2,
+          "layer": "layout"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 19,
+          "element": "<div.chat-bubble.chat-bubble-incoming>",
+          "elementHits": 209,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "float",
+          "selector": "<computed style>",
+          "value": "width:auto"
+        },
+        {
+          "chapterCount": 6,
+          "element": "<div.chat-bubble.chat-bubble-outgoing>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "float",
+          "selector": "<computed style>",
+          "value": "width:auto"
+        },
+        {
+          "chapterCount": 4,
+          "element": "<div.sjxx-left-xxnr>",
+          "elementHits": 55,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "float",
+          "selector": "<computed style>",
+          "value": "width:auto"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.message-content>",
+          "elementHits": 11,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "float",
+          "selector": "<computed style>",
+          "value": "width:auto"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.ot>",
+          "elementHits": 9,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "float",
+          "selector": "<computed style>",
+          "value": "width:auto"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.se>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "float",
+          "selector": "<computed style>",
+          "value": "width:auto"
+        }
+      ]
+    },
+    {
+      "chapterCount": 18,
+      "elementHits": 507,
+      "epubCount": 2,
+      "feature": "flex",
+      "layers": [
+        {
+          "chapterCount": 18,
+          "elementHits": 507,
+          "epubCount": 2,
+          "layer": "layout"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 10,
+          "element": "<h3>",
+          "elementHits": 42,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": "h3",
+          "value": "flex-start"
+        },
+        {
+          "chapterCount": 10,
+          "element": "<h3>",
+          "elementHits": 42,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": "h3",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 10,
+          "element": "<h3>",
+          "elementHits": 42,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "justify-content",
+          "selector": "h3",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.ability-value>",
+          "elementHits": 20,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".ability-value",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.ability-value>",
+          "elementHits": 20,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".ability-value",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.ability-value>",
+          "elementHits": 20,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "justify-content",
+          "selector": ".ability-value",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-label>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".skill-label",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-name>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".skill-name",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-score>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".skill-score",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-value>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".skill-value",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-label>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".skill-label",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-name>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".skill-name",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-score>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".skill-score",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-value>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".skill-value",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-score>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "justify-content",
+          "selector": ".skill-score",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-value>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "justify-content",
+          "selector": ".skill-value",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.resource-bar>",
+          "elementHits": 3,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".resource-bar",
+          "value": "center"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.resource-bar>",
+          "elementHits": 3,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".resource-bar",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.resource-bar>",
+          "elementHits": 3,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "justify-content",
+          "selector": ".resource-bar",
+          "value": "center"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<div.ability-name>",
+          "elementHits": 13,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".ability-name",
+          "value": "center"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<div.ability-name>",
+          "elementHits": 13,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".ability-name",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<div.resource-progress>",
+          "elementHits": 2,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".resource-progress",
+          "value": "center"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<div.resource-progress>",
+          "elementHits": 2,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".resource-progress",
+          "value": "flex"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<div.resource-progress>",
+          "elementHits": 2,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "justify-content",
+          "selector": ".resource-progress",
+          "value": "center"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.ability-label>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".ability-label",
+          "value": "center"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.c-skill-name>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".c-skill-name",
+          "value": "center"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.c-skill-score>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".c-skill-score",
+          "value": "center"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.d-skill-name>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".d-skill-name",
+          "value": "center"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.d-skill-score>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "align-items",
+          "selector": ".d-skill-score",
+          "value": "center"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.ability-label>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "display",
+          "selector": ".ability-label",
+          "value": "flex"
+        }
+      ]
+    },
+    {
+      "chapterCount": 16,
+      "elementHits": 733,
+      "epubCount": 1,
+      "feature": "media-queries",
+      "layers": [
+        {
+          "chapterCount": 16,
+          "elementHits": 733,
+          "epubCount": 1,
+          "layer": "conditional-media"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 15,
+          "element": "<h1>",
+          "elementHits": 30,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "h1",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 15,
+          "element": "<body>",
+          "elementHits": 15,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "body",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 14,
+          "element": "<strong>",
+          "elementHits": 389,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "strong",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 14,
+          "element": "<h2>",
+          "elementHits": 152,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "h2",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 14,
+          "element": "<p>",
+          "elementHits": 76,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "h2 + p",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 14,
+          "element": "<hr>",
+          "elementHits": 15,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "hr",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 11,
+          "element": "<img>",
+          "elementHits": 23,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "figure img",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<a>",
+          "elementHits": 13,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": ".toc a",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<li>",
+          "elementHits": 13,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": ".toc li",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<code>",
+          "elementHits": 2,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "code",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<p>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": ".toc p",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<blockquote>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "blockquote",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<body.cover>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "body",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<body.cover>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "body.cover",
+          "value": "(prefers-color-scheme: dark)"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<code.language-text>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "conditional-media",
+          "property": "paint-only-or-non-layout",
+          "selector": "code",
+          "value": "(prefers-color-scheme: dark)"
+        }
+      ]
+    },
+    {
+      "chapterCount": 9,
+      "elementHits": 149,
+      "epubCount": 1,
+      "feature": "positioned",
+      "layers": [
+        {
+          "chapterCount": 9,
+          "elementHits": 149,
+          "epubCount": 1,
+          "layer": "layout"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 3,
+          "element": "<div.ability-value>",
+          "elementHits": 20,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".ability-value",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-label>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".skill-label",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-name>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".skill-name",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-score>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".skill-score",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 3,
+          "element": "<div.skill-value>",
+          "elementHits": 19,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".skill-value",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 2,
+          "element": "<div.ability-name>",
+          "elementHits": 13,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".ability-name",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.ability-label>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".ability-label",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.c-skill-name>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".c-skill-name",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.c-skill-score>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".c-skill-score",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.d-skill-name>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".d-skill-name",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.d-skill-score>",
+          "elementHits": 7,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".d-skill-score",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.c-resource-bar>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".c-resource-bar",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.c-resource-text>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".c-resource-text",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.close-btn>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".close-btn",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.panel-title-text>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".panel-title-text",
+          "value": "absolute"
+        },
+        {
+          "chapterCount": 1,
+          "element": "<div.skill-status-label>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "position",
+          "selector": ".skill-status-label",
+          "value": "absolute"
+        }
+      ]
+    },
+    {
+      "chapterCount": 1,
+      "elementHits": 1,
+      "epubCount": 1,
+      "feature": "calc-min-max-clamp",
+      "layers": [
+        {
+          "chapterCount": 1,
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "layout"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 1,
+          "element": "<div.skill-status-label>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "layout",
+          "property": "width",
+          "selector": ".skill-status-label",
+          "value": "calc(100% - 110px)"
+        }
+      ]
+    },
+    {
+      "chapterCount": 1,
+      "elementHits": 1,
+      "epubCount": 1,
+      "feature": "mathml",
+      "layers": [
+        {
+          "chapterCount": 1,
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "dom"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 1,
+          "element": "<math>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM math>",
+          "value": "math"
+        }
+      ]
+    },
+    {
+      "chapterCount": 1,
+      "elementHits": 1,
+      "epubCount": 1,
+      "feature": "scripted-interactive",
+      "layers": [
+        {
+          "chapterCount": 1,
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "dom"
+        }
+      ],
+      "patterns": [
+        {
+          "chapterCount": 1,
+          "element": "<object>",
+          "elementHits": 1,
+          "epubCount": 1,
+          "layer": "dom",
+          "property": "element",
+          "selector": "<DOM script, iframe, object, embed, canvas, audio, video>",
+          "value": "object"
+        }
+      ]
+    }
+  ],
+  "ingestionFallbacks": [
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#0: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#10: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#11: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#12: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#13: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#14: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#1: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#2: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#3: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#4: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#5: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#6: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#7: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#8: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS",
+    "official-epub3/kusamakura-japanese-vertical-writing.epub#9: PublicationSession resource lookup failed; read decoded ZIP entry and active CSS"
+  ],
+  "origins": [
+    {
+      "chapterCount": 2042,
+      "epubCount": 4,
+      "origin": "official-epub3",
+      "scannedChapterCount": 2042
+    },
+    {
+      "chapterCount": 6,
+      "epubCount": 5,
+      "origin": "repo-generated",
+      "scannedChapterCount": 6
+    },
+    {
+      "chapterCount": 8,
+      "epubCount": 6,
+      "origin": "repo-regression",
+      "scannedChapterCount": 8
+    },
+    {
+      "chapterCount": 5294,
+      "epubCount": 8,
+      "origin": "user-provided-real",
+      "scannedChapterCount": 5294
+    }
+  ],
+  "scannedChapterCount": 7350,
+  "scannerFallbacks": [
+    {
+      "chapterCount": 88,
+      "epubCount": 5,
+      "reason": "ruby"
+    },
+    {
+      "chapterCount": 25,
+      "epubCount": 4,
+      "reason": "table"
+    },
+    {
+      "chapterCount": 45,
+      "epubCount": 3,
+      "reason": "unknown-block-display"
+    },
+    {
+      "chapterCount": 107,
+      "epubCount": 2,
+      "reason": "vertical-writing-mode"
+    },
+    {
+      "chapterCount": 25,
+      "epubCount": 2,
+      "reason": "float"
+    },
+    {
+      "chapterCount": 18,
+      "epubCount": 2,
+      "reason": "flex-grid"
+    },
+    {
+      "chapterCount": 16,
+      "epubCount": 1,
+      "reason": "media-queries"
+    },
+    {
+      "chapterCount": 9,
+      "epubCount": 1,
+      "reason": "positioned"
+    },
+    {
+      "chapterCount": 1,
+      "epubCount": 1,
+      "reason": "calc-modern-functions"
+    },
+    {
+      "chapterCount": 1,
+      "epubCount": 1,
+      "reason": "mathml"
+    },
+    {
+      "chapterCount": 1,
+      "epubCount": 1,
+      "reason": "scripted-interactive"
+    }
+  ],
+  "schemaVersion": 1
+}

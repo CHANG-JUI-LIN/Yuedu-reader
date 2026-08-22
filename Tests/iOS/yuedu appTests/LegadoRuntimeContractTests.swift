@@ -240,6 +240,73 @@ struct LegadoJavaInteropRuntimeTests {
         #expect(engine.evaluate("var z=Packages.cn.hutool.core.util.ZipUtil.gzip('abc',''); [z[0],z[1],z.length>10].join('|')") == "31|139|true")
     }
 
+    @Test("theme APIs preserve Android mode JSON and Java Map shapes")
+    func themeConfigurationShapes() {
+        let defaults = UserDefaults.standard
+        let followsKey = "yd_appearance_follows_system"
+        let pinnedKey = "yd_appearance_pinned_color_scheme"
+        let previousFollows = defaults.object(forKey: followsKey)
+        let previousPinned = defaults.object(forKey: pinnedKey)
+        defer {
+            if let previousFollows { defaults.set(previousFollows, forKey: followsKey) }
+            else { defaults.removeObject(forKey: followsKey) }
+            if let previousPinned { defaults.set(previousPinned, forKey: pinnedKey) }
+            else { defaults.removeObject(forKey: pinnedKey) }
+        }
+
+        defaults.set(false, forKey: followsKey)
+        defaults.set("dark", forKey: pinnedKey)
+        let engine = JSCoreEngine()
+        #expect(engine.evaluate("java.getThemeMode()") == "2")
+        #expect(engine.evaluate("JSON.parse(java.getThemeConfig()).bgColor") == "#000000")
+        #expect(engine.evaluate("java.getThemeConfigMap().get('backgroundColor')") == "#000000")
+
+        defaults.set(true, forKey: followsKey)
+        #expect(engine.evaluate("java.getThemeMode()") == "0")
+    }
+
+    @Test("importScript shares Android cacheFile MD5 invalidation semantics")
+    func importScriptUsesSourceCache() {
+        let engine = JSCoreEngine()
+        engine.bookSource = BookSource(
+            bookSourceUrl: "import-script-cache-\(UUID().uuidString)",
+            bookSourceName: "import script cache fixture"
+        )
+        let scriptURL = "https://example.com/\(UUID().uuidString).js"
+        var requestCount = 0
+        engine.networkHandler = { request in
+            requestCount += 1
+            return LegadoHTTPResult(
+                requestURL: request.url!,
+                finalURL: request.url!,
+                statusCode: 200,
+                statusMessage: "OK",
+                headers: [:],
+                cookies: [:],
+                body: "script-\(requestCount)"
+            )
+        }
+
+        #expect(engine.evaluate("java.importScript('\(scriptURL)')") == "script-1")
+        #expect(engine.evaluate("java.importScript('\(scriptURL)')") == "script-1")
+        #expect(requestCount == 1)
+        _ = engine.evaluate("cache.delete(java.md5Encode16('\(scriptURL)'))")
+        #expect(engine.evaluate("java.importScript('\(scriptURL)')") == "script-2")
+        #expect(requestCount == 2)
+    }
+
+    @Test("Swift list rule results retain mutable java.util.List semantics")
+    func swiftListResultSupportsJavaListMethods() {
+        let engine = JSCoreEngine()
+        let output = engine.evaluate(
+            "result.add('有声书'); [Array.isArray(result), result.size(), result.get(1)].join('|')",
+            result: ["小说"]
+        )
+
+        #expect(engine.lastError == nil)
+        #expect(output == "true|2|有声书")
+    }
+
     @Test("bounded okhttp3 builder executes through the source network session")
     func okhttpBuilder() {
         let engine = JSCoreEngine()
@@ -330,6 +397,8 @@ struct LegadoFullSourceFixtureTests {
         "/Users/zhangruilin/Desktop/Test document/RULE/书旗（同人）.json"
     private static let qingtianQidianDefaultPath =
         "/Users/zhangruilin/Desktop/Test document/RULE/晴天起点.json"
+    private static let tongrenDefaultPath =
+        "/Users/zhangruilin/Desktop/Test document/RULE/同人小说网最终版.json"
 
     /// `named` picks one source out of a multi-source export by a substring of its name; without
     /// it the first entry wins (which is what the single-source fixtures want).
@@ -477,6 +546,47 @@ struct LegadoFullSourceFixtureTests {
         #expect(page.injectedJavaScript.contains("window.qmRun=run"))
         #expect(page.configurationJSON.contains("heightPercentage"))
         #expect(bridge.lastSourceScriptError == nil)
+    }
+
+    @Test("provided Tongren source keeps java ajax after four-argument showBrowser preload")
+    func tongrenSourceBrowserPageJavaBridge() throws {
+        let source = try loadSource(
+            environmentKey: "TONGREN_SOURCE_JSON",
+            defaultPath: Self.tongrenDefaultPath
+        )
+        let bridge = ModernParserBridge(source: source)
+        var browserPage: LegadoBrowserPageRequest?
+        bridge.browserPagePresentHandler = { browserPage = $0 }
+
+        _ = bridge.evaluateSourceScript(
+            "showCmt.call(this,'book-fixture','chapter-fixture','paragraph-fixture','0','dp')"
+        )
+
+        let page = try #require(browserPage)
+        #expect(bridge.lastSourceScriptError == nil)
+        #expect(page.injectedJavaScript.contains("window.java=java"))
+        #expect(page.html.contains("当前阅读 WebView 不支持 java.ajax/java.get"))
+
+        let context = try #require(JSContext())
+        let prompt: @convention(block) (String, String) -> String = { name, _ in
+            name == JsBridgeBrowserRepresentable.sourceJavaPromptName
+                ? #"{"code":0,"data":{"comments":[]}}"#
+                : ""
+        }
+        context.setObject(prompt, forKeyedSubscript: "prompt" as NSString)
+        _ = context.evaluateScript("var window = this;")
+        _ = context.evaluateScript(
+            JsBridgeBrowserRepresentable.sourcePageBootstrap(
+                injectedJavaScript: page.injectedJavaScript
+            )
+        )
+
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("typeof window.java.ajax")?.toString() == "function")
+        #expect(
+            context.evaluateScript("window.java.ajax('https://pl.aadcn.cn/comments')")?.toString()
+                == #"{"code":0,"data":{"comments":[]}}"#
+        )
     }
 
     @Test(

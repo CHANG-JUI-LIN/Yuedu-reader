@@ -198,6 +198,46 @@ struct ModernParserBridgeChapterCompatibilityTests {
         #expect(exploreBooks.first?.tocUrl == "")
     }
 
+    @Test("Search, detail, and discover parse kind with Legado List semantics")
+    func kindRulesUseStringListSemantics() throws {
+        let html = #"{"data":{"ret_data":[{"book_name":"Fixture","category":"玄幻","score":"9.1","genre":4}]}}"#
+        let kindRule = #"$.category&&$.score@js:"{{$.genre}}"==4?result.add("有声书"):result;result"#
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.ruleSearch.bookList = "$.data.ret_data.*"
+        source.ruleSearch.name = "$.book_name"
+        source.ruleSearch.bookUrl = "https://example.com/book/1"
+        source.ruleSearch.kind = kindRule
+        source.ruleExplore.bookList = source.ruleSearch.bookList
+        source.ruleExplore.name = source.ruleSearch.name
+        source.ruleExplore.bookUrl = source.ruleSearch.bookUrl
+        source.ruleExplore.kind = kindRule
+        source.ruleBookInfo.name = "$.book_name"
+        source.ruleBookInfo.kind = kindRule
+
+        let bridge = ModernParserBridge(source: source)
+        let search = try bridge.parseSearchResults(
+            html: html,
+            baseURL: "https://example.com/search",
+            source: source
+        )
+        let explore = bridge.parseExploreResults(
+            html: html,
+            baseURL: "https://example.com/explore",
+            source: source
+        )
+        let info = try bridge.parseBookInfo(
+            html: #"{"book_name":"Fixture","category":"玄幻","score":"9.1","genre":4}"#,
+            bookUrl: "https://example.com/book/1",
+            baseURL: "https://example.com/book/1",
+            source: source
+        )
+
+        #expect(search.first?.kind == "玄幻,9.1,有声书")
+        #expect(explore.first?.kind == "玄幻,9.1,有声书")
+        #expect(info.kind == "玄幻,9.1,有声书")
+    }
+
     @Test("Legacy Jsoup tag chain is not claimed as a CSS selector")
     func legacyJsoupTagChainRoutesToDefaultExtractor() {
         let engine = ModernRuleEngine()
@@ -2811,6 +2851,111 @@ struct JSCoreEngineTests {
         #expect(context.exception == nil)
         #expect(context.evaluateScript("qmRun('fixture-script')")?.toString() == "native:fixture-script")
         #expect(context.evaluateScript("qmLocalCommentPage")?.toBool() == true)
+    }
+
+    @Test("source-authored browser page exposes synchronous java ajax and get")
+    func sourceBrowserPageSynchronousJavaNetworkBridge() throws {
+        let context = try #require(JSContext())
+        var calls: [[String: Any]] = []
+        let prompt: @convention(block) (String, String) -> String = { name, payload in
+            guard name == JsBridgeBrowserRepresentable.sourceJavaPromptName,
+                  let data = payload.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return "unexpected bridge request"
+            }
+            calls.append(object)
+            return "native-body-\(calls.count)"
+        }
+        context.setObject(prompt, forKeyedSubscript: "prompt" as NSString)
+        _ = context.evaluateScript("var window = this;")
+        _ = context.evaluateScript(
+            JsBridgeBrowserRepresentable.sourcePageBootstrap(injectedJavaScript: "")
+        )
+
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("java.ajax('https://example.com/a')")?.toString() == "native-body-1")
+        #expect(context.evaluateScript("java.get('https://example.com/b', {'X-Test':'yes'})")?.toString() == "native-body-2")
+        #expect(calls.count == 2)
+        #expect(calls[0]["method"] as? String == "ajax")
+        #expect(calls[0]["arguments"] as? [String] == ["https://example.com/a"])
+        #expect(calls[1]["method"] as? String == "get")
+        let getArguments = try #require(calls[1]["arguments"] as? [Any])
+        #expect(getArguments.first as? String == "https://example.com/b")
+        #expect((getArguments[1] as? [String: Any])?["X-Test"] as? String == "yes")
+    }
+
+    @Test("source browser java request reuses the source runtime transport")
+    func sourceBrowserJavaRequestUsesSourceRuntime() throws {
+        var source = BookSource(
+            bookSourceUrl: "source-page-network-\(UUID().uuidString)",
+            bookSourceName: "source page network fixture"
+        )
+        source.header = #"{"X-Source":"source-header"}"#
+        let bridge = ModernParserBridge(source: source)
+        var capturedRequest: URLRequest?
+        bridge.sourceScriptNetworkHandler = { request in
+            capturedRequest = request
+            return .bodyOnly(request: request, body: #"{"comments":[1]}"#)
+        }
+        let payload = #"{"method":"get","arguments":["https://example.com/comments",{"X-Page":"page-header"}]}"#
+        let script = try JsBridgeBrowserRepresentable.sourceJavaScript(
+            forPromptPayload: payload
+        )
+
+        #expect(bridge.evaluateSourceScript(script) == #"{"comments":[1]}"#)
+        #expect(capturedRequest?.value(forHTTPHeaderField: "X-Page") == "page-header")
+        #expect(capturedRequest?.value(forHTTPHeaderField: "X-Source") == "source-header")
+    }
+
+    @Test("source browser common Java network methods preserve Android return shapes")
+    func sourceBrowserJavaNetworkMethodShapes() throws {
+        let bridge = ModernParserBridge(source: BookSource(
+            bookSourceUrl: "source-page-methods-\(UUID().uuidString)",
+            bookSourceName: "source page methods fixture"
+        ))
+        var requests: [URLRequest] = []
+        bridge.sourceScriptNetworkHandler = { request in
+            requests.append(request)
+            return LegadoHTTPResult(
+                requestURL: request.url!,
+                finalURL: request.url!,
+                statusCode: 200,
+                statusMessage: "OK",
+                headers: ["X-Reply": "yes"],
+                cookies: [:],
+                body: request.httpMethod == "POST" ? "posted" : "fetched"
+            )
+        }
+        func run(_ method: String, _ arguments: [Any]) throws -> String? {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "method": method,
+                "arguments": arguments,
+            ])
+            let payload = try #require(String(data: data, encoding: .utf8))
+            return bridge.evaluateSourceScript(
+                try JsBridgeBrowserRepresentable.sourceJavaScript(
+                    forPromptPayload: payload
+                )
+            )
+        }
+
+        #expect(try run("ajax", ["https://example.com/ajax"]) == "fetched")
+        #expect(try run("get", ["https://example.com/get", ["X-Page": "get"]]) == "fetched")
+        #expect(
+            try run("post", ["https://example.com/post", "payload", ["X-Page": "post"]])
+                == "posted"
+        )
+        let head = try #require(try run("head", ["https://example.com/head", [:]]))
+        let headObject = try #require(
+            JSONSerialization.jsonObject(with: Data(head.utf8)) as? [String: String]
+        )
+        #expect(headObject["X-Reply"] == "yes")
+        #expect(
+            try run("connect", ["https://example.com/connect", ["X-Page": "connect"], 1_200])?
+                .contains("Response{code=200") == true
+        )
+        #expect(requests.map(\.httpMethod) == ["GET", "GET", "POST", "HEAD", "GET"])
+        #expect(requests[4].timeoutInterval == 1.2)
     }
 
     // MARK: Login-source bridge methods (番茄/起点/企点 special sources)

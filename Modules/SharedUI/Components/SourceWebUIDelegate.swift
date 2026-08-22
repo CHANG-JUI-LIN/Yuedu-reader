@@ -22,6 +22,15 @@ import WebKit
 /// and the hole is silently back.
 final class SourceWebUIDelegate: NSObject, WKUIDelegate {
 
+    /// Reserved `prompt` channel used by source-authored HTML pages for synchronous
+    /// Legado `java.*` calls. WebKit's script-message reply API always returns a Promise,
+    /// while Android's `addJavascriptInterface` returns the HTTP body before the JS call
+    /// continues. `prompt` keeps that page-side contract without blocking UIKit: WebKit
+    /// pauses only the calling script and this handler completes after the source runtime
+    /// finishes its request off the main thread.
+    static let sourceBridgePromptName = "__yuedu_source_java_bridge__"
+    var sourceBridgePromptHandler: ((String, @escaping (String?) -> Void) -> Void)?
+
     // MARK: - Popups
 
     /// `window.open` / `target="_blank"`: there is no second web view to hand back,
@@ -88,6 +97,14 @@ final class SourceWebUIDelegate: NSObject, WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping (String?) -> Void
     ) {
+        if prompt == Self.sourceBridgePromptName {
+            guard let sourceBridgePromptHandler else {
+                completionHandler(nil)
+                return
+            }
+            sourceBridgePromptHandler(defaultText ?? "", completionHandler)
+            return
+        }
         guard let presenter = Self.presenter(for: webView) else {
             completionHandler(nil); return
         }

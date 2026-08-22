@@ -100,4 +100,42 @@ struct DismissalSequencedPresentationTests {
         #expect(sequence.pendingRoute == nil)
         #expect(sequence.consumeAfterDismissal() == nil)
     }
+
+    /// 現代's book card is a popover, and a popover that is still dismissing drops the sheet its
+    /// action asks for — 聽書 slid the card back into the cover thumbnail and never showed the TTS
+    /// panel. The tap must only record the route; the popover's dismissal opens it.
+    @Test("現代 book-card 聽書 waits for the popover to dismiss")
+    func modernBookCardPlaybackWaitsForPopoverDismissal() {
+        var sequence = DismissalSequencedPresentation<ReaderModernBookCardRoute>()
+
+        sequence.select(.secondary(.playback))
+
+        #expect(sequence.pendingRoute == .secondary(.playback))
+        #expect(sequence.consumeAfterDismissal() == .secondary(.playback))
+        // Dismissing the popover again (tap-outside, chrome hiding) must not re-open the panel.
+        #expect(sequence.consumeAfterDismissal() == nil)
+    }
+
+    @Test("closing the 現代 book card without choosing opens nothing")
+    func modernBookCardDismissalWithoutChoiceOpensNothing() {
+        var sequence = DismissalSequencedPresentation<ReaderModernBookCardRoute>()
+
+        #expect(sequence.consumeAfterDismissal() == nil)
+    }
+
+    @Test("every 現代 book-card action is routable")
+    func modernBookCardRoutesCoverEveryAction() {
+        // The popover runs its action by looking the id back up in `readerSecondaryActions`,
+        // so every id has to survive the round trip through the route.
+        let ids: [ReaderSecondaryAction.ID] = [.playback, .download, .changeSource, .refresh]
+        for id in ids {
+            var sequence = DismissalSequencedPresentation<ReaderModernBookCardRoute>()
+            sequence.select(.secondary(id))
+            #expect(sequence.consumeAfterDismissal() == .secondary(id))
+        }
+
+        var detail = DismissalSequencedPresentation<ReaderModernBookCardRoute>()
+        detail.select(.bookDetail)
+        #expect(detail.consumeAfterDismissal() == .bookDetail)
+    }
 }

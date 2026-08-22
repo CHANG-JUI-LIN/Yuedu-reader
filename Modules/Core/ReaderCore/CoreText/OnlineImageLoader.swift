@@ -27,9 +27,12 @@ enum OnlineImageLoader {
     /// and return nil so the render always proceeds.
     /// `decode`: optional per-source byte decryptor (Legado `imageDecode`) run on
     /// downloaded bytes before image decoding; nil result keeps the originals.
+    /// `bodyPointSize`: the reader's body text size, used to scale source review cards
+    /// (`ReviewCardSVGMetrics`); 0 keeps the plain column-width sizing.
     static func load(
         src: String,
         renderWidth: CGFloat,
+        bodyPointSize: CGFloat = 0,
         timeout: TimeInterval = 8,
         decode: (@Sendable (Data, String) -> Data?)? = nil
     ) async -> UIImage? {
@@ -47,7 +50,12 @@ enum OnlineImageLoader {
         CommentBubbleSVGRecognizer.diag("load:kind=\(kind)", context: ["srcPrefix": String(cleaned.prefix(64))])
 
         let image = await withTimeoutOrNil(seconds: timeout) {
-            await loadResolved(cleaned, renderWidth: renderWidth, decode: decode)
+            await loadResolved(
+                cleaned,
+                renderWidth: renderWidth,
+                bodyPointSize: bodyPointSize,
+                decode: decode
+            )
         }
 
         let ms = Int(Date().timeIntervalSince(started) * 1000)
@@ -63,13 +71,24 @@ enum OnlineImageLoader {
     private static func loadResolved(
         _ cleaned: String,
         renderWidth: CGFloat,
+        bodyPointSize: CGFloat = 0,
         decode: (@Sendable (Data, String) -> Data?)? = nil
     ) async -> UIImage? {
         if cleaned.hasPrefix("data:") {
-            return await loadDataURIImage(cleaned, renderWidth: renderWidth, decode: decode)
+            return await loadDataURIImage(
+                cleaned,
+                renderWidth: renderWidth,
+                bodyPointSize: bodyPointSize,
+                decode: decode
+            )
         }
         if cleaned.hasPrefix("http://") || cleaned.hasPrefix("https://") {
-            return await loadRemoteImage(cleaned, renderWidth: renderWidth, decode: decode)
+            return await loadRemoteImage(
+                cleaned,
+                renderWidth: renderWidth,
+                bodyPointSize: bodyPointSize,
+                decode: decode
+            )
         }
         return nil
     }
@@ -117,6 +136,7 @@ enum OnlineImageLoader {
     static func loadDataURIImage(
         _ uri: String,
         renderWidth: CGFloat,
+        bodyPointSize: CGFloat = 0,
         decode: (@Sendable (Data, String) -> Data?)? = nil
     ) async -> UIImage? {
         guard uri.hasPrefix("data:"), let commaIdx = uri.firstIndex(of: ",") else { return nil }
@@ -155,7 +175,12 @@ enum OnlineImageLoader {
             }
             // Render the book source's SVG exactly as authored (no native substitution) — all
             // styling must follow the source.
-            return await rasterizeSVG(svg, renderWidth: renderWidth, baseURL: nil)
+            return await rasterizeSVG(
+                svg,
+                renderWidth: renderWidth,
+                bodyPointSize: bodyPointSize,
+                baseURL: nil
+            )
         }
         let effectiveData = decode?(data, uri) ?? data
         return UIImage(data: effectiveData)
@@ -165,6 +190,7 @@ enum OnlineImageLoader {
     static func loadRemoteImage(
         _ urlString: String,
         renderWidth: CGFloat,
+        bodyPointSize: CGFloat = 0,
         decode: (@Sendable (Data, String) -> Data?)? = nil
     ) async -> UIImage? {
         guard let url = URL(string: urlString) else { return nil }
@@ -198,14 +224,35 @@ enum OnlineImageLoader {
             // WebView rasterizer. If this fires for 光遇/企点, the native redraw can't help; the
             // bubble is webview-rendered and the gap/wrap fix must live in the source SVG or here.
             CommentBubbleSVGRecognizer.diag("load:remote-svg → webview", context: ["len": svg.count])
-            return await rasterizeSVG(svg, renderWidth: renderWidth, baseURL: url)
+            return await rasterizeSVG(
+                svg,
+                renderWidth: renderWidth,
+                bodyPointSize: bodyPointSize,
+                baseURL: url
+            )
         }
         return nil
     }
 
     @MainActor
-    private static func rasterizeSVG(_ svg: String, renderWidth: CGFloat, baseURL: URL?) async -> UIImage? {
-        let width = renderWidth > 0 ? renderWidth : UIScreen.main.bounds.width
+    private static func rasterizeSVG(
+        _ svg: String,
+        renderWidth: CGFloat,
+        bodyPointSize: CGFloat,
+        baseURL: URL?
+    ) async -> UIImage? {
+        let column = renderWidth > 0 ? renderWidth : UIScreen.main.bounds.width
+        // A source review card (神评论 / 本章说 / 作者说) draws its prose in viewBox units, so the
+        // width we rasterize at IS its text size. Sizing it off the column makes the same card
+        // read at ~13pt on an iPhone and ~38pt in an iPad landscape column; size it off the
+        // reader's own body text instead. Anything that isn't a card keeps the column width.
+        let width = ReviewCardSVGMetrics.textCard(in: svg).map {
+            ReviewCardSVGMetrics.preferredWidth(
+                for: $0,
+                bodyPointSize: bodyPointSize,
+                columnWidth: column
+            )
+        } ?? column
         let size = SVGWebViewRasterizer.shared.resolveSVGSize(
             styleWidth: nil,
             styleHeight: nil,

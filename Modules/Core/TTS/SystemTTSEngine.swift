@@ -94,6 +94,11 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
         guard !chunks.isEmpty else {
             ttsLog("[TTS][SystemEngine] speak aborted no chunks")
+            AppLogger.error(
+                "[TTS] 系統語音沒有可朗讀的文字",
+                context: ["textCount": text.count, "title": title],
+                level: .warning
+            )
             return
         }
 
@@ -169,6 +174,11 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             activeUtterance = nil
         }
         ttsLog("[TTS][SystemEngine] recovering after media-services reset index=\(currentIndex) offset=\(spokenUTF16Offset)")
+        AppLogger.info(
+            "[TTS] 音訊服務重置後重新朗讀",
+            context: ["index": currentIndex, "offset": spokenUTF16Offset],
+            level: .notice
+        )
         resumeCurrentChunkFromSpokenOffset(token: playbackToken)
     }
 
@@ -365,6 +375,19 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private func failPlayback(_ error: Error) {
         guard isPlaying else { return }
         ttsLog("[TTS][SystemEngine] playback failed error=\(error.localizedDescription)")
+        // Narration is ending with the user still listening and nobody asked for it. Every
+        // breadcrumb above this line is `ttsLog`, i.e. NSLog — Console on a tethered Mac and
+        // nothing in the diagnostics export, which is why a stopped offline session used to
+        // leave the log completely silent.
+        AppLogger.anomaly(
+            localized("聽書因系統語音中斷而停止"),
+            category: .tts,
+            detail: """
+            index=\(currentIndex)/\(chunks.count)
+            spokenOffset=\(spokenUTF16Offset)
+            error=\(String(describing: error))
+            """
+        )
         shouldRecoverCancellation = false
         resetPlaybackState()
         onError?(error)
@@ -385,7 +408,19 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             )
         case .waiting:
             enterWaitingForNextUnit()
-        case .ready, .finished:
+        case .ready:
+            // The `where !next.text.isEmpty` case above took every usable unit, so reaching
+            // here means the host said "ready" and handed over nothing. Indistinguishable from
+            // finishing the book on screen; not indistinguishable in the log.
+            AppLogger.anomaly(
+                localized("聽書停止：下一段沒有可朗讀的內容"),
+                category: .tts,
+                detail: "finishedChunks=\(chunks.count)"
+            )
+            resetPlaybackState()
+            onStop?()
+        case .finished:
+            AppLogger.info("[TTS] 朗讀到結尾", context: ["chunks": chunks.count], level: .notice)
             resetPlaybackState()
             onStop?()
         }
@@ -402,6 +437,14 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         beginBackgroundTask()
         silence.start()
         ttsLog("[TTS][SystemEngine] waiting for next unit")
+        // Audible silence starts here. If narration never comes back, this line and the absence
+        // of a following `supplyPendingUnit` is what separates "the chapter never arrived" from
+        // "the engine died".
+        AppLogger.info(
+            "[TTS] 等待下一段內容",
+            context: ["finishedChunks": chunks.count],
+            level: .notice
+        )
     }
 
     func supplyPendingUnit(_ unit: TTSNarrationUnit) {
@@ -411,6 +454,13 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
         guard !unit.text.isEmpty else {
             ttsLog("[TTS][SystemEngine] supplyPendingUnit empty text; stopping")
+            // 「聽幾章就停」 lands here: the host answered the wait with nothing to read, which
+            // is a supply failure wearing the same clothes as the end of the book.
+            AppLogger.anomaly(
+                localized("聽書停止：下一段沒有可朗讀的內容"),
+                category: .tts,
+                detail: "waitingSince=\(currentIndex)/\(chunks.count)"
+            )
             isWaitingForNextUnit = false
             resetPlaybackState()
             onStop?()
@@ -557,6 +607,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         guard backgroundTask == .invalid else { return }
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "System TTS Playback") { [weak self] in
             ttsLog("[TTS][SystemEngine] background task expired")
+            AppLogger.error("[TTS] 背景執行時間用完", level: .warning)
             self?.endBackgroundTask()
         }
         ttsLog("[TTS][SystemEngine] background task started id=\(backgroundTask.rawValue)")

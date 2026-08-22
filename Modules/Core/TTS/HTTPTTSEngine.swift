@@ -474,7 +474,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             AppLogger.anomaly(
                 localized("朗讀因連續取得失敗而停止"),
                 category: .tts,
-                detail: "index=\(index)\nconsecutiveFailures=\(consecutiveChunkFailures)\nerror=\(error)"
+                // `TTSAudioProviderError` prints what the provider actually sent — status,
+                // endpoint, and a bounded excerpt of the body. That excerpt is the whole
+                // reason this anomaly is worth exporting.
+                detail: "index=\(index)\nconsecutiveFailures=\(consecutiveChunkFailures)\nerror=\(String(describing: error))"
             )
             failPlayback(
                 TTSPlaybackError.chunkUnavailable(index: index, underlying: error),
@@ -484,6 +487,17 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
 
         ttsLog("[TTS][HTTPEngine] skipping failed chunk index=\(index) consecutiveFailures=\(consecutiveChunkFailures)")
+        // Skipped segments are the run that leads to the stop. Keeping them out of the on-device
+        // log left the anomaly standing alone with no history in front of it.
+        AppLogger.error(
+            "[TTS] 跳過取得失敗的段落",
+            context: [
+                "index": index,
+                "consecutiveFailures": consecutiveChunkFailures,
+                "reason": String(describing: error)
+            ],
+            level: .warning
+        )
         onSegmentSkipped?(TTSPlaybackError.chunkSkipped(index: index, underlying: error))
         // `playChunk` past the last index ends the page, so a failing final segment hands over
         // to the next chapter instead of killing the session.

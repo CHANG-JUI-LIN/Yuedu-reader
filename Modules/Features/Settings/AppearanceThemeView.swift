@@ -1176,13 +1176,13 @@ private struct AppearanceReaderInterfaceView: View {
     @ObservedObject private var settings = GlobalSettings.shared
 
     /// The reading background the reader is currently painting with, so the preview
-    /// shows the circles against the surface they will actually sit on. Read once per
+    /// shows the chrome against the surface it will actually sit on. Read once per
     /// body pass: the reading background can only change from inside the reader, which
     /// this page is never on screen for.
     private var previewTheme: ReaderTheme { ReaderTheme.loadPersisted() }
 
-    private var previewPalette: ReaderClassicCircleButtonPalette {
-        ReaderClassicCircleButtonPalette(theme: previewTheme, settings: settings)
+    private var previewPalette: ReaderClassicChromePalette {
+        ReaderClassicChromePalette(theme: previewTheme, settings: settings)
     }
 
     var body: some View {
@@ -1227,27 +1227,67 @@ private struct AppearanceReaderInterfaceView: View {
         .themedAppSurface(for: .settings)
     }
 
-    /// Scoped to 經典 because the four floating circle buttons it edits are 經典's
-    /// own chrome — 現代 and Apple Books draw neither.
+    /// Scoped to 經典: the top bar, the floating circles and the bottom tool row it
+    /// edits are 經典's own chrome — 現代 and Apple Books draw none of them.
     private var classicCustomizationSection: some View {
         Section {
-            circleButtonPreview
+            chromePreview
 
-            ColorPicker(selection: circleFillBinding, supportsOpacity: false) {
-                Text(localized("圓形按鈕底色"))
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textPrimary)
+            colorRow(
+                localized("頂部底色"),
+                storage: \.readerClassicTopBarFillHex,
+                resolved: \.topFill
+            )
+            colorRow(
+                localized("頂部圖示顏色"),
+                storage: \.readerClassicTopBarIconHex,
+                resolved: \.topIcon
+            )
+
+            colorRow(
+                localized("圓形按鈕底色"),
+                storage: \.readerClassicCircleFillHex,
+                resolved: \.circleFill
+            )
+            colorRow(
+                localized("圓形按鈕圖示顏色"),
+                storage: \.readerClassicCircleIconHex,
+                resolved: \.circleIcon
+            )
+
+            colorRow(
+                localized("底部底色"),
+                storage: \.readerClassicBottomBarFillHex,
+                resolved: \.bottomFill
+            )
+            colorRow(
+                localized("底部圖示顏色"),
+                storage: \.readerClassicBottomBarIconHex,
+                resolved: \.bottomIcon
+            )
+            colorRow(
+                localized("底部強調色"),
+                storage: \.readerClassicBottomBarAccentHex,
+                resolved: \.bottomAccent
+            )
+
+            NavigationLink {
+                ReaderClassicToolIconSettingsView()
+            } label: {
+                HStack {
+                    Text(localized("底部圖示"))
+                        .font(DSFont.body)
+                        .foregroundStyle(DSColor.textPrimary)
+                    Spacer(minLength: DSSpacing.md)
+                    Text(bottomToolIconSummary)
+                        .font(DSFont.body)
+                        .foregroundStyle(DSColor.textSecondary)
+                }
             }
 
-            ColorPicker(selection: circleIconBinding, supportsOpacity: false) {
-                Text(localized("圓形按鈕圖示顏色"))
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textPrimary)
-            }
-
-            if settings.hasReaderClassicCircleOverride {
+            if settings.hasReaderClassicChromeOverride {
                 Button {
-                    settings.clearReaderClassicCircleColors()
+                    settings.resetReaderClassicChrome()
                 } label: {
                     Label(localized("跟隨閱讀主題"), systemImage: "arrow.counterclockwise")
                 }
@@ -1257,63 +1297,132 @@ private struct AppearanceReaderInterfaceView: View {
                 .font(DSFont.headline)
                 .foregroundStyle(DSColor.textPrimary)
         } footer: {
-            Text(localized("調整浮在正文上那四顆圓形按鈕（刷新／換源／下載／聽書）的顏色。未調整時跟隨目前的閱讀主題。"))
+            Text(localized("頂部是返回／書籤那條，底部是進度條與工具列，中間四顆圓鈕是刷新／換源／下載／聽書。強調色用在進度條和「深色」的選中狀態。未調整的部分跟隨目前的閱讀主題。"))
                 .font(DSFont.footnote)
                 .foregroundStyle(DSColor.textSecondary)
         }
         .interfaceSectionSurface()
     }
 
-    /// The real four buttons, drawn with the real palette on the real reading
-    /// background — the section is about how they look, so a swatch would not answer
-    /// the only question the reader has here.
-    private var circleButtonPreview: some View {
-        HStack(spacing: 12) {
-            ForEach(Self.previewIcons, id: \.self) { icon in
-                Image(systemName: icon)
-                    .font(DSFont.fixed(size: 18))
-                    .foregroundStyle(previewPalette.icon)
-                    .frame(width: 40, height: 40)
-                    .background(previewPalette.fill, in: Circle())
-                    .overlay(Circle().stroke(previewPalette.border, lineWidth: 1))
-                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-            }
+    /// 目錄／書籤／深色／設置 status, so the row says something without opening it.
+    private var bottomToolIconSummary: String {
+        let hidden = ReaderClassicToolItem.allCases.count - settings.visibleReaderClassicToolItems.count
+        let custom = settings.readerClassicToolIcons.count
+        var parts: [String] = []
+        if custom > 0 {
+            parts.append(String(format: localized("已換 %d 個"), custom))
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, DSSpacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
-                .fill(previewTheme.backgroundColor)
+        if hidden > 0 {
+            parts.append(String(format: localized("已隱藏 %d 個"), hidden))
+        }
+        guard !parts.isEmpty else { return localized("預設") }
+        return parts.formatted(.list(type: .and, width: .narrow))
+    }
+
+    private func colorRow(
+        _ title: String,
+        storage: ReferenceWritableKeyPath<GlobalSettings, UInt32?>,
+        resolved: KeyPath<ReaderClassicChromePalette, Color>
+    ) -> some View {
+        ColorPicker(selection: colorBinding(storage: storage, resolved: resolved), supportsOpacity: false) {
+            Text(title)
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+        }
+    }
+
+    /// Opens on the colour that is on screen right now rather than a blank swatch,
+    /// the same contract as the reader's 文字顏色 picker. Writing one stores an
+    /// override; clearing every override is the 跟隨閱讀主題 button, not a colour.
+    private func colorBinding(
+        storage: ReferenceWritableKeyPath<GlobalSettings, UInt32?>,
+        resolved: KeyPath<ReaderClassicChromePalette, Color>
+    ) -> Binding<Color> {
+        Binding(
+            get: { previewPalette[keyPath: resolved] },
+            set: { settings[keyPath: storage] = UIColor($0).rgbHex }
         )
-        // One decorative element: VoiceOver gets the colour values from the two
-        // pickers below, not from a row of unlabelled symbols.
+    }
+
+    /// The real chrome, drawn with the real palette on the real reading background —
+    /// the section is about how 經典 looks, so swatches would not answer the only
+    /// question the reader has here.
+    private var chromePreview: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: DSSpacing.md) {
+                Image(systemName: "chevron.left")
+                Spacer(minLength: 0)
+                Image(systemName: "bookmark")
+                Image(systemName: "ellipsis")
+            }
+            .font(DSFont.fixed(size: 13, weight: .medium))
+            .foregroundStyle(previewPalette.topIcon)
+            .padding(.horizontal, DSSpacing.md)
+            .frame(height: 34)
+            .frame(maxWidth: .infinity)
+            .background(previewPalette.topFill)
+
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                ForEach(Self.previewCircleIcons, id: \.self) { icon in
+                    Image(systemName: icon)
+                        .font(DSFont.fixed(size: 11))
+                        .foregroundStyle(previewPalette.circleIcon)
+                        .frame(width: 24, height: 24)
+                        .background(previewPalette.circleFill, in: Circle())
+                        .overlay(Circle().stroke(previewPalette.circleBorder, lineWidth: 1))
+                }
+            }
+            .padding(DSSpacing.md)
+            .frame(maxWidth: .infinity)
+            .background(previewTheme.backgroundColor)
+
+            VStack(spacing: DSSpacing.sm) {
+                Capsule()
+                    .fill(previewPalette.bottomAccent)
+                    .frame(height: 3)
+                HStack(spacing: 0) {
+                    ForEach(settings.visibleReaderClassicToolItems) { item in
+                        previewToolGlyph(for: item)
+                    }
+                }
+            }
+            .padding(.horizontal, DSSpacing.md)
+            .padding(.vertical, DSSpacing.sm)
+            .frame(maxWidth: .infinity)
+            .background(previewPalette.bottomFill)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
+        // One decorative element: VoiceOver gets the values from the rows below,
+        // not from a stack of unlabelled symbols.
         .accessibilityHidden(true)
     }
 
+    @ViewBuilder
+    private func previewToolGlyph(for item: ReaderClassicToolItem) -> some View {
+        Group {
+            if let image = settings.readerClassicToolIconImage(for: item) {
+                Image(uiImage: image)
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: item.systemImage(isNight: previewTheme == .night))
+                    .font(DSFont.fixed(size: 14))
+                    .foregroundStyle(previewPalette.bottomIcon)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     /// 刷新／換源／下載／聽書, matching `ReaderBottomControlBar`.
-    private static let previewIcons = [
+    private static let previewCircleIcons = [
         "arrow.clockwise",
         "arrow.left.and.right",
         "arrow.down.circle",
         "headphones",
     ]
-
-    /// Opens on the colour that is on screen right now rather than a blank swatch,
-    /// the same contract as the reader's 文字顏色 picker. Writing one stores an
-    /// override; clearing it is the 跟隨閱讀主題 button, not a colour.
-    private var circleFillBinding: Binding<Color> {
-        Binding(
-            get: { previewPalette.fill },
-            set: { settings.readerClassicCircleFillHex = UIColor($0).rgbHex }
-        )
-    }
-
-    private var circleIconBinding: Binding<Color> {
-        Binding(
-            get: { previewPalette.icon },
-            set: { settings.readerClassicCircleIconHex = UIColor($0).rgbHex }
-        )
-    }
 }
 
 private struct AppearanceThemeCustomizationView: View {

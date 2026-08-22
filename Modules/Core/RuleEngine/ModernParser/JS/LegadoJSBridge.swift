@@ -167,6 +167,12 @@ struct LegadoHTTPResult {
     func urlParts(_ url: String, _ baseURL: JSValue) -> NSDictionary
     func gzipBytes(_ value: JSValue) -> [Int]
 
+    // App theme information exposed by Android's JsExtensions.
+    // `getThemeMode`: 0 follows system, 1 light, 2 dark, 3 e-ink.
+    func getThemeMode() -> String
+    func getThemeConfig() -> String
+    func getThemeConfigMap() -> LegadoJavaMap
+
     // Chinese character conversion
     func t2s(_ text: String) -> String
     func s2t(_ text: String) -> String
@@ -307,6 +313,9 @@ struct LegadoHTTPResult {
     /// (`BookSource.presentsAndroidIdentity`). Supplied by the owning engine
     /// because the bridge is per-source but the flag lives on the model.
     var presentsAndroidIdentityProvider: (() -> Bool)?
+    /// Android `importScript(http…)` delegates to `cacheFile`, whose MD5 URL
+    /// key lives in the same `cache` namespace exposed to source JavaScript.
+    var importScriptCacheProvider: (() -> LegadoCacheBridge?)?
     var sourceHeaders: [String: String] { sourceHeadersProvider?() ?? [:] }
 
     /// Timeout for `java.ajax`/`java.connect` requests. Legado sources carry `respondTime`
@@ -694,7 +703,21 @@ struct LegadoHTTPResult {
     func importScript(_ url: String) -> String {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("http") else { return trimmed }
-        return performRequest(trimmed)
+        let key = md5Encode16(trimmed)
+        if let cached = importScriptCacheProvider?()?.get(key),
+           !cached.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return cached
+        }
+
+        let response = performRequestResult(trimmed)
+        let body = response.body
+        if response.statusCode >= 200,
+           response.statusCode < 300,
+           !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !Self.isCloudflareChallengedBody(body) {
+            importScriptCacheProvider?()?.put(key, body)
+        }
+        return body
     }
 
     // MARK: Cookie Helpers
@@ -1299,6 +1322,69 @@ struct LegadoHTTPResult {
 
     func gzipBytes(_ value: JSValue) -> [Int] {
         Self.gzip(Data(Self.byteArray(from: value))).map(Int.init)
+    }
+
+    /// Matches Android `JsExtensions.getThemeMode()` rather than returning the
+    /// currently resolved trait: sources use `0` to distinguish follow-system
+    /// from a user-pinned light/dark appearance.
+    func getThemeMode() -> String {
+        let defaults = UserDefaults.standard
+        let followsSystemKey = "yd_appearance_follows_system"
+        let followsSystem = defaults.object(forKey: followsSystemKey) == nil
+            ? true
+            : defaults.bool(forKey: followsSystemKey)
+        guard !followsSystem else { return "0" }
+        return defaults.string(forKey: "yd_appearance_pinned_color_scheme") == "dark"
+            ? "2"
+            : "1"
+    }
+
+    /// Android returns its durable ThemeConfig as JSON. iOS has a different
+    /// theme model, so expose the equivalent resolved background fields that
+    /// source rules consume while preserving Android's JSON shape.
+    func getThemeConfig() -> String {
+        let values = resolvedThemeConfigValues()
+        guard JSONSerialization.isValidJSONObject(values),
+              let data = try? JSONSerialization.data(withJSONObject: values),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    /// JavaScriptCore does not give a Swift Dictionary Java's `.get()` method.
+    /// Return the same Java Map-shaped wrapper used by response headers/cookies.
+    func getThemeConfigMap() -> LegadoJavaMap {
+        LegadoJavaMap(resolvedThemeConfigValues())
+    }
+
+    private func resolvedThemeConfigValues() -> [String: String] {
+        let defaults = UserDefaults.standard
+        let followsSystemKey = "yd_appearance_follows_system"
+        let followsSystem = defaults.object(forKey: followsSystemKey) == nil
+            ? true
+            : defaults.bool(forKey: followsSystemKey)
+
+        let isDark: Bool
+        if !followsSystem {
+            isDark = defaults.string(forKey: "yd_appearance_pinned_color_scheme") == "dark"
+        } else if UITraitCollection.current.userInterfaceStyle != .unspecified {
+            isDark = UITraitCollection.current.userInterfaceStyle == .dark
+        } else {
+            // This process preference is readable from the source JS queue. Avoid
+            // a synchronous main-thread hop here: callers can already be blocking
+            // the main thread while they wait for a rule evaluation to finish.
+            isDark = defaults.string(forKey: "AppleInterfaceStyle") == "Dark"
+        }
+
+        let background = isDark ? "#000000" : "#FFFFFF"
+        return [
+            "bgColor": background,
+            "backgroundColor": background,
+            "readBgColor": background,
+            "contentBgColor": background,
+            "pageBgColor": background,
+        ]
     }
 
     private static func chapterNumber(_ input: String) -> Int? {

@@ -1153,6 +1153,17 @@
 "簡潔" = "Compact";
 "沉浸" = "Immersive";
 "選擇閱讀界面的工具列與控制方式。" = "Choose the reader toolbar and control style.";
+"頂部底色" = "Top Bar Fill";
+"頂部圖示顏色" = "Top Bar Icon Color";
+"底部底色" = "Bottom Bar Fill";
+"底部圖示顏色" = "Bottom Bar Icon Color";
+"底部強調色" = "Bottom Bar Accent";
+"底部圖示" = "Bottom Icons";
+"已換 %d 個" = "%d replaced";
+"已隱藏 %d 個" = "%d hidden";
+"頂部是返回／書籤那條，底部是進度條與工具列，中間四顆圓鈕是刷新／換源／下載／聽書。強調色用在進度條和「深色」的選中狀態。未調整的部分跟隨目前的閱讀主題。" = "Top is the back / bookmark row, bottom is the progress slider and tool row, and the four circles between them are Refresh, Change Source, Download and Listen. The accent paints the slider and the selected Dark button. Anything left alone follows the current reading theme.";
+"關掉的按鈕會整個離開工具列。設置固定顯示——它是經典介面回到閱讀設定的唯一入口。" = "A button you turn off leaves the tool row entirely. Settings always stays — it is the only way back to reader settings from Classic.";
+"匯入的圖片會以自己的顏色顯示，不跟著底部圖示顏色變。" = "An imported image keeps its own colors and does not follow the bottom bar icon color.";
 "圓形按鈕底色" = "Circle Button Fill";
 "圓形按鈕圖示顏色" = "Circle Button Icon Color";
 "跟隨閱讀主題" = "Follow Reading Theme";
@@ -2166,6 +2177,8 @@
 "規則比對" = "Rule Match";
 "章節反覆重試" = "Chapter is retrying repeatedly";
 "朗讀因連續取得失敗而停止" = "Speech stopped after repeated segment failures";
+"聽書因系統語音中斷而停止" = "Speech stopped: the system voice was cut off";
+"聽書停止：下一段沒有可朗讀的內容" = "Speech stopped: the next passage had nothing to read";
 
 // MARK: - 段落筆記
 "筆記" = "Note";

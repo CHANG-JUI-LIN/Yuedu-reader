@@ -195,4 +195,60 @@ struct FanqieSauceSourceTests {
         #expect(!package.content.contains("请求失败"))
         #expect(!package.content.contains("undefined is not an object"))
     }
+
+    @Test("live source loads the first chapter of the reported bookshelf title")
+    func liveReportedBookshelfChapter() async throws {
+        guard Self.runLiveTests, var source = try loadSource() else { return }
+        let fetcher = BookSourceFetcher.shared
+        let searchQuery = "我在修仙界搞内卷"
+
+        let testSourceID = UUID()
+        source.id = testSourceID
+        defer { Self.cleanupLiveCache(sourceID: testSourceID, fetcher: fetcher) }
+        source.lastUpdateTime = max(
+            1,
+            Int64(Date().timeIntervalSince1970 * 1_000)
+        )
+        SearchResultCache.shared.clear(query: searchQuery, source: source)
+        defer { SearchResultCache.shared.clear(query: searchQuery, source: source) }
+
+        let books = try await fetcher.search(query: searchQuery, in: source)
+        let book = try #require(
+            books.first { $0.name.contains(searchQuery) }
+        )
+        let info = try await fetcher.fetchBookInfoPackage(
+            url: book.bookUrl,
+            source: source,
+            runtimeVariables: book.runtimeVariables
+        )
+        let tocURL = info.tocUrl.isEmpty ? book.bookUrl : info.tocUrl
+        let toc = try await fetcher.fetchTOCPackage(
+            tocUrl: tocURL,
+            source: source,
+            runtimeVariables: info.runtimeVariables,
+            onFirstPageReady: nil,
+            forceRefresh: true
+        )
+        let chapter = try #require(
+            toc.chapters.first {
+                $0.hasLoadableContentURL && !$0.shouldRenderAsVolumeSeparator
+            }
+        )
+        #expect(chapter.title.contains("第1章"))
+
+        let bookID = UUID()
+        defer { fetcher.clearAllChapterCache(bookId: bookID) }
+        let package = try await fetcher.fetchChapterPackage(
+            ref: chapter,
+            bookId: bookID,
+            source: source,
+            chapterReferer: tocURL
+        )
+        let content = package.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(!content.isEmpty)
+        #expect(!content.contains("请求失败"))
+        #expect(!content.contains("undefined is not an object"))
+        #expect(!content.lowercased().contains("cloudflare"))
+        #expect(!content.lowercased().contains("web server is down"))
+    }
 }

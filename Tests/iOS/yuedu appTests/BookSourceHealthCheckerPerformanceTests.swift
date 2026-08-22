@@ -208,6 +208,35 @@ struct BookSourceHealthCheckerPerformanceTests {
         #expect(contentVariables?["chapter.scope"] == "chapter")
     }
 
+    @Test("source validation rejects an upstream error page returned as chapter text")
+    func transportErrorPageCannotPassContentValidation() async {
+        let fetcher = HealthCheckMixedContentFetcher(
+            chapterContent: """
+            <!doctype html><html><head><title>Web server is down</title></head>
+            <body><div>cloudflare</div><span>Error code 522</span>
+            <footer>Visit cloudflare.com</footer></body></html>
+            """
+        )
+        let checker = BookSourceHealthChecker(fetcher: fetcher)
+        var source = BookSource(
+            bookSourceUrl: "https://transport-error-content.example",
+            bookSourceName: "transport error content"
+        )
+        source.bookSourceType = 0
+        source.searchUrl = "https://transport-error-content.example/search?q={{key}}"
+        checker.policy.checkDiscovery = false
+
+        checker.prepare(sources: [source])
+        await checker.runAll()
+
+        #expect(checker.items[0].outcome(.search).status == .pass)
+        #expect(checker.items[0].outcome(.detail).status == .pass)
+        #expect(checker.items[0].outcome(.toc).status == .pass)
+        #expect(checker.items[0].outcome(.content).status == .fail)
+        #expect(checker.items[0].failureCategory == .siteError)
+        #expect(!checker.items[0].overallPass)
+    }
+
     @Test("validation candidate selection respects declared and unknown content types")
     func declaredContentSelectionContract() {
         var textSource = BookSource(
@@ -488,9 +517,14 @@ private actor HealthCheckKeywordCaptureFetcher: BookSourceHealthCheckFetching {
 }
 
 private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
+    private let chapterContent: String
     private(set) var detailURLs: [String] = []
     private(set) var chapterReferers: [String?] = []
     private(set) var contentRuntimeVariables: [[String: String]?] = []
+
+    init(chapterContent: String = "content") {
+        self.chapterContent = chapterContent
+    }
 
     func search(
         query: String,
@@ -557,7 +591,7 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         bookId: UUID,
         source: BookSource,
         chapterReferer: String?
-    ) async throws -> String { "content" }
+    ) async throws -> String { chapterContent }
 
     func fetchBookInfoPackage(
         url: String,
@@ -629,7 +663,7 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
             sourceURL: ref.url,
             tocTitle: ref.title,
             canonicalTitle: nil,
-            content: "content",
+            content: chapterContent,
             contentChecksum: "",
             rawHTMLFilename: nil,
             normalizedHTMLFilename: nil,

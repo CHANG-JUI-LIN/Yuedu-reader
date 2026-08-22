@@ -42,7 +42,7 @@ Yuedu 可直接导入 Legado 3.0 的书源 JSON 数据模型，但**不代表所
 | `java.randomUUID()`、`java.toNumChapter(title)`、`java.urlParts(url, baseUrl)` | UUID、中文章序号标准化、URL 结构解析 |
 | `java.getCookie(url)`、`java.getCookie(url, key)` | 读 cookie（写入请用 `cookie.set`，见下） |
 | `java.androidId()`、`java.deviceID()` | 设备识别码。注意：**不是真 ANDROID_ID**，是一串 16 位小写 hex（SHA256 派生），细节见下方说明 |
-| `java.startBrowser(url)`、`java.startBrowserAwait(url)`、`java.showBrowser(baseUrl, html, preloadJS, configJSON)` | 开内置浏览器；四参数 `showBrowser` 支持高度、折叠、下拉关闭与圆角设置 |
+| `java.startBrowser(url)`、`java.startBrowserAwait(url)`、`java.showBrowser(baseUrl, html, preloadJS, configJSON)` | 开内置浏览器；四参数 `showBrowser` 支持高度、折叠、下拉关闭与圆角设置，其页面内同步 `java.ajax/get/post/head/connect` 会沿用同一书源 session |
 | `java.webView(...)`、`java.webViewGetSource(...)`、`java.webViewGetOverrideUrl(...)` | 无头 WebView 执行页面 JS，或按完整正则取得资源 URL／跳转 URL |
 | `java.log(msg)`、`java.toast(msg)`、`java.longToast(msg)` | 调试输出／提示（`log` 会进「网络日志」） |
 | `java.importScript(url)` | 引入远端 JS |

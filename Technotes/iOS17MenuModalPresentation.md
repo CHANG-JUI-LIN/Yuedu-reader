@@ -134,6 +134,22 @@ ownership and dismisses its local-import sheet before the file picker on iOS 17;
 reader settings dismisses before handing font import to the reader's first-level
 presenter.
 
+## A Popover Is the Same Boundary — On Every iOS
+
+The 現代 reader chrome hangs its book card off the cover thumbnail as a
+`.popover`, and its four actions (刷新 / 換源 / 下載 / 聽書) each open a sheet.
+Setting `showModernBookCard = false` and running the action in the same turn
+lost the sheet on iPadOS 26.6.1: the card slid back into the thumbnail and no
+TTS panel ever appeared. This is the same presentation boundary as the menu
+cases above, so it is documented here — but it is **not** version-gated, and no
+policy switches it off on iOS 18+.
+
+`.popover` has no `onDismiss` parameter, so the real dismissal signal is the
+popover content's own `.onDisappear`. `ReaderView` retains the choice in a
+`DismissalSequencedPresentation<ReaderModernBookCardRoute>` and opens the
+destination only from there. Do not replace that with an `asyncAfter` delay,
+and do not add a second popover-launched modal without the same handoff.
+
 ## Removal Condition
 
 Delete the compatibility policy, chooser routes, and contract tests only when
@@ -153,4 +169,6 @@ what shipped the 匯出書源 bug.
   OS policy and pending-route lifecycle without requiring an iOS runtime.
 - `Tests/iOS/yuedu appTests/DismissalSequencedPresentationTests.swift` mirrors
   the behavior in the iOS test target.
+- `Tests/iOS/yuedu appTests/DismissalSequencedPresentationTests.swift` also
+  covers the 現代 book-card routes, which are not version-gated.
 - Parse all affected Swift files after changing presentation routing.
