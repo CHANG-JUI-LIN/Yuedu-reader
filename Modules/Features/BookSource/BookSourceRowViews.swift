@@ -47,18 +47,27 @@ struct BookSourceRowGroup: Identifiable {
 }
 
 /// Native share row for 匯出 …（儲存到「檔案」／AirDrop／…）. See `BookSourceExportFile` for
-/// why this is a `ShareLink` and not a `.fileExporter`.
+/// why the payload is a `Transferable` and not a `.fileExporter` document, and
+/// `MenuShareLinkPresentationPolicy` for why the share sheet cannot open from this
+/// menu before iOS 18.
 struct BookSourceExportShareLink: View {
     let label: String
     let filenameLabel: String
     let sources: [BookSource]
+    /// Where the payload goes before iOS 18: the owning screen shows the share sheet
+    /// from its own first-level presenter.
+    let onHandoff: (PendingShareExport<BookSourceExportFile>) -> Void
 
     var body: some View {
-        let file = BookSourceExportFile(
-            filename: BookSourceExportFile.filename(for: filenameLabel), sources: sources)
-        ShareLink(item: file, preview: SharePreview(file.filename)) {
-            Label(label, systemImage: "square.and.arrow.up")
-        }
+        MenuShareRow(
+            label: label,
+            makeExport: {
+                let file = BookSourceExportFile(
+                    filename: BookSourceExportFile.filename(for: filenameLabel), sources: sources)
+                return PendingShareExport(title: label, name: file.filename, item: file)
+            },
+            onHandoff: onHandoff
+        )
     }
 }
 
@@ -74,6 +83,9 @@ struct BookSourceRowActions {
     var test: (BookSource) -> Void
     var edit: (BookSource) -> Void
     var copyJSON: (BookSource) -> Void
+    /// 匯出書源檔案 — hands the payload to the list's first-level share sheet before
+    /// iOS 18. See `MenuShareLinkPresentationPolicy`.
+    var export: (PendingShareExport<BookSourceExportFile>) -> Void
     var login: (BookSource) -> Void
     var editVariables: (BookSource) -> Void
     /// Writes a group name to a set of sources; the built-in default group clears the field.
@@ -273,7 +285,8 @@ struct BookSourceRow: View {
                 label: localized("匯出書源檔案"),
                 filenameLabel: source.bookSourceName.isEmpty
                     ? localized("未命名書源") : source.bookSourceName,
-                sources: [source]
+                sources: [source],
+                onHandoff: actions.export
             )
             Button {
                 actions.copyJSON(source)
@@ -441,6 +454,8 @@ struct BookSourceGroupActions {
     var setEnabled: (Set<UUID>, Bool) -> Void
     var select: (Set<UUID>) -> Void
     var copyToPasteboard: (BookSourceRowGroup) -> Void
+    /// 匯出該分組 — same first-level share hand-off as `BookSourceRowActions.export`.
+    var export: (PendingShareExport<BookSourceExportFile>) -> Void
     var delete: (BookSourceRowGroup) -> Void
 }
 
@@ -522,7 +537,8 @@ struct BookSourceGroupHeaderRow: View {
             BookSourceExportShareLink(
                 label: localized("匯出該分組"),
                 filenameLabel: group.name,
-                sources: group.sources
+                sources: group.sources,
+                onHandoff: actions.export
             )
             Button {
                 actions.copyToPasteboard(group)
@@ -562,7 +578,8 @@ private func previewSource(
 
 private let previewActions = BookSourceRowActions(
     toggleSelection: { _ in }, toggleEnabled: { _ in }, showInfo: { _ in }, test: { _ in },
-    edit: { _ in }, copyJSON: { _ in }, login: { _ in }, editVariables: { _ in },
+    edit: { _ in }, copyJSON: { _ in }, export: { _ in }, login: { _ in },
+    editVariables: { _ in },
     applyGroupName: { _, _ in }, pickGroup: { _ in }, moveToNewGroup: { _ in },
     pinToTop: { _ in },
     pinToBottom: { _ in }, unpin: { _, _ in }, delete: { _ in }
@@ -599,7 +616,7 @@ private let previewActions = BookSourceRowActions(
             actions: BookSourceGroupActions(
                 toggleExpansion: { _ in }, rename: { _ in }, pickMergeTarget: { _ in },
                 setEnabled: { _, _ in }, select: { _ in }, copyToPasteboard: { _ in },
-                delete: { _ in })
+                export: { _ in }, delete: { _ in })
         )
         BookSourceGroupHeaderRow(
             group: BookSourceRowGroup(
@@ -609,7 +626,7 @@ private let previewActions = BookSourceRowActions(
             actions: BookSourceGroupActions(
                 toggleExpansion: { _ in }, rename: { _ in }, pickMergeTarget: { _ in },
                 setEnabled: { _, _ in }, select: { _ in }, copyToPasteboard: { _ in },
-                delete: { _ in })
+                export: { _ in }, delete: { _ in })
         )
     }
     .listStyle(.plain)

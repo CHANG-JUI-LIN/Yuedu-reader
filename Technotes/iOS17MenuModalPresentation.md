@@ -11,8 +11,11 @@ There are four presentation boundaries:
    UI as a nested sheet.
 3. Reader settings was itself a sheet and tried to present its font document
    picker from that nested presenter.
-4. A `ShareLink` inside a toolbar `Menu` still asks for a share sheet while the
-   menu controller is dismissing; UIKit ownership does not remove that boundary.
+4. A `ShareLink` inside a `Menu` still asks for a share sheet while the menu
+   controller is dismissing; UIKit ownership does not remove that boundary.
+   Confirmed again on iOS 17.7 by 匯出書源, which was simply dead: the book-source
+   export links had been written as in-menu `ShareLink`s precisely because the
+   author believed UIKit ownership avoided the race.
 
 The empty-book-source button is a direct `Button`, not a `Menu`, and it also
 failed. That evidence disproved the original menu-only diagnosis.
@@ -75,9 +78,24 @@ parse route (`ReaderSettingsImportService`), and a single apply.
 
 `ShareLink` avoids the document-picker path used by `.fileExporter`, but it is
 only presentation-safe when the link itself is a direct page or sheet control.
-It must not be launched from a still-dismissing `Menu` on iOS 17. 診斷與回報
-therefore keeps its export link directly in the Form and leaves only non-presenting
-actions in the toolbar menu.
+It must not be launched from a still-dismissing `Menu` on iOS 17. 診斷與回報 and
+書源除錯大師 therefore keep their export links directly in the Form and leave only
+non-presenting actions in the toolbar menu; 主題 keeps per-theme export in the theme
+editor rather than the grid's context menu.
+
+`MenuShareLinkPresentationPolicy` covers the shares that have to stay in a menu
+because the menu is the row's only affordance. Before iOS 18 the menu row becomes a
+plain `Button` that hands a `PendingShareExport` to the screen, and the screen shows
+`ShareExportSheet` — where the `ShareLink` is a direct sheet control — from its own
+first-level presenter. iOS 18 keeps the native in-menu `ShareLink`, which needs no
+extra tap. The payload is built in a closure, so before iOS 18 it is only produced on
+tap rather than on every layout pass of the eagerly-built menu.
+
+Pick by who owns the menu: a screen that is itself a page (書源管理 is pushed before
+iOS 18, RSS 文章 is a `navigationDestination`) shows the hand-off sheet as a
+first-level presentation. A screen that is already a sheet moves the link out of the
+menu entirely instead of nesting another sheet under it — that is why 書源除錯大師's
+匯出紀錄 became a Form row.
 
 Both sequenced flows use an event boundary, not a guessed duration:
 
@@ -105,6 +123,10 @@ The compatibility path covers menu-launched imports in:
 - Bottom-tab custom icons
 - 書籍資訊 cover images (pushed from the bookshelf on iOS 17)
 - Diagnostics export (direct Form `ShareLink`, never toolbar Menu → share sheet)
+- 書源除錯大師 匯出紀錄 (direct Form `ShareLink`, moved out of the toolbar menu)
+- 書源匯出: 匯出全部／匯出選中／匯出書源檔案／匯出該分組 (hand-off to
+  `BookSourceListView`'s first-level `ShareExportSheet`)
+- RSS 文章 分享 and 電量 SVG 分享 SVG (same hand-off, own screen's presenter)
 
 Direct import buttons remain unchanged unless their owner is book-source
 management or reader settings. Book-source management changes navigation
@@ -120,7 +142,10 @@ document-picker actions must not be launched directly from a SwiftUI `Menu` on
 iOS 17, book-source management and 書籍資訊 must not be changed back to sheets
 there, and reader font import and the 閱讀設定 style importers must keep their
 first-level presenter handoff. Presentation-producing `ShareLink`s must also stay
-out of SwiftUI `Menu`s on iOS 17.
+out of SwiftUI `Menu`s on iOS 17: either move the link to a direct page or sheet
+control, or route it through `MenuShareLinkPresentationPolicy`'s hand-off. Never
+re-argue that UIKit owning the share sheet removes the boundary — that belief is
+what shipped the 匯出書源 bug.
 
 ## Regression Checks
 

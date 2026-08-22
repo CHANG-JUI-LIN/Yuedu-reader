@@ -56,6 +56,16 @@ private enum DismissalSequencedPresentationContract {
                 osMajorVersion: 18
             )
         )
+        precondition(
+            MenuShareLinkPresentationPolicy.requiresFirstLevelShareSheet(
+                osMajorVersion: 17
+            )
+        )
+        precondition(
+            !MenuShareLinkPresentationPolicy.requiresFirstLevelShareSheet(
+                osMajorVersion: 18
+            )
+        )
 
         var sequence = DismissalSequencedPresentation<ContractRoute>()
         sequence.select(.network)

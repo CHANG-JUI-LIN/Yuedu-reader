@@ -104,6 +104,32 @@ enum ReaderSettingsPresentationPolicy {
     }
 }
 
+/// A `ShareLink` inside a `Menu` asks UIKit for the share sheet while the menu's
+/// own presentation controller is still dismissing, and that request is dropped —
+/// the same boundary as a sheet or document picker. UIKit owning the presentation
+/// does not remove it; 匯出書源 was reported dead on iOS 17.7 for exactly this
+/// reason, and 診斷與回報 and 匯出主題 were moved out of their menus earlier for the
+/// same symptom.
+///
+/// Before iOS 18 the menu row becomes a plain `Button` that hands the payload to
+/// the screen's first-level presenter, which shows `ShareExportSheet`; the
+/// `ShareLink` there is a direct sheet control and is safe. iOS 18 keeps the
+/// in-menu `ShareLink`. Delete this policy when the deployment target reaches
+/// iOS 18.
+enum MenuShareLinkPresentationPolicy {
+    static func requiresFirstLevelShareSheet(
+        osMajorVersion: Int
+    ) -> Bool {
+        osMajorVersion < 18
+    }
+
+    static var requiresFirstLevelShareSheet: Bool {
+        requiresFirstLevelShareSheet(
+            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        )
+    }
+}
+
 /// Retains a menu choice until the compatibility chooser's real `onDismiss`
 /// callback fires. This deliberately models a presentation boundary instead of
 /// guessing UIKit's dismissal duration with `asyncAfter` or `Task.sleep`.

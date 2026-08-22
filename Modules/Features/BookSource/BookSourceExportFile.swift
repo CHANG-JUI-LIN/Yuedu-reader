@@ -7,9 +7,14 @@ import UniformTypeIdentifiers
 /// Shared through `ShareLink` rather than `.fileExporter` on purpose: a document picker opened
 /// from a SwiftUI `Menu` action hits the iOS 17 menu-dismissal race documented in
 /// `Technotes/iOS17MenuModalPresentation.md`, and the only workaround already in this repo for
-/// that combination is an `asyncAfter` delay, which this project bans. `ShareLink` renders as a
-/// native menu row and UIKit owns the presentation, so there is no second presentation to
-/// sequence — and 「儲存到檔案」 is one tap inside the share sheet.
+/// that combination is an `asyncAfter` delay, which this project bans. 「儲存到檔案」 is also one
+/// tap inside the share sheet.
+///
+/// `ShareLink` does NOT escape that race, though — this comment used to claim UIKit ownership
+/// removed the boundary, and 匯出書源 was reported dead on iOS 17.7 because of it. The share
+/// sheet is a second presentation like any other, so the link has to be a direct page or sheet
+/// control: `BookSourceExportShareLink` hands this payload to `BookSourceListView`'s
+/// first-level `ShareExportSheet` before iOS 18. See `MenuShareLinkPresentationPolicy`.
 ///
 /// Carries the sources as a snapshot and encodes only when a share actually completes: `Menu`
 /// content is built eagerly with its parent row, so encoding at construction time would

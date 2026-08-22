@@ -18,6 +18,10 @@ struct ReaderBatterySVGImportView: View {
     @State private var assetPendingRename: ReaderOverlaySVGAsset?
     @State private var renameDraft = ""
     @State private var assetPendingDeletion: ReaderOverlaySVGAsset?
+    /// 分享 SVG payload waiting for this screen's share sheet: a `ShareLink` inside the
+    /// row `Menu` loses its share sheet to the menu's own dismissal before iOS 18. See
+    /// `MenuShareLinkPresentationPolicy`.
+    @State private var pendingShare: PendingShareExport<URL>?
 
     init(
         store: ReaderOverlaySVGAssetStore,
@@ -90,6 +94,9 @@ struct ReaderBatterySVGImportView: View {
                     .accessibilityLabel(localized("匯入 SVG"))
                 }
             }
+        }
+        .sheet(item: $pendingShare) { export in
+            ShareExportSheet(export: export)
         }
         .fileImporter(
             isPresented: $showingImporter,
@@ -171,6 +178,7 @@ struct ReaderBatterySVGImportView: View {
                     },
                     onRename: { beginRename(asset) },
                     onDelete: { assetPendingDeletion = asset },
+                    onShare: { pendingShare = $0 },
                     onError: { issue = $0 }
                 )
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -286,6 +294,9 @@ private struct ReaderBatterySVGAssetRow: View {
     let onSelect: (() -> Void)?
     let onRename: () -> Void
     let onDelete: () -> Void
+    /// 分享 SVG hand-off — the row menu cannot present the share sheet itself before
+    /// iOS 18; the screen shows it from its own presenter.
+    let onShare: (PendingShareExport<URL>) -> Void
     let onError: (ReaderBatterySVGImportIssue) -> Void
 
     @State private var previewImage: UIImage?
@@ -318,9 +329,17 @@ private struct ReaderBatterySVGAssetRow: View {
                     Label(localized("重新命名"), systemImage: "pencil")
                 }
                 if let exportURL {
-                    ShareLink(item: exportURL) {
-                        Label(localized("分享 SVG"), systemImage: "square.and.arrow.up")
-                    }
+                    MenuShareRow(
+                        label: localized("分享 SVG"),
+                        makeExport: {
+                            PendingShareExport(
+                                title: localized("分享 SVG"),
+                                name: exportURL.lastPathComponent,
+                                item: exportURL
+                            )
+                        },
+                        onHandoff: onShare
+                    )
                 }
                 Button(role: .destructive, action: onDelete) {
                     Label(localized("刪除"), systemImage: "trash")

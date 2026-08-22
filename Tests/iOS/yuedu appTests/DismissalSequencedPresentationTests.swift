@@ -15,6 +15,13 @@ struct DismissalSequencedPresentationTests {
         #expect(!MenuModalPresentationPolicy.requiresDismissalSequencedChooser(osMajorVersion: 26))
     }
 
+    @Test("iOS 17 hands a menu's ShareLink to a first-level share sheet")
+    func iOS17UsesFirstLevelShareSheet() {
+        #expect(MenuShareLinkPresentationPolicy.requiresFirstLevelShareSheet(osMajorVersion: 17))
+        #expect(!MenuShareLinkPresentationPolicy.requiresFirstLevelShareSheet(osMajorVersion: 18))
+        #expect(!MenuShareLinkPresentationPolicy.requiresFirstLevelShareSheet(osMajorVersion: 26))
+    }
+
     @Test("iOS 17 pushes book-source management to avoid a nested sheet")
     func iOS17PushesBookSourceManagement() {
         #expect(

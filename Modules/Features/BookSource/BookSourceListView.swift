@@ -69,6 +69,10 @@ struct BookSourceListView: View {
     @State private var groupPicking: PendingGroupPick? = nil
     /// Source shown in the read-only 查看詳情 sheet.
     @State private var infoSource: BookSource? = nil
+    /// 匯出 payload waiting for this screen's first-level share sheet. Book-source
+    /// management is pushed before iOS 18, so this sheet is a first-level
+    /// presentation. See `MenuShareLinkPresentationPolicy`.
+    @State private var pendingExport: PendingShareExport<BookSourceExportFile>? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var checkSources: [BookSource] {
@@ -263,13 +267,15 @@ struct BookSourceListView: View {
                                 BookSourceExportShareLink(
                                     label: localized("匯出選中"),
                                     filenameLabel: localized("選中書源"),
-                                    sources: store.sources.filter { selectedIds.contains($0.id) }
+                                    sources: store.sources.filter { selectedIds.contains($0.id) },
+                                    onHandoff: { pendingExport = $0 }
                                 )
                             }
                             BookSourceExportShareLink(
                                 label: localized("匯出全部"),
                                 filenameLabel: localized("全部書源"),
-                                sources: store.sources
+                                sources: store.sources,
+                                onHandoff: { pendingExport = $0 }
                             )
                             Divider()
                             Button {
@@ -343,6 +349,9 @@ struct BookSourceListView: View {
                         store.add(src)
                     }
                 }
+            }
+            .sheet(item: $pendingExport) { export in
+                ShareExportSheet(export: export)
             }
             .sheet(item: $infoSource) { src in
                 AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
@@ -701,6 +710,7 @@ struct BookSourceListView: View {
             test: { self.presentCheckOptions(for: [$0]) },
             edit: { self.editingSource = $0 },
             copyJSON: { self.copySourceJSON($0) },
+            export: { self.pendingExport = $0 },
             login: { self.loginSource = $0 },
             editVariables: { self.variableEditingSource = $0 },
             applyGroupName: { self.applyGroupName($0, to: $1) },
@@ -724,6 +734,7 @@ struct BookSourceListView: View {
             setEnabled: { self.store.setEnabledByUser(ids: $0, enabled: $1) },
             select: { self.selectedIds.formUnion($0) },
             copyToPasteboard: { self.copyGroupToPasteboard($0) },
+            export: { self.pendingExport = $0 },
             delete: { group in
                 self.deletingGroup = PendingGroupAction(
                     id: group.id, name: group.name, sourceIds: group.sourceIds)

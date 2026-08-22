@@ -44,6 +44,22 @@ struct BookSourceDebugView: View {
                 .interfaceSectionSurface()
 
                 Section {
+                    ShareLink(
+                        item: BookSourceDebugExportFile(
+                            filename: BookSourceDebugExportFile.filename(),
+                            entries: debugger.logs
+                        ),
+                        preview: SharePreview(localized("書源除錯大師"))
+                    ) {
+                        Label(localized("匯出紀錄"), systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(debugger.logs.isEmpty)
+                } header: {
+                    Text(localized("操作"))
+                }
+                .interfaceSectionSurface()
+
+                Section {
                     if filteredLogs.isEmpty {
                         emptyState
                     } else {
@@ -70,13 +86,12 @@ struct BookSourceDebugView: View {
                     .accessibilityLabel(localized("關閉"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    // 匯出紀錄 is deliberately NOT here: a `ShareLink` inside a `Menu`
+                    // loses its share sheet to the menu's own dismissal before iOS 18
+                    // (`MenuShareLinkPresentationPolicy`). It lives in the 操作 section
+                    // instead, exactly like 診斷與回報's export link. Only non-presenting
+                    // actions belong in this menu.
                     Menu {
-                        ShareLink(
-                            item: exportText,
-                            preview: SharePreview(localized("書源除錯大師"))
-                        ) {
-                            Label(localized("匯出紀錄"), systemImage: "square.and.arrow.up")
-                        }
                         Button {
                             UIPasteboard.general.string = exportText
                             showCopiedAlert = true
@@ -115,31 +130,11 @@ struct BookSourceDebugView: View {
         }
     }
 
-    /// Built on demand — the toolbar `Menu` is constructed eagerly with its parent,
-    /// so formatting hundreds of entries here on every layout pass would be wasted
-    /// work. Same reasoning as `BookSourceExportFile`.
+    /// Built on demand — this is only read inside 複製全部's action closure, so the
+    /// formatting cost is paid on tap and never on a layout pass. The share export
+    /// renders through the same function; see `BookSourceDebugExportFile`.
     private var exportText: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        let body = debugger.logs.map { entry -> String in
-            var line = "\(formatter.string(from: entry.timestamp)) [\(entry.type.rawValue)] \(entry.message)"
-            if let url = entry.url { line += "\n    url: \(url)" }
-            switch entry.detail {
-            case .headers(let headers):
-                line += headers.sorted { $0.key < $1.key }
-                    .map { "\n    \($0.key): \($0.value)" }.joined()
-            case .body(let text), .text(let text):
-                line += "\n" + text.split(separator: "\n", omittingEmptySubsequences: false)
-                    .map { "    \($0)" }.joined(separator: "\n")
-            case .none:
-                break
-            }
-            return line
-        }.joined(separator: "\n")
-        // Book-source requests carry tokens in the query string and in headers, and
-        // this text is about to leave the device.
-        return DiagnosticRedactor.redact(body)
+        BookSourceDebugExportFile.render(entries: debugger.logs)
     }
 }
 

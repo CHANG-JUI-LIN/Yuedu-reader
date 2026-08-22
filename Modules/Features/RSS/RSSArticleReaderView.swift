@@ -10,6 +10,11 @@ struct RSSArticleReaderView: View {
     @State private var isLoadingFullText = false
     @State private var fullTextError: String?
     @State private var selectedURL: URL?
+    /// 分享 payload waiting for this page's own share sheet. This view is a
+    /// `navigationDestination`, so that sheet is a first-level presentation — the
+    /// toolbar `Menu` cannot own the share sheet itself before iOS 18. See
+    /// `MenuShareLinkPresentationPolicy`.
+    @State private var pendingShare: PendingShareExport<URL>?
     @State private var findRequestID: UUID?
     @State private var sourceFaviconURLs: [URL] = []
 
@@ -66,9 +71,17 @@ struct RSSArticleReaderView: View {
                             }
 
                             if let url = URL(string: article.link) {
-                                ShareLink(item: url) {
-                                    Label(localized("分享"), systemImage: "square.and.arrow.up")
-                                }
+                                MenuShareRow(
+                                    label: localized("分享"),
+                                    makeExport: {
+                                        PendingShareExport(
+                                            title: localized("分享"),
+                                            name: article.title,
+                                            item: url
+                                        )
+                                    },
+                                    onHandoff: { pendingShare = $0 }
+                                )
 
                                 Button {
                                     selectedURL = url
@@ -95,6 +108,9 @@ struct RSSArticleReaderView: View {
                     description: Text(localized("重新載入"))
                 )
             }
+        }
+        .sheet(item: $pendingShare) { export in
+            ShareExportSheet(export: export)
         }
         .sheet(item: $selectedURL) { url in
             SafariView(url: url)
