@@ -141,6 +141,15 @@ final class SearchResultCache {
         }
     }
 
+#if DEBUG
+    /// Deterministic test seam for assertions made immediately after `store`.
+    /// Production writes stay fire-and-forget; tests can drain the serial queue
+    /// without polling or adding timing-dependent sleeps.
+    func waitForPendingWritesForTesting() {
+        writeQueue.sync {}
+    }
+#endif
+
     private func fileURL(for key: String) -> URL {
         directory.appendingPathComponent("\(key).json")
     }

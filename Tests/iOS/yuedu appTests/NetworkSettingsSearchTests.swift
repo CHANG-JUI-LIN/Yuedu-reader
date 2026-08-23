@@ -46,6 +46,7 @@ struct NetworkSettingsSearchTests {
             days: 5,
             now: Date(timeIntervalSince1970: 1_000)
         )
+        cache.waitForPendingWritesForTesting()
 
         source.id = UUID()
         source.bookSourceName = "Current"
