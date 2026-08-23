@@ -469,9 +469,28 @@ enum AppearanceColorScheme: String, Equatable {
 
 class GlobalSettings: ObservableObject {
     static let shared = GlobalSettings()
+    static let defaultReaderFontSize = 18.0
+    static let defaultReaderLineHeightMultiple = 1.65
+    static let defaultReaderParagraphSpacingMultiplier = 0.8
+    static let defaultReaderPageMarginH = 24.0
+    static let defaultReaderPageMarginV = 16.0
+    static let defaultReaderPageTurnStyle: PageTurnStyle = .slide
     static let bookshelfGridColumnCountOptions = [2, 3, 4, 5]
     static let defaultBookshelfGridColumnCount = 3
     private static let bookshelfGridColumnCountKey = "yd_bookshelf_grid_column_count"
+
+    // 預設封面 (default cover) — see `DefaultCoverLibrary`.
+    private static let useDefaultCoverForAllBooksKey = "yd_default_cover_force"
+    private static let bookshelfCoverCornerRadiusKey = "yd_bookshelf_cover_corner_radius"
+    private static let exploreUsesDefaultCoverKey = "yd_explore_default_cover"
+    private static let defaultCoverLightFileNamesKey = "yd_default_cover_light_files"
+    private static let defaultCoverDarkFileNamesKey = "yd_default_cover_dark_files"
+
+    /// Cover corner radius the bookshelf clips its covers with. The ceiling is
+    /// deliberately short of half a cover's width — past that the "rounded
+    /// rectangle" is a lozenge and the artwork loses its corners entirely.
+    static let bookshelfCoverCornerRadiusRange: ClosedRange<Double> = 0...24
+    static let defaultBookshelfCoverCornerRadius: Double = 8
     /// "默認" (classic) — the app's original look; also the fallback when a
     /// selected Pro theme becomes unavailable (entitlement lapse / deletion).
     static let defaultAppearanceThemeID = AppearanceThemePreset.classicID
@@ -485,15 +504,9 @@ class GlobalSettings: ObservableObject {
     private static let appearanceBoundLightReaderThemeKey = "yd_appearance_bound_light_reader_theme"
     private static let appearanceBoundDarkReaderThemeKey = "yd_appearance_bound_dark_reader_theme"
     private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
-    private static let readerClassicCircleFillHexKey = "yd_reader_classic_circle_fill_hex"
-    private static let readerClassicCircleIconHexKey = "yd_reader_classic_circle_icon_hex"
-    private static let readerClassicTopBarFillHexKey = "yd_reader_classic_top_fill_hex"
-    private static let readerClassicTopBarIconHexKey = "yd_reader_classic_top_icon_hex"
-    private static let readerClassicBottomBarFillHexKey = "yd_reader_classic_bottom_fill_hex"
-    private static let readerClassicBottomBarIconHexKey = "yd_reader_classic_bottom_icon_hex"
-    private static let readerClassicBottomBarAccentHexKey = "yd_reader_classic_bottom_accent_hex"
-    private static let readerClassicToolVisibleIDsKey = "yd_reader_classic_tool_visible_ids"
-    static let readerClassicToolIconsKey = "yd_reader_classic_tool_icons"
+    static let readerChromeColorsKey = "yd_reader_chrome_colors"
+    static let readerChromeHiddenIDsKey = "yd_reader_chrome_hidden_ids"
+    static let readerChromeIconsKey = "yd_reader_chrome_icons"
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
     private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
     private static let interfaceGlassTransparencyKey = "yd_interface_glass_transparency"
@@ -1049,72 +1062,24 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey) }
     }
 
-    // MARK: - 經典閱讀介面自定義配色
+    // MARK: - 閱讀介面自定義（經典／現代）
 
-    /// Fill of the four floating circle buttons the 經典 reader stacks above its
-    /// control bar (刷新／換源／下載／聽書). nil = follow the reading theme's bar
-    /// colour, which is what they painted before this setting existed.
-    @Published var readerClassicCircleFillHex: UInt32? {
-        didSet { Self.persistHex(readerClassicCircleFillHex, forKey: Self.readerClassicCircleFillHexKey) }
+    /// Hand-picked chrome colours, keyed "<interface>.<slot>" — see
+    /// `ReaderChromePalette`. An absent key means "follow the reading theme",
+    /// which is why clearing a slot must remove it rather than store a sentinel.
+    @Published var readerChromeColors: [String: UInt32] {
+        didSet { Self.saveReaderChromeColors(readerChromeColors) }
     }
 
-    /// Symbol (and hairline border) colour of those same four buttons.
-    /// nil = follow the reading theme's text colour.
-    @Published var readerClassicCircleIconHex: UInt32? {
-        didSet { Self.persistHex(readerClassicCircleIconHex, forKey: Self.readerClassicCircleIconHexKey) }
-    }
-
-    /// Top bar (返回／書籤／書籍詳情) background and symbol colour.
-    /// nil = follow the reading theme, the look these had before 自定義 existed.
-    @Published var readerClassicTopBarFillHex: UInt32? {
-        didSet { Self.persistHex(readerClassicTopBarFillHex, forKey: Self.readerClassicTopBarFillHexKey) }
-    }
-
-    @Published var readerClassicTopBarIconHex: UInt32? {
-        didSet { Self.persistHex(readerClassicTopBarIconHex, forKey: Self.readerClassicTopBarIconHexKey) }
-    }
-
-    /// Bottom bar: the progress row plus the 目錄／書籤／深色／設置 row behind it.
-    @Published var readerClassicBottomBarFillHex: UInt32? {
-        didSet { Self.persistHex(readerClassicBottomBarFillHex, forKey: Self.readerClassicBottomBarFillHexKey) }
-    }
-
-    @Published var readerClassicBottomBarIconHex: UInt32? {
-        didSet { Self.persistHex(readerClassicBottomBarIconHex, forKey: Self.readerClassicBottomBarIconHexKey) }
-    }
-
-    /// Progress slider, and the 深色 button while night mode is on.
-    @Published var readerClassicBottomBarAccentHex: UInt32? {
-        didSet { Self.persistHex(readerClassicBottomBarAccentHex, forKey: Self.readerClassicBottomBarAccentHexKey) }
-    }
-
-    /// Which bottom tool buttons are drawn. Sanitized on write — 設置 can never
-    /// leave, see `ReaderClassicToolItem.isAlwaysVisible`.
-    @Published var readerClassicToolVisibleIDs: [String] {
-        didSet {
-            UserDefaults.standard.set(readerClassicToolVisibleIDs, forKey: Self.readerClassicToolVisibleIDsKey)
-        }
+    /// `storageID`s of buttons the reader switched off. Absent = visible, so a new
+    /// button added in a later version shows up by default.
+    @Published var readerChromeHiddenIDs: [String] {
+        didSet { UserDefaults.standard.set(readerChromeHiddenIDs, forKey: Self.readerChromeHiddenIDsKey) }
     }
 
     /// User-imported replacements for those buttons' symbols.
-    @Published var readerClassicToolIcons: [ReaderClassicToolIconAsset] {
-        didSet { Self.saveReaderClassicToolIcons(readerClassicToolIcons) }
-    }
-
-    /// One writer for every optional hex setting: an absent value must remove the
-    /// key rather than store a sentinel, otherwise "follow the theme" and "black"
-    /// become the same stored state.
-    private static func persistHex(_ value: UInt32?, forKey key: String) {
-        if let value {
-            UserDefaults.standard.set(Int(value), forKey: key)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-    }
-
-    private static func loadHex(forKey key: String) -> UInt32? {
-        guard let stored = UserDefaults.standard.object(forKey: key) as? Int else { return nil }
-        return UInt32(clamping: stored)
+    @Published var readerChromeIcons: [ReaderChromeIconAsset] {
+        didSet { Self.saveReaderChromeIcons(readerChromeIcons) }
     }
 
     // MARK: - 界面效果 (Interface Effects)
@@ -1295,6 +1260,90 @@ class GlobalSettings: ObservableObject {
         return min(max(value, minimum), maximum)
     }
 
+    // MARK: - 預設封面 (Default Cover)
+
+    /// Every book shows a default cover, ignoring the one it came with. Legado's
+    /// `useDefaultCover`; the shelf, search results and detail pages all honor it.
+    @Published var useDefaultCoverForAllBooks: Bool {
+        didSet {
+            UserDefaults.standard.set(useDefaultCoverForAllBooks, forKey: Self.useDefaultCoverForAllBooksKey)
+        }
+    }
+
+    /// Corner radius applied to the cover artwork on bookshelf cards. It clips the
+    /// image only — the card's own background keeps the design system's radius.
+    @Published var bookshelfCoverCornerRadius: Double {
+        didSet {
+            let clamped = Self.clampedBookshelfCoverCornerRadius(bookshelfCoverCornerRadius)
+            if bookshelfCoverCornerRadius != clamped {
+                bookshelfCoverCornerRadius = clamped
+            } else {
+                UserDefaults.standard.set(clamped, forKey: Self.bookshelfCoverCornerRadiusKey)
+            }
+        }
+    }
+
+    /// 探索頁 book cards fall back to a default cover instead of the title card.
+    @Published var exploreUsesDefaultCover: Bool {
+        didSet {
+            UserDefaults.standard.set(exploreUsesDefaultCover, forKey: Self.exploreUsesDefaultCoverKey)
+        }
+    }
+
+    @Published var defaultCoverLightFileNames: [String] {
+        didSet {
+            UserDefaults.standard.set(defaultCoverLightFileNames, forKey: Self.defaultCoverLightFileNamesKey)
+            DefaultCoverLibrary.invalidateCache()
+        }
+    }
+
+    @Published var defaultCoverDarkFileNames: [String] {
+        didSet {
+            UserDefaults.standard.set(defaultCoverDarkFileNames, forKey: Self.defaultCoverDarkFileNamesKey)
+            DefaultCoverLibrary.invalidateCache()
+        }
+    }
+
+    static func clampedBookshelfCoverCornerRadius(_ value: Double) -> Double {
+        min(max(value, bookshelfCoverCornerRadiusRange.lowerBound), bookshelfCoverCornerRadiusRange.upperBound)
+    }
+
+    func defaultCoverFileNames(for scheme: DefaultCoverScheme) -> [String] {
+        scheme == .dark ? defaultCoverDarkFileNames : defaultCoverLightFileNames
+    }
+
+    @discardableResult
+    func importDefaultCover(from url: URL, for scheme: DefaultCoverScheme) throws -> String {
+        try adoptDefaultCover(
+            fileName: DefaultCoverStorageManager.shared.importImage(fileURL: url, scheme: scheme),
+            for: scheme
+        )
+    }
+
+    @discardableResult
+    func importDefaultCover(data: Data, for scheme: DefaultCoverScheme) throws -> String {
+        try adoptDefaultCover(
+            fileName: DefaultCoverStorageManager.shared.importImage(data: data, scheme: scheme),
+            for: scheme
+        )
+    }
+
+    private func adoptDefaultCover(fileName: String, for scheme: DefaultCoverScheme) -> String {
+        switch scheme {
+        case .light: defaultCoverLightFileNames.append(fileName)
+        case .dark: defaultCoverDarkFileNames.append(fileName)
+        }
+        return fileName
+    }
+
+    func removeDefaultCover(fileName: String, for scheme: DefaultCoverScheme) {
+        switch scheme {
+        case .light: defaultCoverLightFileNames.removeAll { $0 == fileName }
+        case .dark: defaultCoverDarkFileNames.removeAll { $0 == fileName }
+        }
+        DefaultCoverStorageManager.shared.delete(fileName: fileName)
+    }
+
     // MARK: - Network Settings
 
     @Published var searchConcurrency: Int {
@@ -1384,7 +1433,8 @@ class GlobalSettings: ObservableObject {
         textConversion = TextConversion(rawValue: rawConv) ?? .original
         readerFontBold = UserDefaults.standard.bool(forKey: "yd_reader_font_bold")
         let persistedFontSize =
-            (UserDefaults.standard.object(forKey: "yd_reader_font_size") as? Double) ?? 18.0
+            (UserDefaults.standard.object(forKey: "yd_reader_font_size") as? Double)
+            ?? Self.defaultReaderFontSize
         readerFontSize = persistedFontSize
 
         if let savedLineHeightMultiple = UserDefaults.standard.object(forKey: "yd_line_height_multiple") as? Double {
@@ -1392,7 +1442,7 @@ class GlobalSettings: ObservableObject {
         } else if let legacyLineSpacing = UserDefaults.standard.object(forKey: "yd_line_spacing") as? Double {
             lineHeightMultiple = max(1.0, 1.0 + legacyLineSpacing / max(persistedFontSize, 1.0))
         } else {
-            lineHeightMultiple = 1.65
+            lineHeightMultiple = Self.defaultReaderLineHeightMultiple
         }
 
         scrollMode = UserDefaults.standard.bool(forKey: "yd_scroll_mode")
@@ -1411,13 +1461,15 @@ class GlobalSettings: ObservableObject {
         } else if let legacyParagraphSpacing = UserDefaults.standard.object(forKey: "yd_paragraph_spacing") as? Double {
             paragraphSpacingMultiplier = max(0, legacyParagraphSpacing / max(persistedFontSize, 1.0))
         } else {
-            paragraphSpacingMultiplier = 0.8
+            paragraphSpacingMultiplier = Self.defaultReaderParagraphSpacingMultiplier
         }
 
         pageMarginH =
-            (UserDefaults.standard.object(forKey: "yd_page_margin_h") as? Double) ?? 24.0
+            (UserDefaults.standard.object(forKey: "yd_page_margin_h") as? Double)
+            ?? Self.defaultReaderPageMarginH
         pageMarginV =
-            (UserDefaults.standard.object(forKey: "yd_page_margin_v") as? Double) ?? 16.0
+            (UserDefaults.standard.object(forKey: "yd_page_margin_v") as? Double)
+            ?? Self.defaultReaderPageMarginV
         readerTextColorOverrides =
             (UserDefaults.standard.dictionary(forKey: Self.readerTextColorOverridesKey) as? [String: Int])?
                 .mapValues { UInt32(clamping: $0) } ?? [:]
@@ -1434,9 +1486,11 @@ class GlobalSettings: ObservableObject {
         readerTitleSize =
             (UserDefaults.standard.object(forKey: "yd_reader_title_size") as? Double) ?? 28.0
         readerTitleTopSpacing =
-            (UserDefaults.standard.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10.0
+            (UserDefaults.standard.object(forKey: "yd_reader_title_top_spacing") as? Double)
+            ?? Double(ChapterTitleStyle.default.topSpacing)
         readerTitleBottomSpacing =
-            (UserDefaults.standard.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 20.0
+            (UserDefaults.standard.object(forKey: "yd_reader_title_bottom_spacing") as? Double)
+            ?? Double(ChapterTitleStyle.default.bottomSpacing)
         chapterTitleStyle = Self.loadChapterTitleStyle()
         chapterTitleCustomPresets = Self.loadChapterTitleCustomPresets()
         let loadedReaderHeaderVisible =
@@ -1491,9 +1545,21 @@ class GlobalSettings: ObservableObject {
             )
         )
         let overlayDefaults = UserDefaults.standard
+        let hasPersistedLegacyOverlaySettings = [
+            "yd_reader_header_visible",
+            "yd_reader_footer_visible",
+            "yd_reader_header_positions",
+            "yd_reader_header_top_padding",
+            "yd_reader_header_text_gap",
+            "yd_reader_header_h_padding",
+            "yd_footer_bottom_padding",
+            "yd_footer_text_gap",
+            "yd_reader_footer_h_padding"
+        ].contains { overlayDefaults.object(forKey: $0) != nil }
         let overlayResolution = ReaderOverlayLayoutMigration.resolve(
             storedData: overlayDefaults.data(forKey: Self.readerOverlayLayoutDataKey),
-            legacy: legacyOverlaySettings
+            legacy: legacyOverlaySettings,
+            hasPersistedLegacySettings: hasPersistedLegacyOverlaySettings
         )
         readerOverlayLayout = overlayResolution.layout
         readerOverlayLayoutSyncClock = overlayDefaults.object(
@@ -1511,7 +1577,7 @@ class GlobalSettings: ObservableObject {
             }
         }
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
-        pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? .slide
+        pageTurnStyle = PageTurnStyle(rawValue: rawPageTurn) ?? Self.defaultReaderPageTurnStyle
         let rawSpreadMode = UserDefaults.standard.string(forKey: "yd_reader_spread_mode") ?? ""
         let loadedSpreadMode = (ReaderSpreadMode(rawValue: rawSpreadMode) ?? .singlePage).normalizedForUserSelection
         readerSpreadMode = loadedSpreadMode
@@ -1689,18 +1755,9 @@ class GlobalSettings: ObservableObject {
         launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
         let rawReaderInterface = UserDefaults.standard.string(forKey: Self.appearanceReaderInterfaceKey) ?? ""
         appearanceReaderInterface = AppearanceReaderInterface(rawValue: rawReaderInterface) ?? .classic
-        readerClassicCircleFillHex = Self.loadHex(forKey: Self.readerClassicCircleFillHexKey)
-        readerClassicCircleIconHex = Self.loadHex(forKey: Self.readerClassicCircleIconHexKey)
-        readerClassicTopBarFillHex = Self.loadHex(forKey: Self.readerClassicTopBarFillHexKey)
-        readerClassicTopBarIconHex = Self.loadHex(forKey: Self.readerClassicTopBarIconHexKey)
-        readerClassicBottomBarFillHex = Self.loadHex(forKey: Self.readerClassicBottomBarFillHexKey)
-        readerClassicBottomBarIconHex = Self.loadHex(forKey: Self.readerClassicBottomBarIconHexKey)
-        readerClassicBottomBarAccentHex = Self.loadHex(forKey: Self.readerClassicBottomBarAccentHexKey)
-        readerClassicToolVisibleIDs = Self.sanitizedReaderClassicToolVisibleIDs(
-            UserDefaults.standard.stringArray(forKey: Self.readerClassicToolVisibleIDsKey)
-                ?? Self.defaultReaderClassicToolVisibleIDs
-        )
-        readerClassicToolIcons = Self.loadReaderClassicToolIcons()
+        readerChromeColors = Self.loadReaderChromeColors()
+        readerChromeHiddenIDs = UserDefaults.standard.stringArray(forKey: Self.readerChromeHiddenIDsKey) ?? []
+        readerChromeIcons = Self.loadReaderChromeIcons()
         interfaceGlowIntensity = Self.sanitizedInterfaceGlowIntensity(
             (UserDefaults.standard.object(forKey: Self.interfaceGlowIntensityKey) as? Double)
                 ?? Self.defaultInterfaceGlowIntensity
@@ -1749,6 +1806,16 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: Self.bookshelfGridColumnCountKey) as? Int)
             ?? Self.defaultBookshelfGridColumnCount
         )
+        useDefaultCoverForAllBooks = UserDefaults.standard.bool(forKey: Self.useDefaultCoverForAllBooksKey)
+        bookshelfCoverCornerRadius = Self.clampedBookshelfCoverCornerRadius(
+            (UserDefaults.standard.object(forKey: Self.bookshelfCoverCornerRadiusKey) as? Double)
+            ?? Self.defaultBookshelfCoverCornerRadius
+        )
+        exploreUsesDefaultCover = UserDefaults.standard.bool(forKey: Self.exploreUsesDefaultCoverKey)
+        defaultCoverLightFileNames =
+            UserDefaults.standard.stringArray(forKey: Self.defaultCoverLightFileNamesKey) ?? []
+        defaultCoverDarkFileNames =
+            UserDefaults.standard.stringArray(forKey: Self.defaultCoverDarkFileNamesKey) ?? []
 
         // MD3 defaults to 16. Current upstream Legado defaults to 32, while its
         // fixed CPU dispatcher is capped at 9; our URLSession work is asynchronous
@@ -1914,10 +1981,15 @@ class GlobalSettings: ObservableObject {
         // upgrader keeps their size/spacing/visibility while the new fields take
         // their defaults. The first `didSet` save writes JSON; thereafter the
         // legacy keys are only read by older layout-preset import.
-        let visible = (defaults.object(forKey: "yd_reader_title_visible") as? Bool) ?? true
-        let size = (defaults.object(forKey: "yd_reader_title_size") as? Double) ?? 28
-        let top = (defaults.object(forKey: "yd_reader_title_top_spacing") as? Double) ?? 10
-        let bottom = (defaults.object(forKey: "yd_reader_title_bottom_spacing") as? Double) ?? 20
+        let styleDefaults = ChapterTitleStyle.default
+        let visible = (defaults.object(forKey: "yd_reader_title_visible") as? Bool)
+            ?? styleDefaults.visible
+        let size = (defaults.object(forKey: "yd_reader_title_size") as? Double)
+            ?? Double(styleDefaults.size)
+        let top = (defaults.object(forKey: "yd_reader_title_top_spacing") as? Double)
+            ?? Double(styleDefaults.topSpacing)
+        let bottom = (defaults.object(forKey: "yd_reader_title_bottom_spacing") as? Double)
+            ?? Double(styleDefaults.bottomSpacing)
         return ChapterTitleStyle(
             legacyVisible: visible,
             legacySize: CGFloat(size),

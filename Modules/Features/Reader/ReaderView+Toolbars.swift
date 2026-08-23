@@ -156,67 +156,108 @@ extension ReaderView {
     /// All three are `Button`s on purpose. iOS 26 puts glass behind toolbar *controls*
     /// only — the title was a plain `Text` before and rendered bare over the page.
     /// Tapping the title opens the same book card the cover does.
+    /// 現代's own chrome colours. 現代 exposes no `topFill`: its navigation bar is
+    /// the system's glass with the background deliberately hidden, so only the
+    /// symbol colour is ours to set.
+    var modernPalette: ReaderChromePalette {
+        ReaderChromePalette(interface: .modern, theme: readerTheme, settings: settings)
+    }
+
+    /// Three glass islands: 返回 (circle) · 書名 (capsule) · 封面 (circle), each in
+    /// its own placement.
+    ///
+    /// They are NOT one `ToolbarItemGroup` with `Spacer()`s, even though that is how
+    /// the bookshelf's multi-select bottom bar builds the same shape. That works in
+    /// `.bottomBar`, which hands the group the full width; the navigation bar's
+    /// `.principal` region sizes to its content, so the spacers collapsed and took
+    /// 書名 and 封面 with them — the device showed a bare chevron floating mid-bar
+    /// and nothing else. Verified twice on hardware. Do not merge these back into
+    /// one group.
+    ///
+    /// Separate placements are also what centres 書名: `.principal` is the only one
+    /// that does, and a flexible `ToolbarSpacer` in the leading group only pushes to
+    /// that group's own trailing edge. The catch is that a principal item is the
+    /// bar's title view and never takes the glass by itself, so it asks explicitly
+    /// with `.buttonStyle(.glass)`. `.plain` is the opposite lever — an opt-out —
+    /// which the cover uses so the artwork itself is the circle.
     @ToolbarContentBuilder
     var modernToolbarContent: some ToolbarContent {
         if settings.appearanceReaderInterface == .modern {
             ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    closeReader()
-                } label: {
-                    Label(localized("退出閱讀"), systemImage: "chevron.left")
-                        .labelStyle(.iconOnly)
-                }
-                .accessibilityIdentifier("reader_back_button")
-                .accessibilityLabel(localized("退出閱讀"))
+                modernBackButton
             }
-
             ToolbarItem(placement: .principal) {
-                Button {
-                    showModernBookCard = true
-                } label: {
-                    VStack(spacing: 1) {
-                        Text(modernBookTitle)
-                            .font(DSFont.subheadline)
-                            .lineLimit(1)
-                        if !modernBookAuthor.isEmpty {
-                            Text(modernBookAuthor)
-                                .font(DSFont.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-                .accessibilityLabel(
-                    modernBookAuthor.isEmpty
-                        ? modernBookTitle
-                        : "\(modernBookTitle), \(modernBookAuthor)"
-                )
-                .accessibilityHint(localized("書籍詳情"))
+                modernTitleButton
             }
-
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showModernBookCard = true
-                } label: {
-                    modernCoverThumbnail
-                }
-                .accessibilityLabel(localized("書籍詳情"))
-                // Arrow on the thumbnail's bottom edge, so the card hangs under the
-                // cover it belongs to rather than covering it.
-                .popover(isPresented: $showModernBookCard, arrowEdge: .bottom) {
-                    modernBookCard
-                        // Keep it a popover on iPhone too — the card belongs to the
-                        // cover it hangs off, which a sheet would break.
-                        .presentationCompactAdaptation(.popover)
-                        // `.popover` has no `onDismiss`, so the card's own disappearance is
-                        // the dismissal signal the deferred route waits on. Deliberately a
-                        // real lifecycle callback, not a timer.
-                        .onDisappear(perform: presentDeferredModernBookCardRoute)
-                }
+                modernCoverButton
             }
         }
     }
 
+    private var modernBackButton: some View {
+        Button {
+            closeReader()
+        } label: {
+            Label(localized("退出閱讀"), systemImage: "chevron.left")
+                .labelStyle(.iconOnly)
+                .foregroundStyle(modernPalette.topIcon)
+        }
+        .accessibilityIdentifier("reader_back_button")
+        .accessibilityLabel(localized("退出閱讀"))
+    }
+
+    /// One line, one glass capsule. The author moved into the card: a second line
+    /// makes the capsule tall and breaks the row of equal-height islands.
+    private var modernTitleButton: some View {
+        Button {
+            showModernBookCard = true
+        } label: {
+            Text(modernBookTitle)
+                .font(DSFont.subheadline)
+                .foregroundStyle(modernPalette.topIcon)
+                .lineLimit(1)
+        }
+        .modernToolbarGlass()
+        .accessibilityLabel(
+            modernBookAuthor.isEmpty
+                ? modernBookTitle
+                : "\(modernBookTitle), \(modernBookAuthor)"
+        )
+        .accessibilityHint(localized("書籍詳情"))
+    }
+
+    private var modernCoverButton: some View {
+        Button {
+            showModernBookCard = true
+        } label: {
+            modernCoverThumbnail
+        }
+        // `.plain` so the cover *is* the control: a bordered/glass toolbar button
+        // would draw its own circle and inset the artwork inside it, which is the
+        // small-square-in-a-circle look this replaces.
+        .buttonStyle(.plain)
+        .accessibilityLabel(localized("書籍詳情"))
+        // Arrow on the thumbnail's bottom edge, so the card hangs under the cover it
+        // belongs to rather than covering it.
+        .popover(isPresented: $showModernBookCard, arrowEdge: .bottom) {
+            modernBookCard
+                // Keep it a popover on iPhone too — the card belongs to the cover it
+                // hangs off, which a sheet would break.
+                .presentationCompactAdaptation(.popover)
+                // The card paints its own fill; this is what reaches the popover's
+                // surface behind the corners and the arrow.
+                .presentationBackground(modernPalette.panelFill)
+                // `.popover` has no `onDismiss`, so the card's own disappearance is the
+                // dismissal signal the deferred route waits on. Deliberately a real
+                // lifecycle callback, not a timer.
+                .onDisappear(perform: presentDeferredModernBookCardRoute)
+        }
+    }
+
+    /// The cover fills the whole control as a circle. It used to be a 30pt rounded
+    /// square sitting inside the toolbar button's own circular chrome, which read as
+    /// a small picture in a ring rather than as the book.
     private var modernCoverThumbnail: some View {
         Group {
             if let modernCoverImage {
@@ -227,8 +268,14 @@ extension ReaderView {
                 TitleCardPlaceholder(title: modernBookTitle)
             }
         }
-        .frame(width: 30, height: 30)
-        .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+        .frame(
+            width: DSLayout.readerModernCoverButtonSize,
+            height: DSLayout.readerModernCoverButtonSize
+        )
+        .clipShape(Circle())
+        // A hairline keeps a pale cover from dissolving into a pale page.
+        .overlay(Circle().stroke(modernPalette.topIcon.opacity(0.25), lineWidth: 0.5))
+        .contentShape(Circle())
     }
 
     var modernBottomBar: some View {
@@ -262,7 +309,9 @@ extension ReaderView {
             progressText: modernChapterProgressText,
             // Reversed for the same reason the Apple Books menu reverses it: the list is
             // built most-specific-first (聽書 … 刷新) and reads better the other way round.
-            actions: readerSecondaryActions.reversed().map { action in
+            // `visibleReaderSecondaryActions` then drops whatever 自定義 switched off —
+            // Apple Books keeps the full list, since none of its chrome is customizable.
+            actions: settings.visibleReaderSecondaryActions(readerSecondaryActions.reversed()).map { action in
                 // Every one of these opens its own sheet, and iOS won't present a modal from
                 // a popover that is still up — nor from one that is still dismissing, which
                 // is why running the action in the same turn as `showModernBookCard = false`
@@ -273,6 +322,7 @@ extension ReaderView {
                     showModernBookCard = false
                 }
             },
+            palette: modernPalette,
             onOpenDetail: onlineBookDetail == nil ? nil : {
                 modernBookCardPresentation.select(.bookDetail)
                 showModernBookCard = false
@@ -543,4 +593,22 @@ extension ReaderView {
         )
     }
 
+}
+
+/// Liquid Glass on a `.principal` toolbar item, which the bar treats as its title
+/// view and never grants the treatment to on its own. Before iOS 26 there is no
+/// glass at all, so the control keeps exactly the look it has always had.
+private extension View {
+    @ViewBuilder
+    func modernToolbarGlass() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            buttonStyle(.glass)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
 }

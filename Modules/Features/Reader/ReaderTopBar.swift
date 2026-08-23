@@ -15,8 +15,8 @@ struct ReaderTopBar: View {
 
     @ObservedObject private var settings = GlobalSettings.shared
 
-    private var palette: ReaderClassicChromePalette {
-        ReaderClassicChromePalette(theme: theme, settings: settings)
+    private var palette: ReaderChromePalette {
+        ReaderChromePalette(interface: .classic, theme: theme, settings: settings)
     }
 
     var body: some View {

@@ -26,9 +26,17 @@ struct ReaderModernBottomControlBar: View {
     let onOpenBookmarks: () -> Void
     let onOpenSettings: () -> Void
 
+    @ObservedObject private var settings = GlobalSettings.shared
+
     @State private var chapterSliderDraft: Double? = nil
 
     private let feedbackDuration: Double = 0.25
+
+    private var palette: ReaderChromePalette {
+        ReaderChromePalette(interface: .modern, theme: readerTheme, settings: settings)
+    }
+
+    private var isNightTheme: Bool { readerTheme == .night }
 
     private var sliderProgress: Double {
         chapterSliderDraft ?? chapterSliderProgressValue()
@@ -51,7 +59,7 @@ struct ReaderModernBottomControlBar: View {
             .padding(.vertical, DSSpacing.md)
             .floatingSurface(
                 in: RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous),
-                fill: readerTheme.barColor
+                fill: palette.bottomFill
             )
             .overlay(alignment: .top) {
                 if chapterSliderDraft != nil {
@@ -61,7 +69,7 @@ struct ReaderModernBottomControlBar: View {
             .frame(maxWidth: overlayContentMaxWidth)
             .padding(.horizontal, DSSpacing.md)
             .padding(.bottom, DSSpacing.md)
-            .tint(readerTheme.accentColor)
+            .tint(palette.bottomAccent)
             .animation(.easeOut(duration: 0.15), value: chapterSliderDraft == nil)
         }
     }
@@ -75,7 +83,7 @@ struct ReaderModernBottomControlBar: View {
             Text(chapterPageInfo)
                 .font(DSFont.footnote.monospacedDigit())
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(palette.bottomIcon.opacity(0.62))
         .accessibilityElement(children: .combine)
     }
 
@@ -84,6 +92,7 @@ struct ReaderModernBottomControlBar: View {
             Button(action: onPrevChapter) {
                 Image(systemName: "chevron.left")
                     .font(DSFont.fixed(size: 15, weight: .medium))
+                    .foregroundStyle(palette.bottomIcon)
                     // Explicit, not left to the button style: `.plain` does not reliably
                     // dim a disabled label, and at a chapter boundary the arrow has to
                     // read as unavailable.
@@ -116,6 +125,7 @@ struct ReaderModernBottomControlBar: View {
             Button(action: onNextChapter) {
                 Image(systemName: "chevron.right")
                     .font(DSFont.fixed(size: 15, weight: .medium))
+                    .foregroundStyle(palette.bottomIcon)
                     .opacity(canGoNextChapter ? 1 : 0.3)
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
@@ -126,51 +136,86 @@ struct ReaderModernBottomControlBar: View {
         }
     }
 
+    /// Same shared list 經典 draws, so hiding 深色 or importing an icon in
+    /// 自定義 applies to whichever interface is on. Order always follows
+    /// `allCases`; persistence only records what is hidden.
     private var toolRow: some View {
         HStack(spacing: 0) {
-            toolBtn(icon: "list.bullet", label: localized("目錄"), action: onOpenTOC)
-            toolBtn(icon: "bookmark", label: localized("書籤"), action: onOpenBookmarks)
-            toolBtn(
-                icon: readerTheme == .night ? "sun.min" : "moon",
-                label: localized(readerTheme == .night ? "白天" : "深色"),
-                active: readerTheme == .night
-            ) {
-                withAnimation(.easeInOut(duration: feedbackDuration)) {
-                    if readerTheme == .night {
-                        let saved = UserDefaults.standard.string(forKey: "lastLightTheme")
-                            ?? ReaderTheme.white.rawValue
-                        readerTheme = ReaderTheme(rawValue: saved) ?? .white
-                    } else {
-                        UserDefaults.standard.set(readerTheme.rawValue, forKey: "lastLightTheme")
-                        readerTheme = .night
-                    }
-                }
+            ForEach(settings.visibleReaderChromeToolItems) { item in
+                toolButton(for: item)
             }
-            toolBtn(icon: "gearshape", label: localized("設置"), action: onOpenSettings)
+        }
+    }
+
+    @ViewBuilder
+    private func toolButton(for item: ReaderChromeToolItem) -> some View {
+        switch item {
+        case .tableOfContents:
+            toolBtn(item: item, label: localized("目錄"), action: onOpenTOC)
+        case .bookmarks:
+            toolBtn(item: item, label: localized("書籤"), action: onOpenBookmarks)
+        case .nightMode:
+            toolBtn(
+                item: item,
+                label: localized(isNightTheme ? "白天" : "深色"),
+                active: isNightTheme,
+                action: toggleNightTheme
+            )
+        case .settings:
+            toolBtn(item: item, label: localized("設置"), action: onOpenSettings)
+        }
+    }
+
+    private func toggleNightTheme() {
+        withAnimation(.easeInOut(duration: feedbackDuration)) {
+            if isNightTheme {
+                let saved = UserDefaults.standard.string(forKey: "lastLightTheme")
+                    ?? ReaderTheme.white.rawValue
+                readerTheme = ReaderTheme(rawValue: saved) ?? .white
+            } else {
+                UserDefaults.standard.set(readerTheme.rawValue, forKey: "lastLightTheme")
+                readerTheme = .night
+            }
         }
     }
 
     @ViewBuilder
     private func toolBtn(
-        icon: String,
+        item: ReaderChromeToolItem,
         label: String,
         active: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             VStack(spacing: 3) {
-                Label(label, systemImage: icon)
-                    .labelStyle(.iconOnly)
-                    .imageScale(.large)
+                toolGlyph(for: item, active: active)
                 Text(label)
                     .font(DSFont.caption2)
+                    .foregroundStyle(active ? palette.bottomAccent : palette.bottomIcon)
             }
-            .foregroundStyle(active ? readerTheme.accentColor : Color.primary)
             .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    /// An imported icon is drawn in its own colours — it is artwork the reader
+    /// chose, not a symbol to tint. Only the fallback SF Symbol takes the palette.
+    @ViewBuilder
+    private func toolGlyph(for item: ReaderChromeToolItem, active: Bool) -> some View {
+        if let custom = settings.readerChromeIconImage(for: item) {
+            Image(uiImage: custom)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 22, height: 22)
+        } else {
+            Image(systemName: item.systemImage(isNight: isNightTheme))
+                .imageScale(.large)
+                .foregroundStyle(active ? palette.bottomAccent : palette.bottomIcon)
+        }
     }
 
     /// The bubble that follows the slider while scrubbing, showing where a release
@@ -186,7 +231,7 @@ struct ReaderModernBottomControlBar: View {
         }
         .padding(.horizontal, DSSpacing.xl)
         .padding(.vertical, DSSpacing.md)
-        .floatingSurface(in: Capsule(), fill: readerTheme.barColor)
+        .floatingSurface(in: Capsule(), fill: palette.bottomFill)
         .allowsHitTesting(false)
         .transition(.opacity.animation(.easeOut(duration: 0.15)))
         .offset(y: -72)

@@ -138,16 +138,14 @@ struct ChapterTitleStyle: Codable, Equatable, Sendable {
     static let defaultLightTemplate = "<div style=\"text-align:center\"><div style=\"font-size:0.55em;letter-spacing:2px;color:#8A8A8E\">{number}</div><div style=\"font-size:1em;font-weight:700;color:#1C1C1E;margin-top:0.2em\">{name}</div></div>"
     static let defaultDarkTemplate = "<div style=\"text-align:center\"><div style=\"font-size:0.55em;letter-spacing:2px;color:#8E8E93\">{number}</div><div style=\"font-size:1em;font-weight:700;color:#F2F2F7;margin-top:0.2em\">{name}</div></div>"
 
-    /// Official default. `visible/size/topSpacing/bottomSpacing` match the
-    /// legacy loose-field defaults so migration is a no-op for those; the new
-    /// fields default to the centred, split, reader-font look the picture shows.
+    /// Official default for new installs and the reset action.
     static let `default` = ChapterTitleStyle(
         visible: true,
         size: 28,
-        topSpacing: 10,
-        bottomSpacing: 20,
+        topSpacing: 16,
+        bottomSpacing: 24,
         weight: .bold,
-        alignment: .center,
+        alignment: .left,
         followsBodyFont: true,
         // Off by default: an untouched install renders the title exactly as
         // before (single line). Two-line split is opt-in on the settings page.
@@ -289,9 +287,7 @@ extension ChapterTitleStyle {
     /// Backwards-compatible constructor from the legacy loose GlobalSettings
     /// fields. Used once during migration when no `chapterTitleStyle` JSON exists.
     /// Carries over the four legacy values; every new field (weight, alignment,
-    /// split, fonts) takes its `default`. Note: because `default.splitEnabled`
-    /// is true, existing TXT/online titles with a "第X章" prefix begin rendering
-    /// as two lines after this migration — an intended visual upgrade.
+    /// split, fonts) takes its `default`.
     init(legacyVisible: Bool, legacySize: CGFloat, legacyTopSpacing: CGFloat, legacyBottomSpacing: CGFloat) {
         self = ChapterTitleStyle.default
         self.visible = legacyVisible

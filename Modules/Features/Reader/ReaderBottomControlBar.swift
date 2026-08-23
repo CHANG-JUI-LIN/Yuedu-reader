@@ -36,18 +36,20 @@ struct ReaderBottomControlBar: View {
 
             HStack(spacing: 12) {
                 Spacer()
-                if showRefreshButton {
-                    circleBtn(icon: "arrow.clockwise", label: localized("刷新")) { onRefresh() }
+                if showRefreshButton, settings.isReaderChromeItemVisible(ReaderChromeActionItem.refresh) {
+                    circleBtn(item: .refresh, label: localized("刷新")) { onRefresh() }
                 }
-                if showChangeSourceButton {
-                    circleBtn(icon: "arrow.left.and.right", label: localized("換源")) {
+                if showChangeSourceButton, settings.isReaderChromeItemVisible(ReaderChromeActionItem.changeSource) {
+                    circleBtn(item: .changeSource, label: localized("換源")) {
                         onOpenChangeSource()
                     }
                 }
-                if showDownloadButton {
-                    circleBtn(icon: downloadButtonIcon, label: localized("下載")) { onDownloadAction() }
+                if showDownloadButton, settings.isReaderChromeItemVisible(ReaderChromeActionItem.download) {
+                    circleBtn(item: .download, label: localized("下載")) { onDownloadAction() }
                 }
-                circleBtn(icon: "headphones", label: localized("聽書")) { onOpenTTS() }
+                if settings.isReaderChromeItemVisible(ReaderChromeActionItem.playback) {
+                    circleBtn(item: .playback, label: localized("聽書")) { onOpenTTS() }
+                }
             }
             .padding(.trailing, 20)
             .padding(.bottom, 20)
@@ -90,8 +92,8 @@ struct ReaderBottomControlBar: View {
         }
     }
 
-    private var palette: ReaderClassicChromePalette {
-        ReaderClassicChromePalette(theme: readerTheme, settings: settings)
+    private var palette: ReaderChromePalette {
+        ReaderChromePalette(interface: .classic, theme: readerTheme, settings: settings)
     }
 
     private var isNightTheme: Bool { readerTheme == .night }
@@ -107,11 +109,9 @@ struct ReaderBottomControlBar: View {
     /// That is also why this takes 光暈 alone rather than the full `floatingSurface`:
     /// letting 毛玻璃 reach these circles would put the body text back behind the icons.
     @ViewBuilder
-    private func circleBtn(icon: String, label: String, action: @escaping () -> Void) -> some View {
+    private func circleBtn(item: ReaderChromeActionItem, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(DSFont.fixed(size: 18))
-                .foregroundColor(palette.circleIcon)
+            circleGlyph(for: item)
                 .frame(width: 40, height: 40)
                 .background(palette.circleFill, in: Circle())
                 .interfaceGlow(in: Circle())
@@ -124,6 +124,23 @@ struct ReaderBottomControlBar: View {
                 .accessibilityHidden(true)
         }
         .accessibilityLabel(label)
+    }
+
+    /// An imported icon is drawn in its own colours — it is artwork the reader
+    /// chose, not a symbol to tint.
+    @ViewBuilder
+    private func circleGlyph(for item: ReaderChromeActionItem) -> some View {
+        if let custom = settings.readerChromeIconImage(for: item) {
+            Image(uiImage: custom)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 20, height: 20)
+        } else {
+            Image(systemName: item == .download ? downloadButtonIcon : item.defaultSystemImage)
+                .font(DSFont.fixed(size: 18))
+                .foregroundColor(palette.circleIcon)
+        }
     }
 
     /// The one source for both the printed progress line and the slider's VoiceOver value.
@@ -202,7 +219,7 @@ struct ReaderBottomControlBar: View {
     /// cannot reshuffle the row.
     private var toolRow: some View {
         HStack(spacing: 0) {
-            ForEach(settings.visibleReaderClassicToolItems) { item in
+            ForEach(settings.visibleReaderChromeToolItems) { item in
                 toolButton(for: item)
             }
         }
@@ -211,7 +228,7 @@ struct ReaderBottomControlBar: View {
     }
 
     @ViewBuilder
-    private func toolButton(for item: ReaderClassicToolItem) -> some View {
+    private func toolButton(for item: ReaderChromeToolItem) -> some View {
         switch item {
         case .tableOfContents:
             toolBtn(item: item, label: localized("目錄")) { onOpenTOC() }
@@ -244,7 +261,7 @@ struct ReaderBottomControlBar: View {
 
     @ViewBuilder
     private func toolBtn(
-        item: ReaderClassicToolItem, label: String, active: Bool = false, badge: Int? = nil,
+        item: ReaderChromeToolItem, label: String, active: Bool = false, badge: Int? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -274,8 +291,8 @@ struct ReaderBottomControlBar: View {
     /// chose, not a symbol to tint. Only the fallback SF Symbol inherits the row's
     /// `foregroundColor`, which is why the label under it still recolors either way.
     @ViewBuilder
-    private func toolGlyph(for item: ReaderClassicToolItem) -> some View {
-        if let custom = settings.readerClassicToolIconImage(for: item) {
+    private func toolGlyph(for item: ReaderChromeToolItem) -> some View {
+        if let custom = settings.readerChromeIconImage(for: item) {
             Image(uiImage: custom)
                 .renderingMode(.original)
                 .resizable()

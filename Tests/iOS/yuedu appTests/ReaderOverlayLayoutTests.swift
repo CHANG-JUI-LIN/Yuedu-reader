@@ -413,18 +413,76 @@ struct ReaderOverlayLayoutTests {
         #expect(ReaderOverlayLayout.default == ReaderOverlayLayoutMigration.defaultLayout)
         #expect(ReaderOverlayLayout.default.components.map(\.kind) == [
             .chapterTitle,
-            .currentTime,
-            .battery,
             .chapterPage,
-            .totalProgressText
+            .totalProgressText,
+            .battery,
+            .currentTime
         ])
         #expect(ReaderOverlayLayout.default.components.map(\.id) == [
             UUID(uuidString: "00000000-0000-0000-0000-000000000101")!,
-            UUID(uuidString: "00000000-0000-0000-0000-000000000102")!,
-            UUID(uuidString: "00000000-0000-0000-0000-000000000103")!,
             UUID(uuidString: "00000000-0000-0000-0000-000000000104")!,
-            UUID(uuidString: "00000000-0000-0000-0000-000000000105")!
+            UUID(uuidString: "00000000-0000-0000-0000-000000000105")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000103")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000102")!
         ])
+        #expect(ReaderOverlayLayout.default.chapterOpeningComponents.map(\.id) == [
+            UUID(uuidString: "00000000-0000-0000-0000-000000000111")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000114")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000115")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000113")!,
+            UUID(uuidString: "00000000-0000-0000-0000-000000000112")!
+        ])
+    }
+
+    @Test("fresh installs use the current default instead of legacy defaults")
+    func freshInstallUsesCurrentDefault() {
+        let resolution = ReaderOverlayLayoutMigration.resolve(
+            storedData: nil,
+            legacy: migrationFixture(),
+            hasPersistedLegacySettings: false
+        )
+
+        #expect(resolution.layout == ReaderOverlayLayout.default)
+        #expect(resolution.shouldPersistPrimary)
+    }
+
+    @Test("existing legacy settings are still migrated")
+    func existingLegacySettingsAreStillMigrated() {
+        let legacy = migrationFixture()
+        let resolution = ReaderOverlayLayoutMigration.resolve(
+            storedData: nil,
+            legacy: legacy,
+            hasPersistedLegacySettings: true
+        )
+
+        #expect(resolution.layout == ReaderOverlayLayoutMigration.migrate(legacy))
+        #expect(resolution.shouldPersistPrimary)
+    }
+
+    @Test("stored automatic legacy default upgrades to the current default")
+    func storedAutomaticLegacyDefaultUpgradesToCurrentDefault() throws {
+        let legacyDefault = automaticLegacyDefaultFixture()
+        let resolution = ReaderOverlayLayoutMigration.resolve(
+            storedData: try JSONEncoder().encode(legacyDefault),
+            legacy: migrationFixture()
+        )
+
+        #expect(resolution.layout == ReaderOverlayLayout.default)
+        #expect(resolution.shouldPersistPrimary)
+    }
+
+    @Test("a customized legacy default remains customized")
+    func customizedLegacyDefaultRemainsCustomized() throws {
+        var customized = automaticLegacyDefaultFixture()
+        customized.components[0].position.x += 0.01
+        customized.chapterOpeningComponents[0].position.x += 0.01
+
+        let resolution = ReaderOverlayLayoutMigration.resolve(
+            storedData: try JSONEncoder().encode(customized),
+            legacy: migrationFixture()
+        )
+
+        #expect(resolution.layout == customized)
     }
 
     @Test("persistence normalizes before writing")
@@ -527,6 +585,22 @@ struct ReaderOverlayLayoutTests {
             footerHorizontalPadding: 24,
             topContentReservation: 46,
             bottomContentReservation: 36
+        )
+    }
+
+    private func automaticLegacyDefaultFixture() -> ReaderOverlayLayout {
+        ReaderOverlayLayoutMigration.migrate(
+            ReaderLegacyOverlaySettings(
+                headerVisible: true,
+                footerVisible: true,
+                headerFieldPositions: ["chapterTitle": "left"],
+                headerTopPadding: 6,
+                headerHorizontalPadding: 16,
+                footerBottomPadding: 4,
+                footerHorizontalPadding: 16,
+                topContentReservation: 34,
+                bottomContentReservation: 32
+            )
         )
     }
 }

@@ -111,6 +111,14 @@ struct SettingsView: View {
                                 .labelStyle(IconConsistentLabelStyle())
                         }
                         .pickerStyle(.menu)
+
+                        NavigationLink {
+                            DefaultCoverSettingsView()
+                        } label: {
+                            Label(localized("預設封面"), systemImage: "photo.stack.fill")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                        }
                     }
                     .interfaceSectionSurface()
 

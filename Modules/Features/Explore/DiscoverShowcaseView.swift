@@ -490,6 +490,19 @@ private struct DiscoverRankedSummaryCard: View {
 /// Rows read only precomputed `DiscoverBookDisplay` fields — no HTML stripping,
 /// audiobook inference, or source lookups in `body` (each visible row re-renders
 /// every time any section finishes loading; see `DiscoverBookDisplay`).
+/// Whether a 探索 card may fall back to the user's 預設封面 library, and under
+/// which key. Gated on 設定 → 書架顯示 → 預設封面 → 探索頁啟用預設封面, so the
+/// bookshelf can use default covers without the discover page changing.
+enum DiscoverDefaultCoverSeed {
+    static func seed(for display: DiscoverBookDisplay) -> String? {
+        guard GlobalSettings.shared.exploreUsesDefaultCover else { return nil }
+        // Book URL first: two books can share a title, and the same book keeps
+        // its picture across carousels this way.
+        let url = display.book.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        return url.isEmpty ? display.book.name : url
+    }
+}
+
 private struct DiscoverFeaturedCard: View {
     let display: DiscoverBookDisplay
     let section: DiscoverShowcaseSection
@@ -500,7 +513,8 @@ private struct DiscoverFeaturedCard: View {
                 coverURL: display.book.coverUrl,
                 title: display.book.name,
                 sourceBaseURL: section.coverBaseURL,
-                sourceHeaders: section.coverHeaders
+                sourceHeaders: section.coverHeaders,
+                defaultCoverSeed: DiscoverDefaultCoverSeed.seed(for: display)
             )
             .frame(width: 104, height: 138)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
@@ -540,7 +554,8 @@ private struct DiscoverRankedRow: View {
                 coverURL: display.book.coverUrl,
                 title: display.book.name,
                 sourceBaseURL: section.coverBaseURL,
-                sourceHeaders: section.coverHeaders
+                sourceHeaders: section.coverHeaders,
+                defaultCoverSeed: DiscoverDefaultCoverSeed.seed(for: display)
             )
             .frame(width: 52, height: 70)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))

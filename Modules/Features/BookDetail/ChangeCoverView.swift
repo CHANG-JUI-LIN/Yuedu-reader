@@ -1,31 +1,23 @@
 import Combine
 import SwiftUI
 
-/// One cover offered by 封面搜索, with the source it came from — the source is
-/// what supplies the download headers, so it travels with the URL.
-struct CoverCandidate: Identifiable, Equatable {
-    let id: String
-    let coverUrl: String
-    let sourceId: UUID
-    let sourceName: String
-}
-
-/// Cross-source cover search, Legado's 换封面 dialog.
+/// 換封面 — covers taken from the book sources the user has installed.
 ///
 /// Streams candidates through the shared `BookOriginSearchService` fan-out — the
 /// same search 換源 runs — and keeps the covers whose source actually returned
 /// one. Deduped by cover URL: aggregation sources hand back the same CDN image
 /// under several channels, and a grid of the identical picture is worthless.
+///
+/// Legado runs this and its 封面規則 web lookup inside one dialog; here they are
+/// two entries, so 封面搜索 (web) stays usable for a book with no matching source.
 @MainActor
-final class CoverSearchViewModel: ObservableObject {
+final class ChangeCoverViewModel: ObservableObject {
     @Published private(set) var candidates: [CoverCandidate] = []
     @Published private(set) var isSearching = false
     @Published private(set) var hasSearched = false
 
     private var searchTask: Task<Void, Never>?
     private var seenCoverUrls = Set<String>()
-
-    var isEmpty: Bool { candidates.isEmpty }
 
     /// Seeds from the 換源 result cache when one is fresh, so a book whose sources
     /// were already searched shows its covers immediately.
@@ -84,10 +76,9 @@ final class CoverSearchViewModel: ObservableObject {
             let url = origin.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !url.isEmpty, seenCoverUrls.insert(url).inserted else { return nil }
             return CoverCandidate(
-                id: url,
                 coverUrl: url,
                 sourceId: origin.sourceId,
-                sourceName: origin.sourceName
+                providerName: origin.sourceName
             )
         }
         guard !fresh.isEmpty else { return }
@@ -95,30 +86,35 @@ final class CoverSearchViewModel: ObservableObject {
     }
 }
 
-/// The 封面搜索 grid. Picking a cover hands it back to 書籍資訊, which owns the
+/// The 換封面 screen. Picking a cover hands it back to 書籍資訊, which owns the
 /// download and the book record.
-struct CoverSearchView: View {
+struct ChangeCoverView: View {
     let bookId: UUID
     let title: String
     let author: String
     let onSelect: (CoverCandidate) -> Void
 
-    @StateObject private var model = CoverSearchViewModel()
+    @StateObject private var model = ChangeCoverViewModel()
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    private var columnCount: Int {
-        dynamicTypeSize.isAccessibilitySize ? 2 : 3
-    }
 
     var body: some View {
         AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-            content
+            CoverCandidateGrid(
+                bookTitle: title,
+                candidates: model.candidates,
+                isSearching: model.isSearching,
+                hasSearched: model.hasSearched,
+                emptyHint: localized("可以改用「封面搜索」上網找，或從相簿選一張圖片。")
+            ) { candidate in
+                model.stop()
+                onSelect(candidate)
+                dismiss()
+            }
         }
-        .navigationTitle(localized("封面搜索"))
+        .navigationTitle(localized("換封面"))
         // Pushed page: the back button is the way out (this screen is entered
         // from 書籍資訊, sheet or push, through a NavigationLink).
-        .toolbarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inlineLarge)
         .themedAppSurface(for: .bookshelf)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -142,99 +138,6 @@ struct CoverSearchView: View {
         .onDisappear { model.stop() }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        ScrollView {
-            LazyVGrid(
-                columns: Array(
-                    repeating: GridItem(.flexible(), spacing: DSSpacing.md),
-                    count: columnCount
-                ),
-                spacing: DSSpacing.lg
-            ) {
-                ForEach(model.candidates) { candidate in
-                    coverCell(candidate)
-                }
-            }
-            .padding(DSSpacing.lg)
-
-            statusFooter
-                .padding(.horizontal, DSSpacing.lg)
-                .padding(.bottom, DSSpacing.xxl)
-        }
-    }
-
-    @ViewBuilder
-    private var statusFooter: some View {
-        if model.isSearching {
-            HStack(spacing: DSSpacing.sm) {
-                ProgressView()
-                Text(
-                    model.isEmpty
-                        ? localized("正在搜尋封面…")
-                        : localized("正在搜尋更多封面…")
-                )
-                .font(DSFont.footnote)
-                .foregroundStyle(DSColor.textSecondary)
-            }
-            .frame(maxWidth: .infinity)
-        } else if model.isEmpty && model.hasSearched {
-            VStack(spacing: DSSpacing.sm) {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(DSFont.fixed(size: 36))
-                    .foregroundStyle(DSColor.textSecondary.opacity(0.4))
-                    // Decorative: the text below says the same thing.
-                    .accessibilityHidden(true)
-                Text(localized("沒有找到其他封面"))
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
-                Text(localized("可以改用相簿裡的圖片，或直接貼上封面網址。"))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary.opacity(0.8))
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, DSSpacing.xxl)
-        }
-    }
-
-    private func coverCell(_ candidate: CoverCandidate) -> some View {
-        Button {
-            model.stop()
-            onSelect(candidate)
-            dismiss()
-        } label: {
-            VStack(spacing: DSSpacing.xs) {
-                BookCoverImage(
-                    coverURL: candidate.coverUrl,
-                    title: title,
-                    sourceBaseURL: source(for: candidate)?.bookSourceUrl,
-                    sourceHeaders: source(for: candidate)?.parsedHeaders ?? [:]
-                )
-                .aspectRatio(2.0 / 3.0, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
-                        .stroke(DSColor.textSecondary.opacity(0.2), lineWidth: 0.5)
-                )
-
-                Text(candidate.sourceName)
-                    .font(DSFont.caption2)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(localized("封面") + "，" + candidate.sourceName)
-        .accessibilityHint(localized("點兩下使用這張封面"))
-        .accessibilityAddTraits(.isButton)
-    }
-
-    private func source(for candidate: CoverCandidate) -> BookSource? {
-        BookSourceStore.shared.sources.first { $0.id == candidate.sourceId }
-    }
-
     private func startSearch() {
         model.start(
             bookId: bookId,
@@ -247,7 +150,7 @@ struct CoverSearchView: View {
 
 #Preview {
     NavigationStack {
-        CoverSearchView(
+        ChangeCoverView(
             bookId: UUID(),
             title: "紅樓夢",
             author: "曹雪芹",

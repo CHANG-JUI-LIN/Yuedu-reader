@@ -6,9 +6,10 @@ import UIKit
 /// actions underneath — 刷新 / 換源 / 下載 / 聽書, the same
 /// `ReaderView.readerSecondaryActions` list Apple Books renders in its menu.
 ///
-/// The popover supplies the surface, so nothing here paints a background or a shadow.
-/// Local books have no detail page, so `onOpenDetail` is nil for them and the identity
-/// block simply isn't tappable.
+/// The popover supplies the shape and shadow; 自定義 supplies the fill, which is why
+/// the card paints `palette.panelFill` behind itself rather than leaving the system
+/// material bare. Local books have no detail page, so `onOpenDetail` is nil for them
+/// and the identity block simply isn't tappable.
 struct ReaderModernBookCard: View {
     let coverImage: UIImage?
     let bookTitle: String
@@ -16,8 +17,11 @@ struct ReaderModernBookCard: View {
     let formatText: String
     let progressText: String
     let actions: [ReaderSecondaryAction]
+    let palette: ReaderChromePalette
 
     let onOpenDetail: (() -> Void)?
+
+    @ObservedObject private var settings = GlobalSettings.shared
 
     /// Popovers size to their content; without a width the title would stretch the
     /// card to the full screen on a long book name.
@@ -32,6 +36,11 @@ struct ReaderModernBookCard: View {
             }
         }
         .frame(width: contentWidth)
+        .foregroundStyle(palette.panelText)
+        // `.presentationBackground` is what actually reaches the popover's own
+        // surface; painting only this view would leave the system material showing
+        // through the corners.
+        .background(palette.panelFill)
     }
 
     @ViewBuilder
@@ -60,7 +69,7 @@ struct ReaderModernBookCard: View {
                 if !author.isEmpty {
                     Text(author)
                         .font(DSFont.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.panelText.opacity(0.62))
                         .lineLimit(1)
                 }
                 HStack(spacing: DSSpacing.sm) {
@@ -98,10 +107,10 @@ struct ReaderModernBookCard: View {
                 .fontWeight(.medium)
         }
         .font(DSFont.caption2)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(palette.panelText.opacity(0.62))
         .padding(.horizontal, DSSpacing.sm)
         .padding(.vertical, 4)
-        .background(.quaternary, in: Capsule())
+        .background(palette.panelText.opacity(0.1), in: Capsule())
         .accessibilityElement(children: .combine)
     }
 
@@ -110,9 +119,7 @@ struct ReaderModernBookCard: View {
             ForEach(actions) { action in
                 Button(action: action.action) {
                     VStack(spacing: 5) {
-                        Label(action.label, systemImage: action.icon)
-                            .labelStyle(.iconOnly)
-                            .imageScale(.large)
+                        actionGlyph(for: ReaderChromeActionItem(action.id), fallback: action.icon)
                         Text(action.label)
                             .font(DSFont.caption2)
                             .lineLimit(1)
@@ -126,6 +133,23 @@ struct ReaderModernBookCard: View {
         }
         .padding(.horizontal, DSSpacing.sm)
         .padding(.bottom, DSSpacing.sm)
+    }
+
+    /// An imported icon is drawn in its own colours — it is artwork the reader
+    /// chose, not a symbol to tint. `fallback` is the live symbol `ReaderView`
+    /// picked, which for 下載 changes with download state.
+    @ViewBuilder
+    private func actionGlyph(for item: ReaderChromeActionItem, fallback: String) -> some View {
+        if let custom = settings.readerChromeIconImage(for: item) {
+            Image(uiImage: custom)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 22, height: 22)
+        } else {
+            Image(systemName: fallback)
+                .imageScale(.large)
+        }
     }
 }
 
@@ -147,6 +171,7 @@ struct ReaderModernBookCard: View {
             ReaderSecondaryAction(id: .download, icon: "arrow.down.circle", label: "下載", action: {}),
             ReaderSecondaryAction(id: .playback, icon: "headphones", label: "聽書", action: {})
         ],
+        palette: ReaderChromePalette(interface: .modern, theme: .sepia, settings: .shared),
         onOpenDetail: {}
     )
 }

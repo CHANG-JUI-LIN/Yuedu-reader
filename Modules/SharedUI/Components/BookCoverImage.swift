@@ -15,19 +15,26 @@ struct BookCoverImage: View {
     let title: String
     var sourceBaseURL: String?
     var sourceHeaders: [String: String]
+    /// Stable key identifying the book, when this slot may fall back to the
+    /// user's 預設封面 library. `nil` keeps the plain title card — only the
+    /// surfaces 預設封面 covers (書架, and 探索 when enabled) pass a seed.
+    var defaultCoverSeed: String?
 
     @State private var image: UIImage?
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         coverURL: String,
         title: String,
         sourceBaseURL: String? = nil,
-        sourceHeaders: [String: String] = [:]
+        sourceHeaders: [String: String] = [:],
+        defaultCoverSeed: String? = nil
     ) {
         self.coverURL = coverURL
         self.title = title
         self.sourceBaseURL = sourceBaseURL
         self.sourceHeaders = sourceHeaders
+        self.defaultCoverSeed = defaultCoverSeed
         // Cache hits paint on the first layout pass — no placeholder flash and
         // no extra state publish per cell while a list scrolls.
         _image = State(initialValue: BookCoverLoader.cachedImage(for: coverURL))
@@ -35,8 +42,12 @@ struct BookCoverImage: View {
 
     var body: some View {
         ZStack {
-            if let image {
+            if let image, !forcesDefaultCover {
                 Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else if let defaultCover = resolvedDefaultCover {
+                Image(uiImage: defaultCover)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -48,9 +59,24 @@ struct BookCoverImage: View {
         .task(id: coverURL) { await load() }
     }
 
+    /// 強制使用預設封面: the book's own artwork is ignored everywhere it is drawn,
+    /// exactly like Legado's `useDefaultCover` short-circuit in `BookCover.load`.
+    private var forcesDefaultCover: Bool {
+        GlobalSettings.shared.useDefaultCoverForAllBooks
+    }
+
+    /// The default cover this slot should show, if any. Forcing applies to every
+    /// book, so it also supplies a seed to slots that opted out of the library.
+    private var resolvedDefaultCover: UIImage? {
+        guard let seed = defaultCoverSeed ?? (forcesDefaultCover ? title : nil) else { return nil }
+        return DefaultCoverLibrary.image(seed: seed, colorScheme: colorScheme)
+    }
+
     // Runs on the MainActor (`.task` inherits the view's actor), so state
     // assignments need no explicit hop.
     private func load() async {
+        // Nothing on screen would use it: the default cover wins for every book.
+        if forcesDefaultCover, DefaultCoverLibrary.hasImages(for: colorScheme) { return }
         if let cached = BookCoverLoader.cachedImage(for: coverURL) {
             if image !== cached { image = cached }
             return

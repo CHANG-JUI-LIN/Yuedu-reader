@@ -1153,6 +1153,14 @@
 "簡潔" = "Compact";
 "沉浸" = "Immersive";
 "選擇閱讀界面的工具列與控制方式。" = "Choose the reader toolbar and control style.";
+"書卡面板底色" = "Book Card Fill";
+"書卡面板文字顏色" = "Book Card Text Color";
+"按鈕圖示" = "Button Icons";
+"底部工具" = "Bottom Tools";
+"書籍動作" = "Book Actions";
+"現代的頂欄是系統玻璃，只能改圖示顏色；底部是浮動面板，書卡是點封面圓圈之後那張。未調整的部分跟隨目前的閱讀主題。" = "Modern's top bar is system glass, so only its icon color is ours to set; the bottom is a floating panel, and the book card is what opens behind the cover circle. Anything left alone follows the current reading theme.";
+"關掉的按鈕會整個離開工具列。設置固定顯示——它是回到閱讀設定的唯一入口。" = "A button you turn off leaves the tool row entirely. Settings always stays — it is the only way back to reader settings.";
+"經典把這四個畫成浮在正文上的圓鈕，現代放在點封面圓圈之後的書卡裡。原本就不適用這本書的動作仍然不會出現。" = "Classic draws these four as circles floating over the page; Modern puts them in the card behind the cover circle. Actions that do not apply to a book still never appear.";
 "頂部底色" = "Top Bar Fill";
 "頂部圖示顏色" = "Top Bar Icon Color";
 "底部底色" = "Bottom Bar Fill";
@@ -2207,3 +2215,31 @@
 "段落筆記" = "Paragraph Notes";
 "在劃線的段落上寫筆記，隨時回頭查看" = "Write notes on highlighted passages and revisit them any time";
 "訂閱 Pro 繼續編輯筆記" = "Subscribe to Pro to keep editing notes";
+
+/* Settings — default cover */
+"預設封面" = "Default Cover";
+"強制使用預設封面" = "Always Use Default Cover";
+"開啟後所有書籍都使用預設封面，忽略書籍自帶的封面圖。" = "Every book shows the default cover, ignoring its own artwork.";
+"封面圓角" = "Cover Corner Radius";
+"%d pt" = "%d pt";
+"用於書架卡片中的封面裁切，不影響卡片背景圓角。" = "Applies to how covers are clipped on bookshelf cards; the card background keeps its own radius.";
+"探索頁啟用預設封面" = "Default Covers in Explore";
+"開啟後，探索頁中沒有封面的書卡也使用隨機預設封面圖（列表和網格均生效）。" = "Books without artwork on the Explore page also get a random default cover, in both list and grid layouts.";
+"亮色封面" = "Light Covers";
+"深色封面" = "Dark Covers";
+"暫無封面，點擊下方按鈕添加" = "No covers yet — add one with the button below";
+"暫無深色封面，未設置時使用亮色封面" = "No dark covers — light covers are used instead";
+"書籍沒有封面時隨機使用其中一張作為預設封面。" = "A book with no cover gets one of these at random.";
+"深色模式下優先使用這裡的封面，未設置時跟隨亮色封面。" = "Used in dark mode; falls back to the light covers when empty.";
+"添加封面圖" = "Add Cover Image";
+"添加深色封面圖" = "Add Dark Cover Image";
+"移除這張封面" = "Remove this cover";
+"封面匯入失敗" = "Couldn't Import Cover";
+
+/* Book info — web cover search and change cover */
+"換封面" = "Change Cover";
+"封面搜索會上網找封面；換封面則在你已加入的書源裡，尋找同書名同作者的封面。" = "Search Covers looks on the web; Change Cover looks through the book sources you've added for the same title and author.";
+"可以改用「封面搜索」上網找，或從相簿選一張圖片。" = "Try Search Covers on the web instead, or pick an image from your photo library.";
+"可以改用「換封面」在書源裡找，或從相簿選一張圖片。" = "Try Change Cover to look in your book sources, or pick an image from your photo library.";
+"推書君" = "Tuishujun";
+"一片書喽" = "Ypshuo";

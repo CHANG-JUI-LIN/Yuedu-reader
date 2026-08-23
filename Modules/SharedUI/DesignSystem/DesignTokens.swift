@@ -241,6 +241,9 @@ enum DSLayout {
     static let readerAppleBooksMenuRowHeight: CGFloat = 44
     /// VoiceOver increment/decrement step for the Apple Books progress scrubber.
     static let readerAppleBooksProgressAccessibilityStep: Double = 0.01
+    /// Diameter of 現代's cover button in the reader toolbar. The cover fills it
+    /// as a circle, so this is the control size, not an inset thumbnail size.
+    static let readerModernCoverButtonSize: CGFloat = 34
     /// Width of the quote bar beside the annotated excerpt in the note editor.
     static let readerNoteQuoteBarWidth: CGFloat = 3
     /// Minimum height of the paragraph-comment SVG editor.

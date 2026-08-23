@@ -3,6 +3,33 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 // MARK: - Bookshelf Home
+/// Cover styling the bookshelf shares between its list rows and grid cells.
+enum BookshelfCoverStyle {
+    /// 設定 → 書架顯示 → 預設封面 → 封面圓角. Read unobserved: `HomeView` observes
+    /// `GlobalSettings`, so a change there rebuilds every row with the new value.
+    static var cornerRadius: CGFloat {
+        CGFloat(GlobalSettings.shared.bookshelfCoverCornerRadius)
+    }
+
+    /// The artwork a bookshelf card draws, or nil to fall back to the title card.
+    ///
+    /// One resolver for the row, the grid cell and the open-book transition
+    /// snapshot, so 強制使用預設封面 cannot end up honored in one of them and
+    /// ignored in another — a mismatch there shows as the cover swapping
+    /// mid-animation.
+    static func image(for book: ReadingBook, colorScheme: ColorScheme) -> UIImage? {
+        let defaultCover = DefaultCoverLibrary.image(
+            seed: book.id.uuidString, colorScheme: colorScheme
+        )
+        // Forcing means the book's own artwork is never drawn, even when the
+        // library is empty — that case falls through to the title card, which is
+        // what Legado's built-in default cover does.
+        if GlobalSettings.shared.useDefaultCoverForAllBooks { return defaultCover }
+        return book.coverImagePath.flatMap { BookshelfCoverLoader.load(filename: $0) }
+            ?? defaultCover
+    }
+}
+
 enum BookshelfCoverLoader {
     static func load(filename: String) -> UIImage? {
         BookCoverLoader.localImage(filename: filename)
@@ -62,6 +89,7 @@ struct HomeView: View {
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) private var appDependencies
     @ObservedObject private var gs = GlobalSettings.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var showAddSheet = false
     @State private var showWebDAVImport = false
@@ -146,9 +174,9 @@ struct HomeView: View {
             let requestToken = UUID()
             pendingReaderOpenToken = requestToken
             AppLogger.info("⟐ openBook staged token=\(requestToken) hasPendingToken=\(pendingReaderOpenToken != nil)")
-            let snapshot: UIImage? = book.coverImagePath.flatMap {
-                BookshelfCoverLoader.load(filename: $0)
-            }
+            // Same resolver the cards use, so the lifted card carries the very
+            // image the shelf was showing (including a 預設封面).
+            let snapshot = BookshelfCoverStyle.image(for: book, colorScheme: colorScheme)
             AppLogger.info("⟐ openBook snapshot resolved hasSnapshot=\(snapshot != nil)")
             Task { @MainActor in
                 AppLogger.info("⟐ openBook begin resolveOpeningDirection bookID=\(book.id)")
@@ -955,7 +983,19 @@ struct EditBookSheet: View {
             // (Technotes/iOS17MenuModalPresentation.md), and internal navigation
             // inside a sheet is the sanctioned pattern anyway.
             NavigationLink {
-                CoverSearchView(
+                OnlineCoverSearchView(
+                    title: liveBook.title,
+                    author: liveBook.author
+                ) { candidate in
+                    applyCover(url: candidate.coverUrl, sourceId: candidate.sourceId)
+                }
+            } label: {
+                Label(localized("封面搜索"), systemImage: "globe")
+            }
+            .disabled(isApplyingCover)
+
+            NavigationLink {
+                ChangeCoverView(
                     bookId: book.id,
                     title: liveBook.title,
                     author: liveBook.author
@@ -963,7 +1003,7 @@ struct EditBookSheet: View {
                     applyCover(url: candidate.coverUrl, sourceId: candidate.sourceId)
                 }
             } label: {
-                Label(localized("封面搜索"), systemImage: "magnifyingglass")
+                Label(localized("換封面"), systemImage: "books.vertical")
             }
             .disabled(isApplyingCover)
 
@@ -987,7 +1027,7 @@ struct EditBookSheet: View {
         } header: {
             Text(localized("封面"))
         } footer: {
-            Text(localized("封面搜索會在所有啟用的書源中，尋找同書名同作者的封面。"))
+            Text(localized("封面搜索會上網找封面；換封面則在你已加入的書源裡，尋找同書名同作者的封面。"))
         }
         .interfaceSectionSurface()
 
@@ -1208,6 +1248,7 @@ struct BookRow: View {
     private let coverW: CGFloat = 45
     private let coverH: CGFloat = 65
     @State private var liveCoverFrame: CGRect = .zero
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1223,7 +1264,7 @@ struct BookRow: View {
                                 ? nil
                                 : ReaderCardGeometry(
                                     frame: liveCoverFrame,
-                                    cornerRadius: DSRadius.sm
+                                    cornerRadius: BookshelfCoverStyle.cornerRadius
                                 )
                         )
                     }) { rowContent }
@@ -1346,20 +1387,19 @@ struct BookRow: View {
 
     @ViewBuilder
     private var bookCover: some View {
-        if let coverPath = book.coverImagePath,
-           let uiImage = loadCoverImage(filename: coverPath) {
+        if let uiImage = BookshelfCoverStyle.image(for: book, colorScheme: colorScheme) {
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFill()
                 .frame(width: coverW, height: coverH)
-                .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm))
+                .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
                 .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
                 .overlay(alignment: .bottomTrailing) {
                     if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 7) }
                 }
         } else {
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: DSRadius.sm)
+                RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius)
                     .fill(Color(.secondarySystemBackground))
                     .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
                 Text(book.title)
@@ -1373,10 +1413,6 @@ struct BookRow: View {
                 if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 7) }
             }
         }
-    }
-
-    private func loadCoverImage(filename: String) -> UIImage? {
-        BookshelfCoverLoader.load(filename: filename)
     }
 
 }
@@ -1424,13 +1460,15 @@ struct BookGridCell: View {
     let onDelete: () -> Void
     var onShowDetail: (() -> Void)? = nil
     @State private var liveCoverFrame: CGRect = .zero
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Cover geometry for the open-book card transition, or nil before the cover
-    /// has reported a frame.
+    /// has reported a frame. The radius has to match what the cell actually
+    /// clipped with, or the card visibly re-rounds as it lifts off the shelf.
     private var readerCardGeometry: ReaderCardGeometry? {
         liveCoverFrame.isEmpty
             ? nil
-            : ReaderCardGeometry(frame: liveCoverFrame, cornerRadius: DSRadius.md)
+            : ReaderCardGeometry(frame: liveCoverFrame, cornerRadius: BookshelfCoverStyle.cornerRadius)
     }
 
     /// Everything the cell shows, spoken as one phrase. The cell is a single
@@ -1546,22 +1584,21 @@ struct BookGridCell: View {
         let base = Color.clear
             .aspectRatio(2/3, contentMode: .fit)
 
-        if let coverPath = book.coverImagePath,
-           let uiImage = loadCoverImage(filename: coverPath) {
+        if let uiImage = BookshelfCoverStyle.image(for: book, colorScheme: colorScheme) {
             base.overlay(
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
             )
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: DSRadius.md))
+            .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
             .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
             .overlay(alignment: .bottomTrailing) {
                 if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 11) }
             }
         } else {
             base.overlay(
-                RoundedRectangle(cornerRadius: DSRadius.md)
+                RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius)
                     .fill(Color(.secondarySystemBackground))
                     .overlay(
                         Text(book.title)
@@ -1577,10 +1614,6 @@ struct BookGridCell: View {
                 if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 11) }
             }
         }
-    }
-
-    private func loadCoverImage(filename: String) -> UIImage? {
-        BookshelfCoverLoader.load(filename: filename)
     }
 
 }

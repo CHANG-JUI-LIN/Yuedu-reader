@@ -50,44 +50,112 @@ enum ReaderOverlayLayoutMigration {
     static let defaultLayout = ReaderOverlayLayout(
         version: ReaderOverlayLayout.currentVersion,
         components: [
-            ReaderOverlayComponent(
+            defaultComponent(
                 id: ComponentID.defaultChapterTitle,
                 kind: .chapterTitle,
-                position: ReaderOverlayNormalizedPoint(x: 0.06, y: 0.04)
+                x: 0.05454545454545454,
+                y: 0.07566248256624825,
+                fontSize: 12,
+                fontWeight: .regular
             ),
-            ReaderOverlayComponent(
-                id: ComponentID.defaultCurrentTime,
-                kind: .currentTime,
-                position: ReaderOverlayNormalizedPoint(x: 0.94, y: 0.04)
-            ),
-            ReaderOverlayComponent(
-                id: ComponentID.defaultBattery,
-                kind: .battery,
-                position: ReaderOverlayNormalizedPoint(x: 0.06, y: 0.96)
-            ),
-            ReaderOverlayComponent(
+            defaultComponent(
                 id: ComponentID.defaultChapterPage,
                 kind: .chapterPage,
-                position: ReaderOverlayNormalizedPoint(x: 0.5, y: 0.96)
+                x: 0.05454545454545454,
+                y: 0.9644351464435146,
+                fontSize: 10
             ),
-            ReaderOverlayComponent(
+            defaultComponent(
                 id: ComponentID.defaultTotalProgress,
                 kind: .totalProgressText,
-                position: ReaderOverlayNormalizedPoint(x: 0.94, y: 0.96)
+                x: 0.15454545454545454,
+                y: 0.9644351464435147,
+                fontSize: 10
+            ),
+            defaultComponent(
+                id: ComponentID.defaultBattery,
+                kind: .battery,
+                x: 0.9454545454545454,
+                y: 0.9644351464435147,
+                fontSize: 9,
+                showsBatteryPercentage: true
+            ),
+            defaultComponent(
+                id: ComponentID.defaultCurrentTime,
+                kind: .currentTime,
+                x: 0.8143939393939393,
+                y: 0.9644351464435147,
+                fontSize: 10
             )
         ],
-        // Matches the pre-overlay default header/footer reservations:
-        // 6 + 16 + 12 at the top, and 16 + 4 + 12 at the bottom.
-        contentReservations: ReaderOverlayContentReservations(top: 34, bottom: 32)
+        chapterOpeningComponents: [
+            defaultComponent(
+                id: ComponentID.defaultOpeningBookTitle,
+                kind: .bookTitle,
+                x: 0.05454545454545454,
+                y: 0.07322175732217573,
+                fontSize: 12,
+                fontWeight: .regular
+            ),
+            defaultComponent(
+                id: ComponentID.defaultOpeningChapterPage,
+                kind: .chapterPage,
+                x: 0.05454545454545454,
+                y: 0.964783821478382,
+                fontSize: 10
+            ),
+            defaultComponent(
+                id: ComponentID.defaultOpeningTotalProgress,
+                kind: .totalProgressText,
+                x: 0.1553030303030303,
+                y: 0.964783821478382,
+                fontSize: 10
+            ),
+            defaultComponent(
+                id: ComponentID.defaultOpeningBattery,
+                kind: .battery,
+                x: 0.9454545454545454,
+                y: 0.964783821478382,
+                fontSize: 9,
+                showsBatteryPercentage: true
+            ),
+            defaultComponent(
+                id: ComponentID.defaultOpeningCurrentTime,
+                kind: .currentTime,
+                x: 0.8151515151515152,
+                y: 0.964783821478382,
+                fontSize: 10
+            )
+        ],
+        contentReservations: ReaderOverlayContentReservations(top: 90, bottom: 32)
+    )
+
+    /// Before the current visual default, first launch migrated these legacy
+    /// literals and immediately persisted the result. Exact equality lets us
+    /// upgrade that app-authored value without touching any edited layout.
+    private static let obsoleteAutomaticDefaultLayout = migrate(
+        ReaderLegacyOverlaySettings(
+            headerVisible: true,
+            footerVisible: true,
+            headerFieldPositions: ["chapterTitle": "left"],
+            headerTopPadding: 6,
+            headerHorizontalPadding: 16,
+            footerBottomPadding: 4,
+            footerHorizontalPadding: 16,
+            topContentReservation: 34,
+            bottomContentReservation: 32
+        )
     )
 
     static func resolve(
         storedData: Data?,
-        legacy: ReaderLegacyOverlaySettings
+        legacy: ReaderLegacyOverlaySettings,
+        hasPersistedLegacySettings: Bool = true
     ) -> ReaderOverlayLayoutResolution {
+        let fallbackLayout = hasPersistedLegacySettings ? migrate(legacy) : defaultLayout
         guard let storedData else {
             return ReaderOverlayLayoutResolution(
-                layout: migrate(legacy),
+                layout: fallbackLayout,
                 corruptData: nil,
                 shouldPersistPrimary: true
             )
@@ -97,7 +165,7 @@ enum ReaderOverlayLayoutMigration {
         if let envelope = try? decoder.decode(LayoutVersionEnvelope.self, from: storedData),
            envelope.version > ReaderOverlayLayout.currentVersion {
             return ReaderOverlayLayoutResolution(
-                layout: migrate(legacy),
+                layout: fallbackLayout,
                 corruptData: nil,
                 shouldPersistPrimary: false
             )
@@ -107,19 +175,22 @@ enum ReaderOverlayLayoutMigration {
             let storedLayout = try decoder.decode(ReaderOverlayLayout.self, from: storedData)
             guard storedLayout.version <= ReaderOverlayLayout.currentVersion else {
                 return ReaderOverlayLayoutResolution(
-                    layout: migrate(legacy),
+                    layout: fallbackLayout,
                     corruptData: nil,
                     shouldPersistPrimary: false
                 )
             }
+            let upgradedLayout = upgrade(storedLayout)
             return ReaderOverlayLayoutResolution(
-                layout: upgrade(storedLayout),
+                layout: upgradedLayout == obsoleteAutomaticDefaultLayout
+                    ? defaultLayout
+                    : upgradedLayout,
                 corruptData: nil,
                 shouldPersistPrimary: true
             )
         } catch {
             return ReaderOverlayLayoutResolution(
-                layout: migrate(legacy),
+                layout: fallbackLayout,
                 corruptData: storedData,
                 shouldPersistPrimary: true
             )
@@ -151,6 +222,33 @@ enum ReaderOverlayLayoutMigration {
     static func upgrade(_ layout: ReaderOverlayLayout) -> ReaderOverlayLayout {
         guard layout.version <= ReaderOverlayLayout.currentVersion else { return layout }
         return layout.normalized(preservingVersion: false)
+    }
+
+    private static func defaultComponent(
+        id: UUID,
+        kind: ReaderOverlayComponentKind,
+        x: Double,
+        y: Double,
+        fontSize: Double,
+        fontWeight: ReaderOverlayFontWeight = .light,
+        showsBatteryPercentage: Bool = false
+    ) -> ReaderOverlayComponent {
+        ReaderOverlayComponent(
+            id: id,
+            kind: kind,
+            position: ReaderOverlayNormalizedPoint(x: x, y: y),
+            style: ReaderOverlayComponentStyle(
+                font: ReaderOverlayFontReference(kind: .system),
+                fontSize: fontSize,
+                fontWeight: fontWeight,
+                color: ReaderOverlayColorReference(source: .readerText),
+                opacity: 0.72
+            ),
+            configuration: ReaderOverlayComponentConfiguration(
+                batteryVisual: .system,
+                showsBatteryPercentage: showsBatteryPercentage
+            )
+        )
     }
 
     private static func migrateHeader(
@@ -262,6 +360,12 @@ enum ReaderOverlayLayoutMigration {
         static let defaultBattery = UUID(uuidString: "00000000-0000-0000-0000-000000000103")!
         static let defaultChapterPage = UUID(uuidString: "00000000-0000-0000-0000-000000000104")!
         static let defaultTotalProgress = UUID(uuidString: "00000000-0000-0000-0000-000000000105")!
+
+        static let defaultOpeningBookTitle = UUID(uuidString: "00000000-0000-0000-0000-000000000111")!
+        static let defaultOpeningCurrentTime = UUID(uuidString: "00000000-0000-0000-0000-000000000112")!
+        static let defaultOpeningBattery = UUID(uuidString: "00000000-0000-0000-0000-000000000113")!
+        static let defaultOpeningChapterPage = UUID(uuidString: "00000000-0000-0000-0000-000000000114")!
+        static let defaultOpeningTotalProgress = UUID(uuidString: "00000000-0000-0000-0000-000000000115")!
 
         static let legacyHeaderBookTitle = UUID(uuidString: "00000000-0000-0000-0000-000000000201")!
         static let legacyHeaderChapterTitle = UUID(uuidString: "00000000-0000-0000-0000-000000000202")!
