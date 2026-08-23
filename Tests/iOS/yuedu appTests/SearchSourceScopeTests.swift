@@ -84,6 +84,35 @@ struct SearchSourceScopeTests {
         #expect(reloaded.scope == saved)
     }
 
+    @MainActor
+    @Test("cancel and clear resets aggregate search state")
+    func cancelAndClearResetsSearchState() {
+        var source = makeSource(name: "Pending", url: "https://pending.invalid")
+        source.searchUrl = "https://pending.invalid/search?q={{key}}"
+        source.ruleSearch.bookList = ".book"
+        source.ruleSearch.name = ".name"
+        source.ruleSearch.bookUrl = "a@href"
+        let aggregator = SearchAggregator()
+
+        aggregator.search(query: "scope", sources: [source])
+        #expect(aggregator.isSearching)
+        #expect(aggregator.progress.total == 1)
+        aggregator.pause()
+        #expect(aggregator.isPaused)
+
+        aggregator.cancelAndClear()
+
+        #expect(!aggregator.isSearching)
+        #expect(!aggregator.isPaused)
+        #expect(aggregator.results.isEmpty)
+        #expect(!aggregator.hasMoreResults)
+        #expect(aggregator.progress.total == 0)
+        #expect(aggregator.progress.completed == 0)
+        #expect(aggregator.progress.failed == 0)
+        #expect(aggregator.progress.timedOut == 0)
+        #expect(aggregator.progress.skipped == 0)
+    }
+
     private func makeSource(
         name: String,
         url: String,

@@ -762,6 +762,38 @@ class SearchAggregator: ObservableObject {
         logPublicationSummary(reason: "cancel")
     }
 
+    /// Stops the current search and removes every query-scoped value.
+    ///
+    /// Scope changes use this command so results, progress, resume bookkeeping,
+    /// and cross-source paging can never belong to a different source range than
+    /// the range currently shown by the search screen.
+    func cancelAndClear() {
+        searchTask?.cancel()
+        searchTask = nil
+        resultsPublicationTask?.cancel()
+        resultsPublicationTask = nil
+
+        internalResults = []
+        resultsNeedSort = false
+        internalProgress = SearchProgress()
+        internalHasMoreResults = false
+        deduplicationMap = [:]
+        allSources = []
+        completedSourceIds = []
+        currentQuery = ""
+        autoPausePolicy = SearchAutoPausePolicy(count: 0)
+        coverDecodeSourcesById = [:]
+        searchPage = 1
+        successfulSourceIds = []
+        exhaustedSourceIds = []
+        publicationMetrics = ResultPublicationMetrics()
+        isSearching = false
+        isPaused = false
+
+        requestResultsPublication(force: true, reason: "clear")
+        SourceHealthStore.shared.flush()
+    }
+
     // MARK: - Scene-aware result publication (internalResults → results)
 
     /// Called by the search screen when its scene moves between active and
