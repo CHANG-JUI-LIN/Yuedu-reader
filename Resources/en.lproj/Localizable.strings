@@ -1769,7 +1769,15 @@
 "複製全部到剪貼簿" = "Copy All to Clipboard";
 "複製該分組到剪貼簿" = "Copy Group to Clipboard";
 "選中書源" = "selected-sources";
-"全部書源" = "all-book-sources";
+"全部書源" = "All Sources";
+"搜索範圍" = "Search Scope";
+"自選書源" = "Selected Sources";
+"已選 %d 個書源" = "%d Sources Selected";
+"快速選擇" = "Quick Selection";
+"請至少選擇一個可用書源" = "Select at least one available source.";
+"已選取" = "Selected";
+"未選取" = "Not Selected";
+"搜索範圍已更新，請再次搜索" = "Search scope updated. Search again.";
 "點擊右上角 + 手動新增\n或匯入 Legado 書源 JSON" = "Tap + at the top right to add manually\nor import Legado book-source JSON";
 "規則" = "Rules";
 "搜索規則" = "Search Rules";
