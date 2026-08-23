@@ -524,7 +524,20 @@ final class CustomHTTPProvider: TTSAudioProvider {
         }
         ttsLog("[TTS][Provider] request method=\(request.httpMethod ?? "GET") url=\(request.url?.absoluteString ?? "")")
 
-        return try await fetchAudioData(request: request, source: activeSource)
+        // Honour the voice source's declared `concurrentRate`, the same budget book sources have
+        // been running under. `HTTPTTSEngine` keeps three segments preloading and downloads them
+        // in parallel, so a source declaring "1/1000" was being handed four requests at once —
+        // the app parsed the field, stored it, and then ignored it. Reusing `SourceRateLimit`
+        // rather than adding a TTS-specific throttle keeps one implementation of the rule.
+        //
+        // The cost is real and accepted: a segment can now wait behind queued preloads (≈1s each
+        // for "1/1000"), during which the engine plays silence. That is what the source asked for.
+        return try await SourceRateLimit.run(
+            rate: activeSource?.concurrentRate ?? "",
+            key: activeSource?.id ?? ""
+        ) {
+            try await fetchAudioData(request: request, source: activeSource)
+        }
     }
 
     private func fetchAudioData(request: URLRequest, source: ImportedTTSSource?) async throws -> Data {

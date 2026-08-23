@@ -650,18 +650,27 @@ extension ReaderView {
         let anchor = startCharOffset > 0
             ? CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: startCharOffset)
             : .chapterStart(chapterIndex)
-        setActiveTTSAnchor(anchor, alignReader: shouldSyncReader)
-        ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
-        prepareNextTTSChapter(after: chapterIndex)
-        ttsCoordinator.speak(
-            text: text,
-            title: chapters[chapterIndex].title,
-            bookTitle: ttsNowPlayingBookTitle,
-            author: ttsNowPlayingAuthor,
-            artwork: ttsNowPlayingArtwork(),
-            pronunciationHints: hints
-        )
-        ttsCoordinator.refreshNowPlayingForSystemSurfaces()
+        // ⟐ ttsSwitch — measuring the 下一章 pile-up before changing anything. See
+        // TTSChapterSwitchTrace for what each field separates.
+        TTSChapterSwitchTrace.span(target: chapterIndex) { step in
+            setActiveTTSAnchor(anchor, alignReader: shouldSyncReader)
+            step("align")
+            ensureChapterReady(chapterIndex: chapterIndex, priority: .jump)
+            step("ensure")
+            prepareNextTTSChapter(after: chapterIndex)
+            step("prepare")
+            ttsCoordinator.speak(
+                text: text,
+                title: chapters[chapterIndex].title,
+                bookTitle: ttsNowPlayingBookTitle,
+                author: ttsNowPlayingAuthor,
+                artwork: ttsNowPlayingArtwork(),
+                pronunciationHints: hints
+            )
+            step("speak")
+            ttsCoordinator.refreshNowPlayingForSystemSurfaces()
+            step("nowPlaying")
+        }
         return true
     }
 

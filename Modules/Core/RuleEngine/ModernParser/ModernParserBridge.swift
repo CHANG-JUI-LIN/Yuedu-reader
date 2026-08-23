@@ -2121,11 +2121,11 @@ class ModernParserBridge {
             .compactMap { rawEntry in
                 let entry = rawEntry.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !entry.isEmpty else { return nil }
-                // Drop stray markup lines (HTML fragments from a dead endpoint) — a real category
-                // name never contains an `<…>` tag.
-                if entry.range(of: #"<[^>]+>"#, options: .regularExpression) != nil { return nil }
 
                 guard let separator = entry.range(of: "::") else {
+                    // No `名稱::URL` split: either a bare category name or markup debris from a
+                    // dead endpoint. Only the latter carries an actual HTML tag.
+                    if Self.containsHTMLTag(entry) { return nil }
                     return DiscoverItem(title: entry, url: nil)
                 }
 
@@ -2134,8 +2134,22 @@ class ModernParserBridge {
                 let url = entry[separator.upperBound...]
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !title.isEmpty else { return nil }
+                // Only the title is screened for debris. The URL must NOT be: `<,{{page}}>` /
+                // `<,_{{page}}>` is legado's page-range syntax (`AnalyzeUrl.pagePattern` is
+                // literally `<(.*?)>`) and is ordinary in a static explore rule.
+                if Self.containsHTMLTag(title) { return nil }
                 return DiscoverItem(title: title, url: url.isEmpty ? nil : url)
             }
+    }
+
+    /// True when the text contains a real HTML tag (`<p>`, `</div>`, `<br/>`).
+    ///
+    /// Deliberately narrower than `<[^>]+>`: that shape also matches legado's page-range syntax
+    /// (`<,{{page}}>`), and screening whole rule lines with it silently deleted every category of
+    /// 38 sources in a 1912-source pack — their 發現頁 came up empty with no error anywhere.
+    /// A tag name must start with a letter, which no page-range block does.
+    static func containsHTMLTag(_ value: String) -> Bool {
+        value.range(of: #"</?[a-zA-Z][^>]*>"#, options: .regularExpression) != nil
     }
 
     private static func isJSExploreRule(_ value: String) -> Bool {

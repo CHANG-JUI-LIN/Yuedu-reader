@@ -122,9 +122,7 @@ enum ReaderHTMLUtilities {
     /// (`<p>`/`<div>`/…) is returned unchanged, except for literal source newlines inside a `<p>`,
     /// which are promoted to separate paragraphs.
     static func wrapNewlineParagraphsIfNeeded(_ html: String) -> String {
-        let paragraphNormalized = promoteBreakSeparatedParagraphs(
-            in: splitNewlineSeparatedParagraphContents(in: html)
-        )
+        let paragraphNormalized = splitNewlineSeparatedParagraphContents(in: html)
         guard !containsBlockLevelTag(paragraphNormalized) else { return paragraphNormalized }
         let segments = paragraphNormalized
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -197,34 +195,167 @@ enum ReaderHTMLUtilities {
         return result
     }
 
-    /// Turns `<br>` into a real paragraph boundary when it is the *only* structure a source gives
-    /// a chapter (`段落一<br>段落二<br>…` — 书旗's decoded chapter body, and the shape its own 段評 JS
-    /// assumes when it splits the content on `/(<br\s*\/?>)/i`).
+    /// Rewrites `<br>`-separated prose into real paragraphs, scoped to the block that contains it.
     ///
-    /// Legado does this unconditionally: `HtmlFormatter.format` rewrites
-    /// `</?(?:div|p|br|hr|h\d|article|dd|dl)[^>]*>` to "\n", and `BookContent.analyzeContent` then
-    /// makes one indented paragraph per line. SwiftSoup instead keeps `<br>` as an inline break, so
-    /// such a chapter reaches CoreText as a single paragraph: only its very first line receives
-    /// `text-indent`, and every following paragraph sits flush against the margin with no
-    /// paragraph spacing.
+    /// Sources hand the reader a chapter body whose paragraph separator is `<br>`
+    /// (`段落一<br>段落二<br>…`). SwiftSoup keeps `<br>` as an inline break, so such a chapter reaches
+    /// CoreText as a single paragraph: only its very first line receives `text-indent`, and every
+    /// following paragraph sits flush against the margin with no paragraph spacing.
     ///
-    /// Deliberately narrower than legado: a `<br>` inside authored block markup is a genuine soft
-    /// break (verse, address lines) and must stay one, so this only fires for fragments that carry
-    /// no block container of their own.
-    private static func promoteBreakSeparatedParagraphs(in html: String) -> String {
-        let breakTag = #"(?i)<br\b[^>]*>"#
-        guard html.range(of: breakTag, options: .regularExpression) != nil,
-              !containsBlockContainerTag(html)
-        else { return html }
-        return html.replacingOccurrences(
-            of: breakTag,
-            with: "\n",
-            options: .regularExpression
-        )
+    /// Legado never hits this: `HtmlFormatter.format` rewrites `</?(?:div|p|br|hr|h\d|article|dd|dl)>`
+    /// to "\n" and `ContentProcessor.getContent` then prefixes every non-empty line with
+    /// `ReadBookConfig.paragraphIndent`, so its indent depends only on line breaks, never on markup.
+    ///
+    /// The scope rule is what makes this narrower than legado, and it is structural rather than
+    /// statistical: `<br>` is promoted when it sits directly inside a **container** block
+    /// (`<div>`, `<body>`, `<article>`, …), and left alone inside a **paragraph** block
+    /// (`<p>`, `<h1>`–`<h6>`, `<li>`, `<dd>`, …). A container makes no claim about paragraphs, so a
+    /// `<br>` in it is the source's paragraph separator; a `<p>` already declares "this is one
+    /// paragraph", so a `<br>` in it is a genuine soft break (verse, address lines) and stays one.
+    ///
+    /// Real shapes this covers, all captured live on 2026-08-23:
+    /// `<div id="nr1">…<br><br>…</div>` (笔迷读), `<h2>章节名</h2>…<br>…` (新笔趣阁 wap),
+    /// `<p>站点公告</p><div>…<br>…</div>` (笔趣阁 biquluo), and bare `段落一<br>段落二` (书旗) where the
+    /// container is `<body>` itself. Earlier this was gated on the *whole fragment* carrying no
+    /// block tag, so any one of those stray elements silently cancelled promotion for the chapter.
+    @discardableResult
+    static func promoteBreakSeparatedParagraphs(in body: Element) -> Int {
+        var promoted = 0
+        for container in [body] + ((try? body.select("div, article, section, main, center, blockquote, td")
+            .array()) ?? []) {
+            promoted += promoteBreakSeparatedParagraphs(inContainer: container)
+        }
+        return promoted
+    }
+
+    /// Blocks that declare "I am one paragraph" — a `<br>` inside them is a soft break.
+    private static let paragraphBlockTags: Set<String> = [
+        "p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "dd", "dt", "figcaption", "caption", "th"
+    ]
+
+    /// Blocks that only group content — they say nothing about paragraphs.
+    private static let containerBlockTags: Set<String> = [
+        "body", "div", "article", "section", "main", "center", "blockquote", "td", "html"
+    ]
+
+    private static func isBlockElement(_ element: Element) -> Bool {
+        let tag = element.tagName().lowercased()
+        return paragraphBlockTags.contains(tag)
+            || containerBlockTags.contains(tag)
+            || ["ul", "ol", "dl", "table", "thead", "tbody", "tfoot", "tr", "figure", "pre", "hr"]
+                .contains(tag)
+    }
+
+    private static func promoteBreakSeparatedParagraphs(inContainer container: Element) -> Int {
+        let children = container.getChildNodes()
+        guard children.contains(where: { ($0 as? Element)?.tagName().lowercased() == "br" }) else {
+            return 0
+        }
+
+        // Group the container's direct children into paragraph runs. A `<br>` closes the current
+        // run; a nested block element (a heading, the source's notice `<p>`, a `<ul>`) is passed
+        // through untouched and also closes the run around it.
+        var groups: [[Node]] = [[]]
+        var passthrough: [Int: Node] = [:]
+        for node in children {
+            if let element = node as? Element {
+                let tag = element.tagName().lowercased()
+                if tag == "br" {
+                    groups.append([])
+                    continue
+                }
+                if isBlockElement(element) {
+                    groups.append([])
+                    passthrough[groups.count - 1] = element
+                    groups.append([])
+                    continue
+                }
+            }
+            groups[groups.count - 1].append(node)
+        }
+
+        // A source that separates paragraphs with `<br>` also uses literal "\n" for the same job in
+        // the same chapter (SwiftSoup keeps those in the text node; only rendering would collapse
+        // them). Once this container is known to be `<br>`-separated, both are the same separator.
+        var paragraphs: [[Node]] = []
+        var order: [(isPassthrough: Bool, index: Int)] = []
+        for (groupIndex, group) in groups.enumerated() {
+            if let block = passthrough[groupIndex] {
+                order.append((true, paragraphs.count))
+                paragraphs.append([block])
+                continue
+            }
+            var current: [Node] = []
+            func flush() {
+                guard current.contains(where: { hasVisibleContent($0) }) else {
+                    current.removeAll()
+                    return
+                }
+                order.append((false, paragraphs.count))
+                paragraphs.append(current)
+                current.removeAll()
+            }
+            for node in group {
+                guard let textNode = node as? TextNode else {
+                    current.append(node)
+                    continue
+                }
+                let pieces = textNode.getWholeText().components(separatedBy: "\n")
+                for (pieceIndex, piece) in pieces.enumerated() {
+                    if pieceIndex > 0 { flush() }
+                    let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { continue }
+                    current.append(TextNode(trimmed, ""))
+                }
+            }
+            flush()
+        }
+
+        // Only rebuild when promotion actually produces more than one prose paragraph — a lone
+        // trailing `<br>` must not restructure the chapter.
+        let proseCount = order.filter { !$0.isPassthrough }.count
+        guard proseCount > 1 else { return 0 }
+
+        do {
+            // Detach back-to-front before re-appending: SwiftSoup's `appendChild` reparents through
+            // `parentNode.removeChild(child)`, which indexes `childNodes` by the child's cached
+            // `siblingIndex`. Clearing the container first (`empty()`) leaves those indices dangling
+            // and the reparent traps on an out-of-range `Array.remove(at:)`. Reverse order keeps
+            // every remaining sibling index valid while the list drains.
+            for node in children.reversed() { try node.remove() }
+            for entry in order {
+                let nodes = paragraphs[entry.index]
+                if entry.isPassthrough {
+                    for node in nodes { try container.appendChild(node) }
+                    continue
+                }
+                let paragraph = Element(try Tag.valueOf("p"), "")
+                for node in nodes { try paragraph.appendChild(node) }
+                try container.appendChild(paragraph)
+            }
+        } catch {
+            AppLogger.parse("⟐ brPromotion failed", context: ["error": String(describing: error)])
+            return 0
+        }
+        return proseCount
+    }
+
+    private static func hasVisibleContent(_ node: Node) -> Bool {
+        if let textNode = node as? TextNode {
+            return !textNode.getWholeText().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if let element = node as? Element {
+            let tag = element.tagName().lowercased()
+            if ["img", "image", "svg", "video", "audio", "iframe"].contains(tag) { return true }
+            let text = ((try? element.text()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return !text.isEmpty || !element.children().isEmpty()
+        }
+        return false
     }
 
     /// Tags that give a fragment paragraph structure of its own. `<br>` is deliberately absent —
-    /// it is a break *inside* a block, not a container (see `promoteBreakSeparatedParagraphs`).
+    /// whether it separates paragraphs depends on the block it sits in, which is decided on the
+    /// parsed tree by `promoteBreakSeparatedParagraphs(in:)`.
     private static func containsBlockContainerTag(_ html: String) -> Bool {
         let lower = html.lowercased()
         let containerTags = [

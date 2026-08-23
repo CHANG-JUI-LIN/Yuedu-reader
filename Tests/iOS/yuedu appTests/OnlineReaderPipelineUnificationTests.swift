@@ -989,6 +989,147 @@ struct OnlineReaderPipelineUnificationTests {
         )
     }
 
+    // MARK: - `<br>` paragraphs inside a container block
+
+    /// Every case below was captured from a live source on 2026-08-23 (yckceo 合集 1234/1230/1189).
+    /// They share one shape: the chapter's paragraphs are separated by `<br>`, and the fragment
+    /// *also* carries one unrelated block element — the container the rule selected, a duplicate
+    /// chapter heading, or a site-notice paragraph. Gating `<br>` promotion on "the fragment has
+    /// no block tag at all" let that single element collapse the whole chapter into one CoreText
+    /// paragraph, so only its first line kept `firstLineHeadIndent`.
+    private func bodyParagraphIndents(
+        title: String,
+        rawHTMLContent: String,
+        plainTextContent: String
+    ) async throws -> [(text: String, indent: CGFloat)] {
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: title,
+            plainTextContent: plainTextContent,
+            rawHTMLContent: rawHTMLContent
+        )
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(
+                index: 0,
+                title: title,
+                plainText: plainTextContent,
+                body: .html(normalizedHTML),
+                sourceHref: "https://example.com/1"
+            )
+        ])
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: provider,
+            renderSize: CGSize(width: 320, height: 480)
+        )
+        let result = try await builder.buildChapter(
+            at: 0,
+            settings: Self.settings,
+            themeTextColor: UIColor.label,
+            themeBackgroundColor: UIColor.systemBackground
+        )
+        let attributed = result.attributedString
+        let ns = attributed.string as NSString
+        var paragraphs: [(text: String, indent: CGFloat)] = []
+        var location = 0
+        while location < ns.length {
+            let range = ns.paragraphRange(for: NSRange(location: location, length: 0))
+            location = max(NSMaxRange(range), location + 1)
+            guard range.length > 0 else { continue }
+            let text = ns.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.hasSuffix("段。") else { continue }
+            let style = attributed.attribute(
+                .paragraphStyle, at: range.location, effectiveRange: nil
+            ) as? NSParagraphStyle
+            paragraphs.append((text, style?.firstLineHeadIndent ?? 0))
+        }
+        return paragraphs
+    }
+
+    @Test("br paragraphs inside the selected container block stay indented paragraphs")
+    func breakParagraphsInsideContainerBlockStayIndented() async throws {
+        // 笔迷读 (bimidu.com) — `#nr1@html` returns the container itself:
+        // `<div id="nr1">…<br><br>…</div>`.
+        let paragraphs = try await bodyParagraphIndents(
+            title: "第一章",
+            rawHTMLContent: "<div id=\"nr1\">第一段。<br>\n<br>第二段。<br>\n<br>第三段。</div>",
+            plainTextContent: "第一段。\n第二段。\n第三段。"
+        )
+        #expect(paragraphs.map(\.text) == ["第一段。", "第二段。", "第三段。"], "actual=\(paragraphs)")
+        #expect(
+            paragraphs.allSatisfy { $0.indent == Self.settings.fontSize * 2 },
+            "indents=\(paragraphs.map(\.indent))"
+        )
+    }
+
+    @Test("a heading sibling does not cancel br paragraph promotion")
+    func headingSiblingKeepsBreakParagraphPromotion() async throws {
+        // 新笔趣阁 wap (wap.t965.com) — the content rule keeps the source's own `<h2>` title
+        // above `<br>`-separated prose.
+        let paragraphs = try await bodyParagraphIndents(
+            title: "第一千九百八十一章",
+            rawHTMLContent: "<h2>第一千九百八十一章 大结局</h2>\n第一段。<br>第二段。<br>第三段。",
+            plainTextContent: "第一段。\n第二段。\n第三段。"
+        )
+        #expect(paragraphs.map(\.text) == ["第一段。", "第二段。", "第三段。"], "actual=\(paragraphs)")
+        #expect(
+            paragraphs.allSatisfy { $0.indent == Self.settings.fontSize * 2 },
+            "indents=\(paragraphs.map(\.indent))"
+        )
+    }
+
+    @Test("a site-notice paragraph does not cancel br paragraph promotion")
+    func noticeParagraphKeepsBreakParagraphPromotion() async throws {
+        // 笔趣阁 (biquluo.la) — a `<p>天才一秒记住本站地址…</p>` notice precedes the prose,
+        // which is `<br>`-separated inside a `<div>`.
+        let paragraphs = try await bodyParagraphIndents(
+            title: "第一章",
+            rawHTMLContent: "<p>天才一秒记住本站地址</p><div>第一段。<br>第二段。<br>第三段。</div>",
+            plainTextContent: "第一段。\n第二段。\n第三段。"
+        )
+        #expect(paragraphs.map(\.text) == ["第一段。", "第二段。", "第三段。"], "actual=\(paragraphs)")
+        #expect(
+            paragraphs.allSatisfy { $0.indent == Self.settings.fontSize * 2 },
+            "indents=\(paragraphs.map(\.indent))"
+        )
+    }
+
+    @Test("an id on the content container does not strip paragraph indents")
+    func idOnContentContainerKeepsParagraphIndents() async throws {
+        // The container a web-novel source selects almost always carries an id — `#content@html`,
+        // `#nr1@html`, `id.chaptercontent@html`. The converter wraps such an element in
+        // `.anchorTarget`, which the block-child classification did not unwrap, so the parent saw
+        // an inline-only block and dropped `firstLineHeadIndent` from paragraph two onward.
+        // Authored `<p>` structure is used here so the case is independent of `<br>` promotion.
+        let paragraphs = try await bodyParagraphIndents(
+            title: "第一章",
+            rawHTMLContent: "<div id=\"content\"><p>第一段。</p><p>第二段。</p><p>第三段。</p></div>",
+            plainTextContent: "第一段。\n第二段。\n第三段。"
+        )
+        #expect(paragraphs.map(\.text) == ["第一段。", "第二段。", "第三段。"], "actual=\(paragraphs)")
+        #expect(
+            paragraphs.allSatisfy { $0.indent == Self.settings.fontSize * 2 },
+            "indents=\(paragraphs.map(\.indent))"
+        )
+    }
+
+    @Test("authored <p> paragraphs keep their own br as a soft line break")
+    func authoredParagraphStructureKeepsInteriorBreaks() async throws {
+        // 七步阁 (m.qibuge.com) — real `<p>` paragraph structure with `<br>` used inside a
+        // paragraph. Promotion must not fire there: `<p>` already declares the paragraph.
+        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: "第一章",
+            plainTextContent: "第一段。\n第二段。",
+            rawHTMLContent: "<p>第一段。<br>续行。</p><p>第二段。</p><p>第三段。</p>"
+        )
+        #expect(
+            normalizedHTML.lowercased().contains("<br"),
+            "normalizedHTML=>>>\(normalizedHTML)<<<"
+        )
+        #expect(
+            normalizedHTML.components(separatedBy: "<p>").count - 1 == 3,
+            "normalizedHTML=>>>\(normalizedHTML)<<<"
+        )
+    }
+
     // MARK: - OnlineChapterContentService cache-only test
 
     @Test("cache-only service reports missing content")

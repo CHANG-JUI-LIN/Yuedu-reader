@@ -385,8 +385,9 @@ struct BookSourceListView: View {
                 }
             }
             .sheet(item: $loginSource) { src in
-                if src.loginUi.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    BookSourceLoginWebView(source: src) {
+                if src.loginUi.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   let webLogin = SourceWebLogin(bookSource: src) {
+                    SourceLoginWebView(login: webLogin) {
                         loginSource = nil
                     }
                 } else {

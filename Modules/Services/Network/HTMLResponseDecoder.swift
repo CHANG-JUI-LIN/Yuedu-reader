@@ -13,7 +13,7 @@ import Foundation
 enum HTMLResponseDecoder {
 
     /// Multi-strategy charset detection with scoring for ambiguous encodings.
-    static func decode(data: Data, response: URLResponse) -> String? {
+    static func decode(data: Data, response: URLResponse?) -> String? {
         struct DecodeCandidate {
             let encoding: String.Encoding
             let priority: Int
@@ -29,7 +29,16 @@ enum HTMLResponseDecoder {
         }
 
         appendCandidate(bomEncoding(in: data), priority: 500)
-        appendCandidate(encoding(forIANA: response.textEncodingName), priority: 380)
+        // UTF-8 is self-validating: multi-byte sequences have a rigid bit pattern that other
+        // encodings' output almost never satisfies by accident across a whole document. So bytes
+        // that validate as UTF-8 *and* actually use multi-byte sequences outrank a declared
+        // charset — servers mislabel UTF-8 pages as ISO-8859-1 constantly (a default in stock
+        // Apache/nginx configs), and honouring that label renders every Chinese chapter as
+        // `è ± å° å®¶` while the ASCII markup around it still looks fine.
+        if usesMultiByteUTF8(data) {
+            appendCandidate(.utf8, priority: 400)
+        }
+        appendCandidate(encoding(forIANA: response?.textEncodingName), priority: 380)
 
         if let http = response as? HTTPURLResponse,
             let ct = http.value(forHTTPHeaderField: "Content-Type")
@@ -61,7 +70,14 @@ enum HTMLResponseDecoder {
         }
 
         // Short-circuit: if a high-confidence candidate decodes cleanly, take it.
+        //
+        // "Decodes cleanly" only means something for an encoding that can *fail*. A single-byte
+        // encoding maps all 256 byte values to characters, so it never emits U+FFFD no matter what
+        // it is fed — accepting one here on a zero-replacement result is how a mislabeled UTF-8
+        // page short-circuited into mojibake before the document's own `<meta charset>` (a lower
+        // priority candidate) ever got a turn. Those encodings go to the scoring pass instead.
         for index in candidates.indices where candidates[index].priority >= 340 {
+            guard !acceptsAnyByteSequence(candidates[index].encoding) else { continue }
             guard let text = decoded(index) else { continue }
             let census = replacementCensus(text)
             let ratio = Double(census.replacements) / Double(max(census.total, 1))
@@ -79,6 +95,27 @@ enum HTMLResponseDecoder {
             }
         }
         return best?.text
+    }
+
+    /// True when `data` is valid UTF-8 **and** actually contains a multi-byte sequence.
+    /// Pure ASCII is excluded on purpose: it decodes identically under every candidate here, so it
+    /// carries no evidence about which one the server meant.
+    private static func usesMultiByteUTF8(_ data: Data) -> Bool {
+        guard !data.isEmpty else { return false }
+        guard data.contains(where: { $0 >= 0x80 }) else { return false }
+        return String(data: data, encoding: .utf8) != nil
+    }
+
+    /// Encodings that decode any byte sequence without ever producing U+FFFD, so a clean decode
+    /// from them is not evidence of anything.
+    private static func acceptsAnyByteSequence(_ encoding: String.Encoding) -> Bool {
+        switch encoding {
+        case .isoLatin1, .isoLatin2, .windowsCP1250, .windowsCP1251, .windowsCP1252,
+             .windowsCP1253, .windowsCP1254, .macOSRoman:
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Charset detection

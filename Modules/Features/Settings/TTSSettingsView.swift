@@ -22,6 +22,10 @@ struct TTSSettingsView: View {
     @State private var searchText = ""
     @State private var selectedSourceIds: Set<String> = []
     @State private var loginSource: ImportedTTSSource?
+    /// Web login asked for from the login form. Retained until that form is really gone —
+    /// same presentation boundary the import chooser above already respects.
+    @State private var pendingWebLogin: SourceWebLogin?
+    @State private var webLogin: SourceWebLogin?
     @State private var loginFieldValues: [String: String] = [:]
     @State private var showLoginSuccess: Bool = false
 
@@ -119,9 +123,17 @@ struct TTSSettingsView: View {
         ) { result in
             handleSourceFileImport(result)
         }
-            .sheet(item: $loginSource) { source in
+            .sheet(item: $loginSource, onDismiss: presentPendingWebLogin) { source in
                 TTSSourceLoginView(source: source) {
                     loginSource = nil
+                } onOpenWebLogin: {
+                    pendingWebLogin = SourceWebLogin(ttsSource: source)
+                    loginSource = nil
+                }
+            }
+            .sheet(item: $webLogin) { login in
+                SourceLoginWebView(login: login) {
+                    webLogin = nil
                 }
             }
             .onDisappear {
@@ -699,6 +711,13 @@ struct TTSSettingsView: View {
         testCoordinator.stop(reason: "cleared sources")
     }
 
+    /// Opens the web login once the login form's own sheet has finished dismissing.
+    private func presentPendingWebLogin() {
+        guard let pending = pendingWebLogin else { return }
+        pendingWebLogin = nil
+        webLogin = pending
+    }
+
     @MainActor
     private func importTTSSources() async {
         let trimmed = sourceListURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -783,6 +802,10 @@ struct TTSSettingsView: View {
 struct TTSSourceLoginView: View {
     let source: ImportedTTSSource
     let onDismiss: () -> Void
+    /// Asks the presenting screen to open the web login. Handed upward rather than presented
+    /// here: this form is itself a sheet, and a sheet presenting a sheet is the nested shape
+    /// iOS 17 drops (Technotes/iOS17MenuModalPresentation.md).
+    var onOpenWebLogin: (() -> Void)?
 
     @State private var fieldValues: [String: String] = [:]
     @State private var saved = false
@@ -790,9 +813,14 @@ struct TTSSourceLoginView: View {
 
     private let fields: [LoginField]
 
-    init(source: ImportedTTSSource, onDismiss: @escaping () -> Void) {
+    init(
+        source: ImportedTTSSource,
+        onDismiss: @escaping () -> Void,
+        onOpenWebLogin: (() -> Void)? = nil
+    ) {
         self.source = source
         self.onDismiss = onDismiss
+        self.onOpenWebLogin = onOpenWebLogin
         let loginInfo = LoginManager.shared.getLoginInfo(sourceUrl: source.id) ?? [:]
         _fieldValues = State(initialValue: loginInfo)
         if let ui = source.loginUi {
@@ -856,18 +884,49 @@ struct TTSSourceLoginView: View {
         e.sourceBridge.removeLoginHeaderHandler = {
             LoginManager.shared.clearLogin(sourceUrl: sourceId)
         }
-        // Evaluate loginUrl JS first so functions (set, next, Style, etc.) are available
-        if let loginUrl = source.loginUrl, !loginUrl.isEmpty {
-            _ = e.evaluate(loginUrl, result: nil, bindings: [:])
+        // Evaluate loginUrl JS first so functions (set, next, Style, etc.) are available to the
+        // loginUi button rows — this IS the explicit login action, which is the one place Legado
+        // runs `loginUrl`. But only when it is actually a script: 纳米AI TTS declares
+        // `loginUrl: "https://bot.n.cn/"`, and a bare URL fed to JavaScriptCore parses as the
+        // label `https:` followed by the comment `//bot.n.cn/` and then EOF —
+        // `SyntaxError: Unexpected end of script`, once per open, silently discarded.
+        if let loginJs = source.loginUrl.flatMap(LoginManager.shared.extractLoginJs),
+           !loginJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            _ = e.evaluate(loginJs, result: nil, bindings: [:])
+            if let error = e.lastError {
+                AppLogger.error("[TTS] 語音源 loginUrl JS 執行失敗", context: [
+                    "source": source.name,
+                    "error": error
+                ])
+            }
         }
         engine = e
         return e
     }
 
+    /// Only shown when the source declares a page to sign in on. The captured cookie is stored
+    /// under the source's own key, which is what every synthesis request reads its login header
+    /// back from — so signing in here is enough, with no 手动填 Cookie step.
+    @ViewBuilder
+    private var webLoginSection: some View {
+        if let webLogin = SourceWebLogin(ttsSource: source), let onOpenWebLogin {
+            Section {
+                Button {
+                    onOpenWebLogin()
+                } label: {
+                    Label(localized("網頁登入"), systemImage: "globe")
+                }
+            } footer: {
+                Text(String(format: localized("在 %@ 登入後，Cookie 會自動帶進朗讀請求。"), webLogin.url.host ?? webLogin.url.absoluteString))
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                if fields.isEmpty {
+                webLoginSection
+                if fields.isEmpty, SourceWebLogin(ttsSource: source) == nil {
                     Text(localized("無可設定的欄位"))
                         .foregroundColor(.secondary)
                 }

@@ -2010,21 +2010,14 @@ struct LegadoHTTPResult {
         return responseResult ?? .bodyOnly(request: request, body: "")
     }
 
-    /// Charset-aware string decoding: honours HTTP Content-Type charset before falling back to UTF-8.
+    /// Charset-aware string decoding for `java.ajax` / `java.post` responses.
+    ///
+    /// Delegates to `HTMLResponseDecoder` so a source's JS sees exactly what the rule engine sees.
+    /// This used to be a second, weaker implementation: it trusted `textEncodingName` outright and
+    /// ended in an `?? String(data:encoding:.isoLatin1)` catch-all — two different ways to turn a
+    /// mislabeled UTF-8 body into mojibake, on the path many sources use to fetch chapter text.
     static func decodeData(_ data: Data, response: URLResponse?) -> String {
-        if let httpResponse = response as? HTTPURLResponse,
-           let ianaName = httpResponse.textEncodingName {
-            let cfEncoding = CFStringConvertIANACharSetNameToEncoding(ianaName as CFString)
-            if cfEncoding != kCFStringEncodingInvalidId {
-                let nsEncoding = CFStringConvertEncodingToNSStringEncoding(cfEncoding)
-                if let text = String(data: data, encoding: String.Encoding(rawValue: nsEncoding)) {
-                    return text
-                }
-            }
-        }
-        return String(data: data, encoding: .utf8)
-            ?? String(data: data, encoding: .isoLatin1)
-            ?? ""
+        HTMLResponseDecoder.decode(data: data, response: response) ?? ""
     }
 
     /// Returns true when the response body looks like a Cloudflare challenge page.

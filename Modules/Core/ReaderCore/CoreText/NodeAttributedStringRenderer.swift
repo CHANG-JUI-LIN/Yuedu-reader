@@ -338,6 +338,10 @@ struct NodeAttributedStringRenderer {
 
         case .listItem(let children, let bullet):
             let hasBlockChildren = children.contains { child in
+                // `.anchorTarget` is an id wrapper, not a node type — unwrap before classifying
+                // (see `isBlockLevelChild`).
+                var child = child
+                if case .anchorTarget(_, let inner) = child { child = inner }
                 if case .paragraph = child { return true }
                 if case .block = child { return true }
                 if case .heading = child { return true }
@@ -499,6 +503,13 @@ struct NodeAttributedStringRenderer {
         switch child {
         case .paragraph, .block, .heading, .blockquote, .listItem, .horizontalRule:
             return true
+        case .anchorTarget(_, let inner):
+            // An `id` on the element only adds a jump target — it must not change whether the
+            // parent sees a block child. Missing this made `<div id="content">` (the container
+            // nearly every web-novel source's `#content@html` rule selects) look like an inline-only
+            // block, so `applyBlockBreakContinuationIndent` stripped the first-line indent from
+            // every paragraph after the first: the chapter rendered flush-left from paragraph two on.
+            return isBlockLevelChild(inner)
         default:
             return false
         }

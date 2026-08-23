@@ -172,23 +172,40 @@ struct ChapterFetcher {
             () -> (
                 html: String,
                 titleBubble: String?,
-                reviewRepair: ParagraphReviewStructureRepair
+                reviewRepair: ParagraphReviewStructureRepair,
+                promotedParagraphs: Int
             ) in
             guard let document = try? SwiftSoup.parse(slimmedHTML),
                   let body = document.body()
             else {
-                return ("", nil, ParagraphReviewStructureRepair())
+                return ("", nil, ParagraphReviewStructureRepair(), 0)
             }
             _ = try? body.select("script,noscript,iframe,object,embed").remove()
             let titleBubble = Self.detachLeadingTitleReviewImage(from: body)
             Self.detachLeadingDuplicateTitle(from: body, title: trimmedTitle)
+            // `<br>`-separated prose becomes real paragraphs here, on the parsed tree, so the
+            // decision is per containing block instead of per chapter — one stray `<div>`/`<h2>`/
+            // notice `<p>` used to cancel it for the whole chapter, leaving every paragraph after
+            // the first flush against the margin. Runs before the review repair so a 段評 bubble
+            // ends up inside the paragraph it belongs to.
+            let promotedParagraphs = ReaderHTMLUtilities.promoteBreakSeparatedParagraphs(in: body)
             let reviewRepair = Self.reattachStandaloneParagraphReviews(in: body)
             let html = ((try? body.html()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return (html, titleBubble, reviewRepair)
+            return (html, titleBubble, reviewRepair, promotedParagraphs)
         }.value
         let bodyHTML = ReaderHTMLUtilities.restoreDataURIPayloads(parsedBody.html, restore: payloadRestore)
         let leadingTitleBubbleHTML = parsedBody.titleBubble.map {
             ReaderHTMLUtilities.restoreDataURIPayloads($0, restore: payloadRestore)
+        }
+        if parsedBody.promotedParagraphs > 0 {
+            // ⟐ brPromotion — how many paragraphs a `<br>`-separated chapter was split into.
+            // A chapter reported as "no indent / paragraphs run together" that logs nothing here
+            // never reached promotion (check `⟐ buildRenderableNormalizedHTML` branch first).
+            AppLogger.parse("⟐ brPromotion", context: [
+                "title": title,
+                "paragraphs": parsedBody.promotedParagraphs,
+                "source": reviewContext?.sourceName ?? "",
+            ])
         }
         if parsedBody.reviewRepair.scanned > 0 {
             AppLogger.parse("⟐ reviewFlow", context: [

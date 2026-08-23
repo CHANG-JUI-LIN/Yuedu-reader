@@ -2,13 +2,13 @@ import SwiftUI
 import WebKit
 import Combine
 
-/// Interactive WebView login for book sources that require cookie authentication.
-/// Shows the book source's `loginUrl` (or `bookSourceUrl` as fallback) in a real
-/// browser. Cookies are captured **when the user taps "Done"** — NOT on `didFinish` —
-/// so that Cloudflare `cf_clearance` and other async-set cookies are captured
-/// after all JS challenges have resolved.
-struct BookSourceLoginWebView: View {
-    let source: BookSource
+/// Interactive WebView login for any source that authenticates with a cookie — book sources and
+/// voice sources both, via `SourceWebLogin`.
+///
+/// Cookies are captured **when the user taps "Done"** — NOT on `didFinish` — so that Cloudflare
+/// `cf_clearance` and other async-set cookies are captured after all JS challenges have resolved.
+struct SourceLoginWebView: View {
+    let login: SourceWebLogin
     let onDismiss: () -> Void
 
     private let gs = GlobalSettings.shared
@@ -20,7 +20,7 @@ struct BookSourceLoginWebView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                BookSourceLoginWebViewRepresentable(source: source, bridge: bridge)
+                SourceLoginWebViewRepresentable(login: login, bridge: bridge)
                     .edgesIgnoringSafeArea(.bottom)
                     .overlay(alignment: .top) {
                         // md3's `LinearProgressIndicator` — visible while the page loads.
@@ -65,8 +65,7 @@ struct BookSourceLoginWebView: View {
 
     /// Same 「登入：源名稱」 title format as the form login sheet.
     private var loginTitle: String {
-        let name = source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName
-        return String(format: localized("登入：%@"), name)
+        String(format: localized("登入：%@"), login.name)
     }
 }
 
@@ -85,8 +84,8 @@ final class LoginWebBridge: ObservableObject {
 
 // MARK: - UIViewRepresentable
 
-struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
-    let source: BookSource
+struct SourceLoginWebViewRepresentable: UIViewRepresentable {
+    let login: SourceWebLogin
     let bridge: LoginWebBridge
 
     func makeUIView(context: Context) -> WKWebView {
@@ -117,9 +116,7 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
             coordinator.syncCookies(from: wv, completion: completion)
         }
 
-        if let url = Self.effectiveURL(source: source) {
-            wv.load(URLRequest(url: url))
-        }
+        wv.load(URLRequest(url: login.url))
         return wv
     }
 
@@ -129,37 +126,12 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         coordinator.clipboardBridge.remove(from: uiView.configuration.userContentController)
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(source: source) }
-
-    /// Resolves the effective URL to open in the WebView.
-    /// Legado's `loginUrl` can be:
-    ///   1. A plain URL:                `https://www.qidian.com/sign/`
-    ///   2. A JS expression:            `@js: java.webView("https://...")`
-    ///   3. Empty → fall back to bookSourceUrl
-    static func effectiveURL(source: BookSource) -> URL? {
-        let raw = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // 1. Plain URL
-        if !raw.isEmpty && !raw.hasPrefix("@") && !raw.hasPrefix("{") {
-            if let url = URL(string: raw) { return url }
-        }
-
-        // 2. @js: expression — extract the first https?:// URL from inside quotes
-        if raw.lowercased().hasPrefix("@js:") {
-            let js = raw.dropFirst(4)
-            if let range = js.range(of: #"https?://[^"'\s)>]+"#, options: .regularExpression) {
-                if let url = URL(string: String(js[range])) { return url }
-            }
-        }
-
-        // 3. Fall back to bookSourceUrl
-        return URL(string: source.bookSourceUrl)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(login: login) }
 
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, WKNavigationDelegate {
-        private let source: BookSource
+        private let login: SourceWebLogin
         /// Weak reference set in makeUIView; used by the bridge closure.
         weak var webView: WKWebView?
         /// Strongly held: `WKWebView.uiDelegate` is weak.
@@ -168,7 +140,7 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         private var progressObservation: NSKeyValueObservation?
         private weak var progressBridge: LoginWebBridge?
 
-        init(source: BookSource) { self.source = source }
+        init(login: SourceWebLogin) { self.login = login }
 
         /// KVO on `estimatedProgress` → publishes into the SwiftUI bridge for the
         /// top linear loading indicator (md3's LinearProgressIndicator).
@@ -197,7 +169,7 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
         /// into CookieStore, HTTPCookieStorage, and LoginManager. Calls `completion`
         /// after the async cookie fetch completes.
         func syncCookies(from webView: WKWebView, completion: (() -> Void)?) {
-            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [source] cookies in
+            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [login] cookies in
                 guard !cookies.isEmpty else { completion?(); return }
 
                 // (1) Push every cookie into HTTPCookieStorage for URLSession auto-handling
@@ -207,17 +179,16 @@ struct BookSourceLoginWebViewRepresentable: UIViewRepresentable {
                     .map { "\($0.name)=\($0.value)" }
                     .joined(separator: "; ")
 
-                // (2) CookieStore keyed by loginUrl (JS bridge access)
-                if let baseURL = BookSourceLoginWebViewRepresentable.effectiveURL(source: source) {
-                    CookieStore.shared.set(url: baseURL.absoluteString, cookie: cookieString)
-                }
+                // (2) CookieStore keyed by the page that was opened (JS bridge access)
+                CookieStore.shared.set(url: login.url.absoluteString, cookie: cookieString)
 
-                // (3) LoginManager keyed by bookSourceUrl — read by applyLoginHeaders()
-                //    when constructing every URLRequest in the rule engine.
-                var headers = LoginManager.shared.getLoginHeaders(sourceUrl: source.bookSourceUrl)
+                // (3) LoginManager keyed by the source's own key — read by applyLoginHeaders()
+                //    when the rule engine builds a request, and merged into every TTS synthesis
+                //    request by `CustomHTTPProvider.buildJSRequestOrThrow`.
+                var headers = LoginManager.shared.getLoginHeaders(sourceUrl: login.storageKey)
                 headers["Cookie"] = cookieString
                 LoginManager.shared.storeLoginHeaders(
-                    sourceUrl: source.bookSourceUrl, headers: headers
+                    sourceUrl: login.storageKey, headers: headers
                 )
 
                 completion?()

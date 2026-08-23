@@ -3543,6 +3543,50 @@ struct RuleAnalyzerSourceRuleIntegrationTests {
 @Suite("ModernParserBridge Explore", .serialized)
 struct ModernParserBridgeExploreTests {
 
+    @Test("a static explore rule keeps categories whose URL carries legado page syntax")
+    func staticExploreRuleKeepsPageSyntaxCategories() async throws {
+        // `<,{{page}}>` / `<,_{{page}}>` is legado's page-range syntax (AnalyzeUrl.pagePattern is
+        // literally `<(.*?)>`) and appears in ordinary static `名稱::URL` explore rules. A guard
+        // meant to drop HTML debris from a dead endpoint matched `<…>` of any shape, so it deleted
+        // every category of such a source and the 發現頁 came up empty — 38 sources in a
+        // 1912-source pack, 万象书城 and 小红书 among them.
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.bookSourceName = "static explore page syntax"
+        source.exploreUrl = """
+        玄幻·奇幻::/nav/xuanhuan<,_{{page}}>.html
+        仙侠·武侠::/nav/xianxia<,_{{page}}>.html
+        全部::/category/0/<,{{page}}.html>
+        """
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+
+        #expect(items.map(\.title) == ["玄幻·奇幻", "仙侠·武侠", "全部"], "actual=\(items.map(\.title))")
+        #expect(items.compactMap(\.url) == [
+            "/nav/xuanhuan<,_{{page}}>.html",
+            "/nav/xianxia<,_{{page}}>.html",
+            "/category/0/<,{{page}}.html>",
+        ], "actual=\(items.compactMap(\.url))")
+    }
+
+    @Test("a static explore rule still drops HTML debris from a dead endpoint")
+    func staticExploreRuleStillDropsMarkupDebris() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.bookSourceName = "static explore markup debris"
+        // Kept clear of `looksLikeMarkupOrError`'s whole-payload check (leading `<`, `<html`,
+        // `404 not found`): this covers the per-line guard, which is what the fix touches.
+        source.exploreUrl = """
+        玄幻::/nav/xuanhuan.html
+        <p>nginx</p>
+        <div class="err">something</div>
+        """
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+
+        #expect(items.map(\.title) == ["玄幻"], "actual=\(items.map(\.title))")
+    }
+
     @Test("LYC explore supports infoMap save used by source filters")
     func lycExploreSupportsInfoMapSave() async throws {
         var source = BookSource()
