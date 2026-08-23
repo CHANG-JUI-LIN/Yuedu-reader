@@ -13,11 +13,13 @@ struct SearchSourceScopeCapsule: View {
                     ? "checkmark.circle.fill"
                     : "line.3.horizontal.decrease.circle.fill"
             )
-            .font(DSFont.subheadline)
+            .font(DSFont.caption)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
-        .controlSize(.large)
+        .controlSize(.small)
+        .frame(minHeight: DSLayout.minimumTapTarget, alignment: .leading)
+        .contentShape(Rectangle())
         .tint(DSColor.accent)
         .accessibilityLabel(localized("搜索範圍"))
         .accessibilityValue(title)

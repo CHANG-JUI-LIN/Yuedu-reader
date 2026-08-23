@@ -285,7 +285,7 @@ struct BookSearchView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, DSSpacing.lg)
-        .padding(.vertical, DSSpacing.sm)
+        .padding(.vertical, DSSpacing.xs)
     }
 
     private var sourceScopeSummary: String {
