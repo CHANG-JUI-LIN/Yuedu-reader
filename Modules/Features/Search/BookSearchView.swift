@@ -69,15 +69,17 @@ struct BookSearchView: View {
 
     @EnvironmentObject var bookStore: BookStore
     @StateObject private var aggregator = SearchAggregator()
+    @StateObject private var scopeStore = SearchSourceScopeStore.shared
+    @ObservedObject private var sourceStore = BookSourceStore.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var query = ""
-    @State private var selectedSourceId: UUID? = nil  // nil = all
     @State private var errorMsg: String? = nil
     @State private var submittedQuery = ""
     @State private var selectedIOS17ResultRoute: BookSearchResultRoute?
-    private var sourceStore: BookSourceStore { BookSourceStore.shared }
+    @State private var showsSourceScopeSheet = false
+    @State private var needsSearchResubmission = false
 
     var enabledSources: [BookSource] { sourceStore.enabledSources }
 
@@ -92,11 +94,10 @@ struct BookSearchView: View {
     var body: some View {
         AdaptiveContentContainer(maxWidth: DSLayout.readableExpandedWidth) {
             VStack(spacing: 0) {
-                if enabledSources.count > 1 {
-                    sourceSelector
+                if !enabledSources.isEmpty {
+                    sourceScopeBar
+                    Divider()
                 }
-
-                Divider()
 
                 ZStack {
                     if !aggregator.results.isEmpty {
@@ -142,12 +143,20 @@ struct BookSearchView: View {
             )
         )
         .searchable(text: $query, prompt: localized("輸入書名或作者"))
+        .sheet(isPresented: $showsSourceScopeSheet) {
+            SearchSourceScopeSheet(
+                enabledSources: enabledSources,
+                initialScope: scopeStore.scope,
+                onSave: applySearchSourceScope
+            )
+        }
         .onSubmit(of: .search) { doSearch() }
         .onChange(of: query) { _, newValue in
             // Mirror the old clear button: emptying the field resets the search.
             if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 submittedQuery = ""
-                aggregator.cancel()
+                needsSearchResubmission = false
+                aggregator.cancelAndClear()
             }
         }
         .toolbar {
@@ -157,7 +166,9 @@ struct BookSearchView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
+                            .accessibilityHidden(true)
                     }
+                    .accessibilityLabel(localized("關閉"))
                 }
             }
         }
@@ -263,35 +274,30 @@ struct BookSearchView: View {
         }
     }
 
-    // MARK: Source Selector
-    private var sourceSelector: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                sourceChip(id: nil, name: localized("全部"))
-                ForEach(enabledSources) { src in
-                    sourceChip(id: src.id, name: src.bookSourceName)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+    // MARK: Source Scope
+    private var sourceScopeBar: some View {
+        HStack {
+            SearchSourceScopeCapsule(
+                title: sourceScopeSummary,
+                isCustom: scopeStore.scope.mode == .custom,
+                action: { showsSourceScopeSheet = true }
+            )
+            Spacer(minLength: 0)
         }
-        .background(DSColor.groupedBackground.opacity(0.001))
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.sm)
     }
 
-    @ViewBuilder
-    private func sourceChip(id: UUID?, name: String) -> some View {
-        Button {
-            selectedSourceId = id
-        } label: {
-            Text(name)
-                .font(DSFont.caption)
-                .lineLimit(1)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(selectedSourceId == id ? DSColor.accent : Color(UIColor.systemGray5))
-                .foregroundColor(selectedSourceId == id ? .white : .primary)
-                .clipShape(Capsule())
+    private var sourceScopeSummary: String {
+        switch scopeStore.scope.mode {
+        case .all:
+            return localized("全部書源")
+        case .custom:
+            return String(
+                format: localized("已選 %d 個書源"),
+                scopeStore.scope.resolvedSources(from: enabledSources).count
+            )
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: Result List
@@ -397,7 +403,15 @@ struct BookSearchView: View {
             } else {
                 Image(systemName: "text.magnifyingglass").font(DSFont.fixed(size: 48)).foregroundColor(
                     Color.secondary.opacity(0.3))
-                Text(localized("輸入書名或作者搜索")).font(DSFont.subheadline).foregroundColor(.secondary)
+                if needsSearchResubmission {
+                    Text(localized("搜索範圍已更新，請再次搜索"))
+                        .font(DSFont.subheadline)
+                        .foregroundStyle(DSColor.textSecondary)
+                } else {
+                    Text(localized("輸入書名或作者搜索"))
+                        .font(DSFont.subheadline)
+                        .foregroundStyle(DSColor.textSecondary)
+                }
                 Text(localized("已啟用") + " \(enabledSources.count) " + localized("個書源")).font(DSFont.caption)
                     .foregroundColor(
                         Color.secondary.opacity(0.7))
@@ -407,18 +421,26 @@ struct BookSearchView: View {
     }
 
     // MARK: Search Logic
+    private func applySearchSourceScope(_ newScope: SearchSourceScope) {
+        guard newScope != scopeStore.scope else { return }
+        scopeStore.save(newScope)
+        submittedQuery = ""
+        needsSearchResubmission = !trimmedQuery.isEmpty
+        aggregator.cancelAndClear()
+    }
+
     private func doSearch() {
         let q = trimmedQuery
         guard !q.isEmpty else { return }
-        let sources =
-            selectedSourceId == nil
-            ? enabledSources
-            : enabledSources.filter { $0.id == selectedSourceId }
+        let sources = scopeStore.scope.resolvedSources(from: enabledSources)
         guard !sources.isEmpty else {
-            errorMsg = localized("沒有可用的書源，請先啟用書源")
+            errorMsg = scopeStore.scope.mode == .custom
+                ? localized("請至少選擇一個可用書源")
+                : localized("沒有可用的書源，請先啟用書源")
             return
         }
 
+        needsSearchResubmission = false
         submittedQuery = q
         aggregator.search(query: q, sources: sources)
     }
@@ -595,5 +617,12 @@ extension SearchBook: Hashable {
     }
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+}
+
+#Preview("搜索書籍") {
+    NavigationStack {
+        BookSearchView()
+            .environmentObject(BookStore())
     }
 }
