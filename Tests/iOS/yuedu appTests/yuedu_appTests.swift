@@ -150,7 +150,8 @@ struct yuedu_appTests {
         func fetchBookInfoPackage(
             url: String,
             source: BookSource,
-            runtimeVariables: [String: String]?
+            runtimeVariables: [String: String]?,
+            knownBook: OnlineBook?
         ) async throws -> BookInfoPackage {
             throw NSError(domain: "ProgressiveTOCFetcher", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "fetchBookInfoPackage should not be called in this test"

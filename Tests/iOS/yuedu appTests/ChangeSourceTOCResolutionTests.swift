@@ -117,7 +117,8 @@ private actor RecordingChangeSourceFetcher: BookSourceFetching {
     nonisolated func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage {
         await record(bookInfo: url)
         return BookInfoPackage(

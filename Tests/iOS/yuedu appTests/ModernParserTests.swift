@@ -3543,6 +3543,46 @@ struct RuleAnalyzerSourceRuleIntegrationTests {
 @Suite("ModernParserBridge Explore", .serialized)
 struct ModernParserBridgeExploreTests {
 
+    @Test("a JSON explore rule decodes despite legado flexbox style values")
+    func jsonExploreRuleDecodesWithFlexboxStyle() async throws {
+        // Real sources attach legado's `ExploreKind.Style` to each chip, and its values are
+        // numbers and booleans — `layout_flexGrow: 1`, `layout_flexBasisPercent: 0.33`. `style` is
+        // typed `[String: String]`, so this only decodes because `DiscoverItem.init(from:)` reads
+        // it through `LenientScalar` and drops the whole style rather than the item when it cannot.
+        // 457 of the 493 JSON-shaped explore rules in a 1912-source pack carry such a style; a
+        // future switch to synthesized Codable would silently empty every one of their 發現頁.
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.bookSourceName = "json explore flexbox style"
+        source.exploreUrl = """
+        [{"title":"🔥热播榜","url":"https://example.com/a?page={{page}}","style":{"layout_flexGrow":1,"layout_flexBasisPercent":0.33}},\
+        {"title":"完结","url":"https://example.com/b","style":{"layout_flexGrow":1.5,"layout_flexShrink":1,"layout_alignSelf":"auto","layout_wrapBefore":true}},\
+        {"title":"分类","url":"https://example.com/c","style":{"layout_flexBasisPercent":null}}]
+        """
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+
+        #expect(items.map(\.title) == ["🔥热播榜", "完结", "分类"], "actual=\(items.map(\.title))")
+        #expect(items.compactMap(\.url).count == 3, "actual=\(items.compactMap(\.url))")
+    }
+
+    @Test("a JSON explore rule survives an unexpected style shape")
+    func jsonExploreRuleSurvivesOddStyleShape() async throws {
+        // The other half of that contract: a style that is not even an object (or misspells a key,
+        // as several sources do — `layout_flexBasisPersent`) must cost the style, never the category.
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.bookSourceName = "json explore odd style"
+        source.exploreUrl = """
+        [{"title":"甲","url":"https://example.com/a","style":{"layout_flexGrow":"1","layout_flexBasisPersent":0.5}},\
+        {"title":"乙","url":"https://example.com/b","style":"not-an-object"}]
+        """
+
+        let items = await ModernParserBridge(source: source).getExploreItems()
+
+        #expect(items.map(\.title) == ["甲", "乙"], "actual=\(items.map(\.title))")
+    }
+
     @Test("a static explore rule keeps categories whose URL carries legado page syntax")
     func staticExploreRuleKeepsPageSyntaxCategories() async throws {
         // `<,{{page}}>` / `<,_{{page}}>` is legado's page-range syntax (AnalyzeUrl.pagePattern is

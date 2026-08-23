@@ -432,7 +432,8 @@ private actor HealthCheckTransportFailureFetcher: BookSourceHealthCheckFetching 
     func fetchBookInfo(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> OnlineBook {
         calls.append("detail")
         throw URLError(.timedOut)
@@ -499,7 +500,8 @@ private actor HealthCheckKeywordCaptureFetcher: BookSourceHealthCheckFetching {
     func fetchBookInfo(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> OnlineBook { throw URLError(.unsupportedURL) }
 
     func fetchTOC(
@@ -565,7 +567,8 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
     func fetchBookInfo(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> OnlineBook {
         detailURLs.append(url)
         return book(
@@ -596,12 +599,14 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage {
         let info = try await fetchBookInfo(
             url: url,
             source: source,
-            runtimeVariables: runtimeVariables
+            runtimeVariables: runtimeVariables,
+            knownBook: knownBook
         )
         var variables = info.runtimeVariables ?? [:]
         variables["detail.scope"] = "detail"
@@ -744,7 +749,8 @@ private actor HealthCheckDetailFailureFetcher: BookSourceHealthCheckFetching {
     func fetchBookInfo(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> OnlineBook {
         calls.append("detail")
         throw URLError(.timedOut)
@@ -839,7 +845,8 @@ private actor TimedHealthCheckFetcher: BookSourceHealthCheckFetching {
     func fetchBookInfo(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> OnlineBook {
         let start = begin("detail")
         defer { end("detail", start) }

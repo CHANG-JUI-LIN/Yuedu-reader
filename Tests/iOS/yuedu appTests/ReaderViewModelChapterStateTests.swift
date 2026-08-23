@@ -699,7 +699,8 @@ private struct StubBookSourceFetcher: BookSourceFetching {
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage {
         throw NSError(domain: "StubBookSourceFetcher", code: 1)
     }

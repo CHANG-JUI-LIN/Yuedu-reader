@@ -1604,10 +1604,29 @@ class BookStore: ObservableObject, BookProvider {
         var infoPackage: BookInfoPackage?
 
         if forceInfoRefresh || tocURL.isEmpty {
+            // The shelf already knows this book — hand that over so a detail page that omits a
+            // field leaves the stored value alone. Most sources' `ruleBookInfo.name` is empty
+            // (they rely on the caller keeping the title it already had, as legado's
+            // `analyzeBookInfo` does), and a refresh must never blank a shelved book's title.
+            let knownBook = OnlineBook(
+                name: snapshot.title,
+                author: snapshot.author,
+                intro: "",   // ReadingBook does not store an intro; nothing to preserve here
+                coverUrl: snapshot.coverUrl ?? "",
+                bookUrl: bookURL,
+                tocUrl: normalizedOnlineValue(snapshot.tocURL),
+                wordCount: "",
+                lastChapter: snapshot.onlineChapters?.last?.title ?? "",
+                kind: "",
+                sourceId: sourceId,
+                sourceName: source.bookSourceName,
+                runtimeVariables: runtimeVariables
+            )
             let fetchedInfo = try await bookSourceFetcher.fetchBookInfoPackage(
                 url: bookURL,
                 source: source,
-                runtimeVariables: runtimeVariables
+                runtimeVariables: runtimeVariables,
+                knownBook: knownBook
             )
             infoPackage = fetchedInfo
             if let fetchedRuntime = fetchedInfo.runtimeVariables, !fetchedRuntime.isEmpty {

@@ -17,7 +17,8 @@ protocol BookSourceFetching {
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage
 
     func fetchTOCPackage(
@@ -209,12 +210,14 @@ struct LiveBookSourceFetcher: BookSourceFetching {
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage {
         try await bookSourceFetcher.fetchBookInfoPackage(
             url: url,
             source: source,
-            runtimeVariables: runtimeVariables
+            runtimeVariables: runtimeVariables,
+            knownBook: knownBook
         )
     }
 

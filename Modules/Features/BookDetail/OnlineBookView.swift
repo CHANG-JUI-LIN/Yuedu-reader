@@ -762,7 +762,8 @@ struct OnlineBookView: View {
                     try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
                         url: requestBook.bookUrl,
                         source: source,
-                        runtimeVariables: parallelRuntimeVariables
+                        runtimeVariables: parallelRuntimeVariables,
+                        knownBook: requestBook
                     )
                 }
                 currentRuntimeVariables = infoPackage.runtimeVariables
@@ -798,7 +799,8 @@ struct OnlineBookView: View {
                     try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
                         url: requestBook.bookUrl,
                         source: source,
-                        runtimeVariables: currentRuntimeVariables
+                        runtimeVariables: currentRuntimeVariables,
+                        knownBook: requestBook
                     )
                 }
                 currentRuntimeVariables = infoPackage.runtimeVariables

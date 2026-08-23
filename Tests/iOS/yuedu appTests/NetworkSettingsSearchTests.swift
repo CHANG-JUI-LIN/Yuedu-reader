@@ -272,7 +272,8 @@ private actor CancellableTOCFetcher: BookSourceFetching {
     nonisolated func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage {
         throw NSError(domain: "CancellableTOCFetcher", code: 1)
     }
@@ -351,7 +352,8 @@ private final class CountingBookSourceFetcher: BookSourceFetching {
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage {
         throw NSError(domain: "CountingBookSourceFetcher", code: 1)
     }

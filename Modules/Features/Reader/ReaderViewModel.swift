@@ -439,10 +439,30 @@ final class ReaderViewModel: ObservableObject {
         var tocUrl = origin.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         var tocRuntimeVariables = origin.runtimeVariables
         if tocUrl.isEmpty {
+            // Hand over what the 換源 search already established, so a detail page that omits a
+            // field keeps the origin's value instead of blanking it. name/author are deliberately
+            // left empty: `BookOrigin` carries none (a source switch keeps the book's identity,
+            // which lives on the ReadingBook, not on the origin), and this path exists only to
+            // resolve a missing tocUrl — the switch must never rename the book being read.
+            let knownBook = OnlineBook(
+                name: "",
+                author: "",
+                intro: origin.intro,
+                coverUrl: origin.coverUrl,
+                bookUrl: origin.bookUrl,
+                tocUrl: origin.tocUrl,
+                wordCount: origin.wordCount,
+                lastChapter: origin.lastChapter,
+                kind: origin.kind,
+                sourceId: origin.sourceId,
+                sourceName: origin.sourceName,
+                runtimeVariables: origin.runtimeVariables
+            )
             let info = try await bookSourceFetcher.fetchBookInfoPackage(
                 url: origin.bookUrl,
                 source: source,
-                runtimeVariables: origin.runtimeVariables
+                runtimeVariables: origin.runtimeVariables,
+                knownBook: knownBook
             )
             tocUrl = info.tocUrl
             tocRuntimeVariables = info.runtimeVariables ?? tocRuntimeVariables

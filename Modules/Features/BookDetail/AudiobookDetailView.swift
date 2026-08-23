@@ -582,7 +582,8 @@ struct AudiobookDetailView: View {
                 var runtimeVars = request.runtimeVariables
                 if !request.bookUrl.isEmpty {
                     let pkg = try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
-                        url: request.bookUrl, source: source, runtimeVariables: runtimeVars)
+                        url: request.bookUrl, source: source, runtimeVariables: runtimeVars,
+                        knownBook: request)
                     runtimeVars = Self.mergedRuntimeVariables(runtimeVars, pkg.runtimeVariables)
                     await MainActor.run {
                         guard isCurrentRequest(request) else { return }

@@ -19,7 +19,8 @@ protocol BookSourceHealthCheckFetching: Sendable {
     func fetchBookInfo(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> OnlineBook
     func fetchTOC(
         tocUrl: String,
@@ -35,7 +36,8 @@ protocol BookSourceHealthCheckFetching: Sendable {
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage
     func fetchTOCPackage(
         tocUrl: String,
@@ -59,12 +61,14 @@ extension BookSourceHealthCheckFetching {
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
-        runtimeVariables: [String: String]?
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
     ) async throws -> BookInfoPackage {
         let book = try await fetchBookInfo(
             url: url,
             source: source,
-            runtimeVariables: runtimeVariables
+            runtimeVariables: runtimeVariables,
+            knownBook: knownBook
         )
         return BookInfoPackage(
             sourceId: source.id,
@@ -966,10 +970,14 @@ final class BookSourceHealthChecker: ObservableObject {
 
     private func probeDetail(book: OnlineBook, source: BookSource) async -> ProbeResult<OnlineBook> {
         do {
+            // `book` is the search/discover result this probe ran against — hand it over so a
+            // detail rule that omits a field (the majority omit the title) keeps what the search
+            // stage already found, exactly as legado's `analyzeBookInfo` does.
             let package = try await fetcher.fetchBookInfoPackage(
                 url: book.bookUrl,
                 source: source,
-                runtimeVariables: book.runtimeVariables
+                runtimeVariables: book.runtimeVariables,
+                knownBook: book
             )
             var info = package.onlineBook
             let name = info.name.trimmingCharacters(in: .whitespacesAndNewlines)

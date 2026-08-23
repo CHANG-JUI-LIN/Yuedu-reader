@@ -656,6 +656,55 @@ struct BookInfoPackage: Codable {
             runtimeVariables: runtimeVariables
         )
     }
+
+    /// Fills empty fields from the search result the user actually picked.
+    ///
+    /// Legado's `BookInfo.analyzeBookInfo` **updates the `Book` it was handed** rather than
+    /// building a fresh one, so a field the detail page does not yield keeps whatever the search
+    /// stage found: `if (parsed.isNotEmpty()) book.field = parsed`, and for name/author
+    /// `if (parsed.isNotEmpty() && (canReName || book.name.isEmpty()))`. 431 of 1912 real sources
+    /// (22.5%) ship an empty `ruleBookInfo.name` precisely because they rely on that — their detail
+    /// page never repeats the title. Parsing into a standalone value, as this reader does, dropped
+    /// it: the book opened with a blank name and 校驗書源 reported 詳情為空.
+    ///
+    /// - Parameters:
+    ///   - known: the book as the search/discover stage knew it, or nil when there is none
+    ///     (opening a bookmarked URL directly), in which case the parsed package is returned as-is.
+    ///   - canReName: `!source.ruleBookInfo.canReName.isEmpty` — legado's flag for "this source is
+    ///     allowed to correct the title it was given".
+    func merging(searchResult known: OnlineBook?, canReName: Bool) -> BookInfoPackage {
+        guard let known else { return self }
+
+        /// Non-name fields: the parsed value wins whenever it is non-empty.
+        func preferParsed(_ parsed: String, _ fallback: String) -> String {
+            parsed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : parsed
+        }
+        /// name/author: the parsed value additionally needs permission to overwrite a known one.
+        func preferParsedRenamable(_ parsed: String, _ fallback: String) -> String {
+            guard !parsed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return fallback
+            }
+            let fallbackIsEmpty = fallback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return (canReName || fallbackIsEmpty) ? parsed : fallback
+        }
+
+        return BookInfoPackage(
+            sourceId: sourceId,
+            sourceName: sourceName,
+            bookURL: bookURL,
+            name: preferParsedRenamable(name, known.name),
+            author: preferParsedRenamable(author, known.author),
+            intro: preferParsed(intro, known.intro),
+            coverUrl: preferParsed(coverUrl, known.coverUrl),
+            tocUrl: preferParsed(tocUrl, known.tocUrl),
+            wordCount: preferParsed(wordCount, known.wordCount),
+            lastChapter: preferParsed(lastChapter, known.lastChapter),
+            kind: preferParsed(kind, known.kind),
+            runtimeVariables: runtimeVariables ?? known.runtimeVariables,
+            rawHTMLFilename: rawHTMLFilename,
+            savedAt: savedAt
+        )
+    }
 }
 
 typealias RenderPackage = BookPackage

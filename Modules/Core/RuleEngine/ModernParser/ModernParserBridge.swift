@@ -2107,6 +2107,22 @@ class ModernParserBridge {
         if let single = try? JSONDecoder().decode(DiscoverItem.self, from: data) {
             return [single]
         }
+        // Both shapes failed. A silent `return []` here is why a `style` type mismatch could empty
+        // 457 sources' 發現頁 with nothing to show for it: an empty discover list looks the same
+        // whether the source has no categories or we failed to read the ones it has. Report the
+        // decoder's own reason so the next such mismatch is one log line, not an audit.
+        var reason = "unknown"
+        do {
+            _ = try JSONDecoder().decode([DiscoverItem].self, from: data)
+        } catch {
+            reason = "\(error)"
+        }
+        AppLogger.parse("⟐ exploreJSONDecodeFailed", context: [
+            "source": sourceRuleData.source.bookSourceName,
+            "len": json.count,
+            "head": String(json.prefix(180)),
+            "error": String(reason.prefix(300)),
+        ])
         return []
     }
 
