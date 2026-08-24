@@ -27,6 +27,19 @@ struct ReviewCardSVGMetricsTests {
     </svg>
     """
 
+    /// The other shape the same family of cards ships in: authored `width`/`height` with **no**
+    /// viewBox (起点 jsLib `ChapterCmtSvg`). Its coordinate system is the declared width, and it
+    /// reaches the reader as an inline `<svg>` element rather than an `<img src="data:…">`.
+    private let noViewBoxCard = """
+    <svg width="1080" height="700" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1080" height="700" fill="rgba(255,255,255,0.25)" rx="35"/>
+        <text x="80" y="75" font-size="44" font-family="Arial" fill="#000">本章说</text>
+        <text x="1000" y="75" font-size="36" text-anchor="end" fill="#000">525条评论 ❯</text>
+        <text x="80" y="190" font-weight="bold" font-size="42" fill="#000">绝傲蜀风</text>
+        <text x="80" y="280" font-size="42" fill="#000">近现代背景、古董加点、漂亮妹妹</text>
+    </svg>
+    """
+
     /// A 段評 count bubble — one digit in a small coordinate system. Must keep its own sizing;
     /// it is scaled to the line height further down the pipeline.
     private let countBubble = """
@@ -45,51 +58,85 @@ struct ReviewCardSVGMetricsTests {
         #expect(abs((card?.textFraction ?? 0) - 0.036) < 0.0001)
     }
 
-    @Test("the card reads at the reader's body size, not the column's")
-    func cardWidthTracksBodyPointSize() throws {
-        let card = try #require(ReviewCardSVGMetrics.textCard(in: chapterCommentCard))
-
-        // iPad mini, 21pt reader text: portrait and landscape must agree.
-        let portrait = ReviewCardSVGMetrics.preferredWidth(
-            for: card, bodyPointSize: 21, columnWidth: 700
-        )
-        let landscape = ReviewCardSVGMetrics.preferredWidth(
-            for: card, bodyPointSize: 21, columnWidth: 1050
-        )
-        #expect(abs(portrait - landscape) < 0.5)
-        // 21pt / 0.036 ≈ 583pt — the width at which the card's own text is 21pt.
-        #expect(abs(portrait - 21 / card.textFraction) < 0.5)
-        // Which is exactly the point: the card no longer blows up with the column.
-        #expect(landscape < 1050)
+    @Test("a card authored without a viewBox is measured off its declared width")
+    func noViewBoxCardIsRecognized() throws {
+        let card = try #require(ReviewCardSVGMetrics.textCard(in: noViewBoxCard))
+        #expect(card.coordinateWidth == 1080)
+        // Longest run is the 15-character 近现代… line at font-size 42.
+        #expect(card.dominantFontSize == 42)
     }
 
-    @Test("a bigger 字級 setting makes the card bigger")
-    func cardFollowsFontSizeSetting() throws {
-        let card = try #require(ReviewCardSVGMetrics.textCard(in: chapterCommentCard))
-        let small = ReviewCardSVGMetrics.preferredWidth(
-            for: card, bodyPointSize: 16, columnWidth: 1050
+    /// The iPad report: the card's text read visibly larger than the prose beside it, and
+    /// shrinking the card to fix that left a pill floating mid-column. The card stays full
+    /// width; its canvas is widened until its own text is body-sized.
+    @Test("a wide column widens the card's canvas instead of shrinking the card")
+    func wideColumnWidensTheCanvas() throws {
+        let reshaped = try #require(
+            ReviewCardSVGMetrics.reshapedForColumn(
+                svg: chapterCommentCard, bodyPointSize: 18, columnWidth: 900, path: "test"
+            )
         )
-        let large = ReviewCardSVGMetrics.preferredWidth(
-            for: card, bodyPointSize: 26, columnWidth: 1050
-        )
-        #expect(large > small)
+        // 36 units of text at 18pt across a 900pt column ⇒ a 1800-unit canvas.
+        #expect(reshaped.contains(#"viewBox="0 0 1800 322""#))
+        #expect(reshaped.contains(#"width="1800""#))
+        // Rasterized at the column, the comment line now measures the reader's body size.
+        let card = try #require(ReviewCardSVGMetrics.textCard(in: reshaped))
+        #expect(abs(900 * card.textFraction - 18) < 0.5)
     }
 
-    @Test("a narrow column still wins — the card never overflows it")
-    func cardNeverExceedsTheColumn() throws {
-        let card = try #require(ReviewCardSVGMetrics.textCard(in: chapterCommentCard))
-        let width = ReviewCardSVGMetrics.preferredWidth(
-            for: card, bodyPointSize: 21, columnWidth: 350
+    @Test("the card's background and rules grow with the canvas")
+    func fullBleedGeometryStretches() throws {
+        let reshaped = try #require(
+            ReviewCardSVGMetrics.reshapedForColumn(
+                svg: chapterCommentCard, bodyPointSize: 18, columnWidth: 900, path: "test"
+            )
         )
-        #expect(width == 350)
+        // Background plate: x=0 width=1000 → spans the whole widened canvas.
+        #expect(reshaped.contains(#"<rect x="0" y="30" width="1800""#))
+        // Separator rule: x=44 width=912 (right edge 956, a 44-unit margin) → keeps that margin.
+        #expect(reshaped.contains(#"<rect x="44" y="130" width="1756""#))
+    }
+
+    @Test("right-anchored text travels with the right edge")
+    func rightAnchoredTextFollowsTheEdge() throws {
+        let reshaped = try #require(
+            ReviewCardSVGMetrics.reshapedForColumn(
+                svg: chapterCommentCard, bodyPointSize: 18, columnWidth: 900, path: "test"
+            )
+        )
+        // 12条评论 sat at x=956 (44 from the right edge) and must stay 44 from the new one.
+        #expect(reshaped.contains(#"x="1756""#))
+        // The badge and the comment line are anchored left and must not move.
+        #expect(reshaped.contains(#"<text x="126" y="101""#))
+        #expect(reshaped.contains(#"<text x="44" y="236""#))
+    }
+
+    @Test("a phone column leaves the card exactly as the source drew it")
+    func narrowColumnIsUntouched() {
+        // 36 units at 19pt would need a 664-unit canvas — narrower than the authored 1000, and
+        // narrowing would crop the author's layout.
+        #expect(
+            ReviewCardSVGMetrics.reshapedForColumn(
+                svg: chapterCommentCard, bodyPointSize: 19, columnWidth: 350, path: "test"
+            ) == nil
+        )
     }
 
     @Test("no reader font to match keeps the old column-width sizing")
-    func withoutBodyPointSizeNothingChanges() throws {
-        let card = try #require(ReviewCardSVGMetrics.textCard(in: chapterCommentCard))
+    func withoutBodyPointSizeNothingChanges() {
         #expect(
-            ReviewCardSVGMetrics.preferredWidth(for: card, bodyPointSize: 0, columnWidth: 900)
-                == 900
+            ReviewCardSVGMetrics.reshapedForColumn(
+                svg: chapterCommentCard, bodyPointSize: 0, columnWidth: 900, path: "test"
+            ) == nil
+        )
+    }
+
+    @Test("an SVG that is not a card is never reshaped")
+    func nonCardsAreNeverReshaped() {
+        #expect(
+            ReviewCardSVGMetrics.reshapedForColumn(
+                svg: countBubble, bodyPointSize: 18, columnWidth: 900, path: "test"
+            ) == nil
         )
     }
 

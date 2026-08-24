@@ -75,13 +75,11 @@
 	<true/>
 	<key>UIPrefersShowingLanguageSettings</key>
 	<true/>
-	<!-- `.yuedustyle` is this app's own reader-style package: a zip holding manifest.json
-	     plus the referenced assets (see ReaderStylePackage). The UTType(exportedAs:) in
-	     ReaderStylePackage.swift only names the identifier — the declaration has to live
-	     here, or UniformTypeIdentifiers logs "was expected to be declared and exported in
-	     the Info.plist" at launch and leaves the type provisional, so ShareLink exports and
-	     .fileImporter filters degrade to public.data. Keep the identifier, the conformance,
-	     and the extension in sync with that UTType extension. -->
+	<!-- App-owned file types. A UTType(exportedAs:) in Swift only names its identifier;
+	     every concrete type also needs a matching declaration here or it remains
+	     provisional and ShareLink/fileImporter behavior degrades. Keep each identifier,
+	     conformance, and extension in sync with its UTType extension. The log type uses
+	     public.data rather than public.text so chat apps receive a file attachment. -->
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -98,6 +96,23 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>yuedustyle</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>app.yuedu.log-file</string>
+			<key>UTTypeDescription</key>
+			<string>Yuedu Log File</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>txt</string>
 				</array>
 			</dict>
 		</dict>

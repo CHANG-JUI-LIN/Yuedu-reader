@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 import os.log
 @testable import yuedu_app
 
@@ -276,5 +277,36 @@ struct DiagnosticRedactorTests {
     func ordinaryTextSurvives() {
         let line = "[FlipTrace] pageForward from=(ch3,off100) to=(ch3,off200) host=www.example.com"
         #expect(DiagnosticRedactor.redact(line) == line)
+    }
+}
+
+@Suite("Diagnostic export file type")
+struct DiagnosticExportFileTypeTests {
+
+    @Test("log payloads export one concrete non-text file type")
+    func payloadsUseConcreteFileType() {
+        #expect(DiagnosticReportBundle.exportedContentType == .yueduLogFile)
+        #expect(BookSourceDebugExportFile.exportedContentType == .yueduLogFile)
+        #expect(UTType.yueduLogFile.conforms(to: .data))
+        #expect(!UTType.yueduLogFile.conforms(to: .text))
+    }
+
+    @Test("the app registers the log type as a txt file")
+    func appDeclaresLogFileType() throws {
+        let declarations = try #require(
+            Bundle.main.object(forInfoDictionaryKey: "UTExportedTypeDeclarations")
+                as? [[String: Any]]
+        )
+        let declaration = try #require(
+            declarations.first {
+                $0["UTTypeIdentifier"] as? String == UTType.yueduLogFile.identifier
+            }
+        )
+        let conformances = try #require(declaration["UTTypeConformsTo"] as? [String])
+        let tags = try #require(declaration["UTTypeTagSpecification"] as? [String: Any])
+        let extensions = try #require(tags["public.filename-extension"] as? [String])
+
+        #expect(conformances == [UTType.data.identifier])
+        #expect(extensions == ["txt"])
     }
 }

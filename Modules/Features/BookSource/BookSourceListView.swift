@@ -420,7 +420,7 @@ struct BookSourceListView: View {
                             .sourceVariableJSON(for: src.bookSourceUrl) ?? ""
                     ) { newValue in
                         let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(
+                        BookSourceRuntimeStateStore.shared.setUserSourceVariableJSON(
                             trimmed.isEmpty ? nil : trimmed,
                             for: src.bookSourceUrl
                         )

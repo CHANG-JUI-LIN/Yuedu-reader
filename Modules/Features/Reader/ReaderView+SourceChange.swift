@@ -136,7 +136,7 @@ extension ReaderView {
                             .sourceVariableJSON(for: source.bookSourceUrl) ?? ""
                     ) { newValue in
                         let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                        BookSourceRuntimeStateStore.shared.setSourceVariableJSON(
+                        BookSourceRuntimeStateStore.shared.setUserSourceVariableJSON(
                             trimmed.isEmpty ? nil : trimmed,
                             for: source.bookSourceUrl
                         )

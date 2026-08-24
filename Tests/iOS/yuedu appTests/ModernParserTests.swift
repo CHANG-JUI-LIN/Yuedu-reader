@@ -4179,6 +4179,70 @@ struct DiscoverFilterTests {
     }
 }
 
+@Suite("Source Variable Runtime State", .serialized)
+struct SourceVariableRuntimeStateTests {
+    private final class NotificationRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [String] = []
+
+        func append(_ value: String) {
+            lock.lock()
+            storage.append(value)
+            lock.unlock()
+        }
+
+        var values: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return storage
+        }
+    }
+
+    @Test("user source-variable saves notify only on a real change")
+    func userSourceVariableSaveNotification() async throws {
+        let sourceURL = "source-variable-notification-\(UUID().uuidString)"
+        let store = BookSourceRuntimeStateStore.shared
+        store.setSourceVariableJSON(nil, for: sourceURL)
+        defer { store.setSourceVariableJSON(nil, for: sourceURL) }
+
+        let notifications = NotificationRecorder()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .bookSourceUserVariableDidChange,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if let changedURL = notification.userInfo?["sourceURL"] as? String {
+                notifications.append(changedURL)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        store.setUserSourceVariableJSON("plain-token", for: sourceURL)
+        store.setUserSourceVariableJSON("plain-token", for: sourceURL)
+        store.setSourceVariableJSON("rule-internal-update", for: sourceURL)
+
+        #expect(notifications.values == [sourceURL])
+    }
+
+    @Test("source-variable diagnostics expose shape but never secret values")
+    func sourceVariableDiagnosticRedaction() {
+        let plainSecret = "private-token-value"
+        let jsonSecret = "json-secret-value"
+
+        let plain = ModernParserBridge.sourceVariableLogSummary(plainSecret)
+        let json = ModernParserBridge.sourceVariableLogSummary(
+            "{\"token\":\"\(jsonSecret)\",\"mode\":\"novel\"}"
+        )
+
+        #expect(plain.contains("configured"))
+        #expect(plain.contains("plain"))
+        #expect(!plain.contains(plainSecret))
+        #expect(json.contains("mode,token"))
+        #expect(!json.contains(jsonSecret))
+        #expect(ModernParserBridge.sourceVariableLogSummary(nil) == "not configured")
+    }
+}
+
 // MARK: - 14. Edge Cases & Stress Tests
 
 @Suite("Edge Cases", .serialized)

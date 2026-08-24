@@ -1,3 +1,6 @@
 /* UTTypeDescription for the app's .yuedustyle reader-style package (Info.plist
    UTExportedTypeDeclarations). Shown as the file's kind in the Files app. */
 "Yuedu Reader Style" = "Reader Style";
+
+/* UTTypeDescription for exported diagnostic and book-source debug log files. */
+"Yuedu Log File" = "Yuedu Log File";

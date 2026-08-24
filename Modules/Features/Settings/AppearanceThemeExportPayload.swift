@@ -7,14 +7,14 @@ import UniformTypeIdentifiers
 ///
 /// `ShareLink` rather than `.fileExporter` for the reason recorded in
 /// `Technotes/iOS17MenuModalPresentation.md`: a document picker opened from a
-/// `Menu` / `contextMenu` action hits the iOS 17 menu-dismissal race, and
-/// per-theme export lives in exactly such a menu. UIKit owns the share sheet's
-/// presentation, so there is no second presentation to sequence.
+/// `Menu` / `contextMenu` action hits the iOS 17 menu-dismissal race. A share
+/// sheet is the same presentation boundary, so theme exports stay as direct
+/// editor/Form rows rather than menu actions before iOS 18.
 ///
 /// Carries the cheap value snapshot (colors plus background *file names*) and
-/// reads the image bytes only inside the transfer closure. Menu content is
-/// built with its row, and a theme with page backgrounds base64s to megabytes —
-/// building that eagerly would run on every layout pass.
+/// reads the image bytes only inside the transfer closure. SwiftUI rebuilds the
+/// visible export row with its parent, and a theme with page backgrounds base64s
+/// to megabytes — building that eagerly would run on every layout pass.
 struct AppearanceThemeExportPayload: Transferable {
     /// Filename including the `.json` extension. Build it with `filename(for:)`.
     let filename: String

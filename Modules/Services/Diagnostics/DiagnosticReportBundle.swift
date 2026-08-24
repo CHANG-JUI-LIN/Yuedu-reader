@@ -2,6 +2,20 @@ import Foundation
 import CoreTransferable
 import UniformTypeIdentifiers
 
+extension UTType {
+    /// A concrete file-only type for readable `.txt` logs.
+    ///
+    /// It deliberately conforms to `public.data`, not `public.text`: chat apps
+    /// must receive the attachment instead of requesting a string and splitting a
+    /// large log into hundreds of messages. Do not replace this with the abstract
+    /// `UTType.data`; iOS 17 can fail to resolve a `FileRepresentation` whose
+    /// advertised type does not specifically describe the returned file URL.
+    static let yueduLogFile = UTType(
+        exportedAs: "app.yuedu.log-file",
+        conformingTo: .data
+    )
+}
+
 /// Removes credentials from a diagnostic line before it can leave the device.
 ///
 /// The rules are deliberately blunt — over-redacting a log costs a little context,
@@ -72,16 +86,19 @@ struct DiagnosticReportBundle: Transferable {
     let session: DiagnosticSession
     let uncleanSessions: [DiagnosticSession]
 
+    static let exportedContentType = UTType.yueduLogFile
+
     static var transferRepresentation: some TransferRepresentation {
-        // `.data`, not `.plainText`, and this is the whole reason the export works.
+        // The concrete type conforms to `.data`, not `.plainText`, and this is the
+        // whole reason the export remains an attachment without breaking iOS 17.
         //
         // `public.plain-text` conforms to `public.text`, so a share target that accepts
         // text — QQ, WeChat, Messages — asks the item provider for the *string* instead
         // of the file, then chops it into one message per chunk. A 3 MB log arrives as
-        // several hundred messages. Advertising only `public.data` leaves a receiver no
-        // text representation to take, so it has to accept the file. The name still ends
-        // in `.txt`, so saving it and opening it are unchanged.
-        FileRepresentation(exportedContentType: .data) { bundle in
+        // several hundred messages. `yueduLogFile` exposes no text conformance, so the
+        // receiver has to accept the file. The name still ends in `.txt`, so saving it
+        // and opening it are unchanged.
+        FileRepresentation(exportedContentType: exportedContentType) { bundle in
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent(bundle.filename)
             try Data(bundle.render().utf8).write(to: url, options: .atomic)

@@ -26,6 +26,28 @@ enum ModernParserBridgeError: LocalizedError {
 /// when switching sources.
 class ModernParserBridge {
 
+    /// Diagnostic representation of a source variable that never includes its
+    /// values. Plain tokens/JWTs and JSON secrets must not reach exported logs.
+    nonisolated static func sourceVariableLogSummary(_ raw: String?) -> String {
+        guard let raw else { return "not configured" }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "not configured" }
+
+        var shape = "plain"
+        if let data = trimmed.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) {
+            if let dictionary = object as? [String: Any] {
+                let keys = dictionary.keys.sorted().joined(separator: ",")
+                shape = keys.isEmpty ? "json object" : "json object keys=[\(keys)]"
+            } else if object is [Any] {
+                shape = "json array"
+            } else {
+                shape = "json scalar"
+            }
+        }
+        return "configured; \(shape); length=\(trimmed.count)"
+    }
+
     private let jsEngineLock = NSLock()
     private var _jsEngine: JSCoreEngine?
 
@@ -1320,7 +1342,9 @@ class ModernParserBridge {
         // ⟐ contentJS — diagnose 段评-on infinite-loading: if "done" never logs the
         // ruleContent JS (getComments→ajaxAll) hung; if it logs empty the JS returned
         // nothing; if it logs content+0 bubbles the comment injection silently failed.
-        let paraState = BookSourceRuntimeStateStore.shared.sourceVariableJSON(for: source.bookSourceUrl) ?? ""
+        let paraState = BookSourceRuntimeStateStore.shared.sourceVariableJSON(
+            for: source.bookSourceUrl
+        )
         if source.bookSourceName.contains("书山聚合") {
             let yunpara = sourceRuleData.getVariable(key: "yunpara")
             NSLog(
@@ -1334,7 +1358,7 @@ class ModernParserBridge {
         }
         AppLogger.parse("⟐ contentJS start", context: [
             "title": chapterRef?.title ?? "",
-            "vars": String(paraState.prefix(160))
+            "vars": Self.sourceVariableLogSummary(paraState)
         ])
         // Source-scoped diagnostic probe for 同人小说网. It observes the source's own existing
         // getComments boundary without changing its arguments or return value, and is restored
@@ -1592,9 +1616,11 @@ class ModernParserBridge {
         }
         _dbgLog("聚合/JS 搜尋", data: [
             "source": source.bookSourceName,
-            "变量": String(
-                (BookSourceRuntimeStateStore.shared
-                    .sourceVariableJSON(for: source.bookSourceUrl) ?? "(空)").prefix(300)),
+            "变量": Self.sourceVariableLogSummary(
+                BookSourceRuntimeStateStore.shared.sourceVariableJSON(
+                    for: source.bookSourceUrl
+                )
+            ),
             "搜索参数": Self.searchParamsPreview(from: finalUrl),
         ], hyp: "S1")
         // #endregion
@@ -1615,9 +1641,11 @@ class ModernParserBridge {
         // #region agent log
         _dbgLog("聚合/JS 搜尋", data: [
             "source": source.bookSourceName,
-            "变量": String(
-                (BookSourceRuntimeStateStore.shared
-                    .sourceVariableJSON(for: source.bookSourceUrl) ?? "(空)").prefix(300)),
+            "变量": Self.sourceVariableLogSummary(
+                BookSourceRuntimeStateStore.shared.sourceVariableJSON(
+                    for: source.bookSourceUrl
+                )
+            ),
             "搜索参数": Self.searchParamsPreview(from: finalUrl),
         ], hyp: "S1")
         // #endregion

@@ -101,6 +101,25 @@ struct DismissalSequencedPresentationTests {
         #expect(sequence.consumeAfterDismissal() == nil)
     }
 
+    @Test("RSS top-menu routes cover every presenting export and sheet action")
+    func rssTopMenuRoutesCoverAllActions() {
+        #expect(
+            Set(RSSHomeActionRoute.allCases) == Set<RSSHomeActionRoute>([
+                .markAllRead,
+                .toggleHideRead,
+                .organize,
+                .exportOPML,
+                .exportJSON,
+                .settings,
+            ])
+        )
+
+        var sequence = DismissalSequencedPresentation<RSSHomeActionRoute>()
+        sequence.select(.exportOPML)
+        #expect(sequence.consumeAfterDismissal() == .exportOPML)
+        #expect(sequence.consumeAfterDismissal() == nil)
+    }
+
     /// 現代's book card is a popover, and a popover that is still dismissing drops the sheet its
     /// action asks for — 聽書 slid the card back into the cover thumbnail and never showed the TTS
     /// panel. The tap must only record the route; the popover's dismissal opens it.

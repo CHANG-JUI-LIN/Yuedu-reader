@@ -33,11 +33,13 @@ struct AllBookSourcesLiveRegressionTests {
         let discoverBookCount: Int?
         let chapterCount: Int?
         let contentLength: Int?
+        let reviewMarkerCount: Int?
+        let reviewStatus: String
         let elapsedSeconds: Double
     }
 
     @Test(
-        "every local source completes search, detail, toc, and first chapter",
+        "every non-comic local source completes discover, detail, toc, chapter, and review sampling",
         .enabled(if: isEnabled, "Set RUN_ALL_SOURCE_LIVE_TESTS=1 to run the real-network corpus"),
         .timeLimit(.minutes(60))
     )
@@ -63,6 +65,7 @@ struct AllBookSourcesLiveRegressionTests {
         )
         .filter { fileURL in
             fileURL.pathExtension.lowercased() == "json"
+                && !Self.isExcludedComicCollection(fileURL)
                 && (fileFilters.isEmpty || fileFilters.contains {
                     fileURL.lastPathComponent.contains($0)
                 })
@@ -114,37 +117,11 @@ struct AllBookSourcesLiveRegressionTests {
             var discoverBookCount: Int?
             var chapterCount: Int?
             var contentLength: Int?
+            var reviewMarkerCount: Int?
+            var reviewStatus = sourceDeclaresReviews(source) ? "not reached" : "not declared"
             var currentStage = "discover"
             var discoveredSearchSeed: String?
-            var discoverFailure: String?
             var resolvedSearchQuery = ""
-
-            if isExcludedComicCollection(entry.0) {
-                results.append(makeResult(
-                    fileURL: entry.0,
-                    index: entry.1,
-                    source: source,
-                    searchQuery: "",
-                    status: "excluded",
-                    stage: "scope",
-                    detail: "excluded comic collection",
-                    searchCount: nil,
-                    discoverCategoryCount: nil,
-                    discoverBookCount: nil,
-                    chapterCount: nil,
-                    contentLength: nil,
-                    started: started
-                ))
-                print("\(prefix) EXCLUDED comic collection")
-                writeReport(
-                    results,
-                    corpusPath: corpusPath,
-                    expectedCount: corpus.count,
-                    currentFile: nil,
-                    currentSource: nil
-                )
-                continue
-            }
 
             do {
                 if source.enabledExplore,
@@ -153,11 +130,14 @@ struct AllBookSourcesLiveRegressionTests {
                     discoverCategoryCount = items.count
                     var discoveredBooks: [OnlineBook] = []
                     var attemptErrors: [String] = []
+                    var attemptSummaries: [String] = []
                     for item in items.filter({
                         !(($0.url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }).prefix(3) {
+                    }).prefix(12) {
                         do {
                             let books = try await fetcher.discoverBooks(from: item, in: source)
+                            let title = String((item.title ?? "untitled").prefix(40))
+                            attemptSummaries.append("\(title)=\(books.count)")
                             if discoveredBooks.isEmpty, !books.isEmpty {
                                 discoveredBooks = books
                             }
@@ -172,11 +152,37 @@ struct AllBookSourcesLiveRegressionTests {
                     )?.name
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     if items.isEmpty {
-                        discoverFailure = "no categories"
+                        let recorded = SourceAPIErrorLog.shared.last(
+                            for: source.bookSourceUrl
+                        )?.displayText
+                        throw StageFailure(
+                            stage: "discover",
+                            detail: recorded.map { "no categories; \($0)" } ?? "no categories"
+                        )
                     } else if discoveredBooks.isEmpty {
-                        discoverFailure = attemptErrors.isEmpty
-                            ? "categories returned no books"
-                            : "categories returned no books: \(attemptErrors.joined(separator: " | "))"
+                        let recorded = SourceAPIErrorLog.shared.last(
+                            for: source.bookSourceUrl
+                        )?.displayText
+                        var details = ["categories returned no books"]
+                        if !attemptSummaries.isEmpty {
+                            details.append("attempts \(attemptSummaries.joined(separator: ", "))")
+                        } else {
+                            let labels = items.compactMap { item -> String? in
+                                let title = (item.title ?? "").trimmingCharacters(
+                                    in: .whitespacesAndNewlines
+                                )
+                                return title.isEmpty ? nil : String(title.prefix(80))
+                            }
+                            if !labels.isEmpty {
+                                details.append("items \(labels.prefix(4).joined(separator: " | "))")
+                            }
+                        }
+                        if !attemptErrors.isEmpty {
+                            details.append(attemptErrors.joined(separator: " | "))
+                        }
+                        if let recorded { details.append(recorded) }
+                        let detail = details.joined(separator: "; ")
+                        throw StageFailure(stage: "discover", detail: detail)
                     }
                 }
 
@@ -231,22 +237,48 @@ struct AllBookSourcesLiveRegressionTests {
                 }
 
                 currentStage = "chapter"
+                let bookID = UUID()
+                defer { fetcher.clearAllChapterCache(bookId: bookID) }
                 let package = try await fetcher.fetchChapterPackage(
                     ref: chapter,
-                    bookId: UUID(),
+                    bookId: bookID,
                     source: source,
                     chapterReferer: tocURL
                 )
                 contentLength = package.content
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                     .count
-                guard (contentLength ?? 0) > 0 else {
-                    throw StageFailure(stage: "chapter", detail: "empty content")
+                guard (contentLength ?? 0) >= 20 else {
+                    let shortResult = package.content
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let suffix = shortResult.isEmpty
+                        ? "empty"
+                        : "short result=\(String(shortResult.prefix(40)))"
+                    throw StageFailure(
+                        stage: "chapter",
+                        detail: "content too short (\(contentLength ?? 0)); \(suffix)"
+                    )
                 }
 
-                let detailMessage = discoverFailure.map {
-                    "ok; optional discover warning: \($0)"
-                } ?? "ok"
+                currentStage = "review"
+                if let normalizedHTML = fetcher.loadNormalizedChapterHTMLSync(
+                    bookId: bookID,
+                    chapterIndex: chapter.index,
+                    expectedSourceURL: chapter.url,
+                    expectedTOCTitle: chapter.title
+                ) {
+                    reviewMarkerCount = normalizedHTML
+                        .components(separatedBy: "ydreview://").count - 1
+                    reviewStatus = (reviewMarkerCount ?? 0) > 0
+                        ? "markers present"
+                        : (sourceDeclaresReviews(source)
+                            ? "no markers in sampled chapter"
+                            : "not declared")
+                } else {
+                    reviewStatus = sourceDeclaresReviews(source)
+                        ? "normalized chapter unavailable"
+                        : "not declared"
+                }
 
                 results.append(makeResult(
                     fileURL: entry.0,
@@ -255,18 +287,21 @@ struct AllBookSourcesLiveRegressionTests {
                     searchQuery: resolvedSearchQuery,
                     status: "passed",
                     stage: "complete",
-                    detail: detailMessage,
+                    detail: "ok; review=\(reviewStatus)",
                     searchCount: searchCount,
                     discoverCategoryCount: discoverCategoryCount,
                     discoverBookCount: discoverBookCount,
                     chapterCount: chapterCount,
                     contentLength: contentLength,
+                    reviewMarkerCount: reviewMarkerCount,
+                    reviewStatus: reviewStatus,
                     started: started
                 ))
                 print(
                     "\(prefix) PASS query=\(resolvedSearchQuery) search=\(searchCount ?? 0) "
                         + "discover=\(discoverCategoryCount ?? 0)/\(discoverBookCount ?? 0) "
-                        + "toc=\(chapterCount ?? 0) content=\(contentLength ?? 0)"
+                        + "toc=\(chapterCount ?? 0) content=\(contentLength ?? 0) "
+                        + "review=\(reviewStatus)/\(reviewMarkerCount ?? 0)"
                 )
             } catch let failure as StageFailure {
                 let status = classifiedFailureStatus(
@@ -285,6 +320,8 @@ struct AllBookSourcesLiveRegressionTests {
                     discoverBookCount: discoverBookCount,
                     chapterCount: chapterCount,
                     contentLength: contentLength,
+                    reviewMarkerCount: reviewMarkerCount,
+                    reviewStatus: reviewStatus,
                     started: started
                 ))
                 print("\(prefix) \(status.uppercased()) stage=\(failure.stage) detail=\(failure.detail)")
@@ -307,6 +344,8 @@ struct AllBookSourcesLiveRegressionTests {
                     discoverBookCount: discoverBookCount,
                     chapterCount: chapterCount,
                     contentLength: contentLength,
+                    reviewMarkerCount: reviewMarkerCount,
+                    reviewStatus: reviewStatus,
                     started: started
                 ))
                 print("\(prefix) \(status.uppercased()) stage=\(stage) detail=\(detail)")
@@ -372,6 +411,8 @@ struct AllBookSourcesLiveRegressionTests {
         discoverBookCount: Int?,
         chapterCount: Int?,
         contentLength: Int?,
+        reviewMarkerCount: Int?,
+        reviewStatus: String,
         started: Date
     ) -> Result {
         Result(
@@ -388,6 +429,8 @@ struct AllBookSourcesLiveRegressionTests {
             discoverBookCount: discoverBookCount,
             chapterCount: chapterCount,
             contentLength: contentLength,
+            reviewMarkerCount: reviewMarkerCount,
+            reviewStatus: reviewStatus,
             elapsedSeconds: Date().timeIntervalSince(started)
         )
     }
@@ -424,8 +467,21 @@ struct AllBookSourcesLiveRegressionTests {
         return String((components.string ?? value).prefix(160))
     }
 
-    private func isExcludedComicCollection(_ fileURL: URL) -> Bool {
+    private static func isExcludedComicCollection(_ fileURL: URL) -> Bool {
         fileURL.lastPathComponent == "35个漫画源.json"
+    }
+
+    private func sourceDeclaresReviews(_ source: BookSource) -> Bool {
+        let contract = [
+            source.bookSourceGroup,
+            source.bookSourceComment,
+            source.loginUi,
+            source.jsLib,
+            source.ruleContent.content,
+        ].joined(separator: "\n").lowercased()
+        return ["段评", "段評", "章评", "章評", "comment", "review", "bubble"].contains {
+            contract.contains($0)
+        }
     }
 
     /// Keep environment/prerequisite failures visible in the report without
@@ -436,16 +492,34 @@ struct AllBookSourcesLiveRegressionTests {
         source: BookSource, stage: String, detail: String
     ) -> String {
         let normalized = detail.lowercased()
-        let loginContract = (source.loginUi + "\n" + source.loginUrl + "\n" + source.header)
+        let loginContract = (
+            source.loginUi + "\n" + source.loginUrl + "\n" + source.header + "\n"
+                + source.variableComment + "\n" + source.bookSourceComment
+        )
             .lowercased()
         let declaresTokenOrAccount = [
             "token", "授权令牌", "授權令牌", "password", "账号", "帳號", "登录", "登入",
         ].contains { loginContract.contains($0) }
         let authenticationFailure = [
             "http error 401", "http 401", "unauthorized", "not logged in",
-            "未登录", "未登錄", "token expired", "invalid token",
+            "未登录", "未登錄", "token expired", "invalid token", "invalid jwt", "无效jwt",
         ].contains { normalized.contains($0) }
         if declaresTokenOrAccount && authenticationFailure {
+            return "missingPrerequisite"
+        }
+        if declaresTokenOrAccount,
+           stage == "discover",
+           normalized.contains("categories returned no books") {
+            return "missingPrerequisite"
+        }
+        if declaresTokenOrAccount,
+           stage == "search",
+           normalized.contains("no usable result") {
+            return "missingPrerequisite"
+        }
+        if declaresTokenOrAccount,
+           stage == "chapter",
+           (normalized.contains("content too short") || normalized.contains("empty content")) {
             return "missingPrerequisite"
         }
 
@@ -459,6 +533,7 @@ struct AllBookSourcesLiveRegressionTests {
         let verifiedUpstreamFailure = [
             "cloudflare 52", "bad gateway", "gateway timeout", "http error 500",
             "http error 502", "http error 503", "http error 504", "http error 522",
+            "http 403", "http error 403",
         ].contains { normalized.contains($0) }
         if verifiedUpstreamFailure {
             return "upstreamFailure"

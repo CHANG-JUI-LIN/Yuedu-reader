@@ -14,16 +14,19 @@ struct BookSourceDebugExportFile: Transferable {
     let filename: String
     let entries: [WebCrawlerDebugger.LogEntry]
 
+    static let exportedContentType = UTType.yueduLogFile
+
     static var transferRepresentation: some TransferRepresentation {
-        // `.data`, not `.plainText`, and this is the whole reason the export works.
+        // The concrete type conforms to `.data`, not `.plainText`, and this is the
+        // whole reason the export remains an attachment without breaking iOS 17.
         //
         // `public.plain-text` conforms to `public.text`, so a share target that accepts
         // text — QQ, WeChat, Messages — asks the item provider for the *string* instead
         // of the file, then chops it into one message per chunk. A 3 MB log arrives as
-        // several hundred messages. Advertising only `public.data` leaves a receiver no
-        // text representation to take, so it has to accept the file. The name still ends
-        // in `.txt`, so saving it and opening it are unchanged.
-        FileRepresentation(exportedContentType: .data) { file in
+        // several hundred messages. `yueduLogFile` exposes no text conformance, so the
+        // receiver has to accept the file. The name still ends in `.txt`, so saving it
+        // and opening it are unchanged.
+        FileRepresentation(exportedContentType: exportedContentType) { file in
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent(file.filename)
             try Data(file.render().utf8).write(to: url, options: .atomic)

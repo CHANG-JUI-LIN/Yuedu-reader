@@ -6,9 +6,9 @@ import UniformTypeIdentifiers
 ///
 /// Shared through `ShareLink` rather than `.fileExporter` on purpose: a document picker opened
 /// from a SwiftUI `Menu` action hits the iOS 17 menu-dismissal race documented in
-/// `Technotes/iOS17MenuModalPresentation.md`, and the only workaround already in this repo for
-/// that combination is an `asyncAfter` delay, which this project bans. 「儲存到檔案」 is also one
-/// tap inside the share sheet.
+/// `Technotes/iOS17MenuModalPresentation.md`. The app sequences that boundary from the real
+/// chooser dismissal instead of guessing a delay. 「儲存到檔案」 is also one tap inside the
+/// share sheet.
 ///
 /// `ShareLink` does NOT escape that race, though — this comment used to claim UIKit ownership
 /// removed the boundary, and 匯出書源 was reported dead on iOS 17.7 because of it. The share

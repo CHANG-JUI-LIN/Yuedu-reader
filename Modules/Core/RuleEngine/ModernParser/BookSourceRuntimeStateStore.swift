@@ -1,6 +1,18 @@
 import CryptoKit
 import Foundation
 
+extension Notification.Name {
+    /// Posted only after a user-facing source-variable editor saves a change.
+    ///
+    /// Rule JS also calls `source.setVariable(...)` while discover/content is
+    /// running. Broadcasting those internal writes would cancel and restart the
+    /// same discover evaluation indefinitely, so runtime bridges continue to use
+    /// `setSourceVariableJSON` while editors use `setUserSourceVariableJSON`.
+    static let bookSourceUserVariableDidChange = Notification.Name(
+        "bookSourceUserVariableDidChange"
+    )
+}
+
 /// Persistent runtime state owned by an imported Legado book source.
 ///
 /// Source variables are intentionally kept outside `BookSource`: imported rule
@@ -34,6 +46,20 @@ final class BookSourceRuntimeStateStore: @unchecked Sendable {
             }
             defaults.set(json, forKey: storageKey)
         }
+    }
+
+    /// Persists a source variable entered by the user and tells live consumers
+    /// to invalidate their source-scoped presentation state.
+    func setUserSourceVariableJSON(_ json: String?, for sourceUrl: String) {
+        let previous = sourceVariableJSON(for: sourceUrl)
+        setSourceVariableJSON(json, for: sourceUrl)
+        let current = sourceVariableJSON(for: sourceUrl)
+        guard previous != current else { return }
+        NotificationCenter.default.post(
+            name: .bookSourceUserVariableDidChange,
+            object: nil,
+            userInfo: ["sourceURL": sourceUrl]
+        )
     }
 
     /// Parsed `source.setVariable(...)` payload for this source.

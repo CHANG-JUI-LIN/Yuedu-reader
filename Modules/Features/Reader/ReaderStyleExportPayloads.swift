@@ -6,16 +6,15 @@ import UniformTypeIdentifiers
 /// 匯出閱讀設定 — AirDrop, 訊息 and 儲存到「檔案」 all come out of the one share sheet.
 ///
 /// `ShareLink` rather than `.fileExporter` for the reason recorded in
-/// `Technotes/iOS17MenuModalPresentation.md`. Both exports live in a ⋯ menu on a
-/// page pushed inside 閱讀設定, which is itself a presented sheet: that is two of
-/// the three boundaries iOS 17 can drop a document-picker presentation across.
-/// UIKit owns the share sheet's presentation, so there is no second presentation
-/// to sequence.
+/// `Technotes/iOS17MenuModalPresentation.md`. These links stay as direct Form rows
+/// on pages pushed inside 閱讀設定. Moving them into a `Menu` would make the share
+/// sheet race that menu's dismissal on iOS 17; replacing them with `.fileExporter`
+/// would also add a document-picker presentation under the settings sheet.
 ///
 /// Each payload carries only the cheap value snapshot; the archive — which reads
 /// image assets off disk and zips them — is built inside the transfer closure.
-/// Menu content is built together with its row, so building megabytes eagerly
-/// would run on every layout pass.
+/// SwiftUI can rebuild the visible export row repeatedly, so building megabytes
+/// eagerly would run on every layout pass.
 enum ReaderStyleExportFilename {
     /// Turns a label into a safe `.yuedustyle` filename. Rule and preset names
     /// are user-entered and can arrive from an imported file, so they can carry

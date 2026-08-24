@@ -213,6 +213,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     /// Per-source content-image decryptor (Legado `ruleContent.imageDecode`),
     /// applied to downloaded image bytes before decoding. nil for most sources.
     private let imageDecode: (@Sendable (Data, String) -> Data?)?
+    /// The book source's request headers (UA/Referer/cookies), sent with every remote
+    /// chapter image — same map the cover and comic-page loaders already use. Empty for
+    /// EPUB/local books, which have no source.
+    private let imageHeaders: [String: String]
 
     init(
         provider: any BookContentProvider,
@@ -220,7 +224,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         resourceProvider: (any BookResourceProvider)? = nil,
         chapterSourceHrefs: [String?] = [],
         fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
-        imageDecode: (@Sendable (Data, String) -> Data?)? = nil
+        imageDecode: (@Sendable (Data, String) -> Data?)? = nil,
+        imageHeaders: [String: String] = [:]
     ) {
         self.provider = provider
         self.renderSize = renderSize
@@ -229,6 +234,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             EPUBStyleResolver(resourceProvider: $0, fontRegistrationService: fontRegistrationService)
         }
         self.imageDecode = imageDecode
+        self.imageHeaders = imageHeaders
         if chapterSourceHrefs.count == provider.totalChapters {
             self.chapterSourceHrefs = chapterSourceHrefs
         } else {
@@ -370,6 +376,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             src: cleaned,
             renderWidth: renderWidth,
             bodyPointSize: bodyPointSize,
+            headers: imageHeaders,
             decode: imageDecode
         ) {
             return onlineImage

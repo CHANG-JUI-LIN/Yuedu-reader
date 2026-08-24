@@ -83,6 +83,15 @@ It must not be launched from a still-dismissing `Menu` on iOS 17. 診斷與回�
 non-presenting actions in the toolbar menu; 主題 keeps per-theme export in the theme
 editor rather than the grid's context menu.
 
+Log attachments also need a concrete exported content type. `DiagnosticReportBundle`
+and `BookSourceDebugExportFile` use `UTType.yueduLogFile`, declared in `Info.plist` as
+`app.yuedu.log-file` with `public.data` conformance and the `txt` extension. Do not use
+the abstract `UTType.data` for their `FileRepresentation`: iOS 17 can fail to resolve
+that generic representation as the returned file URL. Do not switch back to
+`UTType.plainText` either; its `public.text` conformance lets chat targets request the
+payload as a string and split a large log into hundreds of messages. The concrete type
+keeps the payload file-only while preserving the readable `.txt` filename.
+
 `MenuShareLinkPresentationPolicy` covers the shares that have to stay in a menu
 because the menu is the row's only affordance. Before iOS 18 the menu row becomes a
 plain `Button` that hands a `PendingShareExport` to the screen, and the screen shows
@@ -102,6 +111,12 @@ Both sequenced flows use an event boundary, not a guessed duration:
 1. Store the selected route.
 2. Dismiss the current menu chooser or reader-settings sheet.
 3. Consume and present the route from that presenter's `onDismiss`.
+
+RSS uses the same rule in both directions. Its iOS 17 top action chooser opens
+OPML/JSON exporters only from the chooser sheet's `onDismiss`. Its OPML import
+sheet stores the file result or downloaded data, dismisses, and lets
+`RSSListView` consume that payload from the import sheet's `onDismiss`; it does
+not delay the parent callback by a guessed fraction of a second.
 
 Never replace this sequence with `DispatchQueue.main.asyncAfter`, `Task.sleep`,
 or a retry. Timing values vary by device, accessibility settings, animation

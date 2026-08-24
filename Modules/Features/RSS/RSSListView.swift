@@ -10,6 +10,20 @@ private enum RSSAddPresentationRoute: Hashable {
     case refresh
 }
 
+enum RSSHomeActionRoute: Hashable, CaseIterable {
+    case markAllRead
+    case toggleHideRead
+    case organize
+    case exportOPML
+    case exportJSON
+    case settings
+}
+
+private enum RSSOPMLDeferredImport {
+    case file(Result<[URL], Error>)
+    case data(Data)
+}
+
 struct RSSListView: View {
     @StateObject private var store = RSSStore.shared
     @ObservedObject private var gs = GlobalSettings.shared
@@ -42,6 +56,10 @@ struct RSSListView: View {
     @State private var showLegacyAddChooser = false
     @State private var legacyAddSequence =
         DismissalSequencedPresentation<RSSAddPresentationRoute>()
+    @State private var showLegacyTopActionChooser = false
+    @State private var legacyTopActionSequence =
+        DismissalSequencedPresentation<RSSHomeActionRoute>()
+    @State private var pendingOPMLImport: RSSOPMLDeferredImport?
 
     private var folders: [RSSFolder] {
         store.orderedFolders()
@@ -92,25 +110,7 @@ struct RSSListView: View {
                 #endif
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    RSSHomeTopMenu(
-                        hideReadFeeds: hideReadFeeds,
-                        hasSources: !store.sources.isEmpty,
-                        hasUnreadArticles: store.totalUnreadCount() > 0,
-                        onToggleHideRead: { hideReadFeeds.toggle() },
-                        onMarkAllRead: { store.markAllRead() },
-                        onOrganize: { showOrganize = true },
-                        onExportOPML: {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                showOPMLExporter = true
-                            }
-                        },
-                        onExportJSON: {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                showJSONExporter = true
-                            }
-                        },
-                        onSettings: { showSettings = true }
-                    )
+                    rssTopToolbarControl
                 }
             }
             .refreshable {
@@ -160,6 +160,57 @@ struct RSSListView: View {
                     )
                 }
             }
+            .sheet(
+                isPresented: $showLegacyTopActionChooser,
+                onDismiss: presentLegacyTopActionAfterChooserDismissal
+            ) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(
+                        title: localized("更多"),
+                        actions: [
+                            DismissalSequencedAction(
+                                route: .markAllRead,
+                                title: localized("標記全部已讀"),
+                                systemImage: "checkmark.circle",
+                                isEnabled: store.totalUnreadCount() > 0
+                            ),
+                            DismissalSequencedAction(
+                                route: .toggleHideRead,
+                                title: hideReadFeeds
+                                    ? localized("顯示已讀訂閱")
+                                    : localized("隱藏已讀訂閱"),
+                                systemImage: hideReadFeeds
+                                    ? "line.3.horizontal.decrease.circle.fill"
+                                    : "line.3.horizontal.decrease.circle"
+                            ),
+                            DismissalSequencedAction(
+                                route: .organize,
+                                title: localized("整理訂閱"),
+                                systemImage: "arrow.up.arrow.down",
+                                isEnabled: !store.sources.isEmpty
+                            ),
+                            DismissalSequencedAction(
+                                route: .exportOPML,
+                                title: localized("匯出 OPML"),
+                                systemImage: "square.and.arrow.up",
+                                isEnabled: !store.sources.isEmpty
+                            ),
+                            DismissalSequencedAction(
+                                route: .exportJSON,
+                                title: localized("匯出 Legado JSON"),
+                                systemImage: "doc.badge.arrow.up",
+                                isEnabled: !store.sources.isEmpty
+                            ),
+                            DismissalSequencedAction(
+                                route: .settings,
+                                title: localized("設定"),
+                                systemImage: "gearshape"
+                            ),
+                        ],
+                        onSelect: { legacyTopActionSequence.select($0) }
+                    )
+                }
+            }
             .sheet(isPresented: $showAddSheet) {
                 AddRSSSourceSheet(
                     isPresented: $showAddSheet,
@@ -174,12 +225,19 @@ struct RSSListView: View {
             .sheet(isPresented: $showJSONURLSheet) {
                 ImportLegadoJSONURLSheet(isPresented: $showJSONURLSheet, store: store)
             }
-            .sheet(isPresented: $showOPMLImportSheet) {
+            .sheet(
+                isPresented: $showOPMLImportSheet,
+                onDismiss: presentPendingOPMLImportAfterSheetDismissal
+            ) {
                 RSSOPMLImportSheet(
                     isPresented: $showOPMLImportSheet,
-                    onFileCompletion: importOPML,
+                    onFileCompletion: { result in
+                        pendingOPMLImport = .file(result)
+                        showOPMLImportSheet = false
+                    },
                     onDataImport: { data in
-                        importOPMLData(data)
+                        pendingOPMLImport = .data(data)
+                        showOPMLImportSheet = false
                     }
                 )
             }
@@ -647,6 +705,31 @@ struct RSSListView: View {
         }
     }
 
+    @ViewBuilder
+    private var rssTopToolbarControl: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                legacyTopActionSequence.cancel()
+                showLegacyTopActionChooser = true
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .accessibilityLabel(localized("更多"))
+        } else {
+            RSSHomeTopMenu(
+                hideReadFeeds: hideReadFeeds,
+                hasSources: !store.sources.isEmpty,
+                hasUnreadArticles: store.totalUnreadCount() > 0,
+                onToggleHideRead: { hideReadFeeds.toggle() },
+                onMarkAllRead: { store.markAllRead() },
+                onOrganize: { showOrganize = true },
+                onExportOPML: { showOPMLExporter = true },
+                onExportJSON: { showJSONExporter = true },
+                onSettings: { showSettings = true }
+            )
+        }
+    }
+
     private func presentLegacyAddActionAfterChooserDismissal() {
         guard let route = legacyAddSequence.consumeAfterDismissal() else {
             return
@@ -662,6 +745,37 @@ struct RSSListView: View {
             showJSONImporter = true
         case .refresh:
             Task { await refreshAllSources() }
+        }
+    }
+
+    private func presentLegacyTopActionAfterChooserDismissal() {
+        guard let route = legacyTopActionSequence.consumeAfterDismissal() else {
+            return
+        }
+        switch route {
+        case .markAllRead:
+            store.markAllRead()
+        case .toggleHideRead:
+            hideReadFeeds.toggle()
+        case .organize:
+            showOrganize = true
+        case .exportOPML:
+            showOPMLExporter = true
+        case .exportJSON:
+            showJSONExporter = true
+        case .settings:
+            showSettings = true
+        }
+    }
+
+    private func presentPendingOPMLImportAfterSheetDismissal() {
+        guard let pendingOPMLImport else { return }
+        self.pendingOPMLImport = nil
+        switch pendingOPMLImport {
+        case .file(let result):
+            importOPML(result)
+        case .data(let data):
+            importOPMLData(data)
         }
     }
 }
@@ -1006,10 +1120,7 @@ private struct RSSOPMLImportSheet: View {
                 allowedContentTypes: opmlContentTypes,
                 allowsMultipleSelection: false
             ) { result in
-                isPresented = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    onFileCompletion(result)
-                }
+                onFileCompletion(result)
             }
         }
     }
@@ -1035,10 +1146,7 @@ private struct RSSOPMLImportSheet: View {
                 throw URLError(.badServerResponse)
             }
 
-            isPresented = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                onDataImport(data)
-            }
+            onDataImport(data)
         } catch {
             message = "❌ \(String(format: localized("OPML 匯入失敗：%@"), error.localizedDescription))"
             showMessage = true

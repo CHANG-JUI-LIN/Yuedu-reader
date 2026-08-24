@@ -216,15 +216,27 @@ extension ReaderView {
         // Per-source content-image decryptor (Legado `ruleContent.imageDecode`):
         // only sources declaring the rule pay anything; the closure runs the
         // source's JS over downloaded image bytes.
+        let bookSource = book.bookSourceId.flatMap { sourceId in
+            BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+        }
         var imageDecode: (@Sendable (Data, String) -> Data?)? = nil
-        if let sourceId = book.bookSourceId,
-           let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId }),
+        if let source = bookSource,
            !source.ruleContent.imageDecode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let ruleJs = source.ruleContent.imageDecode
             imageDecode = { data, src in
                 SourceImageDecoder.decode(data, src: src, ruleJs: ruleJs, source: source)
             }
         }
+        // In-chapter illustrations belong to the source's own CDN, which gates on the source's
+        // headers exactly like its cover art does — same header map the cover and comic-page
+        // loaders build, so an online book has one answer for "how do I fetch this source's
+        // images". Without it 幻梦轻小说's 插图 chapters came back 403 and rendered blank.
+        let imageHeaders = bookSource.map { source in
+            BookCoverLoader.headers(
+                sourceBaseURL: source.bookSourceUrl,
+                sourceHeaders: source.parsedHeaders
+            )
+        } ?? [:]
 
         epubRenderer.loadWithProvider(
             contentProvider: bundle.provider,
@@ -232,7 +244,8 @@ extension ReaderView {
             bookIdentifier: bundle.bookIdentifier,
             renderSize: currentReaderRenderSize,
             settings: settings,
-            imageDecode: imageDecode
+            imageDecode: imageDecode,
+            imageHeaders: imageHeaders
         )
 
         currentPage = 0

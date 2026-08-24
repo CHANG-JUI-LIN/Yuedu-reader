@@ -76,6 +76,17 @@ struct ExploreHomeView: View {
                 // the pre-login category cache.
                 discover.reload(forceRefresh: true)
             }
+            .onReceive(
+                NotificationCenter.default.publisher(for: .bookSourceUserVariableDidChange)
+            ) { notification in
+                guard let sourceURL = notification.userInfo?["sourceURL"] as? String,
+                      discover.selectedSource?.bookSourceUrl == sourceURL else { return }
+                // A bare token is a valid Legado source variable. The previous
+                // discover snapshot may have been produced before it existed, so
+                // saving the editor must invalidate that live snapshot as well as
+                // the key-addressed category cache.
+                discover.reload(forceRefresh: true)
+            }
             .navigationDestination(isPresented: pushedSourceManagerBinding) {
                 BookSourceListView(embedsNavigationStack: false)
             }

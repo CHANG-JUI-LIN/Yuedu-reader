@@ -29,11 +29,16 @@ enum OnlineImageLoader {
     /// downloaded bytes before image decoding; nil result keeps the originals.
     /// `bodyPointSize`: the reader's body text size, used to scale source review cards
     /// (`ReviewCardSVGMetrics`); 0 keeps the plain column-width sizing.
+    /// `headers`: the book source's request header map (Legado `header`), applied to remote
+    /// fetches. Chapter illustrations live on the source's own CDN, and those CDNs gate on the
+    /// source's declared User-Agent/Referer just like cover art does — legado downloads them via
+    /// `AnalyzeUrl(src, source = bookSource)` for exactly this reason. Empty = built-in UA.
     static func load(
         src: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
         timeout: TimeInterval = 8,
+        headers: [String: String] = [:],
         decode: (@Sendable (Data, String) -> Data?)? = nil
     ) async -> UIImage? {
         let cleaned = cleanImageSource(src)
@@ -54,6 +59,7 @@ enum OnlineImageLoader {
                 cleaned,
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
+                headers: headers,
                 decode: decode
             )
         }
@@ -72,6 +78,7 @@ enum OnlineImageLoader {
         _ cleaned: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
+        headers: [String: String] = [:],
         decode: (@Sendable (Data, String) -> Data?)? = nil
     ) async -> UIImage? {
         if cleaned.hasPrefix("data:") {
@@ -87,6 +94,7 @@ enum OnlineImageLoader {
                 cleaned,
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
+                headers: headers,
                 decode: decode
             )
         }
@@ -191,6 +199,7 @@ enum OnlineImageLoader {
         _ urlString: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
+        headers: [String: String] = [:],
         decode: (@Sendable (Data, String) -> Data?)? = nil
     ) async -> UIImage? {
         guard let url = URL(string: urlString) else { return nil }
@@ -202,14 +211,33 @@ enum OnlineImageLoader {
             "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
             forHTTPHeaderField: "User-Agent"
         )
+        // The source's own headers win over the built-in UA: illustration CDNs treat the
+        // source's declared User-Agent as a pass token (幻梦轻小说's ends in a bogus
+        // `Safari/537.36.3022`, and only that exact string clears its Cloudflare rule).
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
         let started = Date()
-        AppLogger.render("⟐ imgLoad http start", context: ["url": String(urlString.prefix(90))])
-        guard let (data, _) = try? await URLSession.shared.data(for: request), !data.isEmpty else {
+        AppLogger.render("⟐ imgLoad http start", context: [
+            "url": String(urlString.prefix(90)),
+            "srcHeaders": headers.count
+        ])
+        guard let (data, response) = try? await URLSession.shared.data(for: request), !data.isEmpty else {
             AppLogger.render("⟐ imgLoad http FAIL", context: [
                 "url": String(urlString.prefix(90)),
                 "ms": Int(Date().timeIntervalSince(started) * 1000)
             ])
             return nil
+        }
+        // A hotlink/bot wall answers 403 with an HTML body, which decodes to no image and is
+        // otherwise indistinguishable from a broken URL. Name it, so "插图不显示" is one log away.
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            AppLogger.render("⟐ imgLoad http status", context: [
+                "url": String(urlString.prefix(90)),
+                "status": http.statusCode,
+                "srcHeaders": headers.count,
+                "bytes": data.count
+            ])
         }
         let ms = Int(Date().timeIntervalSince(started) * 1000)
         if ms > 1000 {
@@ -243,22 +271,22 @@ enum OnlineImageLoader {
     ) async -> UIImage? {
         let column = renderWidth > 0 ? renderWidth : UIScreen.main.bounds.width
         // A source review card (神评论 / 本章说 / 作者说) draws its prose in viewBox units, so the
-        // width we rasterize at IS its text size. Sizing it off the column makes the same card
-        // read at ~13pt on an iPhone and ~38pt in an iPad landscape column; size it off the
-        // reader's own body text instead. Anything that isn't a card keeps the column width.
-        let width = ReviewCardSVGMetrics.textCard(in: svg).map {
-            ReviewCardSVGMetrics.preferredWidth(
-                for: $0,
-                bodyPointSize: bodyPointSize,
-                columnWidth: column
-            )
-        } ?? column
+        // width we rasterize at IS its text size. Left alone, the same card reads at ~13pt on an
+        // iPhone and ~35pt in an iPad column. It stays full-width — the card is a banner — and
+        // instead gets a wider canvas, which is what pulls its text back down to the reader's own
+        // body size. Anything that isn't a card is rasterized exactly as before.
+        let drawn = ReviewCardSVGMetrics.reshapedForColumn(
+            svg: svg,
+            bodyPointSize: bodyPointSize,
+            columnWidth: column,
+            path: "img-data-uri"
+        ) ?? svg
         let size = SVGWebViewRasterizer.shared.resolveSVGSize(
             styleWidth: nil,
             styleHeight: nil,
-            svgString: svg,
-            renderWidth: width
+            svgString: drawn,
+            renderWidth: column
         )
-        return await SVGWebViewRasterizer.shared.render(svgString: svg, size: size, baseURL: baseURL)
+        return await SVGWebViewRasterizer.shared.render(svgString: drawn, size: size, baseURL: baseURL)
     }
 }
