@@ -2195,6 +2195,9 @@
 "朗讀因連續取得失敗而停止" = "Speech stopped after repeated segment failures";
 "聽書因系統語音中斷而停止" = "Speech stopped: the system voice was cut off";
 "網頁登入" = "Web sign-in";
+"電腦版網頁" = "Desktop site";
+"開啟" = "On";
+"網站只給手機版下載頁時改用電腦版" = "Use when the site only serves a mobile download page";
 "在 %@ 登入後，Cookie 會自動帶進朗讀請求。" = "Sign in at %@ and the cookie is sent with every speech request.";
 "聽書停止：下一段沒有可朗讀的內容" = "Speech stopped: the next passage had nothing to read";
 

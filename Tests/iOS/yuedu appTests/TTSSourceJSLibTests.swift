@@ -150,6 +150,32 @@ struct TTSSourceJSLibTests {
         }
     }
 
+    /// 納米AI signs its own request: `zm-ua = md5(User-Agent)` folded into `zm-token`, with that
+    /// same User-Agent sent alongside. A stored one overwriting it would sign under one identity
+    /// and ask under another, which is a 110001 the server is right to return.
+    @Test("a header the rule set itself is never overwritten by the stored one")
+    func ruleHeadersOutrankStoredHeaders() async throws {
+        let source = ImportedTTSSource(
+            name: "自己簽名的語音源",
+            urlTemplate: "@js:'https://tts.test/say,' + JSON.stringify({method:'GET',headers:{'User-Agent':'RuleAgent/1.0','X-Signed-For':'RuleAgent/1.0'}})",
+            sourceID: "tts-self-signed"
+        )
+        try await withTTSSource(source) {
+            LoginManager.shared.storeLoginHeaders(
+                sourceUrl: source.id,
+                headers: ["User-Agent": "StoredAgent/9.9", "Cookie": "sid=abc"]
+            )
+            _ = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+
+            let request = try #require(TTSJSLibTestURLProtocol.lastRequest)
+            // The rule's own identity survives, so its signature still matches.
+            #expect(request.value(forHTTPHeaderField: "User-Agent") == "RuleAgent/1.0")
+            #expect(request.value(forHTTPHeaderField: "X-Signed-For") == "RuleAgent/1.0")
+            // Anything the rule left unset is still filled in from the stored login.
+            #expect(request.value(forHTTPHeaderField: "Cookie") == "sid=abc")
+        }
+    }
+
     /// A header the rule's own JS sets during this evaluation is fresher than the stored one.
     @Test("a header put by the rule overrides the stored one")
     func ruleHeaderWinsOverStoredHeader() async throws {

@@ -16,11 +16,20 @@ struct SourceLoginWebView: View {
 /// cookie sync routine running inside the Coordinator.
     @StateObject private var bridge = LoginWebBridge()
     @State private var isSyncing = false
+    /// Some sites answer a phone user-agent with an app-download page and no way to sign in at
+    /// all — bot.n.cn (纳米AI TTS's `loginUrl`) is one, so its 网页登录 mode was unreachable from
+    /// here however the rest of the plumbing behaved. The desktop identity is a user's escape
+    /// hatch from that, not a default: a phone UA is still the right first try.
+    @State private var usesDesktopSite = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                SourceLoginWebViewRepresentable(login: login, bridge: bridge)
+                SourceLoginWebViewRepresentable(
+                    login: login,
+                    usesDesktopSite: usesDesktopSite,
+                    bridge: bridge
+                )
                     .edgesIgnoringSafeArea(.bottom)
                     .overlay(alignment: .top) {
                         // md3's `LinearProgressIndicator` — visible while the page loads.
@@ -42,6 +51,16 @@ struct SourceLoginWebView: View {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel(localized("取消"))
+                    .disabled(isSyncing)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Toggle(isOn: $usesDesktopSite) {
+                        Image(systemName: usesDesktopSite ? "desktopcomputer" : "iphone")
+                    }
+                    .toggleStyle(.button)
+                    .accessibilityLabel(localized("電腦版網頁"))
+                    .accessibilityValue(usesDesktopSite ? localized("開啟") : localized("關閉"))
+                    .accessibilityHint(localized("網站只給手機版下載頁時改用電腦版"))
                     .disabled(isSyncing)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -86,7 +105,19 @@ final class LoginWebBridge: ObservableObject {
 
 struct SourceLoginWebViewRepresentable: UIViewRepresentable {
     let login: SourceWebLogin
+    let usesDesktopSite: Bool
     let bridge: LoginWebBridge
+
+    /// Matches what the sites themselves expect to see; 纳米AI's own rule falls back to a
+    /// Windows Chrome identity when the user pastes a cookie by hand, which is the same shape.
+    static let phoneUserAgent =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    static let desktopUserAgent =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+
+    static func userAgent(desktop: Bool) -> String {
+        desktop ? desktopUserAgent : phoneUserAgent
+    }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -100,8 +131,7 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
         context.coordinator.clipboardBridge.install(in: config.userContentController)
 
         let wv = WKWebView(frame: .zero, configuration: config)
-        wv.customUserAgent =
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        wv.customUserAgent = Self.userAgent(desktop: usesDesktopSite)
         wv.navigationDelegate = context.coordinator
         wv.uiDelegate = context.coordinator.uiDelegate  // weak on WKWebView
 
@@ -120,7 +150,15 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
         return wv
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    /// Switching identity means reloading — the page the site already served was chosen for the
+    /// previous one. Guarded so an unrelated SwiftUI update never reloads the page out from under
+    /// a half-finished sign-in.
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        let wanted = Self.userAgent(desktop: usesDesktopSite)
+        guard uiView.customUserAgent != wanted else { return }
+        uiView.customUserAgent = wanted
+        uiView.reload()
+    }
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
         coordinator.clipboardBridge.remove(from: uiView.configuration.userContentController)
@@ -169,6 +207,11 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
         /// into CookieStore, HTTPCookieStorage, and LoginManager. Calls `completion`
         /// after the async cookie fetch completes.
         func syncCookies(from webView: WKWebView, completion: (() -> Void)?) {
+            // The identity the session was established under. A site that hands out a cookie to a
+            // desktop browser and then sees a phone asking with it is entitled to refuse, so the
+            // user-agent travels with the cookie rather than being left to whatever the request
+            // path happens to send.
+            let userAgent = webView.customUserAgent
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [login] cookies in
                 guard !cookies.isEmpty else { completion?(); return }
 
@@ -187,6 +230,9 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
                 //    request by `CustomHTTPProvider.buildJSRequestOrThrow`.
                 var headers = LoginManager.shared.getLoginHeaders(sourceUrl: login.storageKey)
                 headers["Cookie"] = cookieString
+                if let userAgent, !userAgent.isEmpty {
+                    headers["User-Agent"] = userAgent
+                }
                 LoginManager.shared.storeLoginHeaders(
                     sourceUrl: login.storageKey, headers: headers
                 )

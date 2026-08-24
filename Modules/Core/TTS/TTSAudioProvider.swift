@@ -779,12 +779,20 @@ final class CustomHTTPProvider: TTSAudioProvider {
 
         // Login state reaches the request as headers, exactly like Legado's
         // `AnalyzeUrl(hasLoginHeader: true)` → `BaseSource.getHeaderMap` → `getLoginHeaderMap()`.
-        // The stored header goes on first; anything the rule's own JS put there during this
-        // evaluation is fresher and wins.
+        //
+        // Stored headers only FILL IN what the rule did not set. The rule signs its own request:
+        // 纳米AI computes `zm-ua = md5(User-Agent)` and folds it into `zm-token`, then sends that
+        // User-Agent alongside. Letting a stored one overwrite it would sign under one identity
+        // and ask under another — a signature the server is right to reject. The stored
+        // user-agent is there for the opposite case, a rule that sets none and relies on the
+        // session captured by the web login.
         var mutableRequest = request
-        for (field, value) in LoginManager.shared.getLoginHeaders(sourceUrl: sourceId) {
+        for (field, value) in LoginManager.shared.getLoginHeaders(sourceUrl: sourceId)
+        where mutableRequest.value(forHTTPHeaderField: field) == nil {
             mutableRequest.setValue(value, forHTTPHeaderField: field)
         }
+        // `putLoginHeader` ran during THIS evaluation, so it is the rule's own current answer and
+        // outranks both (小米MiMo mints its `api-key` header this way).
         for (field, value) in loginHeaders {
             mutableRequest.setValue(value, forHTTPHeaderField: field)
         }
