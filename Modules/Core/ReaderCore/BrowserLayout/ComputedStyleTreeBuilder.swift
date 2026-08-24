@@ -206,6 +206,9 @@ final class ComputedStyleTreeBuilder {
         var style = parent.inherited(from: parent)
         let ua = UserAgentStyle.basis(for: element.tagName().lowercased())
         style = style.applyingUA(ua)
+        if element.tagName().lowercased() == "rt" {
+            style.fontSize = parent.fontSize * 0.5
+        }
 
         let ctx = ApplyContext(parent: parent, rootFontSize: rootFontSize, textColor: textColor, backgroundColor: backgroundColor, configFontFamilies: configFontFamilies)
 
@@ -384,6 +387,12 @@ enum ComputedStylePropertyApplier {
             case "pre-line": style.whiteSpace = .preLine
             default: break
             }
+        case "ruby-align", "-epub-ruby-align", "-webkit-ruby-align":
+            style.rubyAlign = RubyAlignment.parse(value)
+        case "ruby-position", "-epub-ruby-position", "-webkit-ruby-position":
+            style.rubyPosition = RubyPosition.parse(value)
+        case "ruby-merge", "-epub-ruby-merge", "-webkit-ruby-merge":
+            style.rubyMerge = RubyMerge.parse(value)
         case "width": if let l = CSSLengthResolver.parse(value) { style.width = l }
         case "height": if let l = CSSLengthResolver.parse(value) { style.height = l }
         case "max-width": if let l = CSSLengthResolver.parse(value) { style.maxWidth = l }

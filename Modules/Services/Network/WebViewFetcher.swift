@@ -139,8 +139,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         let wv = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: config)
         wv.navigationDelegate = self
-        wv.customUserAgent =
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        wv.customUserAgent = SourceWebIdentity.phoneUserAgent
         return wv
     }
 

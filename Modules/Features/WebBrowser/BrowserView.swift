@@ -392,6 +392,9 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var hasPage = false
     @Published var hasEnoughContent = false
     @Published var hasTOC = false
+    /// Whether the page is being asked for as a desktop browser. Per session, not persisted: it is
+    /// an escape hatch for one stubborn site, not a global preference.
+    @Published var usesDesktopSite = false
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -403,8 +406,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
         super.init()
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.customUserAgent =
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        webView.customUserAgent = SourceWebIdentity.phoneUserAgent
     }
 
     func load(_ raw: String) {
@@ -423,9 +425,32 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
     }
 
     func loadEngine(_ engine: SearchEngine) { load(engine.startURL) }
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        preferences: WKWebpagePreferences,
+        decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+    ) {
+        // Per navigation, so a redirect or a followed link stays in the mode the user chose.
+        preferences.preferredContentMode = SourceWebIdentity.contentMode(desktop: usesDesktopSite)
+        preferences.allowsContentJavaScript = true
+        decisionHandler(.allow, preferences)
+    }
+
     func goBack() { webView.goBack() }
     func goForward() { webView.goForward() }
     func reload() { webView.reload() }
+
+    /// Re-asks the site as a desktop browser. Some sites answer a phone with an app-download page
+    /// and nothing else — bot.n.cn is one — which left this browser with no way through.
+    /// `SourceWebIdentity` widens the layout viewport as well as changing identity; swapping only
+    /// the user-agent delivers desktop HTML into a phone-width viewport and is worse than useless.
+    func setDesktopSite(_ desktop: Bool) {
+        guard usesDesktopSite != desktop else { return }
+        usesDesktopSite = desktop
+        SourceWebIdentity.apply(desktop: desktop, to: webView)
+        webView.reload()
+    }
 
     // MARK: - Extract content directly from the current WebView
 
@@ -935,6 +960,19 @@ struct BrowserView: View {
                 Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise")
                     .font(DSFont.fixed(size: 15)).foregroundColor(.secondary)
             }
+
+            Button {
+                browser.setDesktopSite(!browser.usesDesktopSite)
+            } label: {
+                Image(systemName: browser.usesDesktopSite ? "desktopcomputer" : "iphone")
+                    .font(DSFont.fixed(size: 15))
+                    .foregroundColor(browser.usesDesktopSite ? DSColor.accent : .secondary)
+            }
+            .accessibilityLabel(localized("電腦版網頁"))
+            .accessibilityValue(
+                browser.usesDesktopSite ? localized("開啟") : localized("關閉")
+            )
+            .accessibilityHint(localized("網站只給手機版下載頁時改用電腦版"))
         }
         .frame(maxWidth: browserContentMaxWidth)
         .padding(.horizontal, 12).padding(.vertical, 8)

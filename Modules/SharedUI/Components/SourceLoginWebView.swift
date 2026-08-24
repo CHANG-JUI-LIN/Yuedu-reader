@@ -64,6 +64,15 @@ struct SourceLoginWebView: View {
                     .disabled(isSyncing)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        bridge.reload?()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel(localized("重新整理"))
+                    .disabled(isSyncing)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     if isSyncing {
                         ProgressView().scaleEffect(0.85)
                     } else {
@@ -97,6 +106,9 @@ final class LoginWebBridge: ObservableObject {
     /// Set by the Coordinator after the WKWebView is created.
     /// Calling it triggers a full cookie sync and then invokes `completion`.
     var syncCookiesAndDismiss: ((@escaping () -> Void) -> Void)?
+    /// Reloads the page. A sign-in flow that stalls, a captcha that expired, or a site that
+    /// half-loaded has no other way back without abandoning the sheet and starting over.
+    var reload: (() -> Void)?
     /// 0…1 while the page loads; 1 (hidden) once loaded.
     @Published var progress: Double = 0
 }
@@ -108,15 +120,8 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
     let usesDesktopSite: Bool
     let bridge: LoginWebBridge
 
-    /// Matches what the sites themselves expect to see; 纳米AI's own rule falls back to a
-    /// Windows Chrome identity when the user pastes a cookie by hand, which is the same shape.
-    static let phoneUserAgent =
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-    static let desktopUserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
-
-    static func userAgent(desktop: Bool) -> String {
-        desktop ? desktopUserAgent : phoneUserAgent
+    static func userAgent(desktop: Bool) -> String? {
+        SourceWebIdentity.userAgent(desktop: desktop)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -124,6 +129,7 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
         config.websiteDataStore = .default()
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
+        prefs.preferredContentMode = SourceWebIdentity.contentMode(desktop: usesDesktopSite)
         config.defaultWebpagePreferences = prefs
         // Same reason as JsBridgeBrowserView: a widget that opens its own window
         // (captcha / OAuth) is blocked before the UI delegate is consulted.
@@ -132,6 +138,7 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
 
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.customUserAgent = Self.userAgent(desktop: usesDesktopSite)
+        context.coordinator.usesDesktopSite = usesDesktopSite
         wv.navigationDelegate = context.coordinator
         wv.uiDelegate = context.coordinator.uiDelegate  // weak on WKWebView
 
@@ -145,18 +152,20 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
             guard let wv = coordinator.webView else { completion(); return }
             coordinator.syncCookies(from: wv, completion: completion)
         }
+        bridge.reload = { [weak coordinator] in coordinator?.webView?.reload() }
 
         wv.load(URLRequest(url: login.url))
         return wv
     }
 
     /// Switching identity means reloading — the page the site already served was chosen for the
-    /// previous one. Guarded so an unrelated SwiftUI update never reloads the page out from under
-    /// a half-finished sign-in.
+    /// previous one. Guarded on the coordinator's own record rather than on `customUserAgent`,
+    /// which is nil in desktop mode and so cannot distinguish the two. Without the guard an
+    /// unrelated SwiftUI update would reload the page out from under a half-finished sign-in.
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        let wanted = Self.userAgent(desktop: usesDesktopSite)
-        guard uiView.customUserAgent != wanted else { return }
-        uiView.customUserAgent = wanted
+        guard context.coordinator.usesDesktopSite != usesDesktopSite else { return }
+        context.coordinator.usesDesktopSite = usesDesktopSite
+        SourceWebIdentity.apply(desktop: usesDesktopSite, to: uiView)
         uiView.reload()
     }
 
@@ -170,6 +179,9 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         private let login: SourceWebLogin
+        /// Mirrors the SwiftUI toggle so each navigation is decided in the right content mode,
+        /// and so `updateUIView` can tell a real switch from any other view update.
+        var usesDesktopSite = false
         /// Weak reference set in makeUIView; used by the bridge closure.
         weak var webView: WKWebView?
         /// Strongly held: `WKWebView.uiDelegate` is weak.
@@ -190,6 +202,20 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
                     bridge?.progress = wv.estimatedProgress
                 }
             }
+        }
+
+        /// Content mode is per navigation: a redirect, or a link the sign-in flow follows, must
+        /// stay in the mode the user chose instead of reverting to the configuration default.
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            preferences: WKWebpagePreferences,
+            decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+        ) {
+            preferences.preferredContentMode =
+                SourceWebIdentity.contentMode(desktop: usesDesktopSite)
+            preferences.allowsContentJavaScript = true
+            decisionHandler(.allow, preferences)
         }
 
         /// Intermediate sync on each page load — catches non-Cloudflare cookies early.

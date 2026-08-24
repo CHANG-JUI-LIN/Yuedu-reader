@@ -123,6 +123,9 @@ struct ComputedStyle: Equatable {
     var textAlign: NSTextAlignment = .natural
     var lineHeight: CGFloat?            // nil = normal (ascent/descent)
     var whiteSpace: WhiteSpaceMode = .normal
+    var rubyAlign: RubyAlignment = .center
+    var rubyPosition: RubyPosition = .over
+    var rubyMerge: RubyMerge = .separate
 
     // Box model (specified)
     var width: CSSLength = .auto
@@ -174,7 +177,7 @@ struct ComputedStyle: Equatable {
 
 extension ComputedStyle {
     func inherited(from parent: ComputedStyle) -> ComputedStyle {
-        ComputedStyle(
+        var style = ComputedStyle(
             fontSize: parent.fontSize,
             fontFamilies: parent.fontFamilies,
             fontWeight: parent.fontWeight,
@@ -185,6 +188,10 @@ extension ComputedStyle {
             lineHeight: parent.lineHeight,
             whiteSpace: parent.whiteSpace
         )
+        style.rubyAlign = parent.rubyAlign
+        style.rubyPosition = parent.rubyPosition
+        style.rubyMerge = parent.rubyMerge
+        return style
     }
 }
 
@@ -199,7 +206,8 @@ enum UserAgentStyle {
              "li", "dl", "dt", "dd", "hr", "pre", "address", "form", "fieldset":
             style.display = .block
         case "span", "a", "em", "i", "strong", "b", "u", "s", "small", "code",
-             "q", "cite", "mark", "time", "sub", "sup", "abbr", "label", "br":
+             "q", "cite", "mark", "time", "sub", "sup", "abbr", "label", "br",
+             "ruby", "rt", "rp":
             style.display = .inline
             if tag == "em" || tag == "i" { style.isItalic = true }
             if tag == "strong" || tag == "b" { style.fontWeight = 700 }

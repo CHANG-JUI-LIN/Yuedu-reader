@@ -69,6 +69,25 @@ struct SourceWebLoginTests {
         }
     }
 
+    // MARK: - Requesting the desktop site
+
+    /// bot.n.cn answers a phone with an app-download page, so 纳米AI's 网页登录 mode had no
+    /// reachable entry. The first version of the toggle only swapped the user-agent string, which
+    /// delivered desktop HTML into a phone-width viewport — the page rendered, and nothing on it
+    /// could be used. Desktop mode must hand the decision to WebKit instead.
+    @Test("desktop mode sets no user-agent, so WebKit supplies the matching one")
+    func desktopModeDefersToWebKit() {
+        #expect(SourceLoginWebViewRepresentable.userAgent(desktop: true) == nil)
+    }
+
+    @Test("phone mode keeps the explicit Safari identity")
+    func phoneModeKeepsItsUserAgent() {
+        let agent = SourceLoginWebViewRepresentable.userAgent(desktop: false)
+        // WebKit's own default omits the Version/… Safari/… tail that some sites gate on.
+        #expect(agent?.contains("iPhone") == true)
+        #expect(agent?.contains("Safari/") == true)
+    }
+
     // MARK: - Book sources keep their existing resolution
 
     @Test("a book source's plain loginUrl still wins")

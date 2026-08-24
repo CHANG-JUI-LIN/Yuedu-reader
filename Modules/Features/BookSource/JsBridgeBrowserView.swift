@@ -115,6 +115,16 @@ struct JsBridgeBrowserView: View {
                             .disabled(isSyncing)
                         }
                         ToolbarItem(placement: .navigationBarTrailing) {
+                            Button {
+                                bridge.reload?()
+                            } label: {
+                                Label(localized("重新整理"), systemImage: "arrow.clockwise")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .accessibilityLabel(localized("重新整理"))
+                            .disabled(isSyncing)
+                        }
+                        ToolbarItem(placement: .navigationBarTrailing) {
                             if isSyncing {
                                 ProgressView().scaleEffect(0.85)
                             } else {
@@ -475,8 +485,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         }
 
         let wv = WKWebView(frame: .zero, configuration: config)
-        wv.customUserAgent =
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        wv.customUserAgent = SourceWebIdentity.phoneUserAgent
         wv.navigationDelegate = context.coordinator
         // `uiDelegate` is weak — the Coordinator owns it. Without it the page's
         // `window.open` / `alert` / `confirm` are dropped without a trace.
