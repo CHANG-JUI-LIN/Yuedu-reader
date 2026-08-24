@@ -1187,6 +1187,14 @@ enum ReaderHTMLUtilities {
             cleanedTag = markImageAsTextSized(cleanedTag)
         }
 
+        // Same reason, different payload: a Legado `headers` option belongs to the image's own
+        // request (a CDN wanting its own Referer), and deleting the suffix threw it away. Move it
+        // onto the src as a fragment instead — see `OnlineImageRequestOptions`.
+        cleanedTag = carryingImageRequestHeaders(
+            cleanedTag,
+            headers: OnlineImageRequestOptions.headers(fromOptionSuffix: suffix)
+        )
+
         let isQidianFullReview = clickStyle == "full" && isQidianSource(reviewContext)
 
         // 起点中文的神评是 a bare `<svg><text>…</text></svg>` with `style:"FULL"`. It has no
@@ -1401,6 +1409,33 @@ enum ReaderHTMLUtilities {
         var result = tag
         result.replaceSubrange(r, with: "<img data-yd-imgstyle=\"text\"")
         return result
+    }
+
+    /// Rewrites the tag's `src` so it carries the image's own request headers. No-op when the
+    /// option block declared none, which is every image but a handful across the source packs.
+    private static func carryingImageRequestHeaders(
+        _ tag: String,
+        headers: [String: String]
+    ) -> String {
+        guard !headers.isEmpty,
+              let regex = try? NSRegularExpression(
+                pattern: #"(\bsrc\s*=\s*["'])([^"']*)(["'])"#,
+                options: .caseInsensitive
+              )
+        else { return tag }
+        let ns = tag as NSString
+        guard let match = regex.firstMatch(
+            in: tag,
+            range: NSRange(location: 0, length: ns.length)
+        ), match.numberOfRanges >= 4 else { return tag }
+
+        // Deliberately operating on the RAW attribute text: the fragment we append is base64url,
+        // so it needs no escaping and appending it leaves whatever entity escaping the source
+        // wrote (`&amp;` in a query string) exactly as it was.
+        let source = ns.substring(with: match.range(at: 2))
+        let encoded = OnlineImageRequestOptions.encoding(src: source, headers: headers)
+        guard encoded != source else { return tag }
+        return ns.replacingCharacters(in: match.range(at: 2), with: encoded)
     }
 
     private static func legadoClickConfigMatch(in text: String) -> NSTextCheckingResult? {

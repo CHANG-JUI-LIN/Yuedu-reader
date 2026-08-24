@@ -245,7 +245,10 @@ extension ReaderView {
             renderSize: currentReaderRenderSize,
             settings: settings,
             imageDecode: imageDecode,
-            imageHeaders: imageHeaders
+            imageHeaders: imageHeaders,
+            // Illustrations offline download already fetched. Keyed by book id, not by the
+            // provider's bookIdentifier, because that is what the downloader writes under.
+            imageCacheDirectory: OfflineStorageRoots.live.textImagesDirectory(bookId: book.id)
         )
 
         currentPage = 0

@@ -86,8 +86,9 @@ struct ChapterCommentCardRasterTests {
     }
 
     /// The card is authored 1080 units wide with 42-unit text, i.e. ~3.9% of its own width.
-    /// Rasterizing that at an iPad landscape column made its text ~40pt against 20pt prose;
-    /// it must come back sized so the card's own text lands on the reader's body size instead.
+    /// Rasterizing that at an iPad landscape column made its text ~40pt against 20pt prose.
+    /// The card stays a full-width banner; its *canvas* is widened until the card's own text
+    /// lands on the reader's body size.
     @Test("a wide column no longer blows the card's text up")
     func cardIsSizedByReaderTextNotColumnWidth() async {
         let uri = cardDataURI()
@@ -97,16 +98,16 @@ struct ChapterCommentCardRasterTests {
         let image = await OnlineImageLoader.load(
             src: uri, renderWidth: column, bodyPointSize: bodyPointSize, timeout: 12
         )
-        let card = ReviewCardSVGMetrics.textCard(in: cardSVG())
+        let reshaped = ReviewCardSVGMetrics.reshapedForColumn(
+            svg: cardSVG(), bodyPointSize: bodyPointSize, columnWidth: column, path: "test"
+        )
+        let card = reshaped.flatMap { ReviewCardSVGMetrics.textCard(in: $0) }
         #expect(card != nil)
         guard let image, let card else { return }
 
-        let expected = ReviewCardSVGMetrics.preferredWidth(
-            for: card, bodyPointSize: bodyPointSize, columnWidth: column
-        )
-        #expect(abs(image.size.width - expected) < 4.0)
-        #expect(image.size.width < column)
-        // The card's own body text now measures the reader's body size.
+        // Still drawn across the whole column…
+        #expect(abs(image.size.width - column) < 4.0)
+        // …and the card's own body text now measures the reader's body size.
         #expect(abs(image.size.width * card.textFraction - bodyPointSize) < 1.0)
     }
 

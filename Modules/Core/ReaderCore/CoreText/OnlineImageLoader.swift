@@ -1,3 +1,4 @@
+import ImageIO
 import UIKit
 
 /// Loads chapter images for ONLINE book sources.
@@ -43,6 +44,13 @@ enum OnlineImageLoader {
     ) async -> UIImage? {
         let cleaned = cleanImageSource(src)
         guard !cleaned.isEmpty else { return nil }
+        // A Legado per-image `headers` option rides on the src as a fragment (the chapter
+        // sanitizer had to move it off the tag). It wins over the source-wide map, exactly as
+        // `AnalyzeUrl` merges url options over `source.getHeaderMap()` — and as the comic page
+        // loader already does with the same option.
+        let effectiveHeaders = headers.merging(OnlineImageRequestOptions.decode(src).headers) {
+            _, perImage in perImage
+        }
 
         let seq = nextSeq()
         let kind = cleaned.hasPrefix("data:")
@@ -59,7 +67,7 @@ enum OnlineImageLoader {
                 cleaned,
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
-                headers: headers,
+                headers: effectiveHeaders,
                 decode: decode
             )
         }
@@ -128,8 +136,11 @@ enum OnlineImageLoader {
 
     /// Strips a trailing Legado `,{json}` click-config suffix that may survive into an image
     /// source, leaving a clean data URI / URL. (base64 + percent-encoding never contain `,{`.)
+    /// Also drops the per-image header fragment (`OnlineImageRequestOptions`), so what comes back
+    /// is always the URL to actually request — every caller wants that, headers or not.
     static func cleanImageSource(_ src: String) -> String {
-        var s = src.trimmingCharacters(in: .whitespacesAndNewlines)
+        var s = OnlineImageRequestOptions.decode(src).src
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasSuffix("}"), let r = s.range(of: ",{", options: .backwards) {
             let suffix = s[r.lowerBound...]
             if suffix.contains("\"") || suffix.contains(":") {
@@ -191,7 +202,7 @@ enum OnlineImageLoader {
             )
         }
         let effectiveData = decode?(data, uri) ?? data
-        return UIImage(data: effectiveData)
+        return decodedImage(from: effectiveData)
     }
 
     /// Fetches a remote image. Falls back to SVG rasterization when the bytes are an SVG document.
@@ -246,7 +257,7 @@ enum OnlineImageLoader {
         // Per-source imageDecode (encrypted-image sources); falls back to the
         // raw bytes so a broken rule degrades instead of blanking the image.
         let effectiveData = decode?(data, urlString) ?? data
-        if let image = UIImage(data: effectiveData) { return image }
+        if let image = decodedImage(from: effectiveData) { return image }
         if let svg = String(data: effectiveData, encoding: .utf8), svg.contains("<svg") {
             // ⟐ bubble: REMOTE SVG bubbles never touch recognize() — they go straight to the
             // WebView rasterizer. If this fires for 光遇/企点, the native redraw can't help; the
@@ -260,6 +271,42 @@ enum OnlineImageLoader {
             )
         }
         return nil
+    }
+
+    /// Longest edge, in pixels, a chapter image is decoded at.
+    ///
+    /// Light-novel 插图 chapters ship print scans: the 青春豬頭少年 第一卷 插图 spread is
+    /// 5392×3542 (a 607KB JPEG that decodes to ~76MB), and a chapter holds a dozen of them.
+    /// The reader draws an illustration at column width — ~1170px on a 3x phone, ~1400px in an
+    /// iPad column — and the widest it is ever shown is the full-screen preview at 1x, ~2064px
+    /// on the largest iPad. 2048 covers every one of those at native resolution; only pinch-zoom
+    /// past 1x in the preview gets softer, the same trade the comic reader already makes
+    /// (`FixedPageImageLoader.maxRasterPixelWidth` = 2000). Covers have their own, much smaller
+    /// ceiling in `BookCoverLoader.decodedCover` — a cover slot is 140pt, an illustration is the
+    /// whole column.
+    private static let maxImagePixelSize = 2048
+
+    /// Decodes image bytes, downsampling anything above `maxImagePixelSize` and forcing the
+    /// decode here (already off the main thread) so drawing a page doesn't pay for it.
+    ///
+    /// Never upscales: `kCGImageSourceThumbnailMaxPixelSize` is a ceiling, so the 716×1023 plates
+    /// in the same chapter come back untouched. Bytes ImageIO can't open (a broken `imageDecode`
+    /// rule, say) fall back to `UIImage(data:)` so they degrade exactly as before.
+    static func decodedImage(from data: Data) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return UIImage(data: data)
+        }
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxImagePixelSize
+        ] as [CFString: Any] as CFDictionary
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+            return UIImage(data: data)
+        }
+        return UIImage(cgImage: cgImage)
     }
 
     @MainActor

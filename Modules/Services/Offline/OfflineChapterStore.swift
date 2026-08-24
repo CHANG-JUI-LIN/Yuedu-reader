@@ -19,6 +19,13 @@ struct OfflineStorageRoots: Sendable, Equatable {
         mangaRoot.appendingPathComponent(bookId.uuidString, isDirectory: true)
     }
 
+    /// Illustrations belonging to a prose book's chapters, keyed by URL — see
+    /// `OnlineImageDiskCache`. Lives INSIDE the text book directory so `removeBook`,
+    /// `storageByteCount` and the cache-management screen already account for it.
+    func textImagesDirectory(bookId: UUID) -> URL {
+        textBookDirectory(bookId: bookId).appendingPathComponent("images", isDirectory: true)
+    }
+
     func mangaChapterDirectory(bookId: UUID, chapterIndex: Int) -> URL {
         mangaBookDirectory(bookId: bookId)
             .appendingPathComponent(String(chapterIndex), isDirectory: true)
@@ -48,6 +55,14 @@ struct OfflineMangaChapterRequest: Equatable, Sendable {
     var chapterIndex: Int
     var chapterSourceURL: String
     var tocTitle: String
+    var images: [OfflineMangaImageRequest]
+}
+
+/// The illustrations of one PROSE chapter. Deliberately not a manga request: a manga page that
+/// fails to download is a broken chapter, an illustration that fails is a chapter with one picture
+/// missing — so these are downloaded best-effort and never gate the chapter's completion.
+struct OfflineTextImageRequest: Equatable, Sendable {
+    var bookId: UUID
     var images: [OfflineMangaImageRequest]
 }
 
@@ -127,6 +142,8 @@ protocol OfflineChapterStoring: Sendable {
         hasBookSource: Bool
     ) async -> OfflineChapterValidation
     func persistMangaImages(_ request: OfflineMangaChapterRequest) async throws
+    @discardableResult
+    func persistTextImages(_ request: OfflineTextImageRequest) async -> Int
     func removeBook(bookId: UUID) async throws
     func reconcileBook(
         bookId: UUID,
@@ -344,6 +361,72 @@ actor OfflineChapterStore: OfflineChapterStoring {
             try? fileManager.removeItem(at: committedDirectory)
             throw OfflineChapterStoreError.manifestValidation
         }
+    }
+
+    /// Downloads a prose chapter's illustrations into the book's image cache and returns how many
+    /// landed. Best effort by contract: a plate behind a dead link, a hotlink wall or a slow CDN
+    /// leaves the chapter downloaded and readable with that one picture missing — the alternative
+    /// (failing the chapter) would make one broken illustration re-queue the chapter forever.
+    /// Images already on disk are skipped, so re-running a download costs nothing.
+    @discardableResult
+    func persistTextImages(_ request: OfflineTextImageRequest) async -> Int {
+        guard !request.images.isEmpty else { return 0 }
+        let cache = OnlineImageDiskCache(
+            directory: roots.textImagesDirectory(bookId: request.bookId),
+            fileManager: fileManager
+        )
+        let pending = request.images.filter { !cache.contains($0.sourceURL) }
+        guard !pending.isEmpty else { return 0 }
+
+        var stored = 0
+        var failed = 0
+        // Same batch width as the manga path — enough to hide latency, not enough to look like a
+        // scraper to a CDN that rate-limits per IP.
+        for batchStart in stride(from: 0, to: pending.count, by: 4) {
+            if Task.isCancelled { break }
+            let batch = Array(pending[batchStart..<min(batchStart + 4, pending.count)])
+            let results = await withTaskGroup(of: (String, Data?).self) { group in
+                for image in batch {
+                    let downloader = imageDownloader
+                    group.addTask {
+                        guard let url = URL(string: image.sourceURL) else {
+                            return (image.sourceURL, nil)
+                        }
+                        var urlRequest = URLRequest(url: url, timeoutInterval: 30)
+                        for (key, value) in image.headers {
+                            urlRequest.setValue(value, forHTTPHeaderField: key)
+                        }
+                        guard let response = try? await downloader.response(for: urlRequest),
+                              (200...299).contains(response.statusCode),
+                              !response.data.isEmpty,
+                              Self.isSupportedImageData(response.data, mimeType: response.mimeType)
+                        else { return (image.sourceURL, nil) }
+                        return (image.sourceURL, response.data)
+                    }
+                }
+                var values: [(String, Data?)] = []
+                for await value in group { values.append(value) }
+                return values
+            }
+            for (sourceURL, data) in results {
+                guard let data else { failed += 1; continue }
+                do {
+                    try cache.write(data, for: sourceURL)
+                    stored += 1
+                } catch {
+                    failed += 1
+                }
+            }
+        }
+
+        AppLogger.parse("⟐ offline textImages", context: [
+            "book": request.bookId.uuidString,
+            "found": request.images.count,
+            "pending": pending.count,
+            "stored": stored,
+            "failed": failed
+        ])
+        return stored
     }
 
     func removeBook(bookId: UUID) async throws {

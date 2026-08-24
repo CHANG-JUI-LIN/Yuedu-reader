@@ -217,6 +217,9 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     /// chapter image — same map the cover and comic-page loaders already use. Empty for
     /// EPUB/local books, which have no source.
     private let imageHeaders: [String: String]
+    /// Where offline download put this book's illustrations. Checked before the network, so a
+    /// downloaded 插图 chapter reads on a plane — and a re-opened one doesn't re-fetch its plates.
+    private let imageCache: OnlineImageDiskCache?
 
     init(
         provider: any BookContentProvider,
@@ -225,7 +228,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         chapterSourceHrefs: [String?] = [],
         fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
         imageDecode: (@Sendable (Data, String) -> Data?)? = nil,
-        imageHeaders: [String: String] = [:]
+        imageHeaders: [String: String] = [:],
+        imageCacheDirectory: URL? = nil
     ) {
         self.provider = provider
         self.renderSize = renderSize
@@ -235,6 +239,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         }
         self.imageDecode = imageDecode
         self.imageHeaders = imageHeaders
+        self.imageCache = imageCacheDirectory.map { OnlineImageDiskCache(directory: $0) }
         if chapterSourceHrefs.count == provider.totalChapters {
             self.chapterSourceHrefs = chapterSourceHrefs
         } else {
@@ -372,8 +377,19 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         let cleaned = OnlineImageLoader.cleanImageSource(src)
         guard !cleaned.isEmpty else { return nil }
 
+        // Downloaded copy first: no request, no 8s timeout to wait out when there's no network.
+        // Bytes are stored exactly as the server sent them, so a source's `imageDecode` still has
+        // to run. A miss (or an SVG, which decodes to nil here) simply falls through to the fetch.
+        if let imageCache, let data = imageCache.data(for: cleaned) {
+            if let image = OnlineImageLoader.decodedImage(from: imageDecode?(data, cleaned) ?? data) {
+                return image
+            }
+        }
+
         if let onlineImage = await OnlineImageLoader.load(
-            src: cleaned,
+            // NOT `cleaned`: the raw src is what carries this image's own request headers
+            // (`OnlineImageRequestOptions`); the loader cleans it again on the way in.
+            src: src,
             renderWidth: renderWidth,
             bodyPointSize: bodyPointSize,
             headers: imageHeaders,

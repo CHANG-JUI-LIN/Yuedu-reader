@@ -426,6 +426,10 @@ private actor TestOfflineChapterStore: OfflineChapterStoring {
         await ledger.insert(request.chapterIndex)
     }
 
+    /// Prose illustrations are best effort and never gate a chapter, so the ledger — which is
+    /// what these tests assert completion against — deliberately ignores them.
+    func persistTextImages(_ request: OfflineTextImageRequest) async -> Int { 0 }
+
     func removeBook(bookId: UUID) async throws {
         await ledger.removeAll()
     }

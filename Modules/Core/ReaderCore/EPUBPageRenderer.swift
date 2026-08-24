@@ -511,7 +511,8 @@ final class EPUBPageRenderer: ObservableObject {
         settings: ReaderRenderSettings,
         customScheme: String = "reader-online",
         imageDecode: (@Sendable (Data, String) -> Data?)? = nil,
-        imageHeaders: [String: String] = [:]
+        imageHeaders: [String: String] = [:],
+        imageCacheDirectory: URL? = nil
     ) {
         let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
@@ -527,7 +528,8 @@ final class EPUBPageRenderer: ObservableObject {
             resourceProvider: resourceAdapter,
             chapterSourceHrefs: chapterSourceHrefs,
             imageDecode: imageDecode,
-            imageHeaders: imageHeaders
+            imageHeaders: imageHeaders,
+            imageCacheDirectory: imageCacheDirectory
         )
         let chapterDocumentStore = ChapterDocumentStore(builder: onlineBuilder)
         let newEngine = CoreTextPageEngine(

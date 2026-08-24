@@ -114,6 +114,79 @@ struct OnlineChapterImageHeaderTests {
         #expect(result.attributedString.string.contains("\u{FFFC}"))
     }
 
+    /// Live proof against the real CDN, off by default (needs network + the site up).
+    /// `RUN_HUANMENG_IMAGE_LIVE_TESTS=1` to run it.
+    @Test(
+        "LIVE: 幻梦轻小说 illustration loads only with the source's header map",
+        .enabled(if: ProcessInfo.processInfo.environment["RUN_HUANMENG_IMAGE_LIVE_TESTS"] == "1"
+                 || ProcessInfo.processInfo.environment["TEST_RUNNER_RUN_HUANMENG_IMAGE_LIVE_TESTS"] == "1")
+    )
+    func liveIllustrationNeedsSourceHeaders() async throws {
+        // 青春猪头少年不会梦到兔女郎学姊 · 第一卷 插图, first plate.
+        let src = "https://picture.302258.xyz/1/1614/54785/67547.jpg"
+        let headers = BookCoverLoader.headers(
+            sourceBaseURL: "https://www.huanmengacg.com",
+            sourceHeaders: ["User-Agent": Self.sourceUserAgent]
+        )
+
+        let withoutHeaders = await OnlineImageLoader.load(src: src, renderWidth: 360, timeout: 20)
+        let withHeaders = await OnlineImageLoader.load(
+            src: src, renderWidth: 360, timeout: 20, headers: headers
+        )
+
+        #expect(withoutHeaders == nil, "the built-in UA is 403'd by the CDN's Cloudflare rule")
+        #expect(withHeaders != nil)
+        if let withHeaders {
+            print("⟐TEST live illustration = \(Int(withHeaders.size.width))x\(Int(withHeaders.size.height))")
+        }
+    }
+
+    /// A PNG of exactly `size` in PIXELS — the renderer's default scale would silently make the
+    /// bitmap 2–3x the requested size, which is the number these tests assert on.
+    private static func pngData(pixels size: CGSize) -> Data {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).pngData { ctx in
+            UIColor.systemTeal.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    @Test("an oversized print scan is downsampled to the reader's ceiling")
+    func oversizedIllustrationIsDownsampled() async throws {
+        // Same shape as the 第一卷 插图 spread: far wider than any column or preview.
+        let big = Self.pngData(pixels: CGSize(width: 3000, height: 1971))
+        GatedImageCDNURLProtocol.reset(requiredUserAgent: nil, body: big)
+        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
+        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
+
+        let url = "https://\(UUID().uuidString).picture-cdn.invalid/spread.png"
+        let image = try #require(await OnlineImageLoader.load(src: url, renderWidth: 360))
+
+        #expect(max(image.size.width, image.size.height) == 2048)
+        // Aspect ratio survives: 3000:1971 → 2048:1345.
+        #expect(abs(image.size.height - 2048.0 * 1971.0 / 3000.0) < 2.0)
+    }
+
+    @Test("a plate already under the ceiling is never upscaled")
+    func smallIllustrationIsUntouched() async throws {
+        // 716x1023 — the size most plates in that chapter actually are.
+        let plate = Self.pngData(pixels: CGSize(width: 716, height: 1023))
+        GatedImageCDNURLProtocol.reset(requiredUserAgent: nil, body: plate)
+        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
+        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
+
+        let url = "https://\(UUID().uuidString).picture-cdn.invalid/plate.png"
+        let image = try #require(await OnlineImageLoader.load(src: url, renderWidth: 360))
+
+        #expect(image.size == CGSize(width: 716, height: 1023))
+    }
+
+    @Test("bytes ImageIO cannot open still degrade through UIImage(data:)")
+    func undecodableBytesFallBackToUIImage() {
+        #expect(OnlineImageLoader.decodedImage(from: Data("not an image".utf8)) == nil)
+    }
+
     @Test("source header JSON parses into the request header map")
     func sourceHeaderJSONParses() throws {
         var source = BookSource()
@@ -126,6 +199,58 @@ struct OnlineChapterImageHeaderTests {
         )
         #expect(headers["User-Agent"] == Self.sourceUserAgent)
         #expect(headers["Referer"] == "https://www.huanmengacg.com")
+    }
+
+    // MARK: - Legado per-image `headers` option
+
+    @Test("a per-image header option survives the chapter sanitizer")
+    func perImageHeadersSurviveSanitizing() throws {
+        let raw = #"<p><img src="https://cdn.example/1.jpg,{"headers":{"Referer":"https://plates.example/"}}"></p>"#
+        let sanitized = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(raw)
+
+        // The suffix itself must be gone — its inner quotes break SwiftSoup's attribute parsing.
+        #expect(!sanitized.contains(",{"))
+        let range = try #require(sanitized.range(of: #"(?<=src=")[^"]+"#, options: .regularExpression))
+        let decoded = OnlineImageRequestOptions.decode(String(sanitized[range]))
+        #expect(decoded.src == "https://cdn.example/1.jpg")
+        #expect(decoded.headers["Referer"] == "https://plates.example/")
+    }
+
+    @Test("an image's own headers win over the source's")
+    func perImageHeadersOverrideSourceHeaders() async throws {
+        GatedImageCDNURLProtocol.reset(requiredUserAgent: "per-image-ua", body: Self.pngData())
+        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
+        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
+
+        let src = OnlineImageRequestOptions.encoding(
+            src: "https://\(UUID().uuidString).picture-cdn.invalid/1.jpg",
+            headers: ["User-Agent": "per-image-ua"]
+        )
+        let image = await OnlineImageLoader.load(
+            src: src,
+            renderWidth: 320,
+            headers: ["User-Agent": "source-wide-ua", "Referer": "https://source.example/"]
+        )
+
+        #expect(image != nil)
+        #expect(GatedImageCDNURLProtocol.lastUserAgent == "per-image-ua")
+        // Source headers it does not override are still sent.
+        #expect(GatedImageCDNURLProtocol.lastReferer == "https://source.example/")
+        // The fragment must never reach the wire.
+        #expect(GatedImageCDNURLProtocol.lastPath?.contains("yd-imgh") == false)
+    }
+
+    @Test("an ordinary src is returned untouched by the option codec")
+    func plainSourcesAreUntouched() {
+        let plain = "https://cdn.example/a.jpg"
+        #expect(OnlineImageRequestOptions.encoding(src: plain, headers: [:]) == plain)
+        #expect(OnlineImageRequestOptions.decode(plain).src == plain)
+        #expect(OnlineImageRequestOptions.decode(plain).headers.isEmpty)
+        // A data: URI carries its bytes — there is no request to add headers to.
+        let dataURI = "data:image/png;base64,AAAA"
+        #expect(
+            OnlineImageRequestOptions.encoding(src: dataURI, headers: ["A": "b"]) == dataURI
+        )
     }
 }
 
@@ -159,6 +284,8 @@ private final class GatedImageCDNURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var required: String?
     nonisolated(unsafe) private static var payload = Data()
     nonisolated(unsafe) private static var storedUA: String?
+    nonisolated(unsafe) private static var storedReferer: String?
+    nonisolated(unsafe) private static var storedPath: String?
     nonisolated(unsafe) private static var storedStatus = 0
     nonisolated(unsafe) private static var requests = 0
     nonisolated(unsafe) private static var rejected = 0
@@ -168,6 +295,8 @@ private final class GatedImageCDNURLProtocol: URLProtocol {
         required = requiredUserAgent
         payload = body
         storedUA = nil
+        storedReferer = nil
+        storedPath = nil
         storedStatus = 0
         requests = 0
         rejected = 0
@@ -175,6 +304,8 @@ private final class GatedImageCDNURLProtocol: URLProtocol {
     }
 
     static var lastUserAgent: String? { lock.withLock { storedUA } }
+    static var lastReferer: String? { lock.withLock { storedReferer } }
+    static var lastPath: String? { lock.withLock { storedPath } }
     static var lastStatusCode: Int { lock.withLock { storedStatus } }
     static var requestCount: Int { lock.withLock { requests } }
     static var rejectedCount: Int { lock.withLock { rejected } }
@@ -187,8 +318,12 @@ private final class GatedImageCDNURLProtocol: URLProtocol {
 
     override func startLoading() {
         let ua = request.value(forHTTPHeaderField: "User-Agent")
+        let referer = request.value(forHTTPHeaderField: "Referer")
+        let path = request.url?.absoluteString
         let (status, body): (Int, Data) = Self.lock.withLock {
             Self.storedUA = ua
+            Self.storedReferer = referer
+            Self.storedPath = path
             Self.requests += 1
             if let required = Self.required, ua != required {
                 Self.rejected += 1

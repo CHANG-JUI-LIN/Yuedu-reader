@@ -575,6 +575,8 @@ private struct PreviewOfflineChapterStore: OfflineChapterStoring {
         throw PreviewStubError.unavailable
     }
 
+    func persistTextImages(_ request: OfflineTextImageRequest) async -> Int { 0 }
+
     func removeBook(bookId: UUID) async throws {}
 
     func reconcileBook(

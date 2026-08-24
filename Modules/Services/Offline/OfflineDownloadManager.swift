@@ -404,6 +404,21 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                         ) {
                             try await chapterStore.persistMangaImages(request)
                         }
+                    } else {
+                        // 插图 chapters of a light novel are prose chapters that happen to be all
+                        // pictures; without this a "downloaded" book still needed a connection to
+                        // show them. Best effort on purpose — see `persistTextImages`, and note it
+                        // is NOT part of `validationState`, so a missing plate never re-queues the
+                        // chapter.
+                        let request = await textImageRequest(book: book, package: package)
+                        if !request.images.isEmpty {
+                            await SourcePerfTrace.spanAsync(
+                                "offline.textImageCommit",
+                                book.title
+                            ) {
+                                _ = await chapterStore.persistTextImages(request)
+                            }
+                        }
                     }
                 }
 
@@ -594,13 +609,10 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         return .unknown
     }
 
-    private func mangaRequest(
-        book: ReadingBook,
-        chapterIndex: Int,
-        ref: OnlineChapterRef,
-        package: ChapterPackage
-    ) async -> OfflineMangaChapterRequest {
-        let defaultHeaders = await MainActor.run { () -> [String: String] in
+    /// The header map every image of `book` is fetched with — the source's own, exactly as the
+    /// cover loader and the reader build it.
+    private func sourceImageHeaders(for book: ReadingBook) async -> [String: String] {
+        await MainActor.run { () -> [String: String] in
             let source = book.bookSourceId.flatMap { id in
                 BookSourceStore.shared.sources.first { $0.id == id }
             }
@@ -609,6 +621,35 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                 sourceHeaders: source?.parsedHeaders ?? [:]
             )
         }
+    }
+
+    private func textImageRequest(
+        book: ReadingBook,
+        package: ChapterPackage
+    ) async -> OfflineTextImageRequest {
+        let defaultHeaders = await sourceImageHeaders(for: book)
+        // Same extraction the comic path uses — `<img>` srcs, http(s) only, `,{headers}` honoured.
+        // Prose chapters additionally carry per-image headers as a src fragment, because the
+        // sanitizer had to move them off the tag; decode those back before requesting.
+        let images = MangaChapterParser.parsedImages(from: package.content).map { image -> OfflineMangaImageRequest in
+            let decoded = OnlineImageRequestOptions.decode(image.url)
+            return OfflineMangaImageRequest(
+                sourceURL: decoded.src,
+                headers: defaultHeaders
+                    .merging(image.headers) { _, perImage in perImage }
+                    .merging(decoded.headers) { _, perImage in perImage }
+            )
+        }
+        return OfflineTextImageRequest(bookId: book.id, images: images)
+    }
+
+    private func mangaRequest(
+        book: ReadingBook,
+        chapterIndex: Int,
+        ref: OnlineChapterRef,
+        package: ChapterPackage
+    ) async -> OfflineMangaChapterRequest {
+        let defaultHeaders = await sourceImageHeaders(for: book)
         let images = MangaChapterParser.parsedImages(from: package.content).map { image in
             OfflineMangaImageRequest(
                 sourceURL: image.url,
