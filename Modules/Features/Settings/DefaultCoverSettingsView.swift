@@ -68,7 +68,7 @@ struct DefaultCoverSettingsView: View {
             coverLibrarySection(for: .dark)
         }
         .navigationTitle(localized("預設封面"))
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .settings)
         .alert(
             localized("封面匯入失敗"),

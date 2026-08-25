@@ -14,6 +14,7 @@ struct InlineRun {
     /// True for `<br>`: the text is "\n" and must survive all whitespace modes.
     let isHardBreak: Bool
     let atomic: AtomicInline?
+    let ruby: RubyInlineUnit?
 
     init(
         text: String,
@@ -22,7 +23,8 @@ struct InlineRun {
         nodeID: Int = -1,
         linkTarget: String? = nil,
         isHardBreak: Bool = false,
-        atomic: AtomicInline? = nil
+        atomic: AtomicInline? = nil,
+        ruby: RubyInlineUnit? = nil
     ) {
         self.text = text
         self.style = style
@@ -31,6 +33,8 @@ struct InlineRun {
         self.linkTarget = linkTarget
         self.isHardBreak = isHardBreak
         self.atomic = atomic
+        self.ruby = ruby
+        assert(atomic == nil || ruby == nil, "inline image and ruby payloads are mutually exclusive")
     }
 }
 
@@ -65,19 +69,18 @@ enum InlineLayout {
 
     static func layoutLines(
         runs: [InlineRun],
-        maxWidth: CGFloat,
-        rootFontSize: CGFloat,
-        lineHeight: CGFloat?,
-        writingMode: ReaderWritingMode = .horizontal,
-        sourceText: String,
-        fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
-        floatContext: FloatContext? = nil,
-        blockOffsetY: CGFloat = 0
+        context: InlineFormattingContext
     ) -> [LayoutLine] {
         guard !runs.isEmpty else { return [] }
+        let maxWidth = context.containingInlineSize
+        let lineHeight = context.lineHeight
+        let sourceText = context.sourceText
+        let fontResolver = context.fontResolver
+        let floatContext = context.floatContext
+        let blockOffsetY = context.blockOffsetY
 
         func resolveFont(_ style: ComputedStyle) -> UIFont {
-            font(for: style, resolver: fontResolver)
+            resolvedFont(for: style, resolver: fontResolver)
         }
 
         // Build the attributed string mirroring the runs. Atomic runs become
@@ -87,9 +90,25 @@ enum InlineLayout {
         var runAttributedStart: [Int] = []   // attributed-string offset per run
         var attributedCursor = 0
         var delegateBoxes: [AtomicInlineBox] = []
-        for run in runs {
+        var measuredRuby: [Int: RubyBox] = [:]
+        var rubyDelegateBoxes: [RubyRunDelegateBox] = []
+        for (index, run) in runs.enumerated() {
             runAttributedStart.append(attributedCursor)
-            if let atomic = run.atomic {
+            if let unit = run.ruby {
+                let ruby = RubyInlineLayout.measure(unit: unit, fontResolver: fontResolver)
+                measuredRuby[index] = ruby
+                let box = RubyRunDelegateBox(ruby)
+                rubyDelegateBoxes.append(box)
+                var callbacks = RubyRunDelegateBox.callbacks
+                let delegate = CTRunDelegateCreate(
+                    &callbacks,
+                    Unmanaged.passRetained(box).toOpaque()
+                )
+                attributed.append(NSAttributedString(string: "\u{FFFC}", attributes: [
+                    kCTRunDelegateAttributeName as NSAttributedString.Key: delegate as Any,
+                    .font: resolveFont(run.style),
+                ]))
+            } else if let atomic = run.atomic {
                 // CSS 2.1 §10.8.1: an inline replaced element with
                 // `vertical-align: baseline` sits with its BOTTOM margin edge ON
                 // the baseline — ascent = its full height, descent = 0.
@@ -109,7 +128,7 @@ enum InlineLayout {
                     .foregroundColor: run.style.color ?? .black,
                 ]))
             }
-            attributedCursor += (run.atomic != nil ? 1 : (run.text as NSString).length)
+            attributedCursor += shapedLength(of: run)
         }
 
         let cssHeight = lineHeight ?? runs.first?.style.lineHeight
@@ -126,20 +145,32 @@ enum InlineLayout {
             var xCursor: CGFloat = 0
             for (index, run) in runs.enumerated() {
                 let runStart = runAttributedStart[index]
-                let runLen = run.atomic != nil ? 1 : (run.text as NSString).length
+                let runLen = shapedLength(of: run)
                 let runEnd = runStart + runLen
                 let intersectStart = max(lineRange.location, runStart)
                 let intersectEnd = min(lineEnd, runEnd)
                 guard intersectEnd > intersectStart else { continue }
 
                 // Source range of this slice: shift by the run's source offset.
-                let sliceLen = run.atomic != nil ? 0 : (intersectEnd - intersectStart)
-                let sourceOffset = run.sourceRange.location + max(0, intersectStart - runStart)
+                let sliceLen: Int
+                let sourceOffset: Int
+                if run.atomic != nil {
+                    sliceLen = 0
+                    sourceOffset = run.sourceRange.location
+                } else if run.ruby != nil {
+                    sliceLen = run.sourceRange.length
+                    sourceOffset = run.sourceRange.location
+                } else {
+                    sliceLen = intersectEnd - intersectStart
+                    sourceOffset = run.sourceRange.location + max(0, intersectStart - runStart)
+                }
                 let sliceSource = NSRange(location: sourceOffset, length: sliceLen)
 
                 let width: CGFloat
                 if let atomic = run.atomic {
                     width = atomic.usedSize.width
+                } else if let ruby = measuredRuby[index] {
+                    width = ruby.advance
                 } else {
                     let sub = attributed.attributedSubstring(
                         from: NSRange(location: intersectStart, length: intersectEnd - intersectStart)
@@ -150,19 +181,24 @@ enum InlineLayout {
 
                 lineRuns.append(LineRun(
                     sourceRange: sliceSource,
+                    shapedRange: NSRange(
+                        location: intersectStart,
+                        length: intersectEnd - intersectStart
+                    ),
                     x: xCursor,
                     width: width,
                     style: run.style,
                     font: resolveFont(run.style),
                     nodeID: run.nodeID,
                     linkTarget: run.linkTarget,
-                    atomic: run.atomic
+                    atomic: run.atomic,
+                    ruby: measuredRuby[index]
                 ))
                 xCursor += width
             }
 
             // The breaker's measured line width (≤ maxWidth) is authoritative.
-            if let last = lineRuns.last, last.atomic == nil {
+            if let last = lineRuns.last, last.atomic == nil, last.ruby == nil {
                 let clampedWidth: CGFloat
                 if lineRuns.count == 1 {
                     clampedWidth = breakInfo.width
@@ -172,10 +208,14 @@ enum InlineLayout {
                 }
                 lineRuns[lineRuns.count - 1] = LineRun(
                     sourceRange: last.sourceRange,
+                    shapedRange: last.shapedRange,
                     x: last.x,
                     width: clampedWidth,
                     style: last.style, font: last.font,
-                    nodeID: last.nodeID, linkTarget: last.linkTarget, atomic: last.atomic
+                    nodeID: last.nodeID,
+                    linkTarget: last.linkTarget,
+                    atomic: last.atomic,
+                    ruby: last.ruby
                 )
             }
 
@@ -212,18 +252,15 @@ enum InlineLayout {
         }
 
         let breaker = CoreTextLineBreaker()
-        let noExclusion = InlineInterval(
-            lineX: 0,
-            lineWidth: maxWidth,
-            leftIntrusion: 0,
-            rightIntrusion: 0
-        )
+        let noExclusion = context.baseInterval
+        let needsPerLineIntervals = context.firstLineConstraint.isActive
+            || context.floatContext?.activeFloats.isEmpty == false
 
         // Preserve the pre-float pipeline byte-for-byte when no exclusion is
         // active: CoreText computes the complete break list before run slicing
         // or line construction. Only float-affected boxes take the band-aware
         // incremental path below.
-        if floatContext?.activeFloats.isEmpty != false {
+        if !needsPerLineIntervals {
             let effectiveMaxWidth = (runs.contains { $0.style.whiteSpace == .nowrap })
                 ? CGFloat.greatestFiniteMagnitude
                 : maxWidth
@@ -238,6 +275,7 @@ enum InlineLayout {
                 return line
             }
             _ = delegateBoxes
+            _ = rubyDelegateBoxes
             return lines
         }
 
@@ -266,10 +304,12 @@ enum InlineLayout {
             // interval. queryHeight only grows, so this converges instead of
             // oscillating when a tall inline image moves to the next line.
             for _ in 0..<8 {
-                let interval = floatContext?.availableInterval(y: globalY, height: queryHeight)
-                    ?? noExclusion
+                let baseInterval = context.baseAvailableInterval(
+                    y: globalY,
+                    height: queryHeight
+                )
 
-                if let fc = floatContext, interval.lineWidth <= 0 {
+                if let fc = floatContext, baseInterval.lineWidth <= 0 {
                     let upcomingBottoms = fc.activeFloats.map(\.bottom).filter { $0 > globalY }
                     if let nextY = upcomingBottoms.min() {
                         yTop = nextY - blockOffsetY
@@ -277,6 +317,10 @@ enum InlineLayout {
                     }
                     break
                 }
+
+                let interval = result.isEmpty
+                    ? context.firstLineConstraint.apply(to: baseInterval)
+                    : baseInterval
 
                 let effectiveMaxWidth = (runs.contains { $0.style.whiteSpace == .nowrap })
                     ? CGFloat.greatestFiniteMagnitude
@@ -320,6 +364,7 @@ enum InlineLayout {
         // The attributed string (and its delegates) go out of scope here; the
         // delegate callbacks' dealloc releases each AtomicInlineBox.
         _ = delegateBoxes
+        _ = rubyDelegateBoxes
         return result
     }
 
@@ -328,7 +373,7 @@ enum InlineLayout {
     private static func trimLineLeadingWhitespace(from runs: inout [LineRun], sourceText: String) {
         let ns = sourceText as NSString
         while var first = runs.first {
-            if first.atomic != nil { return }
+            if first.atomic != nil || first.ruby != nil { return }
             let mode = first.style.whiteSpace
             guard mode == .normal || mode == .nowrap || mode == .preLine else { return }
             guard first.sourceRange.location >= 0,
@@ -349,10 +394,16 @@ enum InlineLayout {
             if newLength > 0 {
                 first = LineRun(
                     sourceRange: NSRange(location: first.sourceRange.location + advance, length: newLength),
+                    shapedRange: first.shapedRange.map {
+                        NSRange(location: $0.location + advance, length: max(0, $0.length - advance))
+                    },
                     x: first.x + spaceWidth,
                     width: first.width - spaceWidth,
                     style: first.style, font: first.font,
-                    nodeID: first.nodeID, linkTarget: first.linkTarget, atomic: first.atomic
+                    nodeID: first.nodeID,
+                    linkTarget: first.linkTarget,
+                    atomic: first.atomic,
+                    ruby: first.ruby
                 )
                 runs[0] = first
                 return
@@ -364,7 +415,7 @@ enum InlineLayout {
 
     /// Removes trailing whitespace from the last run of a line for collapsing whitespace modes.
     private static func trimLineTrailingWhitespace(from runs: inout [LineRun], sourceText: String) {
-        guard var last = runs.last, last.atomic == nil else { return }
+        guard var last = runs.last, last.atomic == nil, last.ruby == nil else { return }
         let mode = last.style.whiteSpace
         guard mode == .normal || mode == .nowrap || mode == .preLine else { return }
         let ns = sourceText as NSString
@@ -380,8 +431,14 @@ enum InlineLayout {
         if newLength > 0 {
             last = LineRun(
                 sourceRange: NSRange(location: last.sourceRange.location, length: newLength),
+                shapedRange: last.shapedRange.map {
+                    NSRange(location: $0.location, length: max(0, $0.length - tail))
+                },
                 x: last.x, width: last.width, style: last.style, font: last.font,
-                nodeID: last.nodeID, linkTarget: last.linkTarget, atomic: last.atomic
+                nodeID: last.nodeID,
+                linkTarget: last.linkTarget,
+                atomic: last.atomic,
+                ruby: last.ruby
             )
             runs[runs.count - 1] = last
         } else {
@@ -398,7 +455,14 @@ enum InlineLayout {
         }
     }
 
-    static func font(for style: ComputedStyle, resolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil) -> UIFont {
+    private static func shapedLength(of run: InlineRun) -> Int {
+        run.atomic != nil || run.ruby != nil ? 1 : (run.text as NSString).length
+    }
+
+    static func resolvedFont(
+        for style: ComputedStyle,
+        resolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil
+    ) -> UIFont {
         if let resolver,
            let resolved = resolver(style.fontFamilies, style.fontWeight, style.isItalic, style.fontSize) {
             return resolved
@@ -422,6 +486,13 @@ enum InlineLayout {
             }
         }
         return base
+    }
+
+    static func font(
+        for style: ComputedStyle,
+        resolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil
+    ) -> UIFont {
+        resolvedFont(for: style, resolver: resolver)
     }
 }
 

@@ -261,11 +261,22 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
 
     /// The page-local rect of the character under a point (selection anchor).
     func characterRect(at point: CGPoint) -> CGRect? {
-        for item in displayList.items {
+        for item in displayList.items.reversed() {
             guard case .text(let text) = item else { continue }
             if text.rect.contains(point) {
                 return text.rect.rawValue
             }
+        }
+        return nil
+    }
+
+    /// Maps displayed text geometry back into the chapter source coordinate
+    /// space. Ruby annotations carry their base range, so hit-testing never
+    /// invents a second offset space for `<rt>`.
+    func sourceRange(at point: CGPoint) -> NSRange? {
+        for item in displayList.items.reversed() {
+            guard case .text(let text) = item, text.rect.contains(point) else { continue }
+            return text.sourceRange
         }
         return nil
     }

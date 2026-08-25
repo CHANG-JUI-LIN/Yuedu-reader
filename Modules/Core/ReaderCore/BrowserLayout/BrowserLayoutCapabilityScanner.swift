@@ -15,6 +15,7 @@ enum UnsupportedFeature: Equatable, CustomStringConvertible {
     case unsupportedSVG
     case mediaQueries           // @media (layout-affecting)
     case calcOrModernFunctions  // calc() / min() / max() / clamp()
+    case textIndent             // outside the Phase 4E1 resolved subset
     case unparseableLayoutCSS   // CSS we cannot parse that could affect layout
     case unknownBlockDisplay    // display: flex/grid/table/… mapped here too
 
@@ -31,6 +32,7 @@ enum UnsupportedFeature: Equatable, CustomStringConvertible {
         case .unsupportedSVG: return "unsupported-svg"
         case .mediaQueries: return "media-queries"
         case .calcOrModernFunctions: return "calc-modern-functions"
+        case .textIndent: return "text-indent"
         case .unparseableLayoutCSS: return "unparseable-layout-css"
         case .unknownBlockDisplay: return "unknown-block-display"
         }
@@ -40,6 +42,20 @@ enum UnsupportedFeature: Equatable, CustomStringConvertible {
 struct BrowserLayoutCapabilityResult: Equatable {
     let supported: Bool
     let unsupportedFeatures: [UnsupportedFeature]
+    /// Resolved, selector-matched usage from the same computed-style tree the
+    /// scanner already builds. Corpus diagnostics consume this so they do not
+    /// parse a second full DOM merely to classify text-indent.
+    let textIndentUsage: HorizontalTextIndentUsage
+
+    init(
+        supported: Bool,
+        unsupportedFeatures: [UnsupportedFeature],
+        textIndentUsage: HorizontalTextIndentUsage = .none
+    ) {
+        self.supported = supported
+        self.unsupportedFeatures = unsupportedFeatures
+        self.textIndentUsage = textIndentUsage
+    }
 
     static let supported = BrowserLayoutCapabilityResult(supported: true, unsupportedFeatures: [])
 }
@@ -70,6 +86,7 @@ enum BrowserLayoutCapabilityScanner {
     static func scan(html: String, cssTexts: [String]) -> BrowserLayoutCapabilityResult {
         var reasons: [UnsupportedFeature] = []
         var unsupportedDeclarations: [UnsupportedDeclaration] = []
+        var textIndentUsage: HorizontalTextIndentUsage = .none
 
         // @media anywhere in the stylesheet affects layout for every chapter
         // that links it (the media query is not re-evaluated per element).
@@ -88,9 +105,6 @@ enum BrowserLayoutCapabilityScanner {
             }
             if hasAny("math") {
                 reasons.append(.mathML)
-            }
-            if hasAny("ruby, rp, rt") {
-                reasons.append(.ruby)
             }
             if hasAny("table, thead, tbody, tr, td, th, colgroup") {
                 reasons.append(.table)
@@ -153,22 +167,35 @@ enum BrowserLayoutCapabilityScanner {
                 }
             }
 
-            // Float classification must use the SAME resolved cascade as layout.
-            // Replaying declarations here used to get `float: none`, inline
-            // priority, specificity, !important, and width:auto resets wrong.
+            // Ruby, Float and text-indent classification must use the SAME resolved cascade
+            // as layout. Replaying raw declarations here gets overrides,
+            // specificity and !important wrong.
             if let body = doc.body() {
                 let rules = LegacyCSSFrontendSupport.parseRules(in: fullCSS)
                 let styleTree = ComputedStyleTreeBuilder(
                     rules: rules,
                     config: BrowserLayoutConfig()
                 ).buildTree(body: body)
+                let hasRubyMarkup = hasAny("ruby, rp, rt, rb, rtc")
+                if hasRubyMarkup,
+                   !HorizontalRubySupport.validate(
+                       styleTree,
+                       writingMode: .horizontal
+                   ).isSupported {
+                    reasons.append(.ruby)
+                }
                 validateFloats(in: styleTree, hasFloatedAncestor: false, reasons: &reasons)
+                textIndentUsage = HorizontalTextIndentSupport.usage(in: styleTree)
+                if textIndentUsage == .unsupported {
+                    reasons.append(.textIndent)
+                }
             }
         }
 
         return BrowserLayoutCapabilityResult(
             supported: reasons.isEmpty,
-            unsupportedFeatures: dedupe(reasons)
+            unsupportedFeatures: dedupe(reasons),
+            textIndentUsage: textIndentUsage
         )
     }
 
@@ -218,6 +245,12 @@ enum BrowserLayoutCapabilityScanner {
             // Float is validated at the element level (supported for images / explicit widths)
             return nil
         }
+        if k == "text-indent" {
+            // Property-specific admission happens on the resolved style tree.
+            // This must precede the generic calc()/min()/max()/clamp() check so
+            // the scanner reports the shared text-indent capability boundary.
+            return nil
+        }
         if k == "position" && (v.contains("absolute") || v.contains("fixed") || v.contains("sticky")) {
             return .positioned
         }
@@ -232,7 +265,6 @@ enum BrowserLayoutCapabilityScanner {
         if v.contains("calc(") || v.contains("min(") || v.contains("max(") || v.contains("clamp(") {
             return .calcOrModernFunctions
         }
-        if k == "ruby-align" || k == "ruby-position" { return .ruby }
         if k == "writing-mode"
             || k == "-webkit-writing-mode"
             || k == "-epub-writing-mode" {

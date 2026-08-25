@@ -109,7 +109,8 @@ enum HorizontalRubySupport {
         }),
         containsVisibleBase(before),
         supportedInlineBase(before),
-        annotationIsTextOnly(rt) else {
+        containsVisibleBase(rt.children),
+        supportedInlineBase(rt.children) else {
             return nil
         }
 
@@ -168,20 +169,6 @@ enum HorizontalRubySupport {
         }
     }
 
-    private static func annotationIsTextOnly(_ rt: ComputedStyleNode) -> Bool {
-        let text = rt.children.compactMap { child -> String? in
-            guard case .text(let value) = child else { return nil }
-            return value
-        }.joined()
-        guard rt.children.allSatisfy({ child in
-            if case .text = child { return true }
-            return false
-        }) else {
-            return false
-        }
-        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     private static func containsTag(
         _ node: ComputedStyleNode,
         names: Set<String>,
@@ -204,4 +191,40 @@ private extension StyleTreeChild {
         guard case .element(let node) = self else { return nil }
         return node
     }
+}
+
+struct RubyInlinePiece {
+    let text: String
+    let style: ComputedStyle
+    let sourceRange: NSRange
+    let nodeID: Int
+    let linkTarget: String?
+}
+
+struct RubyAnnotationPiece {
+    let text: String
+    let style: ComputedStyle
+    let nodeID: Int
+    let linkTarget: String?
+}
+
+struct RubyAnnotation {
+    let pieces: [RubyAnnotationPiece]
+
+    var text: String {
+        pieces.map(\.text).joined()
+    }
+}
+
+/// Semantic Ruby content before shaping. The base remains in the chapter's
+/// source coordinate space; the annotation deliberately has no independent
+/// source range and maps back to the complete base range later.
+struct RubyInlineUnit {
+    let base: [RubyInlinePiece]
+    let annotation: RubyAnnotation
+    let sourceRange: NSRange
+    let nodeID: Int
+    let linkTarget: String?
+    let alignment: RubyAlignment
+    let position: RubyPosition
 }

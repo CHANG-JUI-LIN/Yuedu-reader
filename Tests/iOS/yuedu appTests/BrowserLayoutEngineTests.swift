@@ -268,8 +268,19 @@ struct InlineLayoutTests {
             InlineRun(text: " Padding makes layout robust.", style: style,
                       sourceRange: NSRange(location: 44, length: 29)),
         ]
-        let lines = InlineLayout.layoutLines(runs: runs, maxWidth: 150, rootFontSize: 16,
-                                             lineHeight: nil, sourceText: "The quick brown fox jumps over the lazy dog. Padding makes layout robust.")
+        let lines = InlineLayout.layoutLines(
+            runs: runs,
+            context: InlineFormattingContext(
+                containingInlineSize: 150,
+                rootFontSize: 16,
+                lineHeight: nil,
+                writingMode: .horizontal,
+                sourceText: "The quick brown fox jumps over the lazy dog. Padding makes layout robust.",
+                fontResolver: nil,
+                floatContext: nil,
+                blockOffsetY: 0
+            )
+        )
         #expect(lines.count >= 2)
         for line in lines {
             #expect(line.height == 24)
@@ -287,8 +298,19 @@ struct InlineLayoutTests {
         let collapsed = InlineLayout.collapseText("Alpha   Beta\nGamma", mode: .normal)
         let runs = [InlineRun(text: collapsed, style: style,
                               sourceRange: NSRange(location: 0, length: (collapsed as NSString).length))]
-        let lines = InlineLayout.layoutLines(runs: runs, maxWidth: 400, rootFontSize: 16,
-                                             lineHeight: nil, sourceText: collapsed)
+        let lines = InlineLayout.layoutLines(
+            runs: runs,
+            context: InlineFormattingContext(
+                containingInlineSize: 400,
+                rootFontSize: 16,
+                lineHeight: nil,
+                writingMode: .horizontal,
+                sourceText: collapsed,
+                fontResolver: nil,
+                floatContext: nil,
+                blockOffsetY: 0
+            )
+        )
         let total = lines.flatMap(\.runs).map(\.sourceRange.length).reduce(0, +)
         #expect(total == 16)
     }

@@ -112,7 +112,9 @@ struct BrowserScrollDocument {
                         dx: -documentRect.minX, dy: -documentRect.minY
                     )),
                     baselineY: t.baselineY - documentRect.minY,
-                    font: t.font, color: t.color, text: t.text, ctLine: t.ctLine
+                    font: t.font, color: t.color, text: t.text, ctLine: t.ctLine,
+                    sourceMapping: t.sourceMapping,
+                    renderedTextOverride: t.renderedTextOverride
                 )))
             case .fill(let f):
                 guard f.rect.rawValue.intersects(documentRect) else { continue }

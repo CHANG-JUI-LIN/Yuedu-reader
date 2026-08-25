@@ -74,10 +74,51 @@ struct BrowserLayoutCapabilityScannerTests {
         #expect(scan("<html><body></body></html>", css).unsupportedFeatures.isEmpty)
     }
 
-    @Test func rejectsRubyAndMathMLAndScript() {
-        #expect(scan("<html><body><ruby>漢<rt>かん</rt></ruby></body></html>").unsupportedFeatures.contains(.ruby))
+    @Test func rejectsMathMLAndScript() {
         #expect(scan("<html><body><math><mi>x</mi></math></body></html>").unsupportedFeatures.contains(.mathML))
         #expect(scan("<html><body><script>alert(1)</script></body></html>").unsupportedFeatures.contains(.scriptedInteractive))
+    }
+
+    @Test func acceptsSupportedHorizontalRubySubset() {
+        let accepted: [(String, [String])] = [
+            ("<ruby>漢<rt>かん</rt></ruby>", []),
+            ("<ruby><span>漢字</span><rt>かんじ</rt></ruby>", []),
+            ("<ruby>漢<rt><span>かん</span></rt></ruby>", []),
+            ("<ruby>漢<rp>(</rp><rt>かん</rt><rp>)</rp></ruby>", []),
+            ("<ruby>漢<rt>かん</rt></ruby>", ["ruby { ruby-align:center; ruby-position:over }"]),
+        ]
+        for (ruby, css) in accepted {
+            let result = scan("<html><body><p>\(ruby)</p></body></html>", css)
+            #expect(result.supported)
+            #expect(!result.unsupportedFeatures.contains(.ruby))
+        }
+    }
+
+    @Test func rejectsRubyOutsideSupportedSubset() {
+        let rejected: [(String, [String])] = [
+            ("<ruby>漢</ruby>", []),
+            ("<ruby>漢<rt>a</rt><rt>b</rt></ruby>", []),
+            ("<ruby><rb>漢</rb><rt>a</rt></ruby>", []),
+            ("<ruby>漢<rtc><rt>a</rt></rtc></ruby>", []),
+            ("<ruby>漢<rt>a</rt></ruby>", ["ruby { ruby-position:under }"]),
+            ("<ruby>漢<rt>a</rt></ruby>", ["ruby { ruby-position:inter-character }"]),
+            ("<ruby>漢<rt>a</rt></ruby>", ["ruby { -epub-ruby-position:under }"]),
+            ("<ruby>漢<rt>a</rt></ruby>", ["ruby { ruby-align:start }"]),
+            ("<ruby>外<ruby>內<rt>n</rt></ruby><rt>w</rt></ruby>", []),
+            ("<ruby>漢<rt><span style='display:block'>a</span></rt></ruby>", []),
+        ]
+        for (ruby, css) in rejected {
+            let result = scan("<html><body><p>\(ruby)</p></body></html>", css)
+            #expect(result.unsupportedFeatures.contains(.ruby))
+        }
+    }
+
+    @Test func rubySupportDoesNotEraseIndependentFallbackReasons() {
+        let result = scan(
+            "<html><body><p><ruby>漢<rt>かん</rt></ruby></p><table><tr><td>x</td></tr></table></body></html>"
+        )
+        #expect(!result.unsupportedFeatures.contains(.ruby))
+        #expect(result.unsupportedFeatures.contains(.table))
     }
 
     @Test func rejectsMediaQueriesAndCalc() {
@@ -184,5 +225,65 @@ extension BrowserLayoutCapabilityScannerTests {
         #expect(CSSFloat.parse(" none ") == CSSFloat.none)
         #expect(CSSFloat.parse("center") == nil)
         #expect(CSSFloat.parse("inline-start") == nil)
+    }
+}
+
+// MARK: - text-indent resolved subset
+
+extension BrowserLayoutCapabilityScannerTests {
+    @Test func acceptsSupportedTextIndentSubset() {
+        for value in ["0", "20px", "1em", "2rem", "10%"] {
+            let result = scan(
+                "<html><body><p>x</p></body></html>",
+                ["p { text-indent:\(value) }"]
+            )
+            #expect(result.supported, "value=\(value)")
+        }
+    }
+
+    @Test func rejectsEffectiveUnsupportedTextIndent() {
+        for value in ["hanging", "each-line", "-1px", "calc(2em + 1px)", "2em hanging"] {
+            let result = scan(
+                "<html><body><p>x</p></body></html>",
+                ["p { text-indent:\(value) }"]
+            )
+            #expect(result.unsupportedFeatures.contains(.textIndent), "value=\(value)")
+        }
+    }
+
+    @Test func overriddenUnsupportedTextIndentDoesNotReject() {
+        let result = scan(
+            "<html><body><p class='x'>x</p></body></html>",
+            ["p { text-indent:hanging } p.x { text-indent:0 }"]
+        )
+        #expect(result.supported)
+    }
+
+    @Test func inheritedUnsupportedOnlyRejectsAFormattingOwner() {
+        let overridden = scan(
+            "<html><body><div class='parent'><p class='child'>x</p></div></body></html>",
+            [".parent { text-indent:hanging } .child { text-indent:0 }"]
+        )
+        #expect(overridden.supported)
+
+        let inherited = scan(
+            "<html><body><div class='parent'><p>x</p></div></body></html>",
+            [".parent { text-indent:hanging }"]
+        )
+        #expect(inherited.unsupportedFeatures.contains(.textIndent))
+    }
+
+    @Test func nonBreakingSpaceAndPreformattedSpaceAreFormattingOwners() {
+        let nonBreaking = scan(
+            "<html><body><p>&#160;</p></body></html>",
+            ["p { text-indent:hanging }"]
+        )
+        #expect(nonBreaking.unsupportedFeatures.contains(.textIndent))
+
+        let preformatted = scan(
+            "<html><body><pre>   </pre></body></html>",
+            ["pre { white-space:pre; text-indent:hanging }"]
+        )
+        #expect(preformatted.unsupportedFeatures.contains(.textIndent))
     }
 }

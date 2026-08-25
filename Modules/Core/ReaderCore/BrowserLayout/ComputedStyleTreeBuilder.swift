@@ -374,6 +374,8 @@ enum ComputedStylePropertyApplier {
             style.isItalic = value.contains("italic") || value.contains("oblique")
         case "text-align":
             style.textAlign = cssAlignment(value)
+        case "text-indent":
+            style.textIndent = CSSTextIndent.parse(value)
         case "line-height":
             if let lh = resolveLineHeight(value, fontSize: style.fontSize, root: ctx.rootFontSize) {
                 style.lineHeight = lh

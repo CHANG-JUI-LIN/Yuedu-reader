@@ -118,6 +118,16 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         collectionView.showsVerticalScrollIndicator = false
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.contentInsetAdjustmentBehavior = .never
+        // 上下滑動 is the only reading mode whose canvas is a real scroll view, so iOS
+        // 26 paints its scroll-edge effect over the top of the page — an opaque band
+        // under the toolbar that 翻頁 never gets, because a paged canvas is not a
+        // scroll view. The reader owns every pixel of its surface; the two modes have
+        // to read the same, with the text running under the glass controls.
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            collectionView.topEdgeEffect.isHidden = true
+        }
+        #endif
         collectionView.register(CoreTextChunkCollectionCell.self, forCellWithReuseIdentifier: CoreTextChunkCollectionCell.reuseIdentifier)
         collectionView.contentInset = contentInset
 

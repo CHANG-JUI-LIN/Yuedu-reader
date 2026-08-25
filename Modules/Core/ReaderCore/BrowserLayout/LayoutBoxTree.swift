@@ -41,6 +41,7 @@ struct AtomicInline {
 /// ranges in document order reassembles the visible text.
 struct LineRun {
     let sourceRange: NSRange
+    let shapedRange: NSRange?
     let x: CGFloat                    // left edge of the run within the line's content box
     let width: CGFloat
     let style: ComputedStyle
@@ -48,6 +49,31 @@ struct LineRun {
     let nodeID: Int
     let linkTarget: String?
     let atomic: AtomicInline?         // non-nil = replaced element run (image)
+    let ruby: RubyBox?
+
+    init(
+        sourceRange: NSRange,
+        shapedRange: NSRange? = nil,
+        x: CGFloat,
+        width: CGFloat,
+        style: ComputedStyle,
+        font: UIFont,
+        nodeID: Int,
+        linkTarget: String?,
+        atomic: AtomicInline?,
+        ruby: RubyBox? = nil
+    ) {
+        self.sourceRange = sourceRange
+        self.shapedRange = shapedRange ?? sourceRange
+        self.x = x
+        self.width = width
+        self.style = style
+        self.font = font
+        self.nodeID = nodeID
+        self.linkTarget = linkTarget
+        self.atomic = atomic
+        self.ruby = ruby
+    }
 }
 
 struct LayoutLine {
@@ -76,9 +102,17 @@ final class BlockBox {
     let style: ComputedStyle
     let boxType: BlockBoxType
     var children: [BlockBox]
+    /// Post-layout output. This must remain empty after BoxTreeBuilder and is
+    /// populated only by BlockLayout through InlineLayout. PageWalker consumes
+    /// it only after BlockLayout has completed the tree.
     var lines: [LayoutLine]
-    /// Raw unformatted inline runs before line layout with FloatContext.
+    /// Immutable inline-formatting input after BoxTreeBuilder completes.
     var inlineRuns: [InlineRun] = []
+    /// Whether this internal inline formatting context consumes its DOM block
+    /// container's first formatted line. Mixed inline/block content can create
+    /// multiple internal boxes; only the first visible group owns text-indent.
+    /// This is ownership metadata only — BoxTreeBuilder never shapes content.
+    var ownsFirstFormattedLine: Bool
     /// Non-nil when this box IS a replaced element (block-level image).
     var imageAttachment: AtomicInline? = nil
     /// Border-box rect in PARENT content-local coordinates (Phase 2C contract).
@@ -113,13 +147,15 @@ final class BlockBox {
         boxType: BlockBoxType = .block,
         children: [BlockBox] = [],
         lines: [LayoutLine] = [],
-        inlineRuns: [InlineRun] = []
+        inlineRuns: [InlineRun] = [],
+        ownsFirstFormattedLine: Bool = true
     ) {
         self.style = style
         self.boxType = boxType
         self.children = children
         self.lines = lines
         self.inlineRuns = inlineRuns
+        self.ownsFirstFormattedLine = ownsFirstFormattedLine
     }
 
     /// Border-box width (content + padding + border).

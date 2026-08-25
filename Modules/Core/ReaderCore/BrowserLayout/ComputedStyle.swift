@@ -123,6 +123,9 @@ struct ComputedStyle: Equatable {
     var textAlign: NSTextAlignment = .natural
     var lineHeight: CGFloat?            // nil = normal (ascent/descent)
     var whiteSpace: WhiteSpaceMode = .normal
+    /// Inherited specified/computed value. Percentages remain symbolic until
+    /// BlockLayout has resolved this block container's final inline size.
+    var textIndent: CSSTextIndent = .initial
     var rubyAlign: RubyAlignment = .center
     var rubyPosition: RubyPosition = .over
     var rubyMerge: RubyMerge = .separate
@@ -191,6 +194,7 @@ extension ComputedStyle {
         style.rubyAlign = parent.rubyAlign
         style.rubyPosition = parent.rubyPosition
         style.rubyMerge = parent.rubyMerge
+        style.textIndent = parent.textIndent
         return style
     }
 }

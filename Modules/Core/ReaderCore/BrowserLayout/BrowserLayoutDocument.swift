@@ -104,6 +104,18 @@ final class BrowserLayoutDocument {
         )
         let rootNode = frontendResult.rootNode
         let linkAnchors = frontendResult.linkAnchors
+        let rubyValidation = HorizontalRubySupport.validate(
+            rootNode,
+            writingMode: config.writingMode
+        )
+        if !rubyValidation.isSupported {
+            throw BrowserLayoutError.unsupportedRubySubset
+        }
+        let textIndentUsage = HorizontalTextIndentSupport.usage(in: rootNode)
+        if textIndentUsage == .unsupported
+            || (textIndentUsage == .supportedNonZero && config.writingMode != .horizontal) {
+            throw BrowserLayoutError.unsupportedTextIndentSubset
+        }
 
         var sourceText = SourceTextBuilder()
         var anchors: [String: Int] = [:]
@@ -120,6 +132,7 @@ final class BrowserLayoutDocument {
             _ = BlockLayout.layOut(
                 root: rootBox,
                 containerWidth: contentWidth,
+                inlineContainingSize: config.renderWidth,
                 rootFontSize: config.rootFontSize,
                 writingMode: config.writingMode,
                 sourceText: sourceText.text,
@@ -172,6 +185,8 @@ final class BrowserLayoutDocument {
     enum BrowserLayoutError: Error {
         case emptyBody
         case unsupportedFloatFragmentation(nodeID: Int)
+        case unsupportedRubySubset
+        case unsupportedTextIndentSubset
     }
 
     private static func firstOversizedNonReplacedFloat(
@@ -399,7 +414,7 @@ final class BrowserLayoutDocument {
         for fragment in fragments {
             switch fragment {
             case .text(let t):
-                let text = slice(lastSourceText, t.sourceRange)
+                let text = t.renderedTextOverride ?? slice(lastSourceText, t.sourceRange)
                 lines.append("\(indent)text node=\(t.nodeID) range=\(t.sourceRange) link=\(t.linkTarget ?? "-") \(t.rect) \"\(text)\"")
             case .fill(let f):
                 lines.append("\(indent)fill node=\(f.nodeID) \(f.rect) \(f.color)")

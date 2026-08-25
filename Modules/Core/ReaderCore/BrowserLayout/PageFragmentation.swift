@@ -3,6 +3,14 @@ import CoreText
 import Foundation
 import UIKit
 
+enum TextSourceMapping: Equatable {
+    /// Source and shaped UTF-16 coordinates advance together within the line.
+    case linear(shapedRange: NSRange)
+    /// The rendered text has no source span of its own and maps to the entire
+    /// owning range (horizontal Ruby annotation → Ruby base).
+    case wholeRange
+}
+
 /// Page-local fragment: `rect` is PAGE CANVAS-local (viewport coordinates,
 /// origin = viewport top-left). Selection/annotation additionally keeps the
 /// DOCUMENT-absolute rect so ranges stay meaningful across pages/relayouts.
@@ -21,6 +29,36 @@ struct TextFragment {
     /// The shaped line this fragment's run belongs to (full, untrimmed line
     /// range), for precise string-index → typographic-offset mapping.
     let ctLine: CTLine?
+    let sourceMapping: TextSourceMapping
+    let renderedTextOverride: String?
+
+    init(
+        sourceRange: NSRange,
+        nodeID: Int,
+        linkTarget: String?,
+        writingMode: ReaderWritingMode,
+        rect: PageLocalRect,
+        documentRect: DocumentRect,
+        baselineY: CGFloat,
+        font: UIFont,
+        color: UIColor,
+        ctLine: CTLine?,
+        sourceMapping: TextSourceMapping? = nil,
+        renderedTextOverride: String? = nil
+    ) {
+        self.sourceRange = sourceRange
+        self.nodeID = nodeID
+        self.linkTarget = linkTarget
+        self.writingMode = writingMode
+        self.rect = rect
+        self.documentRect = documentRect
+        self.baselineY = baselineY
+        self.font = font
+        self.color = color
+        self.ctLine = ctLine
+        self.sourceMapping = sourceMapping ?? .linear(shapedRange: sourceRange)
+        self.renderedTextOverride = renderedTextOverride
+    }
 }
 
 /// A filled/bordered box in page canvas-local coordinates. A border box emits
@@ -119,6 +157,7 @@ struct PageWalker {
         case floatBoundary(StepFloat)
         case fill(StepFill)
         case text(StepText)
+        case ruby(StepRuby)
         case image(StepImage)
     }
 
@@ -138,6 +177,16 @@ struct PageWalker {
         let font: UIFont
         let color: UIColor
         let ctLine: CTLine?
+        let sourceMapping: TextSourceMapping
+        let renderedTextOverride: String?
+    }
+
+    struct StepRuby {
+        let placementRect: DocumentRect
+        let baseBaselineY: CGFloat
+        let ruby: RubyBox
+        let originX: CGFloat
+        let writingMode: ReaderWritingMode
     }
 
     struct StepFill {
@@ -420,6 +469,20 @@ struct PageWalker {
                     let run = line.runs[stack[index].runIndex]
                     stack[index].runIndex += 1
                     let frame = stack[index]
+                    if let ruby = run.ruby {
+                        return .ruby(StepRuby(
+                            placementRect: DocumentRect(rawValue: CGRect(
+                                x: frame.contentOrigin.x + line.contentX + run.x,
+                                y: frame.contentOrigin.y + line.top,
+                                width: run.width,
+                                height: line.height
+                            )),
+                            baseBaselineY: frame.contentOrigin.y + line.baseline,
+                            ruby: ruby,
+                            originX: frame.contentOrigin.x + line.contentX + run.x,
+                            writingMode: writingMode
+                        ))
+                    }
                     if let atomic = run.atomic {
                         let rect = DocumentRect(rawValue: CGRect(
                             x: frame.contentOrigin.x + line.contentX + run.x,
@@ -470,7 +533,9 @@ struct PageWalker {
                         baselineY: frame.contentOrigin.y + line.baseline,
                         font: run.font,
                         color: run.style.color ?? .black,
-                        ctLine: line.ctLine
+                        ctLine: line.ctLine,
+                        sourceMapping: .linear(shapedRange: run.shapedRange ?? run.sourceRange),
+                        renderedTextOverride: nil
                     ))
                 }
                 stack[index].lineIndex += 1
@@ -504,6 +569,8 @@ struct PageWalker {
             return placeFill(frag)
         case .text(let frag):
             return placeText(frag)
+        case .ruby(let ruby):
+            return placeRuby(ruby)
         case .image(let frag):
             return placeImage(frag)
         }
@@ -647,7 +714,9 @@ struct PageWalker {
                 baselineY: canvas.minY + (step.baselineY - step.rect.minY),
                 font: step.font,
                 color: step.color,
-                ctLine: step.ctLine
+                ctLine: step.ctLine,
+                sourceMapping: step.sourceMapping,
+                renderedTextOverride: step.renderedTextOverride
             )))
             return nil
         }
@@ -681,9 +750,95 @@ struct PageWalker {
             baselineY: canvas.minY + (step.baselineY - step.rect.minY),
             font: step.font,
             color: step.color,
-            ctLine: step.ctLine
+            ctLine: step.ctLine,
+            sourceMapping: step.sourceMapping,
+            renderedTextOverride: step.renderedTextOverride
         )))
         return flushed
+    }
+
+    private mutating func placeRuby(_ step: StepRuby) -> PageFragments? {
+        if isContinuous {
+            currentPage.append(makeRubyGroup(step, displacementY: 0, pageIndex: 0))
+            return nil
+        }
+
+        let shiftedY = step.placementRect.minY + flowShift
+        var target = max(0, Int(floor(shiftedY / pageHeight)))
+        let pageLocalY = shiftedY - CGFloat(target) * pageHeight
+        var adjustedDocY = shiftedY
+        if step.placementRect.height <= pageHeight,
+           pageLocalY + step.placementRect.height > pageHeight + 0.001 {
+            target += 1
+            adjustedDocY = CGFloat(target) * pageHeight
+            flowShift += adjustedDocY - shiftedY
+        }
+        let flushed = advanceToPage(target)
+        adjustedDocY = discardMarginAdjoiningBreak(adjustedDocY, target: target)
+        currentPage.append(makeRubyGroup(
+            step,
+            displacementY: adjustedDocY - step.placementRect.minY,
+            pageIndex: currentIndex
+        ))
+        return flushed
+    }
+
+    private func makeRubyGroup(
+        _ step: StepRuby,
+        displacementY: CGFloat,
+        pageIndex: Int
+    ) -> Fragment {
+        let ruby = step.ruby
+        let baseBaseline = step.baseBaselineY + displacementY
+        var children: [Fragment] = ruby.base.pieces.map { piece in
+            let document = DocumentRect(rawValue: CGRect(
+                x: step.originX + ruby.baseOffsetX + piece.x,
+                y: baseBaseline - ruby.base.ascent,
+                width: piece.width,
+                height: ruby.base.ascent + ruby.base.descent
+            ))
+            let canvas = canvasRect(forDocument: document, pageIndex: pageIndex)
+            return .text(TextFragment(
+                sourceRange: piece.sourceRange,
+                nodeID: piece.nodeID,
+                linkTarget: piece.linkTarget,
+                writingMode: step.writingMode,
+                rect: canvas,
+                documentRect: document,
+                baselineY: canvas.minY + ruby.base.ascent,
+                font: piece.font,
+                color: piece.style.color ?? .black,
+                ctLine: ruby.base.line,
+                sourceMapping: .linear(shapedRange: piece.shapedRange),
+                renderedTextOverride: nil
+            ))
+        }
+
+        let annotationBaseline = baseBaseline + ruby.annotationBaselineOffset
+        children.append(contentsOf: ruby.annotation.pieces.map { piece in
+            let document = DocumentRect(rawValue: CGRect(
+                x: step.originX + ruby.annotationOffsetX + piece.x,
+                y: annotationBaseline - ruby.annotation.ascent,
+                width: piece.width,
+                height: ruby.annotation.ascent + ruby.annotation.descent
+            ))
+            let canvas = canvasRect(forDocument: document, pageIndex: pageIndex)
+            return .text(TextFragment(
+                sourceRange: ruby.unit.sourceRange,
+                nodeID: piece.nodeID,
+                linkTarget: piece.linkTarget ?? ruby.unit.linkTarget,
+                writingMode: step.writingMode,
+                rect: canvas,
+                documentRect: document,
+                baselineY: canvas.minY + ruby.annotation.ascent,
+                font: piece.font,
+                color: piece.style.color ?? .black,
+                ctLine: ruby.annotation.line,
+                sourceMapping: .wholeRange,
+                renderedTextOverride: piece.text
+            ))
+        })
+        return .group(children)
     }
 
     private mutating func placeFill(_ step: StepFill) -> PageFragments? {

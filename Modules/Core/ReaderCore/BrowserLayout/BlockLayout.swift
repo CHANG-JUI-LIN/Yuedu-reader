@@ -21,6 +21,7 @@ enum BlockLayout {
     static func layOut(
         root box: BlockBox,
         containerWidth: CGFloat,
+        inlineContainingSize: CGFloat? = nil,
         rootFontSize: CGFloat = 17,
         writingMode: ReaderWritingMode = .horizontal,
         floatContext: FloatContext? = nil,
@@ -30,6 +31,12 @@ enum BlockLayout {
         fragmentHeight: CGFloat? = nil
     ) -> CGFloat {
         var sides = resolveSides(box, containerWidth: containerWidth, rootFontSize: rootFontSize, writingMode: writingMode)
+        // Phase 4E0 is an ownership-only refactor. The previous pipeline broke
+        // ordinary inline content against BoxTreeBuilder's recursively resolved
+        // containing width, while FloatContext used the box's CSS content width.
+        // Resolve both values here, after used sides exist, so moving shaping
+        // does not silently correct box-model geometry in the same phase.
+        let establishedInlineSize = inlineContainingSize ?? containerWidth
         // Paged replaced-element fit policy is resolved before float exclusion
         // and line breaking. Doing this later in PageWalker would shrink only
         // the painted image while surrounding text still excluded the original
@@ -94,6 +101,20 @@ enum BlockLayout {
             child.padding = childSides.padding
             child.borders = childSides.borders
             child.contentSize.width = childSides.contentWidth
+            let childInlineContainingSize: CGFloat
+            switch child.boxType {
+            case .anonymous:
+                // BoxTreeBuilder flushed this group at the current block's
+                // already-established inline size; it never resolved the
+                // parent's width declaration a second time.
+                childInlineContainingSize = establishedInlineSize
+            case .block:
+                childInlineContainingSize = resolveInlineFormattingSize(
+                    child,
+                    containingInlineSize: establishedInlineSize,
+                    rootFontSize: rootFontSize
+                )
+            }
 
             // 1. Clearance calculation
             if let fc = fc, child.style.cssClear != .none {
@@ -113,6 +134,7 @@ enum BlockLayout {
                 let childContentHeight = layOut(
                     root: child,
                     containerWidth: box.contentSize.width,
+                    inlineContainingSize: childInlineContainingSize,
                     rootFontSize: rootFontSize,
                     writingMode: writingMode,
                     floatContext: nil,
@@ -192,6 +214,7 @@ enum BlockLayout {
                 let childContentHeight = layOut(
                     root: child,
                     containerWidth: box.contentSize.width,
+                    inlineContainingSize: childInlineContainingSize,
                     rootFontSize: rootFontSize,
                     writingMode: writingMode,
                     floatContext: fc,
@@ -231,37 +254,62 @@ enum BlockLayout {
             }
         }
 
-        if box.lines.isEmpty, let last = previousBlockEndMargin,
-           LogicalGeometry.blockEnd(edge: box.borders, mode: writingMode) == 0,
-           LogicalGeometry.blockEnd(edge: box.padding, mode: writingMode) == 0 {
-            cursorBlock -= last
-        }
-
-        // BoxTreeBuilder already shaped inline content at the box's resolved
-        // width. Re-shape only when one of those actual line bands intersects
-        // an active float. Re-laying every box here changes centering and line
-        // geometry across chapters that contain no floats at all.
-        let needsFloatReflow = !box.inlineRuns.isEmpty
-            && writingMode == .horizontal
-            && box.lines.contains { line in
-                fc?.intersectsExclusion(
-                    y: blockOffsetY + line.top,
-                    height: line.height
-                ) == true
+        if !box.inlineRuns.isEmpty {
+            // FloatContext retains every placed float for sibling clearance.
+            // Once all of them end above this inline context, the legacy
+            // pipeline kept the recursively established inline size and never
+            // entered float reflow. Do the same before InlineLayout chooses its
+            // no-exclusion fast path; stale floats must not narrow later boxes
+            // to FloatContext.containerWidth merely by remaining recorded.
+            let relevantFloatContext = fc.flatMap { context in
+                context.activeFloats.contains { $0.bottom > blockOffsetY }
+                    ? context
+                    : nil
             }
-        if needsFloatReflow {
-            let lines = InlineLayout.layoutLines(
-                runs: box.inlineRuns,
-                maxWidth: box.contentSize.width,
+            let firstLineConstraint: InlineFirstLineConstraint
+            if box.ownsFirstFormattedLine, writingMode == .horizontal {
+                switch box.style.textIndent {
+                case .length(let length):
+                    let usedTextIndent = CSSLengthResolver.resolve(
+                        length,
+                        emBase: box.style.fontSize,
+                        remBase: rootFontSize,
+                        percentBase: establishedInlineSize
+                    ) ?? 0
+                    firstLineConstraint = InlineFirstLineConstraint(
+                        textIndent: max(0, usedTextIndent)
+                    )
+                case .unsupported:
+                    assertionFailure("unsupported text-indent reached BlockLayout")
+                    firstLineConstraint = .none
+                }
+            } else {
+                firstLineConstraint = .none
+            }
+            let context = InlineFormattingContext(
+                containingInlineSize: establishedInlineSize,
                 rootFontSize: rootFontSize,
                 lineHeight: box.style.lineHeight,
                 writingMode: writingMode,
                 sourceText: sourceText,
                 fontResolver: fontResolver,
-                floatContext: fc,
-                blockOffsetY: blockOffsetY
+                floatContext: relevantFloatContext,
+                blockOffsetY: blockOffsetY,
+                firstLineConstraint: firstLineConstraint
             )
-            box.lines = lines
+            box.lines = InlineLayout.layoutLines(
+                runs: box.inlineRuns,
+                context: context
+            )
+        }
+        #if DEBUG
+        assert(box.inlineRuns.isEmpty || !box.lines.isEmpty)
+        #endif
+
+        if box.lines.isEmpty, let last = previousBlockEndMargin,
+           LogicalGeometry.blockEnd(edge: box.borders, mode: writingMode) == 0,
+           LogicalGeometry.blockEnd(edge: box.padding, mode: writingMode) == 0 {
+            cursorBlock -= last
         }
 
         var minLineTop: CGFloat = 0
@@ -421,6 +469,29 @@ enum BlockLayout {
         }
         s.borderBoxWidth = s.contentWidth + marginTotalPad
         return s
+    }
+
+    /// Resolves the recursive containing inline size that the pre-Phase-4E0
+    /// BoxTreeBuilder passed to InlineLayout. Keeping this geometry contract is
+    /// separate from `Sides.contentWidth`: auto-width boxes historically did
+    /// not subtract their own horizontal margin/padding/border from line width.
+    /// Correcting that behavior requires its own explicitly approved geometry
+    /// phase; this refactor only moves ownership and call order.
+    private static func resolveInlineFormattingSize(
+        _ box: BlockBox,
+        containingInlineSize: CGFloat,
+        rootFontSize: CGFloat
+    ) -> CGFloat {
+        let resolved = CSSLengthResolver.resolve(
+            box.style.width,
+            emBase: box.style.fontSize,
+            remBase: rootFontSize,
+            percentBase: containingInlineSize
+        )
+        guard case .auto = box.style.width, resolved == nil else {
+            return min(max(resolved ?? containingInlineSize, 0), containingInlineSize)
+        }
+        return containingInlineSize
     }
 
     private static func resolve(_ length: CSSLength, style: ComputedStyle, ctx: LayoutContext) -> CGFloat? {

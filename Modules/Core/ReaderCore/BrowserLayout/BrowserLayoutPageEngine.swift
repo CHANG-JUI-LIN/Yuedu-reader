@@ -217,11 +217,13 @@ struct BrowserChapterLayout {
                 case .text(let t):
                     let color: UIColor
                     if t.color == oldThemeColor { color = themeTextColor } else { color = t.color }
-                    let visible = slice(sourceText, t.sourceRange)
+                    let visible = t.renderedTextOverride ?? slice(sourceText, t.sourceRange)
                     items.append(.text(DisplayTextItem(
                         sourceRange: t.sourceRange, nodeID: t.nodeID, linkTarget: t.linkTarget,
                         writingMode: t.writingMode, rect: t.rect, baselineY: t.baselineY,
-                        font: t.font, color: color, text: visible, ctLine: t.ctLine
+                        font: t.font, color: color, text: visible, ctLine: t.ctLine,
+                        sourceMapping: t.sourceMapping,
+                        renderedTextOverride: t.renderedTextOverride
                     )))
                 case .fill(let f):
                     items.append(.fill(DisplayFillItem(
@@ -1342,6 +1344,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                         let start = max(t.sourceRange.location, range.location)
                         let end = min(t.sourceRange.location + t.sourceRange.length, rangeEnd)
                         guard end > start else { continue }
+                        if case .wholeRange = t.sourceMapping {
+                            pageRects.append(t.rect.rawValue)
+                            continue
+                        }
                         if let line = t.ctLine,
                            let rect = preciseRect(
                                fragment: t, line: line,
@@ -1389,26 +1395,26 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         line: CTLine,
         selection: NSRange
     ) -> CGRect? {
-        let lineRange = CTLineGetStringRange(line)
-        guard lineRange.length > 0 else { return nil }
-        let lineStart = lineRange.location
-        let lineEnd = lineRange.location + lineRange.length
-
-        // The fragment's run within the line: its source range must sit inside
-        // the line's range for the line-space mapping to be exact. (Whitespace
-        // trims shift run ranges; those fall back to proportional.)
-        let fragStart = t.sourceRange.location
-        let fragEnd = t.sourceRange.location + t.sourceRange.length
-        guard fragStart >= lineStart, fragEnd <= lineEnd else { return nil }
-
+        guard case .linear(let shapedRange) = t.sourceMapping else { return nil }
         let selStart = selection.location
         let selEnd = selection.location + selection.length
-        let startInLine = max(selStart, lineStart) - lineStart
-        let endInLine = min(selEnd, lineEnd) - lineStart
-        guard endInLine > startInLine else { return nil }
-
-        let offsetStart = CTLineGetOffsetForStringIndex(line, startInLine, nil)
-        let offsetEnd = CTLineGetOffsetForStringIndex(line, endInLine, nil)
+        let sourceDeltaStart = selStart - t.sourceRange.location
+        let sourceDeltaEnd = selEnd - t.sourceRange.location
+        guard sourceDeltaStart >= 0,
+              sourceDeltaEnd > sourceDeltaStart,
+              sourceDeltaEnd <= shapedRange.length else {
+            return nil
+        }
+        let shapedStart = shapedRange.location + sourceDeltaStart
+        let shapedEnd = shapedRange.location + sourceDeltaEnd
+        let lineRange = CTLineGetStringRange(line)
+        guard shapedStart >= lineRange.location,
+              shapedEnd <= lineRange.location + lineRange.length else {
+            return nil
+        }
+        let pieceOrigin = CTLineGetOffsetForStringIndex(line, shapedRange.location, nil)
+        let offsetStart = CTLineGetOffsetForStringIndex(line, shapedStart, nil) - pieceOrigin
+        let offsetEnd = CTLineGetOffsetForStringIndex(line, shapedEnd, nil) - pieceOrigin
 
         // Horizontal only for now: the fragment rect already encodes the run's
         // baseline-aligned horizontal placement. Vertical mapping arrives with
@@ -1626,4 +1632,3 @@ extension BrowserLayoutPageEngine {
         return nil
     }
 }
-

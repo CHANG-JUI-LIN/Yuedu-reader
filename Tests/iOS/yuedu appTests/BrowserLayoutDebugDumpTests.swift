@@ -67,8 +67,19 @@ struct BrowserLayoutDebugDumpTests {
                       sourceRange: NSRange(location: (firstSentence as NSString).length,
                                            length: (secondSentence as NSString).length)),
         ]
-        let lines2 = InlineLayout.layoutLines(runs: runs2, maxWidth: 150, rootFontSize: 16,
-                                              lineHeight: nil, sourceText: sourceText)
+        let lines2 = InlineLayout.layoutLines(
+            runs: runs2,
+            context: InlineFormattingContext(
+                containingInlineSize: 150,
+                rootFontSize: 16,
+                lineHeight: nil,
+                writingMode: .horizontal,
+                sourceText: sourceText,
+                fontResolver: nil,
+                floatContext: nil,
+                blockOffsetY: 0
+            )
+        )
         var runDump: [String] = []
         for (i, line) in lines2.enumerated() {
             for run in line.runs {

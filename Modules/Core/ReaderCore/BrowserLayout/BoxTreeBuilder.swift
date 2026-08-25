@@ -42,6 +42,9 @@ enum BoxTreeBuilder {
             imageLoader: imageLoader, boxCount: &boxCount
         )
         Self.linkParents(box)
+        #if DEBUG
+        assertUnformatted(box)
+        #endif
         return box
     }
 
@@ -65,6 +68,7 @@ enum BoxTreeBuilder {
         boxCount += 1
         var kids: [BlockBox] = []
         var pendingInline: [InlineRun] = []
+        var assignedFirstInlineContext = false
         // anchor IDs that will register at the first text run appended under them
         var anchorStack: [String] = []
         if let anchor = node.anchorID { anchorStack.append(anchor) }
@@ -96,9 +100,12 @@ enum BoxTreeBuilder {
                     registerAnchors(&anchorStack, ownID: elementNode.anchorID,
                                     anchors: &anchors, at: sourceText.currentOffset)
                     if elementNode.style.isFloated || elementNode.style.display == .block {
-                        flushGroup(&pendingInline, style: node.style, config: config,
-                                   containerWidth: containerWidth,
-                                   sourceText: &sourceText, into: &kids)
+                        flushGroup(
+                            &pendingInline,
+                            style: node.style,
+                            into: &kids,
+                            assignedFirstInlineContext: &assignedFirstInlineContext
+                        )
                         let attachment = makeBlockImage(for: elementNode, config: config, containerWidth: containerWidth, imageLoader: imageLoader)
                         let box = BlockBox(style: elementNode.style, boxType: .block)
                         box.imageAttachment = attachment
@@ -108,10 +115,21 @@ enum BoxTreeBuilder {
                         appendImageRun(elementNode, to: &pendingInline, sourceText: &sourceText,
                                        config: config, imageLoader: imageLoader)
                     }
+                } else if elementNode.tag == "ruby" {
+                    appendRubyRun(
+                        elementNode,
+                        to: &pendingInline,
+                        sourceText: &sourceText,
+                        anchors: &anchors,
+                        anchorStack: &anchorStack
+                    )
                 } else if elementNode.style.isFloated || elementNode.style.display == .block {
-                    flushGroup(&pendingInline, style: node.style, config: config,
-                               containerWidth: containerWidth,
-                               sourceText: &sourceText, into: &kids)
+                    flushGroup(
+                        &pendingInline,
+                        style: node.style,
+                        into: &kids,
+                        assignedFirstInlineContext: &assignedFirstInlineContext
+                    )
                     let childContainer = Self.childContainerWidth(
                         of: elementNode, parentWidth: containerWidth, config: config
                     )
@@ -135,14 +153,13 @@ enum BoxTreeBuilder {
 
         let box = BlockBox(style: node.style, boxType: .block, children: kids)
         Self.attachDebugIdentity(box, node: node)
-        if !pendingInline.isEmpty {
-            let visible = visibleRuns(pendingInline)
-            box.inlineRuns = visible
-            if let lines = layoutRuns(visible, style: node.style, config: config,
-                                      containerWidth: containerWidth, sourceText: &sourceText) {
-                box.lines = lines
-            }
+        let trailingVisibleRuns = visibleRuns(pendingInline)
+        if !trailingVisibleRuns.isEmpty {
+            box.inlineRuns = trailingVisibleRuns
+            box.ownsFirstFormattedLine = !assignedFirstInlineContext
+            assignedFirstInlineContext = true
         }
+        _ = assignedFirstInlineContext
         return box
     }
 
@@ -200,6 +217,14 @@ enum BoxTreeBuilder {
                                     anchors: &anchors, at: sourceText.currentOffset)
                     appendImageRun(elementNode, to: &runs, sourceText: &sourceText,
                                    config: config, imageLoader: imageLoader)
+                } else if elementNode.tag == "ruby" {
+                    appendRubyRun(
+                        elementNode,
+                        to: &runs,
+                        sourceText: &sourceText,
+                        anchors: &anchors,
+                        anchorStack: &localStack
+                    )
                 } else if elementNode.style.display == .block || elementNode.style.display == .none {
                     // Block sibling inside inline flow (e.g. div inside span):
                     // Phase 1.5 flattens it into its own anonymous group boundary
@@ -277,6 +302,181 @@ enum BoxTreeBuilder {
         ))
     }
 
+    private static func appendRubyRun(
+        _ node: ComputedStyleNode,
+        to runs: inout [InlineRun],
+        sourceText: inout SourceTextBuilder,
+        anchors: inout [String: Int],
+        anchorStack: inout [String]
+    ) {
+        guard let structure = HorizontalRubySupport.structure(for: node) else {
+            assertionFailure("unsupported Ruby reached BoxTreeBuilder")
+            return
+        }
+
+        var baseRuns: [InlineRun] = []
+        var localAnchors = anchorStack
+        if let own = node.anchorID { localAnchors.append(own) }
+        collectRubyBase(
+            structure.baseChildren,
+            inheritedNode: node,
+            runs: &baseRuns,
+            sourceText: &sourceText,
+            anchors: &anchors,
+            anchorStack: &localAnchors
+        )
+        let pieces = baseRuns.map {
+            RubyInlinePiece(
+                text: $0.text,
+                style: $0.style,
+                sourceRange: $0.sourceRange,
+                nodeID: $0.nodeID,
+                linkTarget: $0.linkTarget
+            )
+        }
+        guard let first = pieces.first, let last = pieces.last else {
+            assertionFailure("validated Ruby produced no base pieces")
+            return
+        }
+        anchorStack.removeAll()
+
+        var annotationPieces: [RubyAnnotationPiece] = []
+        collectRubyAnnotation(
+            structure.annotation.children,
+            inheritedNode: structure.annotation,
+            pieces: &annotationPieces
+        )
+        annotationPieces = trimRubyAnnotationEdges(annotationPieces)
+        let range = NSRange(
+            location: first.sourceRange.location,
+            length: NSMaxRange(last.sourceRange) - first.sourceRange.location
+        )
+        let unit = RubyInlineUnit(
+            base: pieces,
+            annotation: RubyAnnotation(
+                pieces: annotationPieces
+            ),
+            sourceRange: range,
+            nodeID: node.nodeID,
+            linkTarget: node.linkTarget,
+            alignment: node.style.rubyAlign,
+            position: node.style.rubyPosition
+        )
+        runs.append(InlineRun(
+            text: "\u{FFFC}",
+            style: node.style,
+            sourceRange: range,
+            nodeID: node.nodeID,
+            linkTarget: node.linkTarget,
+            ruby: unit
+        ))
+    }
+
+    private static func collectRubyBase(
+        _ children: [StyleTreeChild],
+        inheritedNode: ComputedStyleNode,
+        runs: inout [InlineRun],
+        sourceText: inout SourceTextBuilder,
+        anchors: inout [String: Int],
+        anchorStack: inout [String]
+    ) {
+        for child in children {
+            switch child {
+            case .text(let raw):
+                appendTextNode(
+                    raw,
+                    style: inheritedNode.style,
+                    nodeID: inheritedNode.nodeID,
+                    link: inheritedNode.linkTarget,
+                    to: &runs,
+                    sourceText: &sourceText,
+                    anchors: &anchors,
+                    anchorStack: &anchorStack
+                )
+            case .element(let element):
+                guard element.tag != "rp" else { continue }
+                var nestedAnchors = anchorStack
+                if let own = element.anchorID { nestedAnchors.append(own) }
+                collectRubyBase(
+                    element.children,
+                    inheritedNode: element,
+                    runs: &runs,
+                    sourceText: &sourceText,
+                    anchors: &anchors,
+                    anchorStack: &nestedAnchors
+                )
+            }
+        }
+    }
+
+    private static func collectRubyAnnotation(
+        _ children: [StyleTreeChild],
+        inheritedNode: ComputedStyleNode,
+        pieces: inout [RubyAnnotationPiece]
+    ) {
+        for child in children {
+            switch child {
+            case .text(let raw):
+                let text = InlineLayout.collapseText(
+                    raw,
+                    mode: inheritedNode.style.whiteSpace
+                )
+                guard !text.isEmpty else { continue }
+                pieces.append(RubyAnnotationPiece(
+                    text: text,
+                    style: inheritedNode.style,
+                    nodeID: inheritedNode.nodeID,
+                    linkTarget: inheritedNode.linkTarget
+                ))
+            case .element(let element):
+                collectRubyAnnotation(
+                    element.children,
+                    inheritedNode: element,
+                    pieces: &pieces
+                )
+            }
+        }
+    }
+
+    private static func trimRubyAnnotationEdges(
+        _ pieces: [RubyAnnotationPiece]
+    ) -> [RubyAnnotationPiece] {
+        var result = pieces
+        while let first = result.first {
+            let text = first.text.drop(while: { $0.isWhitespace })
+            if text.isEmpty {
+                result.removeFirst()
+            } else if text.count != first.text.count {
+                result[0] = RubyAnnotationPiece(
+                    text: String(text),
+                    style: first.style,
+                    nodeID: first.nodeID,
+                    linkTarget: first.linkTarget
+                )
+                break
+            } else {
+                break
+            }
+        }
+        while let last = result.last {
+            let text = last.text.reversed().drop(while: { $0.isWhitespace }).reversed()
+            if text.isEmpty {
+                result.removeLast()
+            } else if text.count != last.text.count {
+                result[result.count - 1] = RubyAnnotationPiece(
+                    text: String(text),
+                    style: last.style,
+                    nodeID: last.nodeID,
+                    linkTarget: last.linkTarget
+                )
+                break
+            } else {
+                break
+            }
+        }
+        return result
+    }
+
     /// The EPUB cover idiom: `<svg viewBox="0 0 1000 1333" width="100%"
     /// height="100%"><image xlink:href="cover.jpg"/></svg>` — an SVG element
     /// used purely as a wrapper around one raster image. Returns the image
@@ -342,9 +542,8 @@ enum BoxTreeBuilder {
         // content width (config.renderWidth) — the 画册 CSS sizes images with
         // `width: 90%` against the body, and the reader contract treats that
         // 352.8pt image as the reference size. The PARAGRAPH's line-box
-        // maxWidth (passed to layoutRuns) is the narrower containing box, so
-        // centering resolves against the actual cell width — the image equals
-        // the cell width and centers at the cell origin.
+        // containing inline size later passed to InlineLayout is the narrower
+        // used content box, so centering resolves against the actual cell width.
         let usedSize = BlockLayout.resolveReplacedSize(
             intrinsic: intrinsic,
             style: node.style,
@@ -390,44 +589,22 @@ enum BoxTreeBuilder {
     private static func flushGroup(
         _ runs: inout [InlineRun],
         style: ComputedStyle,
-        config: BrowserLayoutConfig,
-        containerWidth: CGFloat,
-        sourceText: inout SourceTextBuilder,
-        into kids: inout [BlockBox]
+        into kids: inout [BlockBox],
+        assignedFirstInlineContext: inout Bool
     ) {
         let visible = visibleRuns(runs)
         guard !visible.isEmpty else {
             runs = []
             return
         }
-        let box = BlockBox(style: style, boxType: .anonymous, inlineRuns: visible)
-        if let lines = layoutRuns(visible, style: style, config: config,
-                                  containerWidth: containerWidth, sourceText: &sourceText) {
-            box.lines = lines
-        }
-        kids.append(box)
+        kids.append(BlockBox(
+            style: style,
+            boxType: .anonymous,
+            inlineRuns: visible,
+            ownsFirstFormattedLine: !assignedFirstInlineContext
+        ))
+        assignedFirstInlineContext = true
         runs = []
-    }
-
-    /// Drops trailing whitespace-only runs (inter-block whitespace), then lays
-    /// the remaining runs into line boxes. nil when nothing visible remains.
-    private static func layoutRuns(
-        _ runs: [InlineRun],
-        style: ComputedStyle,
-        config: BrowserLayoutConfig,
-        containerWidth: CGFloat,
-        sourceText: inout SourceTextBuilder
-    ) -> [LayoutLine]? {
-        let visible = visibleRuns(runs)
-        guard !visible.isEmpty else { return nil }
-        return InlineLayout.layoutLines(
-            runs: visible,
-            maxWidth: containerWidth,
-            rootFontSize: config.rootFontSize,
-            lineHeight: style.lineHeight,
-            sourceText: sourceText.text,
-            fontResolver: config.fontResolver
-        )
     }
 
     private static func visibleRuns(_ runs: [InlineRun]) -> [InlineRun] {
@@ -440,6 +617,17 @@ enum BoxTreeBuilder {
         }
         return visible
     }
+
+    #if DEBUG
+    /// BoxTreeBuilder owns unformatted runs only. A non-empty line array here
+    /// means shaping escaped the InlineLayout call owned by BlockLayout.
+    private static func assertUnformatted(_ box: BlockBox) {
+        assert(box.lines.isEmpty, "BoxTreeBuilder must not create LayoutLine values")
+        for child in box.children {
+            assertUnformatted(child)
+        }
+    }
+    #endif
 }
 
 extension BoxTreeBuilder {

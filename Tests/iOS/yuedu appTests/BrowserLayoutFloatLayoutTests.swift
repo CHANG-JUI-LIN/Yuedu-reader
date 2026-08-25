@@ -402,11 +402,16 @@ struct BrowserLayoutFloatLayoutTests {
 
         let lines = InlineLayout.layoutLines(
             runs: [run],
-            maxWidth: 390,
-            rootFontSize: 16,
-            lineHeight: 20,
-            sourceText: text,
-            floatContext: floats
+            context: InlineFormattingContext(
+                containingInlineSize: 390,
+                rootFontSize: 16,
+                lineHeight: 20,
+                writingMode: .horizontal,
+                sourceText: text,
+                fontResolver: nil,
+                floatContext: floats,
+                blockOffsetY: 0
+            )
         )
 
         #expect(lines[0].height > 21)

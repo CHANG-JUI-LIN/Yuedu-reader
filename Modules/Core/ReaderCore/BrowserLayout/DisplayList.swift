@@ -25,6 +25,36 @@ struct DisplayTextItem {
     /// The shaped line this run belongs to (untrimmed line range), for
     /// precise string-index → typographic-offset mapping.
     let ctLine: CTLine?
+    let sourceMapping: TextSourceMapping
+    let renderedTextOverride: String?
+
+    init(
+        sourceRange: NSRange,
+        nodeID: Int,
+        linkTarget: String?,
+        writingMode: ReaderWritingMode,
+        rect: PageLocalRect,
+        baselineY: CGFloat,
+        font: UIFont,
+        color: UIColor,
+        text: String,
+        ctLine: CTLine?,
+        sourceMapping: TextSourceMapping? = nil,
+        renderedTextOverride: String? = nil
+    ) {
+        self.sourceRange = sourceRange
+        self.nodeID = nodeID
+        self.linkTarget = linkTarget
+        self.writingMode = writingMode
+        self.rect = rect
+        self.baselineY = baselineY
+        self.font = font
+        self.color = color
+        self.text = text
+        self.ctLine = ctLine
+        self.sourceMapping = sourceMapping ?? .linear(shapedRange: sourceRange)
+        self.renderedTextOverride = renderedTextOverride
+    }
 }
 
 /// A bordered box: background fill + full four-edge border + radius.
@@ -102,7 +132,7 @@ enum DisplayListBuilder {
         for fragment in fragments {
             switch fragment {
             case .text(let t):
-                let visible = slice(sourceText, range: t.sourceRange)
+                let visible = t.renderedTextOverride ?? slice(sourceText, range: t.sourceRange)
                 items.append(.text(DisplayTextItem(
                     sourceRange: t.sourceRange,
                     nodeID: t.nodeID,
@@ -113,7 +143,9 @@ enum DisplayListBuilder {
                     font: t.font,
                     color: t.color,
                     text: visible,
-                    ctLine: t.ctLine
+                    ctLine: t.ctLine,
+                    sourceMapping: t.sourceMapping,
+                    renderedTextOverride: t.renderedTextOverride
                 )))
             case .fill(let f):
                 items.append(.fill(DisplayFillItem(

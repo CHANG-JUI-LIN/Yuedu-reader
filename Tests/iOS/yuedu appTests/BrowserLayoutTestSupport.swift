@@ -67,6 +67,7 @@ enum BrowserLayoutTestSupport {
         var out = ""
         let ns = sourceText as NSString
         for fragment in allTextFragments(pages) {
+            guard case .linear = fragment.sourceMapping else { continue }
             guard fragment.sourceRange.length > 0,
                   fragment.sourceRange.location >= 0,
                   fragment.sourceRange.location + fragment.sourceRange.length <= ns.length else { continue }
@@ -80,6 +81,7 @@ enum BrowserLayoutTestSupport {
     static func rangesAreOrdered(_ pages: [PageFragments]) -> Bool {
         var cursor = -1
         for fragment in allTextFragments(pages) {
+            guard case .linear = fragment.sourceMapping else { continue }
             let range = fragment.sourceRange
             guard range.length > 0 else { continue }
             guard range.location >= cursor else { return false }
