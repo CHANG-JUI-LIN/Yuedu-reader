@@ -51,9 +51,15 @@ struct RegexHighlightTextStyleTests {
 
     /// True for a real italic face as well as a synthesized one (the shear rides in the font
     /// matrix, where no symbolic trait is set).
+    ///
+    /// Read through `CTFontGetMatrix`, **not** `fontDescriptor.matrix`. As of iOS 26 a descriptor
+    /// taken off a sheared font reports an identity matrix and carries no `.matrix` attribute,
+    /// while the font itself still shears (measured: `CTFontGetMatrix().c == 0.2`, descriptor
+    /// `0.0`, and rasterizing the same glyph through both fonts gives different pixels). Asking
+    /// the descriptor made these tests fail on a slant the reader was still drawing correctly.
     private func isSlanted(_ font: UIFont) -> Bool {
         font.fontDescriptor.symbolicTraits.contains(.traitItalic)
-            || abs(font.fontDescriptor.matrix.c) > 0.05
+            || abs(CTFontGetMatrix(font as CTFont).c) > 0.05
     }
 
     private func resolvedFont(

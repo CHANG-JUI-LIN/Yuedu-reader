@@ -698,6 +698,16 @@ struct ReaderSettingsView: View {
             } label: {
                 Label(localized("正則高亮"), systemImage: "text.magnifyingglass")
             }
+
+            NavigationLink {
+                ReaderDialogueBubbleSettingsView(
+                    style: settings.dialogueBubbleStyle,
+                    onOpenImporter: { requestStyleImporter(.dialogueBubble) },
+                    onChange: { settings.dialogueBubbleStyle = $0 }
+                )
+            } label: {
+                Label(localized("對話氣泡"), systemImage: "bubble.left.and.bubble.right")
+            }
         }
         .interfaceSectionSurface()
     }

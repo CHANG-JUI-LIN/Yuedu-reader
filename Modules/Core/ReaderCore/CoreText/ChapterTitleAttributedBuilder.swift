@@ -99,13 +99,68 @@ enum ChapterTitleAttributedBuilder {
                     "⟐ title.design compile ms=\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))"
                         + " ok=true len=\(titleBlock.length)"
                 )
+                // What the design resolved each dynamic field to — logged only
+                // when a design that *has* text slots filled none of them, which
+                // is the signature of "the chapter name vanished". Logging every
+                // chapter instead buries that line in the routine ones.
+                if let plan = titleBlock.attribute(
+                    designRenderPlanAttribute,
+                    at: 0,
+                    effectiveRange: nil
+                ) as? ChapterTitleRenderPlan,
+                   plan.layers.contains(where: { $0.attributedText != nil }),
+                   plan.layers.allSatisfy({ ($0.attributedText?.length ?? 0) == 0 }) {
+                    let described = plan.layers.map { layer -> String in
+                        guard let attributed = layer.attributedText else {
+                            return layer.image != nil ? "<image>" : "<shape>"
+                        }
+                        // A dynamic field with nothing to show — a chapter title
+                        // carrying no number, say — compiles to an *empty*
+                        // attributed string, and asking an empty one for the
+                        // attribute at 0 raises an NSRangeException. Which is
+                        // exactly how a diagnostic added to explain a missing
+                        // title started crashing the reader on the next chapter.
+                        guard attributed.length > 0 else {
+                            return "\"\"@\(Int(layer.frame.minY))"
+                        }
+                        let font = attributed.attribute(
+                            .font,
+                            at: 0,
+                            effectiveRange: nil
+                        ) as? UIFont
+                        return "\"\(attributed.string)\"@\(Int(layer.frame.minY))"
+                            + "/\(font.map { "\($0.fontName):\(Int($0.pointSize))" } ?? "-")"
+                    }
+                    AppLogger.render(
+                        "chapterTitle design produced no visible text"
+                            + " canvas=\(Int(plan.canvasSize.width))"
+                            + "x\(Int(plan.canvasSize.height)) \(described.joined(separator: " "))",
+                        context: ["title": trimmed]
+                    )
+                }
                 return
             } catch {
-                // Rendering never guesses a second representation. The same
-                // throwing helper is used by editor/apply validation so this
-                // error can be surfaced before the design becomes active.
+                // A design that cannot compile used to drop the title block
+                // entirely — the chapter name simply vanished, with nothing on
+                // screen to say why. The plain two-line title is always
+                // renderable, so it stands in while the real error goes to the
+                // log where a diagnostics export can pick it up. Delete this
+                // branch only once designs can no longer fail at render time.
                 AppLogger.render(
-                    "chapterTitle structured design compile failed; title block omitted error=\(error)"
+                    "chapterTitle structured design compile failed; falling back to plain title",
+                    context: [
+                        "error": String(describing: error),
+                        "title": trimmed,
+                        "layers": String(design.layers.count),
+                        "renderWidth": String(format: "%.1f", renderWidth),
+                    ]
+                )
+                appendPlainLines(
+                    trimmedTitle: trimmed,
+                    style: style,
+                    themeTextColor: themeTextColor,
+                    letterSpacing: letterSpacing,
+                    to: attr
                 )
                 return
             }

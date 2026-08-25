@@ -62,16 +62,34 @@ enum CoreTextHorizontalLineDrawer {
             }
         }
 
+        // Resolved up front rather than inside the loop: 對話氣泡 has to be
+        // painted before any glyph is drawn, and it needs the same shifted
+        // origins the glyphs will use — a bubble measured from the unshifted
+        // ones detaches from its own text on bottom-justified pages.
         var accumulatedShift: CGFloat = 0
-
-        for (lineIdx, line) in lines.enumerated() {
+        var shiftedOrigins = [CGPoint](repeating: .zero, count: lines.count)
+        for lineIdx in lines.indices {
             if lineIdx > 0 && paragraphGapAfterLine.contains(lineIdx - 1) {
                 accumulatedShift -= extraSpacePerGap
             }
+            shiftedOrigins[lineIdx] = CGPoint(
+                x: origins[lineIdx].x + contentMinX,
+                y: origins[lineIdx].y + accumulatedShift + contentMinY
+            )
+        }
 
-            var origin = origins[lineIdx]
-            origin.x += contentMinX
-            origin.y += (accumulatedShift + contentMinY)
+        ReaderDialogueBubbleRenderer.draw(
+            ReaderDialogueBubbleRenderer.bubbles(
+                lines: lines,
+                origins: shiftedOrigins,
+                attributedString: attrStr,
+                writingMode: .horizontal
+            ),
+            context: ctx
+        )
+
+        for (lineIdx, line) in lines.enumerated() {
+            var origin = shiftedOrigins[lineIdx]
 
             let lineRange = CTLineGetStringRange(line)
             let lineStart = lineRange.location

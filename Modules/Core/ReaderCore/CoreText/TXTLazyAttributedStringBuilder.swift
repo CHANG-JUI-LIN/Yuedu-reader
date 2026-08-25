@@ -162,6 +162,25 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
             }
         }
 
+        if settings.dialogueBubbleStyle.isEnabled {
+            await ReaderStyleAssetStore.shared.prewarmDialogueBubbleAssets(
+                style: settings.dialogueBubbleStyle
+            )
+            // Same width the chapter title above is composed against.
+            ReaderDialogueBubbleMarker.apply(
+                style: settings.dialogueBubbleStyle,
+                columnWidth: max(
+                    1,
+                    UIScreen.main.bounds.width
+                        - settings.contentInsets.left
+                        - settings.contentInsets.right
+                ),
+                bodyFontSize: settings.fontSize,
+                writingMode: settings.writingMode,
+                to: attrStr
+            )
+        }
+
         return AttributedChapterBuildResult(
             attributedString: attrStr,
             imagePage: nil,

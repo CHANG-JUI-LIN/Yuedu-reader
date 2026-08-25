@@ -59,6 +59,9 @@ struct NodeAttributedStringRenderer {
         /// `<img>` with no centering CSS but expect them centered, matching the source apps. Left
         /// off for EPUB, whose stylesheets position images themselves.
         let centerStandaloneImages: Bool
+        /// 對話氣泡. Applied after every typography pass, so the bubble's own
+        /// paragraph indents are the last word on where its text sits.
+        let dialogueBubbleStyle: ReaderDialogueBubbleStyle
 
         init(
             from settings: ReaderRenderSettings,
@@ -83,6 +86,7 @@ struct NodeAttributedStringRenderer {
             self.regexHighlightConfiguration = settings.regexHighlightConfiguration
             self.readerStyleAppearance = settings.readerStyleAppearance
             self.readerStyleAssetRevision = settings.readerStyleAssetRevision
+            self.dialogueBubbleStyle = settings.dialogueBubbleStyle
             // EPUB <h1> path: size/spacing/visibility always apply. Font and
             // weight apply only when the user explicitly picked a title font
             // (跟隨閱讀字體 off) — otherwise the publisher's own heading CSS wins,
@@ -194,7 +198,27 @@ struct NodeAttributedStringRenderer {
                 )
             }
         }
+        await applyDialogueBubblesIfNeeded(to: processed)
         return processed
+    }
+
+    /// Runs last, after the inline 對話 decoration: a bubble owns its
+    /// paragraph's alignment and indents, and re-running any typography pass
+    /// afterwards would overwrite them.
+    private func applyDialogueBubblesIfNeeded(to processed: NSMutableAttributedString) async {
+        guard config.dialogueBubbleStyle.isEnabled, let width = config.renderWidth else {
+            return
+        }
+        await ReaderStyleAssetStore.shared.prewarmDialogueBubbleAssets(
+            style: config.dialogueBubbleStyle
+        )
+        ReaderDialogueBubbleMarker.apply(
+            style: config.dialogueBubbleStyle,
+            columnWidth: width,
+            bodyFontSize: config.baseFontSize,
+            writingMode: config.writingMode,
+            to: processed
+        )
     }
 
     private func prewarmRegexHighlightAssets() async {

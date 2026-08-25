@@ -744,6 +744,10 @@ struct ReaderRenderSettings: Equatable {
     var readerStyleAppearance: ReaderStyleAppearance = .light
     /// Invalidates draw-only image decoration snapshots after asset mutations.
     var readerStyleAssetRevision: UInt64 = 0
+    /// 對話氣泡. Lives here rather than being read from settings at draw time so
+    /// that switching it on re-runs layout: the bubble's side, width and padding
+    /// are baked into paragraph indents while the string is built.
+    var dialogueBubbleStyle: ReaderDialogueBubbleStyle = .default
 }
 
 enum ReaderWritingMode: String, CaseIterable, Codable {

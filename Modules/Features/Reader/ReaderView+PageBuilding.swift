@@ -50,7 +50,8 @@ extension ReaderView {
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
             regexHighlightConfiguration: settings.regexHighlightConfiguration,
             readerStyleAppearance: activeReaderStyleAppearance,
-            readerStyleAssetRevision: settings.readerStyleAssetRevision
+            readerStyleAssetRevision: settings.readerStyleAssetRevision,
+            dialogueBubbleStyle: settings.dialogueBubbleStyle
         )
 
         let surface: ReaderRenderSurface

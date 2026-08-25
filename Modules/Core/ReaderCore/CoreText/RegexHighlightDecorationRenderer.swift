@@ -423,33 +423,30 @@ enum RegexHighlightDecorationRenderer {
     ) {
         guard pointSize.width > 0, pointSize.height > 0 else { return }
         // CGContext's tiled-image API scales one tile to this rect, anchors it at the rect origin,
-        // then repeats in user space. Reflect the anchor while correcting CGImage's y orientation.
-        let reflectionAxis = bounds.minY + bounds.maxY
-        let reflectedAnchorY = reflectionAxis - anchor.y - pointSize.height
-        let tileRect = CGRect(
-            x: anchor.x,
-            y: reflectedAnchorY,
-            width: pointSize.width,
-            height: pointSize.height
+        // then repeats in user space. The context is already y-up, so the tile needs neither a
+        // flip nor a reflected anchor — both were compensating for a flip that should not be here.
+        _ = bounds
+        context.draw(
+            image,
+            in: CGRect(origin: anchor, size: pointSize),
+            byTiling: true
         )
-        context.saveGState()
-        context.translateBy(x: 0, y: reflectionAxis)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(image, in: tileRect, byTiling: true)
-        context.restoreGState()
     }
 
+    /// Draws a CGImage the right way up.
+    ///
+    /// This painter runs inside the line drawer's context, which is already
+    /// flipped to CoreText's y-up convention — and CoreGraphics draws images
+    /// upright in a y-up context on its own. The extra flip this used to apply
+    /// turned every background image upside down; invisible on a symmetric
+    /// texture, obvious on anything with a top and a bottom.
     private static func drawUpright(
         _ image: CGImage,
         in rect: CGRect,
         context: CGContext
     ) {
         guard rect.width > 0, rect.height > 0 else { return }
-        context.saveGState()
-        context.translateBy(x: 0, y: rect.minY + rect.maxY)
-        context.scaleBy(x: 1, y: -1)
         context.draw(image, in: rect)
-        context.restoreGState()
     }
 
     private static func roundedPath(rect: CGRect, radius: Double?) -> CGPath {

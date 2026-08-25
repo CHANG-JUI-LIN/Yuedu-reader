@@ -154,6 +154,9 @@ extension ReaderRenderSettings {
             || fontPostScriptName != old.fontPostScriptName
             || isBold != old.isBold
             || chapterTitleStyle != old.chapterTitleStyle
+            // 對話氣泡 rewrites paragraph alignment and indents while the string
+            // is built, so it is a layout change, not a repaint.
+            || dialogueBubbleStyle != old.dialogueBubbleStyle
             || regexRefresh == .relayout
 
         if layoutChanged { return .layout }

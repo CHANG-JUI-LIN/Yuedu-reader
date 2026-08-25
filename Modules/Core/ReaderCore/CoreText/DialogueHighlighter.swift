@@ -106,6 +106,12 @@ enum DialogueHighlighter {
         }
     }
 
+    /// True for any character this scanner treats as a dialogue delimiter.
+    /// Shared with 對話氣泡, which collapses the marks inside a bubble.
+    static func isQuoteMark(_ character: unichar) -> Bool {
+        openers.contains(character) || closers.contains(character)
+    }
+
     /// Scans for quoted dialogue spans: opener → matching closer, with nesting.
     /// Paragraph breaks close any open span and reset nesting, so a stray unclosed
     /// quote never bleeds across the rest of the chapter. An opener with no closer

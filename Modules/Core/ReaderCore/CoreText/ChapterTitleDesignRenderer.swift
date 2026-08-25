@@ -308,8 +308,16 @@ enum ChapterTitleDesignRenderer {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = style.textAlignment.nsTextAlignment
         if let lineHeight = textStyle.lineHeight, lineHeight > 0 {
-            paragraph.minimumLineHeight = CGFloat(lineHeight)
-            paragraph.maximumLineHeight = CGFloat(lineHeight)
+            // Never squeeze the line box below what the resolved font needs.
+            // An authored line height is measured against the design's own
+            // font; the font actually used here is the reader's, scaled by
+            // Dynamic Type, and a CJK face at a larger accessibility size wants
+            // far more than a Latin design allowed. Forcing the smaller value
+            // clips the glyphs — losing full-height CJK entirely while a short
+            // Latin digit survives.
+            let minimum = max(CGFloat(lineHeight), font.lineHeight)
+            paragraph.minimumLineHeight = minimum
+            paragraph.maximumLineHeight = minimum
         }
 
         let colorHex = textStyle.colorHex ?? defaultTextColor(for: appearance)

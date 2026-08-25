@@ -810,7 +810,8 @@ private extension ReaderStyleImageContentMode {
     }
 }
 
-private extension Color {
+/// Shared with 對話氣泡, which fills the same kind of colour rows.
+extension Color {
     var editorRGBHex: UInt32? {
         let color = UIColor(self)
         var red: CGFloat = 0

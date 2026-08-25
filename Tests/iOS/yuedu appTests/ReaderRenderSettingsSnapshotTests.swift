@@ -118,7 +118,8 @@ struct ReaderRenderSettingsSnapshotTests {
             readerBackgroundImageURL: nil,
             regexHighlightConfiguration: .disabled,
             readerStyleAppearance: .dark,
-            readerStyleAssetRevision: 7
+            readerStyleAssetRevision: 7,
+            dialogueBubbleStyle: .default
         )
     }
 }

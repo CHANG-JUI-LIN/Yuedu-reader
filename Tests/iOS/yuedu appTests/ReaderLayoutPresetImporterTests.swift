@@ -253,4 +253,22 @@ struct ReaderLayoutPresetImporterTests {
 
         #expect(preset.readerOverlayLayout == nil)
     }
+
+    /// Every field decodes with `decodeIfPresent`, so an unrelated JSON object
+    /// used to decode "successfully" into an all-defaults preset — and applying
+    /// it silently reset the reader's type size to 18pt.
+    @Test("refuses JSON that carries no layout field at all")
+    func refusesUnrelatedJSON() throws {
+        let dialogueScript = Data(
+            #"{ "name": "氣泡對話", "id": 108, "script": "function process(ctx){}" }"#.utf8
+        )
+        let titleTemplate = Data(#"{ "v": "5.9.0", "fr": 30, "w": 2000, "h": 800 }"#.utf8)
+
+        #expect(throws: ReaderLayoutPresetImportError.self) {
+            try ReaderLayoutPresetImporter.decode(data: dialogueScript)
+        }
+        #expect(throws: ReaderLayoutPresetImportError.self) {
+            try ReaderLayoutPresetImporter.decode(data: titleTemplate)
+        }
+    }
 }

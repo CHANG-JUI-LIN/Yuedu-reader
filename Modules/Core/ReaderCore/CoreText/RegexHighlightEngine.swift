@@ -478,8 +478,14 @@ enum RegexHighlightEngine {
         guard italic else {
             traits.remove(.traitItalic)
             let descriptor = font.fontDescriptor.withSymbolicTraits(traits) ?? font.fontDescriptor
-            // An identity matrix is required to undo a *synthesized* slant: the shear lives in the
-            // descriptor, so re-creating the font without one keeps rendering it italic.
+            // An identity matrix is required to undo a *synthesized* slant: the shear rides along
+            // in the descriptor, so re-creating the font without one keeps rendering it italic.
+            //
+            // It rides along invisibly. As of iOS 26 `fontDescriptor.matrix` reads identity and
+            // `.matrix` is absent from `fontAttributes` even for a font whose `CTFontGetMatrix`
+            // is sheared and whose glyphs rasterize slanted — and a font rebuilt from that
+            // descriptor comes back sheared. Verify a slant with `CTFontGetMatrix`, never with
+            // the descriptor, or this branch looks like dead code.
             var identity = CGAffineTransform.identity
             return CTFontCreateWithFontDescriptor(
                 descriptor as CTFontDescriptor,

@@ -8,6 +8,13 @@ struct ReaderSettingsImportPlan {
     var layout: ReaderLayoutPreset?
     var chapterTitleStyle: ChapterTitleStyle?
     var regexHighlights: RegexHighlightConfiguration?
+    var dialogueBubbleStyle: ReaderDialogueBubbleStyle?
+    /// Name carried by a file that has no layout preset to name it — currently
+    /// the `nm` of an imported Lottie title template.
+    var contentName: String?
+    /// What the file asked for but could not be reproduced exactly. Reported
+    /// alongside the success message so a lossy conversion is never silent.
+    var notes: [String] = []
 
     /// Header/footer components and positions are hand-placed; replacing them
     /// wholesale is the one part of an import worth confirming first.
@@ -17,10 +24,12 @@ struct ReaderSettingsImportPlan {
 
     var isEmpty: Bool {
         layout == nil && chapterTitleStyle == nil && regexHighlights == nil
+            && dialogueBubbleStyle == nil
     }
 
     var name: String? {
-        layout?.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = layout?.name ?? contentName
+        return candidate?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -59,6 +68,39 @@ enum ReaderSettingsImportService {
     static func loadReaderSettings(from url: URL) async throws -> ReaderSettingsImportPlan {
         guard url.pathExtension.lowercased() == "yuedustyle" else {
             let data = try Data(contentsOf: url)
+            // Checked before the chapter-title probe: a Lottie document shares
+            // none of its keys, but both end up as a 章節標題樣式 and only one
+            // decoder can be right for a given file.
+            // Checked first: a bubble script is a `{ name, script … }` document
+            // whose `name` would otherwise satisfy the layout-preset decoder.
+            if DialogueBubbleScriptImporter.looksLikeBubbleScript(data) {
+                let imported = try await DialogueBubbleScriptImporter.import(
+                    data,
+                    assetStore: .shared
+                )
+                return ReaderSettingsImportPlan(
+                    layout: nil,
+                    chapterTitleStyle: nil,
+                    regexHighlights: nil,
+                    dialogueBubbleStyle: imported.style,
+                    contentName: imported.name,
+                    notes: imported.notes
+                )
+            }
+            if LottieTitleTemplateImporter.looksLikeTitleTemplate(data) {
+                let imported = try await LottieTitleTemplateImporter.import(
+                    data,
+                    assetStore: .shared
+                )
+                return ReaderSettingsImportPlan(
+                    layout: nil,
+                    chapterTitleStyle: imported.style,
+                    regexHighlights: nil,
+                    dialogueBubbleStyle: nil,
+                    contentName: imported.templateName,
+                    notes: imported.notes
+                )
+            }
             if looksLikeChapterTitleJSON(data) {
                 return ReaderSettingsImportPlan(
                     layout: nil,
@@ -147,6 +189,10 @@ enum ReaderSettingsImportService {
         if let highlights = plan.regexHighlights {
             GlobalSettings.shared.regexHighlightConfiguration = highlights
             summary.appliedRegexHighlights = true
+        }
+        if let bubbleStyle = plan.dialogueBubbleStyle {
+            GlobalSettings.shared.dialogueBubbleStyle = bubbleStyle
+            summary.appliedDialogueBubbleStyle = true
         }
         return summary
     }

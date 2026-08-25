@@ -11,6 +11,9 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
     case regexHighlights
     /// The 章節標題樣式 page's own 匯入.
     case chapterTitleStyle
+    /// The 對話氣泡 page's own 匯入 — accepts the script-based bubble files and
+    /// keeps only their settings.
+    case dialogueBubble
 
     var id: String { rawValue }
 
@@ -20,7 +23,8 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
     var contentTypes: [UTType] {
         switch self {
         case .readerSettings: ReaderSettingsImportService.readerSettingsContentTypes
-        case .regexHighlights, .chapterTitleStyle: ReaderSettingsImportService.styleContentTypes
+        case .regexHighlights, .chapterTitleStyle, .dialogueBubble:
+            ReaderSettingsImportService.styleContentTypes
         }
     }
 
@@ -35,13 +39,28 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
             return ReaderSettingsImportPlan(
                 layout: nil,
                 chapterTitleStyle: nil,
-                regexHighlights: plan.regexHighlights
+                regexHighlights: plan.regexHighlights,
+                dialogueBubbleStyle: nil,
+                contentName: plan.contentName,
+                notes: plan.notes
             )
         case .chapterTitleStyle:
             return ReaderSettingsImportPlan(
                 layout: nil,
                 chapterTitleStyle: plan.chapterTitleStyle,
-                regexHighlights: nil
+                regexHighlights: nil,
+                dialogueBubbleStyle: nil,
+                contentName: plan.contentName,
+                notes: plan.notes
+            )
+        case .dialogueBubble:
+            return ReaderSettingsImportPlan(
+                layout: nil,
+                chapterTitleStyle: nil,
+                regexHighlights: nil,
+                dialogueBubbleStyle: plan.dialogueBubbleStyle,
+                contentName: plan.contentName,
+                notes: plan.notes
             )
         }
     }
@@ -153,9 +172,15 @@ private struct ReaderStyleImportPresentationModifier: ViewModifier {
             let summary = try ReaderSettingsImportService.apply(plan)
             onApplied(summary)
             let name = plan.name
-            let message = name?.isEmpty == false
+            var message = name?.isEmpty == false
                 ? String(format: localized("已匯入「%@」：%@"), name!, summary.localizedDescription)
                 : summary.localizedDescription
+            // A converted file that lost something says so here. Silence would
+            // leave the user comparing the result against the original with no
+            // idea which differences are ours.
+            if !plan.notes.isEmpty {
+                message += "\n\n" + plan.notes.joined(separator: "\n")
+            }
             alert = ReaderStyleImportAlert(titleKey: "匯入成功", message: message)
         } catch {
             alert = ReaderStyleImportAlert(

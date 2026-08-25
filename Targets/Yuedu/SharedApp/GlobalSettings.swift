@@ -538,6 +538,7 @@ class GlobalSettings: ObservableObject {
     private static let readerDialogueBoxColorHexKey = "yd_reader_dialogue_box_color_hex"
     private static let readerDialogueBoxStyleKey = "yd_reader_dialogue_box_style"
     private static let regexHighlightConfigurationKey = "yd_regex_highlight_configuration_v1"
+    private static let dialogueBubbleStyleKey = "yd_reader_dialogue_bubble_v1"
     private var readerStyleAssetRevisionCancellable: AnyCancellable?
     // TTS playback highlight — independent from the reader dialogue decoration.
     private static let ttsHighlightEnabledKey = "yd_tts_highlight_enabled"
@@ -863,6 +864,18 @@ class GlobalSettings: ObservableObject {
                 return
             }
             Self.saveRegexHighlightConfiguration(sanitized)
+        }
+    }
+    /// 對話氣泡 — the block-level dialogue treatment. Off by default; the inline
+    /// 對話文字高亮 / 對話底色框 above stay the default look.
+    @Published var dialogueBubbleStyle: ReaderDialogueBubbleStyle {
+        didSet {
+            let sanitized = dialogueBubbleStyle.sanitized()
+            if sanitized != dialogueBubbleStyle {
+                dialogueBubbleStyle = sanitized
+                return
+            }
+            Self.saveDialogueBubbleStyle(sanitized)
         }
     }
     @Published private(set) var readerStyleAssetRevision: UInt64 = 0
@@ -1622,6 +1635,7 @@ class GlobalSettings: ObservableObject {
         regexHighlightConfiguration = Self.loadRegexHighlightConfiguration(
             oldGlobalEnabled: loadedDialogueHighlightEnabled
         )
+        dialogueBubbleStyle = Self.loadDialogueBubbleStyle()
 
         // TTS playback highlight
         if UserDefaults.standard.object(forKey: Self.ttsHighlightEnabledKey) == nil {
@@ -2046,6 +2060,24 @@ class GlobalSettings: ObservableObject {
     ) {
         guard let data = try? JSONEncoder().encode(configuration.sanitized()) else { return }
         UserDefaults.standard.set(data, forKey: regexHighlightConfigurationKey)
+    }
+
+    // MARK: - Dialogue bubble style
+
+    private static func loadDialogueBubbleStyle() -> ReaderDialogueBubbleStyle {
+        guard let data = UserDefaults.standard.data(forKey: dialogueBubbleStyleKey),
+              let decoded = try? JSONDecoder().decode(
+                  ReaderDialogueBubbleStyle.self,
+                  from: data
+              ) else {
+            return .default
+        }
+        return decoded.sanitized()
+    }
+
+    private static func saveDialogueBubbleStyle(_ style: ReaderDialogueBubbleStyle) {
+        guard let data = try? JSONEncoder().encode(style.sanitized()) else { return }
+        UserDefaults.standard.set(data, forKey: dialogueBubbleStyleKey)
     }
 
     /// Add or replace a user preset (matched by id).

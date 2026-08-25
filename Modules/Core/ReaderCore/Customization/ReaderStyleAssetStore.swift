@@ -291,6 +291,31 @@ actor ReaderStyleAssetStore {
         }
     }
 
+    /// Loads the bubble skins 對話氣泡 will need into the image cache, so the
+    /// draw pass stays free of file I/O and decoding.
+    func prewarmDialogueBubbleAssets(style: ReaderDialogueBubbleStyle) {
+        guard style.isEnabled else { return }
+        let assetIDs = Set(
+            ReaderDialogueBubbleSide.allCases.flatMap { side -> [UUID] in
+                let sideStyle = style.side(side)
+                return [sideStyle.skin?.assetID, sideStyle.avatar?.assetID].compactMap { $0 }
+            }
+        )
+        for assetID in assetIDs where imageCache.image(for: assetID) == nil {
+            do {
+                _ = try loadCachedImage(for: assetID)
+            } catch {
+                AppLogger.render(
+                    "dialogue bubble skin prewarm failed",
+                    context: [
+                        "assetID": assetID.uuidString,
+                        "error": String(describing: error),
+                    ]
+                )
+            }
+        }
+    }
+
     func references(for id: UUID) -> [ReaderStyleAssetReference] {
         referencesByAssetID[id] ?? []
     }

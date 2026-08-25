@@ -62,7 +62,32 @@ enum ReaderLayoutPresetImporter {
         }
     }
 
+    /// Every key this importer can actually act on — deliberately excluding
+    /// `name`, which is metadata that plenty of unrelated JSON also carries.
+    ///
+    /// `LegadoReadConfig` declares every field with `decodeIfPresent`, so **any**
+    /// JSON object decodes successfully, and `readerLayoutPreset` always hands
+    /// back a font size (`textSize ?? 18`). Without this gate, picking an
+    /// unrelated `.json` in 匯入閱讀設定 reports success and silently resets the
+    /// reader's type size to 18pt. One recognized key is what separates "a
+    /// preset that only sets one field" from "not a preset at all".
+    static let recognizedKeys: Set<String> = [
+        "textSize", "textBold", "lineSpacingExtra", "letterSpacing",
+        "paragraphSpacing", "paddingLeft", "paddingRight", "paddingTop",
+        "paddingBottom", "footerPaddingBottom", "footerPaddingTop", "headerMode",
+        "titleSize", "titleTopSpacing", "titleBottomSpacing", "pageAnim",
+        "readerHeaderVisible", "readerFooterVisible", "readerHeaderFieldPositions",
+        "readerHeaderTopPadding", "readerHeaderTextGap",
+        "readerHeaderHorizontalPadding", "footerBottomPadding", "footerTextGap",
+        "readerFooterHorizontalPadding", "topContentReservation",
+        "bottomContentReservation", "readerOverlayLayout",
+    ]
+
     static func decode(data: Data) throws -> ReaderLayoutPreset {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              !recognizedKeys.isDisjoint(with: object.keys) else {
+            throw ReaderLayoutPresetImportError.invalidReadConfig
+        }
         do {
             let config = try JSONDecoder().decode(LegadoReadConfig.self, from: data)
             let overlayLayout = validOverlayLayout(in: data) ?? config.migratedLegacyOverlayLayout
