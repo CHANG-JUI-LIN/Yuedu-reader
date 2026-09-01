@@ -412,13 +412,11 @@ struct BrowserLayoutImageTests {
             #expect(abs(image.rect.width - 352.8) < 0.5)
             #expect(abs(image.rect.height - 627.2) < 1.0)
         }
-        // Horizontal placement: gallery is 90% auto-centered; the image equals
-        // the cell width (90% of body), so its left edge sits AT the cell
-        // origin — NOT double-centered (previous bug: line maxWidth used the
-        // body width → extra ~19.6 slack). Tolerance covers the body-margin
-        // percentBase rounding (~0.8pt).
+        // Page-local placement composes the UA body margin (8pt), gallery
+        // auto-centering (18.8pt), and image centering inside the 338.4pt
+        // gallery (16.92pt). The root-origin term is the approved Root X rule.
         let first = try #require(images.first)
-        #expect(abs(first.rect.minX - 19.6) < 1.5)
+        #expect(abs(first.rect.minX - 43.72) < 1.5)
         // Critical: no two images overlap on the same page. Images are page-
         // local; compare within each page via documentRect.
         for page in pages {
@@ -453,9 +451,9 @@ struct BrowserLayoutImageTests {
         let (pages, _) = try await BrowserLayoutTestSupport.layout(html, width: 392, height: 842)
         let texts = BrowserLayoutTestSupport.allTextFragments(pages)
         let first = try #require(texts.first)
-        // Text (3 CJK chars ≈ 63pt at 21pt) centered in the 255pt box:
-        // the box itself sits at x=0 (no margin) — left edge ≈ (255-63)/2.
-        #expect(abs(first.rect.minX - (255 - first.rect.width) / 2) < 2.0)
+        // Text (3 CJK chars ≈ 63pt at 21pt) centered in the 255pt box. The
+        // page-local position also includes the UA body's 8pt root origin.
+        #expect(abs(first.rect.minX - (8 + (255 - first.rect.width) / 2)) < 2.0)
     }
 
     // MARK: - Background-image source fidelity
