@@ -443,6 +443,38 @@ struct BrowserLayoutFloatLayoutTests {
         #expect(layout.rootBox.children[1].lines[0].contentX == 80)
     }
 
+    @Test func percentageInlineImageInsideExplicitWidthFloatUsesFloatContentWidth() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 800)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 800, height: 800))
+        }
+        let html = """
+        <html><body style="margin: 4px">
+        <div style="float: right; width: 50%; text-align: center">
+            <img src="portrait.png" width="85%" height="auto">
+        </div>
+        <p style="margin: 0">Text wraps on the left and restores full width below the float.</p>
+        </body></html>
+        """
+        let doc = BrowserLayoutDocument(
+            html: html,
+            cssTexts: [],
+            config: makeConfig(renderWidth: 400),
+            imageLoader: { $0 == "portrait.png" ? image : nil }
+        )
+        let layout = try doc.makeLayout(containerSize: CGSize(width: 400, height: 800))
+
+        let floatBox = layout.rootBox.children[0]
+        let atomic = try #require(floatBox.lines.first?.runs.first?.atomic)
+        #expect(floatBox.contentSize.width == 196)
+        #expect(atomic.usedSize == CGSize(width: 166.6, height: 166.6),
+                "85% must resolve against the 196pt float content box, not the 400pt viewport")
+        #expect(abs((floatBox.lines.first?.contentX ?? -1) - 14.7) < 0.001,
+                "text-align:center must use the float's 196pt content width")
+        #expect(floatBox.frame.height == 166.6,
+                "The resolved image height must define the float exclusion bottom")
+    }
+
     @Test func oversizedReplacedFloatUsesPagedFitPolicy() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 300)).image { context in
             UIColor.red.setFill()

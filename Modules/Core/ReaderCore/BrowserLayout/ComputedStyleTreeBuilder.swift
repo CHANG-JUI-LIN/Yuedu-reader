@@ -210,6 +210,16 @@ final class ComputedStyleTreeBuilder {
             style.fontSize = parent.fontSize * 0.5
         }
 
+        // HTML presentational hints form their own cascade origin between UA
+        // defaults and author CSS. Keep normalization outside the CSS frontend
+        // so a future Lexbor DOM adapter can feed the same typed declarations.
+        applyPresentationalHints(
+            HTMLPresentationalHintExtractor.extract(
+                from: SwiftSoupHTMLSemanticAdapter.adapt(element)
+            ),
+            to: &style
+        )
+
         let ctx = ApplyContext(parent: parent, rootFontSize: rootFontSize, textColor: textColor, backgroundColor: backgroundColor, configFontFamilies: configFontFamilies)
 
         let matched = rules
@@ -232,7 +242,31 @@ final class ComputedStyleTreeBuilder {
         cascadeApply(inlineDecl.important, order: inlineDecl.order, to: &style, ctx: ctx)
 
         if element.hasAttr("hidden") { style.isHidden = true }
+        style.finalizeLineHeight(rootFontSize: rootFontSize)
+        style.finalizeBorderLengths(rootFontSize: rootFontSize)
         return style
+    }
+
+    private func applyPresentationalHints(
+        _ hints: [HTMLPresentationalHint],
+        to style: inout ComputedStyle
+    ) {
+        for hint in hints {
+            guard case .dimension(let dimension) = hint.value else { continue }
+            let length: CSSLength
+            switch dimension {
+            case .pixels(let value):
+                length = .px(value)
+            case .percentage(let fraction):
+                length = .percent(fraction)
+            }
+            switch hint.property {
+            case .width:
+                style.width = length
+            case .height:
+                style.height = length
+            }
+        }
     }
 }
 
@@ -377,8 +411,18 @@ enum ComputedStylePropertyApplier {
         case "text-indent":
             style.textIndent = CSSTextIndent.parse(value)
         case "line-height":
-            if let lh = resolveLineHeight(value, fontSize: style.fontSize, root: ctx.rootFontSize) {
-                style.lineHeight = lh
+            if value == "normal" {
+                style.lineHeight = nil
+                style.lineHeightMultiplier = nil
+                style.pendingLineHeightLength = nil
+            } else if let unitless = Double(value), unitless.isFinite {
+                style.lineHeight = nil
+                style.lineHeightMultiplier = CGFloat(unitless)
+                style.pendingLineHeightLength = nil
+            } else if let length = CSSLengthResolver.parse(value) {
+                style.lineHeight = nil
+                style.lineHeightMultiplier = nil
+                style.pendingLineHeightLength = length
             }
         case "white-space":
             switch value {
@@ -410,17 +454,17 @@ enum ComputedStylePropertyApplier {
         case "padding-right": if let l = CSSLengthResolver.parse(value) { style.paddingRight = l }
         case "padding-bottom": if let l = CSSLengthResolver.parse(value) { style.paddingBottom = l }
         case "padding-left": if let l = CSSLengthResolver.parse(value) { style.paddingLeft = l }
-        case "border-top-width": style.borderTopWidth = numericWidth(value) ?? style.borderTopWidth
-        case "border-right-width": style.borderRightWidth = numericWidth(value) ?? style.borderRightWidth
-        case "border-bottom-width": style.borderBottomWidth = numericWidth(value) ?? style.borderBottomWidth
-        case "border-left-width": style.borderLeftWidth = numericWidth(value) ?? style.borderLeftWidth
+        case "border-top-width": if let length = borderLength(value) { style.pendingBorderTopWidth = length }
+        case "border-right-width": if let length = borderLength(value) { style.pendingBorderRightWidth = length }
+        case "border-bottom-width": if let length = borderLength(value) { style.pendingBorderBottomWidth = length }
+        case "border-left-width": if let length = borderLength(value) { style.pendingBorderLeftWidth = length }
         case "border-width": applyBorderWidthShorthand(value, to: &style)
         case "border":
             // `border: <width> <style> <color>` shorthand. Width + color + style.
             for part in value.split(separator: " ").map(String.init) {
-                if let w = numericWidth(part) {
-                    style.borderTopWidth = w; style.borderRightWidth = w
-                    style.borderBottomWidth = w; style.borderLeftWidth = w
+                if let length = borderLength(part) {
+                    style.pendingBorderTopWidth = length; style.pendingBorderRightWidth = length
+                    style.pendingBorderBottomWidth = length; style.pendingBorderLeftWidth = length
                 } else if let c = parseColor(part) {
                     style.borderColor = c
                 } else if BorderStyle.from(cssRaw: part) != .solid || isBorderStyleKeyword(part) {
@@ -439,7 +483,7 @@ enum ComputedStylePropertyApplier {
         case "border-bottom-style": style.borderBottomStyle = BorderStyle.from(cssRaw: value)
         case "border-left-style": style.borderLeftStyle = BorderStyle.from(cssRaw: value)
         case "border-color": style.borderColor = parseColor(value)
-        case "border-radius": style.borderRadius = numericWidth(value) ?? 0
+        case "border-radius": if let length = borderLength(value) { style.pendingBorderRadius = length }
         case "background":
             if let c = parseColor(shorthandBackgroundColor(value)) { style.backgroundColor = c }
             if let source = parseBackgroundImageSource(preserved) {
@@ -491,19 +535,28 @@ enum ComputedStylePropertyApplier {
         }
     }
 
-    fileprivate static func numericWidth(_ value: String) -> CGFloat? {
-        CSSLengthResolver.resolve(CSSLengthResolver.parse(value) ?? .auto, emBase: 17, remBase: 17, percentBase: 400)
+    fileprivate static func borderLength(_ value: String) -> CSSLength? {
+        guard let length = CSSLengthResolver.parse(value) else { return nil }
+        // Percentages are invalid for border-width. Percentage border-radius
+        // needs final border-box axes and remains outside the current typed
+        // radius model; never turn either form into a magic 400pt-based value.
+        if case .percent = length { return nil }
+        if case .auto = length { return nil }
+        return length
     }
 
-    fileprivate static func applyBorderWidthShorthand(_ value: String, to style: inout ComputedStyle) {
-        let widths = value.split(separator: " ").map(String.init).map(numericWidth)
+    fileprivate static func applyBorderWidthShorthand(
+        _ value: String,
+        to style: inout ComputedStyle
+    ) {
+        let widths = value.split(separator: " ").map(String.init).map(borderLength)
         guard !widths.isEmpty else { return }
-        func w(_ i: Int) -> CGFloat { widths[min(i, widths.count - 1)] ?? 0 }
+        func w(_ i: Int) -> CSSLength? { widths[min(i, widths.count - 1)] }
         switch widths.count {
-        case 1: style.borderTopWidth = w(0); style.borderRightWidth = w(0); style.borderBottomWidth = w(0); style.borderLeftWidth = w(0)
-        case 2: style.borderTopWidth = w(0); style.borderRightWidth = w(1); style.borderBottomWidth = w(0); style.borderLeftWidth = w(1)
-        case 3: style.borderTopWidth = w(0); style.borderRightWidth = w(1); style.borderBottomWidth = w(2); style.borderLeftWidth = w(1)
-        default: style.borderTopWidth = w(0); style.borderRightWidth = w(1); style.borderBottomWidth = w(2); style.borderLeftWidth = w(3)
+        case 1: style.pendingBorderTopWidth = w(0); style.pendingBorderRightWidth = w(0); style.pendingBorderBottomWidth = w(0); style.pendingBorderLeftWidth = w(0)
+        case 2: style.pendingBorderTopWidth = w(0); style.pendingBorderRightWidth = w(1); style.pendingBorderBottomWidth = w(0); style.pendingBorderLeftWidth = w(1)
+        case 3: style.pendingBorderTopWidth = w(0); style.pendingBorderRightWidth = w(1); style.pendingBorderBottomWidth = w(2); style.pendingBorderLeftWidth = w(1)
+        default: style.pendingBorderTopWidth = w(0); style.pendingBorderRightWidth = w(1); style.pendingBorderBottomWidth = w(2); style.pendingBorderLeftWidth = w(3)
         }
     }
 
@@ -538,14 +591,18 @@ enum ComputedStylePropertyApplier {
     }
 
     /// `border-top: <width> <style> <color>` side shorthand.
-    fileprivate static func applyBorderSideShorthand(part value: String, style: inout ComputedStyle, side: String) {
+    fileprivate static func applyBorderSideShorthand(
+        part value: String,
+        style: inout ComputedStyle,
+        side: String
+    ) {
         for part in value.split(separator: " ").map(String.init) {
-            if let w = numericWidth(part) {
+            if let length = borderLength(part) {
                 switch side {
-                case "top": style.borderTopWidth = w
-                case "right": style.borderRightWidth = w
-                case "bottom": style.borderBottomWidth = w
-                default: style.borderLeftWidth = w
+                case "top": style.pendingBorderTopWidth = length
+                case "right": style.pendingBorderRightWidth = length
+                case "bottom": style.pendingBorderBottomWidth = length
+                default: style.pendingBorderLeftWidth = length
                 }
             } else if let c = parseColor(part) {
                 style.borderColor = c
@@ -635,15 +692,6 @@ enum ComputedStylePropertyApplier {
             guard let parsed = CSSLengthResolver.parse(raw) else { return nil }
             return CSSLengthResolver.resolve(parsed, emBase: parentSize, remBase: root, percentBase: parentSize)
         }
-    }
-
-    fileprivate static func resolveLineHeight(_ raw: String, fontSize: CGFloat, root: CGFloat) -> CGFloat? {
-        if raw == "normal" { return nil }
-        if let unitless = Double(raw), abs(Double(fontSize) * unitless).isFinite {
-            return fontSize * CGFloat(unitless)
-        }
-        guard let parsed = CSSLengthResolver.parse(raw) else { return nil }
-        return CSSLengthResolver.resolve(parsed, emBase: fontSize, remBase: root, percentBase: fontSize)
     }
 
     fileprivate static func cssFontWeight(_ raw: String, current: Int) -> Int {

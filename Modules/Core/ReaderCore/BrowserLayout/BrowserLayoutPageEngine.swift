@@ -230,7 +230,8 @@ struct BrowserChapterLayout {
                         rect: f.rect, color: f.color, cornerRadius: f.cornerRadius,
                         borderTop: f.borderTop, borderBottom: f.borderBottom,
                         borderLeft: f.borderLeft, borderRight: f.borderRight,
-                        nodeID: f.nodeID, writingMode: f.writingMode
+                        nodeID: f.nodeID, writingMode: f.writingMode,
+                        fragmentPosition: f.fragmentPosition
                     )))
                 case .image(let i):
                     items.append(.image(DisplayImageItem(

@@ -95,7 +95,7 @@ enum BoxTreeBuilder {
                     registerAnchors(&anchorStack, ownID: elementNode.anchorID,
                                     anchors: &anchors, at: sourceText.currentOffset)
                     appendSVGImageRun(elementNode, source: svgSource, to: &pendingInline,
-                                      sourceText: &sourceText, config: config, imageLoader: imageLoader)
+                                      sourceText: &sourceText, imageLoader: imageLoader)
                 } else if elementNode.tag == "img" {
                     registerAnchors(&anchorStack, ownID: elementNode.anchorID,
                                     anchors: &anchors, at: sourceText.currentOffset)
@@ -106,14 +106,14 @@ enum BoxTreeBuilder {
                             into: &kids,
                             assignedFirstInlineContext: &assignedFirstInlineContext
                         )
-                        let attachment = makeBlockImage(for: elementNode, config: config, containerWidth: containerWidth, imageLoader: imageLoader)
+                        let attachment = makeBlockImage(for: elementNode, imageLoader: imageLoader)
                         let box = BlockBox(style: elementNode.style, boxType: .block)
                         box.imageAttachment = attachment
                         Self.attachDebugIdentity(box, node: elementNode)
                         kids.append(box)
                     } else {
                         appendImageRun(elementNode, to: &pendingInline, sourceText: &sourceText,
-                                       config: config, imageLoader: imageLoader)
+                                       imageLoader: imageLoader)
                     }
                 } else if elementNode.tag == "ruby" {
                     appendRubyRun(
@@ -211,12 +211,12 @@ enum BoxTreeBuilder {
                     registerAnchors(&localStack, ownID: elementNode.anchorID,
                                     anchors: &anchors, at: sourceText.currentOffset)
                     appendSVGImageRun(elementNode, source: svgSource, to: &runs,
-                                      sourceText: &sourceText, config: config, imageLoader: imageLoader)
+                                      sourceText: &sourceText, imageLoader: imageLoader)
                 } else if elementNode.tag == "img" {
                     registerAnchors(&localStack, ownID: elementNode.anchorID,
                                     anchors: &anchors, at: sourceText.currentOffset)
                     appendImageRun(elementNode, to: &runs, sourceText: &sourceText,
-                                   config: config, imageLoader: imageLoader)
+                                   imageLoader: imageLoader)
                 } else if elementNode.tag == "ruby" {
                     appendRubyRun(
                         elementNode,
@@ -500,29 +500,25 @@ enum BoxTreeBuilder {
         return nil
     }
 
-    /// Emits an SVG-wrapped cover image as a replaced element. Sized like an
-    /// `<img>` under `max-width: 100%`: the intrinsic bitmap, scaled down to
-    /// the container when it is wider. The SVG's own `width="100%"` is an
-    /// attribute rather than CSS, so the clamp is applied explicitly here.
+    /// Emits an SVG-wrapped cover image as a replaced element. BoxTreeBuilder
+    /// records intrinsic data only; BlockLayout owns its final used size once
+    /// the containing block is known.
     private static func appendSVGImageRun(
         _ node: ComputedStyleNode,
         source: String,
         to runs: inout [InlineRun],
         sourceText: inout SourceTextBuilder,
-        config: BrowserLayoutConfig,
         imageLoader: (String) -> UIImage?
     ) {
         guard let image = imageLoader(source) else { return }
         let intrinsic = image.size
         guard intrinsic.width > 0, intrinsic.height > 0 else { return }
-        let scale = min(1, config.renderWidth / intrinsic.width)
-        let usedSize = CGSize(width: intrinsic.width * scale, height: intrinsic.height * scale)
         runs.append(InlineRun(
             text: "\u{FFFC}", style: node.style,
             sourceRange: NSRange(location: sourceText.currentOffset, length: 0),
             nodeID: node.nodeID, linkTarget: node.linkTarget,
             atomic: AtomicInline(
-                source: source, image: image, usedSize: usedSize,
+                source: source, image: image, usedSize: intrinsic,
                 nodeID: node.nodeID, linkTarget: node.linkTarget
             )
         ))
@@ -532,31 +528,18 @@ enum BoxTreeBuilder {
         _ node: ComputedStyleNode,
         to runs: inout [InlineRun],
         sourceText: inout SourceTextBuilder,
-        config: BrowserLayoutConfig,
         imageLoader: (String) -> UIImage?
     ) {
         let src = (node.element.flatMap { try? $0.attr("src") }) ?? ""
         let image = imageLoader(src)
         let intrinsic = image?.size ?? .zero
-        // NOTE: the image's containing block for % widths stays the BODY
-        // content width (config.renderWidth) — the 画册 CSS sizes images with
-        // `width: 90%` against the body, and the reader contract treats that
-        // 352.8pt image as the reference size. The PARAGRAPH's line-box
-        // containing inline size later passed to InlineLayout is the narrower
-        // used content box, so centering resolves against the actual cell width.
-        let usedSize = BlockLayout.resolveReplacedSize(
-            intrinsic: intrinsic,
-            style: node.style,
-            containerWidth: config.renderWidth,
-            rootFontSize: config.rootFontSize
-        )
-        guard usedSize.width > 0, usedSize.height > 0, let image else { return }
+        guard intrinsic.width > 0, intrinsic.height > 0, let image else { return }
         runs.append(InlineRun(
             text: "\u{FFFC}", style: node.style,
             sourceRange: NSRange(location: sourceText.currentOffset, length: 0),
             nodeID: node.nodeID, linkTarget: node.linkTarget,
             atomic: AtomicInline(
-                source: src, image: image, usedSize: usedSize,
+                source: src, image: image, usedSize: intrinsic,
                 nodeID: node.nodeID, linkTarget: node.linkTarget
             )
         ))
@@ -564,20 +547,12 @@ enum BoxTreeBuilder {
 
     private static func makeBlockImage(
         for node: ComputedStyleNode,
-        config: BrowserLayoutConfig,
-        containerWidth: CGFloat,
         imageLoader: (String) -> UIImage?
     ) -> AtomicInline? {
         let src = (node.element.flatMap { try? $0.attr("src") }) ?? ""
         guard let image = imageLoader(src) else { return nil }
-        let usedSize = BlockLayout.resolveReplacedSize(
-            intrinsic: image.size,
-            style: node.style,
-            containerWidth: config.renderWidth,
-            rootFontSize: config.rootFontSize
-        )
         return AtomicInline(
-            source: src, image: image, usedSize: usedSize,
+            source: src, image: image, usedSize: image.size,
             nodeID: node.nodeID, linkTarget: node.linkTarget
         )
     }

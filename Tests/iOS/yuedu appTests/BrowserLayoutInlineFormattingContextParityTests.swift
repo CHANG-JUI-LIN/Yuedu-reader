@@ -74,7 +74,11 @@ struct BrowserLayoutInlineFormattingContextParityTests {
         )
         assertDigest(
             snapshot(value),
-            equals: "37e74c2631c11f3e12c816125b4dc7d845c5914f0c9617e1b468614d67b052f5"
+            // This fixture intentionally has paragraph margin + padding, so it
+            // is the one Phase-4E0 PRE artifact directly superseded by the
+            // used-value correction: line breaking now uses the paragraph's
+            // final content box instead of its provisional parent width.
+            equals: "ffde4343e9532ea04945205a9a020d8c10c83f820ebfd345da2da4baa720a3ea"
         )
     }
 

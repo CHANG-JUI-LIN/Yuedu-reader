@@ -146,6 +146,21 @@ final class CoreTextLineBreaker {
         var descent: CGFloat = 0
         var leading: CGFloat = 0
         let width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
-        return (width, ascent, descent)
+        // CoreText can return the same shaped line with sub-nanopoint advance
+        // drift between consecutive CTLine instances (observed delta:
+        // 6.984919309616e-10pt). `LineBreak.width` is authoritative horizontal
+        // used geometry, so retaining that process noise makes fragments and
+        // hit geometry nondeterministic even though line/source ranges are
+        // equal. Normalize only the affected advance at the CoreText -> layout
+        // boundary; ascent/descent remain untouched. Clearing 16 low mantissa
+        // bits absorbs the measured 49,152-ULP drift while retaining roughly
+        // 36 bits of relative precision, far below visible geometry.
+        return (stableLayoutAdvance(width), ascent, descent)
+    }
+
+    private func stableLayoutAdvance(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite, value >= 0 else { return value }
+        let canonicalBits = Double(value).bitPattern & ~UInt64(0xFFFF)
+        return CGFloat(Double(bitPattern: canonicalBits))
     }
 }

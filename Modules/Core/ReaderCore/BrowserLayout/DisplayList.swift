@@ -70,6 +70,31 @@ struct DisplayFillItem {
     let borderRight: BorderEdge
     let nodeID: Int
     let writingMode: ReaderWritingMode
+    let fragmentPosition: BlockDecorationFragmentPosition
+
+    init(
+        rect: PageLocalRect,
+        color: UIColor,
+        cornerRadius: CGFloat,
+        borderTop: BorderEdge,
+        borderBottom: BorderEdge,
+        borderLeft: BorderEdge,
+        borderRight: BorderEdge,
+        nodeID: Int,
+        writingMode: ReaderWritingMode,
+        fragmentPosition: BlockDecorationFragmentPosition = .single
+    ) {
+        self.rect = rect
+        self.color = color
+        self.cornerRadius = cornerRadius
+        self.borderTop = borderTop
+        self.borderBottom = borderBottom
+        self.borderLeft = borderLeft
+        self.borderRight = borderRight
+        self.nodeID = nodeID
+        self.writingMode = writingMode
+        self.fragmentPosition = fragmentPosition
+    }
 
     var hasVisibleBorder: Bool {
         borderTop.isVisible || borderBottom.isVisible || borderLeft.isVisible || borderRight.isVisible
@@ -152,7 +177,8 @@ enum DisplayListBuilder {
                     rect: f.rect, color: f.color, cornerRadius: f.cornerRadius,
                     borderTop: f.borderTop, borderBottom: f.borderBottom,
                     borderLeft: f.borderLeft, borderRight: f.borderRight,
-                    nodeID: f.nodeID, writingMode: f.writingMode
+                    nodeID: f.nodeID, writingMode: f.writingMode,
+                    fragmentPosition: f.fragmentPosition
                 )))
             case .image(let i):
                 items.append(.image(DisplayImageItem(

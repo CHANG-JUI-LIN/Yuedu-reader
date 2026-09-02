@@ -1,0 +1,22 @@
+# BrowserLayout CoreText advance normalization attribution — 2026-09-02
+# Only the horizontal CTLine advance is canonicalized; page and text-fragment counts must remain identical.
+# The production delta is below 1e-9pt around a 100pt advance. Digest changes occur only where formatted geometry crosses an existing rounding boundary.
+spine	classification	subtype	earliest_provenance	root_x_overlap	root_x_delta_pt	golden_pages	before_pages	after_pages	golden_lines	before_lines	after_lines
+10	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	5	5	5	130	130	130
+15	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	23	23	23	848	848	848
+45	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	15	15	15	540	540	540
+68	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	1	1	1	5	5	5
+281	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	25	25	25	1230	1230	1230
+295	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	42	42	42	1896	1896	1896
+296	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	24	24	24	1140	1140	1140
+299	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	27	27	27	1220	1220	1220
+318	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	16	16	16	885	885	885
+322	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	17	17	17	911	911	911
+338	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	4	4	4	203	203	203
+339	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	7	7	7	320	320	320
+340	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	15	15	15	635	635	635
+341	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	13	13	13	536	536	536
+342	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	7	7	7	313	313	313
+383	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	14	14	14	592	592	592
+404	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	13	13	13	508	508	508
+410	EXPECTED_SUBNANOPOINT_X_ONLY	advance-width-canonicalization	CORETEXT_ADVANCE_NORMALIZATION	no	<1e-9	27	27	27	1046	1046	1046

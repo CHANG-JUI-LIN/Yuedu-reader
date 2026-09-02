@@ -229,6 +229,28 @@ extension BlockLayoutTests {
 }
 
 struct CoreTextLineBreakerTests {
+    @Test func usedAdvanceIsBitwiseStableAcrossRepeatedShaping() throws {
+        let attributed = NSAttributedString(
+            string: "Repeated CoreText shaping must preserve authoritative layout geometry.",
+            attributes: [.font: UIFont.systemFont(ofSize: 29, weight: .semibold)]
+        )
+        let breaker = CoreTextLineBreaker()
+
+        func fingerprint() -> [(NSRange, UInt64)] {
+            breaker.breakLines(attributed: attributed, maxWidth: 173).map { line in
+                (line.range, Double(line.width).bitPattern)
+            }
+        }
+
+        let expected = fingerprint()
+        for _ in 0..<64 {
+            #expect(fingerprint().elementsEqual(expected) { lhs, rhs in
+                NSEqualRanges(lhs.0, rhs.0)
+                    && lhs.1 == rhs.1
+            })
+        }
+    }
+
     @Test func breaksLongTextIntoMultipleLines() throws {
         let paragraph = "This is a sentence that is long enough to wrap onto several lines when constrained to a narrow column width."
         let attr = NSAttributedString(string: paragraph, attributes: [.font: UIFont.systemFont(ofSize: 16)])

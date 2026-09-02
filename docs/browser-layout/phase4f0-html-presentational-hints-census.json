@@ -1,0 +1,527 @@
+{
+  "attributes" : [
+    {
+      "attribute" : "width",
+      "chapterCount" : 2060,
+      "elementCount" : 4313,
+      "epubCount" : 4,
+      "tag" : "img",
+      "valuePatterns" : [
+        {
+          "chapterCount" : 783,
+          "elementCount" : 1535,
+          "epubCount" : 2,
+          "value" : "15%"
+        },
+        {
+          "chapterCount" : 765,
+          "elementCount" : 1294,
+          "epubCount" : 1,
+          "value" : "50%"
+        },
+        {
+          "chapterCount" : 394,
+          "elementCount" : 553,
+          "epubCount" : 3,
+          "value" : "85%"
+        },
+        {
+          "chapterCount" : 191,
+          "elementCount" : 441,
+          "epubCount" : 2,
+          "value" : "10%"
+        },
+        {
+          "chapterCount" : 39,
+          "elementCount" : 378,
+          "epubCount" : 1,
+          "value" : "15"
+        },
+        {
+          "chapterCount" : 27,
+          "elementCount" : 52,
+          "epubCount" : 1,
+          "value" : "55%"
+        },
+        {
+          "chapterCount" : 42,
+          "elementCount" : 50,
+          "epubCount" : 2,
+          "value" : "80%"
+        },
+        {
+          "chapterCount" : 1,
+          "elementCount" : 3,
+          "epubCount" : 1,
+          "value" : "20%"
+        },
+        {
+          "chapterCount" : 2,
+          "elementCount" : 2,
+          "epubCount" : 1,
+          "value" : "35%"
+        },
+        {
+          "chapterCount" : 2,
+          "elementCount" : 2,
+          "epubCount" : 1,
+          "value" : "65%"
+        },
+        {
+          "chapterCount" : 1,
+          "elementCount" : 2,
+          "epubCount" : 1,
+          "value" : "70%"
+        },
+        {
+          "chapterCount" : 1,
+          "elementCount" : 1,
+          "epubCount" : 1,
+          "value" : "100%"
+        }
+      ]
+    },
+    {
+      "attribute" : "height",
+      "chapterCount" : 479,
+      "elementCount" : 1038,
+      "epubCount" : 3,
+      "tag" : "img",
+      "valuePatterns" : [
+        {
+          "chapterCount" : 444,
+          "elementCount" : 660,
+          "epubCount" : 3,
+          "value" : "auto"
+        },
+        {
+          "chapterCount" : 39,
+          "elementCount" : 378,
+          "epubCount" : 1,
+          "value" : "15"
+        }
+      ]
+    },
+    {
+      "attribute" : "background",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "body",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "bgcolor",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "body",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "text",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "body",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "align",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "img",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "align",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "table",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "bgcolor",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "table",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "border",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "table",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "cellpadding",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "table",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "cellspacing",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "table",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "height",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "table",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "valign",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "table",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "width",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "table",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "align",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "td",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "bgcolor",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "td",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "border",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "td",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "cellpadding",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "td",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "cellspacing",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "td",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "height",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "td",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "valign",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "td",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "width",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "td",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "align",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "th",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "bgcolor",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "th",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "border",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "th",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "cellpadding",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "th",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "cellspacing",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "th",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "height",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "th",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "valign",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "th",
+      "valuePatterns" : [
+
+      ]
+    },
+    {
+      "attribute" : "width",
+      "chapterCount" : 0,
+      "elementCount" : 0,
+      "epubCount" : 0,
+      "tag" : "th",
+      "valuePatterns" : [
+
+      ]
+    }
+  ],
+  "books" : [
+    {
+      "chapterCount" : 16,
+      "id" : "real/AI术语词典-第一册.epub",
+      "scannedChapterCount" : 16
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "real/georgia-pls-ssml.epub",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 12,
+      "id" : "real/israelsailing.epub",
+      "scannedChapterCount" : 12
+    },
+    {
+      "chapterCount" : 15,
+      "id" : "real/kusamakura-japanese-vertical-writing.epub",
+      "scannedChapterCount" : 15
+    },
+    {
+      "chapterCount" : 2014,
+      "id" : "real/mahabharata.epub",
+      "scannedChapterCount" : 2014
+    },
+    {
+      "chapterCount" : 16,
+      "id" : "real/《全知读者视角01》sing N song(싱숑)著[Hooshaun制作].epub",
+      "scannedChapterCount" : 16
+    },
+    {
+      "chapterCount" : 1881,
+      "id" : "real/《全职高手3》作者：蝴蝶蓝.epub",
+      "scannedChapterCount" : 1881
+    },
+    {
+      "chapterCount" : 1192,
+      "id" : "real/《全能游戏设计师1》作者：冷陌 & 青衫取醉.epub",
+      "scannedChapterCount" : 1192
+    },
+    {
+      "chapterCount" : 458,
+      "id" : "real/《红楼梦+大观红楼》人民文学出版.epub",
+      "scannedChapterCount" : 458
+    },
+    {
+      "chapterCount" : 1594,
+      "id" : "real/《诡秘之主4》作者：爱潜水的乌贼.epub",
+      "scannedChapterCount" : 1594
+    },
+    {
+      "chapterCount" : 44,
+      "id" : "real/壹▪洪武大帝.epub",
+      "scannedChapterCount" : 44
+    },
+    {
+      "chapterCount" : 93,
+      "id" : "real/红楼梦脂评汇校本-繁体竖排版 (BookDNA经典复刻系列) (BookDNA典藏书系) (Traditional Chinese Edition) - 脂砚斋 & 曹雪芹 & 吴铭恩.epub",
+      "scannedChapterCount" : 93
+    },
+    {
+      "chapterCount" : 2,
+      "id" : "repo-generated/georgia",
+      "scannedChapterCount" : 2
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "repo-generated/israelsailing",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "repo-generated/linear-algebra",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "repo-generated/prose-smoke",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "repo-generated/quiz-bindings",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "repo-regression/block-image-before-paragraph.epub",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "repo-regression/centered-percent-image.epub",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "repo-regression/hr-divider-width-alignment-margins.epub",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 2,
+      "id" : "repo-regression/nav-xhtml-basic.epub",
+      "scannedChapterCount" : 2
+    },
+    {
+      "chapterCount" : 1,
+      "id" : "repo-regression/paragraph-border-background.epub",
+      "scannedChapterCount" : 1
+    },
+    {
+      "chapterCount" : 2,
+      "id" : "repo-regression/toc-ncx-basic.epub",
+      "scannedChapterCount" : 2
+    }
+  ],
+  "corpusChapterCount" : 7350,
+  "corpusEPUBCount" : 23,
+  "failures" : [
+
+  ],
+  "ingestionFallbacks" : [
+    "real/kusamakura-japanese-vertical-writing.epub#0: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#10: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#11: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#12: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#13: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#14: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#1: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#2: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#3: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#4: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#5: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#6: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#7: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#8: read percent-decoded ZIP entry",
+    "real/kusamakura-japanese-vertical-writing.epub#9: read percent-decoded ZIP entry"
+  ],
+  "scannedChapterCount" : 7350,
+  "schemaVersion" : 1
+}

@@ -57,7 +57,27 @@ enum DisplayListDrawer {
         guard !rect.isEmpty else { return }
         let radius = min(item.cornerRadius, rect.width / 2, rect.height / 2)
 
-        let borderPath = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+        let roundedCorners: UIRectCorner
+        switch item.fragmentPosition {
+        case .single:
+            roundedCorners = .allCorners
+        case .first:
+            roundedCorners = [.topLeft, .topRight]
+        case .middle:
+            roundedCorners = []
+        case .last:
+            roundedCorners = [.bottomLeft, .bottomRight]
+        }
+        let borderPath: UIBezierPath
+        if radius > 0, !roundedCorners.isEmpty {
+            borderPath = UIBezierPath(
+                roundedRect: rect,
+                byRoundingCorners: roundedCorners,
+                cornerRadii: CGSize(width: radius, height: radius)
+            )
+        } else {
+            borderPath = UIBezierPath(rect: rect)
+        }
         // Background fill (respects alpha — rgba(255,255,255,0.7) shows the
         // authored background through).
         if item.color != .clear {
@@ -133,52 +153,81 @@ enum DisplayListDrawer {
 
         // A UNIFORM border on a rounded box is stroked as ONE rounded path.
         // The per-edge straight lines below cannot bend, so `border-radius: 12px`
-        // on a bordered box (红楼梦's dotted 回目 frame, `div.k2`) drew square
+        // on a dotted bordered box drew square
         // corners while its own background fill was already clipped round —
         // the fill and the frame disagreed on the same box.
-        if radius > 0, item.borderTop.isVisible,
-           item.borderTop.width == item.borderBottom.width,
-           item.borderTop.width == item.borderLeft.width,
-           item.borderTop.width == item.borderRight.width,
-           item.borderTop.style == item.borderBottom.style,
-           item.borderTop.style == item.borderLeft.style,
-           item.borderTop.style == item.borderRight.style,
-           item.borderTop.color == item.borderBottom.color,
-           item.borderTop.color == item.borderLeft.color,
-           item.borderTop.color == item.borderRight.color {
-            let width = item.borderTop.width
+        let visibleEdges = [item.borderTop, item.borderBottom, item.borderLeft, item.borderRight]
+            .filter(\.isVisible)
+        let uniformVisibleBorder = visibleEdges.first.map { first in
+            visibleEdges.dropFirst().allSatisfy {
+                $0.width == first.width && $0.style == first.style && $0.color == first.color
+            }
+        } ?? false
+        let hasFragmentPerimeter: Bool
+        switch item.fragmentPosition {
+        case .single:
+            hasFragmentPerimeter = item.borderTop.isVisible && item.borderBottom.isVisible
+                && item.borderLeft.isVisible && item.borderRight.isVisible
+        case .first:
+            hasFragmentPerimeter = item.borderTop.isVisible
+                && item.borderLeft.isVisible && item.borderRight.isVisible
+        case .middle:
+            hasFragmentPerimeter = item.borderLeft.isVisible && item.borderRight.isVisible
+        case .last:
+            hasFragmentPerimeter = item.borderBottom.isVisible
+                && item.borderLeft.isVisible && item.borderRight.isVisible
+        }
+        if radius > 0, uniformVisibleBorder, hasFragmentPerimeter,
+           let commonEdge = visibleEdges.first {
+            let width = commonEdge.width
             let inset = width / 2
             let box = rect.insetBy(dx: inset, dy: inset)
             let r = max(0, min(radius - inset, box.width / 2, box.height / 2))
-            let style = item.borderTop.style
-            let color = item.borderTop.color
+            let style = commonEdge.style
+            let color = commonEdge.color
 
             // The four FLAT segments are stroked one path at a time, exactly as
             // the square-corner code below does — a single closed path would run
             // one continuous dash phase around the whole perimeter, which
             // changes where dots land on every edge after the first. Only the
             // corners are new geometry.
-            strokeEdge(from: CGPoint(x: box.minX + r, y: box.minY),
-                       to: CGPoint(x: box.maxX - r, y: box.minY),
-                       width: width, style: style, color: color)
-            strokeEdge(from: CGPoint(x: box.minX + r, y: box.maxY),
-                       to: CGPoint(x: box.maxX - r, y: box.maxY),
-                       width: width, style: style, color: color)
-            strokeEdge(from: CGPoint(x: box.minX, y: box.minY + r),
-                       to: CGPoint(x: box.minX, y: box.maxY - r),
-                       width: width, style: style, color: color)
-            strokeEdge(from: CGPoint(x: box.maxX, y: box.minY + r),
-                       to: CGPoint(x: box.maxX, y: box.maxY - r),
-                       width: width, style: style, color: color)
+            let roundsTop = item.fragmentPosition == .single || item.fragmentPosition == .first
+            let roundsBottom = item.fragmentPosition == .single || item.fragmentPosition == .last
+            let topRadius = roundsTop ? r : 0
+            let bottomRadius = roundsBottom ? r : 0
+            if item.borderTop.isVisible {
+                strokeEdge(from: CGPoint(x: box.minX + topRadius, y: box.minY),
+                           to: CGPoint(x: box.maxX - topRadius, y: box.minY),
+                           width: width, style: style, color: color)
+            }
+            if item.borderBottom.isVisible {
+                strokeEdge(from: CGPoint(x: box.minX + bottomRadius, y: box.maxY),
+                           to: CGPoint(x: box.maxX - bottomRadius, y: box.maxY),
+                           width: width, style: style, color: color)
+            }
+            if item.borderLeft.isVisible {
+                strokeEdge(from: CGPoint(x: box.minX, y: box.minY + topRadius),
+                           to: CGPoint(x: box.minX, y: box.maxY - bottomRadius),
+                           width: width, style: style, color: color)
+            }
+            if item.borderRight.isVisible {
+                strokeEdge(from: CGPoint(x: box.maxX, y: box.minY + topRadius),
+                           to: CGPoint(x: box.maxX, y: box.maxY - bottomRadius),
+                           width: width, style: style, color: color)
+            }
             if r > 0 {
-                strokeArc(center: CGPoint(x: box.minX + r, y: box.minY + r), radius: r,
-                          start: .pi, end: 1.5 * .pi, width: width, style: style, color: color)
-                strokeArc(center: CGPoint(x: box.maxX - r, y: box.minY + r), radius: r,
-                          start: 1.5 * .pi, end: 2 * .pi, width: width, style: style, color: color)
-                strokeArc(center: CGPoint(x: box.maxX - r, y: box.maxY - r), radius: r,
-                          start: 0, end: 0.5 * .pi, width: width, style: style, color: color)
-                strokeArc(center: CGPoint(x: box.minX + r, y: box.maxY - r), radius: r,
-                          start: 0.5 * .pi, end: .pi, width: width, style: style, color: color)
+                if roundsTop {
+                    strokeArc(center: CGPoint(x: box.minX + r, y: box.minY + r), radius: r,
+                              start: .pi, end: 1.5 * .pi, width: width, style: style, color: color)
+                    strokeArc(center: CGPoint(x: box.maxX - r, y: box.minY + r), radius: r,
+                              start: 1.5 * .pi, end: 2 * .pi, width: width, style: style, color: color)
+                }
+                if roundsBottom {
+                    strokeArc(center: CGPoint(x: box.maxX - r, y: box.maxY - r), radius: r,
+                              start: 0, end: 0.5 * .pi, width: width, style: style, color: color)
+                    strokeArc(center: CGPoint(x: box.minX + r, y: box.maxY - r), radius: r,
+                              start: 0.5 * .pi, end: .pi, width: width, style: style, color: color)
+                }
             }
             context.restoreGState()
             return

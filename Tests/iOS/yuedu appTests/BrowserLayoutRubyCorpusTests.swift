@@ -36,7 +36,10 @@ struct BrowserLayoutRubyCorpusTests {
 
     @Test(
         "validate Phase 4D horizontal Ruby corpus",
-        .enabled(if: ProcessInfo.processInfo.environment["YUEDU_RUN_RUBY_CORPUS"] == "1")
+        .enabled(if:
+            ProcessInfo.processInfo.environment["YUEDU_RUN_RUBY_CORPUS"] == "1"
+            || FileManager.default.fileExists(atPath: "/tmp/yuedu-run-ruby-corpus")
+        )
     )
     func validateHorizontalRubyCorpus() async throws {
         let root = URL(

@@ -50,6 +50,28 @@ struct BrowserLayoutLineBreakBaselineTests {
             .appendingPathComponent("docs/browser-layout/line-break-baseline/redchamber.tsv")
     }
 
+    nonisolated static var attributionURL: URL {
+        goldenURL.deletingLastPathComponent()
+            .appendingPathComponent("attribution-2026-08-31.tsv")
+    }
+
+    nonisolated static var coreTextNormalizationAttributionURL: URL {
+        goldenURL.deletingLastPathComponent()
+            .appendingPathComponent("coretext-advance-normalization-attribution-2026-09-02.tsv")
+    }
+
+    nonisolated static var approvedUpdateRequested: Bool {
+        FileManager.default.fileExists(
+            atPath: "/tmp/yuedu-update-linebreak-baseline-approved"
+        )
+    }
+
+    nonisolated static var coreTextNormalizationUpdateRequested: Bool {
+        FileManager.default.fileExists(
+            atPath: "/tmp/yuedu-update-linebreak-coretext-normalization-approved"
+        )
+    }
+
     /// Chapters to cover. Default: the whole spine. `YUEDU_LINEBREAK_STRIDE=n`
     /// samples every n-th chapter for a fast local loop.
     nonisolated static var stride: Int {
@@ -77,6 +99,37 @@ struct BrowserLayoutLineBreakBaselineTests {
             }
             return ChapterPrint(spine: spine, pages: pages, lines: lines,
                                 first: f[3], last: f[4], sha: f[5])
+        }
+    }
+
+    struct AttributionRow {
+        let spine: Int
+        let classification: String
+        let provenance: String
+        let goldenPages: Int
+        let afterPages: Int
+        let goldenLines: Int
+        let afterLines: Int
+
+        static func parse(_ row: String) -> AttributionRow? {
+            let fields = row.components(separatedBy: "\t")
+            guard fields.count == 12,
+                  let spine = Int(fields[0]),
+                  let goldenPages = Int(fields[6]),
+                  let afterPages = Int(fields[8]),
+                  let goldenLines = Int(fields[9]),
+                  let afterLines = Int(fields[11]) else {
+                return nil
+            }
+            return AttributionRow(
+                spine: spine,
+                classification: fields[1],
+                provenance: fields[3],
+                goldenPages: goldenPages,
+                afterPages: afterPages,
+                goldenLines: goldenLines,
+                afterLines: afterLines
+            )
         }
     }
 
@@ -130,9 +183,69 @@ struct BrowserLayoutLineBreakBaselineTests {
             contentInsets: settings.contentInsets, lineHeight: settings.lineHeightMultiple,
             fontResolver: adapter.fontResolver()
         )
-        let doc = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { images[$0] })
-        guard let pages = try? await doc.renderPages(containerSize: viewport) else { return nil }
-        return (pages, doc.lastSourceText)
+        var metrics = LayoutMetrics()
+        guard let frontend = try? LegacyCSSFrontend().buildStyleTree(
+            html: html,
+            cssTexts: css,
+            config: config,
+            metrics: &metrics
+        ) else { return nil }
+        let zeroRoot = cloneWithZeroTextIndent(frontend.rootNode)
+        guard HorizontalRubySupport.validate(
+            zeroRoot,
+            writingMode: config.writingMode
+        ).isSupported else { return nil }
+
+        var sourceText = SourceTextBuilder()
+        var anchors: [String: Int] = [:]
+        let rootBox = BoxTreeBuilder.buildBlock(
+            for: zeroRoot,
+            config: config,
+            sourceText: &sourceText,
+            anchors: &anchors,
+            imageLoader: { images[$0] }
+        )
+        _ = BlockLayout.layOut(
+            root: rootBox,
+            containerWidth: contentSize.width,
+            inlineContainingSize: config.renderWidth,
+            rootFontSize: config.rootFontSize,
+            writingMode: config.writingMode,
+            sourceText: sourceText.text,
+            fontResolver: config.fontResolver,
+            fragmentHeight: contentSize.height
+        )
+        let pages = PageFragmentation.fragment(
+            box: rootBox,
+            pageSize: viewport,
+            contentInsets: settings.contentInsets
+        )
+        return (pages, sourceText.text)
+    }
+
+    /// This golden predates CSS text-indent and remains the no-indent ordinary
+    /// inline geometry gate. Phase 4E1 changes are covered by their own
+    /// attributed corpus comparison; do not re-record this baseline for them.
+    static func cloneWithZeroTextIndent(_ node: ComputedStyleNode) -> ComputedStyleNode {
+        var style = node.style
+        style.textIndent = .initial
+        let children = node.children.map { child -> StyleTreeChild in
+            switch child {
+            case .text(let text):
+                return .text(text)
+            case .element(let element):
+                return .element(cloneWithZeroTextIndent(element))
+            }
+        }
+        return ComputedStyleNode(
+            tag: node.tag,
+            element: node.element,
+            style: style,
+            children: children,
+            nodeID: node.nodeID,
+            linkTarget: node.linkTarget,
+            anchorID: node.anchorID
+        )
     }
 
     // MARK: - The net
@@ -188,6 +301,26 @@ struct BrowserLayoutLineBreakBaselineTests {
         let coverageNote = "chapter coverage changed: only-in-golden=\(Array(onlyGolden)) only-now=\(Array(onlyNow))"
         #expect(Set(goldenBySpine.keys) == Set(mineBySpine.keys), "\(coverageNote)")
 
+        if Self.coreTextNormalizationUpdateRequested {
+            try Self.updateCoreTextNormalizationRows(
+                existing: existing!,
+                goldenBySpine: goldenBySpine,
+                currentBySpine: mineBySpine,
+                url: url
+            )
+            return
+        }
+
+        if Self.approvedUpdateRequested {
+            try Self.updateApprovedRows(
+                existing: existing!,
+                goldenBySpine: goldenBySpine,
+                currentBySpine: mineBySpine,
+                url: url
+            )
+            return
+        }
+
         var changed: [String] = []
         for (spine, want) in goldenBySpine.sorted(by: { $0.key < $1.key }) {
             guard let got = mineBySpine[spine] else { continue }
@@ -201,5 +334,181 @@ struct BrowserLayoutLineBreakBaselineTests {
         let changedNote = "\(changed.count) chapters changed their line breaking:\n"
             + changed.prefix(8).joined(separator: "\n")
         #expect(changed.isEmpty, "\(changedNote)")
+    }
+
+    nonisolated static func updateApprovedRows(
+        existing: String,
+        goldenBySpine: [Int: ChapterPrint],
+        currentBySpine: [Int: ChapterPrint],
+        url: URL
+    ) throws {
+        let attributionText = try String(contentsOf: attributionURL, encoding: .utf8)
+        let attributionRows = attributionText
+            .split(separator: "\n")
+            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("spine\t") }
+            .compactMap { AttributionRow.parse(String($0)) }
+        let attributionBySpine = Dictionary(
+            uniqueKeysWithValues: attributionRows.map { ($0.spine, $0) }
+        )
+        let expectedGroupCounts = [
+            "ROOT_FRAGMENT_X": 32,
+            "USED_VALUE_FINAL_WIDTH": 243,
+            "USED_VALUE_FINAL_WIDTH+LINE_HEIGHT_FINALIZATION": 115,
+            "PHASE_4F0_HINTS+USED_VALUE_FINAL_WIDTH": 43,
+        ]
+        let actualGroupCounts = Dictionary(grouping: attributionRows, by: \.provenance)
+            .mapValues(\.count)
+
+        guard attributionRows.count == 433,
+              attributionBySpine.count == attributionRows.count,
+              actualGroupCounts == expectedGroupCounts else {
+            throw CocoaError(
+                .fileReadCorruptFile,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "attribution gate mismatch rows=\(attributionRows.count) groups=\(actualGroupCounts)"]
+            )
+        }
+
+        let changedSpines = Set(goldenBySpine.compactMap { spine, golden in
+            currentBySpine[spine] == golden ? nil : spine
+        })
+        let attributedSpines = Set(attributionBySpine.keys)
+        guard changedSpines == attributedSpines else {
+            throw CocoaError(
+                .fileReadCorruptFile,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "approved diff set mismatch only-current=\(changedSpines.subtracting(attributedSpines).sorted()) "
+                    + "only-attribution=\(attributedSpines.subtracting(changedSpines).sorted())"]
+            )
+        }
+
+        for attribution in attributionRows {
+            guard let golden = goldenBySpine[attribution.spine],
+                  let current = currentBySpine[attribution.spine],
+                  golden.pages == attribution.goldenPages,
+                  current.pages == attribution.afterPages,
+                  golden.lines == attribution.goldenLines,
+                  current.lines == attribution.afterLines else {
+                throw CocoaError(
+                    .fileReadCorruptFile,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "attribution row drift at spine \(attribution.spine)"]
+                )
+            }
+            if attribution.provenance == "ROOT_FRAGMENT_X" {
+                guard attribution.classification == "EXPECTED_X_ONLY",
+                      golden.pages == current.pages,
+                      golden.lines == current.lines else {
+                    throw CocoaError(
+                        .fileReadCorruptFile,
+                        userInfo: [NSLocalizedDescriptionKey:
+                            "root-X row changed line/page count at spine \(attribution.spine)"]
+                    )
+                }
+            }
+        }
+
+        for provenance in expectedGroupCounts.keys.sorted() {
+            let group = attributionRows.filter { $0.provenance == provenance }
+            let oldPages = group.reduce(0) { $0 + $1.goldenPages }
+            let newPages = group.reduce(0) { $0 + $1.afterPages }
+            let oldLines = group.reduce(0) { $0 + $1.goldenLines }
+            let newLines = group.reduce(0) { $0 + $1.afterLines }
+            print(
+                "LINEBREAK_APPROVED_GROUP provenance=\(provenance) rows=\(group.count) "
+                    + "pages=\(oldPages)->\(newPages) textFragments=\(oldLines)->\(newLines)"
+            )
+        }
+
+        let updatedLines = existing.split(separator: "\n", omittingEmptySubsequences: false).map {
+            line -> String in
+            let value = String(line)
+            guard let golden = ChapterPrint.parse(value),
+                  attributedSpines.contains(golden.spine),
+                  let current = currentBySpine[golden.spine] else {
+                return value
+            }
+            return current.row
+        }
+        let updated = updatedLines.joined(separator: "\n")
+        try updated.write(to: url, atomically: true, encoding: .utf8)
+        print(
+            "LINEBREAK_APPROVED_UPDATE wrote=\(attributedSpines.count) "
+                + "preserved=\(goldenBySpine.count - attributedSpines.count) path=\(url.path)"
+        )
+    }
+
+    nonisolated static func updateCoreTextNormalizationRows(
+        existing: String,
+        goldenBySpine: [Int: ChapterPrint],
+        currentBySpine: [Int: ChapterPrint],
+        url: URL
+    ) throws {
+        let attributionText = try String(
+            contentsOf: coreTextNormalizationAttributionURL,
+            encoding: .utf8
+        )
+        let attributionRows = attributionText
+            .split(separator: "\n")
+            .filter { !$0.hasPrefix("#") && !$0.hasPrefix("spine\t") }
+            .compactMap { AttributionRow.parse(String($0)) }
+        let attributionBySpine = Dictionary(
+            uniqueKeysWithValues: attributionRows.map { ($0.spine, $0) }
+        )
+        let changedSpines = Set(goldenBySpine.compactMap { spine, golden in
+            currentBySpine[spine] == golden ? nil : spine
+        })
+        let attributedSpines = Set(attributionBySpine.keys)
+
+        guard attributionRows.count == 18,
+              attributionBySpine.count == attributionRows.count,
+              changedSpines == attributedSpines else {
+            throw CocoaError(
+                .fileReadCorruptFile,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "CoreText normalization attribution mismatch rows=\(attributionRows.count) "
+                    + "only-current=\(changedSpines.subtracting(attributedSpines).sorted()) "
+                    + "only-attribution=\(attributedSpines.subtracting(changedSpines).sorted())"]
+            )
+        }
+
+        for attribution in attributionRows {
+            guard attribution.classification == "EXPECTED_SUBNANOPOINT_X_ONLY",
+                  attribution.provenance == "CORETEXT_ADVANCE_NORMALIZATION",
+                  let golden = goldenBySpine[attribution.spine],
+                  let current = currentBySpine[attribution.spine],
+                  golden.pages == current.pages,
+                  golden.lines == current.lines,
+                  golden.pages == attribution.goldenPages,
+                  current.pages == attribution.afterPages,
+                  golden.lines == attribution.goldenLines,
+                  current.lines == attribution.afterLines else {
+                throw CocoaError(
+                    .fileReadCorruptFile,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "CoreText normalization row drift at spine \(attribution.spine)"]
+                )
+            }
+        }
+
+        let updatedLines = existing.split(separator: "\n", omittingEmptySubsequences: false).map {
+            line -> String in
+            let value = String(line)
+            guard let golden = ChapterPrint.parse(value),
+                  attributedSpines.contains(golden.spine),
+                  let current = currentBySpine[golden.spine] else {
+                return value
+            }
+            return current.row
+        }
+        try updatedLines.joined(separator: "\n")
+            .write(to: url, atomically: true, encoding: .utf8)
+        print(
+            "LINEBREAK_CORETEXT_NORMALIZATION_UPDATE wrote=\(attributedSpines.count) "
+                + "pages=\(attributionRows.reduce(0) { $0 + $1.goldenPages })"
+                + "->\(attributionRows.reduce(0) { $0 + $1.afterPages }) "
+                + "textFragments=\(attributionRows.reduce(0) { $0 + $1.goldenLines })"
+                + "->\(attributionRows.reduce(0) { $0 + $1.afterLines })"
+        )
     }
 }

@@ -30,13 +30,16 @@ enum BlockLayout {
         fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
         fragmentHeight: CGFloat? = nil
     ) -> CGFloat {
+        // Retained as a source-compatible call-site parameter while Phase 4E0
+        // callers are migrated. It is deliberately not a geometry input:
+        // InlineFormattingContext must use this box's final content width.
+        _ = inlineContainingSize
+        resolveBlockReplacedSize(
+            in: box,
+            containingInlineSize: containerWidth,
+            rootFontSize: rootFontSize
+        )
         var sides = resolveSides(box, containerWidth: containerWidth, rootFontSize: rootFontSize, writingMode: writingMode)
-        // Phase 4E0 is an ownership-only refactor. The previous pipeline broke
-        // ordinary inline content against BoxTreeBuilder's recursively resolved
-        // containing width, while FloatContext used the box's CSS content width.
-        // Resolve both values here, after used sides exist, so moving shaping
-        // does not silently correct box-model geometry in the same phase.
-        let establishedInlineSize = inlineContainingSize ?? containerWidth
         // Paged replaced-element fit policy is resolved before float exclusion
         // and line breaking. Doing this later in PageWalker would shrink only
         // the painted image while surrounding text still excluded the original
@@ -91,6 +94,11 @@ enum BlockLayout {
             // Resolve the child's used box model before positioning it. Reading
             // `child.margins` before the recursive layout left every fresh box
             // at zero, so fixed-width blocks with auto margins were pinned left.
+            resolveBlockReplacedSize(
+                in: child,
+                containingInlineSize: box.contentSize.width,
+                rootFontSize: rootFontSize
+            )
             let childSides = resolveSides(
                 child,
                 containerWidth: box.contentSize.width,
@@ -101,20 +109,6 @@ enum BlockLayout {
             child.padding = childSides.padding
             child.borders = childSides.borders
             child.contentSize.width = childSides.contentWidth
-            let childInlineContainingSize: CGFloat
-            switch child.boxType {
-            case .anonymous:
-                // BoxTreeBuilder flushed this group at the current block's
-                // already-established inline size; it never resolved the
-                // parent's width declaration a second time.
-                childInlineContainingSize = establishedInlineSize
-            case .block:
-                childInlineContainingSize = resolveInlineFormattingSize(
-                    child,
-                    containingInlineSize: establishedInlineSize,
-                    rootFontSize: rootFontSize
-                )
-            }
 
             // 1. Clearance calculation
             if let fc = fc, child.style.cssClear != .none {
@@ -134,7 +128,6 @@ enum BlockLayout {
                 let childContentHeight = layOut(
                     root: child,
                     containerWidth: box.contentSize.width,
-                    inlineContainingSize: childInlineContainingSize,
                     rootFontSize: rootFontSize,
                     writingMode: writingMode,
                     floatContext: nil,
@@ -214,7 +207,6 @@ enum BlockLayout {
                 let childContentHeight = layOut(
                     root: child,
                     containerWidth: box.contentSize.width,
-                    inlineContainingSize: childInlineContainingSize,
                     rootFontSize: rootFontSize,
                     writingMode: writingMode,
                     floatContext: fc,
@@ -255,6 +247,16 @@ enum BlockLayout {
         }
 
         if !box.inlineRuns.isEmpty {
+            // Replaced used values and line breaking share the same final
+            // containing-block content width. BoxTreeBuilder may carry a
+            // provisional size for intrinsic discovery, but it is never the
+            // authoritative used value.
+            box.inlineRuns = resolveInlineReplacedSizes(
+                box.inlineRuns,
+                containingInlineSize: box.contentSize.width,
+                rootFontSize: rootFontSize
+            )
+            let inlineFormattingSize = box.contentSize.width
             // FloatContext retains every placed float for sibling clearance.
             // Once all of them end above this inline context, the legacy
             // pipeline kept the recursively established inline size and never
@@ -274,7 +276,7 @@ enum BlockLayout {
                         length,
                         emBase: box.style.fontSize,
                         remBase: rootFontSize,
-                        percentBase: establishedInlineSize
+                        percentBase: inlineFormattingSize
                     ) ?? 0
                     firstLineConstraint = InlineFirstLineConstraint(
                         textIndent: max(0, usedTextIndent)
@@ -287,7 +289,7 @@ enum BlockLayout {
                 firstLineConstraint = .none
             }
             let context = InlineFormattingContext(
-                containingInlineSize: establishedInlineSize,
+                containingInlineSize: inlineFormattingSize,
                 rootFontSize: rootFontSize,
                 lineHeight: box.style.lineHeight,
                 writingMode: writingMode,
@@ -355,11 +357,20 @@ enum BlockLayout {
         intrinsic: CGSize,
         style: ComputedStyle,
         containerWidth: CGFloat,
-        rootFontSize: CGFloat
+        rootFontSize: CGFloat,
+        containerHeight: CGFloat? = nil
     ) -> CGSize {
         let ctx = LayoutContext(rootFontSize: rootFontSize, percentBase: containerWidth)
         let widthSpec = resolve(style.width, style: style, ctx: ctx)
-        let heightSpec = resolve(style.height, style: style, ctx: ctx)
+        // CSS percentage heights use a definite containing-block HEIGHT, never
+        // its inline width. Normal-flow BrowserLayout currently has no definite
+        // block-size input, so an unresolved percentage behaves as `auto`.
+        let heightSpec: CGFloat?
+        if case .percent(let fraction) = style.height {
+            heightSpec = containerHeight.map { fraction * $0 }
+        } else {
+            heightSpec = resolve(style.height, style: style, ctx: ctx)
+        }
         let maxWidth = style.maxWidth.flatMap { resolve($0, style: style, ctx: ctx) }
 
         var w: CGFloat
@@ -425,77 +436,112 @@ enum BlockLayout {
         let mr = resolve(style.marginRight, style: style, ctx: ctx)
         let marginTotalPad = s.padding.horizontal + s.borders.horizontal
 
+        let maxWidth = style.maxWidth.flatMap { resolve($0, style: style, ctx: ctx) }
+        let fillsAvailableWidth: Bool
         if let attachment = box.imageAttachment {
             s.contentWidth = attachment.usedSize.width
-            s.margins.left = ml ?? 0
-            s.margins.right = mr ?? 0
-            s.borderBoxWidth = s.contentWidth + marginTotalPad
-            return s
-        }
-
-        switch style.width {
-        case .auto:
-            let left = ml ?? 0
-            let right = mr ?? 0
-            s.contentWidth = max(containerWidth - marginTotalPad - left - right, 0)
-            s.margins.left = left
-            s.margins.right = right
-        default:
-            let width = resolve(style.width, style: style, ctx: ctx) ?? containerWidth
-            let usedW = min(max(width, 0), containerWidth)
-            if box.isFloated {
-                s.margins.left = ml ?? 0
-                s.margins.right = mr ?? 0
-                s.contentWidth = usedW
-            } else {
-                let leftover = containerWidth - usedW - marginTotalPad - (ml ?? 0) - (mr ?? 0)
-                switch (ml, mr) {
-                case (.some(let l), .some(let r)):
-                    s.margins.left = l; s.margins.right = r
-                case (.none, .none):
-                    s.margins.left = max(leftover / 2, 0); s.margins.right = max(leftover / 2, 0)
-                case (.some(let l), .none):
-                    s.margins.left = l; s.margins.right = max(leftover, 0)
-                case (.none, .some(let r)):
-                    s.margins.left = max(leftover, 0); s.margins.right = r
-                }
-                s.contentWidth = usedW
+            fillsAvailableWidth = false
+        } else {
+            switch style.width {
+            case .auto:
+                let left = ml ?? 0
+                let right = mr ?? 0
+                s.contentWidth = max(containerWidth - marginTotalPad - left - right, 0)
+                fillsAvailableWidth = true
+            default:
+                let width = resolve(style.width, style: style, ctx: ctx) ?? containerWidth
+                s.contentWidth = min(max(width, 0), containerWidth)
+                fillsAvailableWidth = false
             }
         }
 
-        // max-width clamps the used content width.
-        if let maxW = style.maxWidth.flatMap({ resolve($0, style: style, ctx: ctx) }) {
-            s.contentWidth = min(s.contentWidth, maxW)
+        if let maxWidth {
+            s.contentWidth = min(s.contentWidth, max(0, maxWidth))
+        }
+
+        // CSS width:auto consumes the remaining inline space and treats auto
+        // margins as zero. Once max-width constrains that width, however, the
+        // width equation must be solved again so auto margins receive the new
+        // leftover space.
+        let maxWidthConstrainedAuto = fillsAvailableWidth
+            && maxWidth.map { s.contentWidth <= $0 + 0.001 } != nil
+            && s.contentWidth + marginTotalPad + (ml ?? 0) + (mr ?? 0) < containerWidth - 0.001
+        if box.isFloated || (fillsAvailableWidth && !maxWidthConstrainedAuto) {
+            s.margins.left = ml ?? 0
+            s.margins.right = mr ?? 0
+        } else {
+            let leftover = containerWidth - s.contentWidth - marginTotalPad - (ml ?? 0) - (mr ?? 0)
+            switch (ml, mr) {
+            case (.some(let l), .some(let r)):
+                s.margins.left = l; s.margins.right = r
+            case (.none, .none):
+                s.margins.left = max(leftover / 2, 0); s.margins.right = max(leftover / 2, 0)
+            case (.some(let l), .none):
+                s.margins.left = l; s.margins.right = max(leftover, 0)
+            case (.none, .some(let r)):
+                s.margins.left = max(leftover, 0); s.margins.right = r
+            }
         }
         s.borderBoxWidth = s.contentWidth + marginTotalPad
         return s
     }
 
-    /// Resolves the recursive containing inline size that the pre-Phase-4E0
-    /// BoxTreeBuilder passed to InlineLayout. Keeping this geometry contract is
-    /// separate from `Sides.contentWidth`: auto-width boxes historically did
-    /// not subtract their own horizontal margin/padding/border from line width.
-    /// Correcting that behavior requires its own explicitly approved geometry
-    /// phase; this refactor only moves ownership and call order.
-    private static func resolveInlineFormattingSize(
-        _ box: BlockBox,
-        containingInlineSize: CGFloat,
-        rootFontSize: CGFloat
-    ) -> CGFloat {
-        let resolved = CSSLengthResolver.resolve(
-            box.style.width,
-            emBase: box.style.fontSize,
-            remBase: rootFontSize,
-            percentBase: containingInlineSize
-        )
-        guard case .auto = box.style.width, resolved == nil else {
-            return min(max(resolved ?? containingInlineSize, 0), containingInlineSize)
-        }
-        return containingInlineSize
-    }
-
     private static func resolve(_ length: CSSLength, style: ComputedStyle, ctx: LayoutContext) -> CGFloat? {
         CSSLengthResolver.resolve(length, emBase: style.fontSize, remBase: ctx.rootFontSize, percentBase: ctx.percentBase)
+    }
+
+    private static func resolveBlockReplacedSize(
+        in box: BlockBox,
+        containingInlineSize: CGFloat,
+        rootFontSize: CGFloat
+    ) {
+        guard let attachment = box.imageAttachment else { return }
+        let usedSize = resolveReplacedSize(
+            intrinsic: attachment.image.size,
+            style: box.style,
+            containerWidth: containingInlineSize,
+            rootFontSize: rootFontSize
+        )
+        guard usedSize != attachment.usedSize else { return }
+        box.imageAttachment = AtomicInline(
+            source: attachment.source,
+            image: attachment.image,
+            usedSize: usedSize,
+            nodeID: attachment.nodeID,
+            linkTarget: attachment.linkTarget
+        )
+    }
+
+    private static func resolveInlineReplacedSizes(
+        _ runs: [InlineRun],
+        containingInlineSize: CGFloat,
+        rootFontSize: CGFloat
+    ) -> [InlineRun] {
+        runs.map { run in
+            guard let atomic = run.atomic else { return run }
+            let usedSize = resolveReplacedSize(
+                intrinsic: atomic.image.size,
+                style: run.style,
+                containerWidth: containingInlineSize,
+                rootFontSize: rootFontSize
+            )
+            guard usedSize != atomic.usedSize else { return run }
+            return InlineRun(
+                text: run.text,
+                style: run.style,
+                sourceRange: run.sourceRange,
+                nodeID: run.nodeID,
+                linkTarget: run.linkTarget,
+                isHardBreak: run.isHardBreak,
+                atomic: AtomicInline(
+                    source: atomic.source,
+                    image: atomic.image,
+                    usedSize: usedSize,
+                    nodeID: atomic.nodeID,
+                    linkTarget: atomic.linkTarget
+                )
+            )
+        }
     }
 }
 

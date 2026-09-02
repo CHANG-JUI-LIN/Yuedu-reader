@@ -61,9 +61,16 @@ struct TextFragment {
     }
 }
 
-/// A filled/bordered box in page canvas-local coordinates. A border box emits
-/// ONE fill fragment carrying its full paint representation (background fill
-/// + four edges + radius) — never a lone top line.
+/// Physical position of one fragment of a CSS border box under the engine's
+/// `box-decoration-break: slice` policy.
+enum BlockDecorationFragmentPosition: Equatable {
+    case single
+    case first
+    case middle
+    case last
+}
+
+/// A filled/bordered box fragment in page canvas-local coordinates.
 struct FillFragment {
     let rect: PageLocalRect
     let documentRect: DocumentRect
@@ -76,6 +83,38 @@ struct FillFragment {
     let borderRight: BorderEdge
     let nodeID: Int
     let writingMode: ReaderWritingMode
+    let fragmentPosition: BlockDecorationFragmentPosition
+    /// Walker-private identity used to replace a provisional fragment once the
+    /// box end is known. It never participates in layout, paint, or hit-test.
+    let decorationID: Int
+
+    init(
+        rect: PageLocalRect,
+        documentRect: DocumentRect,
+        color: UIColor,
+        cornerRadius: CGFloat,
+        borderTop: BorderEdge,
+        borderBottom: BorderEdge,
+        borderLeft: BorderEdge,
+        borderRight: BorderEdge,
+        nodeID: Int,
+        writingMode: ReaderWritingMode,
+        fragmentPosition: BlockDecorationFragmentPosition = .single,
+        decorationID: Int = -1
+    ) {
+        self.rect = rect
+        self.documentRect = documentRect
+        self.color = color
+        self.cornerRadius = cornerRadius
+        self.borderTop = borderTop
+        self.borderBottom = borderBottom
+        self.borderLeft = borderLeft
+        self.borderRight = borderRight
+        self.nodeID = nodeID
+        self.writingMode = writingMode
+        self.fragmentPosition = fragmentPosition
+        self.decorationID = decorationID
+    }
 }
 
 struct ImageFragment {
@@ -156,6 +195,7 @@ struct PageWalker {
     enum Step {
         case floatBoundary(StepFloat)
         case fill(StepFill)
+        case fillEnd(StepFillEnd)
         case text(StepText)
         case ruby(StepRuby)
         case image(StepImage)
@@ -201,6 +241,11 @@ struct PageWalker {
         let writingMode: ReaderWritingMode
     }
 
+    struct StepFillEnd {
+        let nodeID: Int
+        let originalEndY: CGFloat
+    }
+
     struct StepImage {
         let source: String
         let image: UIImage?
@@ -221,6 +266,9 @@ struct PageWalker {
         var lineIndex = 0
         var runIndex = 0
         var fillsEmitted = false
+        var decorationStarted = false
+        var decorationEndEmitted = false
+        var imageEmitted = false
         var floatBoundaryEmitted = false
         /// The root (html/body) frame. Its background belongs to the CANVAS,
         /// not to the box — see the paint guard in `nextStep`.
@@ -259,6 +307,18 @@ struct PageWalker {
     /// leaves a blank page behind (flow reserved 627.2pt, page consumed 400pt).
     /// One shift for every step kind: never a per-kind nudge.
     private var flowShift: CGFloat = 0
+
+    /// Decorations stay active until their owning box exits. Content may add a
+    /// pagination displacement after the box start, so the final block-end is
+    /// only known at that exit. Earlier pages can still be finalized safely:
+    /// an active slice always reaches that fragmentainer's block-end.
+    private struct ActiveDecoration {
+        let id: Int
+        let step: StepFill
+        let startY: CGFloat
+    }
+    private var activeDecorations: [ActiveDecoration] = []
+    private var nextDecorationID = 0
 
     /// How the in-progress fragmentainer was entered — the input to the CSS
     /// Fragmentation §4.2 margin rule.
@@ -321,7 +381,26 @@ struct PageWalker {
         // The root's block-start margin is the margin adjoining the first
         // content; page 0 is `flowStart`, so it is retained there.
         self.adjoiningBlockStartMargin = rootBlockStartInset
-        var rootFrame = Self.makeFrame(box, contentOrigin: CGPoint(x: 0, y: rootBlockStartInset))
+        // `BlockLayout` resolves the root content width after subtracting its
+        // physical left/right margin, border and padding. Fragmentation must
+        // place that already-resolved content box at the matching physical
+        // inline origin; starting it at x=0 moved every left-side root inset
+        // to the right edge instead. Reader contentInsets are added later by
+        // `canvasRect`, so authored body geometry remains inside (and does not
+        // replace) the reader's symmetric page viewport policy.
+        let rootContentOriginX: CGFloat
+        switch writingMode {
+        case .horizontal:
+            rootContentOriginX = box.margins.left + box.borders.left + box.padding.left
+        case .verticalRTL:
+            // Vertical root inline geometry is outside this horizontal
+            // correctness phase; preserve its established coordinate contract.
+            rootContentOriginX = 0
+        }
+        var rootFrame = Self.makeFrame(
+            box,
+            contentOrigin: CGPoint(x: rootContentOriginX, y: rootBlockStartInset)
+        )
         rootFrame.isRoot = true
         self.stack = [rootFrame]
     }
@@ -386,12 +465,13 @@ struct PageWalker {
                 // body's colour + image to the page canvas, UNDER the wallpaper.
                 // Painting it here too laid an OPAQUE `background-color: #fff`
                 // band back over that wallpaper — the content-column-wide white
-                // stripe across 红楼梦's 回目 title pages, sized to the body's
+                // stripe across title pages, sized to the body's
                 // content box (which is why the correctly centred 15em dotted
                 // frame sat inside a much wider white plate).
                 //
                 // Root BORDERS are not propagated, so those still paint below.
                 if let bg = frame.box.style.backgroundColor, !frame.isRoot {
+                    stack[index].decorationStarted = true
                     return .fill(StepFill(
                         rect: boxRect,
                         color: bg,
@@ -409,6 +489,7 @@ struct PageWalker {
                 let hasAnyBorder = frame.box.borders.top > 0 || frame.box.borders.bottom > 0
                     || frame.box.borders.left > 0 || frame.box.borders.right > 0
                 if hasAnyBorder {
+                    stack[index].decorationStarted = true
                     return .fill(StepFill(
                         rect: boxRect,
                         color: .clear,
@@ -439,9 +520,10 @@ struct PageWalker {
                 stack.append(Self.makeFrame(child, contentOrigin: childOrigin))
                 continue
             }
-            if let attachment = stack[index].box.imageAttachment {
+            if let attachment = stack[index].box.imageAttachment,
+               !stack[index].imageEmitted {
+                stack[index].imageEmitted = true
                 let frame = stack[index]
-                stack.removeLast()
                 let rect = DocumentRect(rawValue: CGRect(
                     x: frame.contentOrigin.x,
                     y: frame.contentOrigin.y,
@@ -542,6 +624,14 @@ struct PageWalker {
                 stack[index].runIndex = 0
                 continue
             }
+            if stack[index].decorationStarted, !stack[index].decorationEndEmitted {
+                stack[index].decorationEndEmitted = true
+                let frame = stack[index]
+                return .fillEnd(StepFillEnd(
+                    nodeID: frame.box.debugNodeID,
+                    originalEndY: frame.borderY + frame.box.frame.height
+                ))
+            }
             stack.removeLast()
         }
         return nil
@@ -567,6 +657,8 @@ struct PageWalker {
             return placeFloatBoundary(marker)
         case .fill(let frag):
             return placeFill(frag)
+        case .fillEnd(let end):
+            return placeFillEnd(end)
         case .text(let frag):
             return placeText(frag)
         case .ruby(let ruby):
@@ -603,6 +695,7 @@ struct PageWalker {
             if let page = place(step) { return page }
         }
         if !currentPage.isEmpty {
+            finalizeActiveDecorationsForCurrentPage()
             let page = PageFragments(index: currentIndex, pageRect: pageRect, fragments: currentPage)
             completedPages.append(page)
             currentPage = []
@@ -658,11 +751,13 @@ struct PageWalker {
     private mutating func advanceToPage(_ target: Int) -> PageFragments? {
         var flushed: PageFragments? = nil
         while target > currentIndex {
+            finalizeActiveDecorationsForCurrentPage()
             let page = PageFragments(index: currentIndex, pageRect: pageRect, fragments: currentPage)
             completedPages.append(page)
             flushed = flushed ?? page
             currentIndex += 1
             currentPage = []
+            appendActiveDecorationFragmentsForCurrentPage()
             // Pagination itself ran out of room: an UNFORCED break. Author
             // breaks would set `.forcedBreak` instead, and the engine does not
             // parse them yet.
@@ -855,25 +950,147 @@ struct PageWalker {
             )))
             return nil
         }
-        var shiftedRect = step.rect.rawValue
-        shiftedRect.origin.y += flowShift
-        let target = max(0, Int(floor(shiftedRect.minY / pageHeight)))
+        let shiftedStartY = step.rect.minY + flowShift
+        let target = max(0, Int(floor(shiftedStartY / pageHeight)))
         let flushed = advanceToPage(target)
-        shiftedRect.origin.y = discardMarginAdjoiningBreak(shiftedRect.minY, target: target)
-        let canvas = canvasRect(forDocument: DocumentRect(rawValue: shiftedRect), pageIndex: currentIndex)
-        currentPage.append(.fill(FillFragment(
-            rect: canvas,
-            documentRect: step.rect,
-            color: step.color,
-            cornerRadius: step.cornerRadius,
-            borderTop: step.borderTop,
-            borderBottom: step.borderBottom,
-            borderLeft: step.borderLeft,
-            borderRight: step.borderRight,
-            nodeID: step.nodeID,
-            writingMode: step.writingMode
-        )))
+        let adjustedStartY = discardMarginAdjoiningBreak(shiftedStartY, target: target)
+        let decoration = ActiveDecoration(
+            id: nextDecorationID,
+            step: step,
+            startY: adjustedStartY
+        )
+        nextDecorationID += 1
+        activeDecorations.append(decoration)
+        upsertDecorationFragment(
+            decoration,
+            endY: step.rect.maxY + flowShift,
+            isFinal: false,
+            pageIndex: currentIndex
+        )
         return flushed
+    }
+
+    private mutating func placeFillEnd(_ step: StepFillEnd) -> PageFragments? {
+        guard !isContinuous else { return nil }
+        let decorations = activeDecorations.filter { $0.step.nodeID == step.nodeID }
+        guard !decorations.isEmpty else {
+            return nil
+        }
+        let finalEndY = max(
+            decorations.map(\.startY).max() ?? 0,
+            step.originalEndY + flowShift
+        )
+        let finalPage = max(0, Int(floor((finalEndY - 0.001) / pageHeight)))
+        let flushed = advanceToPage(finalPage)
+        for decoration in decorations {
+            upsertDecorationFragment(
+                decoration,
+                endY: max(decoration.startY, finalEndY),
+                isFinal: true,
+                pageIndex: currentIndex
+            )
+        }
+        activeDecorations.removeAll { $0.step.nodeID == step.nodeID }
+        return flushed
+    }
+
+    /// Finalizes the open slices on a page that is about to be emitted. Their
+    /// owning boxes have not ended, therefore each slice reaches the page's
+    /// block-end and cannot carry a block-end border or lower corner radius.
+    private mutating func finalizeActiveDecorationsForCurrentPage() {
+        let pageEnd = CGFloat(currentIndex + 1) * pageHeight
+        for decoration in activeDecorations {
+            upsertDecorationFragment(
+                decoration,
+                endY: pageEnd,
+                isFinal: false,
+                pageIndex: currentIndex
+            )
+        }
+    }
+
+    /// A continuation decoration paints before the continued descendants on a
+    /// new fragmentainer. Active decorations are kept in ancestor/start order,
+    /// preserving the same background stacking as the document walk.
+    private mutating func appendActiveDecorationFragmentsForCurrentPage() {
+        let provisionalEnd = CGFloat(currentIndex + 1) * pageHeight
+        for decoration in activeDecorations {
+            upsertDecorationFragment(
+                decoration,
+                endY: provisionalEnd,
+                isFinal: false,
+                pageIndex: currentIndex
+            )
+        }
+    }
+
+    private mutating func upsertDecorationFragment(
+        _ decoration: ActiveDecoration,
+        endY: CGFloat,
+        isFinal: Bool,
+        pageIndex: Int
+    ) {
+        guard pageIndex == currentIndex,
+              let fragment = makeDecorationFragment(
+                decoration,
+                endY: endY,
+                isFinal: isFinal,
+                pageIndex: pageIndex
+              ) else { return }
+
+        if let existing = currentPage.lastIndex(where: { item in
+            guard case .fill(let fill) = item else { return false }
+            return fill.decorationID == decoration.id
+        }) {
+            currentPage[existing] = .fill(fragment)
+        } else {
+            currentPage.append(.fill(fragment))
+        }
+    }
+
+    private func makeDecorationFragment(
+        _ decoration: ActiveDecoration,
+        endY: CGFloat,
+        isFinal: Bool,
+        pageIndex: Int
+    ) -> FillFragment? {
+        let pageStart = CGFloat(pageIndex) * pageHeight
+        let pageEnd = pageStart + pageHeight
+        let fragmentStart = max(decoration.startY, pageStart)
+        let fragmentEnd = min(max(endY, fragmentStart), pageEnd)
+        guard fragmentEnd - fragmentStart > 0.0001 else { return nil }
+
+        let firstPage = max(0, Int(floor(decoration.startY / pageHeight)))
+        let isFirst = pageIndex == firstPage
+        let isLast = isFinal && endY <= pageEnd + 0.001
+        let position: BlockDecorationFragmentPosition
+        switch (isFirst, isLast) {
+        case (true, true): position = .single
+        case (true, false): position = .first
+        case (false, true): position = .last
+        case (false, false): position = .middle
+        }
+
+        let document = DocumentRect(rawValue: CGRect(
+            x: decoration.step.rect.minX,
+            y: fragmentStart,
+            width: decoration.step.rect.width,
+            height: fragmentEnd - fragmentStart
+        ))
+        return FillFragment(
+            rect: canvasRect(forDocument: document, pageIndex: pageIndex),
+            documentRect: document,
+            color: decoration.step.color,
+            cornerRadius: decoration.step.cornerRadius,
+            borderTop: isFirst ? decoration.step.borderTop : .zero,
+            borderBottom: isLast ? decoration.step.borderBottom : .zero,
+            borderLeft: decoration.step.borderLeft,
+            borderRight: decoration.step.borderRight,
+            nodeID: decoration.step.nodeID,
+            writingMode: decoration.step.writingMode,
+            fragmentPosition: position,
+            decorationID: decoration.id
+        )
     }
 
     private mutating func placeImage(_ step: StepImage) -> PageFragments? {

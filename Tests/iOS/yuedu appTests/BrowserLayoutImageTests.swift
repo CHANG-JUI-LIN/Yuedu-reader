@@ -48,7 +48,7 @@ struct BrowserLayoutImageTests {
         // Intrinsic 600×300 in a 200-wide paragraph → clamped to 200×100.
         let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 600, height: 300), color: .green)
         let html = """
-        <html><body><p><img src="big.png" style="max-width: 100%"></p></body></html>
+        <html><body style="margin:0"><p><img src="big.png" style="max-width: 100%"></p></body></html>
         """
         let (pages, _) = try await BrowserLayoutTestSupport.layout(html, width: 200, imageLoader: loader(["big.png": img]))
         let images = BrowserLayoutTestSupport.allImageFragments(pages)
@@ -206,11 +206,12 @@ struct BrowserLayoutImageTests {
         )
         let images = BrowserLayoutTestSupport.allImageFragments(pages)
         #expect(images.count == 2)
-        // 90% of 392 → 352.8 wide, 9:16 → 627.2 tall. Shorter than the 842pt
-        // page, so `placeImage` must NOT scale it.
+        // Final containing-block chain: body 376pt (UA 8pt side margins),
+        // gallery 90% = 338.4pt, image 90% = 304.56pt; 9:16 → 541.44pt.
+        // It is shorter than the 842pt page, so `placeImage` must not scale it.
         for image in images {
-            #expect(abs(image.rect.height - 627.2) < 1.0,
-                    "image height \(image.rect.height) — expected the authored 627.2 (unscaled)")
+            #expect(abs(image.rect.height - 541.44) < 1.0,
+                    "image height \(image.rect.height) — expected final-CB 541.44 (unscaled)")
         }
         // Both captions must survive: an image painted over one would still be
         // in the fragment list, so assert geometric non-overlap per page.
@@ -307,9 +308,10 @@ struct BrowserLayoutImageTests {
         let images = BrowserLayoutTestSupport.allImageFragments(pages)
         #expect(images.count == 1, "SVG-wrapped cover produced no image fragment")
         let coverFragment = try #require(images.first)
-        // max-width: 100% — 1000pt wide clamps to the 366pt container, aspect kept.
-        #expect(abs(coverFragment.rect.width - 366) < 0.5)
-        #expect(abs(coverFragment.rect.height - 366 * 1333 / 1000) < 1.0)
+        // The body UA side margins leave a final 350pt content box. The SVG
+        // wrapper's intrinsic bitmap clamps to that final containing block.
+        #expect(abs(coverFragment.rect.width - 350) < 0.5)
+        #expect(abs(coverFragment.rect.height - 350 * 1333 / 1000) < 1.0)
 
         let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: [])
         #expect(scan.supported, "scanner rejected an image-only SVG cover: \(scan.unsupportedFeatures.map(\.description))")
@@ -383,9 +385,9 @@ struct BrowserLayoutImageTests {
 
     /// Real 画册 DOM fragment (from the 金陵十二钗 chapter): gallery →
     /// gallery-cell (inline img + maintitle paragraph) → sibling cell. The
-    /// image is a 9:16 portrait (intrinsic 900×1600) sized by `width: 90%` of
-    /// the body content — 352.8×627.2 on a 392pt content. Two 627.2pt cells
-    /// cannot share a page; the second must move to the next page.
+    /// image is a 9:16 portrait (intrinsic 900×1600). Both the gallery and the
+    /// image declare `width:90%`, so each percentage resolves once against its
+    /// own immediate final containing block.
     @Test func realGalleryDOMNoOverlapPerPage() async throws {
         let img = BrowserLayoutTestSupport.makeImage(size: CGSize(width: 900, height: 1600), color: .magenta)
         let html = """
@@ -407,10 +409,10 @@ struct BrowserLayoutImageTests {
         )
         let images = BrowserLayoutTestSupport.allImageFragments(pages)
         #expect(images.count == 3)
-        // Each image keeps its authored size (90% of 392 → 352.8 wide).
+        // body 376 × gallery 90% × image 90% = 304.56pt wide.
         for image in images {
-            #expect(abs(image.rect.width - 352.8) < 0.5)
-            #expect(abs(image.rect.height - 627.2) < 1.0)
+            #expect(abs(image.rect.width - 304.56) < 0.5)
+            #expect(abs(image.rect.height - 541.44) < 1.0)
         }
         // Page-local placement composes the UA body margin (8pt), gallery
         // auto-centering (18.8pt), and image centering inside the 338.4pt

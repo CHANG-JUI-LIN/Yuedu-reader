@@ -1301,6 +1301,18 @@ final class HTMLAttributedStringBuilder {
         )
         applyHTMLDirectionAttribute(from: element, to: &style, inheritedDirection: parent.baseWritingDirection)
 
+        // HTML presentational hints are an author-level origin below all author
+        // stylesheets. They are typed by the shared semantic layer rather than
+        // converted into CSS strings, so Legacy and Browser cannot disagree on
+        // percentage-vs-pixel parsing and a future Lexbor adapter can reuse it.
+        applyPresentationalHints(
+            HTMLPresentationalHintExtractor.extract(
+                from: SwiftSoupHTMLSemanticAdapter.adapt(element)
+            ),
+            to: &style,
+            percentageBase: pct
+        )
+
         let matchedRules = rules
             .filter { $0.selector.matches(element: element, parent: parentElement) }
             .sorted { lhs, rhs in
@@ -1461,6 +1473,34 @@ final class HTMLAttributedStringBuilder {
         }
 
         return style
+    }
+
+    private func applyPresentationalHints(
+        _ hints: [HTMLPresentationalHint],
+        to style: inout ResolvedStyle,
+        percentageBase: CGFloat
+    ) {
+        for hint in hints {
+            guard case .dimension(let dimension) = hint.value else { continue }
+            let resolved: CGFloat
+            let rawPercent: CGFloat?
+            switch dimension {
+            case .pixels(let value):
+                resolved = value
+                rawPercent = nil
+            case .percentage(let fraction):
+                resolved = percentageBase * fraction
+                rawPercent = fraction * 100
+            }
+            switch hint.property {
+            case .width:
+                style.width = max(0, resolved)
+                style.rawWidthPercent = rawPercent
+            case .height:
+                style.height = max(0, resolved)
+                style.rawHeightPercent = rawPercent
+            }
+        }
     }
 
     private func applyHTMLDirectionAttribute(
@@ -1800,32 +1840,42 @@ final class HTMLAttributedStringBuilder {
            let resolved = parseColor(backgroundColor) {
             style.backgroundFillColor = resolved
         }
-        if let width = declarations["width"],
-           let value = resolveLength(
+        if let width = declarations["width"] {
+            let trimmed = width.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.lowercased() == "auto" {
+                style.width = nil
+                style.rawWidthPercent = nil
+            } else if let value = resolveLength(
                 width,
                 currentFontSize: style.fontSize,
                 rootFontSize: rootFontSize,
                 relativeBase: style.fontSize,
                 percentageBase: percentageBase
-           ) {
-            style.width = max(0, value)
-            let trimmed = width.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasSuffix("%"), let pct = Double(trimmed.dropLast()) {
-                style.rawWidthPercent = CGFloat(pct)
+            ) {
+                style.width = max(0, value)
+                style.rawWidthPercent = nil
+                if trimmed.hasSuffix("%"), let pct = Double(trimmed.dropLast()) {
+                    style.rawWidthPercent = CGFloat(pct)
+                }
             }
         }
-        if let height = declarations["height"],
-           let value = resolveLength(
+        if let height = declarations["height"] {
+            let trimmed = height.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.lowercased() == "auto" {
+                style.height = nil
+                style.rawHeightPercent = nil
+            } else if let value = resolveLength(
                 height,
                 currentFontSize: style.fontSize,
                 rootFontSize: rootFontSize,
                 relativeBase: style.fontSize,
                 percentageBase: percentageBase
-           ) {
-            style.height = max(0, value)
-            let trimmed = height.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasSuffix("%"), let pct = Double(trimmed.dropLast()) {
-                style.rawHeightPercent = CGFloat(pct)
+            ) {
+                style.height = max(0, value)
+                style.rawHeightPercent = nil
+                if trimmed.hasSuffix("%"), let pct = Double(trimmed.dropLast()) {
+                    style.rawHeightPercent = CGFloat(pct)
+                }
             }
         }
         if let textIndent = declarations["text-indent"],

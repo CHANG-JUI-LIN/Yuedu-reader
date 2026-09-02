@@ -1,5 +1,6 @@
 import CoreText
 import CoreGraphics
+import CryptoKit
 import UIKit
 import ReadiumShared
 import YueduCoreText
@@ -16,6 +17,14 @@ protocol FontRegistrationServicing {
 }
 
 final class CoreTextFontRegistrationService: FontRegistrationServicing {
+    /// URL registrations are path-backed on iOS: removing the temporary file
+    /// while the process registration is still live makes a later UIFont lookup
+    /// fall through to LastResort. Frontends own separate resolver instances, so
+    /// immutable font bytes need one process-wide registration and one retained
+    /// backing file rather than resolver-scoped UUID files.
+    private static let registrationLock = NSLock()
+    private nonisolated(unsafe) static var registrationsByDigest: [String: FontRegistrationResult] = [:]
+
     static func cleanupStaleTemporaryFonts(maxAge: TimeInterval = 7 * 24 * 60 * 60) {
         let fm = FileManager.default
         let dir = fm.temporaryDirectory
@@ -36,9 +45,67 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
     }
 
     func registerFont(data: Data, alias: String, existingTempURL: URL?) -> FontRegistrationResult? {
+        let digest = Self.digest(for: data)
+        Self.registrationLock.lock()
+        defer { Self.registrationLock.unlock() }
+
+        if let existing = Self.registrationsByDigest[digest] {
+            return existing
+        }
+
+        let result = registerUncached(
+            data: data,
+            alias: alias,
+            digest: digest,
+            existingTempURL: existingTempURL
+        )
+        if let result {
+            Self.registrationsByDigest[digest] = result
+        }
+        return result
+    }
+
+    private func registerUncached(
+        data: Data,
+        alias: String,
+        digest: String,
+        existingTempURL: URL?
+    ) -> FontRegistrationResult? {
+        _ = alias
+        let sourceFont: CTFont?
+        if let provider = CGDataProvider(data: data as CFData),
+           let cgFont = CGFont(provider) {
+            let directFont = CTFontCreateWithGraphicsFont(cgFont, 12, nil, nil)
+            sourceFont = directFont
+
+            var graphicsError: Unmanaged<CFError>?
+            let registered = CTFontManagerRegisterGraphicsFont(cgFont, &graphicsError)
+            if let resolved = Self.resolveRegisteredGraphicsFont(
+                cgFont: cgFont,
+                sourceFont: directFont
+            ) {
+                return FontRegistrationResult(
+                    familyName: resolved.familyName,
+                    postScriptName: resolved.fontName,
+                    tempFileURL: nil
+                )
+            }
+
+            // A successful graphics registration that cannot be resolved back
+            // to the source glyph map must not poison the following URL path.
+            if registered {
+                var unregisterError: Unmanaged<CFError>?
+                _ = CTFontManagerUnregisterGraphicsFont(cgFont, &unregisterError)
+            } else if let error = graphicsError?.takeRetainedValue() {
+                AppLogger.render("[CoreTextEngine] registerFont graphics warning: \(error)")
+            }
+        } else {
+            sourceFont = nil
+        }
+
         let tempURL = existingTempURL
             ?? FileManager.default.temporaryDirectory
-                .appendingPathComponent("reader-font-\(alias)-\(UUID().uuidString)")
+                .appendingPathComponent("reader-font-\(digest)")
                 .appendingPathExtension("ttf")
 
         var writableTempURL: URL? = tempURL
@@ -57,11 +124,31 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
                 let postScriptName = descriptor[kCTFontNameAttribute] as? String ?? ""
                 let familyName = descriptor[kCTFontFamilyNameAttribute] as? String ?? ""
                 if !familyName.isEmpty || !postScriptName.isEmpty {
-                    return FontRegistrationResult(
-                        familyName: familyName.isEmpty ? postScriptName : familyName,
-                        postScriptName: postScriptName.isEmpty ? familyName : postScriptName,
-                        tempFileURL: tempURL
-                    )
+                    let resolvedPostScript = postScriptName.isEmpty ? familyName : postScriptName
+                    let resolvedFamily = familyName.isEmpty ? postScriptName : familyName
+                    if let sourceFont,
+                       let registeredFont = UIFont(name: resolvedPostScript, size: 12)
+                            ?? UIFont(name: resolvedFamily, size: 12),
+                       !Self.hasMatchingGlyphMap(
+                            source: sourceFont,
+                            registered: registeredFont as CTFont
+                       ) {
+                        var unregisterError: Unmanaged<CFError>?
+                        _ = CTFontManagerUnregisterFontsForURL(
+                            tempURL as CFURL,
+                            .process,
+                            &unregisterError
+                        )
+                        try? FileManager.default.removeItem(at: tempURL)
+                        AppLogger.render("[CoreTextEngine] registerFont URL glyph-map mismatch ps=\(resolvedPostScript)")
+                        return nil
+                    } else {
+                        return FontRegistrationResult(
+                            familyName: resolvedFamily,
+                            postScriptName: resolvedPostScript,
+                            tempFileURL: tempURL
+                        )
+                    }
                 }
             }
         } catch {
@@ -95,7 +182,60 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
     }
 
     func cleanupTemporaryFile(at url: URL) {
+        Self.registrationLock.lock()
+        let backsLiveRegistration = Self.registrationsByDigest.values.contains {
+            $0.tempFileURL?.standardizedFileURL == url.standardizedFileURL
+        }
+        Self.registrationLock.unlock()
+        guard !backsLiveRegistration else { return }
         try? FileManager.default.removeItem(at: url)
+    }
+
+    private static func digest(for data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func resolveRegisteredGraphicsFont(
+        cgFont: CGFont,
+        sourceFont: CTFont
+    ) -> UIFont? {
+        let familyName = CTFontCopyFamilyName(sourceFont) as String
+        let postScriptName = (cgFont.postScriptName as String?)
+            ?? (CTFontCopyPostScriptName(sourceFont) as String)
+        for name in [postScriptName, familyName] where !name.isEmpty {
+            guard let candidate = UIFont(name: name, size: 12) else { continue }
+            if hasMatchingGlyphMap(source: sourceFont, registered: candidate as CTFont) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    /// A name resolving to a UIFont is insufficient: malformed legacy EPUB
+    /// names can resolve to a dynamic placeholder face whose every supported
+    /// scalar becomes the same glyph. Compare representative glyphs from every
+    /// populated BMP page against the font created directly from the bytes.
+    private static func hasMatchingGlyphMap(source: CTFont, registered: CTFont) -> Bool {
+        let characterSet = CTFontCopyCharacterSet(source) as CharacterSet
+        var characters: [UniChar] = []
+        var lastPage: UInt32?
+        for value in UInt32(0)...0xFFFF {
+            if value >= 0xD800 && value <= 0xDFFF { continue }
+            guard let scalar = UnicodeScalar(value), characterSet.contains(scalar) else { continue }
+            let page = value >> 8
+            guard page != lastPage else { continue }
+            characters.append(UniChar(value))
+            lastPage = page
+        }
+        guard !characters.isEmpty else {
+            return CTFontGetGlyphCount(source) == CTFontGetGlyphCount(registered)
+        }
+
+        var sourceGlyphs = Array(repeating: CGGlyph(), count: characters.count)
+        var registeredGlyphs = Array(repeating: CGGlyph(), count: characters.count)
+        _ = CTFontGetGlyphsForCharacters(source, characters, &sourceGlyphs, characters.count)
+        _ = CTFontGetGlyphsForCharacters(registered, characters, &registeredGlyphs, characters.count)
+        return sourceGlyphs == registeredGlyphs
     }
 }
 

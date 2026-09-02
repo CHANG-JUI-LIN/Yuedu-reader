@@ -76,7 +76,7 @@ enum CSSFloat: Equatable {
     /// Both the style cascade and the capability scanner parse through here so
     /// they can never disagree about whether a box floats. They did disagree
     /// before: the scanner rejected a chapter on the `float` *key* alone, so
-    /// 红楼梦's 41 chapters carrying only `float: center` (invalid → `none`)
+    /// Legacy EPUBs carrying only `float: center` (invalid → `none`)
     /// were refused by the browser engine despite having nothing to float.
     static func parse(_ value: String) -> CSSFloat? {
         switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
@@ -98,7 +98,7 @@ struct ComputedStyle: Equatable {
     var isHidden = false
     /// Used `float`. STRICT: any token outside {none,left,right} leaves this at
     /// `.none`, because an invalid declaration is dropped and the property keeps
-    /// its initial value. 红楼梦 declares `div.duokan-float-center { float: center }`
+    /// its initial value. Some legacy EPUBs declare invalid `float: center`.
     /// on 51 of its 57 float-classed boxes — `center` is not a float value, so a
     /// browser renders those as ordinary blocks. Anything that dispatches on the
     /// CLASS NAME instead of this computed value floats 89% of them wrongly.
@@ -122,6 +122,13 @@ struct ComputedStyle: Equatable {
     var backgroundImage: BackgroundImageStyle? = nil
     var textAlign: NSTextAlignment = .natural
     var lineHeight: CGFloat?            // nil = normal (ascent/descent)
+    /// Unitless line-height is inherited as a multiplier and recomputed from
+    /// each descendant's own font size. Length/percentage values are finalized
+    /// to an absolute computed length before inheritance.
+    var lineHeightMultiplier: CGFloat? = nil
+    /// Transient winning specified length. The style builder resolves this only
+    /// after the complete cascade has selected the final font size.
+    var pendingLineHeightLength: CSSLength? = nil
     var whiteSpace: WhiteSpaceMode = .normal
     /// Inherited specified/computed value. Percentages remain symbolic until
     /// BlockLayout has resolved this block container's final inline size.
@@ -146,6 +153,10 @@ struct ComputedStyle: Equatable {
     var borderRightWidth: CGFloat = 0
     var borderBottomWidth: CGFloat = 0
     var borderLeftWidth: CGFloat = 0
+    var pendingBorderTopWidth: CSSLength? = nil
+    var pendingBorderRightWidth: CSSLength? = nil
+    var pendingBorderBottomWidth: CSSLength? = nil
+    var pendingBorderLeftWidth: CSSLength? = nil
     /// Per-side border styles (Phase 2C: dotted/dashed must render).
     var borderTopStyle: BorderStyle = .solid
     var borderRightStyle: BorderStyle = .solid
@@ -153,6 +164,7 @@ struct ComputedStyle: Equatable {
     var borderLeftStyle: BorderStyle = .solid
     var borderColor: UIColor?
     var borderRadius: CGFloat = 0
+    var pendingBorderRadius: CSSLength? = nil
     var configParagraphSpacing: CGFloat = 0
 
     init(
@@ -179,6 +191,46 @@ struct ComputedStyle: Equatable {
 }
 
 extension ComputedStyle {
+    mutating func finalizeLineHeight(rootFontSize: CGFloat) {
+        if let multiplier = lineHeightMultiplier {
+            lineHeight = max(0, fontSize * multiplier)
+            pendingLineHeightLength = nil
+            return
+        }
+        guard let length = pendingLineHeightLength else { return }
+        lineHeight = CSSLengthResolver.resolve(
+            length,
+            emBase: fontSize,
+            remBase: rootFontSize,
+            percentBase: fontSize
+        ).map { max(0, $0) }
+        // CSS length/percentage line-height inherits as its absolute computed
+        // value, unlike a unitless multiplier.
+        pendingLineHeightLength = nil
+    }
+
+    mutating func finalizeBorderLengths(rootFontSize: CGFloat) {
+        func resolved(_ length: CSSLength?) -> CGFloat? {
+            guard let length else { return nil }
+            return CSSLengthResolver.resolve(
+                length,
+                emBase: fontSize,
+                remBase: rootFontSize,
+                percentBase: 0
+            ).map { max(0, $0) }
+        }
+        if let value = resolved(pendingBorderTopWidth) { borderTopWidth = value }
+        if let value = resolved(pendingBorderRightWidth) { borderRightWidth = value }
+        if let value = resolved(pendingBorderBottomWidth) { borderBottomWidth = value }
+        if let value = resolved(pendingBorderLeftWidth) { borderLeftWidth = value }
+        if let value = resolved(pendingBorderRadius) { borderRadius = value }
+        pendingBorderTopWidth = nil
+        pendingBorderRightWidth = nil
+        pendingBorderBottomWidth = nil
+        pendingBorderLeftWidth = nil
+        pendingBorderRadius = nil
+    }
+
     func inherited(from parent: ComputedStyle) -> ComputedStyle {
         var style = ComputedStyle(
             fontSize: parent.fontSize,
@@ -195,6 +247,8 @@ extension ComputedStyle {
         style.rubyPosition = parent.rubyPosition
         style.rubyMerge = parent.rubyMerge
         style.textIndent = parent.textIndent
+        style.lineHeightMultiplier = parent.lineHeightMultiplier
+        style.pendingLineHeightLength = nil
         return style
     }
 }
