@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "geometryBaseline": "b674e672b8dc873c27b79cc285eab3591cffca13",
+  "recordedRepositoryCommit": "a4715bc156239795542789452aeb967ba87f89c5",
+  "preExistingDirtyPaths": [
+    ".gitignore",
+    "Modules/Features/Settings/DefaultCoverSettingsView.swift",
+    "Tests/iOS/yuedu appTests/BrowserLayoutMysteriesCorrectnessTests.swift",
+    "Yuedu-Reader.xcodeproj/xcshareddata/xcschemes/Yuedu-Reader.xcscheme",
+    "firebase.json"
+  ],
+  "toolchain": {
+    "xcodeVersion": "26.6",
+    "xcodeBuildVersion": "17F113",
+    "swiftDriverVersion": "1.148.6",
+    "swiftVersion": "6.3.3",
+    "swiftLanguageBuild": "swiftlang-6.3.3.1.3",
+    "clangBuild": "clang-2100.1.1.101",
+    "swiftTarget": "arm64-apple-macosx28.0"
+  },
+  "simulatorUDID": "D787D0F2-DD88-475A-9BC2-D4484B706011",
+  "simulator": {
+    "name": "iPhone 17 Pro Max",
+    "state": "Booted",
+    "runtimeOSVersion": "26.5",
+    "runtimeOSBuildNumber": "23F77",
+    "sdk": "iphonesimulator26.5",
+    "sdkBuildNumber": "23F81a",
+    "targetArchitecture": "arm64"
+  },
+  "derivedData": {
+    "mode": "xcode-shared-default",
+    "explicitDerivedDataPathPassed": false
+  },
+  "lineBreakBaselinePassed": true,
+  "lineBreakBaseline": {
+    "testSuite": "BrowserLayoutLineBreakBaselineTests",
+    "testCount": 1,
+    "coveredChapterCount": 458,
+    "unsupportedSkippedChapterCount": 0,
+    "testDurationSeconds": 176.372,
+    "xcodebuildTestDurationSeconds": 191.790
+  },
+  "debugExecutablePath": "YueduReader.app/YueduReader",
+  "debugExecutableBytes": 40624,
+  "debugMachOSize": {
+    "pageZeroVirtualBytes": 4294967296,
+    "textVirtualBytes": 16384,
+    "textSectionBytes": 12567,
+    "dataConstVirtualBytes": 16384,
+    "dataConstSectionBytes": 248,
+    "dataVirtualBytes": 16384,
+    "dataSectionBytes": 2056,
+    "linkEditVirtualBytes": 16384,
+    "totalVirtualBytes": 4295032832
+  },
+  "debugCodeDylib": {
+    "path": "YueduReader.app/YueduReader.debug.dylib",
+    "fileBytes": 184869776,
+    "machOSize": {
+      "textVirtualBytes": 67485696,
+      "textSectionBytes": 67462951,
+      "dataConstVirtualBytes": 1310720,
+      "dataConstSectionBytes": 1310272,
+      "dataVirtualBytes": 7127040,
+      "dataSectionBytes": 7079685,
+      "llvmCoverageVirtualBytes": 3440640,
+      "llvmCoverageSectionBytes": 3437402,
+      "linkEditVirtualBytes": 106430464,
+      "totalVirtualBytes": 185794560
+    }
+  },
+  "buildTimingSeconds": {
+    "real": 30.56,
+    "user": 9.78,
+    "system": 3.91,
+    "generateDSYM": 2.974,
+    "codeSign": 1.237,
+    "validateEmbeddedBinary": 0.995,
+    "link": 0.949,
+    "processInfoPlist": 0.496,
+    "extractAppIntentsMetadata": 0.157,
+    "copySwiftLibraries": 0.086
+  },
+  "recordedAtUTC": "2026-09-04T05:33:00Z"
+}
