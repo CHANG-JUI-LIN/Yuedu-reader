@@ -99,20 +99,26 @@ enum ChapterTitleAttributedBuilder {
                     "⟐ title.design compile ms=\(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))"
                         + " ok=true len=\(titleBlock.length)"
                 )
-                // What the design resolved each dynamic field to — logged only
-                // when a design that *has* text slots filled none of them, which
-                // is the signature of "the chapter name vanished". Logging every
-                // chapter instead buries that line in the routine ones.
+                // Every field that decides whether a layer is visible at all:
+                // box, colour, alpha and font. The earlier version of this line
+                // printed only the text and its font, which proved the slots
+                // resolve correctly and left "then why is nothing on screen"
+                // unanswerable — a zero-width box, a transparent layer and a
+                // title painted in the page colour all look identical from the
+                // text alone. One line per chapter open, which is how the last
+                // one got pasted back.
                 if let plan = titleBlock.attribute(
                     designRenderPlanAttribute,
                     at: 0,
                     effectiveRange: nil
-                ) as? ChapterTitleRenderPlan,
-                   plan.layers.contains(where: { $0.attributedText != nil }),
-                   plan.layers.allSatisfy({ ($0.attributedText?.length ?? 0) == 0 }) {
+                ) as? ChapterTitleRenderPlan {
                     let described = plan.layers.map { layer -> String in
+                        let box = "@\(Int(layer.frame.minX)),\(Int(layer.frame.minY))"
+                            + " \(Int(layer.frame.width))x\(Int(layer.frame.height))"
+                        let alpha = layer.style.ruleStyle.decoration.opacity ?? 1
                         guard let attributed = layer.attributedText else {
-                            return layer.image != nil ? "<image>" : "<shape>"
+                            return (layer.image != nil ? "<image>" : "<shape>")
+                                + box + " a=\(String(format: "%.2f", alpha))"
                         }
                         // A dynamic field with nothing to show — a chapter title
                         // carrying no number, say — compiles to an *empty*
@@ -120,20 +126,20 @@ enum ChapterTitleAttributedBuilder {
                         // attribute at 0 raises an NSRangeException. Which is
                         // exactly how a diagnostic added to explain a missing
                         // title started crashing the reader on the next chapter.
-                        guard attributed.length > 0 else {
-                            return "\"\"@\(Int(layer.frame.minY))"
-                        }
+                        guard attributed.length > 0 else { return "\"\"" + box }
                         let font = attributed.attribute(
                             .font,
                             at: 0,
                             effectiveRange: nil
                         ) as? UIFont
-                        return "\"\(attributed.string)\"@\(Int(layer.frame.minY))"
+                        let colorHex = layer.style.ruleStyle.text.colorHex
+                        return "\"\(attributed.string)\"" + box
                             + "/\(font.map { "\($0.fontName):\(Int($0.pointSize))" } ?? "-")"
+                            + " #\(colorHex.map { String(format: "%06X", $0) } ?? "-")"
+                            + " a=\(String(format: "%.2f", alpha))"
                     }
                     AppLogger.render(
-                        "chapterTitle design produced no visible text"
-                            + " canvas=\(Int(plan.canvasSize.width))"
+                        "⟐ title.design layers canvas=\(Int(plan.canvasSize.width))"
                             + "x\(Int(plan.canvasSize.height)) \(described.joined(separator: " "))",
                         context: ["title": trimmed]
                     )

@@ -4,8 +4,10 @@ import UIKit
 @testable import yuedu_app
 
 /// Guards the real xTitleEditor export end to end: the fixture is the shipped
-/// 星环 template with its artwork swapped for a 1×1 pixel, so every layer
-/// number in it is the authored one.
+/// 星环 template, artwork included, so every number and every pixel in it is
+/// the authored one — the ring is black ink on transparency, which is why a
+/// text layer painted under it, or clipped by its own box, disappears with the
+/// artwork still on screen.
 @Suite("Lottie ring template", .serialized)
 struct LottieRingTemplateTests {
     private static var fixtureURL: URL {

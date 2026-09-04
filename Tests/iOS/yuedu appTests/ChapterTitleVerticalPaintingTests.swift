@@ -7,10 +7,10 @@ import UIKit
 
 /// Vertical painting of a chapter-title plan.
 ///
-/// Horizontal layers are drawn with `NSAttributedString.draw(with:)`, which overflows its rect
-/// instead of clipping, so designs are routinely saved with a box shorter than the font. Rotated
-/// for vertical writing that height becomes the column width, where CoreText clips hard — a box
-/// one point too narrow used to return zero columns and blank the title.
+/// Designs are routinely saved with a box shorter than the font the reader resolves for them.
+/// Horizontally that clips the glyphs (see `ChapterTitleLineBoxTests`); rotated for vertical
+/// writing the box height becomes the column width, where CoreText clips hard instead — a box one
+/// point too narrow used to return zero columns and blank the title.
 @Suite("Chapter title vertical painting")
 struct ChapterTitleVerticalPaintingTests {
     private static let canvasSize = CGSize(width: 160, height: 320)
@@ -97,7 +97,12 @@ struct ChapterTitleVerticalPaintingTests {
             layers: [layer]
         )
 
-        let renderer = UIGraphicsImageRenderer(size: canvas)
+        // Scale 1: `scanInk` reports pixel coordinates and every expectation
+        // below is written in points, so anything else compares 3x numbers
+        // against 1x ones.
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: canvas, format: format)
         let image = renderer.image { rendererContext in
             ChapterTitleCanvasPainter.draw(
                 plan,

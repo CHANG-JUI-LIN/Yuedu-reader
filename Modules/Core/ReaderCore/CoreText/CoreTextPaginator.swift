@@ -2883,6 +2883,20 @@ final class CoreTextPaginator {
                 container: container,
                 writingMode: writingMode
             )
+            // Where the title canvas actually landed on the page. The compile-side
+            // log proves the plan is right; this one is the other half — an empty
+            // rect means nothing is painted at all (the page still reserves the
+            // canvas height, so it reads as a blank gap), and a rect narrower than
+            // the canvas means the whole title was scaled down to fit a column
+            // narrower than the one it was built for.
+            AppLogger.render(
+                "⟐ title.design place canvas=\(Int(logicalCanvasSize.width))"
+                    + "x\(Int(logicalCanvasSize.height))"
+                    + " container=\(Int(container.width))x\(Int(container.height))"
+                    + " rect=\(Int(rect.minX)),\(Int(rect.minY))"
+                    + " \(Int(rect.width))x\(Int(rect.height))"
+                    + " scale=\(String(format: "%.2f", logicalCanvasSize.width > 0 ? rect.width / logicalCanvasSize.width : 0))"
+            )
             guard !rect.isEmpty else { return }
             renderables.append(RenderedBlockRenderable(
                 rect: rect,

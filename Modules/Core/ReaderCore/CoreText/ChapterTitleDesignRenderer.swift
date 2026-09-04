@@ -518,12 +518,58 @@ enum ChapterTitleCanvasPainter {
         context: CGContext
     ) {
         guard attributedText.length > 0 else { return }
+
+        let framesetter = CTFramesetterCreateWithAttributedString(
+            attributedText as CFAttributedString
+        )
+        let range = CFRange(location: 0, length: attributedText.length)
+
         guard writingMode.isVertical else {
-            attributedText.draw(
-                with: rect,
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
+            // CoreText, not `NSAttributedString.draw(with:)`. Everything else in
+            // this reader — body text, regex highlights, the vertical branch
+            // below — paints through CoreText; this one call was the last piece
+            // of UIKit string drawing left, and it is the only thing the three
+            // failing surfaces (paged page, scroll chunk, settings preview) had
+            // in common when a device drew the image of a title and none of its
+            // text. Those three paths are otherwise independent, the compiled
+            // plan was verified correct on that device, and `UIImage.draw(in:)`
+            // in the very same context worked — so the dependency itself goes.
+            //
+            // The frame path is at least as tall as the text needs, because
+            // CoreText drops whole lines that do not fit rather than clipping
+            // them. It grows downward only: CoreText fills a frame from the top,
+            // so the first line stays where the design put it, and `rect` itself
+            // is untouched so backgrounds and borders keep authored geometry.
+            let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
+                framesetter,
+                range,
+                nil,
+                CGSize(width: rect.width, height: CGFloat.greatestFiniteMagnitude),
+                nil
             )
+            let height = suggested.height.isFinite
+                ? max(rect.height, ceil(suggested.height))
+                : rect.height
+            let layoutRect = CGRect(
+                x: rect.minX,
+                y: canvasHeight - rect.minY - height,
+                width: rect.width,
+                height: height
+            )
+            guard layoutRect.width > 0, layoutRect.height > 0 else { return }
+
+            let frame = CTFramesetterCreateFrame(
+                framesetter,
+                range,
+                CGPath(rect: layoutRect, transform: nil),
+                nil
+            )
+            context.saveGState()
+            context.textMatrix = .identity
+            context.translateBy(x: 0, y: canvasHeight)
+            context.scaleBy(x: 1, y: -1)
+            CTFrameDraw(frame, context)
+            context.restoreGState()
             return
         }
 
@@ -535,17 +581,12 @@ enum ChapterTitleCanvasPainter {
         )
         guard coreTextRect.width > 0, coreTextRect.height > 0 else { return }
 
-        let framesetter = CTFramesetterCreateWithAttributedString(
-            attributedText as CFAttributedString
-        )
-        let range = CFRange(location: 0, length: attributedText.length)
-
-        // Horizontal text is drawn with `NSAttributedString.draw(with:)`, which OVERFLOWS its rect
-        // rather than clipping — a layer box shorter than its own font still shows the title, so
-        // designs are routinely saved that way. Rotated for vertical writing, that box height
-        // becomes the column width, and `CTFramesetterCreateFrame` does clip: one point too narrow
-        // and it returns zero columns, blanking the title entirely (measured threshold = exactly
-        // the font size). Widen the layout path to what CoreText actually needs.
+        // Layer boxes are routinely authored shorter than the font the reader resolves for
+        // them (see the horizontal branch, which grows its drawing box for the same reason).
+        // Rotated for vertical writing, that box height becomes the column width, and
+        // `CTFramesetterCreateFrame` clips hard rather than partially: one point too narrow and
+        // it returns zero columns, blanking the title entirely (measured threshold = exactly the
+        // font size). Widen the layout path to what CoreText actually needs.
         //
         // The extra width is split evenly around the box instead of being taken off one side, so
         // an overflowing title stays centred on the box the designer shows — an off-centre title
