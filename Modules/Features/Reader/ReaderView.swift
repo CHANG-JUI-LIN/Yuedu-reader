@@ -1,6 +1,6 @@
 import Combine
 import Foundation
-    import SwiftUI
+import SwiftUI
 import UIKit
 import YueduCoreText
 
@@ -146,6 +146,11 @@ struct ReaderView: View {
     }
 
     @StateObject var epubRenderer = EPUBPageRenderer()
+    #if DEBUG
+    @State var debugSelectedLayoutEngine = ReaderDebugLayoutEngine(
+        featureMode: BrowserLayoutFeature.mode
+    )
+    #endif
 
     @State var showTTSPanel = false
     @State var showDownloadOptions = false
@@ -1577,6 +1582,14 @@ struct ReaderView: View {
                 .transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
             if showBars { readerChrome }
+            #if DEBUG
+            if showBars, debugLayoutABAvailable {
+                debugLayoutABOverlay
+                    .padding(.top, DSLayout.minimumTapTarget + DSSpacing.lg)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .zIndex(80)
+            }
+            #endif
             if showBars,
                settings.appearanceReaderInterface == .appleBooks,
                appleBooksActivePanel != nil {

@@ -2316,3 +2316,8 @@
 "裝飾・圓點" = "Dot";
 "裝飾・蝴蝶結" = "Bow";
 "無" = "None";
+"Legacy" = "Legacy";
+"BrowserForced" = "BrowserForced";
+"目前引擎" = "Effective engine";
+"版面引擎" = "Layout engine";
+"正在切換版面引擎" = "Switching layout engine";

@@ -19,6 +19,11 @@ final class EPUBPageRenderer: ObservableObject {
     private var epubBuilder: EPUBAttributedStringBuilder?
     private var onlineBuilder: OnlineProviderAttributedStringBuilder?
     private var publicationSession: PublicationSession?
+    #if DEBUG
+    /// Retained only for the on-device Legacy/BrowserForced acceptance switch.
+    /// Release builds have no runtime engine switch and no extra state.
+    private var debugPublicationBookIdentifier: String?
+    #endif
 
     /// Scroll-mode-specific engine (alongside the page engine). Created automatically when builder is available.
     @Published private(set) var scrollEngine: CoreTextScrollEngine? {
@@ -360,6 +365,9 @@ final class EPUBPageRenderer: ObservableObject {
         fixedLayoutViewport = session.fixedLayoutViewport
         mediaOverlaysByChapter = session.mediaOverlaysByChapter
         publicationSession = session
+        #if DEBUG
+        debugPublicationBookIdentifier = bookIdentifier
+        #endif
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
@@ -432,6 +440,47 @@ final class EPUBPageRenderer: ObservableObject {
             logProgress("load deferred bookId=\(bookIdentifier) reason=invalidRenderSize size=\(renderSize)")
         }
     }
+
+    #if DEBUG
+    /// The engine currently installed in this renderer. BrowserForced never
+    /// falls back, so the concrete engine is the effective A/B answer.
+    var debugEffectiveLayoutEngine: EPUBLayoutEngineMode {
+        engine is BrowserLayoutPageEngine ? .browserForced : .legacy
+    }
+
+    /// Rebuilds the current reflowable horizontal EPUB with the other DEBUG
+    /// engine while reusing the caller's exact viewport and settings snapshot.
+    /// ReaderView owns stable-position capture/restore around this call.
+    @discardableResult
+    func debugReloadPublication(
+        mode: EPUBLayoutEngineMode,
+        renderSize: CGSize,
+        settings: ReaderRenderSettings
+    ) -> Bool {
+        switch mode {
+        case .legacy, .browserForced:
+            break
+        case .browserAuto:
+            return false
+        }
+        guard let session = publicationSession,
+              let bookIdentifier = debugPublicationBookIdentifier,
+              session.layoutMode != .prePaginated,
+              session.epubWritingMode != .verticalRL else {
+            return false
+        }
+
+        engine?.cancelPendingWork()
+        BrowserLayoutFeature.mode = mode
+        load(
+            publicationSession: session,
+            bookIdentifier: bookIdentifier,
+            renderSize: renderSize,
+            settings: settings
+        )
+        return true
+    }
+    #endif
 
     func loadTXT(
         text: String,
