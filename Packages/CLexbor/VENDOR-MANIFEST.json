@@ -1,0 +1,61 @@
+{
+  "generation": {
+    "command": "perl single.pl --port=posix html css selectors style",
+    "environment": {
+      "LC_ALL": "C",
+      "TZ": "UTC"
+    },
+    "generatorPath": "single.pl",
+    "generatorSHA256": "8bf7856ea4195ad41945a81d3b37343a2ef489a5ff8f9abdffd481979d1c7ea2",
+    "normalization": [
+      "generated Date set to upstream v3.0.0 commit date",
+      "generated copyright end-year set to 2026"
+    ],
+    "offlineVerifier": "scripts/verify_vendored_lexbor.sh",
+    "requestedModules": [
+      "html",
+      "css",
+      "selectors",
+      "style"
+    ],
+    "resolvedModules": [
+      "core",
+      "css",
+      "dom",
+      "html",
+      "ns",
+      "selectors",
+      "style",
+      "tag"
+    ],
+    "vendoringScript": "scripts/vendor_lexbor.sh",
+    "versionFileSHA256": "6c4ca09e0d3549711034c2ce201cd27153bdd686cd57a60db8d7aed76068e087"
+  },
+  "outputs": {
+    "LICENSE": {
+      "path": "LICENSE",
+      "sha256": "7321caa1f366dfbebf799b6c6c2604772dbb12ef10ed6a6b7cbb384b3401c4dd"
+    },
+    "NOTICE": {
+      "path": "NOTICE",
+      "sha256": "b87f965fd2eba846a0a502d633dd7e7a680b93de5c514c404c948ccf1e5c9dc7"
+    },
+    "lexbor_amalgamated_generated_c": {
+      "path": "Sources/CLexbor/lexbor-amalgamated.generated.c",
+      "sha256": "b94981ce824573fd8f2b9256c69a5f3781a8a0026d954a9f0913bafa5540491e"
+    },
+    "lexbor_amalgamated_generated_h": {
+      "path": "Sources/CLexbor/lexbor-amalgamated.generated.h",
+      "sha256": "fe6f9ff4fdd20a248feba53887cf69b5cf86c21c3ab3264744d92e7b8de65c5c"
+    }
+  },
+  "schemaVersion": 1,
+  "upstream": {
+    "commit": "2ae88a1c6b5261830eff73ee12bb3cdf805f3cfe",
+    "releaseDateUTC": "Tue Mar 31 18:45:44 2026 UTC",
+    "repository": "https://github.com/lexbor/lexbor.git",
+    "tag": "v3.0.0",
+    "tagType": "lightweight",
+    "version": "3.0.0"
+  }
+}
