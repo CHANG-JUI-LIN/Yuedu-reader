@@ -42,6 +42,7 @@
 		59196CD4E2AC41958E276886 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 		605CA89FF5C9882A68E236F3 /* YueduCoreText in Frameworks */ = {isa = PBXBuildFile; productRef = FF544FB3AA8924E26745E485 /* YueduCoreText */; };
 		6B865095660449D830AF13C4 /* iosMath in Frameworks */ = {isa = PBXBuildFile; productRef = 3F2758F4003B483DCE6CFC1C /* iosMath */; };
+		6E860399818D270C801E7519 /* CLexbor in Frameworks */ = {isa = PBXBuildFile; productRef = EC30E8EE1B7F4DA83ADB8821 /* CLexbor */; };
 		8A11B0E32F9A1C7300A1B001 /* ReadiumFuzi in Frameworks */ = {isa = PBXBuildFile; productRef = 8A11B0E22F9A1C7300A1B001 /* ReadiumFuzi */; };
 		9345BAE6E7C14A44A078A749 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 		AAAA1111AAAA1111AAAA0001 /* Nuke in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA1111AAAA1111AAAA0002 /* Nuke */; };
@@ -206,6 +207,7 @@
 				6B865095660449D830AF13C4 /* iosMath in Frameworks */,
 				BA0DC69BDD8FFF2AE7B103A0 /* YueduCoreTextTypography in Frameworks */,
 				605CA89FF5C9882A68E236F3 /* YueduCoreText in Frameworks */,
+				6E860399818D270C801E7519 /* CLexbor in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -366,6 +368,7 @@
 				3F2758F4003B483DCE6CFC1C /* iosMath */,
 				3D3ACA9A6DDE978E3B91280C /* YueduCoreTextTypography */,
 				FF544FB3AA8924E26745E485 /* YueduCoreText */,
+				EC30E8EE1B7F4DA83ADB8821 /* CLexbor */,
 			);
 			productName = "yuedu app";
 			productReference = 460D36592F51C5B8006E774C /* YueduReader.app */;
@@ -487,6 +490,7 @@
 				46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				4F766A6C466F0B91C61C6FB1 /* XCRemoteSwiftPackageReference "iosMath" */,
 				4503FB56A177080D0D9E31E4 /* XCRemoteSwiftPackageReference "YueduCoreText" */,
+				D8654E038B484E472D6D37EA /* XCLocalSwiftPackageReference "Packages/CLexbor" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 460D365A2F51C5B8006E774C /* Products */;
@@ -1141,6 +1145,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		D8654E038B484E472D6D37EA /* XCLocalSwiftPackageReference "Packages/CLexbor" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/CLexbor;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		4503FB56A177080D0D9E31E4 /* XCRemoteSwiftPackageReference "YueduCoreText" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -1376,6 +1387,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AAAA1111AAAA1111AAAA0003 /* XCRemoteSwiftPackageReference "Nuke" */;
 			productName = Nuke;
+		};
+		EC30E8EE1B7F4DA83ADB8821 /* CLexbor */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CLexbor;
 		};
 		FF544FB3AA8924E26745E485 /* YueduCoreText */ = {
 			isa = XCSwiftPackageProductDependency;
