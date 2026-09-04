@@ -2,11 +2,14 @@ import Foundation
 import SwiftSoup
 import UIKit
 
-/// One node of the computed-style tree. `element` is nil only for the synthetic
-/// root the builder creates for `<body>` matching.
+/// One node of the computed-style tree. DOM identity is a copied value snapshot;
+/// frontend-owned SwiftSoup/Lexbor nodes never cross this boundary.
 final class ComputedStyleNode {
     let tag: String
-    let element: Element?
+    let semanticElement: HTMLDOMElementSnapshot?
+    /// Source-compatibility spelling for diagnostics being migrated during the
+    /// frontend cutover. Its type is still the neutral value snapshot.
+    var element: HTMLDOMElementSnapshot? { semanticElement }
     let style: ComputedStyle
     let children: [StyleTreeChild]
     /// Stable identity assigned by `ComputedStyleTreeBuilder` (document order).
@@ -18,7 +21,7 @@ final class ComputedStyleNode {
     let anchorID: String?
     init(
         tag: String,
-        element: Element?,
+        semanticElement: HTMLDOMElementSnapshot?,
         style: ComputedStyle,
         children: [StyleTreeChild],
         nodeID: Int,
@@ -26,12 +29,32 @@ final class ComputedStyleNode {
         anchorID: String?
     ) {
         self.tag = tag
-        self.element = element
+        self.semanticElement = semanticElement
         self.style = style
         self.children = children
         self.nodeID = nodeID
         self.linkTarget = linkTarget
         self.anchorID = anchorID
+    }
+
+    convenience init(
+        tag: String,
+        element: HTMLDOMElementSnapshot?,
+        style: ComputedStyle,
+        children: [StyleTreeChild],
+        nodeID: Int,
+        linkTarget: String?,
+        anchorID: String?
+    ) {
+        self.init(
+            tag: tag,
+            semanticElement: element,
+            style: style,
+            children: children,
+            nodeID: nodeID,
+            linkTarget: linkTarget,
+            anchorID: anchorID
+        )
     }
 }
 
@@ -91,13 +114,19 @@ final class ComputedStyleTreeBuilder {
             color: textColor,
             backgroundColor: backgroundColor
         )
-        let bodyStyle = resolvedStyle(for: body, parent: defaultParent, parentElement: nil)
+        let bodySemantic = SwiftSoupHTMLSemanticAdapter.snapshot(body)
+        let bodyStyle = resolvedStyle(
+            for: body,
+            semanticElement: bodySemantic,
+            parent: defaultParent,
+            parentElement: nil
+        )
         let root = ComputedStyleNode(
-            tag: "body", element: body, style: bodyStyle,
+            tag: "body", semanticElement: bodySemantic, style: bodyStyle,
             children: children(of: body, parentStyle: bodyStyle, parentElement: body, inheritedLink: nil),
             nodeID: nextNodeID,
             linkTarget: nil,
-            anchorID: linkAnchorID(of: body)
+            anchorID: linkAnchorID(of: bodySemantic)
         )
         nextNodeID += 1
         return root
@@ -116,20 +145,30 @@ final class ComputedStyleTreeBuilder {
             if let text = node as? TextNode {
                 result.append(.text(text.getWholeText()))
             } else if let child = node as? Element {
-                let style = resolvedStyle(for: child, parent: parentStyle, parentElement: element)
+                let semanticElement = SwiftSoupHTMLSemanticAdapter.snapshot(child)
+                let style = resolvedStyle(
+                    for: child,
+                    semanticElement: semanticElement,
+                    parent: parentStyle,
+                    parentElement: element
+                )
                 if style.isHidden { continue }
                 let childLink: String?
-                if child.tagName().lowercased() == "a", let href = try? child.attr("href"), !href.isEmpty {
+                if child.tagName().lowercased() == "a",
+                   let href = semanticElement.attribute("href"),
+                   !href.isEmpty {
                     childLink = href
                 } else {
                     childLink = inheritedLink
                 }
                 let childNode = ComputedStyleNode(
-                    tag: child.tagName().lowercased(), element: child, style: style,
+                    tag: child.tagName().lowercased(),
+                    semanticElement: semanticElement,
+                    style: style,
                     children: children(of: child, parentStyle: style, parentElement: child, inheritedLink: childLink),
                     nodeID: nextNodeID,
                     linkTarget: childLink,
-                    anchorID: linkAnchorID(of: child)
+                    anchorID: linkAnchorID(of: semanticElement)
                 )
                 nextNodeID += 1
                 result.append(.element(childNode))
@@ -138,9 +177,8 @@ final class ComputedStyleTreeBuilder {
         return result
     }
 
-    private func linkAnchorID(of element: Element) -> String? {
-        guard element.hasAttr("id") else { return nil }
-        let value = (try? element.attr("id")) ?? ""
+    private func linkAnchorID(of element: HTMLDOMElementSnapshot) -> String? {
+        let value = element.attribute("id") ?? ""
         return value.isEmpty ? nil : value
     }
 
@@ -171,11 +209,11 @@ final class ComputedStyleTreeBuilder {
         into map: inout [Int: LinkAnchorInfo]
     ) {
         var current = inherited
-        if let element = node.element, node.tag == "a",
-           let href = try? element.attr("href"), !href.isEmpty {
+        if let element = node.semanticElement, node.tag == "a",
+           let href = element.attribute("href"), !href.isEmpty {
             current = LinkAnchorInfo(
                 anchorNodeID: node.nodeID,
-                semantic: Self.semantic(of: element)
+                semantic: element.linkSemantic
             )
         }
         if let current {
@@ -187,22 +225,14 @@ final class ComputedStyleTreeBuilder {
         }
     }
 
-    /// The anchor's authored semantic. Both spellings the EPUB 3 ecosystem
-    /// actually ships are read: the `epub:type` structural-semantics attribute
-    /// and the DPUB-ARIA `role` that publishers put next to it. Nothing else —
-    /// a class name or an image file name never decides semantics.
-    private static func semantic(of element: Element) -> LinkSemantic {
-        let epubType = (try? element.attr("epub:type")) ?? ""
-        let byEpubType = LinkSemantic.from(epubType: epubType)
-        if byEpubType != .plain { return byEpubType }
-        let role = ((try? element.attr("role")) ?? "").lowercased()
-        let roles = role.split(separator: " ").map(String.init)
-        return roles.contains("doc-noteref") ? .noteref : .plain
-    }
-
     // MARK: - Cascade for one element
 
-    private func resolvedStyle(for element: Element, parent: ComputedStyle, parentElement: Element?) -> ComputedStyle {
+    private func resolvedStyle(
+        for element: Element,
+        semanticElement: HTMLDOMElementSnapshot,
+        parent: ComputedStyle,
+        parentElement: Element?
+    ) -> ComputedStyle {
         var style = parent.inherited(from: parent)
         let ua = UserAgentStyle.basis(for: element.tagName().lowercased())
         style = style.applyingUA(ua)
@@ -215,7 +245,7 @@ final class ComputedStyleTreeBuilder {
         // so a future Lexbor DOM adapter can feed the same typed declarations.
         applyPresentationalHints(
             HTMLPresentationalHintExtractor.extract(
-                from: SwiftSoupHTMLSemanticAdapter.adapt(element)
+                from: semanticElement.htmlSemanticElement
             ),
             to: &style
         )
@@ -241,7 +271,7 @@ final class ComputedStyleTreeBuilder {
         }
         cascadeApply(inlineDecl.important, order: inlineDecl.order, to: &style, ctx: ctx)
 
-        if element.hasAttr("hidden") { style.isHidden = true }
+        if semanticElement.attribute("hidden") != nil { style.isHidden = true }
         style.finalizeLineHeight(rootFontSize: rootFontSize)
         style.finalizeBorderLengths(rootFontSize: rootFontSize)
         return style

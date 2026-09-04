@@ -151,6 +151,34 @@ private final class CensusCollector {
         patterns[key] = accumulator
     }
 
+    func record(
+        feature: CensusFeature,
+        layer: CensusLayer,
+        property: String,
+        value: String,
+        selector: String,
+        element: HTMLDOMElementSnapshot?,
+        bookID: String,
+        chapterID: String
+    ) {
+        let tag = element?.tagName ?? "document"
+        let classes = (element?.classTokens ?? []).sorted().joined(separator: ".")
+        let key = CensusPatternKey(
+            feature: feature,
+            layer: layer,
+            property: Self.short(property, limit: 80),
+            value: Self.short(value, limit: 160),
+            selector: Self.short(selector, limit: 200),
+            tag: tag,
+            classes: classes
+        )
+        let accumulator = patterns[key] ?? CensusPatternAccumulator()
+        accumulator.bookIDs.insert(bookID)
+        accumulator.chapterIDs.insert(chapterID)
+        accumulator.elementHits += 1
+        patterns[key] = accumulator
+    }
+
     func recordScannerReason(_ reason: String, bookID: String, chapterID: String) {
         let accumulator = scannerReasons[reason] ?? CensusReasonAccumulator()
         accumulator.bookIDs.insert(bookID)
@@ -996,7 +1024,9 @@ private enum BrowserLayoutCapabilityCensus {
         recordAll("script, iframe, object, embed, canvas, audio, video", feature: .scriptedInteractive, property: "element")
 
         for svg in (try? document.select("svg").array()) ?? [] {
-            if BoxTreeBuilder.svgWrappedImageSource(svg) == nil {
+            if BoxTreeBuilder.svgWrappedImageSource(
+                SwiftSoupHTMLSemanticAdapter.snapshot(svg)
+            ) == nil {
                 collector.record(
                     feature: .unsupportedSVG, layer: .dom,
                     property: "element", value: "complex-inline-svg",
@@ -1017,7 +1047,8 @@ private enum BrowserLayoutCapabilityCensus {
         let isFloated = node.style.isFloated
         if isFloated {
             let isReplaced = node.tag == "img"
-                || (node.tag == "svg" && node.element.flatMap(BoxTreeBuilder.svgWrappedImageSource) != nil)
+                || (node.tag == "svg"
+                    && node.semanticElement.flatMap(BoxTreeBuilder.svgWrappedImageSource) != nil)
             if (!isReplaced && node.style.width == .auto) || floatedAncestor {
                 collector.record(
                     feature: .unsupportedFloatSubset, layer: .layout,

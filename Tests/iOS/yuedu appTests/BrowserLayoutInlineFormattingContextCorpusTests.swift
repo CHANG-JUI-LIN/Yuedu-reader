@@ -1358,7 +1358,7 @@ struct BrowserLayoutInlineFormattingContextCorpusTests {
         normalized.textIndent = .initial
         guard normalized == zeroed.style,
               original.tag == zeroed.tag,
-              original.element === zeroed.element,
+              original.semanticElement == zeroed.semanticElement,
               original.nodeID == zeroed.nodeID,
               original.linkTarget == zeroed.linkTarget,
               original.anchorID == zeroed.anchorID,

@@ -141,8 +141,11 @@ struct BrowserLayoutRubyCorpusTests {
         func describe(_ node: ComputedStyleNode, depth: Int) -> [String] {
             let indent = String(repeating: "  ", count: depth)
             let markup: String
-            if let element = node.element {
-                markup = (try? element.outerHtml()) ?? "<unavailable>"
+            if let element = node.semanticElement {
+                let attributes = element.attributes.keys.sorted().map { key in
+                    "\(key)=\(element.attributes[key] ?? "")"
+                }.joined(separator: ",")
+                markup = "\(element.semanticPath){\(attributes)}"
             } else {
                 markup = "<synthetic>"
             }

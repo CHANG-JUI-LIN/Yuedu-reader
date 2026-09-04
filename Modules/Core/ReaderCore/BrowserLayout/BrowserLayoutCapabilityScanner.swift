@@ -110,7 +110,11 @@ enum BrowserLayoutCapabilityScanner {
                 reasons.append(.table)
             }
             let svgs = (try? doc.select("svg").array()) ?? []
-            if svgs.contains(where: { BoxTreeBuilder.svgWrappedImageSource($0) == nil }) {
+            if svgs.contains(where: {
+                BoxTreeBuilder.svgWrappedImageSource(
+                    SwiftSoupHTMLSemanticAdapter.snapshot($0)
+                ) == nil
+            }) {
                 reasons.append(.unsupportedSVG)
             }
 
@@ -207,7 +211,8 @@ enum BrowserLayoutCapabilityScanner {
         let isFloated = node.style.isFloated
         if isFloated {
             let isReplaced = node.tag == "img"
-                || (node.tag == "svg" && node.element.flatMap(BoxTreeBuilder.svgWrappedImageSource) != nil)
+                || (node.tag == "svg"
+                    && node.semanticElement.flatMap(BoxTreeBuilder.svgWrappedImageSource) != nil)
             // Non-replaced floats with width:auto need CSS shrink-to-fit, which
             // Phase 4B deliberately does not guess. max-width alone does not
             // turn width:auto into a definite used width.

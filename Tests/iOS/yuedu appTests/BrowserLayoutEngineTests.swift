@@ -435,15 +435,13 @@ private final class RecordingCSSFrontend: CSSFrontend {
     private(set) var callCount = 0
 
     func buildStyleTree(
-        html: String,
-        cssTexts: [String],
+        input: CSSFrontendInput,
         config: BrowserLayoutConfig,
         metrics: inout LayoutMetrics
     ) throws -> CSSFrontendResult {
         callCount += 1
         return try underlying.buildStyleTree(
-            html: html,
-            cssTexts: cssTexts,
+            input: input,
             config: config,
             metrics: &metrics
         )

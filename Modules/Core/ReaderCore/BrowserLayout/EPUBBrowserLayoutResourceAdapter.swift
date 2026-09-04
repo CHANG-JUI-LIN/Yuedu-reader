@@ -107,7 +107,8 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
         // carries no <img>, so without this the box tree asks for a source that
         // was never fetched and the cover renders as an empty chapter.
         for svg in (try? doc.select("svg").array()) ?? [] {
-            if let href = BoxTreeBuilder.svgWrappedImageSource(svg) { sources.insert(href) }
+            let snapshot = SwiftSoupHTMLSemanticAdapter.snapshot(svg)
+            if let href = BoxTreeBuilder.svgWrappedImageSource(snapshot) { sources.insert(href) }
         }
         // NOTE: the root background-image is deliberately NOT collected here.
         // It is paint-only (never affects layout), and scanning the stylesheets

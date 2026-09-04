@@ -1,5 +1,4 @@
 import Foundation
-import SwiftSoup
 import UIKit
 
 /// Accumulates the chapter's collapsed source text. Runs' `sourceRange`s point
@@ -90,7 +89,7 @@ enum BoxTreeBuilder {
                         sourceRange: range, nodeID: elementNode.nodeID,
                         linkTarget: elementNode.linkTarget, isHardBreak: true
                     ))
-                } else if let element = elementNode.element,
+                } else if let element = elementNode.semanticElement,
                           let svgSource = Self.svgWrappedImageSource(element) {
                     registerAnchors(&anchorStack, ownID: elementNode.anchorID,
                                     anchors: &anchors, at: sourceText.currentOffset)
@@ -206,7 +205,7 @@ enum BoxTreeBuilder {
                         sourceRange: range, nodeID: elementNode.nodeID,
                         linkTarget: elementNode.linkTarget, isHardBreak: true
                     ))
-                } else if let element = elementNode.element,
+                } else if let element = elementNode.semanticElement,
                           let svgSource = Self.svgWrappedImageSource(element) {
                     registerAnchors(&localStack, ownID: elementNode.anchorID,
                                     anchors: &anchors, at: sourceText.currentOffset)
@@ -486,18 +485,12 @@ enum BoxTreeBuilder {
     /// draw. `BrowserLayoutCapabilityScanner` calls the SAME predicate, so the
     /// scanner and the box tree can never disagree about which SVGs are
     /// renderable.
-    static func svgWrappedImageSource(_ element: Element) -> String? {
-        guard element.tagName().lowercased() == "svg" else { return nil }
-        guard let images = try? element.select("image").array(), images.count == 1,
-              let image = images.first else { return nil }
-        let drawable = (try? element.select(
-            "path, rect, circle, ellipse, line, polyline, polygon, text, textPath, use, g, symbol, marker, pattern, mask, foreignObject"
-        ).array()) ?? []
-        guard drawable.isEmpty else { return nil }
-        for attribute in ["xlink:href", "href"] {
-            if let href = try? image.attr(attribute), !href.isEmpty { return href }
+    static func svgWrappedImageSource(_ element: HTMLDOMElementSnapshot) -> String? {
+        guard element.tagName == "svg" else { return nil }
+        guard case .rasterWrapper(let source) = element.svgRenderability else {
+            return nil
         }
-        return nil
+        return source
     }
 
     /// Emits an SVG-wrapped cover image as a replaced element. BoxTreeBuilder
@@ -530,7 +523,7 @@ enum BoxTreeBuilder {
         sourceText: inout SourceTextBuilder,
         imageLoader: (String) -> UIImage?
     ) {
-        let src = (node.element.flatMap { try? $0.attr("src") }) ?? ""
+        let src = node.semanticElement?.attribute("src") ?? ""
         let image = imageLoader(src)
         let intrinsic = image?.size ?? .zero
         guard intrinsic.width > 0, intrinsic.height > 0, let image else { return }
@@ -549,7 +542,7 @@ enum BoxTreeBuilder {
         for node: ComputedStyleNode,
         imageLoader: (String) -> UIImage?
     ) -> AtomicInline? {
-        let src = (node.element.flatMap { try? $0.attr("src") }) ?? ""
+        let src = node.semanticElement?.attribute("src") ?? ""
         guard let image = imageLoader(src) else { return nil }
         return AtomicInline(
             source: src, image: image, usedSize: image.size,
@@ -621,8 +614,8 @@ extension BoxTreeBuilder {
         box.debugTag = node.tag
         box.debugNodeID = node.nodeID
         box.debugID = node.anchorID
-        if let element = node.element {
-            box.debugClasses = (try? element.classNames().map { $0 }) ?? []
+        if let element = node.semanticElement {
+            box.debugClasses = element.classTokens
         }
     }
 }
