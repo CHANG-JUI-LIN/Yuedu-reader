@@ -32,11 +32,17 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     private let chapterFetcher: any ChapterFetching
     private let chapterStore: any OfflineChapterStoring
     private let maximumConcurrentBooks: Int
+    /// Fixed chapter concurrency, for tests that need a deterministic width. `nil` in the
+    /// app: the pool follows 網路設定 → 並發數.
+    private let configuredChapterConcurrency: Int?
     /// Seconds to wait before the first automatic retry; later attempts scale with the
     /// attempt number. Injectable so tests exercise the retry path without real waiting.
     private let retryBackoff: TimeInterval
     private var bookJobs: [UUID: Task<Void, Never>] = [:]
-    private var activeChapterIndices: [UUID: Int] = [:]
+    /// Chapter indices in flight, per book. A worker claims its index here before starting
+    /// and holds the claim through every retry, so two workers of the same book can never
+    /// spend attempts on the same chapter. `pause` cancels exactly this set.
+    private var inFlightChapters: [UUID: Set<Int>] = [:]
     private var waitingBooks: [WaitingBook] = []
     private var isReconciling = false
     /// The store each running book is downloading into, so the background-expiry handler can
@@ -70,11 +76,13 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         chapterFetcher: any ChapterFetching,
         chapterStore: any OfflineChapterStoring = OfflineChapterStore(),
         maximumConcurrentBooks: Int = 2,
+        chapterConcurrency: Int? = nil,
         retryBackoff: TimeInterval = 1.0
     ) {
         self.chapterFetcher = chapterFetcher
         self.chapterStore = chapterStore
         self.maximumConcurrentBooks = max(1, maximumConcurrentBooks)
+        self.configuredChapterConcurrency = chapterConcurrency
         self.retryBackoff = max(0, retryBackoff)
     }
 
@@ -109,11 +117,11 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
 
     func pause(bookId: UUID, store: BookStore) async {
         waitingBooks.removeAll { $0.book.id == bookId }
-        let activeChapterIndex = activeChapterIndices[bookId]
+        let activeChapterIndices = inFlightChapters[bookId] ?? []
         let job = bookJobs[bookId]
         job?.cancel()
-        if let activeChapterIndex {
-            await chapterFetcher.cancelChapter(bookId: bookId, chapterIndex: activeChapterIndex)
+        for chapterIndex in activeChapterIndices {
+            await chapterFetcher.cancelChapter(bookId: bookId, chapterIndex: chapterIndex)
         }
         await job?.value
         await MainActor.run {
@@ -320,47 +328,101 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
             runningStores[bookId] = waiting.store
             bookJobs[bookId] = Task { [weak self] in
                 await self?.beginBackgroundAssertion()
+                await self?.refreshChapterSlotCapacity()
                 await self?.runBook(waiting.book, store: waiting.store)
                 await MainActor.run { OfflineDownloadBackgroundTask.shared.release() }
             }
         }
     }
 
+    /// Hands the book's pending chapters to the shared chapter-slot pool until there are
+    /// none left and every worker has returned.
+    ///
+    /// This used to fetch one chapter, await it, then fetch the next — a book downloaded
+    /// with exactly one request in flight, which is most of why a long book took minutes of
+    /// mostly-idle network. Legado has never done that: `CacheBook.startProcessJob` collects
+    /// a flow of books with `onEachParallel(threadCount)`, so `threadCount` chapter fetches
+    /// run at once and the slots are shared across every downloading book.
     private func runBook(_ originalBook: ReadingBook, store: BookStore) async {
         defer { finishBook(bookId: originalBook.id) }
 
-        while !Task.isCancelled {
-            let snapshot = await MainActor.run { () -> (ReadingBook, BookOfflineDownloadTask)? in
-                guard
-                    let book = store.books.first(where: { $0.id == originalBook.id }),
-                    let task = book.offlineDownloadTask
-                else { return nil }
-                return (book, task)
-            }
-            guard let (book, task) = snapshot, !task.isPaused else { return }
-            guard let index = task.pendingIndices.sorted().first else {
-                await MainActor.run {
-                    guard let finalTask = store.books
-                        .first(where: { $0.id == book.id })?.offlineDownloadTask else { return }
-                    store.replaceOfflineDownloadTask(
-                        bookId: book.id,
-                        task: finalTask,
-                        isRunning: false
-                    )
+        await withTaskGroup(of: Void.self) { group in
+            var running = 0
+            while !Task.isCancelled {
+                let snapshot = await MainActor.run { () -> (ReadingBook, BookOfflineDownloadTask)? in
+                    guard
+                        let book = store.books.first(where: { $0.id == originalBook.id }),
+                        let task = book.offlineDownloadTask
+                    else { return nil }
+                    return (book, task)
                 }
-                return
-            }
-            guard let refs = book.onlineChapters, refs.indices.contains(index) else {
-                await removeInvalidIndex(index, bookId: book.id, store: store)
-                continue
-            }
-            let ref = refs[index]
-            if ref.shouldRenderAsVolumeSeparator {
-                await removeInvalidIndex(index, bookId: book.id, store: store)
-                continue
-            }
+                guard let (book, task) = snapshot, !task.isPaused else { break }
 
-            activeChapterIndices[book.id] = index
+                guard let index = claimNextChapter(bookId: book.id, task: task) else {
+                    // Nothing left to hand out. Workers still in flight are the last writers
+                    // of this task, so the download is only finished once they have returned.
+                    if running == 0 {
+                        await MainActor.run {
+                            guard let finalTask = store.books
+                                .first(where: { $0.id == book.id })?.offlineDownloadTask else { return }
+                            store.replaceOfflineDownloadTask(
+                                bookId: book.id,
+                                task: finalTask,
+                                isRunning: false
+                            )
+                        }
+                        break
+                    }
+                    if await group.next() != nil { running -= 1 } else { running = 0 }
+                    continue
+                }
+
+                guard let refs = book.onlineChapters, refs.indices.contains(index) else {
+                    releaseChapter(index, bookId: book.id)
+                    await removeInvalidIndex(index, bookId: book.id, store: store)
+                    continue
+                }
+                let ref = refs[index]
+                if ref.shouldRenderAsVolumeSeparator {
+                    releaseChapter(index, bookId: book.id)
+                    await removeInvalidIndex(index, bookId: book.id, store: store)
+                    continue
+                }
+
+                await acquireChapterSlot()
+                guard !Task.isCancelled else {
+                    releaseChapter(index, bookId: book.id)
+                    releaseChapterSlot()
+                    break
+                }
+                group.addTask { [weak self] in
+                    await self?.downloadChapter(
+                        index: index,
+                        ref: ref,
+                        book: book,
+                        store: store
+                    )
+                    await self?.releaseChapterSlot()
+                }
+                running += 1
+            }
+            await group.waitForAll()
+        }
+    }
+
+    /// One chapter, start to finish, including its retries. The worker keeps the chapter
+    /// claimed across every attempt: releasing it between attempts would let a sibling worker
+    /// pick the same index straight out of `pendingIndices` and spend the remaining attempts
+    /// in parallel with this one.
+    private func downloadChapter(
+        index: Int,
+        ref: OnlineChapterRef,
+        book: ReadingBook,
+        store: BookStore
+    ) async {
+        defer { releaseChapter(index, bookId: book.id) }
+
+        while !Task.isCancelled {
             do {
                 let validation = await SourcePerfTrace.spanAsync(
                     "offline.validation",
@@ -435,6 +497,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                     throw OfflineDownloadManagerError.invalidPackage
                 }
                 await markCompleted(index, bookId: book.id, store: store)
+                return
             } catch is CancellationError {
                 return
             } catch {
@@ -444,11 +507,11 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                 chapterAttempts[book.id, default: [:]][index] = attempts
 
                 if attempts < Self.maximumChapterAttempts, Self.isRetryable(category) {
-                    // The index is still in `pendingIndices` (only `markFailed` removes it),
-                    // so the next loop pass picks it straight back up. Back off first —
-                    // retrying a source the instant it failed is how a transient error
-                    // becomes three of them. Legado waits a flat second here; the wait grows
-                    // with the attempt so a struggling source gets more room each round.
+                    // Back off before trying again — retrying a source the instant it failed
+                    // is how a transient error becomes three of them. Legado waits a flat
+                    // second here; the wait grows with the attempt so a struggling source
+                    // gets more room each round. Cancellation lands as a thrown sleep, which
+                    // the `while` condition then catches.
                     AppLogger.parse("⟐ offline chapter retry", context: [
                         "index": index,
                         "attempt": attempts,
@@ -461,7 +524,6 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                         attempt: attempts,
                         detail: "category=\(category.rawValue)"
                     )
-                    activeChapterIndices.removeValue(forKey: book.id)
                     let backoff = retryBackoff * Double(attempts)
                     if backoff > 0 {
                         try? await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
@@ -477,8 +539,77 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                     store: store
                 )
                 chapterAttempts[book.id]?.removeValue(forKey: index)
+                return
             }
-            activeChapterIndices.removeValue(forKey: book.id)
+        }
+    }
+
+    /// The lowest pending index no worker holds, claimed for the caller.
+    private func claimNextChapter(bookId: UUID, task: BookOfflineDownloadTask) -> Int? {
+        let claimed = inFlightChapters[bookId] ?? []
+        guard let index = task.pendingIndices.subtracting(claimed).min() else { return nil }
+        inFlightChapters[bookId, default: []].insert(index)
+        return index
+    }
+
+    private func releaseChapter(_ index: Int, bookId: UUID) {
+        inFlightChapters[bookId]?.remove(index)
+        if inFlightChapters[bookId]?.isEmpty == true {
+            inFlightChapters.removeValue(forKey: bookId)
+        }
+    }
+
+    // MARK: - Chapter slot pool
+
+    /// Chapter fetches allowed in flight across EVERY downloading book at once — Legado's
+    /// shared `threadCount` pool, not a per-book budget. Capacity is read when a book job
+    /// starts, the same moment `CacheBookService` reads `AppConfig.threadCount`, so changing
+    /// 並發數 mid-download applies from the next book (or the next resume).
+    private var chapterSlotCapacity = 1
+    private var chapterSlotsInUse = 0
+    private var chapterSlotWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private func refreshChapterSlotCapacity() async {
+        let configured: Int
+        if let configuredChapterConcurrency {
+            configured = configuredChapterConcurrency
+        } else {
+            configured = await MainActor.run { GlobalSettings.shared.searchConcurrency }
+        }
+        chapterSlotCapacity = NetworkSearchSettings.clampedDownloadConcurrency(configured)
+        // The effective width, named on device. "Is the download actually running N at a
+        // time?" is otherwise unanswerable from the outside, and it was exactly the question
+        // nobody could answer while this pool did not exist.
+        AppLogger.cache("⟐ offline slots", context: [
+            "capacity": chapterSlotCapacity,
+            "configured": configured,
+            "inUse": chapterSlotsInUse,
+            "waiting": chapterSlotWaiters.count,
+        ])
+        drainChapterSlotWaiters()
+    }
+
+    private func acquireChapterSlot() async {
+        if chapterSlotsInUse < chapterSlotCapacity {
+            chapterSlotsInUse += 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            chapterSlotWaiters.append(continuation)
+        }
+    }
+
+    private func releaseChapterSlot() {
+        chapterSlotsInUse = max(0, chapterSlotsInUse - 1)
+        drainChapterSlotWaiters()
+    }
+
+    /// Hands freed slots to waiters in arrival order, which is what keeps two books sharing
+    /// the pool instead of the first one holding every slot until it finishes.
+    private func drainChapterSlotWaiters() {
+        while chapterSlotsInUse < chapterSlotCapacity, !chapterSlotWaiters.isEmpty {
+            chapterSlotsInUse += 1
+            chapterSlotWaiters.removeFirst().resume()
         }
     }
 
@@ -540,7 +671,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     }
 
     private func finishBook(bookId: UUID) {
-        activeChapterIndices.removeValue(forKey: bookId)
+        inFlightChapters.removeValue(forKey: bookId)
         chapterAttempts.removeValue(forKey: bookId)
         bookJobs.removeValue(forKey: bookId)
         runningStores.removeValue(forKey: bookId)

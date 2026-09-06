@@ -23,7 +23,7 @@ struct OfflineDownloadManagerTests {
         #expect(fixture.store.books.first?.offlineDownloadState == .partial)
         // Chapter 1 is tried three times before being recorded as failed, and the download
         // still moves on to chapter 2 afterwards.
-        #expect(await fixture.fetcher.requestedIndices == [0, 1, 1, 1, 2])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [0, 1, 1, 1, 2])
     }
 
     @Test("a chapter that fails once is retried and succeeds")
@@ -46,7 +46,7 @@ struct OfflineDownloadManagerTests {
         #expect(task.completedIndices == Set([0, 1]))
         #expect(task.failedChapters.isEmpty)
         #expect(fixture.store.books.first?.offlineDownloadState == .available)
-        #expect(await fixture.fetcher.requestedIndices == [0, 0, 1])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [0, 0, 1])
     }
 
     @Test("a deterministic failure is not retried")
@@ -68,7 +68,7 @@ struct OfflineDownloadManagerTests {
         let task = try #require(fixture.store.books.first?.offlineDownloadTask)
         #expect(Set(task.failedChapters.keys) == Set([0]))
         #expect(task.failedChapters[0]?.category == .invalidChapter)
-        #expect(await fixture.fetcher.requestedIndices == [0, 1])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [0, 1])
     }
 
     @Test("an explicit retry gets a fresh set of attempts")
@@ -83,7 +83,7 @@ struct OfflineDownloadManagerTests {
             store: fixture.store
         )
         await fixture.manager.waitUntilIdle()
-        #expect(await fixture.fetcher.requestedIndices == [0, 0, 0])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [0, 0, 0])
 
         // The user may have logged in or bought the chapter in between, so the attempts
         // already spent must not carry over — otherwise the retry button would fire a
@@ -96,7 +96,7 @@ struct OfflineDownloadManagerTests {
         let task = try #require(fixture.store.books.first?.offlineDownloadTask)
         #expect(task.completedIndices == Set([0]))
         #expect(task.failedChapters.isEmpty)
-        #expect(await fixture.fetcher.requestedIndices == [0, 0, 0, 0])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [0, 0, 0, 0])
     }
 
     @Test("volume separator is skipped without a fetch")
@@ -116,7 +116,7 @@ struct OfflineDownloadManagerTests {
         )
         await fixture.manager.waitUntilIdle()
 
-        #expect(await fixture.fetcher.requestedIndices == [1])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [1])
         let task = try #require(fixture.store.books.first?.offlineDownloadTask)
         #expect(task.requestedIndices == Set([1]))
         #expect(task.completedIndices == Set([1]))
@@ -166,7 +166,7 @@ struct OfflineDownloadManagerTests {
         await fixture.manager.waitUntilIdle()
 
         // 1 exhausts its three automatic attempts, then the manual retry fetches it once more.
-        #expect(await fixture.fetcher.requestedIndices == [0, 1, 1, 1, 2, 1])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [0, 1, 1, 1, 1, 2])
         let task = try #require(fixture.store.books.first?.offlineDownloadTask)
         #expect(task.completedIndices == Set(0...2))
         #expect(task.failedChapters.isEmpty)
@@ -195,7 +195,35 @@ struct OfflineDownloadManagerTests {
         #expect(task.failedChapters.isEmpty)
         #expect(fixture.store.books.first?.offlineDownloadState == .available)
         // Both failing chapters spend their three attempts before being recorded.
-        #expect(await fixture.fetcher.requestedIndices == [0, 1, 1, 1, 2, 3, 3, 3])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [0, 1, 1, 1, 2, 3, 3, 3])
+    }
+
+    @Test("chapters of one book download concurrently", .timeLimit(.minutes(1)))
+    @MainActor
+    func chaptersDownloadConcurrently() async throws {
+        let fixture = makeFixture(chapters: 8)
+        defer { fixture.cleanup() }
+        // Hold every fetch inside the call, so what the assertion sees is how many the
+        // manager was willing to have in flight — not how fast an instant fetch returned.
+        await fixture.fetcher.closeGate()
+
+        await fixture.manager.start(
+            book: fixture.book,
+            selection: .range(0...7),
+            store: fixture.store
+        )
+        // Before the slot pool this hung here forever: the download loop fetched one
+        // chapter, awaited it, and only then looked for the next.
+        await fixture.fetcher.waitUntilInFlight(4)
+        await fixture.fetcher.openGate()
+        await fixture.manager.waitUntilIdle()
+
+        // Four is the fixture's pinned pool width, and the pool is the only thing that
+        // should cap it — a fifth in flight would mean the width is not being honoured.
+        #expect(await fixture.fetcher.peakConcurrency == 4)
+        let task = try #require(fixture.store.books.first?.offlineDownloadTask)
+        #expect(task.completedIndices == Set(0...7))
+        #expect(fixture.store.books.first?.offlineDownloadState == .available)
     }
 
     @Test("removing a download survives a reconcile pass that is mid-validation")
@@ -226,7 +254,7 @@ struct OfflineDownloadManagerTests {
 
         #expect(fixture.store.books.first?.offlineDownloadTask == nil)
         #expect(fixture.store.books.first?.offlineDownloadState == BookOfflineDownloadState.none)
-        #expect(await fixture.fetcher.requestedIndices == [0, 1])
+        #expect(await fixture.fetcher.requestedIndices.sorted() == [0, 1])
     }
 
     @MainActor
@@ -267,6 +295,10 @@ struct OfflineDownloadManagerTests {
         let manager = OfflineDownloadManager(
             chapterFetcher: fetcher,
             chapterStore: artifactStore,
+            // Pinned so the pool width does not follow whatever 並發數 the running
+            // device happens to have; wide enough that the tests run the concurrent
+            // path rather than a degenerate one-at-a-time one.
+            chapterConcurrency: 4,
             // Exercise the real retry path with no wall-clock wait.
             retryBackoff: 0
         )
@@ -306,6 +338,12 @@ private actor TestOfflineChapterFetcher: ChapterFetching {
     private let ledger: TestArtifactLedger
     private var failingIndices: Set<Int>
     private(set) var requestedIndices: [Int] = []
+    /// Highest number of `fetchChapter` calls that were inside the call at the same time.
+    private(set) var peakConcurrency = 0
+    private var inFlight = 0
+    private var isGated = false
+    private var gateWaiters: [CheckedContinuation<Void, Never>] = []
+    private var inFlightWatchers: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
     /// When set, only this many attempts fail before the chapter starts succeeding — models
     /// a transient blip rather than a permanently broken chapter.
     private var remainingFailures: Int?
@@ -329,6 +367,34 @@ private actor TestOfflineChapterFetcher: ChapterFetching {
         failureError = error
     }
 
+    /// Holds every fetch inside the call so the test can observe how many the manager
+    /// started, instead of racing an instant return.
+    func closeGate() {
+        isGated = true
+    }
+
+    func openGate() {
+        isGated = false
+        let waiters = gateWaiters
+        gateWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// Resumes once `target` fetches are simultaneously in flight. Returns immediately if
+    /// that many already are.
+    func waitUntilInFlight(_ target: Int) async {
+        if inFlight >= target { return }
+        await withCheckedContinuation { continuation in
+            inFlightWatchers.append((target, continuation))
+        }
+    }
+
+    private func noteInFlightChanged() {
+        let reached = inFlightWatchers.filter { inFlight >= $0.target }
+        inFlightWatchers.removeAll { inFlight >= $0.target }
+        for watcher in reached { watcher.continuation.resume() }
+    }
+
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool {
         await ledger.contains(chapterIndex)
     }
@@ -340,6 +406,15 @@ private actor TestOfflineChapterFetcher: ChapterFetching {
         store: BookStore?
     ) async throws -> ChapterPackage {
         requestedIndices.append(chapterIndex)
+        inFlight += 1
+        peakConcurrency = max(peakConcurrency, inFlight)
+        noteInFlightChanged()
+        defer { inFlight -= 1 }
+        if isGated {
+            await withCheckedContinuation { continuation in
+                gateWaiters.append(continuation)
+            }
+        }
         if failingIndices.contains(chapterIndex) {
             if let remaining = remainingFailures {
                 if remaining > 0 {

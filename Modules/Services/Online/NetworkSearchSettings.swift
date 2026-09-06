@@ -8,6 +8,18 @@ enum NetworkSearchSettings {
         min(30, max(1, value))
     }
 
+    /// Ceiling for offline downloads, which read the same 網路設定 → 並發數 knob as search.
+    /// A search spreads its N requests over N different sites; a download aims all N at the
+    /// ONE host the book's source lives on, so the same number is far less polite there.
+    /// Legado drives both from a single `threadCount` (default 16), but its MD3 fork clamps
+    /// the cache path with `maxDownloadConcurrency = 8` — follow that ceiling so raising the
+    /// knob for search cannot turn a download into a hammer on a single site.
+    static let maximumDownloadConcurrency = 8
+
+    static func clampedDownloadConcurrency(_ value: Int) -> Int {
+        min(maximumDownloadConcurrency, max(1, value))
+    }
+
     static func effectiveAutoPauseCount(configured value: Int, sourceCount: Int) -> Int {
         let configured = max(0, value)
         guard configured == 0, sourceCount >= largeSourcePackThreshold else {

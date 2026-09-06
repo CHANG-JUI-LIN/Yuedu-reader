@@ -276,41 +276,35 @@ actor ChapterFetchManager {
 
         var shouldClearCachedChapter = false
 
+        // Load once and branch on the result. The `else if` this replaces re-ran the same
+        // call with the same arguments purely to tell "no cache" from "unusable cache" —
+        // and each run re-reads the metadata, the artifact and the whole chapter body, then
+        // checksums the body. It runs on this actor's serial executor, which now serves
+        // every concurrent download worker, so the duplicate was work they all queued behind.
         if let cached = bookSourceFetcher.loadChapterPackageSync(
             bookId: book.id,
             chapterIndex: chapterIndex,
             expectedSourceURL: sanitizedURL,
             expectedTOCTitle: ref.title
-        ), isReusableCachedPackage(cached, for: book)
-        {
-            states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
-            return cached
-        } else if bookSourceFetcher.loadChapterPackageSync(
-            bookId: book.id,
-            chapterIndex: chapterIndex,
-            expectedSourceURL: sanitizedURL,
-            expectedTOCTitle: ref.title
-        ) != nil {
+        ) {
+            if isReusableCachedPackage(cached, for: book) {
+                states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
+                return cached
+            }
             shouldClearCachedChapter = true
         }
         // Also accept caches stored under the original URL (legacy path)
         if sanitizedURL != refs[chapterIndex].url,
-           let cached = bookSourceFetcher.loadChapterPackageSync(
+           let legacyCached = bookSourceFetcher.loadChapterPackageSync(
             bookId: book.id,
             chapterIndex: chapterIndex,
             expectedSourceURL: refs[chapterIndex].url,
             expectedTOCTitle: ref.title
-        ), isReusableCachedPackage(cached, for: book)
-        {
-            states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
-            return cached
-        } else if sanitizedURL != refs[chapterIndex].url,
-                  bookSourceFetcher.loadChapterPackageSync(
-                    bookId: book.id,
-                    chapterIndex: chapterIndex,
-                    expectedSourceURL: refs[chapterIndex].url,
-                    expectedTOCTitle: ref.title
-                  ) != nil {
+        ) {
+            if isReusableCachedPackage(legacyCached, for: book) {
+                states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
+                return legacyCached
+            }
             shouldClearCachedChapter = true
         }
 
