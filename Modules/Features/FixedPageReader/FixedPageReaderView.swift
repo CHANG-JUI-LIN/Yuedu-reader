@@ -18,6 +18,7 @@ final class FixedPageReaderState: ObservableObject {
     @Published var errorMessage: String?
     @Published var showControls: Bool = true
     @Published var showChapterList: Bool = false
+    @Published var isAutoScrolling: Bool = false
 
     // Actions wired by the controller.
     var onJumpToPage: ((Int) -> Void)?
@@ -26,6 +27,7 @@ final class FixedPageReaderState: ObservableObject {
     var onNextChapter: (() -> Void)?
     var onPrevChapter: (() -> Void)?
     var onReload: (() -> Void)?
+    var onToggleAutoScroll: (() -> Void)?
 }
 
 struct FixedPageChapterListItem: Identifiable, Equatable {
@@ -88,6 +90,27 @@ struct FixedPageReaderView: View {
                         }
                     )
                         .transition(.opacity)
+                }
+
+                if state.fixedPageReaderConfiguration.layout == .continuousVerticalScroll {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button {
+                                state.onToggleAutoScroll?()
+                                state.isAutoScrolling.toggle()
+                            } label: {
+                                Image(systemName: state.isAutoScrolling ? "pause.circle.fill" : "play.circle.fill")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.white)
+                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                            }
+                            .padding(.trailing, DSSpacing.lg)
+                            .padding(.bottom, state.showControls ? 85 : 36)
+                        }
+                    }
+                    .transition(.opacity)
                 }
 
                 if showTouchZoneEditor {
@@ -235,24 +258,41 @@ struct FixedPageReaderControlsOverlay: View {
         .background(.ultraThinMaterial)
     }
 
+    private var isRTL: Bool {
+        state.fixedPageReaderConfiguration.progression == .rightToLeft
+    }
+
     private var bottomBar: some View {
         VStack(spacing: DSSpacing.xs) {
             if state.totalPages > 1 {
                 HStack(spacing: DSSpacing.md) {
-                    Button { state.onPrevChapter?() } label: {
-                        Image(systemName: "backward.end").foregroundColor(.white)
+                    Button {
+                        if isRTL { state.onNextChapter?() } else { state.onPrevChapter?() }
+                    } label: {
+                        Image(systemName: isRTL ? "forward.end" : "backward.end").foregroundColor(.white)
                     }
                     Slider(
                         value: Binding(
-                            get: { Double(state.currentPage) },
-                            set: { state.onJumpToPage?(Int($0.rounded())) }
+                            get: {
+                                isRTL
+                                    ? Double(max(0, state.totalPages - 1 - state.currentPage))
+                                    : Double(state.currentPage)
+                            },
+                            set: { newValue in
+                                let target = isRTL
+                                    ? state.totalPages - 1 - Int(newValue.rounded())
+                                    : Int(newValue.rounded())
+                                state.onJumpToPage?(target)
+                            }
                         ),
                         in: 0...Double(max(1, state.totalPages - 1)),
                         step: 1
                     )
                     .tint(.white)
-                    Button { state.onNextChapter?() } label: {
-                        Image(systemName: "forward.end").foregroundColor(.white)
+                    Button {
+                        if isRTL { state.onPrevChapter?() } else { state.onNextChapter?() }
+                    } label: {
+                        Image(systemName: isRTL ? "backward.end" : "forward.end").foregroundColor(.white)
                     }
                 }
                 .padding(.horizontal, DSSpacing.md)
@@ -277,16 +317,110 @@ struct FixedPageReaderSettingsView: View {
 
     var body: some View {
         Menu {
-            ForEach(FixedPageReadingMode.allCases, id: \.rawValue) { mode in
+            // Section 1: Reading Mode
+            Section {
+                ForEach(FixedPageReadingMode.allCases, id: \.rawValue) { mode in
+                    Button {
+                        var updated = FixedPageReaderConfiguration.recommendedDefault(for: mode)
+                        // Preserve user toggles
+                        updated.cropBorders = fixedPageReaderConfiguration.cropBorders
+                        updated.isLiveTextEnabled = fixedPageReaderConfiguration.isLiveTextEnabled
+                        updated.pageSpreadLayout = fixedPageReaderConfiguration.pageSpreadLayout
+                        updated.pageOffset = fixedPageReaderConfiguration.pageOffset
+                        updated.splitWideImages = fixedPageReaderConfiguration.splitWideImages
+                        updated.pillarbox = fixedPageReaderConfiguration.pillarbox
+                        onSelectConfiguration(updated)
+                    } label: {
+                        Label(
+                            mode.localizedName,
+                            systemImage: fixedPageReaderConfiguration.mode == mode ? "checkmark" : mode.iconName
+                        )
+                    }
+                }
+            }
+
+            // Section 2: Paged mode specific options
+            if fixedPageReaderConfiguration.layout == .paged {
+                Section {
+                    ForEach(FixedPageReaderConfiguration.PageSpreadLayout.allCases, id: \.rawValue) { layout in
+                        Button {
+                            var config = fixedPageReaderConfiguration
+                            config.pageSpreadLayout = layout
+                            onSelectConfiguration(config)
+                        } label: {
+                            Label(
+                                spreadTitle(layout),
+                                systemImage: fixedPageReaderConfiguration.pageSpreadLayout == layout ? "checkmark" : spreadIcon(layout)
+                            )
+                        }
+                    }
+
+                    Button {
+                        var config = fixedPageReaderConfiguration
+                        config.pageOffset.toggle()
+                        onSelectConfiguration(config)
+                    } label: {
+                        Label(
+                            localized("封面單頁偏移"),
+                            systemImage: fixedPageReaderConfiguration.pageOffset ? "checkmark.square" : "square"
+                        )
+                    }
+
+                    Button {
+                        var config = fixedPageReaderConfiguration
+                        config.splitWideImages.toggle()
+                        onSelectConfiguration(config)
+                    } label: {
+                        Label(
+                            localized("自動切分雙頁大圖"),
+                            systemImage: fixedPageReaderConfiguration.splitWideImages ? "checkmark.square" : "square"
+                        )
+                    }
+                }
+            }
+
+            // Section 3: Webtoon mode specific options
+            if fixedPageReaderConfiguration.layout == .continuousVerticalScroll {
+                Section {
+                    Button {
+                        var config = fixedPageReaderConfiguration
+                        config.pillarbox.toggle()
+                        onSelectConfiguration(config)
+                    } label: {
+                        Label(
+                            localized("寬屏黑邊限制"),
+                            systemImage: fixedPageReaderConfiguration.pillarbox ? "checkmark.square" : "square"
+                        )
+                    }
+                }
+            }
+
+            // Section 4: General enhancements
+            Section {
                 Button {
-                    onSelectConfiguration(.recommendedDefault(for: mode))
+                    var config = fixedPageReaderConfiguration
+                    config.cropBorders.toggle()
+                    onSelectConfiguration(config)
                 } label: {
                     Label(
-                        mode.localizedName,
-                        systemImage: fixedPageReaderConfiguration.mode == mode ? "checkmark" : mode.iconName
+                        localized("自動裁切留白邊框"),
+                        systemImage: fixedPageReaderConfiguration.cropBorders ? "checkmark.square" : "square"
+                    )
+                }
+
+                Button {
+                    var config = fixedPageReaderConfiguration
+                    config.isLiveTextEnabled.toggle()
+                    onSelectConfiguration(config)
+                } label: {
+                    Label(
+                        localized("原文字選取與識別"),
+                        systemImage: fixedPageReaderConfiguration.isLiveTextEnabled ? "checkmark.square" : "square"
                     )
                 }
             }
+
+            // Section 5: Touch zone editor
             if ReaderPremiumVisibilityPolicy(isProActive: subscriptionStore.isProActive).showsTouchZoneEditor,
                fixedPageReaderConfiguration.layout == .paged {
                 Divider()
@@ -299,6 +433,22 @@ struct FixedPageReaderSettingsView: View {
                 .font(DSFont.fixed(size: 17, weight: .medium))
                 .foregroundColor(.white)
                 .frame(width: 36, height: 36)
+        }
+    }
+
+    private func spreadTitle(_ layout: FixedPageReaderConfiguration.PageSpreadLayout) -> String {
+        switch layout {
+        case .single: return localized("單頁")
+        case .double: return localized("雙頁")
+        case .auto: return localized("自動雙頁")
+        }
+    }
+
+    private func spreadIcon(_ layout: FixedPageReaderConfiguration.PageSpreadLayout) -> String {
+        switch layout {
+        case .single: return "rectangle.portrait"
+        case .double: return "rectangle.split.2x1"
+        case .auto: return "rectangle.portrait.and.arrow.forward"
         }
     }
 }

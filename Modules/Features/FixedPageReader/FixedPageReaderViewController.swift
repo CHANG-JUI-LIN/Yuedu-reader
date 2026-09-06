@@ -84,6 +84,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         state.onSetConfiguration = { [weak self] configuration in self?.changeConfiguration(configuration) }
         state.onNextChapter = { [weak self] in self?.loadNextChapter() }
         state.onPrevChapter = { [weak self] in self?.loadPreviousChapter() }
+        state.onToggleAutoScroll = { [weak self] in self?.reader?.toggleAutoScroll() }
         state.onReload = { [weak self] in
             guard let self else { return }
             self.loadChapter(at: self.chapterIndex, startPage: self.reader?.currentPageIndex() ?? 0)
@@ -424,6 +425,52 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         )
     }
     func readerShowTableOfContents() { state.showChapterList = true }
+
+    func readerAppendNextChapter() async -> [FixedPage]? {
+        guard !isSingleChapterDocumentBook else { return nil }
+        let nextIndex = chapterIndex + 1
+        guard chapters.indices.contains(nextIndex) else { return nil }
+
+        do {
+            let package = try await chapterFetcher.fetchChapter(
+                book: book, chapterIndex: nextIndex, priority: .immediate, store: store)
+            let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: nextIndex)
+            let pages = MangaChapterParser.pages(from: package.content, headers: headers, localDir: localDir)
+            if !pages.isEmpty {
+                chapterIndex = nextIndex
+                state.currentChapterIndex = nextIndex
+                state.chapterTitle = chapters[nextIndex].title
+                currentPages.append(contentsOf: pages)
+                return pages
+            }
+        } catch {
+            AppLogger.error("Failed to append next manga chapter", error: error)
+        }
+        return nil
+    }
+
+    func readerPrependPreviousChapter() async -> [FixedPage]? {
+        guard !isSingleChapterDocumentBook else { return nil }
+        let prevIndex = chapterIndex - 1
+        guard prevIndex >= 0, chapters.indices.contains(prevIndex) else { return nil }
+
+        do {
+            let package = try await chapterFetcher.fetchChapter(
+                book: book, chapterIndex: prevIndex, priority: .immediate, store: store)
+            let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: prevIndex)
+            let pages = MangaChapterParser.pages(from: package.content, headers: headers, localDir: localDir)
+            if !pages.isEmpty {
+                chapterIndex = prevIndex
+                state.currentChapterIndex = prevIndex
+                state.chapterTitle = chapters[prevIndex].title
+                currentPages.insert(contentsOf: pages, at: 0)
+                return pages
+            }
+        } catch {
+            AppLogger.error("Failed to prepend previous manga chapter", error: error)
+        }
+        return nil
+    }
 
     // MARK: Prefetching
 

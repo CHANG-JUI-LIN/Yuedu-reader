@@ -3,11 +3,8 @@ import UIKit
 // MARK: - Webtoon layout
 //
 // Vertical, full-width, variable-height layout (adapted from Aidoku's
-// VerticalContentOffsetPreservingLayout). Heights come from an owned per-item
-// aspect-ratio cache: a placeholder ratio is used until a page image loads, then
-// the real ratio is set and the layout invalidated. Within a single chapter the
-// item indices are stable, so resizing a not-yet-shown page (always below the
-// viewport) never shifts what's on screen.
+// VerticalContentOffsetPreservingLayout). Supports offset preservation when
+// prepending chapters and pillarboxing for wide/iPad screens.
 
 final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
 
@@ -15,8 +12,19 @@ final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
     private var ratios: [Int: CGFloat] = [:]
     private var currentAttributes: [IndexPath: UICollectionViewLayoutAttributes] = [:]
     private var computedContentSize: CGSize = .zero
+    private let fixedPageReaderConfiguration: FixedPageReaderConfiguration
+
+    var isInsertingCellsAbove: Bool = false {
+        didSet {
+            if isInsertingCellsAbove {
+                contentSizeBeforeInsertingAbove = collectionViewContentSize
+            }
+        }
+    }
+    private var contentSizeBeforeInsertingAbove: CGSize?
 
     init(fixedPageReaderConfiguration: FixedPageReaderConfiguration) {
+        self.fixedPageReaderConfiguration = fixedPageReaderConfiguration
         super.init()
         scrollDirection = .vertical
         minimumInteritemSpacing = 0
@@ -43,18 +51,37 @@ final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
         super.prepare()
         guard let collectionView else { return }
         currentAttributes = [:]
-        let width = collectionView.bounds.width
-        var origin: CGFloat = 0
+
+        let totalWidth = collectionView.bounds.width
+        let effectiveWidth = fixedPageReaderConfiguration.pillarbox
+            ? min(totalWidth, max(200, totalWidth * fixedPageReaderConfiguration.pillarboxAmount))
+            : totalWidth
+        let originX = (totalWidth - effectiveWidth) / 2
+
+        var originY: CGFloat = 0
         let count = collectionView.numberOfItems(inSection: 0)
         for item in 0..<count {
             let indexPath = IndexPath(item: item, section: 0)
             let attributes = UICollectionViewLayoutAttributes(forCellWith: indexPath)
-            let h = height(for: item, width: width)
-            attributes.frame = CGRect(x: 0, y: origin, width: width, height: h)
+            let h = height(for: item, width: effectiveWidth)
+            attributes.frame = CGRect(x: originX, y: originY, width: effectiveWidth, height: h)
             currentAttributes[indexPath] = attributes
-            origin += h
+            originY += h + minimumLineSpacing
         }
-        computedContentSize = CGSize(width: width, height: origin)
+        computedContentSize = CGSize(width: totalWidth, height: max(0, originY - minimumLineSpacing))
+
+        // Preserve scroll offset when inserting cells above
+        if isInsertingCellsAbove, let oldSize = contentSizeBeforeInsertingAbove {
+            let newSize = computedContentSize
+            let deltaY = newSize.height - oldSize.height
+            if deltaY > 0 {
+                UIView.performWithoutAnimation {
+                    collectionView.contentOffset.y += deltaY
+                }
+            }
+            contentSizeBeforeInsertingAbove = nil
+            isInsertingCellsAbove = false
+        }
     }
 
     override func layoutAttributesForItem(at indexPath: IndexPath) -> UICollectionViewLayoutAttributes? {

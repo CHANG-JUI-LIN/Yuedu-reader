@@ -24,13 +24,82 @@ struct FixedPageReaderConfiguration: Equatable, Codable {
         case fitWidth
     }
 
-    let mode: FixedPageReadingMode
-    let layout: Layout
-    let navigationAxis: NavigationAxis
-    let progression: Progression
-    let fitMode: FitMode
-    let pageSpacing: CGFloat
-    let isZoomEnabled: Bool
+    enum PageSpreadLayout: String, Codable, CaseIterable {
+        case single
+        case double
+        case auto
+    }
+
+    var mode: FixedPageReadingMode
+    var layout: Layout
+    var navigationAxis: NavigationAxis
+    var progression: Progression
+    var fitMode: FitMode
+    var pageSpacing: CGFloat
+    var isZoomEnabled: Bool
+
+    // Aidoku-inspired advanced features:
+    var pageSpreadLayout: PageSpreadLayout
+    var pageOffset: Bool
+    var splitWideImages: Bool
+    var cropBorders: Bool
+    var pillarbox: Bool
+    var pillarboxAmount: CGFloat
+    var autoScrollSpeed: Int
+    var isLiveTextEnabled: Bool
+
+    init(
+        mode: FixedPageReadingMode,
+        layout: Layout,
+        navigationAxis: NavigationAxis,
+        progression: Progression,
+        fitMode: FitMode,
+        pageSpacing: CGFloat,
+        isZoomEnabled: Bool,
+        pageSpreadLayout: PageSpreadLayout = .single,
+        pageOffset: Bool = false,
+        splitWideImages: Bool = false,
+        cropBorders: Bool = false,
+        pillarbox: Bool = false,
+        pillarboxAmount: CGFloat = 0.75,
+        autoScrollSpeed: Int = 3,
+        isLiveTextEnabled: Bool = true
+    ) {
+        self.mode = mode
+        self.layout = layout
+        self.navigationAxis = navigationAxis
+        self.progression = progression
+        self.fitMode = fitMode
+        self.pageSpacing = pageSpacing
+        self.isZoomEnabled = isZoomEnabled
+        self.pageSpreadLayout = pageSpreadLayout
+        self.pageOffset = pageOffset
+        self.splitWideImages = splitWideImages
+        self.cropBorders = cropBorders
+        self.pillarbox = pillarbox
+        self.pillarboxAmount = pillarboxAmount
+        self.autoScrollSpeed = autoScrollSpeed
+        self.isLiveTextEnabled = isLiveTextEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decode(FixedPageReadingMode.self, forKey: .mode)
+        layout = try container.decode(Layout.self, forKey: .layout)
+        navigationAxis = try container.decode(NavigationAxis.self, forKey: .navigationAxis)
+        progression = try container.decode(Progression.self, forKey: .progression)
+        fitMode = try container.decode(FitMode.self, forKey: .fitMode)
+        pageSpacing = try container.decode(CGFloat.self, forKey: .pageSpacing)
+        isZoomEnabled = try container.decode(Bool.self, forKey: .isZoomEnabled)
+        pageSpreadLayout = try container.decodeIfPresent(PageSpreadLayout.self, forKey: .pageSpreadLayout) ?? .single
+        pageOffset = try container.decodeIfPresent(Bool.self, forKey: .pageOffset) ?? false
+        splitWideImages = try container.decodeIfPresent(Bool.self, forKey: .splitWideImages) ?? false
+        cropBorders = try container.decodeIfPresent(Bool.self, forKey: .cropBorders) ?? false
+        pillarbox = try container.decodeIfPresent(Bool.self, forKey: .pillarbox) ?? false
+        pillarboxAmount = try container.decodeIfPresent(CGFloat.self, forKey: .pillarboxAmount) ?? 0.75
+        autoScrollSpeed = try container.decodeIfPresent(Int.self, forKey: .autoScrollSpeed) ?? 3
+        isLiveTextEnabled = try container.decodeIfPresent(Bool.self, forKey: .isLiveTextEnabled) ?? true
+    }
 
     static func recommendedDefault(for mode: FixedPageReadingMode) -> FixedPageReaderConfiguration {
         mode.recommendedConfiguration
@@ -78,7 +147,7 @@ extension FixedPageReadingMode {
                 progression: .verticalScroll,
                 fitMode: .fitWidth,
                 pageSpacing: 0,
-                isZoomEnabled: false
+                isZoomEnabled: true // Enable zoom in webtoon!
             )
         }
     }

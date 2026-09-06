@@ -2,9 +2,9 @@ import UIKit
 
 // MARK: - Paged reader (RTL / LTR / vertical)
 //
-// Wraps a `UIPageViewController` over the current chapter's pages. RTL flips the
-// data-source order and tap zones. Tapping forward past the last page (or back
-// before the first) asks the container to change chapters.
+// Wraps a `UIPageViewController` over the current chapter's pages or spreads.
+// Supports single page, double-page spreads (with cover offset), split wide images,
+// and chapter transition cards (ported and adapted from Aidoku).
 
 final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
     UIPageViewControllerDataSource, UIPageViewControllerDelegate {
@@ -13,8 +13,10 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
 
     private let fixedPageReaderConfiguration: FixedPageReaderConfiguration
     private let targetWidth: CGFloat
-    private var pages: [FixedPage] = []
-    private var currentIndex = 0
+    private var rawPages: [FixedPage] = []
+    private var displayPages: [FixedPage] = []
+    private var spreads: [[FixedPage]] = []
+    private var currentSpreadIndex = 0
     private let pageVC: UIPageViewController
 
     init(fixedPageReaderConfiguration: FixedPageReaderConfiguration, targetWidth: CGFloat) {
@@ -49,36 +51,142 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
         view.addGestureRecognizer(tap)
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // If in auto-spread mode, rebuild spreads on orientation changes
+        if fixedPageReaderConfiguration.pageSpreadLayout == .auto {
+            let wasDouble = spreads.contains { $0.count > 1 }
+            let isLandscape = view.bounds.width > view.bounds.height
+            if wasDouble != isLandscape && !displayPages.isEmpty {
+                let currentPage = currentPageIndex()
+                buildSpreads()
+                goToPage(currentPage, animated: false)
+            }
+        }
+    }
+
     // MARK: FixedPageModeReader
 
     func setPages(_ pages: [FixedPage], startPage: Int) {
-        self.pages = pages
-        guard !pages.isEmpty else { return }
-        currentIndex = max(0, min(startPage, pages.count - 1))
-        if let vc = makePage(at: currentIndex) {
+        self.rawPages = pages
+        self.displayPages = processSplitPages(pages)
+        buildSpreads()
+
+        guard !spreads.isEmpty else { return }
+        let targetSpread = spreadIndex(forPageIndex: startPage)
+        currentSpreadIndex = targetSpread
+        if let vc = makeViewController(forSpread: targetSpread) {
             pageVC.setViewControllers([vc], direction: .forward, animated: false)
         }
-        container?.reader(didMoveToPage: currentIndex, total: pages.count)
+        reportPageProgress()
     }
 
-    func currentPageIndex() -> Int { currentIndex }
+    func currentPageIndex() -> Int {
+        guard spreads.indices.contains(currentSpreadIndex) else { return 0 }
+        return spreads[currentSpreadIndex].first?.id ?? 0
+    }
 
     func goToPage(_ index: Int, animated: Bool) {
-        guard pages.indices.contains(index), index != currentIndex, let vc = makePage(at: index) else { return }
+        let targetSpread = spreadIndex(forPageIndex: index)
+        guard spreads.indices.contains(targetSpread),
+              let vc = makeViewController(forSpread: targetSpread) else { return }
+
         let direction: UIPageViewController.NavigationDirection =
-            (index > currentIndex) ? forwardDirection : backwardDirection
-        currentIndex = index
+            (targetSpread > currentSpreadIndex) ? forwardDirection : backwardDirection
+        currentSpreadIndex = targetSpread
         pageVC.setViewControllers([vc], direction: direction, animated: animated)
-        container?.reader(didMoveToPage: currentIndex, total: pages.count)
+        reportPageProgress()
     }
 
-    // MARK: Navigation
+    // MARK: Split & Spread Building
 
-    private func makePage(at index: Int) -> FixedPagePageViewController? {
-        guard pages.indices.contains(index) else { return nil }
-        return FixedPagePageViewController(
-            page: pages[index],
-            index: index,
+    private func processSplitPages(_ pages: [FixedPage]) -> [FixedPage] {
+        guard fixedPageReaderConfiguration.splitWideImages else { return pages }
+        var result: [FixedPage] = []
+        let isRTL = usesRightToLeftProgression
+
+        for page in pages {
+            // Split page into right & left halves
+            var firstHalf = page
+            var secondHalf = page
+            if isRTL {
+                firstHalf.subPageSide = .right
+                secondHalf.subPageSide = .left
+            } else {
+                firstHalf.subPageSide = .left
+                secondHalf.subPageSide = .right
+            }
+            result.append(firstHalf)
+            result.append(secondHalf)
+        }
+        return result
+    }
+
+    private var shouldDisplayDoublePages: Bool {
+        switch fixedPageReaderConfiguration.pageSpreadLayout {
+        case .single:
+            return false
+        case .double:
+            return true
+        case .auto:
+            return view.bounds.width > view.bounds.height
+        }
+    }
+
+    private func buildSpreads() {
+        guard !displayPages.isEmpty else {
+            spreads = []
+            return
+        }
+
+        guard shouldDisplayDoublePages else {
+            spreads = displayPages.map { [$0] }
+            return
+        }
+
+        var newSpreads: [[FixedPage]] = []
+        var index = 0
+
+        // Page offset: single cover page first
+        if fixedPageReaderConfiguration.pageOffset && index < displayPages.count {
+            newSpreads.append([displayPages[index]])
+            index += 1
+        }
+
+        while index < displayPages.count {
+            if index + 1 < displayPages.count {
+                newSpreads.append([displayPages[index], displayPages[index + 1]])
+                index += 2
+            } else {
+                newSpreads.append([displayPages[index]])
+                index += 1
+            }
+        }
+        spreads = newSpreads
+    }
+
+    private func spreadIndex(forPageIndex pageIndex: Int) -> Int {
+        for (idx, spread) in spreads.enumerated() {
+            if spread.contains(where: { $0.id == pageIndex }) {
+                return idx
+            }
+        }
+        return min(max(0, pageIndex), max(0, spreads.count - 1))
+    }
+
+    private func reportPageProgress() {
+        let page = currentPageIndex()
+        let total = rawPages.count
+        container?.reader(didMoveToPage: page, total: total)
+    }
+
+    // MARK: View Controller Factory
+
+    private func makeViewController(forSpread index: Int) -> UIViewController? {
+        guard spreads.indices.contains(index) else { return nil }
+        return FixedPageSpreadViewController(
+            spreadIndex: index,
+            pages: spreads[index],
             fixedPageReaderConfiguration: fixedPageReaderConfiguration,
             targetWidth: targetWidth
         )
@@ -97,13 +205,25 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
     }
 
     private func advance() {
-        let target = currentIndex + 1
-        if target >= pages.count { container?.readerRequestsNextChapter() } else { goToPage(target, animated: true) }
+        let next = currentSpreadIndex + 1
+        if next >= spreads.count {
+            container?.readerRequestsNextChapter()
+        } else if let vc = makeViewController(forSpread: next) {
+            currentSpreadIndex = next
+            pageVC.setViewControllers([vc], direction: forwardDirection, animated: true)
+            reportPageProgress()
+        }
     }
 
     private func goBack() {
-        let target = currentIndex - 1
-        if target < 0 { container?.readerRequestsPreviousChapter() } else { goToPage(target, animated: true) }
+        let prev = currentSpreadIndex - 1
+        if prev < 0 {
+            container?.readerRequestsPreviousChapter()
+        } else if let vc = makeViewController(forSpread: prev) {
+            currentSpreadIndex = prev
+            pageVC.setViewControllers([vc], direction: backwardDirection, animated: true)
+            reportPageProgress()
+        }
     }
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -134,21 +254,72 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
     // MARK: UIPageViewControllerDataSource / Delegate
 
     func pageViewController(_ pvc: UIPageViewController, viewControllerBefore vc: UIViewController) -> UIViewController? {
-        guard let current = vc as? FixedPagePageViewController else { return nil }
-        return makePage(at: usesRightToLeftProgression ? current.pageIndex + 1 : current.pageIndex - 1)
+        if let transitionVC = vc as? FixedPageTransitionViewController {
+            switch transitionVC.direction {
+            case .next:
+                let target = spreads.count - 1
+                return makeViewController(forSpread: target)
+            case .previous:
+                container?.readerRequestsPreviousChapter()
+                return nil
+            }
+        }
+
+        guard let spreadVC = vc as? FixedPageSpreadViewController else { return nil }
+        let targetIndex = usesRightToLeftProgression ? spreadVC.spreadIndex + 1 : spreadVC.spreadIndex - 1
+
+        if targetIndex < 0 {
+            return FixedPageTransitionViewController(direction: .previous(
+                currentTitle: "",
+                prevTitle: nil
+            ))
+        }
+        if targetIndex >= spreads.count {
+            return FixedPageTransitionViewController(direction: .next(
+                currentTitle: "",
+                nextTitle: nil
+            ))
+        }
+        return makeViewController(forSpread: targetIndex)
     }
 
     func pageViewController(_ pvc: UIPageViewController, viewControllerAfter vc: UIViewController) -> UIViewController? {
-        guard let current = vc as? FixedPagePageViewController else { return nil }
-        return makePage(at: usesRightToLeftProgression ? current.pageIndex - 1 : current.pageIndex + 1)
+        if let transitionVC = vc as? FixedPageTransitionViewController {
+            switch transitionVC.direction {
+            case .next:
+                container?.readerRequestsNextChapter()
+                return nil
+            case .previous:
+                return makeViewController(forSpread: 0)
+            }
+        }
+
+        guard let spreadVC = vc as? FixedPageSpreadViewController else { return nil }
+        let targetIndex = usesRightToLeftProgression ? spreadVC.spreadIndex - 1 : spreadVC.spreadIndex + 1
+
+        if targetIndex < 0 {
+            return FixedPageTransitionViewController(direction: .previous(
+                currentTitle: "",
+                prevTitle: nil
+            ))
+        }
+        if targetIndex >= spreads.count {
+            return FixedPageTransitionViewController(direction: .next(
+                currentTitle: "",
+                nextTitle: nil
+            ))
+        }
+        return makeViewController(forSpread: targetIndex)
     }
 
     func pageViewController(
         _ pvc: UIPageViewController, didFinishAnimating finished: Bool,
         previousViewControllers: [UIViewController], transitionCompleted completed: Bool
     ) {
-        guard completed, let current = pvc.viewControllers?.first as? FixedPagePageViewController else { return }
-        currentIndex = current.pageIndex
-        container?.reader(didMoveToPage: currentIndex, total: pages.count)
+        guard completed else { return }
+        if let current = pvc.viewControllers?.first as? FixedPageSpreadViewController {
+            currentSpreadIndex = current.spreadIndex
+            reportPageProgress()
+        }
     }
 }

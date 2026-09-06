@@ -12,11 +12,17 @@ enum FixedPageRenderSource: Equatable {
 }
 
 struct FixedPage: Identifiable, Equatable {
+    enum SubPageSide: String, Codable, Equatable {
+        case left
+        case right
+    }
+
     let id: Int               // page index within the chapter
     let imageURL: String      // remote URL
     let headers: [String: String]
     var localURL: URL?        // non-nil when downloaded for offline reading
     var renderSource: FixedPageRenderSource = .image
+    var subPageSide: SubPageSide? = nil
 }
 
 /// A jump target inside a document that is loaded as a single chapter (local PDF,

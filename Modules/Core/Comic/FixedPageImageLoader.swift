@@ -19,14 +19,17 @@ enum FixedPageImageLoader {
     /// would ask for a ~65 MB bitmap.
     static let maxRasterPixelWidth: CGFloat = 2000
 
-    /// Build a Nuke request for a page: headered URLRequest + resize-to-width.
-    static func request(for page: FixedPage, targetWidth: CGFloat) -> ImageRequest {
+    /// Build a Nuke request for a page: headered URLRequest + resize-to-width + optional border crop.
+    static func request(for page: FixedPage, targetWidth: CGFloat, cropBorders: Bool = false) -> ImageRequest {
         let resolved = page.localURL ?? URL(string: page.imageURL)
         var urlRequest = URLRequest(url: resolved ?? URL(fileURLWithPath: "/dev/null"))
         if page.localURL == nil {
             for (key, value) in page.headers { urlRequest.setValue(value, forHTTPHeaderField: key) }
         }
         var processors: [any ImageProcessing] = []
+        if cropBorders {
+            processors.append(FixedPageCropBordersProcessor())
+        }
         if targetWidth > 0 {
             processors.append(ImageProcessors.Resize(width: targetWidth, unit: .points, upscale: false))
         }
@@ -37,25 +40,34 @@ enum FixedPageImageLoader {
     static func loadImage(
         for page: FixedPage,
         targetWidth: CGFloat,
-        renderScale: CGFloat? = nil
+        renderScale: CGFloat? = nil,
+        cropBorders: Bool = false
     ) async -> UIImage? {
+        var baseImage: UIImage?
         switch page.renderSource {
         case .fixedLayoutEPUB(let sourceFilename, let chapterIndex):
-            return await FixedLayoutEPUBRenderer.shared.image(
+            baseImage = await FixedLayoutEPUBRenderer.shared.image(
                 sourceURL: LocalMangaArchive.archiveURL(for: sourceFilename),
                 pageIndex: chapterIndex,
                 targetWidth: targetWidth
             )
         case .pdf(let sourceFilename, let pageIndex):
-            return await PDFPageRasterizer.shared.image(
+            baseImage = await PDFPageRasterizer.shared.image(
                 fileURL: LocalPDFArchive.archiveURL(for: sourceFilename),
                 pageIndex: pageIndex,
                 targetWidth: targetWidth,
                 scale: renderScale ?? defaultRenderScale
             )
         case .image:
-            return try? await ImagePipeline.shared.image(for: request(for: page, targetWidth: targetWidth))
+            baseImage = try? await ImagePipeline.shared.image(for: request(for: page, targetWidth: targetWidth, cropBorders: cropBorders))
         }
+
+        guard var image = baseImage else { return nil }
+
+        if let side = page.subPageSide {
+            image = FixedPageSplitProcessor.cropHalf(from: image, side: side)
+        }
+        return image
     }
 
     @MainActor

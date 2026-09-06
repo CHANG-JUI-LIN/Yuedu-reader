@@ -35,7 +35,14 @@ struct FixedPageReaderConfigurationTests {
         #expect(webtoon.progression == .verticalScroll)
         #expect(webtoon.fitMode == .fitWidth)
         #expect(webtoon.pageSpacing == 0)
-        #expect(!webtoon.isZoomEnabled)
+        #expect(webtoon.isZoomEnabled)
+        #expect(webtoon.pageSpreadLayout == .single)
+        #expect(!webtoon.splitWideImages)
+        #expect(!webtoon.cropBorders)
+        #expect(!webtoon.pillarbox)
+        #expect(webtoon.pillarboxAmount == 0.75)
+        #expect(webtoon.autoScrollSpeed == 3)
+        #expect(webtoon.isLiveTextEnabled)
     }
 
     @Test("fixed page reader mode keeps legacy manga reading mode fallback")
