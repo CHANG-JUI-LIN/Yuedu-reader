@@ -670,7 +670,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         "[StartupTrace][ReaderView.Coordinator] onChapterReady spine=\(spineIndex.map(String.init) ?? "all") currentPage=\(self.currentPage) enginePage=\(engine.currentPage) totalPages=\(engine.totalPages)"
                     AppLogger.render(line)
                     NSLog("%@", line)
+                    if let spineIndex { self.unresolvedChapters.removeValue(forKey: spineIndex) }
                     self.handleChapterReady(spineIndex, on: pageViewController)
+                }
+            }
+
+            engine.onChapterLayoutUnresolved = { [weak self] spineIndex, outcome in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    guard self.callbackEngineIdentifier == identifier else { return }
+                    self.unresolvedChapters[spineIndex] = outcome
                 }
             }
 
@@ -700,6 +709,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private func clearEngineCallbacks() {
             if let engine = callbackEngineObject as? any PageRenderingProvider {
                 engine.onChapterReady = nil
+                engine.onChapterLayoutUnresolved = nil
                 engine.onNavigateToPage = nil
             }
             if let linkEngine = callbackEngineObject as? any LinkNavigationProviding {
@@ -707,6 +717,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             callbackEngineObject = nil
             callbackEngineIdentifier = nil
+            unresolvedChapters.removeAll()
         }
 
         fileprivate func displayViewController(at index: Int) -> UIViewController {
@@ -808,6 +819,44 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 isRTL: isRTL,
                 gutter: spreadGutter,
                 backgroundColor: UIColor(currentTheme.backgroundColor)
+            )
+        }
+
+        /// Chapters whose last layout attempt finished without one, and why.
+        ///
+        /// Written by `onChapterLayoutUnresolved`, cleared by `onChapterReady`. This is
+        /// bookkeeping for the detector below and nothing else — it never triggers a
+        /// re-layout. `Technotes/ReaderChapterSupply.md` rules out the self-healing poll
+        /// that used to live here; observing is not repairing.
+        fileprivate var unresolvedChapters: [Int: ChapterLayoutOutcome] = [:]
+
+        /// A 載入中 page the reader is still looking at when they try to turn again.
+        ///
+        /// No timer: the trigger is the user's own next gesture, which is also the
+        /// moment the symptom is real to them. Reported once per chapter — someone
+        /// stuck on one swipes repeatedly, and an anomaly per swipe would bury the log
+        /// it is supposed to make readable.
+        private func reportStuckPlaceholderIfNeeded(showing viewController: UIViewController) {
+            guard isPlaceholderDisplay(viewController),
+                  let position = (viewController as? CoreTextReadingPositionProviding)?
+                      .coreTextReadingPosition,
+                  let outcome = unresolvedChapters[position.spineIndex]
+            else { return }
+
+            // Cleared so a run of swipes produces one report, not one each. The next
+            // failed attempt on this chapter writes it back.
+            unresolvedChapters.removeValue(forKey: position.spineIndex)
+
+            AppLogger.anomaly(
+                localized("章節停在載入中且沒有再次嘗試"),
+                category: .reader,
+                detail: [
+                    "chapter=\(position.spineIndex)",
+                    "charOffset=\(position.charOffset)",
+                    "outcome=\(outcome.rawValue)",
+                    "laidOutChapters=\(currentEngine.layouts.keys.sorted())",
+                    "totalPages=\(currentEngine.totalPages)",
+                ].joined(separator: "\n")
             )
         }
 
@@ -1430,6 +1479,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
             stackWriteGate.beginGesture()
+            if let visible = pvc.viewControllers?.first {
+                reportStuckPlaceholderIfNeeded(showing: visible)
+            }
             // Invariant G1's start line. Recorded here rather than in the data source
             // on purpose: `viewControllerBefore/After` are speculative queries UIKit
             // makes for pages the reader may never reach, and writing coordinator

@@ -26,6 +26,7 @@ final class TXTPageEngine: PageRenderingProvider {
     private var textAnnotations: [CoreTextTextAnnotation] = []
     private var renderSettings: ReaderRenderSettings
     var onChapterReady: ((Int?) -> Void)?
+    var onChapterLayoutUnresolved: ((Int, ChapterLayoutOutcome) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
 
     init(text: String, title: String, offsetStore: CharOffsetStore, settings: ReaderRenderSettings) {
@@ -257,18 +258,24 @@ final class TXTPageEngine: PageRenderingProvider {
         return placeholder
     }
 
-    func preloadChapter(at spineIndex: Int) async {
-        guard (0..<chapterCount).contains(spineIndex) else { return }
-        if layouts[spineIndex] != nil { return }
+    /// This engine does not track the finer reasons `CoreTextPageEngine` does; it
+    /// answers with the two it can actually observe, which is still enough to tell a
+    /// stuck 載入中 page apart from a chapter that simply had not been asked for yet.
+    @discardableResult
+    func preloadChapter(at spineIndex: Int) async -> ChapterLayoutOutcome {
+        guard (0..<chapterCount).contains(spineIndex) else { return .outOfRange }
+        if layouts[spineIndex] != nil { return .alreadyLaidOut }
         if let existing = preloadTasks[spineIndex] {
             await existing.value
-            return
+            return layouts[spineIndex] != nil ? .laidOut : .contentUnavailable
         }
 
         let generation = layoutGeneration
         let task = makePreloadTask(spineIndex: spineIndex, generation: generation)
         preloadTasks[spineIndex] = task
         await task.value
+        if layouts[spineIndex] != nil { return .laidOut }
+        return layoutGeneration == generation ? .contentUnavailable : .supersededByGeneration
     }
 
     func notifyChapterDataChanged(at spineIndex: Int) async {

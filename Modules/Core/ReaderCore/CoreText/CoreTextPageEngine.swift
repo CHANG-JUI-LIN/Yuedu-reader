@@ -279,7 +279,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
     }()
     private var spinePageOffsets: [Int] = []
     private(set) var renderSize: CGSize = .zero
-    private var preloadTasks: [Int: Task<Void, Never>] = [:]
+    private var preloadTasks: [Int: Task<ChapterLayoutOutcome, Never>] = [:]
     private var preloadTaskIDs: [Int: UUID] = [:]
     private var layoutGeneration: Int = 0
     private var nextLayoutInvalidationOperationID: UInt64 = 0
@@ -311,6 +311,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
     private var cachedReaderBackgroundImage: UIImage?
     private var textAnnotations: [CoreTextTextAnnotation] = []
     var onChapterReady: ((Int?) -> Void)?
+    var onChapterLayoutUnresolved: ((Int, ChapterLayoutOutcome) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
     /// Fired when a tapped in-content link (TOC table, cross-reference) resolves to a page.
     /// Distinct from `onNavigateToPage`, which is a binding-level offset-correction channel:
@@ -653,32 +654,33 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         preloadTaskIDs.removeAll()
     }
 
-    private func shouldAbortPreload(generation: Int) -> Bool {
-        if generation != layoutGeneration {
-            return true
-        }
-        do {
-            try Task.checkCancellation()
-            return false
-        } catch {
-            return true
-        }
+    /// Why this attempt must stop, or nil to carry on.
+    ///
+    /// This was a `Bool`, which collapsed "someone threw away every layout" and "this
+    /// task was cancelled" into one indistinguishable early return — and both of them
+    /// left the caller looking at a missing chapter with no way to say which had
+    /// happened. They are different bugs with different fixes, so they are different
+    /// values now.
+    private func abortReason(generation: Int) -> ChapterLayoutOutcome? {
+        if generation != layoutGeneration { return .supersededByGeneration }
+        return Task.isCancelled ? .cancelled : nil
     }
 
     private func makePreloadTask(
         spineIndex: Int,
         generation: Int,
         taskID: UUID
-    ) -> Task<Void, Never> {
+    ) -> Task<ChapterLayoutOutcome, Never> {
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            // The engine went away mid-flight; nobody is left to receive a layout.
+            guard let self else { return .cancelled }
             defer {
                 if self.preloadTaskIDs[spineIndex] == taskID {
                     self.preloadTasks.removeValue(forKey: spineIndex)
                     self.preloadTaskIDs.removeValue(forKey: spineIndex)
                 }
             }
-            await self.preloadChapterInternal(at: spineIndex, generation: generation)
+            return await self.preloadChapterInternal(at: spineIndex, generation: generation)
         }
     }
 
@@ -686,7 +688,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
     private func installPreloadTask(
         spineIndex: Int,
         generation: Int
-    ) -> Task<Void, Never> {
+    ) -> Task<ChapterLayoutOutcome, Never> {
         let taskID = UUID()
         let task = makePreloadTask(
             spineIndex: spineIndex,
@@ -778,13 +780,18 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         )
         Task { [weak self] in
             guard let self else { return }
-            await self.preloadChapter(at: spineIndex)
+            let outcome = await self.preloadChapter(at: spineIndex)
             guard _layouts[spineIndex] != nil else {
                 // The placeholder this page is standing in for will not be replaced by
-                // this attempt. Legitimate while an online chapter is still being
-                // fetched; anything else is the 載入中 page getting stuck, and this is
-                // the only line that says which.
-                AppLogger.render("[FlipTrace] pageVC placeholder unresolved spine=\(spineIndex) pending=\(preloadTasks.keys.sorted())")
+                // this attempt, and nothing here asks again — the user's own workaround
+                // is to swipe away and back, which calls this method afresh. Which exit
+                // `preloadChapter` took is the whole question, so it is in the line.
+                AppLogger.render(
+                    "⟐ placeholder unresolved spine=\(spineIndex) outcome=\(outcome.rawValue)"
+                    + " generation=\(layoutGeneration) pending=\(preloadTasks.keys.sorted())",
+                    level: .warning
+                )
+                self.onChapterLayoutUnresolved?(spineIndex, outcome)
                 return
             }
             self.onChapterReady?(spineIndex)
@@ -888,9 +895,14 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         )
         Task { [weak self] in
             guard let self else { return }
-            await self.preloadChapter(at: position.spineIndex)
+            let outcome = await self.preloadChapter(at: position.spineIndex)
             guard _layouts[position.spineIndex] != nil else {
-                AppLogger.render("[FlipTrace] positionVC placeholder unresolved position=\(position) pending=\(preloadTasks.keys.sorted())")
+                AppLogger.render(
+                    "⟐ placeholder unresolved position=\(position) outcome=\(outcome.rawValue)"
+                    + " generation=\(layoutGeneration) pending=\(preloadTasks.keys.sorted())",
+                    level: .warning
+                )
+                self.onChapterLayoutUnresolved?(position.spineIndex, outcome)
                 return
             }
             self.onChapterReady?(position.spineIndex)
@@ -898,13 +910,14 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         return placeholder
     }
 
-    func preloadChapter(at spineIndex: Int) async {
-        guard (0..<chapterCount).contains(spineIndex) else { return }
+    @discardableResult
+    func preloadChapter(at spineIndex: Int) async -> ChapterLayoutOutcome {
+        guard (0..<chapterCount).contains(spineIndex) else { return .outOfRange }
         // A partial (first-page-only) layout does not count as loaded: callers
         // of this method need the FULL pagination (restore, link resolution …).
         if let existing = _layouts[spineIndex], !existing.isPartial {
             AppLogger.render("[FlipTrace] preload skip loaded spine=\(spineIndex) layouts=\(_layouts.keys.sorted())")
-            return
+            return .alreadyLaidOut
         }
 
         // Joining an in-flight task used to end the method outright, which reported
@@ -918,25 +931,34 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         // Bounded at two rounds: a retry is justified only by a *newer* generation, and
         // an engine being invalidated faster than it can paginate is better served by an
         // honest "no layout" than by a loop that never settles.
+        var lastAttempt: ChapterLayoutOutcome = .contentUnavailable
         for _ in 0..<2 {
             let generation = layoutGeneration
             if let existing = preloadTasks[spineIndex] {
                 AppLogger.render("[FlipTrace] preload await existing spine=\(spineIndex) generation=\(generation)")
-                await existing.value
+                lastAttempt = await existing.value
             } else {
-                await installPreloadTask(
+                lastAttempt = await installPreloadTask(
                     spineIndex: spineIndex,
                     generation: generation
                 ).value
             }
 
             // Laid out — done.
-            guard _layouts[spineIndex]?.isPartial != false else { return }
+            guard _layouts[spineIndex]?.isPartial != false else { return .laidOut }
             // Still nothing, but nobody superseded us: the chapter genuinely cannot be
             // laid out yet (an online chapter whose content has not been fetched). That
             // is the fetch's job, not ours; retrying here would spin.
-            guard layoutGeneration != generation else { return }
-            AppLogger.render("[FlipTrace] preload retry superseded spine=\(spineIndex) oldGeneration=\(generation) generation=\(layoutGeneration)")
+            //
+            // For a local book no fetch follows, so this exit is a dead end for whoever
+            // was waiting — the placeholder on screen, or TTS at a chapter boundary.
+            // Returning the attempt's own reason rather than a bare `return` is what
+            // lets them say so.
+            guard layoutGeneration != generation else { return lastAttempt }
+            AppLogger.render(
+                "⟐ preload retry superseded spine=\(spineIndex) oldGeneration=\(generation) generation=\(layoutGeneration)",
+                level: .warning
+            )
             ChapterRetryLog.record(
                 .layoutSuperseded,
                 chapter: spineIndex,
@@ -944,6 +966,8 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
                 detail: "oldGeneration=\(generation) generation=\(layoutGeneration)"
             )
         }
+        // Two rounds and the generation was still moving underneath us.
+        return .supersededByGeneration
     }
 
     func notifyChapterDataChanged(at spineIndex: Int) async {
@@ -970,14 +994,24 @@ _layouts[spineIndex] = nil
         }
 
         // 3. Reload the chapter (preloadChapter checks layouts[spineIndex] == nil before executing)
-        await preloadChapter(at: spineIndex)
+        let outcome = await preloadChapter(at: spineIndex)
 
         // 4. Notify ReaderView to refresh:
         //    - layoutOK=true → swap to the VC with the new layout, showing actual content
         //    - layoutOK=false → swap to PlaceholderVC (loading UI), so refresh can immediately
         //      clear old content and show loading, then notifyChapterDataChanged again once refetch completes.
         let layoutOK = layouts[spineIndex] != nil
-        AppLogger.render("[FetchTrace] engine.notifyChapterDataChanged done ch=\(spineIndex) layoutOK=\(layoutOK) hasCallback=\(onChapterReady != nil)")
+        if layoutOK {
+            AppLogger.render("[FetchTrace] engine.notifyChapterDataChanged done ch=\(spineIndex) layoutOK=true hasCallback=\(onChapterReady != nil)")
+        } else {
+            // The chapter's data changed and it still cannot be laid out. Whoever is
+            // looking at it keeps the 載入中 page.
+            AppLogger.render(
+                "⟐ notifyChapterDataChanged left no layout ch=\(spineIndex) outcome=\(outcome.rawValue)"
+                + " hasCallback=\(onChapterReady != nil)",
+                level: .warning
+            )
+        }
         onChapterReady?(spineIndex)
     }
 
@@ -1007,35 +1041,76 @@ _layouts[spineIndex] = nil
         onChapterReady?(spineIndex)
     }
 
-    private func preloadChapterInternal(at spineIndex: Int, generation: Int) async {
-        guard (0..<chapterCount).contains(spineIndex),
-              _layouts[spineIndex]?.isPartial != false else { return }
-        guard !shouldAbortPreload(generation: generation) else { return }
+    private func preloadChapterInternal(
+        at spineIndex: Int,
+        generation: Int
+    ) async -> ChapterLayoutOutcome {
+        guard (0..<chapterCount).contains(spineIndex) else { return .outOfRange }
+        guard _layouts[spineIndex]?.isPartial != false else { return .alreadyLaidOut }
+        if let abort = abortReason(generation: generation) { return abort }
         AppLogger.render("[FlipTrace] preload begin spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
 
-        let buildResult = try? await ReaderPerfTrace.spanAsync(
-            .chapterLoad,
-            metadata: ReaderPerfMetadata(
-                spineIndex: spineIndex,
-                writingMode: String(describing: renderSettings.writingMode),
-                executor: Thread.isMainThread ? "main" : "background",
-                generation: generation
-            )
-        ) {
-            try await chapterDocumentStore.document(
-                for: ChapterDocumentRequest(
+        // `try?` here used to discard the reason the document could not be built, so
+        // every failure — an online chapter with no content yet, a parse that blew up,
+        // a cancellation — arrived at the caller as the same silent "no layout". The
+        // thrown error is the only thing that tells them apart on a device.
+        let buildResult: ChapterDocument
+        do {
+            buildResult = try await ReaderPerfTrace.spanAsync(
+                .chapterLoad,
+                metadata: ReaderPerfMetadata(
                     spineIndex: spineIndex,
-                    settings: renderSettings,
-                    themeTextColor: themeTextColor,
-                    themeBackgroundColor: themeBackgroundColor
+                    writingMode: String(describing: renderSettings.writingMode),
+                    executor: Thread.isMainThread ? "main" : "background",
+                    generation: generation
                 )
+            ) {
+                try await chapterDocumentStore.document(
+                    for: ChapterDocumentRequest(
+                        spineIndex: spineIndex,
+                        settings: renderSettings,
+                        themeTextColor: themeTextColor,
+                        themeBackgroundColor: themeBackgroundColor
+                    )
+                )
+            }
+        } catch is CancellationError {
+            // Pre-empted, not refused — `Technotes/ReaderChapterSupply.md` invariant 3.
+            return .cancelled
+        } catch AttributedStringBuildingError.contentNotCached(let index) {
+            // The chapter's text has not arrived. `notice`, not `warning`: for an
+            // online book this is the ordinary state of a neighbour being preloaded
+            // ahead of its fetch, and it fires on most chapter turns. The line that
+            // means something is wrong is the one raised where somebody is actually
+            // waiting on it — `placeholder unresolved`, and the TTS anomaly.
+            AppLogger.render(
+                "⟐ preload contentUnavailable spine=\(spineIndex) builderIndex=\(index) generation=\(generation)",
+                level: .notice
+            )
+            return .contentUnavailable
+        } catch AttributedStringBuildingError.chapterOutOfRange {
+            return .outOfRange
+        } catch {
+            AppLogger.render(
+                "⟐ preload buildFailed spine=\(spineIndex) generation=\(generation)",
+                error: error,
+                level: .error
+            )
+            return .buildFailed
+        }
+        if let abort = abortReason(generation: generation) { return abort }
+
+        // A chapter that built cleanly but carries no text is the other way the reader
+        // ends up with nothing: the page has no ranges to show and TTS has nothing to
+        // read, yet neither the build nor the layout failed. It reads identically to a
+        // stuck placeholder from outside, so it gets its own name.
+        let documentIsEmpty = buildResult.attributedString.length == 0
+        if documentIsEmpty {
+            AppLogger.render(
+                "⟐ preload builtEmptyDocument spine=\(spineIndex) generation=\(generation)",
+                level: .warning
             )
         }
-        guard let buildResult else {
-            AppLogger.render("[CoreTextEngine] preloadChapter[\(spineIndex)] FAILED to build attributed string")
-            return
-        }
-        guard !shouldAbortPreload(generation: generation) else { return }
 
         let request = PaginationRequest(
             spineIndex: spineIndex,
@@ -1071,9 +1146,9 @@ _layouts[spineIndex] = nil
                 )
             )
             if let firstPageResult = await paginationManager.paginateFirstPage(request) {
-                guard !shouldAbortPreload(generation: generation) else {
+                if let abort = abortReason(generation: generation) {
                     ReaderPerfTrace.end(firstPageTrace)
-                    return
+                    return abort
                 }
                 let firstPageLayout = firstPageResult.layout.withUpdatedAppearance(
                     textColor: themeTextColor,
@@ -1115,7 +1190,7 @@ _layouts[spineIndex] = nil
                         )
                     )
                     AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(firstPageLayout.pageRanges.count) generation=\(generation) source=cache")
-                    return
+                    return documentIsEmpty ? .contentUnavailable : .laidOut
                 }
             } else {
                 ReaderPerfTrace.end(firstPageTrace)
@@ -1124,7 +1199,7 @@ _layouts[spineIndex] = nil
 
         let fullLayoutStart = ProcessInfo.processInfo.systemUptime
         let layout = await paginationManager.paginate(request).layout
-        guard !shouldAbortPreload(generation: generation) else { return }
+        if let abort = abortReason(generation: generation) { return abort }
         SourcePerfTrace.record(
             "coreText.fullLayout",
             "spine=\(spineIndex) chars=\(buildResult.attributedString.length)",
@@ -1143,6 +1218,7 @@ _layouts[spineIndex] = nil
             for: spineIndex
         )
         AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
+        return documentIsEmpty ? .contentUnavailable : .laidOut
     }
 
     func invalidateLayout(newSize: CGSize) async {
@@ -1176,7 +1252,7 @@ _layouts.removeAll()
 
         await withTaskGroup(of: Void.self) { group in
             for i in spinesToReload.sorted() {
-                group.addTask { await self.preloadChapter(at: i) }
+                group.addTask { _ = await self.preloadChapter(at: i) }
             }
         }
 

@@ -1,7 +1,19 @@
 import Foundation
 
+/// The narration half of the TTS log.
+///
+/// This was `NSLog` only, so none of its 162 call sites ever reached the in-app
+/// diagnostics — including the one line that explains 朗讀斷在章末
+/// (`chapter N still empty after layout; aborting wait`). Routing it through
+/// `AppLogger` puts every one of them in front of the user without touching a
+/// single call site.
+///
+/// `.trace` on purpose: this is step-by-step narration, and it belongs in the
+/// flight recorder, which releases it attached to whatever actually went wrong.
+/// The handful of lines that are verdicts rather than narration pass an explicit
+/// level at their own call site instead of coming through here.
 func ttsLog(_ message: String) {
-    NSLog("%@", message)
+    AppLogger.render(message, level: .trace)
 }
 
 /// What the host has to say when an engine reaches the end of the current chapter.

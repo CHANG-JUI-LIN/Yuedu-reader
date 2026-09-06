@@ -826,7 +826,20 @@ extension ReaderView {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // Content cached and layout built, yet still no text: this chapter is genuinely
             // unreadable (empty body, parse failure), so waiting longer cannot help.
-            ttsLog("[TTS][Reader] chapter \(target) still empty after layout; aborting wait")
+            // Reported, not narrated. This is the line behind 「朗讀每次都斷在章末」:
+            // the content was cached and the layout pass ran, and there is still no
+            // text, so narration stops at a chapter boundary. It reached `NSLog` only
+            // until now, which is why no exported log ever explained the stop.
+            AppLogger.anomaly(
+                localized("朗讀在章節結束處取不到下一章文字"),
+                category: .tts,
+                detail: [
+                    "chapter=\(target)",
+                    "contentAvailable=\(isChapterContentAvailable(at: target))",
+                    "hasLayout=\(epubRenderer.engine?.layouts[target] != nil)",
+                    "usesCoreTextEPUB=\(usesCoreTextEPUB)",
+                ].joined(separator: "\n")
+            )
             ttsPendingChapterIndex = nil
             ttsCoordinator.abortWaitingForNextChapter(reason: "empty chapter \(target)")
             return
@@ -845,14 +858,20 @@ extension ReaderView {
         case .ready:
             resolveWaitingTTSChapter(chapterIndex)
         case let .failed(reason):
-            ttsLog("[TTS][Reader] chapter wait failed chapter=\(chapterIndex) reason=\(reason)")
+            AppLogger.render(
+                "⟐ [TTS][Reader] chapter wait failed chapter=\(chapterIndex) reason=\(reason)",
+                level: .error
+            )
             ttsPendingChapterIndex = nil
             ttsCoordinator.abortWaitingForNextChapter(reason: reason)
         case .cancelled:
             // Preempted, not refused. `reissueCancelledChapterFetch` asks again; ending the
             // session here stopped narration at a chapter boundary over a fetch that was
             // never carried to a verdict — the lock-screen "stops for no reason" report.
-            ttsLog("[TTS][Reader] chapter wait fetch cancelled chapter=\(chapterIndex); awaiting re-request")
+            AppLogger.render(
+                "⟐ [TTS][Reader] chapter wait fetch cancelled chapter=\(chapterIndex); awaiting re-request",
+                level: .warning
+            )
         case .idle, .loading:
             break
         }

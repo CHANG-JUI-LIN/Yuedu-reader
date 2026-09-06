@@ -19,6 +19,43 @@ enum LayoutInvalidationCause: String {
     case unspecified
 }
 
+/// How one attempt to lay a chapter out ended.
+///
+/// `preloadChapter` used to return `Void` through six different exits, five of them
+/// silent. Every caller therefore saw the same thing when a chapter failed to
+/// appear — the 載入中 page on screen, the TTS session waiting for text,
+/// `notifyChapterDataChanged` — namely "there is no layout", with nothing to say why.
+///
+/// That is the shape behind three long-standing intermittent reports that are really
+/// one bug: 朗讀斷在章末, 劃到下一章卡住轉圈圈, and 往回劃一次再往前就正常了. The
+/// last of those is the tell: the second attempt succeeds, so the layout was always
+/// buildable and the first attempt died somewhere unrecorded.
+///
+/// Only `CoreTextPageEngine` distinguishes all of these today; the other engines
+/// answer with the two they can actually tell apart.
+enum ChapterLayoutOutcome: String, Sendable {
+    /// A full (non-partial) layout was already installed.
+    case alreadyLaidOut
+    /// This attempt built and installed one.
+    case laidOut
+    /// The generation moved on mid-flight, so this attempt's work was discarded.
+    /// Someone called `cancelPendingWork` — its `cause` names who.
+    case supersededByGeneration
+    /// The task was cancelled.
+    case cancelled
+    /// The chapter's document could not be built: for an online book, content that
+    /// has not been fetched yet. Not an error — but also not something that resolves
+    /// on its own for a local book, where no fetch will follow.
+    case contentUnavailable
+    /// Building the document threw. The error is logged at the point it was caught.
+    case buildFailed
+    case outOfRange
+
+    /// True when the chapter is renderable now. The three consumers of `layouts` all
+    /// branch on exactly this, and everything else is a reason for the log.
+    var isReady: Bool { self == .alreadyLaidOut || self == .laidOut }
+}
+
 // MARK: - PageIndexProviding / CoreTextReadingPositionProviding
 
 /// A UIViewController that tracks its position in the global page sequence.
@@ -43,7 +80,8 @@ protocol LayoutLifecycle: AnyObject {
     var offsetStore: CharOffsetStore { get }
 
     func start(renderSize: CGSize, bookId: String) async
-    func preloadChapter(at spineIndex: Int) async
+    @discardableResult
+    func preloadChapter(at spineIndex: Int) async -> ChapterLayoutOutcome
     func invalidateLayout(newSize: CGSize) async
     func warmUpNext(currentGlobalPage: Int)
     func cancelPendingWork(cause: LayoutInvalidationCause)
@@ -51,6 +89,15 @@ protocol LayoutLifecycle: AnyObject {
 
     var onChapterReady: ((Int?) -> Void)? { get set }
     var onNavigateToPage: ((Int) -> Void)? { get set }
+
+    /// An attempt to lay a chapter out ended without one, while a placeholder for that
+    /// chapter is what the reader is looking at.
+    ///
+    /// The counterpart to `onChapterReady`, and needed for the same reason: a layout
+    /// that never arrives is as much a fact about the chapter as one that does, and
+    /// without this the paged view could see the 載入中 page but never learn that the
+    /// attempt behind it had already given up.
+    var onChapterLayoutUnresolved: ((Int, ChapterLayoutOutcome) -> Void)? { get set }
 }
 
 @MainActor

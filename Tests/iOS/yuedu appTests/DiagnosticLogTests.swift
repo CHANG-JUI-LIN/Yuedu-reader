@@ -57,6 +57,118 @@ struct DiagnosticLogTests {
         #expect(messages.contains("problem"))
     }
 
+    // MARK: - Flight recorder
+    //
+    // The reader's whole diagnostic narration is `.trace`, so with verbose off a user
+    // who hit 翻頁卡在載入中 exported a log holding the anomaly and nothing that
+    // explained it. Dropped trace is now held and released attached to whatever went
+    // wrong — which is what makes the export answerable without asking anyone to turn
+    // a setting on first.
+
+    @Test("trace dropped by the verbose gate is held rather than discarded")
+    func droppedTraceIsHeld() {
+        let (log, dir) = makeLog(verbose: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        log.record(severity: .trace, category: .reader, message: "preload begin spine=42")
+        log.record(severity: .trace, category: .reader, message: "preload superseded spine=42")
+
+        #expect(log.flightRecorderCount == 2)
+        // Still absent from disk: holding is not the same as writing.
+        #expect(log.snapshot().isEmpty)
+    }
+
+    @Test("an anomaly carries the run-up that was never written down")
+    func anomalyCarriesFlightRecorder() {
+        let (log, dir) = makeLog(verbose: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        log.record(severity: .trace, category: .reader, message: "preload begin spine=42")
+        log.record(severity: .trace, category: .reader, message: "preload superseded spine=42")
+        log.record(severity: .anomaly, category: .reader, message: "stuck", detail: "chapter=42")
+
+        let detail = try! #require(log.snapshot().first?.detail)
+        // The caller's own detail stays first — it is the finding; the ring is context.
+        #expect(detail.hasPrefix("chapter=42"))
+        #expect(detail.contains("preload begin spine=42"))
+        #expect(detail.contains("preload superseded spine=42"))
+        // Oldest first, so the detail reads forwards into the anomaly.
+        #expect(
+            detail.range(of: "preload begin")!.lowerBound
+                < detail.range(of: "preload superseded")!.lowerBound
+        )
+    }
+
+    @Test("an anomaly with no detail of its own still carries the run-up")
+    func anomalyWithoutDetailStillCarriesFlightRecorder() {
+        let (log, dir) = makeLog(verbose: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        log.record(severity: .trace, category: .tts, message: "chapter wait begin")
+        log.record(severity: .anomaly, category: .tts, message: "narration stopped")
+
+        let detail = try! #require(log.snapshot().first?.detail)
+        #expect(detail.contains("chapter wait begin"))
+    }
+
+    @Test("the run-up is released once, not repeated on every following anomaly")
+    func flightRecorderDrainsOnAttach() {
+        let (log, dir) = makeLog(verbose: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        log.record(severity: .trace, category: .reader, message: "narration")
+        log.record(severity: .anomaly, category: .reader, message: "first")
+        log.record(severity: .anomaly, category: .reader, message: "second")
+
+        #expect(log.flightRecorderCount == 0)
+        let entries = log.snapshot()
+        let second = try! #require(entries.first { $0.message == "second" })
+        let first = try! #require(entries.first { $0.message == "first" })
+        #expect(first.detail?.contains("narration") == true)
+        // Someone stuck on one chapter produces a run of anomalies; repeating the same
+        // narration under each would bury the log this exists to make readable.
+        #expect(second.detail == nil)
+    }
+
+    @Test("the ring is bounded and keeps the newest lines")
+    func flightRecorderIsBounded() {
+        let (log, dir) = makeLog(verbose: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        for index in 0..<500 {
+            log.record(severity: .trace, category: .reader, message: "line \(index)")
+        }
+        #expect(log.flightRecorderCount == 300)
+
+        log.record(severity: .anomaly, category: .reader, message: "boom")
+        let detail = try! #require(log.snapshot().first?.detail)
+        #expect(!detail.contains("line 0 "))
+        #expect(detail.contains("line 499"))
+    }
+
+    @Test("nothing is held while verbose is on, because nothing is being dropped")
+    func verboseOnKeepsRingEmpty() {
+        let (log, dir) = makeLog(verbose: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        log.record(severity: .trace, category: .reader, message: "narration")
+        // Already on disk in sequence; duplicating it into a detail block would only
+        // make the export longer.
+        #expect(log.flightRecorderCount == 0)
+        log.record(severity: .anomaly, category: .reader, message: "boom")
+        #expect(log.snapshot().first { $0.message == "boom" }?.detail == nil)
+    }
+
+    @Test("clearing the log clears what was being held for it")
+    func clearDropsFlightRecorder() {
+        let (log, dir) = makeLog(verbose: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        log.record(severity: .trace, category: .reader, message: "narration")
+        log.clear()
+        #expect(log.flightRecorderCount == 0)
+    }
+
     @Test("turning verbose on starts keeping trace lines")
     func verboseCanBeTurnedOn() {
         let (log, dir) = makeLog(verbose: false)
@@ -212,6 +324,34 @@ struct DiagnosticSeverityClassifierTests {
         #expect(AppLogger.resolvedSeverity(message: "book opened", default: .info) == .info)
         #expect(AppLogger.resolvedSeverity(message: "generic failure", default: .error) == .error)
         #expect(AppLogger.resolvedSeverity(message: "tampering detected", default: .fault) == .fault)
+    }
+
+    /// The reader's decisive lines used to be `[FlipTrace]`, which the suffix rule
+    /// classifies as narration — so the one export that could have explained
+    /// 翻頁卡在載入中 carried the symptom and none of the diagnosis. They now pass an
+    /// explicit level, and they also no longer *look* like narration, so dropping the
+    /// explicit level later cannot silently put them back in the discarded bucket.
+    @Test("the reader's decisive lines can never be classified as narration")
+    func decisiveReaderLinesAreNotNarration() {
+        let decisive = [
+            "⟐ placeholder unresolved spine=42 outcome=contentUnavailable generation=7 pending=[]",
+            "⟐ placeholder unresolved position=(ch42,off0) outcome=cancelled generation=7 pending=[]",
+            "⟐ preload retry superseded spine=42 oldGeneration=7 generation=8",
+            "⟐ preload contentUnavailable spine=42 builderIndex=42 generation=7",
+            "⟐ preload buildFailed spine=42 generation=7",
+            "⟐ preload builtEmptyDocument spine=42 generation=7",
+            "⟐ notifyChapterDataChanged left no layout ch=42 outcome=cancelled hasCallback=true",
+            "⟐ stackWrite deferred chapterReady gesture=true transitions=0",
+            "⟐ stackWrite dropped [chapterReady] inFavourOf=externalTarget",
+            "⟐ layoutGeneration 7 → 8 cause=refreshTransaction discardingPreloads",
+            "⟐ [TTS][Reader] chapter wait failed chapter=42 reason=timeout",
+        ]
+        for message in decisive {
+            #expect(
+                AppLogger.resolvedSeverity(message: message, default: .notice) != .trace,
+                "\(message) would be dropped with verbose off"
+            )
+        }
     }
 
     @Test("leading whitespace does not hide a marker")

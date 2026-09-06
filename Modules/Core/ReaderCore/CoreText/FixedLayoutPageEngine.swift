@@ -15,6 +15,7 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
     private var pageVCs: [Int: FixedLayoutPageViewController] = [:]
 
     var onChapterReady: ((Int?) -> Void)?
+    var onChapterLayoutUnresolved: ((Int, ChapterLayoutOutcome) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
 
     init(session: PublicationSession, renderSize: CGSize) {
@@ -100,9 +101,15 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
         }
     }
 
-    func preloadChapter(at spineIndex: Int) async {
-        guard spineIndex >= 0, spineIndex < totalPages else { return }
-        _ = await viewportResolver.viewport(for: spineIndex, resourceProvider: resourceProvider)
+    /// Fixed-layout pages come from the viewport resolver rather than a paginator, so
+    /// the only failure this engine can report is an index outside the book.
+    @discardableResult
+    func preloadChapter(at spineIndex: Int) async -> ChapterLayoutOutcome {
+        guard spineIndex >= 0, spineIndex < totalPages else { return .outOfRange }
+        let viewport = await viewportResolver.viewport(
+            for: spineIndex, resourceProvider: resourceProvider
+        )
+        return viewport == nil ? .contentUnavailable : .laidOut
     }
 
     func invalidateLayout(newSize: CGSize) async {

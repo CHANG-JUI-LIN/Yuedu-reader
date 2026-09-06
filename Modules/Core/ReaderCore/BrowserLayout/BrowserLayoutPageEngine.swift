@@ -364,6 +364,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     var offsetStore: CharOffsetStore { delegate.offsetStore }
 
     var onChapterReady: ((Int?) -> Void)?
+    var onChapterLayoutUnresolved: ((Int, ChapterLayoutOutcome) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
     var onLinkNavigate: ((Int) -> Void)?
 
@@ -508,21 +509,25 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         #endif
     }
 
-    func preloadChapter(at spineIndex: Int) async {
+    /// As with `TXTPageEngine`, the reasons this engine can distinguish are coarser
+    /// than `CoreTextPageEngine`'s: it answers from its own state machine and from
+    /// whether a layout ended up installed.
+    @discardableResult
+    func preloadChapter(at spineIndex: Int) async -> ChapterLayoutOutcome {
         // Terminal chapters (ready / diagnostic) never re-ensure a session —
         // the LIVELOCK FIX. `pages.isEmpty` is no longer treated as "not
         // finished": the per-chapter state machine is the source of truth, and
         // a terminal chapter must not trigger another ensure.
         if let state = chapterLayoutStates[spineIndex], state.isTerminal {
             BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) preloadSkip spine=\(spineIndex) state=\(state.label)")
-            return
+            return layouts[spineIndex] != nil ? .alreadyLaidOut : .contentUnavailable
         }
         if let existing = preloadTasks[spineIndex] {
             // In-flight dedupe for (generation, spine): await the existing
             // task instead of starting a parallel layout session.
             BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) preloadDedupe spine=\(spineIndex) awaitingInFlight")
             await existing.value
-            return
+            return layouts[spineIndex] != nil ? .laidOut : .contentUnavailable
         }
         let task = Task { [weak self] in
             guard let self else { return }
@@ -531,6 +536,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         preloadTasks[spineIndex] = task
         await task.value
+        return layouts[spineIndex] != nil ? .laidOut : .contentUnavailable
     }
 
     private func preloadChapterInternal(_ spineIndex: Int) async {

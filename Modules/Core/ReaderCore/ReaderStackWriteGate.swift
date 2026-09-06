@@ -95,7 +95,14 @@ struct ReaderStackWriteGate {
     mutating func request(_ write: ReaderStackWrite) -> ReaderStackWriteDecision {
         guard isBusy else { return .performNow }
         record(write)
-        AppLogger.render("[FlipTrace] stackWrite deferred \(write) gesture=\(isGestureInProgress) transitions=\(activeTransitionCount)")
+        // `notice`, not `trace`: a deferred write is a chapter layout, a link, or a
+        // destination that has *not* reached the screen yet. It is owed work, and when
+        // the replay does not happen it is one of the ways the reader ends up looking
+        // at a page nobody asked for.
+        AppLogger.render(
+            "⟐ stackWrite deferred \(write) gesture=\(isGestureInProgress) transitions=\(activeTransitionCount)",
+            level: .notice
+        )
         return .deferred
     }
 
@@ -113,6 +120,16 @@ struct ReaderStackWriteGate {
         guard !isBusy else { return nil }
         guard !pendingWrites.isEmpty else { return nil }
         let winner = pendingWrites.max(by: { $0.priority < $1.priority })
+        // Everything else owed is dropped here. Deliberate (see above), but it used to
+        // be invisible, and "the layout landed yet the page never changed" is exactly
+        // the shape of one of the reader's standing bugs — so say which write lost.
+        let dropped = pendingWrites.filter { $0.priority != winner?.priority }
+        if !dropped.isEmpty, let winner {
+            AppLogger.render(
+                "⟐ stackWrite dropped \(dropped) inFavourOf=\(winner)",
+                level: .notice
+            )
+        }
         pendingWrites.removeAll()
         return winner
     }

@@ -84,10 +84,36 @@
 - `Tests/iOS/yuedu appTests/ReaderChapterPresentationTests.swift` — `.cancelled` 畫載入中，不畫失敗。
 - `Tests/iOS/yuedu appTests/TTSAudioPayloadTests.swift` — 錯誤頁／JSON／截斷 body 一律拒收。
 
-## 日誌判準（Release Console 可見）
+## 日誌判準（Release Console 可見，且**不需要打開詳細追蹤**）
 
-- `[FlipTrace] preload retry superseded spine=…` — 不變量 1／2 的救援真的發生了。
-- `[FlipTrace] pageVC placeholder unresolved spine=…` — 佔位頁這一輪沒被換掉。抓取還沒回來時是正常的；反覆出現就是卡住了。
+> 2026-09-06 更新。這幾條原本是 `[FlipTrace]`，而 `AppLogger.resolvedSeverity` 用後綴比對把
+> 任何 `[…Trace]` 判成 `.trace`——於是使用者關著詳細追蹤匯出的日誌，只有症狀、沒有成因。
+> 現在它們帶顯式 `level:`，並且不再長得像敘事。守門測試在 `DiagnosticLogTests`
+> 的「the reader's decisive lines can never be classified as narration」。
+
+`preloadChapter` 回傳 `ChapterLayoutOutcome`，六個出口各有名字：`laidOut` / `alreadyLaidOut` /
+`supersededByGeneration` / `cancelled` / `contentUnavailable` / `buildFailed` / `outOfRange`。
+**「章節沒出來」不再是一個沒有理由的靜默 return。**
+
+- `⟐ preload retry superseded spine=…` — 不變量 1／2 的救援真的發生了。
+- `⟐ placeholder unresolved spine=… outcome=…` — 佔位頁這一輪沒被換掉，**並且說出是哪個出口**。
+  抓取還沒回來（`contentUnavailable`）時是正常的；反覆出現、或本地書出現，就是卡住了。
+- `⟐ preload contentUnavailable spine=… builderIndex=…` — 建構器說內容還沒到。
+- `⟐ preload buildFailed spine=… | error=…` — 建構丟出錯誤。這個錯誤以前被 `try?` 吞掉。
+- `⟐ preload builtEmptyDocument spine=…` — 建得出來但沒有字：畫面空白、朗讀無文字。
+- `⟐ notifyChapterDataChanged left no layout ch=… outcome=…` — 資料變了但還是排不出版面。
+- `⟐ stackWrite deferred …` / `⟐ stackWrite dropped … inFavourOf=…` — 欠著的頁堆疊寫入被延後、
+  或被更高優先級的蓋過。「版面到了但畫面沒換」的其中一條路。
+- **異常** `章節停在載入中且沒有再次嘗試` — 使用者在同一個 載入中 頁上再次翻頁時發出。
+  純偵測，不重排；本節開頭禁止的自愈輪詢**沒有**被加回來。
+- **異常** `朗讀在章節結束處取不到下一章文字` — 「朗讀每次都斷在章末」。這行以前只走 `NSLog`。
+
+### 飛行記錄器
+
+詳細追蹤關著時被丟掉的 `.trace` 不再直接丟棄，而是留在 `DiagnosticLog` 的 300 筆記憶體環形
+緩衝裡；一旦有 `.anomaly`／`.fault` 落地，整段附進那筆的 `detail`（匯出檔與畫面展開都看得到），
+然後清空。所以**使用者不必事先打開任何開關**，出事那一刻的前後文就已經在報告裡。
+`ttsLog` 的 162 個呼叫點也因此全部進得了診斷系統（本體改走 `AppLogger.render(level: .trace)`）。
 - `⟐ chapter fetch cancelled, re-requesting ch=…` — 不變量 3 在運作。
 - `⟐ chapterFetch shared task cancelled, restarting` — 有人差點繼承別人的取消。
 - `[TTS][Provider] rejected non-audio payload` / `rejected unrecognised audio container` — 語音源回了非音訊。

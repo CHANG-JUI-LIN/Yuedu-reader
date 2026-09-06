@@ -78,6 +78,96 @@ struct ReaderChapterSupplyTests {
         #expect(await builder.buildCount(chapter: 1) == 1)
     }
 
+    // MARK: - Why a chapter did not arrive
+    //
+    // `preloadChapter` used to return `Void` through six exits, five of them silent, so
+    // "the chapter is not here" reached the placeholder page, the TTS session and
+    // `notifyChapterDataChanged` as one indistinguishable fact. These pin each exit to
+    // the name it now reports.
+
+    @Test("a chapter that lays out reports that it did")
+    func laidOutChapterReportsLaidOut() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 2)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+
+        #expect(await engine.preloadChapter(at: 1) == .laidOut)
+        // A second ask is answered from the installed layout, not by building again.
+        #expect(await engine.preloadChapter(at: 1) == .alreadyLaidOut)
+        #expect(await builder.buildCount(chapter: 1) == 1)
+    }
+
+    @Test("content that has not been fetched is named, not reported as a failure")
+    func missingContentReportsContentUnavailable() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 2)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+        await builder.failBuilds(chapter: 1)
+
+        let outcome = await engine.preloadChapter(at: 1)
+
+        // The distinction that matters to the user: this is the fetch's job, whereas
+        // `.buildFailed` would be our own code breaking. Collapsing them into a silent
+        // return is what left the 載入中 page with nothing to say for itself.
+        #expect(outcome == .contentUnavailable)
+        #expect(outcome.isReady == false)
+        #expect(engine.layouts[1] == nil)
+    }
+
+    @Test("an index outside the book is named rather than silently ignored")
+    func outOfRangeChapterReportsOutOfRange() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 2)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+
+        #expect(await engine.preloadChapter(at: 99) == .outOfRange)
+        #expect(await engine.preloadChapter(at: -1) == .outOfRange)
+    }
+
+    @Test("a chapter whose layout is thrown away mid-flight says so")
+    func supersededChapterReportsSuperseded() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 2)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+
+        // Content never arrives, so no attempt can succeed; meanwhile the generation
+        // keeps moving. That combination is what a refresh transaction does to a
+        // neighbour's supply, and it used to come back as a bare `return`.
+        await builder.failBuilds(chapter: 1)
+        let waiter = Task { await engine.preloadChapter(at: 1) }
+        await builder.waitUntilBuilding(chapter: 1)
+        engine.cancelPendingWork(cause: .refreshTransaction)
+
+        let outcome = await waiter.value
+
+        #expect(outcome.isReady == false)
+        // Either reason is legitimate depending on where the bump landed relative to
+        // the build; what must never happen again is an answer that names neither.
+        #expect([.supersededByGeneration, .contentUnavailable, .cancelled].contains(outcome))
+    }
+
+    @Test("an unresolved chapter tells the paged view, not just the log")
+    func unresolvedChapterNotifiesTheView() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 2)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+        await builder.failBuilds(chapter: 1)
+
+        let unresolved = UnresolvedLog()
+        engine.onChapterLayoutUnresolved = { unresolved.record($0, $1) }
+
+        // Asking for the page is what hands out a placeholder and starts the attempt.
+        _ = engine.pageViewController(for: CoreTextReadingPosition.chapterStart(1))
+        // The notify Task runs after the awaited preload; yield until it has reported
+        // rather than sleeping for a guessed interval.
+        for _ in 0..<200 where unresolved.entries.isEmpty {
+            await Task.yield()
+        }
+
+        #expect(unresolved.entries.first?.spine == 1)
+        #expect(unresolved.entries.first?.outcome == .contentUnavailable)
+    }
+
     // MARK: - Support
 
     private static let renderSize = CGSize(width: 360, height: 560)
@@ -121,6 +211,17 @@ private final class AnnouncementLog {
         } else {
             globalAnnouncements += 1
         }
+    }
+}
+
+/// What the engine reported as *not* having arrived. Same reason as `AnnouncementLog`:
+/// the callback escapes, so the reads stay on the main actor with the test.
+@MainActor
+private final class UnresolvedLog {
+    private(set) var entries: [(spine: Int, outcome: ChapterLayoutOutcome)] = []
+
+    func record(_ spine: Int, _ outcome: ChapterLayoutOutcome) {
+        entries.append((spine, outcome))
     }
 }
 

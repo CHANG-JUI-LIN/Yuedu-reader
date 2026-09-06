@@ -33,6 +33,11 @@ final class DiagnosticLog: @unchecked Sendable {
     private static let snapshotLimit = 6000
     /// Sessions kept in `sessions.json`.
     private static let sessionHistoryLimit = 10
+    /// Trace lines held in memory for the flight recorder. A page turn emits six to
+    /// ten, so this is thirty-odd turns of run-up — enough to see what led to a bug
+    /// without the ring itself becoming the thing that has to be paged through.
+    /// ~300 x ~200 bytes = ~60 KB resident.
+    private static let flightRecorderCapacity = 300
 
     static let verboseDefaultsKey = "yd_diagnostics_verbose"
     /// Highest sequence the user has already taken away (exported or copied).
@@ -45,6 +50,29 @@ final class DiagnosticLog: @unchecked Sendable {
     private var nextSequence: UInt64 = 0
     private var sessionReportableCount = 0
     private var cachedVerbose: Bool
+
+    /// Exactly what the verbose gate would otherwise have thrown away, kept in a
+    /// fixed ring and attached to the next reportable entry.
+    ///
+    /// The reader's whole diagnostic narration — `[FlipTrace]`, `[FetchTrace]`, the
+    /// 162 `ttsLog` lines — is `.trace`, so with verbose off a user who hit "翻頁卡在
+    /// 載入中" exported a log containing the anomaly and nothing that explained it.
+    /// Turning all of it on instead would burn the export's 6000-line window on page
+    /// turns and rotate the anomaly away. So it is recorded, and released only when
+    /// something worth reporting happens.
+    ///
+    /// Empty whenever verbose is on: nothing is being dropped then, the lines are
+    /// already on disk in sequence, and duplicating them into a detail block would
+    /// only make the export longer.
+    private struct FlightEntry {
+        let timestamp: Date
+        let severity: DiagnosticSeverity
+        let category: DiagnosticCategory
+        let message: String
+    }
+    private var flightRing: [FlightEntry?]
+    private var flightWriteIndex = 0
+    private var flightCount = 0
 
     /// Serialises every filesystem touch. Directory resolution happens here too, so
     /// `record` never blocks a caller on disk.
@@ -69,6 +97,7 @@ final class DiagnosticLog: @unchecked Sendable {
 
     init(directory: URL? = nil, verboseOverride: Bool? = nil) {
         directoryOverride = directory
+        flightRing = Array(repeating: nil, count: Self.flightRecorderCapacity)
         cachedVerbose = verboseOverride ?? UserDefaults.standard.bool(forKey: Self.verboseDefaultsKey)
         // A test instance starts with a clean slate rather than inheriting the device's.
         acknowledgedSequence = directory == nil
@@ -102,6 +131,60 @@ final class DiagnosticLog: @unchecked Sendable {
             UserDefaults.standard.set(newValue, forKey: Self.verboseDefaultsKey)
         }
     }
+
+    // MARK: - Flight recorder
+    //
+    // Both of these must be called with `lock` already held: `NSLock` is not
+    // recursive, and `record` does its whole decision inside one `withLock`.
+
+    /// Writes one dropped line into the ring, overwriting the oldest once full.
+    private func appendFlightLocked(_ entry: FlightEntry) {
+        flightRing[flightWriteIndex] = entry
+        flightWriteIndex = (flightWriteIndex + 1) % Self.flightRecorderCapacity
+        flightCount = min(flightCount + 1, Self.flightRecorderCapacity)
+    }
+
+    /// The caller's own detail, followed by everything the ring holds, oldest first.
+    ///
+    /// Drains the ring: a run of anomalies during one stuck chapter would otherwise
+    /// carry the same narration several times over, and the first one already has it.
+    private func detailWithFlightRecorderLocked(_ detail: String?) -> String? {
+        guard flightCount > 0 else { return detail }
+
+        let start = (flightWriteIndex - flightCount + Self.flightRecorderCapacity)
+            % Self.flightRecorderCapacity
+        var lines: [String] = []
+        lines.reserveCapacity(flightCount + 2)
+        lines.append("--- flight recorder (\(flightCount) lines, oldest first) ---")
+        for step in 0..<flightCount {
+            let slot = (start + step) % Self.flightRecorderCapacity
+            guard let entry = flightRing[slot] else { continue }
+            lines.append(
+                "\(Self.flightFormatter.string(from: entry.timestamp)) "
+                + "\(entry.severity.exportTag) [\(entry.category.rawValue)] \(entry.message)"
+            )
+        }
+
+        flightRing = Array(repeating: nil, count: Self.flightRecorderCapacity)
+        flightWriteIndex = 0
+        flightCount = 0
+
+        let body = lines.joined(separator: "\n")
+        guard let detail, !detail.isEmpty else { return body }
+        return detail + "\n\n" + body
+    }
+
+    /// Matches `DiagnosticReportBundle`'s line format so the ring reads like the rest
+    /// of the export rather than like a foreign blob pasted into it.
+    private static let flightFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return formatter
+    }()
+
+    /// Lines currently held but not yet attached to anything. For tests.
+    var flightRecorderCount: Int { lock.withLock { flightCount } }
 
     /// Anomalies and faults seen since launch. Cheap — no disk read.
     var reportableCountThisSession: Int { lock.withLock { sessionReportableCount } }
@@ -159,14 +242,28 @@ final class DiagnosticLog: @unchecked Sendable {
         var shouldFlushNow = false
 
         lock.withLock {
-            guard severity > .trace || cachedVerbose else { return }
+            guard severity > .trace || cachedVerbose else {
+                // Not discarded — held for whatever goes wrong next. See `flightRing`.
+                appendFlightLocked(
+                    FlightEntry(
+                        timestamp: Date(),
+                        severity: severity,
+                        category: category,
+                        message: message
+                    )
+                )
+                return
+            }
 
             let made = DiagnosticEntry(
                 sequence: nextSequence,
                 severity: severity,
                 category: category,
                 message: message,
-                detail: detail
+                // An anomaly carries its own run-up, so the exported entry explains
+                // itself without the reader having to reconstruct it from lines that
+                // were never written down.
+                detail: severity.isReportable ? detailWithFlightRecorderLocked(detail) : detail
             )
             nextSequence += 1
             pending.append(made)
@@ -276,6 +373,9 @@ final class DiagnosticLog: @unchecked Sendable {
         lock.withLock {
             pending.removeAll()
             sessionReportableCount = 0
+            flightRing = Array(repeating: nil, count: Self.flightRecorderCapacity)
+            flightWriteIndex = 0
+            flightCount = 0
         }
         resetAcknowledged()
         ioQueue.sync {
