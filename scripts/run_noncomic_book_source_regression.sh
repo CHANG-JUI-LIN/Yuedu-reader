@@ -9,7 +9,9 @@ set -o pipefail
 
 project_root=${0:A:h:h}
 corpus_path=${BOOK_SOURCE_CORPUS_PATH:-/Users/zhangruilin/Desktop/Test document/RULE}
-destination_id=${BOOK_SOURCE_SIMULATOR_ID:-D787D0F2-DD88-475A-9BC2-D4484B706011}
+# Resolve the simulator at run time — a pinned UDID goes stale the moment a runtime
+# is deleted, and the old default here had already become an orphaned device.
+destination_id=${BOOK_SOURCE_SIMULATOR_ID:-$("$project_root/scripts/sim.sh" udid)} || exit 1
 artifact_dir=${BOOK_SOURCE_REGRESSION_ARTIFACT_DIR:-/tmp/yuedu_noncomic_source_regression}
 final_report=${BOOK_SOURCE_REGRESSION_REPORT_PATH:-/tmp/yuedu_noncomic_source_regression.json}
 only_test='yuedu appTests/AllBookSourcesLiveRegressionTests'

@@ -148,10 +148,12 @@ done
 ```bash
 cd "/Users/zhangruilin/Desktop/Yuedu-reader"
 xcodebuild -project "Yuedu-Reader.xcodeproj" -scheme "Yuedu-Reader" \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -configuration Debug build
+  -destination "$(bash scripts/sim.sh dest)" -configuration Debug build
 ```
 
-注意：在 Claude session 內不要直接跑 xcodebuild（會卡住數分鐘）——改法交給使用者在 Xcode build 驗證，或用 `run-yuedu-reader` skill 的 driver。
+模擬器一律用 `sim.sh` 當場解析成 UDID，不要寫死裝置名稱或 OS 版本——這台機器的模擬器經常刪掉重裝。先跑 `bash scripts/sim.sh doctor` 確認有可用裝置。
+
+建置／測試自己跑，不要把指令丟回去叫使用者跑。跑之前先讀 `CLAUDE.md` 的 **Simulator gotchas**。因為會跑數分鐘：背景執行、加 `-resultBundlePath` 留下失敗訊息（`-quiet` 會把失敗訊息吃掉），超過 5 分鐘沒動靜就主動去查是不是卡住。
 
 ## Deeper Docs
 

@@ -33,11 +33,15 @@ vertical writing, links, selection, images, or annotation rendering.
 
 Run the vertical writing suite before changing vertical layout or interaction:
 
+> Resolve the simulator instead of naming one: `-destination "$(bash scripts/sim.sh dest)"`.
+> This machine's simulators are deleted and re-installed often, and name matching picks
+> silently among duplicates. `bash scripts/sim.sh doctor` diagnoses a broken lineup.
+
 ```bash
 xcodebuild test \
   -project Yuedu-Reader.xcodeproj \
   -scheme Yuedu-Reader \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+  -destination "$(bash scripts/sim.sh dest)" \
   -only-testing:'yuedu appTests/CoreTextWritingModeTests' \
   -parallel-testing-enabled NO
 ```

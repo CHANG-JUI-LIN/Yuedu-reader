@@ -8,26 +8,45 @@ Yuedu Reader — native iOS EPUB/TXT/RSS/web-novel reader. SwiftUI + CoreText, t
 
 ## Build & Test
 
+Simulators on this machine are deleted and re-installed often, so **nothing in this repo hardcodes a device name, an OS version, or an Xcode path**. Resolve them at call time:
+
 ```bash
-# Build for simulator
-xcodebuild -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
-
-# Run all unit tests
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max'
-
-# Run a single test class (no parallel — many tests depend on shared state)
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' -only-testing:'yuedu appTests/CoreTextWritingModeTests'
-
-# Run a single test method
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' -only-testing:'yuedu appTests/CoreTextWritingModeTests/testVerticalRTLPagination'
+bash scripts/sim.sh doctor
 ```
 
-Use `-quiet` to suppress build output. Tests are in `Tests/iOS/yuedu appTests/`. UI tests in `Tests/iOS-UI/`.
+`sim.sh` reads `simctl` and the installed Xcodes live. It picks the toolchain whose SDK can actually build to the installed runtimes, then the newest device on those runtimes (preferring Pro Max > Pro > plain), and prints a ready-made destination. Pass a name substring to steer the device (`sim.sh dest iPad`, `sim.sh dest "iPhone 17 Pro"`); `sim.sh list` shows what is buildable, `sim.sh xcodes` shows every toolchain. Re-run after any simulator or Xcode change — no file here needs editing.
 
-**Two simulator gotchas, both learned the hard way (2026-08-18).**
+```bash
+# One toolchain + one destination for the whole session
+export DEVELOPER_DIR="$(bash scripts/sim.sh xcode)"
+SIM="$(bash scripts/sim.sh dest)"
 
-- `-destination 'platform=iOS Simulator,name=…'` matches by name and picks silently. With an iOS 26.5 and an iOS 27.0 runtime installed, `name=iPhone 17 Pro Max` resolved to the iOS 27 device, and renaming that device to `iPhone 17 Pro Max (iOS 27)` did *not* change the choice — xcodebuild still matched it. Add `,OS=<version>` or `id=<UDID>` when the runtime actually matters; never assume which one you got.
-- `xcodebuild test` can die in a retry loop on `FBSOpenApplicationServiceErrorDomain Code=1 RequestDenied` while launching the UI-test runner, before a single unit test executes. This is CoreSimulator state, not configuration: the same command passed afterwards with no config change at all. `xcrun simctl shutdown all` (and deleting stale `Clone N of …` devices) clears it. While diagnosing, ignore `IDELaunchParametersSnapshot: no debugger version` — it appears in passing runs too and is not the cause; the only meaningful signal is `RequestDenied`.
+# Build for simulator
+xcodebuild -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" build
+
+# Run all unit tests
+xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM"
+
+# Run a single test class (no parallel — many tests depend on shared state)
+xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -only-testing:'yuedu appTests/CoreTextWritingModeTests'
+
+# Run a single test method
+xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -only-testing:'yuedu appTests/CoreTextWritingModeTests/testVerticalRTLPagination'
+```
+
+Use `-quiet` to suppress build output, but pair it with `-resultBundlePath` — `-quiet` swallows the failure messages. Tests are in `Tests/iOS/yuedu appTests/`. UI tests in `Tests/iOS-UI/`.
+
+### Simulator gotchas
+
+All of these were learned the hard way. The first three recur every time the simulator lineup or the installed Xcodes change — `sim.sh doctor` checks for all three at once.
+
+- **`xcode-select` and the runtimes drift apart, and only the command line notices.** With a release Xcode and an Xcode-beta both installed, development happens in the beta (its GUI uses its own toolchain) while `xcode-select` still points at the release. `xcodebuild` then has an older SDK than every installed runtime and reports **no eligible simulator destination at all** — listing only ineligible *physical device* entries, with an error naming an OS version that is not the real problem. Nothing is missing and nothing needs downloading; the toolchain is just wrong. `sim.sh` picks the right one and announces it; `export DEVELOPER_DIR="$(bash scripts/sim.sh xcode)"` fixes it per-command without a password, and `sudo xcode-select -s …` fixes it permanently.
+- **Never match a destination by name.** `-destination 'platform=iOS Simulator,name=…'` picks silently among matches, and there is no way to make it prefer the one you meant — renaming the device does *not* change the choice. Deleting a runtime leaves its devices behind as "unavailable" **under the same name as the live one**, so a stale iPhone 17 Pro Max can shadow the current iPhone 17 Pro Max indefinitely. Always resolve to `-destination "id=<UDID>"` via `sim.sh dest`.
+- **A runtime newer than the active SDK boots but cannot be built to.** `simctl` reports it `isAvailable`, it launches fine, and only `xcodebuild` disagrees. `sim.sh` filters these out; `sim.sh doctor` lists them under "Bootable but NOT buildable". Reach for `xcodebuild -downloadPlatform iOS` only after confirming no installed Xcode already covers them.
+- **Clear orphans after deleting a runtime.** `sim.sh doctor` reports devices stranded by a removed runtime and duplicate names across runtimes. `xcrun simctl delete unavailable` removes them (destructive — it also erases those devices' app data, so read the list first).
+- **`RequestDenied` is CoreSimulator state, not configuration.** `xcodebuild test` can die in a retry loop on `FBSOpenApplicationServiceErrorDomain Code=1 RequestDenied` while launching the UI-test runner, before a single unit test executes — and then pass afterwards with no config change at all. `xcrun simctl shutdown all` (plus deleting stale `Clone N of …` devices) clears it. While diagnosing, ignore `IDELaunchParametersSnapshot: no debugger version`; it appears in passing runs too. `RequestDenied` is the only meaningful signal.
+
+Do **not** pass `-derivedDataPath` to work around any of this — it abandons the incremental cache and rebuilds from scratch every run. `xcodebuild -showBuildSettings … | grep BUILT_PRODUCTS_DIR` resolves where the app actually landed.
 
 ## Targets
 

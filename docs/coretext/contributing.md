@@ -24,11 +24,15 @@
 
 Focused vertical layout and interaction:
 
+> Resolve the simulator instead of naming one: `-destination "$(bash scripts/sim.sh dest)"`.
+> This machine's simulators are deleted and re-installed often, and name matching picks
+> silently among duplicates. `bash scripts/sim.sh doctor` diagnoses a broken lineup.
+
 ```bash
 xcodebuild test \
   -project Yuedu-Reader.xcodeproj \
   -scheme Yuedu-Reader \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+  -destination "$(bash scripts/sim.sh dest)" \
   -only-testing:'yuedu appTests/CoreTextWritingModeTests' \
   -parallel-testing-enabled NO
 ```
@@ -39,7 +43,7 @@ CoreText pipeline regressions:
 xcodebuild test \
   -project Yuedu-Reader.xcodeproj \
   -scheme Yuedu-Reader \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+  -destination "$(bash scripts/sim.sh dest)" \
   -only-testing:'yuedu appTests/CoreTextPipelineTests' \
   -parallel-testing-enabled NO
 ```

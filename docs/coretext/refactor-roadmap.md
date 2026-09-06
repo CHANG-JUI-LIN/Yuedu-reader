@@ -10,10 +10,14 @@
 
 Run these before committing any phase:
 
+> Resolve the simulator instead of naming one: `-destination "$(bash scripts/sim.sh dest)"`.
+> This machine's simulators are deleted and re-installed often, and name matching picks
+> silently among duplicates. `bash scripts/sim.sh doctor` diagnoses a broken lineup.
+
 ```bash
 git diff --check
-xcodebuild build -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' -configuration Debug
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' -only-testing:"yuedu appTests/ReaderPresentationContractTests" -only-testing:"yuedu appTests/ReaderEngineContractTests" -only-testing:"yuedu appTests/ProgrammaticPageTransitionPerformerTests" -only-testing:"yuedu appTests/ReaderPageTransitionQueueTests" -only-testing:"yuedu appTests/CoreTextCFIProgressTests"
+xcodebuild build -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$(bash scripts/sim.sh dest)" -configuration Debug
+xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$(bash scripts/sim.sh dest)" -only-testing:"yuedu appTests/ReaderPresentationContractTests" -only-testing:"yuedu appTests/ReaderEngineContractTests" -only-testing:"yuedu appTests/ProgrammaticPageTransitionPerformerTests" -only-testing:"yuedu appTests/ReaderPageTransitionQueueTests" -only-testing:"yuedu appTests/CoreTextCFIProgressTests"
 find iOS -name Localizable.strings -print0 | xargs -0 plutil -lint
 ```
 
