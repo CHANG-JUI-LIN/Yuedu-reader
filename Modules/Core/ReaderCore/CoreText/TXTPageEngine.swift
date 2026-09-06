@@ -94,7 +94,7 @@ final class TXTPageEngine: PageRenderingProvider {
         preloadTasks[spineIndex] = makePreloadTask(spineIndex: spineIndex, generation: generation)
     }
 
-    func cancelPendingWork() {
+    func cancelPendingWork(cause: LayoutInvalidationCause = .unspecified) {
         layoutGeneration += 1
         cancelPreloadTasks()
     }

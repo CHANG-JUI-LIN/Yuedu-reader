@@ -8,9 +8,8 @@ functions/node_modules/
 .worktrees/
 build/
 
-# Firebase CLI / Data Connect scaffolding (not used by the iOS app)
+# Firebase CLI local state and debug logs
 .firebase/
-dataconnect/
 *-debug.log
 pglite-debug.log
 

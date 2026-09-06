@@ -576,7 +576,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             )
             return .legacyEngineFailure(.resourceFailure("chapterHTML"))
         }
-        let css = await resource.processedCSS(forChapter: spineIndex)
+        let input = await resource.cssFrontendInput(forChapter: spineIndex, html: html)
+        let css = CurrentCSSFrontendSupport.stylesheetsForCurrentCompatibility(input.stylesheets)
         let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: css)
         let decision: ChapterEngineChoice
         if scan.supported {
@@ -627,7 +628,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 await fallbackToLegacy(spineIndex, reason: .resourceFailure("chapterHTML"))
                 return
             }
-            let css = await resource.processedCSS(forChapter: spineIndex)
+            let input = await resource.cssFrontendInput(forChapter: spineIndex, html: html)
             let store = BrowserLayoutImageStore(await resource.prefetchImages(
                 forChapter: spineIndex, html: html, renderWidth: contentWidth
             ))
@@ -640,7 +641,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // NON-terminal chapter is the livelock — fault loudly in debug.
             noteSessionEnsure(spineIndex: spineIndex, generation: generation)
             let session = BrowserLayoutSession(
-                html: html, cssTexts: css, config: config,
+                input: input, config: config,
                 imageLoader: { [store] in store.image(for: $0) }, generation: generation
             )
             session.diagnosticSpine = spineIndex
@@ -887,8 +888,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
     }
 
-    func cancelPendingWork() {
-        delegate.cancelPendingWork()
+    func cancelPendingWork(cause: LayoutInvalidationCause = .unspecified) {
+        delegate.cancelPendingWork(cause: cause)
         for task in preloadTasks.values { task.cancel() }
         preloadTasks.removeAll()
         for task in backgroundFinishTasks.values { task.cancel() }

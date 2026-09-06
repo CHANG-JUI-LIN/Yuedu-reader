@@ -720,7 +720,25 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         )
     }
 
-    func cancelPendingWork() {
+    /// Every caller that throws away every laid-out chapter, so the log can name the one
+    /// that did it.
+    ///
+    /// A blind user's export showed the layout generation climbing 3 → 9 in 53 seconds
+    /// with chapter 14 re-preloaded four times inside one second — a retry storm that
+    /// made VoiceOver page turns crawl. The retries were visible; what bumped the
+    /// generation was not, because these lines were `trace` and dropped with verbose off.
+
+    func cancelPendingWork(cause: LayoutInvalidationCause = .unspecified) {
+        // `notice`, not `trace`: discarding every layout is the most expensive thing this
+        // engine does, and it is never narration.
+        AppLogger.render(
+            "⟐ layoutGeneration \(layoutGeneration) → \(layoutGeneration + 1) cause=\(cause.rawValue) discardingPreloads",
+            level: .notice
+        )
+        cancelPendingWorkInternal()
+    }
+
+    private func cancelPendingWorkInternal() {
         AppLogger.render("[FlipTrace] cancelPendingWork generation=\(layoutGeneration) pending=\(preloadTasks.keys.sorted()) layouts=\(_layouts.keys.sorted())")
         layoutGeneration += 1
         cancelPreloadTasks()

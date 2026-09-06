@@ -17,7 +17,7 @@ protocol BrowserLayoutResourceProviding: AnyObject {
     func chapterHTML(at index: Int) async throws -> String
     /// CSS ready for the browser engine: @imports inlined, @font-face stripped,
     /// url() rewritten to absolute publication URLs.
-    func processedCSS(forChapter index: Int) async -> [String]
+    func cssFrontendInput(forChapter index: Int, html: String) async -> CSSFrontendInput
     /// Pre-fetches every image the chapter's DOM references — `<img src>` and
     /// the SVG-wrapped cover idiom — so the box tree can measure them through a
     /// synchronous loader. These are the only images layout NEEDS: a CSS

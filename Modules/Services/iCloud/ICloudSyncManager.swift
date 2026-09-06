@@ -256,11 +256,17 @@ final class ICloudSyncManager: ObservableObject {
                 // The network merge can outlive a user deletion. Only apply its result when the
                 // store still has the exact snapshot that was merged; otherwise the deletion
                 // remains local and the next sync can publish its tombstone.
+                // Timed because this is the apply that killed a device: it runs on the
+                // main actor, and until `save()` moved to a background queue it carried a
+                // ~3 MB encode and a synchronous file write with it. The span is the
+                // evidence that it stays cheap.
                 await MainActor.run {
-                    _ = BookSourceStore.shared.replaceSourcesFromSync(
-                        sourceMerge.values,
-                        expectedMutationRevision: sourceMutationRevision
-                    )
+                    SourcePerfTrace.span("sync.apply.sources", "count=\(sourceMerge.values.count)") {
+                        _ = BookSourceStore.shared.replaceSourcesFromSync(
+                            sourceMerge.values,
+                            expectedMutationRevision: sourceMutationRevision
+                        )
+                    }
                 }
             }
 
@@ -373,7 +379,11 @@ final class ICloudSyncManager: ObservableObject {
                 )
                 changedRemote = changedRemote || bookMerge.uploaded
                 if bookMerge.shouldApplyLocally {
-                    await MainActor.run { store.replaceBooksFromSync(bookMerge.values) }
+                    await MainActor.run {
+                        SourcePerfTrace.span("sync.apply.books", "count=\(bookMerge.values.count)") {
+                            store.replaceBooksFromSync(bookMerge.values)
+                        }
+                    }
                 }
             }
 

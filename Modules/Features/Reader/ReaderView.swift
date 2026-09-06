@@ -650,7 +650,7 @@ struct ReaderView: View {
             ttsLog("[TTS][Reader] keeping pagination alive while narrating (phase change)")
             return
         }
-        epubRenderer.engine?.cancelPendingWork()
+        epubRenderer.engine?.cancelPendingWork(cause: .appPhaseChange)
     }
 
     func isChapterContentAvailable(at chapterIndex: Int) -> Bool {

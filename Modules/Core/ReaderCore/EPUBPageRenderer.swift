@@ -470,7 +470,7 @@ final class EPUBPageRenderer: ObservableObject {
             return false
         }
 
-        engine?.cancelPendingWork()
+        engine?.cancelPendingWork(cause: .engineModeSwitch)
         BrowserLayoutFeature.mode = mode
         load(
             publicationSession: session,
@@ -768,7 +768,7 @@ final class EPUBPageRenderer: ObservableObject {
             retained.continuation = nil
             refreshTransactions[supersededID] = retained
         }
-        engine?.cancelPendingWork()
+        engine?.cancelPendingWork(cause: .refreshTransaction)
 
         switch request.intent {
         case .layout:

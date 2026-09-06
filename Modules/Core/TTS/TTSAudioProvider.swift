@@ -796,6 +796,26 @@ final class CustomHTTPProvider: TTSAudioProvider {
         for (field, value) in loginHeaders {
             mutableRequest.setValue(value, forHTTPHeaderField: field)
         }
+
+        // Header *names*, never values — several of these are the user's API key or
+        // session cookie. Without this a 401 cannot be told apart from a header we
+        // failed to attach: a real report showed `Invalid API Key` from a source that
+        // mints its key through `putLoginHeader`, and the log could not say whether the
+        // key had been sent at all.
+        AppLogger.info(
+            "[TTS] request built",
+            context: [
+                "source": source?.name ?? "-",
+                "method": mutableRequest.httpMethod ?? "GET",
+                "endpoint": [mutableRequest.url?.host, mutableRequest.url?.path]
+                    .compactMap { $0 }.joined(),
+                "headers": (mutableRequest.allHTTPHeaderFields ?? [:]).keys.sorted()
+                    .joined(separator: ","),
+                "bodyBytes": mutableRequest.httpBody?.count ?? 0,
+                "textCount": text.count,
+            ],
+            level: .notice
+        )
         return mutableRequest
     }
 

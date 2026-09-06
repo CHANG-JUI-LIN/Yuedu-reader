@@ -63,7 +63,6 @@ struct DefaultCoverSettingsView: View {
                 Text(localized("開啟後，探索頁中沒有封面的書卡也使用隨機預設封面圖（列表和網格均生效）。"))
             }
             .interfaceSectionSurface()
-
             coverLibrarySection(for: .light)
             coverLibrarySection(for: .dark)
         }

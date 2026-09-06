@@ -625,7 +625,21 @@ extension ReaderView {
         var text = narration.text
         var hints = narration.pronunciationHints
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            AppLogger.render("[TTS][Reader] startTTSChapter ignored empty chapter=\(chapterIndex)")
+            // The moment listening stops. Previously a `notice` buried among thousands:
+            // a real user's export had seven of these and nothing marking them as the
+            // reason the audio went silent. `narrationForTTSChapter` reads
+            // `engine.layouts[chapterIndex]` first, so this fires when a layout was
+            // discarded out from under playback and neither fallback had the text.
+            AppLogger.anomaly(
+                localized("聽書取不到章節文字而停止"),
+                category: .tts,
+                detail: [
+                    "chapter=\(chapterIndex)",
+                    "hasLayout=\(epubRenderer.engine?.layouts[chapterIndex] != nil)",
+                    "usesCoreText=\(usesCoreTextEPUB)",
+                    "pagesForChapter=\(allPages.filter { $0.chapterIndex == chapterIndex }.count)",
+                ].joined(separator: "\n")
+            )
             if shouldSyncReader {
                 jumpToChapter(chapterIndex)
             }
@@ -884,6 +898,31 @@ extension ReaderView {
         _ = startTTSChapter(target, syncReader: false, startCharOffset: startOffset)
     }
 
+    /// The chapter text with everything that is not speech removed.
+    ///
+    /// Paragraph reviews, 本章说 and 神评论 are drawn by the source as SVG and reach the
+    /// layout as image attachments, so in the string they are `U+FFFC` object-replacement
+    /// characters — not words. They were never stripped on this path, which meant they
+    /// counted toward the 300-character chunk budget and were sent to the provider as
+    /// literal `%EF%BF%BC`. A paragraph dense with review anchors could produce a chunk
+    /// that was almost entirely markers: a synthesis request with nothing to say.
+    ///
+    /// (The only other `U+FFFC` strip in this file is in the anchor-label helper, a
+    /// different function that never fed narration.)
+    static func narratableText(from raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+            // Removing a marker can leave the spaces that surrounded it stranded, and a
+            // run of blank lines reads to a provider as an empty request.
+            .replacingOccurrences(
+                of: "[ \t]+", with: " ", options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: "\n[ \t]*(\n[ \t]*)+", with: "\n\n", options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func narrationForTTSChapter(_ chapterIndex: Int) -> TTSNarrationUnit {
         guard chapters.indices.contains(chapterIndex) else {
             return TTSNarrationUnit(text: "")
@@ -897,7 +936,10 @@ extension ReaderView {
                 lexicons: activePublicationSession?.pronunciationLexicons ?? [],
                 bookLanguage: activePublicationSession?.language
             )
-            return TTSNarrationUnit(text: layout.attributedString.string, pronunciationHints: hints)
+            return TTSNarrationUnit(
+                text: Self.narratableText(from: layout.attributedString.string),
+                pronunciationHints: hints
+            )
         }
         let pageText = allPages
             .filter { $0.chapterIndex == chapterIndex }

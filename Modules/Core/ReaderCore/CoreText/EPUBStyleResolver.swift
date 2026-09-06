@@ -34,7 +34,11 @@ final class EPUBStyleResolver {
     private var registeredFontAssets: [String: FontRegistrationResult] = [:]
     private var pendingFontFaces: [String: [FontFaceDefinition]] = [:]
     private var failedFontResourceURLs: Set<String> = []
-    private var processedStylesheetCache: [String: String] = [:]
+    struct ProcessedStylesheet {
+        let text: String
+        let diagnostics: [String]
+    }
+    private var processedStylesheetCache: [String: ProcessedStylesheet] = [:]
 
     init(
         resourceProvider: any BookResourceProvider,
@@ -57,13 +61,24 @@ final class EPUBStyleResolver {
     // MARK: - Main Entry Point
 
     func processStylesheet(_ cssText: String, cssHref: String, chapterHref: String) async -> String {
-        let cacheKey = cssHref.isEmpty ? "inline:\(chapterHref)" : cssHref
+        await processStylesheetResult(cssText, cssHref: cssHref, chapterHref: chapterHref).text
+    }
+
+    /// Identity is independent of the URL base. Authored inline style nodes
+    /// need distinct cache entries while Current keeps its historical key.
+    func processStylesheetResult(
+        _ cssText: String, cssHref: String, chapterHref: String, cacheIdentity: String? = nil
+    ) async -> ProcessedStylesheet {
+        let cacheKey = cacheIdentity.map { "authored:\($0)" }
+            ?? (cssHref.isEmpty ? "inline:\(chapterHref)" : cssHref)
         if let cached = processedStylesheetCache[cacheKey] {
             return cached
         }
 
+        var diagnostics: [String] = []
         let withImports = await inlineLocalImports(
-            from: cssText, cssHref: cssHref, chapterHref: chapterHref, visited: [cssHref]
+            from: cssText, cssHref: cssHref, chapterHref: chapterHref, visited: [cssHref],
+            diagnostics: &diagnostics
         )
         let fontFaces = extractFontFaces(from: withImports, cssHref: cssHref, chapterHref: chapterHref)
         if !fontFaces.isEmpty {
@@ -82,8 +97,9 @@ final class EPUBStyleResolver {
 
         let stripped = stripFontFaceBlocks(from: withImports)
         let processed = rewriteResourceURLs(in: stripped, cssHref: cssHref)
-        processedStylesheetCache[cacheKey] = processed
-        return processed
+        let result = ProcessedStylesheet(text: processed, diagnostics: diagnostics)
+        processedStylesheetCache[cacheKey] = result
+        return result
     }
 
     /// Browser-style lazy font loading: stylesheet parsing only records `@font-face` descriptors.
@@ -363,7 +379,8 @@ final class EPUBStyleResolver {
     // MARK: - Private CSS Helpers
 
     private func inlineLocalImports(
-        from cssText: String, cssHref: String, chapterHref: String, visited: Set<String>
+        from cssText: String, cssHref: String, chapterHref: String, visited: Set<String>,
+        diagnostics: inout [String]
     ) async -> String {
         guard let regex = try? NSRegularExpression(
             pattern: #"@import\s+(?:url\()?['"]?([^'")]+)['"]?\)?\s*;"#,
@@ -380,12 +397,14 @@ final class EPUBStyleResolver {
             let rawHref = nsCSS.substring(with: match.range(at: 1))
             if rawHref.hasPrefix("http://") || rawHref.hasPrefix("https://") {
                 AppLogger.parse("[EPUBStyleResolver] ignoring remote @import \(rawHref)")
+                diagnostics.append("remote @import rejected: \(rawHref)")
                 result = (result as NSString).replacingCharacters(in: match.range, with: "")
                 continue
             }
 
             let resolved = Self.resolveCSSHref(rawHref, cssHref: cssHref, chapterHref: chapterHref)
             if visited.contains(resolved) {
+                diagnostics.append("cyclic @import rejected: \(resolved)")
                 result = (result as NSString).replacingCharacters(in: match.range, with: "")
                 continue
             }
@@ -395,13 +414,14 @@ final class EPUBStyleResolver {
                 let imported = String(data: response.data, encoding: .utf8)
             else {
                 AppLogger.parse("[EPUBStyleResolver] local @import FAILED \(resolved)")
+                diagnostics.append("local @import load failed: \(resolved)")
                 result = (result as NSString).replacingCharacters(in: match.range, with: "")
                 continue
             }
 
             let inlined = await inlineLocalImports(
                 from: imported, cssHref: resolved, chapterHref: chapterHref,
-                visited: visited.union([resolved])
+                visited: visited.union([resolved]), diagnostics: &diagnostics
             )
             result = (result as NSString).replacingCharacters(in: match.range, with: inlined)
         }

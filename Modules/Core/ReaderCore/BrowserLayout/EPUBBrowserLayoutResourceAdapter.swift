@@ -11,7 +11,7 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
     private let session: PublicationSession
     private let resourceAdapter: ReadiumBookResourceAdapter
     private let styleResolver: EPUBStyleResolver
-    private var cssTextCache: [Int: [String]] = [:]
+    private var cssInputCache: [Int: CSSFrontendInput] = [:]
 
     init(
         session: PublicationSession,
@@ -49,46 +49,31 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
     // MARK: - CSS
 
     func processedCSS(forChapter index: Int) async -> [String] {
-        if let cached = cssTextCache[index] { return cached }
-        guard session.chapters.indices.contains(index) else { return [] }
-        let chapterHref = session.chapters[index].href
+        // Compatibility projection for pre-migration corpus diagnostics.
+        if let cached = cssInputCache[index] {
+            return CurrentCSSFrontendSupport.stylesheetsForCurrentCompatibility(cached.stylesheets)
+        }
+        do {
+            let html = try await chapterHTML(at: index)
+            let input = await cssFrontendInput(forChapter: index, html: html)
+            return CurrentCSSFrontendSupport.stylesheetsForCurrentCompatibility(input.stylesheets)
+        } catch {
+            AppLogger.parse("[EPUBStylesheetIngestion] chapter load failed: \(error)")
+            return []
+        }
+    }
 
-        var texts: [String] = []
-        // Linked stylesheets referenced from the chapter <head> — the SAME
-        // source the legacy pipeline uses (collectStyles). The manifest
-        // reading order alone misses most EPUB stylesheets.
-        var linkedHrefs = resourceAdapter.cssResourceHrefs()
-        if let html = try? await chapterHTML(at: index),
-           let doc = try? SwiftSoup.parse(html),
-           let head = doc.head() {
-            for link in (try? head.select("link[rel=stylesheet]").array()) ?? [] {
-                let href = (try? link.attr("href")) ?? ""
-                if !href.isEmpty {
-                    let resolved = EPUBStyleResolver.resolveCSSHref(href, cssHref: "", chapterHref: chapterHref)
-                    if !linkedHrefs.contains(resolved) { linkedHrefs.append(resolved) }
-                }
-            }
-            for styleTag in (try? head.select("style").array()) ?? [] {
-                let css = (try? styleTag.html()) ?? ""
-                if !css.isEmpty {
-                    let processed = await styleResolver.processStylesheet(
-                        css, cssHref: "", chapterHref: chapterHref
-                    )
-                    if !processed.isEmpty { texts.append(processed) }
-                }
-            }
+    func cssFrontendInput(forChapter index: Int, html: String) async -> CSSFrontendInput {
+        if let cached = cssInputCache[index], cached.html == html { return cached }
+        guard session.chapters.indices.contains(index) else {
+            return CSSFrontendInput(html: html, stylesheets: [])
         }
-        for href in linkedHrefs {
-            guard let response = try? await resourceAdapter.response(for: resourceAdapter.resourceURL(for: href)),
-                  let css = String(data: response.data, encoding: .utf8) else { continue }
-            let processed = await styleResolver.processStylesheet(
-                css, cssHref: href, chapterHref: chapterHref
-            )
-            if !processed.isEmpty { texts.append(processed) }
-        }
-        await styleResolver.registerAllPendingFontFaces()
-        cssTextCache[index] = texts
-        return texts
+        let input = await EPUBStylesheetIngestion.collect(
+            html: html, chapterHref: session.chapters[index].href,
+            resourceProvider: resourceAdapter, styleResolver: styleResolver
+        )
+        cssInputCache[index] = input
+        return input
     }
 
     // MARK: - Images

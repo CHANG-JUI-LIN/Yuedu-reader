@@ -51,6 +51,7 @@ enum CurrentCSSFrontendSupport {
         _ stylesheets: [AuthorStylesheet]
     ) -> [String] {
         stylesheets
+            .filter { $0.currentCompatibilityOrder != nil }
             .sorted { lhs, rhs in
                 let left = lhs.currentCompatibilityOrder ?? lhs.sourceOrder
                 let right = rhs.currentCompatibilityOrder ?? rhs.sourceOrder

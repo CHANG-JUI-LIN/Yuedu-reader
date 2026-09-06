@@ -1,6 +1,24 @@
 import UIKit
 import YueduCoreText
 
+/// Why every laid-out chapter is about to be discarded.
+///
+/// Bumping the layout generation is the most expensive thing the paging engines do — it
+/// throws away every finished layout and cancels every preload in flight. A blind user's
+/// export showed the generation climbing 3 → 9 in 53 seconds, with one chapter re-preloaded
+/// four times inside a single second; the retries were visible but the cause was not.
+/// Naming the caller is what makes that log answerable.
+enum LayoutInvalidationCause: String {
+    case refreshTransaction
+    case engineModeSwitch
+    case renderSizeChange
+    case fontOrMarginChange
+    case cjkFontInstalled
+    /// The app changed lifecycle phase and nothing was narrating.
+    case appPhaseChange
+    case unspecified
+}
+
 // MARK: - PageIndexProviding / CoreTextReadingPositionProviding
 
 /// A UIViewController that tracks its position in the global page sequence.
@@ -28,7 +46,7 @@ protocol LayoutLifecycle: AnyObject {
     func preloadChapter(at spineIndex: Int) async
     func invalidateLayout(newSize: CGSize) async
     func warmUpNext(currentGlobalPage: Int)
-    func cancelPendingWork()
+    func cancelPendingWork(cause: LayoutInvalidationCause)
     func notifyChapterDataChanged(at spineIndex: Int) async
 
     var onChapterReady: ((Int?) -> Void)? { get set }

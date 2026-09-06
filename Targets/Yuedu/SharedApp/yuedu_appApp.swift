@@ -177,7 +177,9 @@ struct yuedu_appApp: App {
                     // this app's definition of "survived", and is also the last
                     // reliable moment to get buffered log lines onto disk.
                     switch newPhase {
-                    case .background: DiagnosticLog.shared.noteEnteredBackground()
+                    case .background:
+                        DiagnosticLog.shared.noteEnteredBackground()
+                        BookSourceStore.shared.flushPendingWrites()
                     case .active: DiagnosticLog.shared.noteBecameActive()
                     default: break
                     }

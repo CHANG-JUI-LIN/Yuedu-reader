@@ -36,7 +36,7 @@ struct ReaderDebugLayoutABTests {
             renderSize: size,
             settings: settings
         )
-        renderer.engine?.cancelPendingWork()
+        renderer.engine?.cancelPendingWork(cause: .engineModeSwitch)
         #expect(renderer.debugEffectiveLayoutEngine == .legacy)
 
         #expect(renderer.debugReloadPublication(
@@ -44,7 +44,7 @@ struct ReaderDebugLayoutABTests {
             renderSize: size,
             settings: settings
         ))
-        renderer.engine?.cancelPendingWork()
+        renderer.engine?.cancelPendingWork(cause: .engineModeSwitch)
         #expect(renderer.engine is BrowserLayoutPageEngine)
         #expect(renderer.debugEffectiveLayoutEngine == .browserForced)
 
@@ -53,7 +53,7 @@ struct ReaderDebugLayoutABTests {
             renderSize: size,
             settings: settings
         ))
-        renderer.engine?.cancelPendingWork()
+        renderer.engine?.cancelPendingWork(cause: .engineModeSwitch)
         #expect(renderer.engine is CoreTextPageEngine)
         #expect(renderer.debugEffectiveLayoutEngine == .legacy)
     }

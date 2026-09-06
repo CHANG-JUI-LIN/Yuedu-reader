@@ -29,8 +29,7 @@ struct LayoutMetrics {
 /// resolves `<img>` sources (tests use local files; no network).
 final class BrowserLayoutDocument {
 
-    private let html: String
-    private let cssTexts: [String]
+    private let input: CSSFrontendInput
     private let config: BrowserLayoutConfig
     private let imageLoader: (String) -> UIImage?
     private let frontend: CSSFrontend
@@ -44,15 +43,24 @@ final class BrowserLayoutDocument {
     /// Metrics of the last `renderPages` run.
     private(set) var lastMetrics = LayoutMetrics()
 
-    init(
+    convenience init(
         html: String,
         cssTexts: [String],
         config: BrowserLayoutConfig,
         imageLoader: ((String) -> UIImage?)? = nil,
         frontend: CSSFrontend = LegacyCSSFrontend()
     ) {
-        self.html = html
-        self.cssTexts = cssTexts
+        self.init(input: .currentCompatibility(html: html, cssTexts: cssTexts),
+                  config: config, imageLoader: imageLoader, frontend: frontend)
+    }
+
+    init(
+        input: CSSFrontendInput,
+        config: BrowserLayoutConfig,
+        imageLoader: ((String) -> UIImage?)? = nil,
+        frontend: CSSFrontend = LegacyCSSFrontend()
+    ) {
+        self.input = input
         self.config = config
         self.imageLoader = imageLoader ?? { _ in nil }
         self.frontend = frontend
@@ -97,8 +105,7 @@ final class BrowserLayoutDocument {
         fragmentHeight: CGFloat? = nil
     ) throws -> BrowserLayoutPipelineResult {
         let frontendResult = try frontend.buildStyleTree(
-            html: html,
-            cssTexts: cssTexts,
+            input: input,
             config: config,
             metrics: &metrics
         )

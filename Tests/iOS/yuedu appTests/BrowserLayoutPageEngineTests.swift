@@ -27,9 +27,9 @@ final class MockBrowserLayoutResource: BrowserLayoutResourceProviding {
         if failChapterHTML.contains(index) { throw MockError.failed }
         return chapters[safe: index]?.html ?? ""
     }
-    func processedCSS(forChapter index: Int) async -> [String] {
-        if failChapterCSS.contains(index) { return [] }
-        return chapters[safe: index]?.css ?? []
+    func cssFrontendInput(forChapter index: Int, html: String) async -> CSSFrontendInput {
+        let css = failChapterCSS.contains(index) ? [] : (chapters[safe: index]?.css ?? [])
+        return .currentCompatibility(html: html, cssTexts: css)
     }
     func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
     func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }

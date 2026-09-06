@@ -14,8 +14,7 @@ import UIKit
 @MainActor
 final class BrowserLayoutSession {
 
-    private let html: String
-    private let cssTexts: [String]
+    private let input: CSSFrontendInput
     private let config: BrowserLayoutConfig
     private let imageLoader: (String) -> UIImage?
     /// Incremented by the CALLER to invalidate in-flight work.
@@ -38,15 +37,24 @@ final class BrowserLayoutSession {
     /// nodeID → owning `<a href>` for this chapter (Phase 3A link interaction).
     private(set) var pipelineLinkAnchors: [Int: LinkAnchorInfo] = [:]
 
-    init(
+    convenience init(
         html: String,
         cssTexts: [String],
         config: BrowserLayoutConfig,
         imageLoader: @escaping (String) -> UIImage?,
         generation: Int
     ) {
-        self.html = html
-        self.cssTexts = cssTexts
+        self.init(input: .currentCompatibility(html: html, cssTexts: cssTexts),
+                  config: config, imageLoader: imageLoader, generation: generation)
+    }
+
+    init(
+        input: CSSFrontendInput,
+        config: BrowserLayoutConfig,
+        imageLoader: @escaping (String) -> UIImage?,
+        generation: Int
+    ) {
+        self.input = input
         self.config = config
         self.imageLoader = imageLoader
         self.generation = generation
@@ -297,7 +305,7 @@ final class BrowserLayoutSession {
     private func ensureInitialized() throws {
         guard walker == nil, pipeline == nil else { return }
         let document = BrowserLayoutDocument(
-            html: html, cssTexts: cssTexts, config: config, imageLoader: imageLoader
+            input: input, config: config, imageLoader: imageLoader
         )
         // The page canvas IS the full viewport (render area + content insets).
         let canvasSize = CGSize(
@@ -305,7 +313,7 @@ final class BrowserLayoutSession {
             height: config.renderHeight + config.contentInsets.top + config.contentInsets.bottom
         )
         #if DEBUG
-        BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE sessionEnsure start spine=\(diagnosticSpine) htmlLen=\(html.count) cssCount=\(cssTexts.count)")
+        BrowserLayoutDeviceDiagnostic.summary("🔬 BROWSER_DEVICE sessionEnsure start spine=\(diagnosticSpine) htmlLen=\(input.html.count) cssCount=\(input.stylesheets.count)")
         #endif
         let result = try document.makeLayout(
             containerSize: canvasSize,

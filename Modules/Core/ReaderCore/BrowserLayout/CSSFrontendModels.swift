@@ -6,10 +6,19 @@ import Foundation
 struct CSSFrontendInput {
     let html: String
     let stylesheets: [AuthorStylesheet]
+    let diagnostics: [CSSFrontendDiagnostic]
 
-    init(html: String, stylesheets: [AuthorStylesheet]) {
+    init(html: String, stylesheets: [AuthorStylesheet], diagnostics: [CSSFrontendDiagnostic] = []) {
         self.html = html
         self.stylesheets = stylesheets
+        self.diagnostics = diagnostics
+    }
+
+    /// Lexbor consumes each active authored sheet exactly once, in DOM order.
+    /// Unsupported media remains in `stylesheets` and diagnostics for the gate.
+    var activeAuthorStylesheets: [AuthorStylesheet] {
+        stylesheets.filter { !$0.currentCompatibilityOnly && !$0.isAlternate && $0.hasSupportedMedia }
+            .sorted { $0.sourceOrder < $1.sourceOrder }
     }
 
     /// Compatibility boundary for existing callers that still provide an
@@ -44,6 +53,11 @@ struct AuthorStylesheet: Equatable {
     let currentCompatibilityOnly: Bool
     let media: String?
     let isAlternate: Bool
+
+    var hasSupportedMedia: Bool {
+        let value = (media ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return value.isEmpty || value == "all"
+    }
 }
 
 struct StylesheetIdentity: Hashable, Codable {

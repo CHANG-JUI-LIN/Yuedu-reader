@@ -129,7 +129,7 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
         }
     }
 
-    func cancelPendingWork() {}
+    func cancelPendingWork(cause: LayoutInvalidationCause = .unspecified) {}
 
     func notifyChapterDataChanged(at spineIndex: Int) async {
         pageVCs[spineIndex] = nil

@@ -718,10 +718,48 @@ class BookSourceStore: ObservableObject {
 
     // MARK: Persistence
 
+    /// Serialises persistence so writes land in the order they were requested, and so a
+    /// burst of `save()` calls cannot overlap on the file.
+    private static let persistQueue = DispatchQueue(
+        label: "com.yuedu.bookSourceStore.persist", qos: .utility
+    )
+
+    /// Encodes and writes off the calling thread.
+    ///
+    /// This used to encode and write inline. `save()` is reached from
+    /// `replaceSourcesFromSync`, which iCloud sync calls inside `await MainActor.run`, so a
+    /// full-library sync did a ~3 MB `JSONEncoder` pass and a synchronous file write **on the
+    /// main thread** — with five more main-actor applies queued behind it in the same sync.
+    /// A device came back with `0x8BADF00D`: the scene-update watchdog killing the app for
+    /// exhausting its 10-second wall-clock budget.
+    ///
+    /// Only the in-memory assignment has to be on the main actor (`sources` is `@Published`);
+    /// the encode and the write do not. The snapshot is taken on the caller's thread so the
+    /// background write can never observe a half-updated array.
+    ///
+    /// `flushPendingWrites()` exists because of what this trade costs: the write is no longer
+    /// guaranteed to have landed when the caller returns.
     private func save() {
-        if let data = try? JSONEncoder().encode(sources) {
-            try? data.write(to: fileURL)
+        let snapshot = sources
+        let url = fileURL
+        Self.persistQueue.async {
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            do {
+                try data.write(to: url, options: .atomic)
+            } catch {
+                AppLogger.cache("BookSourceStore could not write book_sources.json", error: error)
+            }
         }
+    }
+
+    /// Blocks until every queued write has landed.
+    ///
+    /// Call before the app can be suspended or killed. Persistence became asynchronous to keep
+    /// it off the main thread, which means a save issued moments before the app goes away is
+    /// still in flight — and book sources are user data, not a cache that can be refetched.
+    /// Normally a no-op: the queue is empty and this returns immediately.
+    func flushPendingWrites() {
+        Self.persistQueue.sync {}
     }
 
     private func load() {
