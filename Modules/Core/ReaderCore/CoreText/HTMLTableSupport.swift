@@ -504,9 +504,15 @@ enum HTMLTableRasterizer {
         ) -> UIFont {
             let size = max(9, baseFont.pointSize * scale)
             let effectiveWeight = isHeader && families.isEmpty ? max(weight, 600) : weight
-            var font = (!families.isEmpty
-                ? resolvedFont?(families, effectiveWeight, italic, size)
-                : nil) ?? baseFont.withSize(size)
+            // Re-attach the fallback cascade at the cell's own size: the cascade entries
+            // carry a concrete point size, so resizing the body font would otherwise leave
+            // CJK fallback glyphs drawn at the body size inside a `0.8em` cell.
+            var font = ReaderFontCascade.preservingPrimary(
+                (!families.isEmpty
+                    ? resolvedFont?(families, effectiveWeight, italic, size)
+                    : nil) ?? baseFont.withSize(size),
+                size: size
+            )
             var requestedTraits = font.fontDescriptor.symbolicTraits
             if effectiveWeight >= 600 { requestedTraits.insert(.traitBold) }
             if italic { requestedTraits.insert(.traitItalic) }

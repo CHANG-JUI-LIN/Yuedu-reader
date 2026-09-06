@@ -246,7 +246,7 @@ final class EPUBStyleResolver {
             if let styledDescriptor = traitApplied {
                 descriptor = styledDescriptor
             }
-            descriptor = descriptor.addingAttributes([.cascadeList: fontCascadeDescriptors()])
+            descriptor = descriptor.addingAttributes([.cascadeList: fontCascadeDescriptors(size: size)])
             let result = UIFont(descriptor: descriptor, size: size)
             let finalTraits = result.fontDescriptor.symbolicTraits
             // Did the bold/italic request actually land on a face? `withSymbolicTraits` returns nil when
@@ -569,8 +569,8 @@ final class EPUBStyleResolver {
         return result
     }
 
-    private func fontCascadeDescriptors() -> [UIFontDescriptor] {
-        ReaderFontCascade.descriptors()
+    private func fontCascadeDescriptors(size: CGFloat) -> [UIFontDescriptor] {
+        ReaderFontCascade.descriptors(size: size)
     }
 
     private func addFontFallbacks(to font: UIFont, size: CGFloat) -> UIFont {

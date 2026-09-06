@@ -429,8 +429,15 @@ enum RegexHighlightEngine {
         style: ReaderStyleTextStyle
     ) -> UIFont {
         let size = max(CGFloat(style.fontSize ?? Double(publisherFont.pointSize)), 0.01)
-        var font = style.fontPostScriptName.flatMap { UIFont(name: $0, size: size) }
-            ?? publisherFont.withSize(size)
+        // Cascade entries carry a concrete point size, so a rule with its own 字級 must
+        // re-attach them — otherwise CJK fallback glyphs keep the body size. Done before
+        // the italic pass, whose synthesized shear lives in the font matrix and would not
+        // survive being rebuilt from a descriptor.
+        var font = ReaderFontCascade.preservingPrimary(
+            style.fontPostScriptName.flatMap { UIFont(name: $0, size: size) }
+                ?? publisherFont.withSize(size),
+            size: size
+        )
 
         // Weight and italic are resolved in two passes, weight first. Asking CoreText for both at
         // once makes it match the pair or nothing: a CJK family has no italic face anywhere, so the

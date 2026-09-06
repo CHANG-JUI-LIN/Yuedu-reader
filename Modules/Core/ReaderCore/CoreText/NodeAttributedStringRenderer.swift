@@ -1108,7 +1108,7 @@ struct NodeAttributedStringRenderer {
             guard !trimmed.isEmpty else { continue }
             if let font = UIFont(name: trimmed, size: size) {
                 let withTraits = applyTraits(to: font, bold: bold, italic: italic, size: size)
-                let descriptor = withTraits.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes())
+                let descriptor = withTraits.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes(size: size))
                 return addFontFallbacks(to: UIFont(descriptor: descriptor, size: size), size: size)
             }
         }
@@ -1118,15 +1118,15 @@ struct NodeAttributedStringRenderer {
             var traits = system.fontDescriptor.symbolicTraits
             traits.insert(.traitItalic)
             if let descriptor = system.fontDescriptor.withSymbolicTraits(traits) {
-                return UIFont(descriptor: descriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+                return UIFont(descriptor: descriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes(size: size)), size: size)
             }
-            return UIFont(descriptor: system.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+            return UIFont(descriptor: system.fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes(size: size)), size: size)
         } else if bold {
-            return UIFont(descriptor: UIFont.systemFont(ofSize: size, weight: .bold).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+            return UIFont(descriptor: UIFont.systemFont(ofSize: size, weight: .bold).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes(size: size)), size: size)
         } else if italic {
-            return UIFont(descriptor: UIFont.italicSystemFont(ofSize: size).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+            return UIFont(descriptor: UIFont.italicSystemFont(ofSize: size).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes(size: size)), size: size)
         } else {
-            return UIFont(descriptor: UIFont.systemFont(ofSize: size).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+            return UIFont(descriptor: UIFont.systemFont(ofSize: size).fontDescriptor.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes(size: size)), size: size)
         }
     }
 
@@ -1149,11 +1149,11 @@ struct NodeAttributedStringRenderer {
             let obliqued = HTMLAttributedStringBuilder.synthesizedObliqueFont(from: UIFont(descriptor: desc, size: size))
             desc = obliqued.fontDescriptor
         }
-        return UIFont(descriptor: desc.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes()), size: size)
+        return UIFont(descriptor: desc.addingAttributes(NodeAttributedStringRenderer.cascadeAttributes(size: size)), size: size)
     }
 
-    private static func cascadeAttributes() -> [UIFontDescriptor.AttributeName: Any] {
-        ReaderFontCascade.attributes()
+    private static func cascadeAttributes(size: CGFloat) -> [UIFontDescriptor.AttributeName: Any] {
+        ReaderFontCascade.attributes(size: size)
     }
 
     private func addFontFallbacks(to font: UIFont, size: CGFloat) -> UIFont {
