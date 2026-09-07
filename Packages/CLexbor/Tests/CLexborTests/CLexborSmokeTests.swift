@@ -61,6 +61,68 @@ struct CLexborSmokeTests {
             #expect(ylx_debug_live_document_count() == 0)
         }
     }
+
+    @Test func walksValueSnapshotsAndAttachesStylesheets() {
+        let html = "<html><body><p class='lead' style='color: red'>Hello <em>world</em></p></body></html>"
+        var status = YLX_STATUS_OK
+        var elementNames: [String] = []
+        var textValues: [String] = []
+        var declarationProperties: [String] = []
+        let document = withDocumentBytes(html) { bytes in
+            ylx_document_create(bytes.baseAddress, bytes.count, &status)
+        }
+        #expect(document != nil)
+        let css = "p.lead { color: blue; width: 15%; }"
+        let cssStatus = withDocumentBytes(css) { bytes in
+            ylx_document_attach_stylesheet(document, bytes.baseAddress, bytes.count, 0)
+        }
+        #expect(cssStatus == YLX_STATUS_OK)
+        let context = SnapshotContext()
+        let walkStatus = ylx_document_walk(document, snapshotElement, snapshotAttribute, snapshotText, Unmanaged.passUnretained(context).toOpaque())
+        #expect(walkStatus == YLX_STATUS_OK)
+        let declarationStatus = ylx_document_walk_winning_declarations(document, snapshotDeclaration, Unmanaged.passUnretained(context).toOpaque())
+        #expect(declarationStatus == YLX_STATUS_OK)
+        elementNames = context.elements.pointee
+        textValues = context.texts.pointee
+        declarationProperties = context.declarations.pointee
+        #expect(elementNames.contains("P"))
+        #expect(textValues.contains("Hello "))
+        #expect(textValues.contains("world"))
+        #expect(declarationProperties.contains("color"))
+        #expect(declarationProperties.contains("width"))
+        ylx_document_destroy(document)
+    }
+}
+
+private final class SnapshotContext {
+    var elements: UnsafeMutablePointer<[String]>
+    var texts: UnsafeMutablePointer<[String]>
+    var declarations: UnsafeMutablePointer<[String]>
+    init() {
+        self.elements = .allocate(capacity: 1); self.elements.initialize(to: [])
+        self.texts = .allocate(capacity: 1); self.texts.initialize(to: [])
+        self.declarations = .allocate(capacity: 1); self.declarations.initialize(to: [])
+    }
+    deinit { elements.deinitialize(count: 1); elements.deallocate(); texts.deinitialize(count: 1); texts.deallocate(); declarations.deinitialize(count: 1); declarations.deallocate() }
+}
+
+private func snapshotString(_ bytes: YLXBytes) -> String {
+    guard let base = bytes.bytes else { return "" }
+    return String(decoding: UnsafeBufferPointer(start: base, count: bytes.length), as: UTF8.self)
+}
+private func snapshotElement(_ snapshot: UnsafePointer<YLXElementSnapshot>?, _ context: UnsafeMutableRawPointer?) -> Int32 {
+    guard let snapshot, let context else { return 0 }
+    let box = Unmanaged<SnapshotContext>.fromOpaque(context).takeUnretainedValue()
+    box.elements.pointee.append(snapshotString(snapshot.pointee.tag_name)); return 1
+}
+private func snapshotAttribute(_ nodeID: UInt64, _ name: YLXBytes, _ value: YLXBytes, _ context: UnsafeMutableRawPointer?) -> Int32 { 1 }
+private func snapshotText(_ nodeID: UInt64, _ text: YLXBytes, _ context: UnsafeMutableRawPointer?) -> Int32 {
+    guard let context else { return 0 }
+    Unmanaged<SnapshotContext>.fromOpaque(context).takeUnretainedValue().texts.pointee.append(snapshotString(text)); return 1
+}
+private func snapshotDeclaration(_ nodeID: UInt64, _ declaration: UnsafePointer<YLXWinningDeclaration>?, _ context: UnsafeMutableRawPointer?) -> Int32 {
+    guard let declaration, let context else { return 0 }
+    Unmanaged<SnapshotContext>.fromOpaque(context).takeUnretainedValue().declarations.pointee.append(snapshotString(declaration.pointee.property)); return 1
 }
 
 private func withDocumentBytes<T>(
