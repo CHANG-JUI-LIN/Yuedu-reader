@@ -3,6 +3,25 @@ import Foundation
 struct TTSPronunciationHint: Equatable {
     let range: NSRange
     let ipa: String
+    /// Orthographic ruby reading (kana, bopomofo, etc.), never mislabeled as IPA.
+    let reading: String?
+
+    init(range: NSRange, ipa: String) {
+        self.range = range
+        self.ipa = ipa
+        self.reading = nil
+    }
+
+    init(range: NSRange, reading: String) {
+        self.range = range
+        self.ipa = ""
+        self.reading = reading
+    }
+
+    func rebased(to range: NSRange) -> Self {
+        if let reading { return Self(range: range, reading: reading) }
+        return Self(range: range, ipa: ipa)
+    }
 }
 
 struct TTSNarrationUnit {
@@ -21,6 +40,30 @@ struct TTSChunkRange: Equatable {
 }
 
 enum TTSPronunciationProjector {
+    /// Keep an orthographic ruby base in one chunk, even when the ordinary
+    /// length/punctuation boundary lands inside it.
+    static func chunks(_ text: String, targetLength: Int, hints: [TTSPronunciationHint]) -> [TTSChunkRange] {
+        let initial = TTSTextChunker.splitWithRanges(text, targetChunkLength: targetLength)
+        var result: [TTSChunkRange] = []
+        let source = text as NSString
+        for chunk in initial {
+            var range = chunk.sourceRange
+            for hint in hints where hint.reading != nil && hint.range.location >= 0
+                && NSMaxRange(hint.range) <= source.length
+                && NSIntersectionRange(hint.range, chunk.sourceRange).length > 0 {
+                range = NSUnionRange(range, hint.range)
+            }
+            if let previous = result.last, range.location < NSMaxRange(previous.sourceRange) {
+                result.removeLast()
+                range = NSUnionRange(previous.sourceRange, range)
+                result.append(TTSChunkRange(text: source.substring(with: range), sourceRange: range))
+            } else if range != chunk.sourceRange {
+                result.append(TTSChunkRange(text: source.substring(with: range), sourceRange: range))
+            } else { result.append(chunk) }
+        }
+        return result
+    }
+
     static func project(
         _ hints: [TTSPronunciationHint],
         into chunkSourceRange: NSRange
@@ -28,18 +71,30 @@ enum TTSPronunciationProjector {
         hints.compactMap { hint in
             let intersection = NSIntersectionRange(hint.range, chunkSourceRange)
             guard intersection.length > 0 else { return nil }
-            return TTSPronunciationHint(
-                range: NSRange(
-                    location: intersection.location - chunkSourceRange.location,
-                    length: intersection.length
-                ),
-                ipa: hint.ipa
-            )
+            // An orthographic reading owns its complete base. A split must not
+            // pronounce the complete ruby twice across neighbouring chunks.
+            if hint.reading != nil, intersection != hint.range { return nil }
+            return hint.rebased(to: NSRange(
+                location: intersection.location - chunkSourceRange.location,
+                length: intersection.length
+            ))
         }
     }
 }
 
 enum TTSPronunciationAnnotator {
+    static func hints(
+        in text: String,
+        authoredHints: [TTSPronunciationHint],
+        lexicons: [PLSLexicon],
+        bookLanguage: String?
+    ) -> [TTSPronunciationHint] {
+        let lexiconHints = hints(in: NSAttributedString(string: text), lexicons: lexicons, bookLanguage: bookLanguage)
+        return (authoredHints + lexiconHints.filter { candidate in
+            !authoredHints.contains { NSIntersectionRange($0.range, candidate.range).length > 0 }
+        }).sorted { $0.range.location < $1.range.location }
+    }
+
     static func hints(
         in attributedString: NSAttributedString,
         lexicons: [PLSLexicon],
@@ -97,5 +152,50 @@ private extension PLSLexicon {
         return language == lexiconLanguage
             || language.hasPrefix("\(lexiconLanguage)-")
             || lexiconLanguage.hasPrefix("\(language)-")
+    }
+}
+
+/// Speech-only ruby substitution. Source text remains untouched for highlighting,
+/// seek and persisted reading positions; synthesizer offsets map back to UTF-16.
+struct TTSPronunciationSpeechText {
+    let text: String
+    let ipaHints: [TTSPronunciationHint]
+    private let sourceOffsets: [Int]
+
+    init(text: String, hints: [TTSPronunciationHint]) {
+        let source = text as NSString
+        var output = ""
+        var offsets: [Int] = []
+        var cursor = 0
+        var replacements: [(source: NSRange, speech: NSRange)] = []
+        for hint in hints.sorted(by: { $0.range.location < $1.range.location }) {
+            guard let reading = hint.reading, !reading.isEmpty,
+                  hint.range.location >= cursor, hint.range.length > 0,
+                  NSMaxRange(hint.range) <= source.length else { continue }
+            output += source.substring(with: NSRange(location: cursor, length: hint.range.location - cursor))
+            offsets.append(contentsOf: cursor..<hint.range.location)
+            let start = (output as NSString).length
+            output += reading
+            offsets.append(contentsOf: repeatElement(hint.range.location, count: (reading as NSString).length))
+            replacements.append((hint.range, NSRange(location: start, length: (reading as NSString).length)))
+            cursor = NSMaxRange(hint.range)
+        }
+        output += source.substring(from: cursor)
+        offsets.append(contentsOf: cursor..<source.length)
+        offsets.append(source.length)
+        self.text = output
+        self.sourceOffsets = offsets
+        self.ipaHints = hints.compactMap { hint in
+            guard hint.reading == nil, hint.range.length > 0,
+                  hint.range.location >= 0, NSMaxRange(hint.range) <= source.length,
+                  !replacements.contains(where: { NSIntersectionRange($0.source, hint.range).length > 0 }) else { return nil }
+            let delta = replacements.filter { NSMaxRange($0.source) <= hint.range.location }
+                .reduce(0) { $0 + $1.speech.length - $1.source.length }
+            return hint.rebased(to: NSRange(location: hint.range.location + delta, length: hint.range.length))
+        }
+    }
+
+    func sourceOffset(forSpeechOffset offset: Int) -> Int {
+        sourceOffsets[min(max(0, offset), sourceOffsets.count - 1)]
     }
 }

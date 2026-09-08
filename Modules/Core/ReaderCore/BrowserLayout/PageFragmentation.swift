@@ -87,6 +87,12 @@ struct FillFragment {
     /// Walker-private identity used to replace a provisional fragment once the
     /// box end is known. It never participates in layout, paint, or hit-test.
     let decorationID: Int
+    /// True for the injected page-canvas fill that carries the document's own
+    /// `background-color`. Paired with the `isBackgroundPaint` image fragment:
+    /// together they ARE the authored page surface, which a reader-chosen
+    /// background image replaces outright (`CoreTextPageView` resolves the same
+    /// precedence as `readerBackgroundImage ?? pageBackgroundImage`).
+    let isBackgroundPaint: Bool
 
     init(
         rect: PageLocalRect,
@@ -100,7 +106,8 @@ struct FillFragment {
         nodeID: Int,
         writingMode: ReaderWritingMode,
         fragmentPosition: BlockDecorationFragmentPosition = .single,
-        decorationID: Int = -1
+        decorationID: Int = -1,
+        isBackgroundPaint: Bool = false
     ) {
         self.rect = rect
         self.documentRect = documentRect
@@ -114,6 +121,7 @@ struct FillFragment {
         self.writingMode = writingMode
         self.fragmentPosition = fragmentPosition
         self.decorationID = decorationID
+        self.isBackgroundPaint = isBackgroundPaint
     }
 }
 

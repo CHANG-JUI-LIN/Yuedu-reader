@@ -212,6 +212,7 @@ struct UserDetailView: View {
                     Text(localized("連結登入方式"))
                 } footer: {
                     Text(localized("連結後可用任一方式登入同一個帳號，並且至少要保留一種。"))
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
 
@@ -268,14 +269,15 @@ struct UserDetailView: View {
                     } message: {
                         Text(localized("刪除帳號將登出此裝置，並永久刪除已同步的書庫、書源、替換規則、RSS 與頭像資料。此操作無法復原。"))
                     }
-
-                    if let deleteAccountErrorMessage {
-                        Text(deleteAccountErrorMessage)
-                            .font(DSFont.footnote)
-                            .foregroundColor(.red)
-                    }
                 } footer: {
-                    Text(localized("刪除帳號會移除您的登入資訊並清除已上傳的同步資料，且無法復原。儲存在本機的內容檔不會被刪除。"))
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                        Text(localized("刪除帳號會移除您的登入資訊並清除已上傳的同步資料，且無法復原。儲存在本機的內容檔不會被刪除。"))
+                            .dsSectionFooter()
+                        if let deleteAccountErrorMessage {
+                            Text(deleteAccountErrorMessage)
+                                .dsSectionFooter(color: DSColor.destructive)
+                        }
+                    }
                 }
                 .interfaceSectionSurface()
             }

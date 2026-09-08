@@ -19,6 +19,9 @@ struct DiagnosticsView: View {
     @State private var categoryFilter: DiagnosticCategory?
     @State private var showClearConfirmation = false
     @State private var showCopiedAlert = false
+    /// Set by the 匯出目前篩選 menu row before iOS 18, where a `Menu` cannot own a
+    /// share sheet. See `MenuShareHandoff`.
+    @State private var pendingShare: PendingShareExport<DiagnosticReportBundle>?
     /// Fixed once per visit. `filename()` stamps the current time, so recomputing it
     /// inside `body` would hand SwiftUI a different value on every render and make
     /// the export control point at a different filename after state updates.
@@ -71,12 +74,27 @@ struct DiagnosticsView: View {
         return model.entries.filter { DiagnosticLog.shared.isUnreported($0) }.count
     }
 
+    /// The whole session. What 匯出並回報 sends, and what silences the banner.
     private var exportBundle: DiagnosticReportBundle {
         DiagnosticReportBundle(
             filename: exportFilename,
             entries: model.entries,
             session: model.session,
             uncleanSessions: model.uncleanSessions
+        )
+    }
+
+    /// Only what the filters above are showing, for sharing one slice of a session.
+    ///
+    /// `acknowledgesReport: false` — a subset must not silence the banner. See the
+    /// property's own note in `DiagnosticReportBundle`.
+    private var filteredExportBundle: DiagnosticReportBundle {
+        DiagnosticReportBundle(
+            filename: exportFilename,
+            entries: filteredEntries,
+            session: model.session,
+            uncleanSessions: model.uncleanSessions,
+            acknowledgesReport: false
         )
     }
 
@@ -101,6 +119,9 @@ struct DiagnosticsView: View {
                     reportableCount > 0 ? localized("匯出並回報") : localized("匯出紀錄")
                 )
                 .accessibilityIdentifier("diagnostics_export_button")
+            } footer: {
+                Text(localized("匯出的檔案包含這次啟動的完整紀錄，不受下方篩選影響。只想分享其中一段時，用右上角的「匯出目前篩選」。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -113,6 +134,7 @@ struct DiagnosticsView: View {
                     Text(localized("上次未正常結束"))
                 } footer: {
                     Text(localized("App 在使用中結束，而不是被系統回收。詳細的崩潰內容會在下次啟動後由系統送達，出現在下方紀錄裡。"))
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
             }
@@ -134,6 +156,7 @@ struct DiagnosticsView: View {
                 Text(localized("篩選"))
             } footer: {
                 Text(localized("詳細追蹤會記下每一次翻頁與解析步驟，適合在重現問題前打開。關閉時仍會記錄錯誤與異常。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -174,6 +197,18 @@ struct DiagnosticsView: View {
                     } label: {
                         Label(localized("複製全部"), systemImage: "doc.on.doc")
                     }
+                    MenuShareRow(
+                        label: localized("匯出目前篩選"),
+                        systemImage: "line.3.horizontal.decrease.circle",
+                        makeExport: {
+                            PendingShareExport(
+                                title: localized("匯出目前篩選"),
+                                name: exportFilename,
+                                item: filteredExportBundle
+                            )
+                        },
+                        onHandoff: { pendingShare = $0 }
+                    )
                     Button {
                         model.reload()
                     } label: {
@@ -216,6 +251,7 @@ struct DiagnosticsView: View {
         } message: {
             Text(localized("清除後無法復原。如果要回報問題，請先匯出。"))
         }
+        .sheet(item: $pendingShare) { ShareExportSheet(export: $0) }
         .alert(localized("已複製"), isPresented: $showCopiedAlert) {
             Button(localized("好"), role: .cancel) {}
         } message: {

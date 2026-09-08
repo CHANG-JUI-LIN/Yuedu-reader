@@ -17,7 +17,47 @@ public enum ReaderManualRefreshAction: Equatable {
     case fetchMissingContent
 }
 
+/// A load-state publication announces availability; it does not replace the bytes
+/// already being consumed by a renderer. Explicit refetches and edits replace them.
+enum ReaderChapterContentUpdate {
+    case available
+    case replaced
+
+    /// Returns whether the visible page needs to be placed after supply. An already
+    /// installed chapter must keep its current page and document revision.
+    @MainActor
+    func supply(to engine: any PageRenderingProvider, chapterIndex: Int) async -> Bool {
+        let start = SourcePerfTrace.now
+        switch self {
+        case .available:
+            let outcome = await engine.notifyChapterDataAvailable(at: chapterIndex)
+            SourcePerfTrace.record(
+                "reader.chapter.available", "spine=\(chapterIndex) outcome=\(outcome.rawValue)",
+                since: start, thresholdMs: 0
+            )
+            return outcome != .alreadyLaidOut
+        case .replaced:
+            await engine.notifyChapterDataChanged(at: chapterIndex)
+            SourcePerfTrace.record(
+                "reader.chapter.replaced", "spine=\(chapterIndex)",
+                since: start, thresholdMs: 0
+            )
+            return true
+        }
+    }
+}
+
 public enum ReaderChapterPresentation {
+    /// Only the chapter being read may advance the network prefetch window.
+    /// A volume header or an offscreen prefetch completing must not recursively
+    /// queue its neighbors ahead of the reader's current chapter on the source session.
+    static func adjacentPrefetchCenter(
+        readyChapterIndex: Int,
+        currentChapterIndex: Int
+    ) -> Int? {
+        readyChapterIndex == currentChapterIndex ? currentChapterIndex : nil
+    }
+
     public static func manualRefreshAction(
         isContentAvailable: Bool
     ) -> ReaderManualRefreshAction {

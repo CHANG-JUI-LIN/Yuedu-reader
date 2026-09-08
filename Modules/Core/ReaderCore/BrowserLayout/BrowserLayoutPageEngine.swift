@@ -120,6 +120,8 @@ struct BrowserChapterLayout {
     /// nodeID → owning `<a href>` (Phase 3A). Joined with page geometry to build
     /// `LinkInteractionRegionSet`; never consulted by layout.
     let linkAnchors: [Int: LinkAnchorInfo]
+    let mediaAttachments: [Int: EPUBMediaAttachment]
+    let pronunciationHints: [TTSPronunciationHint]
     /// Page-local source ranges (into `sourceText`), rebuilt whenever `pages`
     /// changes (incremental completion grows them).
     ///
@@ -144,12 +146,16 @@ struct BrowserChapterLayout {
 
     init(spineIndex: Int, pages: [PageFragments], sourceText: String, anchorOffsets: [String: Int],
          linkAnchors: [Int: LinkAnchorInfo] = [:],
+         mediaAttachments: [Int: EPUBMediaAttachment] = [:],
+         pronunciationHints: [TTSPronunciationHint] = [],
          fontSize: CGFloat, themeTextColor: UIColor, themeBackgroundColor: UIColor) {
         self.spineIndex = spineIndex
         self.pages = pages
         self.sourceText = sourceText
         self.anchorOffsets = anchorOffsets
         self.linkAnchors = linkAnchors
+        self.mediaAttachments = mediaAttachments
+        self.pronunciationHints = pronunciationHints
         // `didSet` does not run during init.
         self.pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText)
         self.fontSize = fontSize
@@ -231,7 +237,8 @@ struct BrowserChapterLayout {
                         borderTop: f.borderTop, borderBottom: f.borderBottom,
                         borderLeft: f.borderLeft, borderRight: f.borderRight,
                         nodeID: f.nodeID, writingMode: f.writingMode,
-                        fragmentPosition: f.fragmentPosition
+                        fragmentPosition: f.fragmentPosition,
+                        isBackgroundPaint: f.isBackgroundPaint
                     )))
                 case .image(let i):
                     items.append(.image(DisplayImageItem(
@@ -373,6 +380,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private let resource: any BrowserLayoutResourceProviding
     private let delegate: CoreTextPageEngine
     private var settings: ReaderRenderSettings
+    private var regexHighlightNeedsRelayout = false
     private var themeTextColor: UIColor
     private var themeBackgroundColor: UIColor
     private var cachedReaderBackgroundImageURL: URL?
@@ -429,6 +437,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// Stored for future annotation/selection integration (data structures must
     /// not block later work).
     private var textAnnotations: [CoreTextTextAnnotation] = []
+    private let annotationPages = NSHashTable<BrowserLayoutPageView>.weakObjects()
     private var engineStatus: [Int: String] = [:]
     /// Bounded page-artifact window cache: ±2 pages around the current page keep
     /// their paint artifacts; farther pages rebuild on demand (DisplayLists
@@ -520,14 +529,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         // a terminal chapter must not trigger another ensure.
         if let state = chapterLayoutStates[spineIndex], state.isTerminal {
             BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) preloadSkip spine=\(spineIndex) state=\(state.label)")
-            return layouts[spineIndex] != nil ? .alreadyLaidOut : .contentUnavailable
+            return isLaidOut(spineIndex) ? .alreadyLaidOut : .contentUnavailable
         }
         if let existing = preloadTasks[spineIndex] {
             // In-flight dedupe for (generation, spine): await the existing
             // task instead of starting a parallel layout session.
             BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) preloadDedupe spine=\(spineIndex) awaitingInFlight")
             await existing.value
-            return layouts[spineIndex] != nil ? .laidOut : .contentUnavailable
+            return isLaidOut(spineIndex) ? .laidOut : .contentUnavailable
         }
         let task = Task { [weak self] in
             guard let self else { return }
@@ -536,7 +545,17 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         preloadTasks[spineIndex] = task
         await task.value
-        return layouts[spineIndex] != nil ? .laidOut : .contentUnavailable
+        return isLaidOut(spineIndex) ? .laidOut : .contentUnavailable
+    }
+
+    /// Whether this chapter has a layout on WHICHEVER engine owns it.
+    ///
+    /// `layouts[spine] != nil` answers only for the delegate, so a
+    /// browser-rendered chapter reported `.contentUnavailable` no matter how
+    /// well it had laid out — and every caller that branches on
+    /// `ChapterLayoutOutcome.isReady` acted on that.
+    private func isLaidOut(_ spineIndex: Int) -> Bool {
+        chapterPagination(forSpine: spineIndex, charOffset: 0) != nil
     }
 
     private func preloadChapterInternal(_ spineIndex: Int) async {
@@ -642,6 +661,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
             let fontPolicy = Self.fontScalePolicy(for: html)
             let config = makeBrowserConfig(fontScalePolicy: fontPolicy)
+            if config.regexHighlightConfiguration.isEnabled {
+                await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
+                    configuration: config.regexHighlightConfiguration,
+                    appearance: config.readerStyleAppearance
+                )
+                guard generation == layoutGeneration else { return }
+            }
             // Retry-storm seal: count session creation per (generation, spine).
             // A chapter ensures at most once normally; more than twice on a
             // NON-terminal chapter is the livelock — fault loudly in debug.
@@ -699,6 +725,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 sourceText: session.sourceText,
                 anchorOffsets: session.anchorOffsets,
                 linkAnchors: session.pipelineLinkAnchors,
+                mediaAttachments: session.pipelineMediaAttachments.mapValues {
+                    resource.resolveMediaAttachment(forChapter: spineIndex, media: $0)
+                },
+                pronunciationHints: session.pipelinePronunciationHints,
                 fontSize: settings.fontSize,
                 themeTextColor: self.themeTextColor,
                 themeBackgroundColor: themeBackgroundColor
@@ -772,6 +802,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             backgroundColor: themeBackgroundColor,
             contentInsets: settings.contentInsets,
             lineHeight: settings.lineHeightMultiple,
+            lineSpacing: settings.lineSpacing,
+            paragraphSpacing: settings.paragraphSpacing,
+            letterSpacing: settings.letterSpacing,
+            isBold: settings.isBold,
+            regexHighlightConfiguration: settings.regexHighlightConfiguration,
+            readerStyleAppearance: settings.readerStyleAppearance,
+            readerStyleAssetRevision: settings.readerStyleAssetRevision,
             fontResolver: resource.fontResolver()
         )
     }
@@ -853,12 +890,16 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     func invalidateLayout(newSize: CGSize) async {
+        regexHighlightNeedsRelayout = false
         let restore = readingPosition(forPage: currentPage)
         layoutGeneration += 1
         renderSize = newSize
         // Rebuild browser chapters from scratch (settings may have changed).
         // Background finish tasks observe the bumped generation and drop.
-        let browserSpines = Array(browserChapters.keys)
+        // Every previously routed chapter must regain its choice, including
+        // legacy chapters. Otherwise clearing choices sends those chapters to
+        // the default browser route even though only the delegate has pages.
+        let loadedSpines = Set(choices.keys).union(browserChapters.keys).sorted()
         for layout in browserChapters.values { layout.releaseLifecycleBytes() }
         browserChapters.removeAll()
         browserSessions.removeAll()
@@ -873,7 +914,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         for task in preloadTasks.values { task.cancel() }
         preloadTasks.removeAll()
         await delegate.invalidateLayout(newSize: newSize)
-        for spine in browserSpines {
+        for spine in loadedSpines {
             await preloadChapter(at: spine)
         }
         rebuildOffsets()
@@ -917,6 +958,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     // MARK: - StablePositionResolving
+
+    func updateReadingPosition(_ position: CoreTextReadingPosition) {
+        delegate.updateReadingPosition(position)
+        if let page = pageIndex(for: position) {
+            currentPage = max(0, min(page, max(totalPages - 1, 0)))
+        }
+    }
 
     func pageIndex(forSpine spineIndex: Int, charOffset: Int) -> Int {
         let base = spinePageOffsets.indices.contains(spineIndex) ? spinePageOffsets[spineIndex] : 0
@@ -984,6 +1032,58 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         return base + count - 1
     }
 
+    /// Per-chapter dispatch, like every other query here: a browser chapter
+    /// answers from `browserChapters`, a fallen-back chapter from the delegate.
+    ///
+    /// The protocol default reads `layouts[spineIndex]`, which for this engine
+    /// is the DELEGATE's dictionary — a browser chapter has no entry there, so
+    /// inheriting the default would report every browser-rendered chapter as
+    /// "not laid out". That is exactly what the reader used to see.
+    func chapterPagination(forSpine spineIndex: Int, charOffset: Int) -> ChapterPagination? {
+        switch choices[spineIndex] ?? .browser {
+        case .browser:
+            guard let layout = browserChapters[spineIndex], !layout.pages.isEmpty else { return nil }
+            return ChapterPagination(
+                localPageIndex: layout.pageIndex(forCharOffset: charOffset),
+                // A chapter publishes its first page before the rest are laid
+                // out, so this grows as `finishBrowserChapter` completes — the
+                // same "estimate now, exact later" contract as the legacy
+                // engine's `displayPageCount`.
+                displayPageCount: layout.pages.count
+            )
+        case .legacyFallback, .legacyEngineFailure:
+            return delegate.chapterPagination(forSpine: spineIndex, charOffset: charOffset)
+        }
+    }
+
+    func chapterText(forSpine spineIndex: Int) -> String? {
+        switch choices[spineIndex] ?? .browser {
+        case .browser:
+            guard let layout = browserChapters[spineIndex], !layout.pages.isEmpty else { return nil }
+            return layout.sourceText
+        case .legacyFallback, .legacyEngineFailure:
+            return delegate.chapterText(forSpine: spineIndex)
+        }
+    }
+
+    func chapterPronunciationHints(forSpine spineIndex: Int) -> [TTSPronunciationHint] {
+        switch choices[spineIndex] ?? .browser {
+        case .browser: return browserChapters[spineIndex]?.pronunciationHints ?? []
+        case .legacyFallback, .legacyEngineFailure:
+            return delegate.chapterPronunciationHints(forSpine: spineIndex)
+        }
+    }
+
+    func chapterAnchorOffsets(forSpine spineIndex: Int) -> [String: Int]? {
+        switch choices[spineIndex] ?? .browser {
+        case .browser:
+            guard let layout = browserChapters[spineIndex], !layout.pages.isEmpty else { return nil }
+            return layout.anchorOffsets
+        case .legacyFallback, .legacyEngineFailure:
+            return delegate.chapterAnchorOffsets(forSpine: spineIndex)
+        }
+    }
+
     // MARK: - ProgressResolving
 
     func plainText(forPage page: Int) -> String {
@@ -1002,7 +1102,34 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     func totalProgress(forSpine spineIndex: Int, charOffset: Int) -> Double {
-        delegate.totalProgress(forSpine: spineIndex, charOffset: charOffset)
+        // Prefer the shared content-unit map, which needs the chapter's own
+        // character count — the delegate would look that up in `layouts` and
+        // find nothing for a browser chapter, then silently fall through to
+        // scaling bytes as if they were characters.
+        if let metrics = contentMetrics(
+            forSpine: spineIndex,
+            charOffset: charOffset,
+            currentChapterCharacterCount: nil
+        ), metrics.totalUnitCount > 0 {
+            return min(1.0, Double(metrics.currentUnitOffset) / Double(metrics.totalUnitCount))
+        }
+        return delegate.totalProgress(forSpine: spineIndex, charOffset: charOffset)
+    }
+
+    /// The delegate owns the book-wide unit map; only the CURRENT chapter's
+    /// character count has to come from whichever engine laid that chapter out.
+    func contentMetrics(
+        forSpine spineIndex: Int,
+        charOffset: Int,
+        currentChapterCharacterCount: Int?
+    ) -> ReaderContentMetrics? {
+        let characterCount = currentChapterCharacterCount
+            ?? browserChapters[spineIndex].map { ($0.sourceText as NSString).length }
+        return delegate.contentMetrics(
+            forSpine: spineIndex,
+            charOffset: charOffset,
+            currentChapterCharacterCount: characterCount
+        )
     }
 
     func position(forProgress progress: Double) -> (spineIndex: Int, charOffset: Int) {
@@ -1043,17 +1170,42 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         // substitute the new theme color where a fragment carried the layout's
         // ORIGINAL theme color (layout.themeTextColor stays unchanged, exactly
         // like the legacy engine's color-only relayout).
+        //
+        // Which means the cached display lists are the OLD colours: they are
+        // keyed by global page alone, so without this the ±2 pages around the
+        // reader kept the previous theme's text — switching to night mode left
+        // black text on a dark page until the reader turned far enough for the
+        // window to roll over.
+        evictAllDisplayLists()
         onChapterReady?(nil)
     }
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
+        let regexActive = self.settings.regexHighlightConfiguration.isEnabled
+            || settings.regexHighlightConfiguration.isEnabled
+        if regexActive,
+           self.settings.regexHighlightConfiguration != settings.regexHighlightConfiguration
+            || self.settings.readerStyleAppearance != settings.readerStyleAppearance
+            || self.settings.readerStyleAssetRevision != settings.readerStyleAssetRevision
+            || self.settings.textColor != settings.textColor {
+            regexHighlightNeedsRelayout = true
+        }
         self.settings = settings
         delegate.updateRenderSettings(settings)
+    }
+
+    /// Appearance refresh is awaited by the same reader refresh transaction as
+    /// pagination. Rule decorations and dark variants are baked into CTLines;
+    /// evicting display lists alone cannot replace those immutable attributes.
+    func refreshRegexHighlightAppearanceIfNeeded() async {
+        guard regexHighlightNeedsRelayout else { return }
+        await invalidateLayout(newSize: renderSize)
     }
 
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
         textAnnotations = annotations
         delegate.setTextAnnotations(annotations)
+        for page in annotationPages.allObjects { page.textInteraction?.annotations = annotations }
     }
 
     func renderSnapshot(forPage globalPage: Int) -> UIImage? {
@@ -1062,7 +1214,12 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         case .browser:
             guard let layout = browserChapters[spine] else { return nil }
             let list = layout.displayList(forPage: local, themeTextColor: themeTextColor, oldThemeColor: layout.themeTextColor)
-            return DisplayListRenderer.render(list, size: renderSize, backgroundColor: themeBackgroundColor)
+            return DisplayListRenderer.render(
+                list,
+                size: renderSize,
+                backgroundColor: themeBackgroundColor,
+                readerBackgroundImage: currentReaderBackgroundImage()
+            )
         case .legacyFallback, .legacyEngineFailure:
             return delegate.renderSnapshot(forPage: delegatePageIndex(for: spine, localPage: local))
         }
@@ -1092,12 +1249,20 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             }
             let artifacts = cachedArtifacts(globalPage: index, spine: spine, local: local, layout: layout)
             let list = artifacts.displayList
-            let offset = layout.pageSourceRanges[local].location
+            let pageRange = layout.pageSourceRanges[local]
+            let offset = pageRange.location
             let vc = BrowserLayoutPageViewController(
                 globalPageIndex: index,
                 readingPosition: CoreTextReadingPosition(spineIndex: spine, charOffset: offset),
                 displayList: list,
+                mediaAttachments: layout.mediaAttachments,
                 backgroundColor: themeBackgroundColor,
+                readerBackgroundImage: currentReaderBackgroundImage(),
+                // VoiceOver reads this and the TTS wash searches it: both must
+                // be the page's SOURCE text, in the same offset space as the
+                // fragments' `sourceRange`.
+                pageSourceText: plainText(forPage: index),
+                pageSourceRange: pageRange,
                 statusText: showDebugOverlay ? statusLabel(for: spine) : nil,
                 interactionRegions: artifacts.interactionRegions,
                 // The press wash follows the reader theme rather than the system
@@ -1105,6 +1270,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 // non-themed thing on screen.
                 pressedLinkColor: themeTextColor.withAlphaComponent(0.15)
             ) { _ in }
+            vc.pageView.configureTextInteraction(sourceText: layout.sourceText, spineIndex: spine, annotations: textAnnotations)
+            annotationPages.add(vc.pageView)
             // Bound after construction so the closure can reference THIS page's
             // controller — it is the presenter, and it must be the instance that
             // is actually on screen (vending a fresh one would present from a

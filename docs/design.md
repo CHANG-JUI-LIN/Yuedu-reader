@@ -45,6 +45,7 @@
 | H8 | 每個資料畫面都要設計 **空 / 載入 / 錯誤** 三態 | 見 §9 | 只做 happy path |
 | H9 | 不得做成網頁式 UI（dashboard 卡片牆、側欄、Landing） | 見 §13 | Tailwind 風格 |
 | H10 | accessibility modifier 只能加在**該元素本身**，不能加在容器上（會往下傳給每個子元素） | 每顆 `Button` 各自 `.accessibilityLabel` | 在包住三顆按鈕的 `HStack` 上加一個 label |
+| H11 | 區塊底部說明一律收攏為原生 `Section { ... } footer: { Text(...) }` 並套用 `.dsSectionFooter()`（Apple HIG 13pt Footnote + `DSColor.textSecondary`） | `Section { ... } footer: { Text(localized("...")).dsSectionFooter() }` | 在 Section 內用普通 Row 當說明、用 `VStack` 塞副標題、或單獨開說明 Section |
 
 ---
 
@@ -210,6 +211,22 @@ ItemRow(item: item)
 ```
 
 Review 時同時檢視 surface 層級是否「從背景中看得出」：容器色必須明顯區分於頁背景與兄弟容器，幾乎同色的容器等於沒有層級（曾發生審查沒抓到、bubble 與背景同色的真實案例）。
+
+### 4.2 區塊底部說明（Section Footer）規範
+
+- **統一原生 footer**：所有針對 Section 或整組設定的提示、說明、限制條件，一律使用原生 `Section { ... } footer: { Text(...) }`。
+- **嚴禁自刻說明列**：嚴禁在 Section 內部使用普通 Row 放說明文字（會變成卡片 row 外觀與過大行高）、嚴禁在 Toggle 的 label `VStack` 內手動塞說明文字充當區塊附註、嚴禁單獨開一個沒有內容的 Section 專門放說明 Text。
+- **統一字級與顏色**：Apple HIG 規範 Section footer 為 **13pt Footnote** 與 **次要顏色（`DSColor.textSecondary`）**。因為最外層環境可能注入全域字體，為避免字級被放大成 17pt 正文，所有 footer 內的 `Text` 一律呼叫 `.dsSectionFooter()`（錯誤/警示訊息傳入 `.dsSectionFooter(color: DSColor.destructive)`）。
+
+```swift
+Section {
+    Toggle(localized("自動同步"), isOn: $gs.iCloudAutoSync)
+} footer: {
+    Text(localized("開啟後，App 啟動與切到背景時會自動與 iCloud 合併同步。"))
+        .dsSectionFooter()
+}
+.interfaceSectionSurface()
+```
 
 ---
 

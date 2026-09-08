@@ -3,12 +3,12 @@
 ## Per-stage timing (seconds)
 - cssCollect: 0.0000
 - cssParse: 0.0001
-- styleTree: 0.0001
-- boxTree: 0.0001
-- layout: 0.0000
+- styleTree: 0.0002
+- boxTree: 0.0000
+- layout: 0.0001
 - fragment: 0.0000
-- total: 0.0005
-- peak footprint delta: 32768 bytes
+- total: 0.0006
+- peak footprint delta: 0 bytes
 
 ## Source-range parity
 - ranges ordered (no loss/dup/reorder): true

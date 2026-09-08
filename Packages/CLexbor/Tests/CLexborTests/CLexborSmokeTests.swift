@@ -90,6 +90,7 @@ struct CLexborSmokeTests {
         #expect(textValues.contains("world"))
         #expect(declarationProperties.contains("color"))
         #expect(declarationProperties.contains("width"))
+        #expect(context.declarationNodeIDs.pointee.allSatisfy { $0 == context.paragraphID.pointee })
         ylx_document_destroy(document)
     }
 }
@@ -98,12 +99,22 @@ private final class SnapshotContext {
     var elements: UnsafeMutablePointer<[String]>
     var texts: UnsafeMutablePointer<[String]>
     var declarations: UnsafeMutablePointer<[String]>
+    var paragraphID: UnsafeMutablePointer<UInt64>
+    var declarationNodeIDs: UnsafeMutablePointer<[UInt64]>
     init() {
         self.elements = .allocate(capacity: 1); self.elements.initialize(to: [])
         self.texts = .allocate(capacity: 1); self.texts.initialize(to: [])
         self.declarations = .allocate(capacity: 1); self.declarations.initialize(to: [])
+        self.paragraphID = .allocate(capacity: 1); self.paragraphID.initialize(to: 0)
+        self.declarationNodeIDs = .allocate(capacity: 1); self.declarationNodeIDs.initialize(to: [])
     }
-    deinit { elements.deinitialize(count: 1); elements.deallocate(); texts.deinitialize(count: 1); texts.deallocate(); declarations.deinitialize(count: 1); declarations.deallocate() }
+    deinit {
+        elements.deinitialize(count: 1); elements.deallocate()
+        texts.deinitialize(count: 1); texts.deallocate()
+        declarations.deinitialize(count: 1); declarations.deallocate()
+        paragraphID.deinitialize(count: 1); paragraphID.deallocate()
+        declarationNodeIDs.deinitialize(count: 1); declarationNodeIDs.deallocate()
+    }
 }
 
 private func snapshotString(_ bytes: YLXBytes) -> String {
@@ -113,7 +124,10 @@ private func snapshotString(_ bytes: YLXBytes) -> String {
 private func snapshotElement(_ snapshot: UnsafePointer<YLXElementSnapshot>?, _ context: UnsafeMutableRawPointer?) -> Int32 {
     guard let snapshot, let context else { return 0 }
     let box = Unmanaged<SnapshotContext>.fromOpaque(context).takeUnretainedValue()
-    box.elements.pointee.append(snapshotString(snapshot.pointee.tag_name)); return 1
+    let value = snapshot.pointee
+    box.elements.pointee.append(snapshotString(value.tag_name))
+    if snapshotString(value.tag_name) == "P" { box.paragraphID.pointee = value.node_id }
+    return 1
 }
 private func snapshotAttribute(_ nodeID: UInt64, _ name: YLXBytes, _ value: YLXBytes, _ context: UnsafeMutableRawPointer?) -> Int32 { 1 }
 private func snapshotText(_ nodeID: UInt64, _ text: YLXBytes, _ context: UnsafeMutableRawPointer?) -> Int32 {
@@ -122,7 +136,10 @@ private func snapshotText(_ nodeID: UInt64, _ text: YLXBytes, _ context: UnsafeM
 }
 private func snapshotDeclaration(_ nodeID: UInt64, _ declaration: UnsafePointer<YLXWinningDeclaration>?, _ context: UnsafeMutableRawPointer?) -> Int32 {
     guard let declaration, let context else { return 0 }
-    Unmanaged<SnapshotContext>.fromOpaque(context).takeUnretainedValue().declarations.pointee.append(snapshotString(declaration.pointee.property)); return 1
+    let box = Unmanaged<SnapshotContext>.fromOpaque(context).takeUnretainedValue()
+    box.declarations.pointee.append(snapshotString(declaration.pointee.property))
+    box.declarationNodeIDs.pointee.append(nodeID)
+    return 1
 }
 
 private func withDocumentBytes<T>(

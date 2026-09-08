@@ -274,3 +274,98 @@ struct CommentBubbleSVGRecognizerTests {
         #expect(renderedImage.size == expectedImage.size)
     }
 }
+
+/// The recognizer answers two different questions, and they need different strictness:
+/// "is this unknown source image a bubble?" (strict — a wrong yes turns book illustrations
+/// into bubbles) and "parse the template the user picked" (permissive — the user already
+/// said what it is). These tests pin both halves so the two can't be collapsed again.
+@Suite("Comment bubble recognition modes", .serialized)
+struct CommentBubbleRecognitionModeTests {
+    /// An artwork-only bubble: one <image> wrapping a raster, no <text> anywhere. This is
+    /// the shape QiReader exports when the count is switched off, and the shape the 32KB
+    /// string cap used to reject even though there is a single element to parse.
+    private static func rasterBubbleSVG(pixels: Int = 8, noisy: Bool = false) throws -> String {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: pixels, height: pixels))
+        let image = renderer.image { context in
+            UIColor.systemIndigo.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: pixels, height: pixels))
+            guard noisy else { return }
+            // PNG compresses a flat fill to ~1KB at any size; random pixels are what make
+            // the encoded artwork genuinely large, the way real bubble art is.
+            var generator = SystemRandomNumberGenerator()
+            for x in stride(from: 0, to: pixels, by: 2) {
+                for y in stride(from: 0, to: pixels, by: 2) {
+                    UIColor(
+                        red: CGFloat(UInt8.random(in: 0...255, using: &generator)) / 255,
+                        green: CGFloat(UInt8.random(in: 0...255, using: &generator)) / 255,
+                        blue: CGFloat(UInt8.random(in: 0...255, using: &generator)) / 255,
+                        alpha: 1
+                    ).setFill()
+                    context.fill(CGRect(x: x, y: y, width: 2, height: 2))
+                }
+            }
+        }
+        let data = try #require(image.pngData())
+        return "<svg xmlns='http://www.w3.org/2000/svg' width='90' height='120'"
+            + " viewBox='0 0 90 120'><image href='data:image/png;base64,"
+            + data.base64EncodedString()
+            + "' width='90' height='120'/></svg>"
+    }
+
+    @Test("accepts an artwork-only template the user picked")
+    func acceptsArtworkOnlyUserTemplate() throws {
+        let svg = try Self.rasterBubbleSVG()
+        let bubble = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(svg))
+        #expect(bubble.elements.count == 1)
+        // Nothing to substitute a count into, which is exactly the author's intent.
+        #expect(bubble.displayText == nil)
+    }
+
+    @Test("still refuses an artwork-only SVG when sniffing an unknown source image")
+    func refusesArtworkOnlySourceImage() throws {
+        // Relaxing this would make every <image>-only picture a book source serves render
+        // as a comment bubble.
+        let svg = try Self.rasterBubbleSVG()
+        #expect(CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg) == nil)
+    }
+
+    @Test("accepts a user template far larger than the source-sniffing cap")
+    func acceptsLargeUserTemplate() throws {
+        // A base64 raster inflates ~33%, so real artwork lands well past 32KB while still
+        // being a single element.
+        let svg = try Self.rasterBubbleSVG(pixels: 256, noisy: true)
+        #expect(svg.utf8.count > CommentBubbleSVGRecognizer.maximumRecognizableSVGByteCount)
+        #expect(svg.utf8.count <= CommentBubbleSVGRecognizer.maximumUserTemplateSVGByteCount)
+        #expect(CommentBubbleSVGRecognizer.recognizeUserTemplate(svg) != nil)
+        // The strict path keeps its tight bound.
+        #expect(CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg) == nil)
+    }
+
+    @Test("still requires exactly one count text when sniffing")
+    func sniffingRequiresExactlyOneText() {
+        let twoTexts = """
+        <svg xmlns="http://www.w3.org/2000/svg" width="96" height="72" viewBox="0 0 96 72">
+          <rect x="8" y="8" width="80" height="56" rx="18" fill="none" stroke="#888" stroke-width="6"/>
+          <text x="48" y="46" font-size="30" fill="#888">0</text>
+          <text x="10" y="20" font-size="10" fill="#888">1</text>
+        </svg>
+        """
+        #expect(CommentBubbleSVGRecognizer.recognize(src: "", svgContent: twoTexts) == nil)
+        // A second replaceable count is ambiguous for the user path too.
+        #expect(CommentBubbleSVGRecognizer.recognizeUserTemplate(twoTexts) == nil)
+    }
+
+    @Test("refuses a template with nothing to draw")
+    func refusesEmptyTemplate() {
+        let empty = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"90\" height=\"120\"></svg>"
+        #expect(CommentBubbleSVGRecognizer.recognizeUserTemplate(empty) == nil)
+        #expect(CommentBubbleSVGRecognizer.recognize(src: "", svgContent: empty) == nil)
+    }
+
+    @Test("the built-in template still parses through both entry points")
+    func builtinParsesInBothModes() {
+        let builtin = CommentBubbleSVGRecognizer.builtinBubbleSVG
+        #expect(CommentBubbleSVGRecognizer.recognize(src: "", svgContent: builtin) != nil)
+        #expect(CommentBubbleSVGRecognizer.recognizeUserTemplate(builtin) != nil)
+    }
+}

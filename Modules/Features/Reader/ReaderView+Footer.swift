@@ -97,12 +97,15 @@ extension ReaderView {
     func pageFooterInfo(forPage idx: Int) -> (pageInfo: String, progress: String) {
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let (spineIndex, charOffset) = engine.charOffset(forPage: idx)
-            guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
+            guard let pagination = engine.chapterPagination(
+                forSpine: spineIndex,
+                charOffset: charOffset
+            ) else {
                 return ("", "0.00%")
             }
-            let localPage = layout.pageIndex(for: charOffset) + 1
+            let localPage = pagination.localPageIndex + 1
             let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset) * 100
-            return ("\(localPage)/\(layout.displayPageCount)", String(format: "%.2f%%", pct))
+            return ("\(localPage)/\(pagination.displayPageCount)", String(format: "%.2f%%", pct))
         } else {
             guard !allPages.isEmpty, idx >= 0, idx < allPages.count else { return ("", "0.00%") }
             let page = allPages[idx]

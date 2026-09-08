@@ -87,6 +87,7 @@ private struct InterfaceSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
 
     @ObservedObject private var settings = GlobalSettings.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Reduce Transparency is a system-level request for solid surfaces; it outranks
     /// a cosmetic preference, so it forces the opaque fill regardless of the toggle.
@@ -94,14 +95,80 @@ private struct InterfaceSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
         glassAllowed && settings.interfaceFrostedGlass && !reduceTransparency
     }
 
+    /// The active theme's card artwork for this appearance, or nil for the plain fill.
+    private var cardLayer: AppearanceCardBackgroundLayer? {
+        guard let background = settings.appearanceCardBackground, !background.isEmpty else {
+            return nil
+        }
+        let layer = background.layer(for: colorScheme == .dark ? .dark : .light)
+        return layer.isEmpty ? nil : layer
+    }
+
     func body(content: Content) -> some View {
-        if usesFrostedGlass {
+        if let cardLayer {
+            // Artwork replaces the plain fill entirely — a card painting is the whole
+            // surface, and layering it over the themed colour would tint it.
+            content
+                .background(AppearanceCardArtwork(layer: cardLayer).clipShape(shape))
+        } else if usesFrostedGlass {
             content
                 // Fades in over the blur as 透明度 drops; invisible at 100%.
                 .background(fill.opacity(1 - settings.interfaceGlassTransparency), in: shape)
                 .modifier(FrostedGlassBackground(shape: shape))
         } else {
             content.background(fill, in: shape)
+        }
+    }
+}
+
+/// Draws one card-background layer: an optional flat fill, the artwork over it
+/// (stretched, or nine-sliced so a drawn border keeps its corners), and an optional
+/// hairline border on top.
+private struct AppearanceCardArtwork: View {
+    let layer: AppearanceCardBackgroundLayer
+
+    var body: some View {
+        ZStack {
+            if let fillHex = layer.fillHex {
+                Color(uiColor: AppearanceThemePreset.hex(fillHex))
+            }
+            if let image = artworkImage {
+                imageView(image)
+                    .opacity(layer.imageOpacity)
+            }
+            if let borderHex = layer.borderHex, layer.borderWidth > 0 {
+                Rectangle()
+                    .strokeBorder(
+                        Color(uiColor: AppearanceThemePreset.hex(borderHex))
+                            .opacity(layer.borderOpacity),
+                        lineWidth: layer.borderWidth
+                    )
+            }
+        }
+    }
+
+    private var artworkImage: UIImage? {
+        guard let name = layer.imageFileName, !name.isEmpty else { return nil }
+        return AppearanceCardBackgroundImageStore.shared.image(fileName: name)
+    }
+
+    @ViewBuilder
+    private func imageView(_ image: UIImage) -> some View {
+        switch layer.mode {
+        case .stretch:
+            Image(uiImage: image).resizable()
+        case .nineSlice:
+            // Cap insets are stored as fractions of the image, so they survive the
+            // store's downsampling; SwiftUI wants them in the image's own points.
+            Image(uiImage: image).resizable(
+                capInsets: EdgeInsets(
+                    top: image.size.height * layer.sliceTop,
+                    leading: image.size.width * layer.sliceLeft,
+                    bottom: image.size.height * layer.sliceBottom,
+                    trailing: image.size.width * layer.sliceRight
+                ),
+                resizingMode: .stretch
+            )
         }
     }
 }
@@ -293,8 +360,7 @@ private struct InterfaceGlowModifier<SurfaceShape: Shape>: ViewModifier {
                     .font(DSFont.body)
             } footer: {
                 Text("玻璃取樣的是卡片背後的內容，純色主題下與不透明卡片幾乎無異。")
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 

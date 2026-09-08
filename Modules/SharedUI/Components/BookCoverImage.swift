@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Remote book cover with the headers source CDNs need, falling back to the
-/// app's title-card placeholder when there's no cover (or it fails to load).
+/// user's 預設封面 library and then to `GeneratedBookCover` when there's no cover
+/// (or it fails to load).
 ///
 /// Fills whatever frame the caller gives it (`scaledToFill`, clipped). Apply the
 /// frame + `clipShape` outside:
@@ -13,11 +14,15 @@ import SwiftUI
 struct BookCoverImage: View {
     let coverURL: String
     let title: String
+    /// Drawn down the right edge of the generated cover when there's no artwork.
+    /// Optional because plenty of slots (cover pickers, OPDS rows) genuinely have
+    /// no author to show.
+    var author: String?
     var sourceBaseURL: String?
     var sourceHeaders: [String: String]
     /// Stable key identifying the book, when this slot may fall back to the
-    /// user's 預設封面 library. `nil` keeps the plain title card — only the
-    /// surfaces 預設封面 covers (書架, and 探索 when enabled) pass a seed.
+    /// user's 預設封面 library. `nil` goes straight to `GeneratedBookCover` — only
+    /// the surfaces 預設封面 covers (書架, and 探索 when enabled) pass a seed.
     var defaultCoverSeed: String?
 
     @State private var image: UIImage?
@@ -26,12 +31,14 @@ struct BookCoverImage: View {
     init(
         coverURL: String,
         title: String,
+        author: String? = nil,
         sourceBaseURL: String? = nil,
         sourceHeaders: [String: String] = [:],
         defaultCoverSeed: String? = nil
     ) {
         self.coverURL = coverURL
         self.title = title
+        self.author = author
         self.sourceBaseURL = sourceBaseURL
         self.sourceHeaders = sourceHeaders
         self.defaultCoverSeed = defaultCoverSeed
@@ -51,7 +58,7 @@ struct BookCoverImage: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                TitleCardPlaceholder(title: title)
+                GeneratedBookCover(title: title, author: author)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -76,7 +83,10 @@ struct BookCoverImage: View {
     // assignments need no explicit hop.
     private func load() async {
         // Nothing on screen would use it: the default cover wins for every book.
-        if forcesDefaultCover, DefaultCoverLibrary.hasImages(for: colorScheme) { return }
+        // Not conditional on the library having images any more — an empty
+        // library now lands on `GeneratedBookCover` rather than on the book's own
+        // artwork, so downloading it would be wasted either way.
+        if forcesDefaultCover { return }
         if let cached = BookCoverLoader.cachedImage(for: coverURL) {
             if image !== cached { image = cached }
             return
@@ -97,6 +107,7 @@ extension BookCoverImage {
         self.init(
             coverURL: onlineBook.coverUrl,
             title: onlineBook.name,
+            author: onlineBook.author,
             sourceBaseURL: source?.bookSourceUrl,
             sourceHeaders: source?.parsedHeaders ?? [:]
         )
@@ -120,31 +131,12 @@ struct AudiobookCoverBadge: View {
     }
 }
 
-/// The shared no-cover placeholder: title text on a neutral card, matching the
-/// bookshelf. Used wherever a cover is missing.
-struct TitleCardPlaceholder: View {
-    let title: String
-
-    var body: some View {
-        Rectangle()
-            .fill(Color(.secondarySystemBackground))
-            .overlay(alignment: .topLeading) {
-                Text(title)
-                    .font(DSFont.fixed(size: 11, weight: .medium))
-                    .foregroundColor(DSColor.textSecondary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(6)
-                    .padding(8)
-            }
-    }
-}
-
 #Preview {
     HStack(spacing: 16) {
-        BookCoverImage(coverURL: "", title: "劍燭大荒")
+        BookCoverImage(coverURL: "", title: "劍燭大荒", author: "青山鶴")
             .frame(width: 104, height: 138)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
-        TitleCardPlaceholder(title: "宿命之環")
+        GeneratedBookCover(title: "宿命之環", author: "愛潛水的烏賊")
             .frame(width: 104, height: 138)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg))
     }

@@ -60,6 +60,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// full chunk, `spokenUTF16Offset` for a partial resume. Lets the delegate map the
     /// utterance-relative range it reports back onto the full chunk.
     private var utteranceBaseOffset = 0
+    private var utteranceSpeechText: TTSPronunciationSpeechText?
 
     // Read by paragraph: system voices speak long utterances smoothly, so set the cap
     // high enough that a normal paragraph stays a single gap-free chunk. The cap only
@@ -87,7 +88,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     ) {
         ttsLog("[TTS][SystemEngine] speak requested textCount=\(text.count) title=\(title) rate=\(rate)")
         resetPlaybackState()
-        let chunkRanges = TTSTextChunker.splitWithRanges(text, targetChunkLength: targetChunkLength)
+        let chunkRanges = TTSPronunciationProjector.chunks(text, targetLength: targetChunkLength, hints: pronunciationHints)
         chunks = chunkRanges.map(\.text)
         chunkPronunciationHints = chunkRanges.map {
             TTSPronunciationProjector.project(pronunciationHints, into: $0.sourceRange)
@@ -262,6 +263,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         utteranceBaseOffset = 0
 
         let hints = chunkPronunciationHints.indices.contains(index) ? chunkPronunciationHints[index] : []
+        utteranceSpeechText = TTSPronunciationSpeechText(text: chunks[index], hints: hints)
         let utterance = Self.makeUtterance(
             text: chunks[index],
             rate: lastRate,
@@ -302,6 +304,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         publishSegmentChanged(index: currentIndex)
 
         let hints = remainingHints(forChunk: currentIndex, fromUTF16Offset: offset)
+        utteranceSpeechText = TTSPronunciationSpeechText(text: remaining, hints: hints)
         let utterance = Self.makeUtterance(text: remaining, rate: lastRate, pronunciationHints: hints)
         guard let voice = Self.preferredVoice(for: remaining) else {
             failPlayback(TTSPlaybackError.systemVoiceUnavailable)
@@ -323,14 +326,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         guard chunkPronunciationHints.indices.contains(index) else { return [] }
         let full = chunks[index] as NSString
         let tail = NSRange(location: offset, length: max(0, full.length - offset))
-        return chunkPronunciationHints[index].compactMap { hint in
-            let clipped = NSIntersectionRange(hint.range, tail)
-            guard clipped.length > 0 else { return nil }
-            return TTSPronunciationHint(
-                range: NSRange(location: clipped.location - offset, length: clipped.length),
-                ipa: hint.ipa
-            )
-        }
+        return TTSPronunciationProjector.project(chunkPronunciationHints[index], into: tail)
     }
 
     private func jumpToChunk(at index: Int) {
@@ -561,13 +557,14 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         // The language-specific voice is assigned by the playback path after this utterance is
         // built. Keeping construction separate lets pronunciation annotations stay testable.
         let utterance: AVSpeechUtterance
-        if pronunciationHints.isEmpty {
-            utterance = AVSpeechUtterance(string: text)
+        let speech = TTSPronunciationSpeechText(text: text, hints: pronunciationHints)
+        if speech.ipaHints.isEmpty {
+            utterance = AVSpeechUtterance(string: speech.text)
         } else {
-            let attributed = NSMutableAttributedString(string: text)
+            let attributed = NSMutableAttributedString(string: speech.text)
             let key = NSAttributedString.Key(rawValue: AVSpeechSynthesisIPANotationAttribute)
             let bounds = NSRange(location: 0, length: attributed.length)
-            for hint in pronunciationHints {
+            for hint in speech.ipaHints {
                 let range = NSIntersectionRange(hint.range, bounds)
                 guard range.length > 0 else { continue }
                 attributed.addAttribute(key, value: hint.ipa, range: range)
@@ -636,7 +633,7 @@ extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
             guard let self, utterance === self.activeUtterance else { return }
             // `characterRange` is relative to this utterance's string; add the utterance's base
             // offset to track how far into the full chunk we've reached.
-            self.spokenUTF16Offset = self.utteranceBaseOffset + characterRange.location
+            self.spokenUTF16Offset = self.utteranceBaseOffset + (self.utteranceSpeechText?.sourceOffset(forSpeechOffset: characterRange.location) ?? characterRange.location)
         }
     }
 

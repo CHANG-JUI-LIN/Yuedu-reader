@@ -20,17 +20,28 @@ enum ReaderFontCascade {
     /// descriptor keeps the literal `size 0`, which resolves to CoreText's 12pt
     /// default. That is why switching 粗體 on shrank every CJK glyph to 12pt while
     /// Latin text — drawn by the primary font itself — stayed at the reader size.
-    static func descriptors(size: CGFloat) -> [UIFontDescriptor] {
-        fallbackFontNames.map { UIFontDescriptor(name: $0, size: size) }
+    static func descriptors(size: CGFloat, isBoldRequested: Bool = false) -> [UIFontDescriptor] {
+        fallbackFontNames.map { name in
+            let descriptor = UIFontDescriptor(name: name, size: size)
+            guard isBoldRequested else { return descriptor }
+            // An explicit Regular cascade entry can remain Regular even when
+            // the primary is Georgia-Bold. Resolve the same family-preserving
+            // bold face as the primary, retaining the concrete cascade size.
+            return UserReaderFontResolver.boldVersion(
+                of: UIFont(descriptor: descriptor, size: size), size: size
+            ).fontDescriptor
+        }
     }
 
-    static func attributes(size: CGFloat) -> [UIFontDescriptor.AttributeName: Any] {
-        [.cascadeList: descriptors(size: size)]
+    static func attributes(size: CGFloat, isBoldRequested: Bool = false) -> [UIFontDescriptor.AttributeName: Any] {
+        [.cascadeList: descriptors(size: size, isBoldRequested: isBoldRequested)]
     }
 
-    static func preservingPrimary(_ font: UIFont, size: CGFloat) -> UIFont {
+    static func preservingPrimary(_ font: UIFont, size: CGFloat, isBoldRequested: Bool = false) -> UIFont {
         UIFont(
-            descriptor: font.fontDescriptor.addingAttributes(attributes(size: size)),
+            descriptor: font.fontDescriptor.addingAttributes(
+                attributes(size: size, isBoldRequested: isBoldRequested)
+            ),
             size: size
         )
     }

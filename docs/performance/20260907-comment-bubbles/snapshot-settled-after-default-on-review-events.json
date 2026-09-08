@@ -1,0 +1,47 @@
+{
+  "start": 347997.03487125,
+  "commands": [
+    {
+      "command": 59,
+      "action": "tap",
+      "uptime": 347999.05870241666
+    },
+    {
+      "command": 60,
+      "action": "waitFor",
+      "uptime": 348003.20597862505
+    },
+    {
+      "command": 61,
+      "action": "drag",
+      "uptime": 348008.03755345836
+    },
+    {
+      "command": 62,
+      "action": "drag",
+      "uptime": 348012.977345125
+    },
+    {
+      "command": 63,
+      "action": "drag",
+      "uptime": 348017.6102246667
+    },
+    {
+      "command": 64,
+      "action": "drag",
+      "uptime": 348022.1124644167
+    },
+    {
+      "command": 65,
+      "action": "drag",
+      "uptime": 348025.4386156667
+    },
+    {
+      "command": 66,
+      "action": "drag",
+      "uptime": 348030.60169308336
+    }
+  ],
+  "data_ready": 348003.211412541,
+  "closed": 348035.696187291
+}

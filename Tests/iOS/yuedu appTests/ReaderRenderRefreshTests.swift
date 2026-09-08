@@ -98,6 +98,14 @@ struct ReaderRenderRefreshTests {
         await waitUntilPagedReady(renderer)
         #expect(builder.buildCount == 1)
 
+        // Match ReaderView.submitChapterContentRefresh: content supply is
+        // outside the latest-wins visible refresh transaction, so a later
+        // chapter notification cannot cancel this chapter's rebuild.
+        builder.body = "Updated body"
+        await renderer.engine?.notifyChapterDataChanged(at: 0)
+        #expect(builder.buildCount == 2)
+        #expect(renderer.engine?.chapterText(forSpine: 0) == "Updated body")
+
         let task = Task {
             await renderer.refresh(
                 ReaderRenderRefreshRequest(
@@ -117,6 +125,7 @@ struct ReaderRenderRefreshTests {
 
         #expect(await task.value == .completed(transactionID: 1))
         #expect(builder.buildCount == 2)
+        #expect(renderer.engine?.chapterText(forSpine: 0) == "Updated body")
     }
 
     @Test("newer layout refresh rebuilds target while older prepare is in flight")

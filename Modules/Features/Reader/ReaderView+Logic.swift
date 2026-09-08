@@ -165,8 +165,11 @@ extension ReaderView {
     func inChapterPageNumber(for bookmark: Bookmark) -> Int? {
         guard usesCoreTextEPUB, let engine = epubRenderer.engine else { return nil }
         let position = bookmark.position
-        if let layout = engine.layouts[position.spineIndex] {
-            return layout.pageIndex(for: position.charOffset) + 1
+        if let pagination = engine.chapterPagination(
+            forSpine: position.spineIndex,
+            charOffset: position.charOffset
+        ) {
+            return pagination.localPageIndex + 1
         }
         // 章節尚未排版：用引擎相同的保守估算（~400 字/頁）。
         return max(0, position.charOffset / 400) + 1
@@ -201,7 +204,7 @@ extension ReaderView {
         }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let position = CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset)
-            AppLogger.render("[FlipTrace] ReaderView.jumpToChapter request spine=\(idx) charOffset=\(charOffset) layoutReady=\(engine.layouts[idx] != nil)")
+            AppLogger.render("[FlipTrace] ReaderView.jumpToChapter request spine=\(idx) charOffset=\(charOffset) layoutReady=\(engine.chapterPagination(forSpine: idx, charOffset: charOffset) != nil)")
             ensureReaderNavigator(initialPosition: position)
             setCoreTextExternalTarget(position)
             _ = engine.pageViewController(for: position)
@@ -229,11 +232,11 @@ extension ReaderView {
                 usesCoreText: usesCoreTextEPUB,
                 loadState: readerViewModel.chapterState(for: idx),
                 isContentAvailable: isChapterContentAvailable(at: idx),
-                isLayoutAvailable: engine.layouts[idx] != nil
+                isLayoutAvailable: engine.chapterPagination(forSpine: idx, charOffset: charOffset) != nil
             )
             ensureChapterReady(chapterIndex: idx, priority: .jump)
             if case .notifyChapterDataChanged = entryAction {
-                submitChapterContentRefresh(chapterIndex: idx)
+                submitChapterContentRefresh(chapterIndex: idx, update: .available)
             }
             if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
             if idx < chapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }

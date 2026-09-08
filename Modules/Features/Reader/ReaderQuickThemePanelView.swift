@@ -568,12 +568,10 @@ private struct ReaderCustomBackgroundOptionsView: View {
                 }
             } footer: {
                 Text(localized("圖片會直接顯示在閱讀背景與主題預覽中。"))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
         }
-        .font(DSFont.body)
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(DSColor.groupedBackground)
@@ -661,12 +659,10 @@ private struct ReaderCustomBackgroundColorEditorView: View {
                 }
             } footer: {
                 Text(localized("套用後會作為自定義閱讀背景。"))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
         }
-        .font(DSFont.body)
         .scrollContentBackground(.hidden)
         .background(DSColor.groupedBackground)
         .navigationTitle(localized("RGB 調色"))

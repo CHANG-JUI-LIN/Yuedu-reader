@@ -1,0 +1,65 @@
+{
+  "before": {
+    "passes": [
+      {
+        "pass": 0,
+        "requests": 48,
+        "sharedPairs": 0,
+        "elapsedMs": 189.221
+      },
+      {
+        "pass": 1,
+        "requests": 48,
+        "sharedPairs": 0,
+        "elapsedMs": 195.356
+      },
+      {
+        "pass": 2,
+        "requests": 48,
+        "sharedPairs": 0,
+        "elapsedMs": 188.444
+      }
+    ],
+    "medianMs": 189.221,
+    "sourcePerfTrace": {
+      "rendered": {
+        "count": 144,
+        "roundedTotalMs": 580.0
+      }
+    }
+  },
+  "after": {
+    "passes": [
+      {
+        "pass": 0,
+        "requests": 48,
+        "sharedPairs": 24,
+        "elapsedMs": 102.307
+      },
+      {
+        "pass": 1,
+        "requests": 48,
+        "sharedPairs": 24,
+        "elapsedMs": 103.26
+      },
+      {
+        "pass": 2,
+        "requests": 48,
+        "sharedPairs": 24,
+        "elapsedMs": 94.233
+      }
+    ],
+    "medianMs": 102.307,
+    "sourcePerfTrace": {
+      "cached": {
+        "count": 73,
+        "roundedTotalMs": 0.0
+      },
+      "rendered": {
+        "count": 71,
+        "roundedTotalMs": 293.0
+      }
+    }
+  },
+  "medianReductionPercent": 45.9325339153688
+}

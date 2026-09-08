@@ -158,7 +158,7 @@ static lxb_status_t ylx_walk_declaration(lxb_dom_element_t *element,
                                       ylx_buffer_append, &value) != LXB_STATUS_OK) {
         free(name.data); free(value.data); return LXB_STATUS_ERROR_MEMORY_ALLOCATION;
     }
-    uint64_t node_id = (uint64_t) (uintptr_t) element;
+    uint64_t node_id = context->next_id;
     YLXWinningDeclaration snapshot = {
         ylx_bytes(name.data, name.length), ylx_bytes(value.data, value.length),
         { NULL, 0 }, specificity, ylx_source_order(context->document, declaration),
@@ -173,6 +173,7 @@ static lxb_status_t ylx_walk_declaration(lxb_dom_element_t *element,
 static int ylx_walk_declarations(lxb_dom_node_t *node, YLXWalkContext *context)
 {
     for (lxb_dom_node_t *current = node; current != NULL; current = current->next) {
+        context->next_id += 1;
         if (current->type == LXB_DOM_NODE_TYPE_ELEMENT) {
             lxb_dom_element_t *element = lxb_dom_interface_element(current);
             (void) lxb_dom_element_style_attach_exists(element);

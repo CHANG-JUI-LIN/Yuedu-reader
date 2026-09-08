@@ -320,6 +320,9 @@ enum BlockLayout {
             minLineTop = min(minLineTop, line.top)
         }
         if minLineTop < 0 { cursorBlock -= minLineTop }
+        if !box.lines.isEmpty {
+            cursorBlock += box.style.configParagraphSpacing
+        }
 
         // Block-level replaced element (image): its content box IS the image.
         if let attachment = box.imageAttachment {

@@ -1,0 +1,7532 @@
+{
+  "snapshot-after-default-on-continuous": {
+    "label": "snapshot-after-default-on-continuous",
+    "pid": "81332",
+    "start": "2026-09-08T01:03:43.382760",
+    "end": "2026-09-08T01:05:00.020530",
+    "event_duration_s": 76.63777037500404,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.0026433467864990234,
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-after-default-on-continuous-events.json",
+    "processes": [
+      {
+        "pid": "81332",
+        "kind": "reader",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 25.299999999999997,
+        "cpu_percent": 33.574414438333555,
+        "rss_first_mib": 668.062,
+        "rss_last_mib": 672.531,
+        "rss_max_mib": 738.844
+      },
+      {
+        "pid": "81341",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.719,
+        "rss_last_mib": 261.281,
+        "rss_max_mib": 278.719
+      },
+      {
+        "pid": "81342",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.797,
+        "rss_last_mib": 261.875,
+        "rss_max_mib": 278.797
+      },
+      {
+        "pid": "81343",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.875,
+        "rss_last_mib": 261.344,
+        "rss_max_mib": 278.875
+      },
+      {
+        "pid": "81344",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.812,
+        "rss_last_mib": 261.828,
+        "rss_max_mib": 278.812
+      },
+      {
+        "pid": "81347",
+        "kind": "webkit_network",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.020000000000000018,
+        "cpu_percent": 0.026541039081686632,
+        "rss_first_mib": 119.594,
+        "rss_last_mib": 112.734,
+        "rss_max_mib": 119.609
+      },
+      {
+        "pid": "81360",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.1499999999999999,
+        "cpu_percent": 0.19905779311264946,
+        "rss_first_mib": 293.547,
+        "rss_last_mib": 284.281,
+        "rss_max_mib": 297.594
+      },
+      {
+        "pid": "81361",
+        "kind": "webkit_gpu",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.13000000000000006,
+        "cpu_percent": 0.17251675403096303,
+        "rss_first_mib": 152.656,
+        "rss_last_mib": 154.922,
+        "rss_max_mib": 159.516
+      },
+      {
+        "pid": "81362",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.31000000000000005,
+        "cpu_percent": 0.41138610576614254,
+        "rss_first_mib": 261.422,
+        "rss_last_mib": 262.938,
+        "rss_max_mib": 279.219
+      },
+      {
+        "pid": "81363",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.31000000000000005,
+        "cpu_percent": 0.41138610576614254,
+        "rss_first_mib": 261.453,
+        "rss_last_mib": 265.0,
+        "rss_max_mib": 279.297
+      },
+      {
+        "pid": "81364",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.35499999998137,
+        "cpu_seconds": 0.3999999999999999,
+        "cpu_percent": 0.530820781633732,
+        "rss_first_mib": 256.703,
+        "rss_last_mib": 263.844,
+        "rss_max_mib": 279.359
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 346997.1443686667,
+        "page": "2/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 346998.6891284167,
+        "page": "3/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 347000.2179934167,
+        "page": "4/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 347001.74695733335,
+        "page": "5/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 347003.27983408334,
+        "page": "6/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 347004.7678144167,
+        "page": "7/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 347006.30195170833,
+        "page": "8/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 347007.8450309167,
+        "page": "9/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 347009.3875145417,
+        "page": "10/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 347010.93273875,
+        "page": "11/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 347012.446961875,
+        "page": "12/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 347013.97607408336,
+        "page": "13/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 347015.5257077084,
+        "page": "1/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 347017.0714504167,
+        "page": "2/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 347018.60427762504,
+        "page": "3/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 347020.08908991667,
+        "page": "4/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 347021.64110070834,
+        "page": "5/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 347023.180273625,
+        "page": "6/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 347024.7252206667,
+        "page": "7/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 347026.3627552917,
+        "page": "8/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 347027.90421862504,
+        "page": "9/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 347029.44514633337,
+        "page": "10/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 347030.9549669167,
+        "page": "11/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 347032.49995458336,
+        "page": "12/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 347034.02336341667,
+        "page": "1/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 347035.5248674167,
+        "page": "2/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 347037.06190145836,
+        "page": "3/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 347038.59940479166,
+        "page": "4/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 347040.0841402084,
+        "page": "5/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 347041.63824470836,
+        "page": "6/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 347043.1551458333,
+        "page": "7/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 347044.76989550004,
+        "page": "8/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 347046.3082584167,
+        "page": "9/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 347047.8515192917,
+        "page": "10/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 347049.38922091667,
+        "page": "11/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 347050.9222960417,
+        "page": "12/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 347052.4525398334,
+        "page": "1/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 347054.08595700003,
+        "page": "2/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 347055.60320866667,
+        "page": "3/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 347057.1424492917,
+        "page": "4/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 347058.64785091666,
+        "page": "5/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 347060.15814270836,
+        "page": "6/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 347061.69900333334,
+        "page": "7/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 347063.218799125,
+        "page": "8/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 347064.7448797917,
+        "page": "9/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 347066.24438212503,
+        "page": "10/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 347067.77815945836,
+        "page": "11/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 347069.2906547917,
+        "page": "1/10",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 347070.80659670837,
+        "page": "2/10",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 347072.32364008337,
+        "page": "3/10",
+        "chapter_title": "第14章 首杀"
+      }
+    ],
+    "stages": {
+      "chapter.jsNet": {
+        "count": 7,
+        "sum_ms": 21112,
+        "max_ms": 5052,
+        "values_ms": [
+          2590,
+          3484,
+          2239,
+          1791,
+          2122,
+          3834,
+          5052
+        ]
+      },
+      "chapter.parse": {
+        "count": 7,
+        "sum_ms": 39770,
+        "max_ms": 10604,
+        "values_ms": [
+          2775,
+          6339,
+          8690,
+          10604,
+          2243,
+          3962,
+          5157
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 7,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.pageSnapshot": {
+        "count": 100,
+        "sum_ms": 408,
+        "max_ms": 14,
+        "values_ms": [
+          0,
+          0,
+          9,
+          0,
+          8,
+          0,
+          9,
+          0,
+          8,
+          0,
+          5,
+          0,
+          7,
+          0,
+          10,
+          0,
+          7,
+          0,
+          12,
+          0,
+          7,
+          0,
+          7,
+          0,
+          8,
+          0,
+          0,
+          0,
+          8,
+          0,
+          7,
+          0,
+          9,
+          0,
+          9,
+          0,
+          9,
+          0,
+          11,
+          0,
+          7,
+          0,
+          11,
+          0,
+          7,
+          0,
+          7,
+          0,
+          4,
+          0,
+          6,
+          0,
+          9,
+          0,
+          8,
+          0,
+          7,
+          0,
+          14,
+          0,
+          14,
+          0,
+          9,
+          0,
+          11,
+          0,
+          7,
+          0,
+          9,
+          0,
+          8,
+          0,
+          12,
+          0,
+          8,
+          0,
+          9,
+          0,
+          8,
+          0,
+          11,
+          0,
+          7,
+          0,
+          9,
+          0,
+          8,
+          0,
+          6,
+          0,
+          6,
+          0,
+          10,
+          0,
+          4,
+          0,
+          13,
+          0,
+          9,
+          0
+        ]
+      },
+      "coreText.document.htmlParse": {
+        "count": 5,
+        "sum_ms": 328,
+        "max_ms": 80,
+        "values_ms": [
+          80,
+          75,
+          69,
+          53,
+          51
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 5,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 5,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 5,
+        "sum_ms": 114,
+        "max_ms": 27,
+        "values_ms": [
+          27,
+          25,
+          24,
+          19,
+          19
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 5,
+        "sum_ms": 115,
+        "max_ms": 27,
+        "values_ms": [
+          27,
+          25,
+          25,
+          19,
+          19
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 10,
+        "sum_ms": 1067,
+        "max_ms": 282,
+        "values_ms": [
+          0,
+          282,
+          0,
+          188,
+          0,
+          232,
+          0,
+          172,
+          0,
+          193
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 5,
+        "sum_ms": 470,
+        "max_ms": 107,
+        "values_ms": [
+          107,
+          106,
+          97,
+          79,
+          81
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 8,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 4,
+        "sum_ms": 41,
+        "max_ms": 11,
+        "values_ms": [
+          11,
+          11,
+          10,
+          9
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 4,
+        "sum_ms": 164,
+        "max_ms": 55,
+        "values_ms": [
+          55,
+          39,
+          39,
+          31
+        ]
+      },
+      "chapter.network": {
+        "count": 4,
+        "sum_ms": 1803,
+        "max_ms": 603,
+        "values_ms": [
+          177,
+          603,
+          444,
+          579
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 7,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 5,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-08 01:04:03.292",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-08 01:04:21.809",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-08 01:04:40.210",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-08 01:04:57.059",
+        "from_spine": 15,
+        "to_spine": 16
+      }
+    ],
+    "snapshot_requests": {
+      "rendered": 48,
+      "cached": 52,
+      "requests": 100,
+      "cache_hit_ratio": 0.52,
+      "unique_rendered_pages": 48,
+      "same_page_repeat_within_150ms": 0,
+      "repeat_details": []
+    },
+    "render_leaves": [
+      {
+        "time": "2026-09-08T01:03:59.014000",
+        "ms": 0,
+        "spine": 13.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:03:59.296000",
+        "ms": 282,
+        "spine": 13.0,
+        "chars": 3585.0,
+        "imageLoad": 254.4,
+        "bubbleDraw": 3.4,
+        "bubbleRecognize": 3.8
+      },
+      {
+        "time": "2026-09-08T01:04:03.653000",
+        "ms": 0,
+        "spine": 14.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:04:03.841000",
+        "ms": 188,
+        "spine": 14.0,
+        "chars": 3934.0,
+        "imageLoad": 162.4,
+        "bubbleDraw": 2.0,
+        "bubbleRecognize": 3.6
+      },
+      {
+        "time": "2026-09-08T01:04:22.181000",
+        "ms": 0,
+        "spine": 15.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:04:22.414000",
+        "ms": 232,
+        "spine": 15.0,
+        "chars": 3383.0,
+        "imageLoad": 209.3,
+        "bubbleDraw": 0.3,
+        "bubbleRecognize": 4.3
+      },
+      {
+        "time": "2026-09-08T01:04:40.498000",
+        "ms": 0,
+        "spine": 16.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.1
+      },
+      {
+        "time": "2026-09-08T01:04:40.670000",
+        "ms": 172,
+        "spine": 16.0,
+        "chars": 3291.0,
+        "imageLoad": 154.1,
+        "bubbleDraw": 1.4,
+        "bubbleRecognize": 3.1
+      },
+      {
+        "time": "2026-09-08T01:04:57.366000",
+        "ms": 0,
+        "spine": 17.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:04:57.559000",
+        "ms": 193,
+        "spine": 17.0,
+        "chars": 3659.0,
+        "imageLoad": 175.2,
+        "bubbleRecognize": 3.5
+      }
+    ],
+    "cold_load": {
+      "loading": "2026-09-08T01:03:35.901000",
+      "first_real": "2026-09-08T01:03:42.959000",
+      "loading_to_real_s": 7.058,
+      "loading_to_first_observed_ready_upper_s": 7.443384,
+      "capture1": "2026-09-08T01:03:36.111855",
+      "capture2": "2026-09-08T01:03:43.344384",
+      "stages": [
+        {
+          "timestamp": "2026-09-08T01:03:36.420000",
+          "stage": "chapter.network",
+          "ms": 510
+        },
+        {
+          "timestamp": "2026-09-08T01:03:38.358000",
+          "stage": "chapter.jsNet",
+          "ms": 1823
+        },
+        {
+          "timestamp": "2026-09-08T01:03:38.412000",
+          "stage": "chapter.parse",
+          "ms": 1992
+        },
+        {
+          "timestamp": "2026-09-08T01:03:38.412000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-08T01:03:40.832000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 100
+        },
+        {
+          "timestamp": "2026-09-08T01:03:40.881000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 4,
+          "chars": 1.0
+        },
+        {
+          "timestamp": "2026-09-08T01:03:42.673000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 1791,
+          "chars": 4334.0,
+          "imageLoad": 1734.6
+        },
+        {
+          "timestamp": "2026-09-08T01:03:42.939000",
+          "stage": "coreText.fullLayout",
+          "ms": 150,
+          "chars": 4348.0
+        }
+      ]
+    },
+    "comparison": {
+      "before_label": "final-default-on-continuous",
+      "reader_cpu_percent_before": 19.436448622812254,
+      "reader_cpu_percent_after": 33.574414438333555,
+      "reader_cpu_pp_change": 14.137965815521301,
+      "reader_cpu_seconds_before": 14.719999999999999,
+      "reader_cpu_seconds_after": 25.299999999999997,
+      "reader_rss_peak_before_mib": 761.141,
+      "reader_rss_peak_after_mib": 738.844,
+      "snapshots_before": {
+        "rendered": 88,
+        "cached": 12,
+        "requests": 100,
+        "cache_hit_ratio": 0.12,
+        "unique_rendered_pages": 44,
+        "same_page_repeat_within_150ms": 44,
+        "repeat_details": [
+          {
+            "spine": 12,
+            "local_page": 1,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:58:27.767000"
+          },
+          {
+            "spine": 12,
+            "local_page": 2,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:58:29.351000"
+          },
+          {
+            "spine": 12,
+            "local_page": 3,
+            "gap_ms": 18.0,
+            "time": "2026-09-07T23:58:30.909000"
+          },
+          {
+            "spine": 12,
+            "local_page": 4,
+            "gap_ms": 7.0,
+            "time": "2026-09-07T23:58:32.431000"
+          },
+          {
+            "spine": 12,
+            "local_page": 5,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:58:34.002000"
+          },
+          {
+            "spine": 12,
+            "local_page": 6,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:58:35.550000"
+          },
+          {
+            "spine": 12,
+            "local_page": 7,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:58:37.136000"
+          },
+          {
+            "spine": 12,
+            "local_page": 8,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:58:38.701000"
+          },
+          {
+            "spine": 12,
+            "local_page": 9,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:58:40.287000"
+          },
+          {
+            "spine": 12,
+            "local_page": 10,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:58:41.817000"
+          },
+          {
+            "spine": 12,
+            "local_page": 11,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:58:43.352000"
+          },
+          {
+            "spine": 13,
+            "local_page": 1,
+            "gap_ms": 14.0,
+            "time": "2026-09-07T23:58:48.055000"
+          },
+          {
+            "spine": 13,
+            "local_page": 2,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:58:49.635000"
+          },
+          {
+            "spine": 13,
+            "local_page": 3,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:58:51.203000"
+          },
+          {
+            "spine": 13,
+            "local_page": 4,
+            "gap_ms": 6.0,
+            "time": "2026-09-07T23:58:52.747000"
+          },
+          {
+            "spine": 13,
+            "local_page": 5,
+            "gap_ms": 13.0,
+            "time": "2026-09-07T23:58:54.304000"
+          },
+          {
+            "spine": 13,
+            "local_page": 6,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:58:55.884000"
+          },
+          {
+            "spine": 13,
+            "local_page": 7,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:58:57.437000"
+          },
+          {
+            "spine": 13,
+            "local_page": 8,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:58:59.002000"
+          },
+          {
+            "spine": 13,
+            "local_page": 9,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:00.536000"
+          },
+          {
+            "spine": 13,
+            "local_page": 10,
+            "gap_ms": 7.0,
+            "time": "2026-09-07T23:59:02.082000"
+          },
+          {
+            "spine": 14,
+            "local_page": 1,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:06.686000"
+          },
+          {
+            "spine": 14,
+            "local_page": 2,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:08.219000"
+          },
+          {
+            "spine": 14,
+            "local_page": 3,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:59:09.770000"
+          },
+          {
+            "spine": 14,
+            "local_page": 4,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:11.285000"
+          },
+          {
+            "spine": 14,
+            "local_page": 5,
+            "gap_ms": 14.0,
+            "time": "2026-09-07T23:59:12.806000"
+          },
+          {
+            "spine": 14,
+            "local_page": 6,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:14.336000"
+          },
+          {
+            "spine": 14,
+            "local_page": 7,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:59:15.887000"
+          },
+          {
+            "spine": 14,
+            "local_page": 8,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:17.435000"
+          },
+          {
+            "spine": 14,
+            "local_page": 9,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:18.986000"
+          },
+          {
+            "spine": 14,
+            "local_page": 10,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:20.552000"
+          },
+          {
+            "spine": 15,
+            "local_page": 0,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:59:23.633000"
+          },
+          {
+            "spine": 15,
+            "local_page": 1,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:59:25.133000"
+          },
+          {
+            "spine": 15,
+            "local_page": 2,
+            "gap_ms": 6.0,
+            "time": "2026-09-07T23:59:26.648000"
+          },
+          {
+            "spine": 15,
+            "local_page": 3,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:59:28.187000"
+          },
+          {
+            "spine": 15,
+            "local_page": 4,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:29.735000"
+          },
+          {
+            "spine": 15,
+            "local_page": 5,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:31.303000"
+          },
+          {
+            "spine": 15,
+            "local_page": 6,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:32.852000"
+          },
+          {
+            "spine": 15,
+            "local_page": 7,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:34.402000"
+          },
+          {
+            "spine": 15,
+            "local_page": 8,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:59:35.933000"
+          },
+          {
+            "spine": 15,
+            "local_page": 9,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:37.484000"
+          },
+          {
+            "spine": 15,
+            "local_page": 10,
+            "gap_ms": 7.0,
+            "time": "2026-09-07T23:59:39.029000"
+          },
+          {
+            "spine": 16,
+            "local_page": 0,
+            "gap_ms": 16.0,
+            "time": "2026-09-07T23:59:40.570000"
+          },
+          {
+            "spine": 16,
+            "local_page": 1,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:42.080000"
+          }
+        ]
+      },
+      "same_chapter_page_sequence": true,
+      "cold_prefetch_overlap_audit": {
+        "before": {
+          "first_real_to_stress_start_s": 36.841382,
+          "windows": [
+            {
+              "offset_start_s": 0,
+              "offset_end_s": 10,
+              "samples": 9,
+              "sample_duration_s": 8.080000000016298,
+              "cpu_seconds": 1.3100000000000023,
+              "cpu_percent": 16.21287128709604
+            },
+            {
+              "offset_start_s": 10,
+              "offset_end_s": 76.78084937500535,
+              "samples": 67,
+              "sample_duration_s": 66.64400000002934,
+              "cpu_seconds": 13.269999999999996,
+              "cpu_percent": 19.91177000179184
+            }
+          ]
+        },
+        "after": {
+          "first_real_to_stress_start_s": 0.42376,
+          "windows": [
+            {
+              "offset_start_s": 0,
+              "offset_end_s": 10,
+              "samples": 10,
+              "sample_duration_s": 9.043999999994412,
+              "cpu_seconds": 11.02,
+              "cpu_percent": 121.8487394958736
+            },
+            {
+              "offset_start_s": 10,
+              "offset_end_s": 76.63777037500404,
+              "samples": 66,
+              "sample_duration_s": 65.30499999999302,
+              "cpu_seconds": 13.569999999999997,
+              "cpu_percent": 20.77941964627739
+            }
+          ]
+        }
+      },
+      "limitation": "Before waited 36.841 s after first native REAL page; after began in 0.424 s. Four initial prefetch parses finished before the old paging window but inside the first 8 s of the new window. Full-window CPU is preserved but cannot isolate snapshot dedup impact. The 10 s split is diagnostic only, not a replacement 50-turn metric."
+    },
+    "classification": "extra_immediate_after_first_page_not_settled_comparison"
+  },
+  "snapshot-after-default-on-review": {
+    "kind": "review",
+    "pid": "81332",
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-after-default-on-review-events.json",
+    "start_uptime": 347085.284665083,
+    "data_ready_uptime": 347091.551073375,
+    "native_tap_command_ready_uptime": 347087.333282125,
+    "tap_start_to_real_data_observation_s": 6.266408291994594,
+    "timing_definition": "Continuous driver monotonic time before tap command to first waitFor actual numbered floor; includes UI command dispatch and observation latency, not pure XHR latency. No human/tool-thinking gap.",
+    "first_real_data_capture": 60,
+    "first_real_data_verified": true,
+    "scroll_start_uptime": 347091.551073375,
+    "scroll_end_uptime": 347118.93923016667,
+    "scroll_duration_s": 27.388156791683286,
+    "scroll_start_wall": "2026-09-08T01:05:19.242178",
+    "scroll_end_wall": "2026-09-08T01:05:46.630335",
+    "drag_count": 6,
+    "drag_commands": [
+      61,
+      62,
+      63,
+      64,
+      65,
+      66
+    ],
+    "closed_uptime": 347124.027522125,
+    "processes": [
+      {
+        "pid": "81332",
+        "kind": "reader",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 2.0800000000000054,
+        "cpu_percent": 7.944996180292438,
+        "rss_first_mib": 739.25,
+        "rss_last_mib": 737.891,
+        "rss_max_mib": 740.297
+      },
+      {
+        "pid": "81341",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 258.625,
+        "rss_last_mib": 258.562,
+        "rss_max_mib": 258.625
+      },
+      {
+        "pid": "81342",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 259.203,
+        "rss_last_mib": 259.297,
+        "rss_max_mib": 259.359
+      },
+      {
+        "pid": "81343",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 258.672,
+        "rss_last_mib": 258.656,
+        "rss_max_mib": 258.719
+      },
+      {
+        "pid": "81344",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 259.156,
+        "rss_last_mib": 259.156,
+        "rss_max_mib": 259.219
+      },
+      {
+        "pid": "81347",
+        "kind": "webkit_network",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.06999999999999995,
+        "cpu_percent": 0.26737967914445615,
+        "rss_first_mib": 143.438,
+        "rss_last_mib": 144.797,
+        "rss_max_mib": 144.797
+      },
+      {
+        "pid": "81360",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 282.078,
+        "rss_last_mib": 281.812,
+        "rss_max_mib": 282.078
+      },
+      {
+        "pid": "81361",
+        "kind": "webkit_gpu",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.7000000000000001,
+        "cpu_percent": 2.673796791444564,
+        "rss_first_mib": 174.625,
+        "rss_last_mib": 178.297,
+        "rss_max_mib": 184.078
+      },
+      {
+        "pid": "81362",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.172,
+        "rss_last_mib": 260.062,
+        "rss_max_mib": 260.172
+      },
+      {
+        "pid": "81363",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 262.234,
+        "rss_last_mib": 262.562,
+        "rss_max_mib": 262.562
+      },
+      {
+        "pid": "81364",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 261.078,
+        "rss_last_mib": 261.0,
+        "rss_max_mib": 261.078
+      },
+      {
+        "pid": "81663",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.179999999993015,
+        "cpu_seconds": 3.0300000000000002,
+        "cpu_percent": 11.573720397252899,
+        "rss_first_mib": 360.688,
+        "rss_last_mib": 455.156,
+        "rss_max_mib": 455.156
+      }
+    ],
+    "after_close": {
+      "review_pid": "81663",
+      "closed_uptime": 347124.027522125,
+      "reader_monitor_end_uptime": 347162.359,
+      "monitor_window_after_close_s": 38.331477875006385,
+      "review_process_samples_after_close": 0,
+      "last_review_observed_uptime": 347122.012,
+      "last_review_cpu_total_s": 5.98,
+      "interpretation": "No review process sampled after closure while reader monitoring continued; missing PID is not a measured zero CPU percentage. This interval also contains native settings operations, so do not label reader CPU idle."
+    }
+  },
+  "snapshot-settled-after-default-off-continuous": {
+    "label": "snapshot-settled-after-default-off-continuous",
+    "pid": "82878",
+    "start": "2026-09-08T01:15:12.861485",
+    "end": "2026-09-08T01:16:31.069363",
+    "event_duration_s": 78.20787804201245,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.0006864070892333984,
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-settled-after-default-off-continuous-events.json",
+    "processes": [
+      {
+        "pid": "82878",
+        "kind": "reader",
+        "samples": 78,
+        "sample_duration_s": 77.70600000000559,
+        "cpu_seconds": 7.66,
+        "cpu_percent": 9.857668648494903,
+        "rss_first_mib": 626.344,
+        "rss_last_mib": 662.453,
+        "rss_max_mib": 662.453
+      },
+      {
+        "pid": "82886",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.70600000000559,
+        "cpu_seconds": 0.020000000000000462,
+        "cpu_percent": 0.025738038246723577,
+        "rss_first_mib": 278.844,
+        "rss_last_mib": 278.578,
+        "rss_max_mib": 278.844
+      },
+      {
+        "pid": "82887",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.70600000000559,
+        "cpu_seconds": 0.020000000000000462,
+        "cpu_percent": 0.025738038246723577,
+        "rss_first_mib": 278.734,
+        "rss_last_mib": 278.422,
+        "rss_max_mib": 278.734
+      },
+      {
+        "pid": "82889",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.70600000000559,
+        "cpu_seconds": 0.020000000000000462,
+        "cpu_percent": 0.025738038246723577,
+        "rss_first_mib": 278.828,
+        "rss_last_mib": 278.578,
+        "rss_max_mib": 278.828
+      },
+      {
+        "pid": "82890",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.70600000000559,
+        "cpu_seconds": 0.019999999999999574,
+        "cpu_percent": 0.025738038246722435,
+        "rss_first_mib": 278.797,
+        "rss_last_mib": 278.531,
+        "rss_max_mib": 278.797
+      },
+      {
+        "pid": "82892",
+        "kind": "webkit_network",
+        "samples": 78,
+        "sample_duration_s": 77.70600000000559,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 119.5,
+        "rss_last_mib": 119.391,
+        "rss_max_mib": 119.5
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 347686.65530575,
+        "page": "2/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 347688.22316500003,
+        "page": "3/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 347689.79730154166,
+        "page": "4/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 347691.3758101667,
+        "page": "5/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 347692.963551375,
+        "page": "6/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 347694.55803145835,
+        "page": "7/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 347696.13774383336,
+        "page": "8/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 347697.71629533335,
+        "page": "9/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 347699.30022870837,
+        "page": "10/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 347700.8894115,
+        "page": "11/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 347702.4830705417,
+        "page": "12/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 347704.06895720836,
+        "page": "1/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 347705.65937508334,
+        "page": "2/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 347707.2263866667,
+        "page": "3/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 347708.78452320833,
+        "page": "4/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 347710.3769800417,
+        "page": "5/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 347711.95750425,
+        "page": "6/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 347713.505777125,
+        "page": "7/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 347715.059754375,
+        "page": "8/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 347716.63623995834,
+        "page": "9/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 347718.21815083333,
+        "page": "10/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 347719.79508420837,
+        "page": "1/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 347721.36689633335,
+        "page": "2/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 347722.9376830417,
+        "page": "3/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 347724.51852333336,
+        "page": "4/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 347726.10028429166,
+        "page": "5/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 347727.6705056667,
+        "page": "6/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 347729.203189875,
+        "page": "7/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 347730.77219420834,
+        "page": "8/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 347732.35354408337,
+        "page": "9/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 347733.92366458336,
+        "page": "10/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 347735.4291741667,
+        "page": "11/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 347736.97272533335,
+        "page": "1/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 347738.53152762505,
+        "page": "2/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 347740.0873253333,
+        "page": "3/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 347741.6575926667,
+        "page": "4/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 347743.31230595836,
+        "page": "5/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 347744.88357370836,
+        "page": "6/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 347746.4309885,
+        "page": "7/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 347747.97710645833,
+        "page": "8/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 347749.52158991667,
+        "page": "9/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 347751.07204887504,
+        "page": "10/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 347752.610145625,
+        "page": "1/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 347754.1614514167,
+        "page": "2/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 347755.65825179167,
+        "page": "3/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 347757.1918699167,
+        "page": "4/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 347758.73720520834,
+        "page": "5/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 347760.28003208333,
+        "page": "6/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 347761.82538008335,
+        "page": "7/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 347763.368715375,
+        "page": "8/9",
+        "chapter_title": "第14章 首杀"
+      }
+    ],
+    "stages": {
+      "coreText.pageSnapshot": {
+        "count": 100,
+        "sum_ms": 347,
+        "max_ms": 13,
+        "values_ms": [
+          0,
+          0,
+          7,
+          0,
+          8,
+          0,
+          13,
+          0,
+          7,
+          0,
+          7,
+          0,
+          6,
+          0,
+          9,
+          0,
+          6,
+          0,
+          6,
+          0,
+          6,
+          0,
+          6,
+          0,
+          0,
+          0,
+          10,
+          0,
+          5,
+          0,
+          8,
+          0,
+          6,
+          0,
+          8,
+          0,
+          5,
+          0,
+          7,
+          0,
+          6,
+          0,
+          7,
+          0,
+          7,
+          0,
+          8,
+          0,
+          6,
+          0,
+          7,
+          0,
+          11,
+          0,
+          5,
+          0,
+          7,
+          0,
+          6,
+          0,
+          9,
+          0,
+          4,
+          0,
+          5,
+          0,
+          10,
+          0,
+          9,
+          0,
+          4,
+          0,
+          7,
+          0,
+          6,
+          0,
+          7,
+          0,
+          5,
+          0,
+          5,
+          0,
+          6,
+          0,
+          4,
+          0,
+          11,
+          0,
+          6,
+          0,
+          6,
+          0,
+          7,
+          0,
+          12,
+          0,
+          12,
+          0,
+          12,
+          0
+        ]
+      },
+      "coreText.document.htmlParse": {
+        "count": 6,
+        "sum_ms": 12,
+        "max_ms": 2,
+        "values_ms": [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 6,
+        "sum_ms": 40,
+        "max_ms": 8,
+        "values_ms": [
+          8,
+          8,
+          7,
+          7,
+          5,
+          5
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 6,
+        "sum_ms": 42,
+        "max_ms": 9,
+        "values_ms": [
+          9,
+          8,
+          7,
+          7,
+          6,
+          5
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 6,
+        "sum_ms": 39,
+        "max_ms": 8,
+        "values_ms": [
+          8,
+          7,
+          7,
+          6,
+          6,
+          5
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 6,
+        "sum_ms": 30,
+        "max_ms": 6,
+        "values_ms": [
+          6,
+          6,
+          5,
+          4,
+          5,
+          4
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 8,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 4,
+        "sum_ms": 10,
+        "max_ms": 3,
+        "values_ms": [
+          3,
+          3,
+          2,
+          2
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 4,
+        "sum_ms": 26,
+        "max_ms": 8,
+        "values_ms": [
+          8,
+          6,
+          6,
+          6
+        ]
+      },
+      "chapter.network": {
+        "count": 4,
+        "sum_ms": 1015,
+        "max_ms": 480,
+        "values_ms": [
+          168,
+          187,
+          180,
+          480
+        ]
+      },
+      "chapter.parse": {
+        "count": 4,
+        "sum_ms": 75,
+        "max_ms": 25,
+        "values_ms": [
+          16,
+          16,
+          18,
+          25
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 4,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-08 01:15:31.832",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-08 01:15:47.565",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-08 01:16:04.749",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-08 01:16:20.382",
+        "from_spine": 15,
+        "to_spine": 16
+      }
+    ],
+    "snapshot_requests": {
+      "rendered": 48,
+      "cached": 52,
+      "requests": 100,
+      "cache_hit_ratio": 0.52,
+      "unique_rendered_pages": 48,
+      "same_page_repeat_within_150ms": 0,
+      "repeat_details": []
+    },
+    "render_leaves": [
+      {
+        "time": "2026-09-08T01:15:14.462000",
+        "ms": 8,
+        "spine": 11.0,
+        "chars": 3791.0
+      },
+      {
+        "time": "2026-09-08T01:15:27.094000",
+        "ms": 7,
+        "spine": 13.0,
+        "chars": 3471.0
+      },
+      {
+        "time": "2026-09-08T01:15:31.872000",
+        "ms": 7,
+        "spine": 14.0,
+        "chars": 3824.0
+      },
+      {
+        "time": "2026-09-08T01:15:47.604000",
+        "ms": 6,
+        "spine": 15.0,
+        "chars": 3276.0
+      },
+      {
+        "time": "2026-09-08T01:16:04.785000",
+        "ms": 6,
+        "spine": 16.0,
+        "chars": 3205.0
+      },
+      {
+        "time": "2026-09-08T01:16:20.418000",
+        "ms": 5,
+        "spine": 17.0,
+        "chars": 3572.0
+      }
+    ],
+    "cold_load": {
+      "loading": "2026-09-08T01:15:10.233000",
+      "first_real": "2026-09-08T01:15:10.952000",
+      "loading_to_real_s": 0.719,
+      "loading_to_first_observed_ready_upper_s": 2.536558,
+      "capture1": "2026-09-08T01:15:10.446837",
+      "capture2": "2026-09-08T01:15:12.769558",
+      "stages": [
+        {
+          "timestamp": "2026-09-08T01:15:10.829000",
+          "stage": "chapter.network",
+          "ms": 584
+        },
+        {
+          "timestamp": "2026-09-08T01:15:10.842000",
+          "stage": "chapter.parse",
+          "ms": 13
+        },
+        {
+          "timestamp": "2026-09-08T01:15:10.842000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-08T01:15:10.911000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 2
+        },
+        {
+          "timestamp": "2026-09-08T01:15:10.940000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 20,
+          "chars": 4201.0
+        },
+        {
+          "timestamp": "2026-09-08T01:15:10.948000",
+          "stage": "coreText.fullLayout",
+          "ms": 8,
+          "chars": 4213.0
+        }
+      ]
+    },
+    "comparison": {
+      "before_label": "final-default-off-continuous",
+      "reader_cpu_percent_before": 9.470222292664246,
+      "reader_cpu_percent_after": 9.857668648494903,
+      "reader_cpu_pp_change": 0.38744635583065623,
+      "reader_cpu_seconds_before": 7.169999999999998,
+      "reader_cpu_seconds_after": 7.66,
+      "reader_rss_peak_before_mib": 661.578,
+      "reader_rss_peak_after_mib": 662.453,
+      "snapshots_before": {
+        "rendered": 88,
+        "cached": 12,
+        "requests": 100,
+        "cache_hit_ratio": 0.12,
+        "unique_rendered_pages": 44,
+        "same_page_repeat_within_150ms": 44,
+        "repeat_details": [
+          {
+            "spine": 12,
+            "local_page": 1,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:47:27.629000"
+          },
+          {
+            "spine": 12,
+            "local_page": 2,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:47:29.175000"
+          },
+          {
+            "spine": 12,
+            "local_page": 3,
+            "gap_ms": 15.0,
+            "time": "2026-09-07T23:47:30.749000"
+          },
+          {
+            "spine": 12,
+            "local_page": 4,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:32.293000"
+          },
+          {
+            "spine": 12,
+            "local_page": 5,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:33.843000"
+          },
+          {
+            "spine": 12,
+            "local_page": 6,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:35.393000"
+          },
+          {
+            "spine": 12,
+            "local_page": 7,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:47:36.944000"
+          },
+          {
+            "spine": 12,
+            "local_page": 8,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:38.509000"
+          },
+          {
+            "spine": 12,
+            "local_page": 9,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:47:40.061000"
+          },
+          {
+            "spine": 12,
+            "local_page": 10,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:41.626000"
+          },
+          {
+            "spine": 13,
+            "local_page": 1,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:47:46.377000"
+          },
+          {
+            "spine": 13,
+            "local_page": 2,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:47.959000"
+          },
+          {
+            "spine": 13,
+            "local_page": 3,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:47:49.528000"
+          },
+          {
+            "spine": 13,
+            "local_page": 4,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:51.093000"
+          },
+          {
+            "spine": 13,
+            "local_page": 5,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:47:52.662000"
+          },
+          {
+            "spine": 13,
+            "local_page": 6,
+            "gap_ms": 6.0,
+            "time": "2026-09-07T23:47:54.223000"
+          },
+          {
+            "spine": 13,
+            "local_page": 7,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:55.776000"
+          },
+          {
+            "spine": 13,
+            "local_page": 8,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:47:57.326000"
+          },
+          {
+            "spine": 14,
+            "local_page": 1,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:48:02.177000"
+          },
+          {
+            "spine": 14,
+            "local_page": 2,
+            "gap_ms": 13.0,
+            "time": "2026-09-07T23:48:03.714000"
+          },
+          {
+            "spine": 14,
+            "local_page": 3,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:48:05.263000"
+          },
+          {
+            "spine": 14,
+            "local_page": 4,
+            "gap_ms": 13.0,
+            "time": "2026-09-07T23:48:06.847000"
+          },
+          {
+            "spine": 14,
+            "local_page": 5,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:48:08.392000"
+          },
+          {
+            "spine": 14,
+            "local_page": 6,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:48:09.959000"
+          },
+          {
+            "spine": 14,
+            "local_page": 7,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:48:11.526000"
+          },
+          {
+            "spine": 14,
+            "local_page": 8,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:48:13.078000"
+          },
+          {
+            "spine": 14,
+            "local_page": 9,
+            "gap_ms": 6.0,
+            "time": "2026-09-07T23:48:14.590000"
+          },
+          {
+            "spine": 15,
+            "local_page": 0,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:48:17.713000"
+          },
+          {
+            "spine": 15,
+            "local_page": 1,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:48:19.228000"
+          },
+          {
+            "spine": 15,
+            "local_page": 2,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:48:20.742000"
+          },
+          {
+            "spine": 15,
+            "local_page": 3,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:48:22.311000"
+          },
+          {
+            "spine": 15,
+            "local_page": 4,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:48:23.843000"
+          },
+          {
+            "spine": 15,
+            "local_page": 5,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:48:25.394000"
+          },
+          {
+            "spine": 15,
+            "local_page": 6,
+            "gap_ms": 6.0,
+            "time": "2026-09-07T23:48:26.873000"
+          },
+          {
+            "spine": 15,
+            "local_page": 7,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:48:28.393000"
+          },
+          {
+            "spine": 15,
+            "local_page": 8,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:48:29.927000"
+          },
+          {
+            "spine": 15,
+            "local_page": 9,
+            "gap_ms": 6.0,
+            "time": "2026-09-07T23:48:31.474000"
+          },
+          {
+            "spine": 16,
+            "local_page": 0,
+            "gap_ms": 14.0,
+            "time": "2026-09-07T23:48:33.015000"
+          },
+          {
+            "spine": 16,
+            "local_page": 1,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:48:34.560000"
+          },
+          {
+            "spine": 16,
+            "local_page": 2,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:48:36.093000"
+          },
+          {
+            "spine": 16,
+            "local_page": 3,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:48:37.626000"
+          },
+          {
+            "spine": 16,
+            "local_page": 4,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:48:39.178000"
+          },
+          {
+            "spine": 16,
+            "local_page": 5,
+            "gap_ms": 13.0,
+            "time": "2026-09-07T23:48:40.714000"
+          },
+          {
+            "spine": 16,
+            "local_page": 6,
+            "gap_ms": 14.0,
+            "time": "2026-09-07T23:48:42.248000"
+          }
+        ]
+      },
+      "same_chapter_page_sequence": true,
+      "baseline_all_initial_commits_before_stress": true,
+      "baseline_latest_initial_commit_seconds_before_stress": 100.64307
+    },
+    "initial_prefetch_gate": {
+      "label": "snapshot-settled-after-default-off",
+      "condition": "current run chapter 10..14 official cache body+metadata+raw+normalized+last atomic package commit, matched SHA256/state/version/source; initial visible page observed",
+      "start_uptime": 347685.139843166,
+      "completed_uptime": 347685.140958375,
+      "start_wall": "2026-09-08T01:15:12.836057",
+      "completed_wall": "2026-09-08T01:15:12.837173",
+      "chapters": [
+        {
+          "spine": 10,
+          "content_bytes": 10380,
+          "content_sha256": "293e4ef4f9fc545a279f07e4db1309389914a37f1ae93d13ca29dcfdea5e353a",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:15:11.578036",
+          "package_commit_epoch_s": 1788801311.5780356,
+          "source_url_sha256": "3f076db6434d37e50c1d810af6d3d7f8fc9a12032f797247db8c439d9ff99fec"
+        },
+        {
+          "spine": 11,
+          "content_bytes": 11150,
+          "content_sha256": "cec99d57f4ba1d2cb0dc3093ca9bdbe24bdedc9745e852b6d098e2e44c50311a",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:15:11.596112",
+          "package_commit_epoch_s": 1788801311.5961115,
+          "source_url_sha256": "f269aaeae2eb6a00b6b899def54e1241684ffeab23a461e3f9c1a24b54089de5"
+        },
+        {
+          "spine": 12,
+          "content_bytes": 12354,
+          "content_sha256": "20149945d1242d3fcab78cccbde424507bfedf92003f56bc4092b2d3cc619b71",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:15:10.861399",
+          "package_commit_epoch_s": 1788801310.8613987,
+          "source_url_sha256": "57a441c61f70ced236d7bac8bb2d9d8f55153ff67ab1f0bf19ab9f2de66b3195"
+        },
+        {
+          "spine": 13,
+          "content_bytes": 10208,
+          "content_sha256": "c4990db6a369312dbf8b70b74f21c37b7e8b70aeaabbb7b5f0cff0e5312ff506",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:15:11.446045",
+          "package_commit_epoch_s": 1788801311.446045,
+          "source_url_sha256": "e352dc63fe115fa68b528b16e480f31a64770997512a5edc1757374ee7e8efea"
+        },
+        {
+          "spine": 14,
+          "content_bytes": 11267,
+          "content_sha256": "cbf000ec3602ac77bd884c07504d12bfb6bf10e26c1c4aad4af0948221a3e55b",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:15:11.482798",
+          "package_commit_epoch_s": 1788801311.482798,
+          "source_url_sha256": "bc59e1f0a07dcdaef3891ced87b65295b45c3d9f836170132851db1b4f2cc71f"
+        }
+      ]
+    },
+    "tap_count": 50,
+    "wait_for_page_command_count": 0,
+    "classification": "primary_settled_50_turns"
+  },
+  "snapshot-settled-after-default-on-continuous": {
+    "label": "snapshot-settled-after-default-on-continuous",
+    "pid": "83437",
+    "start": "2026-09-08T01:18:54.994309",
+    "end": "2026-09-08T01:20:11.751546",
+    "event_duration_s": 76.75723708298756,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.009541034698486328,
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-settled-after-default-on-continuous-events.json",
+    "processes": [
+      {
+        "pid": "83437",
+        "kind": "reader",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 14.75,
+        "cpu_percent": 19.486352947403883,
+        "rss_first_mib": 688.0,
+        "rss_last_mib": 756.391,
+        "rss_max_mib": 763.453
+      },
+      {
+        "pid": "83442",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.516,
+        "rss_last_mib": 278.516,
+        "rss_max_mib": 278.516
+      },
+      {
+        "pid": "83444",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.359,
+        "rss_last_mib": 278.359,
+        "rss_max_mib": 278.359
+      },
+      {
+        "pid": "83445",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.328,
+        "rss_last_mib": 278.328,
+        "rss_max_mib": 278.328
+      },
+      {
+        "pid": "83446",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.438,
+        "rss_last_mib": 278.438,
+        "rss_max_mib": 278.438
+      },
+      {
+        "pid": "83449",
+        "kind": "webkit_network",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.02999999999999997,
+        "cpu_percent": 0.03963326023200786,
+        "rss_first_mib": 119.562,
+        "rss_last_mib": 119.562,
+        "rss_max_mib": 119.594
+      },
+      {
+        "pid": "83466",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.17000000000000015,
+        "cpu_percent": 0.22458847464804493,
+        "rss_first_mib": 294.922,
+        "rss_last_mib": 297.812,
+        "rss_max_mib": 297.922
+      },
+      {
+        "pid": "83467",
+        "kind": "webkit_gpu",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.15000000000000008,
+        "cpu_percent": 0.19816630116003958,
+        "rss_first_mib": 153.203,
+        "rss_last_mib": 161.656,
+        "rss_max_mib": 161.656
+      },
+      {
+        "pid": "83468",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 279.109,
+        "rss_last_mib": 279.094,
+        "rss_max_mib": 279.109
+      },
+      {
+        "pid": "83469",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.859,
+        "rss_last_mib": 278.844,
+        "rss_max_mib": 278.859
+      },
+      {
+        "pid": "83470",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.69399999995949,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 279.141,
+        "rss_last_mib": 278.984,
+        "rss_max_mib": 279.141
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 347908.00295375,
+        "page": "2/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 347909.54742712504,
+        "page": "3/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 347911.121407125,
+        "page": "4/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 347912.6892881667,
+        "page": "5/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 347914.27997725003,
+        "page": "6/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 347915.8505614167,
+        "page": "7/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 347917.42077270837,
+        "page": "8/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 347919.0026752917,
+        "page": "9/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 347920.58015875,
+        "page": "10/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 347922.1522726667,
+        "page": "11/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 347923.7231669167,
+        "page": "12/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 347925.3051349167,
+        "page": "13/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 347926.83786483336,
+        "page": "1/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 347928.3784862083,
+        "page": "2/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 347929.93010133336,
+        "page": "3/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 347931.5208535,
+        "page": "4/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 347933.0591410417,
+        "page": "5/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 347934.5904476667,
+        "page": "6/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 347936.18707341666,
+        "page": "7/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 347937.7795346667,
+        "page": "8/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 347939.33914545836,
+        "page": "9/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 347940.8920180417,
+        "page": "10/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 347942.4374805834,
+        "page": "11/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 347943.9872991667,
+        "page": "12/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 347945.54904783337,
+        "page": "1/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 347947.059914125,
+        "page": "2/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 347948.58777333336,
+        "page": "3/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 347950.06541441666,
+        "page": "4/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 347951.62360633333,
+        "page": "5/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 347953.16632425,
+        "page": "6/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 347954.73277891666,
+        "page": "7/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 347956.28791475005,
+        "page": "8/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 347957.8526857084,
+        "page": "9/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 347959.40682562505,
+        "page": "10/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 347960.96611154167,
+        "page": "11/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 347962.52631183335,
+        "page": "12/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 347964.07805454166,
+        "page": "1/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 347965.61044225004,
+        "page": "2/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 347967.12897200003,
+        "page": "3/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 347968.6513758334,
+        "page": "4/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 347970.20228820835,
+        "page": "5/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 347971.7518580417,
+        "page": "6/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 347973.2856112917,
+        "page": "7/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 347974.8539185417,
+        "page": "8/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 347976.38512608333,
+        "page": "9/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 347977.9376522084,
+        "page": "10/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 347979.45946879167,
+        "page": "11/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 347981.0018620833,
+        "page": "1/10",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 347982.5212284167,
+        "page": "2/10",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 347984.04457495833,
+        "page": "3/10",
+        "chapter_title": "第14章 首杀"
+      }
+    ],
+    "stages": {
+      "coreText.pageSnapshot": {
+        "count": 100,
+        "sum_ms": 374,
+        "max_ms": 12,
+        "values_ms": [
+          0,
+          0,
+          7,
+          0,
+          7,
+          0,
+          9,
+          0,
+          8,
+          0,
+          9,
+          0,
+          7,
+          0,
+          8,
+          0,
+          7,
+          0,
+          11,
+          0,
+          6,
+          0,
+          8,
+          0,
+          5,
+          0,
+          0,
+          0,
+          11,
+          0,
+          7,
+          0,
+          6,
+          0,
+          4,
+          0,
+          10,
+          0,
+          7,
+          0,
+          11,
+          0,
+          7,
+          0,
+          10,
+          0,
+          5,
+          0,
+          4,
+          0,
+          6,
+          0,
+          8,
+          0,
+          4,
+          0,
+          9,
+          0,
+          11,
+          0,
+          12,
+          0,
+          8,
+          0,
+          10,
+          0,
+          7,
+          0,
+          8,
+          0,
+          7,
+          0,
+          11,
+          0,
+          6,
+          0,
+          9,
+          0,
+          5,
+          0,
+          10,
+          0,
+          7,
+          0,
+          10,
+          0,
+          7,
+          0,
+          8,
+          0,
+          7,
+          0,
+          8,
+          0,
+          6,
+          0,
+          11,
+          0,
+          5,
+          0
+        ]
+      },
+      "coreText.document.htmlParse": {
+        "count": 6,
+        "sum_ms": 416,
+        "max_ms": 85,
+        "values_ms": [
+          85,
+          77,
+          73,
+          75,
+          52,
+          54
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 6,
+        "sum_ms": 144,
+        "max_ms": 30,
+        "values_ms": [
+          30,
+          27,
+          26,
+          24,
+          19,
+          18
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 6,
+        "sum_ms": 144,
+        "max_ms": 30,
+        "values_ms": [
+          30,
+          27,
+          26,
+          24,
+          19,
+          18
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 12,
+        "sum_ms": 1265,
+        "max_ms": 288,
+        "values_ms": [
+          0,
+          288,
+          0,
+          222,
+          0,
+          202,
+          0,
+          226,
+          0,
+          176,
+          0,
+          151
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 6,
+        "sum_ms": 581,
+        "max_ms": 115,
+        "values_ms": [
+          115,
+          106,
+          106,
+          97,
+          77,
+          80
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 8,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 4,
+        "sum_ms": 41,
+        "max_ms": 11,
+        "values_ms": [
+          11,
+          11,
+          10,
+          9
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 4,
+        "sum_ms": 154,
+        "max_ms": 41,
+        "values_ms": [
+          40,
+          41,
+          38,
+          35
+        ]
+      },
+      "chapter.network": {
+        "count": 4,
+        "sum_ms": 2086,
+        "max_ms": 1172,
+        "values_ms": [
+          1172,
+          157,
+          163,
+          594
+        ]
+      },
+      "chapter.jsNet": {
+        "count": 3,
+        "sum_ms": 9536,
+        "max_ms": 4282,
+        "values_ms": [
+          4282,
+          2916,
+          2338
+        ]
+      },
+      "chapter.parse": {
+        "count": 3,
+        "sum_ms": 9886,
+        "max_ms": 4391,
+        "values_ms": [
+          4391,
+          3026,
+          2469
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 3,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-08 01:19:14.617",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-08 01:19:33.317",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-08 01:19:51.846",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-08 01:20:08.778",
+        "from_spine": 15,
+        "to_spine": 16
+      }
+    ],
+    "snapshot_requests": {
+      "rendered": 48,
+      "cached": 52,
+      "requests": 100,
+      "cache_hit_ratio": 0.52,
+      "unique_rendered_pages": 48,
+      "same_page_repeat_within_150ms": 0,
+      "repeat_details": []
+    },
+    "initial_prefetch_gate": {
+      "label": "snapshot-settled-after-default-on",
+      "condition": "current run chapter 10..14 official cache body+metadata+raw+normalized+last atomic package commit, matched SHA256/state/version/source; initial visible page observed",
+      "start_uptime": 347895.58591625,
+      "completed_uptime": 347907.256857791,
+      "start_wall": "2026-09-08T01:18:43.284012",
+      "completed_wall": "2026-09-08T01:18:54.955062",
+      "chapters": [
+        {
+          "spine": 10,
+          "content_bytes": 86375,
+          "content_sha256": "b549c61e49700139043521f969132aed4f02ec7d10297c476e82306c3b74be45",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:18:49.384861",
+          "package_commit_epoch_s": 1788801529.3848608,
+          "source_url_sha256": "3f076db6434d37e50c1d810af6d3d7f8fc9a12032f797247db8c439d9ff99fec"
+        },
+        {
+          "spine": 11,
+          "content_bytes": 94037,
+          "content_sha256": "bf7361abd82534203a99df1430bb3814fba2a74e68389b2a76641ae6e5e88aab",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:18:54.933067",
+          "package_commit_epoch_s": 1788801534.9330668,
+          "source_url_sha256": "f269aaeae2eb6a00b6b899def54e1241684ffeab23a461e3f9c1a24b54089de5"
+        },
+        {
+          "spine": 12,
+          "content_bytes": 101750,
+          "content_sha256": "6ce50f125c35bce80efc15408d2c8ce83aac90d815ced646e8a79a7502909027",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:18:39.803368",
+          "package_commit_epoch_s": 1788801519.8033679,
+          "source_url_sha256": "57a441c61f70ced236d7bac8bb2d9d8f55153ff67ab1f0bf19ab9f2de66b3195"
+        },
+        {
+          "spine": 13,
+          "content_bytes": 87561,
+          "content_sha256": "4f313fb17a5b663fecefdc67b7210038651f9835009a8992feebc3601a82f23a",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:18:52.769515",
+          "package_commit_epoch_s": 1788801532.7695148,
+          "source_url_sha256": "e352dc63fe115fa68b528b16e480f31a64770997512a5edc1757374ee7e8efea"
+        },
+        {
+          "spine": 14,
+          "content_bytes": 86430,
+          "content_sha256": "f49bac175236ae5c2dbab612ac86b207e73800c57032bbc3e045eb96a128ee06",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:18:47.707811",
+          "package_commit_epoch_s": 1788801527.7078109,
+          "source_url_sha256": "bc59e1f0a07dcdaef3891ced87b65295b45c3d9f836170132851db1b4f2cc71f"
+        }
+      ]
+    },
+    "tap_count": 50,
+    "wait_for_page_command_count": 0,
+    "render_leaves": [
+      {
+        "time": "2026-09-08T01:18:56.106000",
+        "ms": 0,
+        "spine": 11.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:18:56.394000",
+        "ms": 288,
+        "spine": 11.0,
+        "chars": 3914.0,
+        "imageLoad": 251.1,
+        "bubbleDraw": 4.4,
+        "bubbleRecognize": 5.1
+      },
+      {
+        "time": "2026-09-08T01:19:10.194000",
+        "ms": 0,
+        "spine": 13.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:19:10.416000",
+        "ms": 222,
+        "spine": 13.0,
+        "chars": 3585.0,
+        "imageLoad": 196.5,
+        "bubbleDraw": 1.7,
+        "bubbleRecognize": 4.0
+      },
+      {
+        "time": "2026-09-08T01:19:15.016000",
+        "ms": 0,
+        "spine": 14.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:19:15.218000",
+        "ms": 202,
+        "spine": 14.0,
+        "chars": 3934.0,
+        "imageLoad": 176.4,
+        "bubbleDraw": 1.4,
+        "bubbleRecognize": 3.7
+      },
+      {
+        "time": "2026-09-08T01:19:33.691000",
+        "ms": 0,
+        "spine": 15.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:19:33.917000",
+        "ms": 226,
+        "spine": 15.0,
+        "chars": 3383.0,
+        "imageLoad": 203.6,
+        "bubbleDraw": 0.3,
+        "bubbleRecognize": 4.2
+      },
+      {
+        "time": "2026-09-08T01:19:52.131000",
+        "ms": 0,
+        "spine": 16.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:19:52.307000",
+        "ms": 176,
+        "spine": 16.0,
+        "chars": 3291.0,
+        "imageLoad": 156.5,
+        "bubbleDraw": 1.5,
+        "bubbleRecognize": 3.3
+      },
+      {
+        "time": "2026-09-08T01:20:09.090000",
+        "ms": 0,
+        "spine": 17.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:20:09.241000",
+        "ms": 151,
+        "spine": 17.0,
+        "chars": 3659.0,
+        "imageLoad": 133.3,
+        "bubbleRecognize": 3.2
+      }
+    ],
+    "cold_load": {
+      "loading": "2026-09-08T01:18:33.631000",
+      "first_real": "2026-09-08T01:18:42.358000",
+      "loading_to_real_s": 8.727,
+      "loading_to_first_observed_ready_upper_s": 9.591222,
+      "capture1": "2026-09-08T01:18:33.895840",
+      "capture2": "2026-09-08T01:18:43.222222",
+      "stages": [
+        {
+          "timestamp": "2026-09-08T01:18:34.198000",
+          "stage": "chapter.network",
+          "ms": 503
+        },
+        {
+          "timestamp": "2026-09-08T01:18:37.795000",
+          "stage": "chapter.jsNet",
+          "ms": 3480
+        },
+        {
+          "timestamp": "2026-09-08T01:18:37.844000",
+          "stage": "chapter.parse",
+          "ms": 3645
+        },
+        {
+          "timestamp": "2026-09-08T01:18:37.844000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-08T01:18:40.263000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 104
+        },
+        {
+          "timestamp": "2026-09-08T01:18:40.312000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 3,
+          "chars": 1.0
+        },
+        {
+          "timestamp": "2026-09-08T01:18:42.085000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 1773,
+          "chars": 4334.0,
+          "imageLoad": 1712.6
+        },
+        {
+          "timestamp": "2026-09-08T01:18:42.339000",
+          "stage": "coreText.fullLayout",
+          "ms": 142,
+          "chars": 4348.0
+        }
+      ]
+    },
+    "comparison": {
+      "before_label": "final-default-on-continuous",
+      "reader_cpu_percent_before": 19.436448622812254,
+      "reader_cpu_percent_after": 19.486352947403883,
+      "reader_cpu_pp_change": 0.049904324591629745,
+      "reader_cpu_seconds_before": 14.719999999999999,
+      "reader_cpu_seconds_after": 14.75,
+      "reader_rss_peak_before_mib": 761.141,
+      "reader_rss_peak_after_mib": 763.453,
+      "snapshots_before": {
+        "rendered": 88,
+        "cached": 12,
+        "requests": 100,
+        "cache_hit_ratio": 0.12,
+        "unique_rendered_pages": 44,
+        "same_page_repeat_within_150ms": 44,
+        "repeat_details": [
+          {
+            "spine": 12,
+            "local_page": 1,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:58:27.767000"
+          },
+          {
+            "spine": 12,
+            "local_page": 2,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:58:29.351000"
+          },
+          {
+            "spine": 12,
+            "local_page": 3,
+            "gap_ms": 18.0,
+            "time": "2026-09-07T23:58:30.909000"
+          },
+          {
+            "spine": 12,
+            "local_page": 4,
+            "gap_ms": 7.0,
+            "time": "2026-09-07T23:58:32.431000"
+          },
+          {
+            "spine": 12,
+            "local_page": 5,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:58:34.002000"
+          },
+          {
+            "spine": 12,
+            "local_page": 6,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:58:35.550000"
+          },
+          {
+            "spine": 12,
+            "local_page": 7,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:58:37.136000"
+          },
+          {
+            "spine": 12,
+            "local_page": 8,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:58:38.701000"
+          },
+          {
+            "spine": 12,
+            "local_page": 9,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:58:40.287000"
+          },
+          {
+            "spine": 12,
+            "local_page": 10,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:58:41.817000"
+          },
+          {
+            "spine": 12,
+            "local_page": 11,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:58:43.352000"
+          },
+          {
+            "spine": 13,
+            "local_page": 1,
+            "gap_ms": 14.0,
+            "time": "2026-09-07T23:58:48.055000"
+          },
+          {
+            "spine": 13,
+            "local_page": 2,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:58:49.635000"
+          },
+          {
+            "spine": 13,
+            "local_page": 3,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:58:51.203000"
+          },
+          {
+            "spine": 13,
+            "local_page": 4,
+            "gap_ms": 6.0,
+            "time": "2026-09-07T23:58:52.747000"
+          },
+          {
+            "spine": 13,
+            "local_page": 5,
+            "gap_ms": 13.0,
+            "time": "2026-09-07T23:58:54.304000"
+          },
+          {
+            "spine": 13,
+            "local_page": 6,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:58:55.884000"
+          },
+          {
+            "spine": 13,
+            "local_page": 7,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:58:57.437000"
+          },
+          {
+            "spine": 13,
+            "local_page": 8,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:58:59.002000"
+          },
+          {
+            "spine": 13,
+            "local_page": 9,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:00.536000"
+          },
+          {
+            "spine": 13,
+            "local_page": 10,
+            "gap_ms": 7.0,
+            "time": "2026-09-07T23:59:02.082000"
+          },
+          {
+            "spine": 14,
+            "local_page": 1,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:06.686000"
+          },
+          {
+            "spine": 14,
+            "local_page": 2,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:08.219000"
+          },
+          {
+            "spine": 14,
+            "local_page": 3,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:59:09.770000"
+          },
+          {
+            "spine": 14,
+            "local_page": 4,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:11.285000"
+          },
+          {
+            "spine": 14,
+            "local_page": 5,
+            "gap_ms": 14.0,
+            "time": "2026-09-07T23:59:12.806000"
+          },
+          {
+            "spine": 14,
+            "local_page": 6,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:14.336000"
+          },
+          {
+            "spine": 14,
+            "local_page": 7,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:59:15.887000"
+          },
+          {
+            "spine": 14,
+            "local_page": 8,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:17.435000"
+          },
+          {
+            "spine": 14,
+            "local_page": 9,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:18.986000"
+          },
+          {
+            "spine": 14,
+            "local_page": 10,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:20.552000"
+          },
+          {
+            "spine": 15,
+            "local_page": 0,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:59:23.633000"
+          },
+          {
+            "spine": 15,
+            "local_page": 1,
+            "gap_ms": 8.0,
+            "time": "2026-09-07T23:59:25.133000"
+          },
+          {
+            "spine": 15,
+            "local_page": 2,
+            "gap_ms": 6.0,
+            "time": "2026-09-07T23:59:26.648000"
+          },
+          {
+            "spine": 15,
+            "local_page": 3,
+            "gap_ms": 12.0,
+            "time": "2026-09-07T23:59:28.187000"
+          },
+          {
+            "spine": 15,
+            "local_page": 4,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:29.735000"
+          },
+          {
+            "spine": 15,
+            "local_page": 5,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:31.303000"
+          },
+          {
+            "spine": 15,
+            "local_page": 6,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:32.852000"
+          },
+          {
+            "spine": 15,
+            "local_page": 7,
+            "gap_ms": 10.0,
+            "time": "2026-09-07T23:59:34.402000"
+          },
+          {
+            "spine": 15,
+            "local_page": 8,
+            "gap_ms": 9.0,
+            "time": "2026-09-07T23:59:35.933000"
+          },
+          {
+            "spine": 15,
+            "local_page": 9,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:37.484000"
+          },
+          {
+            "spine": 15,
+            "local_page": 10,
+            "gap_ms": 7.0,
+            "time": "2026-09-07T23:59:39.029000"
+          },
+          {
+            "spine": 16,
+            "local_page": 0,
+            "gap_ms": 16.0,
+            "time": "2026-09-07T23:59:40.570000"
+          },
+          {
+            "spine": 16,
+            "local_page": 1,
+            "gap_ms": 11.0,
+            "time": "2026-09-07T23:59:42.080000"
+          }
+        ]
+      },
+      "same_chapter_page_sequence": true,
+      "baseline_all_initial_commits_before_stress": true,
+      "baseline_latest_initial_commit_seconds_before_stress": 12.664637
+    },
+    "classification": "primary_settled_50_turns"
+  },
+  "snapshot-settled-after-default-on-review": {
+    "kind": "review",
+    "pid": "83437",
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-settled-after-default-on-review-events.json",
+    "start_uptime": 347997.03487125,
+    "data_ready_uptime": 348003.211412541,
+    "native_tap_command_ready_uptime": 347999.05870241666,
+    "tap_start_to_real_data_observation_s": 6.17654129100265,
+    "timing_definition": "Continuous driver monotonic time before tap command to first waitFor actual numbered floor; includes UI command dispatch and observation latency, not pure XHR latency. No human/tool-thinking gap.",
+    "first_real_data_capture": 60,
+    "first_real_data_verified": true,
+    "scroll_start_uptime": 348003.211412541,
+    "scroll_end_uptime": 348030.60169308336,
+    "scroll_duration_s": 27.39028054237133,
+    "scroll_start_wall": "2026-09-08T01:20:30.903146",
+    "scroll_end_wall": "2026-09-08T01:20:58.293427",
+    "drag_count": 6,
+    "drag_commands": [
+      61,
+      62,
+      63,
+      64,
+      65,
+      66
+    ],
+    "closed_uptime": 348035.696187291,
+    "processes": [
+      {
+        "pid": "83437",
+        "kind": "reader",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 2.3900000000000006,
+        "cpu_percent": 8.77321782540779,
+        "rss_first_mib": 803.297,
+        "rss_last_mib": 803.891,
+        "rss_max_mib": 804.172
+      },
+      {
+        "pid": "83442",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.172,
+        "rss_last_mib": 273.625,
+        "rss_max_mib": 278.172
+      },
+      {
+        "pid": "83444",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.016,
+        "rss_last_mib": 273.484,
+        "rss_max_mib": 278.016
+      },
+      {
+        "pid": "83445",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 277.969,
+        "rss_last_mib": 273.109,
+        "rss_max_mib": 277.969
+      },
+      {
+        "pid": "83446",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.078,
+        "rss_last_mib": 275.188,
+        "rss_max_mib": 278.078
+      },
+      {
+        "pid": "83449",
+        "kind": "webkit_network",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.05999999999999994,
+        "cpu_percent": 0.22024814624454678,
+        "rss_first_mib": 147.0,
+        "rss_last_mib": 148.062,
+        "rss_max_mib": 148.172
+      },
+      {
+        "pid": "83466",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 297.297,
+        "rss_last_mib": 297.266,
+        "rss_max_mib": 297.297
+      },
+      {
+        "pid": "83467",
+        "kind": "webkit_gpu",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.87,
+        "cpu_percent": 3.193598120545931,
+        "rss_first_mib": 180.703,
+        "rss_last_mib": 185.156,
+        "rss_max_mib": 189.0
+      },
+      {
+        "pid": "83468",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.641,
+        "rss_last_mib": 278.625,
+        "rss_max_mib": 278.641
+      },
+      {
+        "pid": "83469",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.391,
+        "rss_last_mib": 278.375,
+        "rss_max_mib": 278.391
+      },
+      {
+        "pid": "83470",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.531,
+        "rss_last_mib": 278.516,
+        "rss_max_mib": 278.531
+      },
+      {
+        "pid": "83758",
+        "kind": "webcontent",
+        "samples": 28,
+        "sample_duration_s": 27.242000000027474,
+        "cpu_seconds": 3.37,
+        "cpu_percent": 12.370604214068722,
+        "rss_first_mib": 363.641,
+        "rss_last_mib": 465.516,
+        "rss_max_mib": 465.516
+      }
+    ],
+    "after_close": {
+      "review_pid": "83758",
+      "closed_uptime": 348035.696187291,
+      "reader_monitor_end_uptime": 348072.966,
+      "monitor_window_after_close_s": 37.2698127090116,
+      "review_process_samples_after_close": 0,
+      "last_review_observed_uptime": 348033.621,
+      "last_review_cpu_total_s": 5.97,
+      "interpretation": "No review process sampled after closure while reader monitoring continued; missing PID is not a measured zero CPU percentage. This interval also contains native settings operations, so do not label reader CPU idle."
+    }
+  },
+  "snapshot-settled-after-jianghu-off-continuous": {
+    "label": "snapshot-settled-after-jianghu-off-continuous",
+    "pid": "84324",
+    "start": "2026-09-08T01:23:53.954682",
+    "end": "2026-09-08T01:25:11.846590",
+    "event_duration_s": 77.89190762495855,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.0026857852935791016,
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-settled-after-jianghu-off-continuous-events.json",
+    "processes": [
+      {
+        "pid": "84324",
+        "kind": "reader",
+        "samples": 77,
+        "sample_duration_s": 76.3640000000014,
+        "cpu_seconds": 21.21,
+        "cpu_percent": 27.774867738724545,
+        "rss_first_mib": 722.234,
+        "rss_last_mib": 776.922,
+        "rss_max_mib": 790.156
+      },
+      {
+        "pid": "84331",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.3640000000014,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.828,
+        "rss_last_mib": 278.594,
+        "rss_max_mib": 278.828
+      },
+      {
+        "pid": "84332",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.3640000000014,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.938,
+        "rss_last_mib": 278.703,
+        "rss_max_mib": 278.938
+      },
+      {
+        "pid": "84333",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.3640000000014,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.969,
+        "rss_last_mib": 278.734,
+        "rss_max_mib": 278.969
+      },
+      {
+        "pid": "84334",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.3640000000014,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.828,
+        "rss_last_mib": 278.641,
+        "rss_max_mib": 278.828
+      },
+      {
+        "pid": "84336",
+        "kind": "webkit_network",
+        "samples": 77,
+        "sample_duration_s": 76.3640000000014,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 119.516,
+        "rss_last_mib": 119.422,
+        "rss_max_mib": 119.516
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 348207.72876670834,
+        "page": "2/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 348209.310731875,
+        "page": "3/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 348210.8794055834,
+        "page": "4/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 348212.5035761667,
+        "page": "5/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 348214.068590625,
+        "page": "6/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 348215.6339889167,
+        "page": "7/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 348217.2042179584,
+        "page": "8/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 348218.7439389167,
+        "page": "9/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 348220.31308337505,
+        "page": "10/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 348221.8833004167,
+        "page": "11/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 348223.44576383336,
+        "page": "1/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 348225.0157797917,
+        "page": "2/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 348226.57847737503,
+        "page": "3/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 348228.1430836667,
+        "page": "4/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 348229.70187983336,
+        "page": "5/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 348231.27177362505,
+        "page": "6/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 348232.82812733337,
+        "page": "7/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 348234.39659716666,
+        "page": "8/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 348235.97013933334,
+        "page": "9/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 348237.52229937504,
+        "page": "1/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 348239.0608566667,
+        "page": "2/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 348240.622821,
+        "page": "3/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 348242.182852,
+        "page": "4/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 348243.72958783334,
+        "page": "5/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 348245.29263570835,
+        "page": "6/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 348246.843355375,
+        "page": "7/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 348248.3978287917,
+        "page": "8/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 348249.9531549584,
+        "page": "9/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 348251.5065395834,
+        "page": "1/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 348253.06205808336,
+        "page": "2/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 348254.6096848333,
+        "page": "3/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 348256.162546125,
+        "page": "4/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 348257.71059558337,
+        "page": "5/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 348259.249609375,
+        "page": "6/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 348260.81339462503,
+        "page": "7/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 348262.36846383335,
+        "page": "8/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 348263.892701625,
+        "page": "1/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 348265.448013875,
+        "page": "2/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 348266.9970153333,
+        "page": "3/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 348268.550012875,
+        "page": "4/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 348270.091640125,
+        "page": "5/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 348271.64354612504,
+        "page": "6/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 348273.1934486667,
+        "page": "7/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 348274.7493117917,
+        "page": "8/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 348276.29360020836,
+        "page": "1/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 348277.84537237504,
+        "page": "2/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 348279.40129300003,
+        "page": "3/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 348280.95031333336,
+        "page": "4/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 348282.5126712917,
+        "page": "5/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 348284.1429292917,
+        "page": "6/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      }
+    ],
+    "stages": {
+      "coreText.pageSnapshot": {
+        "count": 100,
+        "sum_ms": 1827,
+        "max_ms": 47,
+        "values_ms": [
+          0,
+          0,
+          41,
+          0,
+          37,
+          0,
+          45,
+          0,
+          44,
+          0,
+          34,
+          0,
+          38,
+          0,
+          25,
+          0,
+          42,
+          0,
+          47,
+          0,
+          33,
+          0,
+          0,
+          0,
+          34,
+          0,
+          36,
+          0,
+          36,
+          0,
+          36,
+          0,
+          35,
+          0,
+          36,
+          0,
+          35,
+          0,
+          37,
+          0,
+          35,
+          0,
+          35,
+          0,
+          35,
+          0,
+          42,
+          0,
+          42,
+          0,
+          35,
+          0,
+          35,
+          0,
+          44,
+          0,
+          26,
+          0,
+          40,
+          0,
+          43,
+          0,
+          33,
+          0,
+          34,
+          0,
+          43,
+          0,
+          43,
+          0,
+          34,
+          0,
+          33,
+          0,
+          39,
+          0,
+          35,
+          0,
+          35,
+          0,
+          45,
+          0,
+          40,
+          0,
+          45,
+          0,
+          42,
+          0,
+          34,
+          0,
+          42,
+          0,
+          42,
+          0,
+          43,
+          0,
+          42,
+          0,
+          40,
+          0
+        ]
+      },
+      "coreText.document.htmlParse": {
+        "count": 7,
+        "sum_ms": 12,
+        "max_ms": 3,
+        "values_ms": [
+          2,
+          3,
+          2,
+          2,
+          1,
+          1,
+          1
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 7,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 7,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 7,
+        "sum_ms": 45,
+        "max_ms": 9,
+        "values_ms": [
+          9,
+          8,
+          7,
+          6,
+          5,
+          5,
+          5
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 7,
+        "sum_ms": 46,
+        "max_ms": 9,
+        "values_ms": [
+          9,
+          9,
+          7,
+          6,
+          5,
+          5,
+          5
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 7,
+        "sum_ms": 81,
+        "max_ms": 14,
+        "values_ms": [
+          14,
+          13,
+          13,
+          12,
+          10,
+          10,
+          9
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 7,
+        "sum_ms": 21,
+        "max_ms": 3,
+        "values_ms": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 10,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 5,
+        "sum_ms": 11,
+        "max_ms": 3,
+        "values_ms": [
+          2,
+          3,
+          2,
+          2,
+          2
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 5,
+        "sum_ms": 29,
+        "max_ms": 7,
+        "values_ms": [
+          7,
+          6,
+          5,
+          5,
+          6
+        ]
+      },
+      "chapter.network": {
+        "count": 5,
+        "sum_ms": 1273,
+        "max_ms": 510,
+        "values_ms": [
+          510,
+          184,
+          191,
+          164,
+          224
+        ]
+      },
+      "chapter.parse": {
+        "count": 5,
+        "sum_ms": 76,
+        "max_ms": 22,
+        "values_ms": [
+          22,
+          12,
+          11,
+          14,
+          17
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 5,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 7,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 7,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-08 01:24:11.263",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-08 01:24:25.363",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-08 01:24:39.312",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-08 01:24:51.713",
+        "from_spine": 15,
+        "to_spine": 16
+      },
+      {
+        "time": "2026-09-08 01:25:04.112",
+        "from_spine": 16,
+        "to_spine": 17
+      }
+    ],
+    "snapshot_requests": {
+      "rendered": 48,
+      "cached": 52,
+      "requests": 100,
+      "cache_hit_ratio": 0.52,
+      "unique_rendered_pages": 48,
+      "same_page_repeat_within_150ms": 0,
+      "repeat_details": []
+    },
+    "initial_prefetch_gate": {
+      "label": "snapshot-settled-after-jianghu-off",
+      "condition": "current run chapter 10..14 official cache body+metadata+raw+normalized+last atomic package commit, matched SHA256/state/version/source; initial visible page observed",
+      "start_uptime": 348206.235852666,
+      "completed_uptime": 348206.236786041,
+      "start_wall": "2026-09-08T01:23:53.928853",
+      "completed_wall": "2026-09-08T01:23:53.929787",
+      "chapters": [
+        {
+          "spine": 10,
+          "content_bytes": 10380,
+          "content_sha256": "293e4ef4f9fc545a279f07e4db1309389914a37f1ae93d13ca29dcfdea5e353a",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:23:52.402778",
+          "package_commit_epoch_s": 1788801832.4027777,
+          "source_url_sha256": "3f076db6434d37e50c1d810af6d3d7f8fc9a12032f797247db8c439d9ff99fec"
+        },
+        {
+          "spine": 11,
+          "content_bytes": 11150,
+          "content_sha256": "cec99d57f4ba1d2cb0dc3093ca9bdbe24bdedc9745e852b6d098e2e44c50311a",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:23:52.395631",
+          "package_commit_epoch_s": 1788801832.3956308,
+          "source_url_sha256": "f269aaeae2eb6a00b6b899def54e1241684ffeab23a461e3f9c1a24b54089de5"
+        },
+        {
+          "spine": 12,
+          "content_bytes": 12354,
+          "content_sha256": "20149945d1242d3fcab78cccbde424507bfedf92003f56bc4092b2d3cc619b71",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:23:51.576302",
+          "package_commit_epoch_s": 1788801831.576302,
+          "source_url_sha256": "57a441c61f70ced236d7bac8bb2d9d8f55153ff67ab1f0bf19ab9f2de66b3195"
+        },
+        {
+          "spine": 13,
+          "content_bytes": 10208,
+          "content_sha256": "c4990db6a369312dbf8b70b74f21c37b7e8b70aeaabbb7b5f0cff0e5312ff506",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:23:52.104399",
+          "package_commit_epoch_s": 1788801832.1043992,
+          "source_url_sha256": "e352dc63fe115fa68b528b16e480f31a64770997512a5edc1757374ee7e8efea"
+        },
+        {
+          "spine": 14,
+          "content_bytes": 11267,
+          "content_sha256": "cbf000ec3602ac77bd884c07504d12bfb6bf10e26c1c4aad4af0948221a3e55b",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:23:52.382774",
+          "package_commit_epoch_s": 1788801832.3827736,
+          "source_url_sha256": "bc59e1f0a07dcdaef3891ced87b65295b45c3d9f836170132851db1b4f2cc71f"
+        }
+      ]
+    },
+    "tap_count": 50,
+    "wait_for_page_command_count": 0,
+    "render_leaves": [
+      {
+        "time": "2026-09-08T01:23:55.615000",
+        "ms": 14,
+        "spine": 11.0,
+        "chars": 3791.0
+      },
+      {
+        "time": "2026-09-08T01:24:06.649000",
+        "ms": 13,
+        "spine": 13.0,
+        "chars": 3471.0
+      },
+      {
+        "time": "2026-09-08T01:24:11.422000",
+        "ms": 13,
+        "spine": 14.0,
+        "chars": 3824.0
+      },
+      {
+        "time": "2026-09-08T01:24:25.521000",
+        "ms": 12,
+        "spine": 15.0,
+        "chars": 3276.0
+      },
+      {
+        "time": "2026-09-08T01:24:39.403000",
+        "ms": 10,
+        "spine": 16.0,
+        "chars": 3205.0
+      },
+      {
+        "time": "2026-09-08T01:24:51.874000",
+        "ms": 10,
+        "spine": 17.0,
+        "chars": 3572.0
+      },
+      {
+        "time": "2026-09-08T01:25:04.209000",
+        "ms": 9,
+        "spine": 18.0,
+        "chars": 3249.0
+      }
+    ],
+    "cold_load": {
+      "loading": "2026-09-08T01:23:51.125000",
+      "first_real": "2026-09-08T01:23:51.768000",
+      "loading_to_real_s": 0.643,
+      "loading_to_first_observed_ready_upper_s": 2.738514,
+      "capture1": "2026-09-08T01:23:51.571553",
+      "capture2": "2026-09-08T01:23:53.863514",
+      "stages": [
+        {
+          "timestamp": "2026-09-08T01:23:51.544000",
+          "stage": "chapter.network",
+          "ms": 332
+        },
+        {
+          "timestamp": "2026-09-08T01:23:51.556000",
+          "stage": "chapter.parse",
+          "ms": 12
+        },
+        {
+          "timestamp": "2026-09-08T01:23:51.556000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-08T01:23:51.731000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 2
+        },
+        {
+          "timestamp": "2026-09-08T01:23:51.759000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 17,
+          "chars": 4201.0
+        },
+        {
+          "timestamp": "2026-09-08T01:23:51.765000",
+          "stage": "coreText.fullLayout",
+          "ms": 5,
+          "chars": 4213.0
+        }
+      ]
+    },
+    "comparison": {
+      "before_label": "final-jianghu-off-continuous",
+      "reader_cpu_percent_before": 29.56412537281509,
+      "reader_cpu_percent_after": 27.774867738724545,
+      "reader_cpu_pp_change": -1.7892576340905464,
+      "reader_cpu_seconds_before": 22.6,
+      "reader_cpu_seconds_after": 21.21,
+      "reader_rss_peak_before_mib": 802.094,
+      "reader_rss_peak_after_mib": 790.156,
+      "snapshots_before": {
+        "rendered": 88,
+        "cached": 12,
+        "requests": 100,
+        "cache_hit_ratio": 0.12,
+        "unique_rendered_pages": 44,
+        "same_page_repeat_within_150ms": 44,
+        "repeat_details": [
+          {
+            "spine": 12,
+            "local_page": 1,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:18:17.949000"
+          },
+          {
+            "spine": 12,
+            "local_page": 2,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:18:19.529000"
+          },
+          {
+            "spine": 12,
+            "local_page": 3,
+            "gap_ms": 46.0,
+            "time": "2026-09-08T00:18:21.117000"
+          },
+          {
+            "spine": 12,
+            "local_page": 4,
+            "gap_ms": 46.0,
+            "time": "2026-09-08T00:18:22.701000"
+          },
+          {
+            "spine": 12,
+            "local_page": 5,
+            "gap_ms": 33.0,
+            "time": "2026-09-08T00:18:24.254000"
+          },
+          {
+            "spine": 12,
+            "local_page": 6,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:18:25.828000"
+          },
+          {
+            "spine": 12,
+            "local_page": 7,
+            "gap_ms": 36.0,
+            "time": "2026-09-08T00:18:27.407000"
+          },
+          {
+            "spine": 12,
+            "local_page": 8,
+            "gap_ms": 43.0,
+            "time": "2026-09-08T00:18:28.998000"
+          },
+          {
+            "spine": 12,
+            "local_page": 9,
+            "gap_ms": 47.0,
+            "time": "2026-09-08T00:18:30.585000"
+          },
+          {
+            "spine": 13,
+            "local_page": 1,
+            "gap_ms": 84.0,
+            "time": "2026-09-08T00:18:35.405000"
+          },
+          {
+            "spine": 13,
+            "local_page": 2,
+            "gap_ms": 31.0,
+            "time": "2026-09-08T00:18:37.002000"
+          },
+          {
+            "spine": 13,
+            "local_page": 3,
+            "gap_ms": 38.0,
+            "time": "2026-09-08T00:18:38.593000"
+          },
+          {
+            "spine": 13,
+            "local_page": 4,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:18:40.178000"
+          },
+          {
+            "spine": 13,
+            "local_page": 5,
+            "gap_ms": 39.0,
+            "time": "2026-09-08T00:18:41.761000"
+          },
+          {
+            "spine": 13,
+            "local_page": 6,
+            "gap_ms": 32.0,
+            "time": "2026-09-08T00:18:43.337000"
+          },
+          {
+            "spine": 13,
+            "local_page": 7,
+            "gap_ms": 37.0,
+            "time": "2026-09-08T00:18:44.892000"
+          },
+          {
+            "spine": 14,
+            "local_page": 1,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:18:49.596000"
+          },
+          {
+            "spine": 14,
+            "local_page": 2,
+            "gap_ms": 45.0,
+            "time": "2026-09-08T00:18:51.167000"
+          },
+          {
+            "spine": 14,
+            "local_page": 3,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:18:52.713000"
+          },
+          {
+            "spine": 14,
+            "local_page": 4,
+            "gap_ms": 46.0,
+            "time": "2026-09-08T00:18:54.301000"
+          },
+          {
+            "spine": 14,
+            "local_page": 5,
+            "gap_ms": 37.0,
+            "time": "2026-09-08T00:18:55.842000"
+          },
+          {
+            "spine": 14,
+            "local_page": 6,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:18:57.413000"
+          },
+          {
+            "spine": 14,
+            "local_page": 7,
+            "gap_ms": 49.0,
+            "time": "2026-09-08T00:18:58.954000"
+          },
+          {
+            "spine": 15,
+            "local_page": 0,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:19:02.066000"
+          },
+          {
+            "spine": 15,
+            "local_page": 1,
+            "gap_ms": 36.0,
+            "time": "2026-09-08T00:19:03.624000"
+          },
+          {
+            "spine": 15,
+            "local_page": 2,
+            "gap_ms": 35.0,
+            "time": "2026-09-08T00:19:05.157000"
+          },
+          {
+            "spine": 15,
+            "local_page": 3,
+            "gap_ms": 39.0,
+            "time": "2026-09-08T00:19:06.694000"
+          },
+          {
+            "spine": 15,
+            "local_page": 4,
+            "gap_ms": 46.0,
+            "time": "2026-09-08T00:19:08.268000"
+          },
+          {
+            "spine": 15,
+            "local_page": 5,
+            "gap_ms": 47.0,
+            "time": "2026-09-08T00:19:09.819000"
+          },
+          {
+            "spine": 15,
+            "local_page": 6,
+            "gap_ms": 37.0,
+            "time": "2026-09-08T00:19:11.359000"
+          },
+          {
+            "spine": 15,
+            "local_page": 7,
+            "gap_ms": 36.0,
+            "time": "2026-09-08T00:19:12.891000"
+          },
+          {
+            "spine": 16,
+            "local_page": 0,
+            "gap_ms": 47.0,
+            "time": "2026-09-08T00:19:14.452000"
+          },
+          {
+            "spine": 16,
+            "local_page": 1,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:19:16.012000"
+          },
+          {
+            "spine": 16,
+            "local_page": 2,
+            "gap_ms": 48.0,
+            "time": "2026-09-08T00:19:17.570000"
+          },
+          {
+            "spine": 16,
+            "local_page": 3,
+            "gap_ms": 46.0,
+            "time": "2026-09-08T00:19:19.084000"
+          },
+          {
+            "spine": 16,
+            "local_page": 4,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:19:20.633000"
+          },
+          {
+            "spine": 16,
+            "local_page": 5,
+            "gap_ms": 47.0,
+            "time": "2026-09-08T00:19:22.169000"
+          },
+          {
+            "spine": 16,
+            "local_page": 6,
+            "gap_ms": 45.0,
+            "time": "2026-09-08T00:19:23.717000"
+          },
+          {
+            "spine": 16,
+            "local_page": 7,
+            "gap_ms": 29.0,
+            "time": "2026-09-08T00:19:25.234000"
+          },
+          {
+            "spine": 17,
+            "local_page": 0,
+            "gap_ms": 45.0,
+            "time": "2026-09-08T00:19:26.783000"
+          },
+          {
+            "spine": 17,
+            "local_page": 1,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:19:28.330000"
+          },
+          {
+            "spine": 17,
+            "local_page": 2,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:19:29.883000"
+          },
+          {
+            "spine": 17,
+            "local_page": 3,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:19:31.433000"
+          },
+          {
+            "spine": 17,
+            "local_page": 4,
+            "gap_ms": 42.0,
+            "time": "2026-09-08T00:19:32.981000"
+          }
+        ]
+      },
+      "same_chapter_page_sequence": true,
+      "baseline_all_initial_commits_before_stress": true,
+      "baseline_latest_initial_commit_seconds_before_stress": 59.968505
+    },
+    "classification": "primary_settled_50_turns"
+  },
+  "snapshot-settled-after-jianghu-on-continuous": {
+    "label": "snapshot-settled-after-jianghu-on-continuous",
+    "pid": "84885",
+    "start": "2026-09-08T01:28:26.636152",
+    "end": "2026-09-08T01:29:44.078148",
+    "event_duration_s": 77.4419966659625,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.0005955696105957031,
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-settled-after-jianghu-on-continuous-events.json",
+    "processes": [
+      {
+        "pid": "84885",
+        "kind": "reader",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 30.85,
+        "cpu_percent": 40.39544323687558,
+        "rss_first_mib": 801.766,
+        "rss_last_mib": 831.078,
+        "rss_max_mib": 888.297
+      },
+      {
+        "pid": "84895",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.312,
+        "rss_last_mib": 274.219,
+        "rss_max_mib": 278.312
+      },
+      {
+        "pid": "84896",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.297,
+        "rss_last_mib": 272.328,
+        "rss_max_mib": 278.297
+      },
+      {
+        "pid": "84897",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.438,
+        "rss_last_mib": 272.531,
+        "rss_max_mib": 278.438
+      },
+      {
+        "pid": "84899",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.547,
+        "rss_last_mib": 274.172,
+        "rss_max_mib": 278.547
+      },
+      {
+        "pid": "84901",
+        "kind": "webkit_network",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.02999999999999997,
+        "cpu_percent": 0.03928244074898756,
+        "rss_first_mib": 119.531,
+        "rss_last_mib": 116.375,
+        "rss_max_mib": 119.562
+      },
+      {
+        "pid": "84988",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.16999999999999993,
+        "cpu_percent": 0.2226004975775963,
+        "rss_first_mib": 294.531,
+        "rss_last_mib": 286.609,
+        "rss_max_mib": 297.547
+      },
+      {
+        "pid": "84989",
+        "kind": "webkit_gpu",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.15000000000000002,
+        "cpu_percent": 0.196412203744938,
+        "rss_first_mib": 153.109,
+        "rss_last_mib": 154.484,
+        "rss_max_mib": 161.547
+      },
+      {
+        "pid": "84990",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.984,
+        "rss_last_mib": 263.312,
+        "rss_max_mib": 278.984
+      },
+      {
+        "pid": "84991",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 279.141,
+        "rss_last_mib": 262.281,
+        "rss_max_mib": 279.141
+      },
+      {
+        "pid": "84992",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.36999999999534,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.859,
+        "rss_last_mib": 261.312,
+        "rss_max_mib": 278.859
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 348479.95198404166,
+        "page": "2/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 348481.5508147917,
+        "page": "3/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 348483.11963904166,
+        "page": "4/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 348484.68534950004,
+        "page": "5/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 348486.244342625,
+        "page": "6/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 348487.80191750004,
+        "page": "7/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 348489.370271875,
+        "page": "8/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 348490.9257605,
+        "page": "9/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 348492.48548175005,
+        "page": "10/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 348493.9987074167,
+        "page": "11/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 348495.56770383334,
+        "page": "12/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 348497.119105625,
+        "page": "1/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 348498.6630006667,
+        "page": "2/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 348500.239357875,
+        "page": "3/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 348501.89313595835,
+        "page": "4/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 348503.47351975,
+        "page": "5/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 348505.04662108334,
+        "page": "6/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 348506.61343279167,
+        "page": "7/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 348508.18073737505,
+        "page": "8/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 348509.76560054166,
+        "page": "9/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 348511.3325362083,
+        "page": "10/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 348512.913044125,
+        "page": "1/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 348514.4771402917,
+        "page": "2/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 348516.0331896667,
+        "page": "3/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 348517.5829099167,
+        "page": "4/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 348519.11374558334,
+        "page": "5/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 348520.6904615834,
+        "page": "6/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 348522.25797758333,
+        "page": "7/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 348523.8256660417,
+        "page": "8/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 348525.3838450417,
+        "page": "9/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 348526.961881625,
+        "page": "10/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 348528.5315358334,
+        "page": "1/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 348530.07293820835,
+        "page": "2/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 348531.63524750003,
+        "page": "3/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 348533.20750041667,
+        "page": "4/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 348534.780428375,
+        "page": "5/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 348536.36042258336,
+        "page": "6/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 348537.89630358334,
+        "page": "7/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 348539.45749916666,
+        "page": "8/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 348541.02568983333,
+        "page": "9/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 348542.59249658335,
+        "page": "10/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 348544.14908075,
+        "page": "1/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 348545.6732484167,
+        "page": "2/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 348547.22844058333,
+        "page": "3/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 348548.75789191667,
+        "page": "4/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 348550.27925950004,
+        "page": "5/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 348551.828758625,
+        "page": "6/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 348553.3457087917,
+        "page": "7/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 348554.86303825,
+        "page": "8/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 348556.37432708335,
+        "page": "9/9",
+        "chapter_title": "第14章 首杀"
+      }
+    ],
+    "stages": {
+      "coreText.pageSnapshot": {
+        "count": 99,
+        "sum_ms": 1697,
+        "max_ms": 44,
+        "values_ms": [
+          0,
+          0,
+          31,
+          0,
+          36,
+          0,
+          34,
+          0,
+          37,
+          0,
+          42,
+          0,
+          36,
+          0,
+          38,
+          0,
+          35,
+          0,
+          33,
+          0,
+          41,
+          0,
+          36,
+          0,
+          0,
+          36,
+          0,
+          35,
+          0,
+          32,
+          0,
+          34,
+          0,
+          36,
+          0,
+          33,
+          0,
+          43,
+          0,
+          36,
+          0,
+          36,
+          0,
+          37,
+          0,
+          36,
+          0,
+          27,
+          0,
+          27,
+          0,
+          44,
+          0,
+          37,
+          0,
+          39,
+          0,
+          29,
+          0,
+          38,
+          0,
+          40,
+          0,
+          38,
+          0,
+          36,
+          0,
+          38,
+          0,
+          38,
+          0,
+          38,
+          0,
+          28,
+          0,
+          33,
+          0,
+          37,
+          0,
+          34,
+          0,
+          35,
+          0,
+          40,
+          0,
+          40,
+          0,
+          26,
+          0,
+          30,
+          0,
+          34,
+          0,
+          37,
+          0,
+          33,
+          0,
+          28,
+          0
+        ]
+      },
+      "coreText.document.htmlParse": {
+        "count": 6,
+        "sum_ms": 424,
+        "max_ms": 90,
+        "values_ms": [
+          90,
+          76,
+          74,
+          78,
+          56,
+          50
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 6,
+        "sum_ms": 148,
+        "max_ms": 30,
+        "values_ms": [
+          30,
+          26,
+          25,
+          27,
+          21,
+          19
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 6,
+        "sum_ms": 148,
+        "max_ms": 30,
+        "values_ms": [
+          30,
+          26,
+          25,
+          27,
+          21,
+          19
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 12,
+        "sum_ms": 1486,
+        "max_ms": 340,
+        "values_ms": [
+          0,
+          340,
+          0,
+          275,
+          0,
+          231,
+          0,
+          250,
+          0,
+          199,
+          0,
+          191
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 6,
+        "sum_ms": 578,
+        "max_ms": 110,
+        "values_ms": [
+          110,
+          101,
+          105,
+          101,
+          80,
+          81
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 8,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 4,
+        "sum_ms": 40,
+        "max_ms": 11,
+        "values_ms": [
+          11,
+          11,
+          10,
+          8
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 4,
+        "sum_ms": 157,
+        "max_ms": 42,
+        "values_ms": [
+          40,
+          42,
+          42,
+          33
+        ]
+      },
+      "chapter.network": {
+        "count": 4,
+        "sum_ms": 1725,
+        "max_ms": 809,
+        "values_ms": [
+          292,
+          420,
+          809,
+          204
+        ]
+      },
+      "chapter.jsNet": {
+        "count": 4,
+        "sum_ms": 17659,
+        "max_ms": 7589,
+        "values_ms": [
+          2966,
+          3920,
+          7589,
+          3184
+        ]
+      },
+      "chapter.parse": {
+        "count": 4,
+        "sum_ms": 18108,
+        "max_ms": 7699,
+        "values_ms": [
+          3098,
+          4035,
+          7699,
+          3276
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 4,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-08 01:28:44.967",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-08 01:29:00.733",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-08 01:29:16.366",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-08 01:29:31.985",
+        "from_spine": 15,
+        "to_spine": 16
+      }
+    ],
+    "snapshot_requests": {
+      "rendered": 48,
+      "cached": 51,
+      "requests": 99,
+      "cache_hit_ratio": 0.5151515151515151,
+      "unique_rendered_pages": 48,
+      "same_page_repeat_within_150ms": 0,
+      "repeat_details": []
+    },
+    "initial_prefetch_gate": {
+      "label": "snapshot-settled-after-jianghu-on",
+      "condition": "current run chapter 10..14 official cache body+metadata+raw+normalized+last atomic package commit, matched SHA256/state/version/source; initial visible page observed",
+      "start_uptime": 348463.481796708,
+      "completed_uptime": 348478.899351541,
+      "start_wall": "2026-09-08T01:28:11.176785",
+      "completed_wall": "2026-09-08T01:28:26.594464",
+      "chapters": [
+        {
+          "spine": 10,
+          "content_bytes": 86375,
+          "content_sha256": "1d774b75fe59f8fd2d956067520b6554f233046c6c1a4daa1237ad4f341443fb",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:28:16.669617",
+          "package_commit_epoch_s": 1788802096.6696172,
+          "source_url_sha256": "3f076db6434d37e50c1d810af6d3d7f8fc9a12032f797247db8c439d9ff99fec"
+        },
+        {
+          "spine": 11,
+          "content_bytes": 94037,
+          "content_sha256": "45174a948cbb4ec598e6f406421dd146cc96b25866f57b7ec8aa43f02bae5af5",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:28:26.571430",
+          "package_commit_epoch_s": 1788802106.5714297,
+          "source_url_sha256": "f269aaeae2eb6a00b6b899def54e1241684ffeab23a461e3f9c1a24b54089de5"
+        },
+        {
+          "spine": 12,
+          "content_bytes": 101750,
+          "content_sha256": "de6100e0cadb621ed9785d9948cc437b5dce66db5aa88646357ed973d0e84eee",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:28:07.780782",
+          "package_commit_epoch_s": 1788802087.7807815,
+          "source_url_sha256": "57a441c61f70ced236d7bac8bb2d9d8f55153ff67ab1f0bf19ab9f2de66b3195"
+        },
+        {
+          "spine": 13,
+          "content_bytes": 87561,
+          "content_sha256": "2e0decca15a9f1a875f806691bd47888cdd041d4da1b7cbcad4c86794830138b",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:28:16.691344",
+          "package_commit_epoch_s": 1788802096.6913435,
+          "source_url_sha256": "e352dc63fe115fa68b528b16e480f31a64770997512a5edc1757374ee7e8efea"
+        },
+        {
+          "spine": 14,
+          "content_bytes": 86430,
+          "content_sha256": "41ba60fc6047dc6119f0c9390a1f3b26a786508c9254ac0fe199901cacdeef17",
+          "render_artifact_version": 3,
+          "package_commit_wall": "2026-09-08T01:28:19.608639",
+          "package_commit_epoch_s": 1788802099.6086392,
+          "source_url_sha256": "bc59e1f0a07dcdaef3891ced87b65295b45c3d9f836170132851db1b4f2cc71f"
+        }
+      ]
+    },
+    "tap_count": 50,
+    "wait_for_page_command_count": 0,
+    "render_leaves": [
+      {
+        "time": "2026-09-08T01:28:28.081000",
+        "ms": 0,
+        "spine": 11.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:28:28.421000",
+        "ms": 340,
+        "spine": 11.0,
+        "chars": 3914.0,
+        "imageLoad": 263.3,
+        "bubbleDraw": 14.3,
+        "bubbleRecognize": 10.6
+      },
+      {
+        "time": "2026-09-08T01:28:40.607000",
+        "ms": 0,
+        "spine": 13.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:28:40.882000",
+        "ms": 275,
+        "spine": 13.0,
+        "chars": 3585.0,
+        "imageLoad": 224.9,
+        "bubbleDraw": 4.8,
+        "bubbleRecognize": 6.2
+      },
+      {
+        "time": "2026-09-08T01:28:45.483000",
+        "ms": 0,
+        "spine": 14.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.0
+      },
+      {
+        "time": "2026-09-08T01:28:45.715000",
+        "ms": 231,
+        "spine": 14.0,
+        "chars": 3934.0,
+        "imageLoad": 179.3,
+        "bubbleDraw": 4.3,
+        "bubbleRecognize": 5.8
+      },
+      {
+        "time": "2026-09-08T01:29:01.163000",
+        "ms": 0,
+        "spine": 15.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.1
+      },
+      {
+        "time": "2026-09-08T01:29:01.413000",
+        "ms": 250,
+        "spine": 15.0,
+        "chars": 3383.0,
+        "imageLoad": 203.6,
+        "bubbleDraw": 0.8,
+        "bubbleRecognize": 4.8
+      },
+      {
+        "time": "2026-09-08T01:29:16.744000",
+        "ms": 0,
+        "spine": 16.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.1
+      },
+      {
+        "time": "2026-09-08T01:29:16.943000",
+        "ms": 199,
+        "spine": 16.0,
+        "chars": 3291.0,
+        "imageLoad": 161.3,
+        "bubbleDraw": 3.9,
+        "bubbleRecognize": 5.1
+      },
+      {
+        "time": "2026-09-08T01:29:32.418000",
+        "ms": 0,
+        "spine": 17.0,
+        "chars": 1.0,
+        "bubbleRecognize": 0.1
+      },
+      {
+        "time": "2026-09-08T01:29:32.609000",
+        "ms": 191,
+        "spine": 17.0,
+        "chars": 3659.0,
+        "imageLoad": 161.3,
+        "bubbleRecognize": 3.4
+      }
+    ],
+    "cold_load": {
+      "loading": "2026-09-08T01:27:35.383000",
+      "first_real": "2026-09-08T01:28:10.441000",
+      "loading_to_real_s": 35.058,
+      "loading_to_first_observed_ready_upper_s": 35.730034,
+      "capture1": "2026-09-08T01:27:35.868344",
+      "capture2": "2026-09-08T01:28:11.113034",
+      "stages": [
+        {
+          "timestamp": "2026-09-08T01:27:37.441000",
+          "stage": "chapter.network",
+          "ms": 1908
+        },
+        {
+          "timestamp": "2026-09-08T01:28:05.773000",
+          "stage": "chapter.jsNet",
+          "ms": 28204
+        },
+        {
+          "timestamp": "2026-09-08T01:28:05.822000",
+          "stage": "chapter.parse",
+          "ms": 28381
+        },
+        {
+          "timestamp": "2026-09-08T01:28:05.822000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-08T01:28:08.357000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 100
+        },
+        {
+          "timestamp": "2026-09-08T01:28:08.423000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 20,
+          "chars": 1.0
+        },
+        {
+          "timestamp": "2026-09-08T01:28:10.181000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 1758,
+          "chars": 4334.0,
+          "imageLoad": 1645.4
+        },
+        {
+          "timestamp": "2026-09-08T01:28:10.425000",
+          "stage": "coreText.fullLayout",
+          "ms": 132,
+          "chars": 4348.0
+        }
+      ]
+    },
+    "comparison": {
+      "before_label": "final-jianghu-on-continuous",
+      "reader_cpu_percent_before": 40.04687157960567,
+      "reader_cpu_percent_after": 40.39544323687558,
+      "reader_cpu_pp_change": 0.3485716572699076,
+      "reader_cpu_seconds_before": 31.1,
+      "reader_cpu_seconds_after": 30.85,
+      "reader_rss_peak_before_mib": 890.594,
+      "reader_rss_peak_after_mib": 888.297,
+      "snapshots_before": {
+        "rendered": 88,
+        "cached": 12,
+        "requests": 100,
+        "cache_hit_ratio": 0.12,
+        "unique_rendered_pages": 44,
+        "same_page_repeat_within_150ms": 44,
+        "repeat_details": [
+          {
+            "spine": 12,
+            "local_page": 1,
+            "gap_ms": 35.0,
+            "time": "2026-09-08T00:28:30.645000"
+          },
+          {
+            "spine": 12,
+            "local_page": 2,
+            "gap_ms": 45.0,
+            "time": "2026-09-08T00:28:32.255000"
+          },
+          {
+            "spine": 12,
+            "local_page": 3,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:28:33.852000"
+          },
+          {
+            "spine": 12,
+            "local_page": 4,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:28:35.452000"
+          },
+          {
+            "spine": 12,
+            "local_page": 5,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:28:37.038000"
+          },
+          {
+            "spine": 12,
+            "local_page": 6,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:28:38.617000"
+          },
+          {
+            "spine": 12,
+            "local_page": 7,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:28:40.221000"
+          },
+          {
+            "spine": 12,
+            "local_page": 8,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:28:41.801000"
+          },
+          {
+            "spine": 12,
+            "local_page": 9,
+            "gap_ms": 36.0,
+            "time": "2026-09-08T00:28:43.363000"
+          },
+          {
+            "spine": 12,
+            "local_page": 10,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:28:44.954000"
+          },
+          {
+            "spine": 13,
+            "local_page": 1,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:28:49.734000"
+          },
+          {
+            "spine": 13,
+            "local_page": 2,
+            "gap_ms": 30.0,
+            "time": "2026-09-08T00:28:51.290000"
+          },
+          {
+            "spine": 13,
+            "local_page": 3,
+            "gap_ms": 29.0,
+            "time": "2026-09-08T00:28:52.856000"
+          },
+          {
+            "spine": 13,
+            "local_page": 4,
+            "gap_ms": 37.0,
+            "time": "2026-09-08T00:28:54.448000"
+          },
+          {
+            "spine": 13,
+            "local_page": 5,
+            "gap_ms": 43.0,
+            "time": "2026-09-08T00:28:56.070000"
+          },
+          {
+            "spine": 13,
+            "local_page": 6,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:28:57.668000"
+          },
+          {
+            "spine": 13,
+            "local_page": 7,
+            "gap_ms": 46.0,
+            "time": "2026-09-08T00:28:59.273000"
+          },
+          {
+            "spine": 13,
+            "local_page": 8,
+            "gap_ms": 30.0,
+            "time": "2026-09-08T00:29:00.824000"
+          },
+          {
+            "spine": 14,
+            "local_page": 1,
+            "gap_ms": 46.0,
+            "time": "2026-09-08T00:29:05.623000"
+          },
+          {
+            "spine": 14,
+            "local_page": 2,
+            "gap_ms": 39.0,
+            "time": "2026-09-08T00:29:07.216000"
+          },
+          {
+            "spine": 14,
+            "local_page": 3,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:29:08.801000"
+          },
+          {
+            "spine": 14,
+            "local_page": 4,
+            "gap_ms": 42.0,
+            "time": "2026-09-08T00:29:10.386000"
+          },
+          {
+            "spine": 14,
+            "local_page": 5,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:29:12.002000"
+          },
+          {
+            "spine": 14,
+            "local_page": 6,
+            "gap_ms": 43.0,
+            "time": "2026-09-08T00:29:13.587000"
+          },
+          {
+            "spine": 14,
+            "local_page": 7,
+            "gap_ms": 39.0,
+            "time": "2026-09-08T00:29:15.183000"
+          },
+          {
+            "spine": 14,
+            "local_page": 8,
+            "gap_ms": 33.0,
+            "time": "2026-09-08T00:29:16.760000"
+          },
+          {
+            "spine": 15,
+            "local_page": 0,
+            "gap_ms": 44.0,
+            "time": "2026-09-08T00:29:19.955000"
+          },
+          {
+            "spine": 15,
+            "local_page": 1,
+            "gap_ms": 43.0,
+            "time": "2026-09-08T00:29:21.554000"
+          },
+          {
+            "spine": 15,
+            "local_page": 2,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:29:23.135000"
+          },
+          {
+            "spine": 15,
+            "local_page": 3,
+            "gap_ms": 33.0,
+            "time": "2026-09-08T00:29:24.760000"
+          },
+          {
+            "spine": 15,
+            "local_page": 4,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:29:26.368000"
+          },
+          {
+            "spine": 15,
+            "local_page": 5,
+            "gap_ms": 42.0,
+            "time": "2026-09-08T00:29:27.970000"
+          },
+          {
+            "spine": 15,
+            "local_page": 6,
+            "gap_ms": 38.0,
+            "time": "2026-09-08T00:29:29.549000"
+          },
+          {
+            "spine": 15,
+            "local_page": 7,
+            "gap_ms": 40.0,
+            "time": "2026-09-08T00:29:31.151000"
+          },
+          {
+            "spine": 15,
+            "local_page": 8,
+            "gap_ms": 42.0,
+            "time": "2026-09-08T00:29:32.753000"
+          },
+          {
+            "spine": 15,
+            "local_page": 9,
+            "gap_ms": 39.0,
+            "time": "2026-09-08T00:29:34.333000"
+          },
+          {
+            "spine": 16,
+            "local_page": 0,
+            "gap_ms": 37.0,
+            "time": "2026-09-08T00:29:35.898000"
+          },
+          {
+            "spine": 16,
+            "local_page": 1,
+            "gap_ms": 37.0,
+            "time": "2026-09-08T00:29:37.498000"
+          },
+          {
+            "spine": 16,
+            "local_page": 2,
+            "gap_ms": 36.0,
+            "time": "2026-09-08T00:29:39.097000"
+          },
+          {
+            "spine": 16,
+            "local_page": 3,
+            "gap_ms": 37.0,
+            "time": "2026-09-08T00:29:40.665000"
+          },
+          {
+            "spine": 16,
+            "local_page": 4,
+            "gap_ms": 50.0,
+            "time": "2026-09-08T00:29:42.278000"
+          },
+          {
+            "spine": 16,
+            "local_page": 5,
+            "gap_ms": 45.0,
+            "time": "2026-09-08T00:29:43.839000"
+          },
+          {
+            "spine": 16,
+            "local_page": 6,
+            "gap_ms": 46.0,
+            "time": "2026-09-08T00:29:45.441000"
+          },
+          {
+            "spine": 16,
+            "local_page": 7,
+            "gap_ms": 41.0,
+            "time": "2026-09-08T00:29:47.019000"
+          }
+        ]
+      },
+      "same_chapter_page_sequence": true,
+      "baseline_all_initial_commits_before_stress": false,
+      "baseline_latest_initial_commit_seconds_before_stress": -0.943774
+    },
+    "classification": "primary_settled_50_turns"
+  },
+  "snapshot-settled-after-jianghu-on-review": {
+    "kind": "review",
+    "pid": "84885",
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-settled-after-jianghu-on-review-events.json",
+    "start_uptime": 348569.855952791,
+    "data_ready_uptime": 348576.062922458,
+    "native_tap_command_ready_uptime": 348571.85780941666,
+    "tap_start_to_real_data_observation_s": 6.2069696669932455,
+    "timing_definition": "Continuous driver monotonic time before tap command to first waitFor actual numbered floor; includes UI command dispatch and observation latency, not pure XHR latency. No human/tool-thinking gap.",
+    "first_real_data_capture": 60,
+    "first_real_data_verified": true,
+    "scroll_start_uptime": 348576.062922458,
+    "scroll_end_uptime": 348603.094656125,
+    "scroll_duration_s": 27.031733667012304,
+    "scroll_start_wall": "2026-09-08T01:30:03.758962",
+    "scroll_end_wall": "2026-09-08T01:30:30.790696",
+    "drag_count": 6,
+    "drag_commands": [
+      61,
+      62,
+      63,
+      64,
+      65,
+      66
+    ],
+    "closed_uptime": 348608.158479583,
+    "processes": [
+      {
+        "pid": "84885",
+        "kind": "reader",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 3.1400000000000006,
+        "cpu_percent": 12.015919179557688,
+        "rss_first_mib": 746.812,
+        "rss_last_mib": 741.688,
+        "rss_max_mib": 746.812
+      },
+      {
+        "pid": "84895",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.391,
+        "rss_last_mib": 260.375,
+        "rss_max_mib": 260.391
+      },
+      {
+        "pid": "84896",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.203,
+        "rss_last_mib": 260.188,
+        "rss_max_mib": 260.203
+      },
+      {
+        "pid": "84897",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.781,
+        "rss_last_mib": 260.766,
+        "rss_max_mib": 260.781
+      },
+      {
+        "pid": "84899",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.594,
+        "rss_last_mib": 260.578,
+        "rss_max_mib": 260.594
+      },
+      {
+        "pid": "84901",
+        "kind": "webkit_network",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.04999999999999993,
+        "cpu_percent": 0.19133629266811578,
+        "rss_first_mib": 144.781,
+        "rss_last_mib": 146.016,
+        "rss_max_mib": 146.016
+      },
+      {
+        "pid": "84988",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 281.859,
+        "rss_last_mib": 281.828,
+        "rss_max_mib": 281.859
+      },
+      {
+        "pid": "84989",
+        "kind": "webkit_gpu",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.7000000000000001,
+        "cpu_percent": 2.678708097353624,
+        "rss_first_mib": 175.234,
+        "rss_last_mib": 177.828,
+        "rss_max_mib": 180.344
+      },
+      {
+        "pid": "84990",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 256.047,
+        "rss_last_mib": 256.031,
+        "rss_max_mib": 256.047
+      },
+      {
+        "pid": "84991",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 256.141,
+        "rss_last_mib": 256.125,
+        "rss_max_mib": 256.141
+      },
+      {
+        "pid": "84992",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 256.109,
+        "rss_last_mib": 256.094,
+        "rss_max_mib": 256.109
+      },
+      {
+        "pid": "85337",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.131999999983236,
+        "cpu_seconds": 3.22,
+        "cpu_percent": 12.322057247826672,
+        "rss_first_mib": 366.953,
+        "rss_last_mib": 463.797,
+        "rss_max_mib": 463.797
+      }
+    ]
+  },
+  "snapshot-settled-after-jianghu-on-idle": {
+    "kind": "idle",
+    "pid": "84885",
+    "start_capture": 71,
+    "end_capture": 72,
+    "start_uptime": 348640.491520125,
+    "end_uptime": 348833.7518811667,
+    "duration_s": 193.26036104169907,
+    "start_wall": "2026-09-08T01:31:08.187949",
+    "end_wall": "2026-09-08T01:34:21.449811",
+    "no_webview_in_both_captures": true,
+    "processes": [
+      {
+        "pid": "84885",
+        "kind": "reader",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 12.420000000000002,
+        "cpu_percent": 6.469322804623076,
+        "rss_first_mib": 742.922,
+        "rss_last_mib": 772.984,
+        "rss_max_mib": 773.172
+      },
+      {
+        "pid": "84895",
+        "kind": "webcontent",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.375,
+        "rss_last_mib": 259.531,
+        "rss_max_mib": 260.375
+      },
+      {
+        "pid": "84896",
+        "kind": "webcontent",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.188,
+        "rss_last_mib": 259.234,
+        "rss_max_mib": 260.188
+      },
+      {
+        "pid": "84897",
+        "kind": "webcontent",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.766,
+        "rss_last_mib": 259.422,
+        "rss_max_mib": 260.766
+      },
+      {
+        "pid": "84899",
+        "kind": "webcontent",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.578,
+        "rss_last_mib": 260.0,
+        "rss_max_mib": 260.578
+      },
+      {
+        "pid": "84901",
+        "kind": "webkit_network",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 146.031,
+        "rss_last_mib": 146.016,
+        "rss_max_mib": 146.047
+      },
+      {
+        "pid": "84988",
+        "kind": "webcontent",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 281.828,
+        "rss_last_mib": 281.828,
+        "rss_max_mib": 281.828
+      },
+      {
+        "pid": "84989",
+        "kind": "webkit_gpu",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 171.547,
+        "rss_last_mib": 171.547,
+        "rss_max_mib": 171.547
+      },
+      {
+        "pid": "84990",
+        "kind": "webcontent",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 256.031,
+        "rss_last_mib": 256.031,
+        "rss_max_mib": 256.031
+      },
+      {
+        "pid": "84991",
+        "kind": "webcontent",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 256.125,
+        "rss_last_mib": 256.125,
+        "rss_max_mib": 256.125
+      },
+      {
+        "pid": "84992",
+        "kind": "webcontent",
+        "samples": 192,
+        "sample_duration_s": 191.98300000000745,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 256.094,
+        "rss_last_mib": 256.094,
+        "rss_max_mib": 256.094
+      }
+    ]
+  },
+  "snapshot-final-cold-jump20": {
+    "kind": "uncached_chapter_jump",
+    "pid": "84885",
+    "spine": 22,
+    "chapter_number": 20,
+    "event_file": "/tmp/yuedu-reader-profiling/snapshot-final-cold-jump20-events.json",
+    "package_exists_before": false,
+    "definition": "Uncached chapter body in an already running reader with warm fonts/SVG infrastructure; not a fresh-app cold start.",
+    "loading": "2026-09-08T01:35:57.552000",
+    "provider_ready": "2026-09-08T01:36:12.122000",
+    "first_real": "2026-09-08T01:36:12.819000",
+    "loading_to_real_s": 15.267,
+    "driver_tap_to_first_observed_page_s": 18.391472500690725,
+    "stages": [
+      {
+        "time": "2026-09-08T01:36:04.416000",
+        "stage": "chapter.network",
+        "ms": 6855
+      },
+      {
+        "time": "2026-09-08T01:36:10.805000",
+        "stage": "chapter.jsNet",
+        "ms": 6296
+      },
+      {
+        "time": "2026-09-08T01:36:10.823000",
+        "stage": "chapter.parse",
+        "ms": 6407
+      },
+      {
+        "time": "2026-09-08T01:36:10.823000",
+        "stage": "chapter.nextContent",
+        "ms": 0
+      },
+      {
+        "time": "2026-09-08T01:36:12.393000",
+        "stage": "coreText.document.htmlParse",
+        "ms": 51
+      },
+      {
+        "time": "2026-09-08T01:36:12.424000",
+        "stage": "coreText.document.renderLeaves",
+        "ms": 1,
+        "chars": 1.0
+      },
+      {
+        "time": "2026-09-08T01:36:12.660000",
+        "stage": "coreText.document.renderLeaves",
+        "ms": 236,
+        "chars": 3317.0,
+        "imageLoad": 199.5
+      },
+      {
+        "time": "2026-09-08T01:36:12.813000",
+        "stage": "coreText.fullLayout",
+        "ms": 77,
+        "chars": 3329.0
+      }
+    ],
+    "target_preload_completions": [
+      {
+        "time": "2026-09-08T01:36:12.818000",
+        "pages": 9,
+        "layouts": [
+          12,
+          13,
+          14,
+          15,
+          22
+        ],
+        "target_retained": true
+      }
+    ]
+  },
+  "snapshot-idle-diagnosis2": {
+    "kind": "idle_diagnosis",
+    "pid": "87765",
+    "same_chapter": 10,
+    "cache_windows_verified": [
+      [
+        20,
+        24
+      ],
+      [
+        10,
+        14
+      ]
+    ],
+    "events_path": "/tmp/yuedu-reader-profiling/snapshot-idle-diagnosis2-events.json",
+    "result": "6.4693% prior idle observation not reproduced; no proven new root cause",
+    "clock_offset_method": "Median CSV UTC epoch minus monotonic_s for this PID; sample header plus requested duration excludes final snapshot overhead",
+    "review_actual_data_confirmed": true,
+    "review_drag_count": 6,
+    "prior_observation_preserved": "snapshot-settled-after-jianghu-on-idle",
+    "before": {
+      "event_enclosure": {
+        "start_uptime": 349842.23203125,
+        "end_uptime": 349875.3670840834,
+        "duration_s": 33.135052833356895,
+        "processes": [
+          {
+            "pid": "87765",
+            "kind": "reader",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.23999999999999844,
+            "cpu_percent": 0.7426891536437603,
+            "rss_first_mib": 825.516,
+            "rss_last_mib": 809.672,
+            "rss_max_mib": 825.516
+          },
+          {
+            "pid": "87771",
+            "kind": "webcontent",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.594,
+            "rss_last_mib": 277.266,
+            "rss_max_mib": 278.594
+          },
+          {
+            "pid": "87772",
+            "kind": "webcontent",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.547,
+            "rss_last_mib": 276.562,
+            "rss_max_mib": 278.547
+          },
+          {
+            "pid": "87773",
+            "kind": "webcontent",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.562,
+            "rss_last_mib": 276.828,
+            "rss_max_mib": 278.562
+          },
+          {
+            "pid": "87774",
+            "kind": "webcontent",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.531,
+            "rss_last_mib": 277.125,
+            "rss_max_mib": 278.531
+          },
+          {
+            "pid": "87776",
+            "kind": "webkit_network",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 119.578,
+            "rss_last_mib": 116.078,
+            "rss_max_mib": 119.578
+          },
+          {
+            "pid": "87785",
+            "kind": "webcontent",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 295.094,
+            "rss_last_mib": 294.984,
+            "rss_max_mib": 295.094
+          },
+          {
+            "pid": "87786",
+            "kind": "webcontent",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 294.656,
+            "rss_last_mib": 294.484,
+            "rss_max_mib": 294.656
+          },
+          {
+            "pid": "87787",
+            "kind": "webcontent",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 295.312,
+            "rss_last_mib": 295.156,
+            "rss_max_mib": 295.312
+          },
+          {
+            "pid": "87788",
+            "kind": "webcontent",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.922,
+            "rss_last_mib": 278.906,
+            "rss_max_mib": 278.922
+          },
+          {
+            "pid": "87793",
+            "kind": "webkit_gpu",
+            "samples": 33,
+            "sample_duration_s": 32.31500000000233,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 162.875,
+            "rss_last_mib": 162.844,
+            "rss_max_mib": 162.875
+          }
+        ]
+      },
+      "sample_window": {
+        "start_uptime": 349842.2373139858,
+        "end_uptime": 349872.2373139858,
+        "duration_s": 30.0,
+        "processes": [
+          {
+            "pid": "87765",
+            "kind": "reader",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.2099999999999973,
+            "cpu_percent": 0.7427318384387676,
+            "rss_first_mib": 825.516,
+            "rss_last_mib": 809.531,
+            "rss_max_mib": 825.516
+          },
+          {
+            "pid": "87771",
+            "kind": "webcontent",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.594,
+            "rss_last_mib": 277.266,
+            "rss_max_mib": 278.594
+          },
+          {
+            "pid": "87772",
+            "kind": "webcontent",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.547,
+            "rss_last_mib": 276.562,
+            "rss_max_mib": 278.547
+          },
+          {
+            "pid": "87773",
+            "kind": "webcontent",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.562,
+            "rss_last_mib": 276.828,
+            "rss_max_mib": 278.562
+          },
+          {
+            "pid": "87774",
+            "kind": "webcontent",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.531,
+            "rss_last_mib": 277.125,
+            "rss_max_mib": 278.531
+          },
+          {
+            "pid": "87776",
+            "kind": "webkit_network",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 119.578,
+            "rss_last_mib": 116.078,
+            "rss_max_mib": 119.578
+          },
+          {
+            "pid": "87785",
+            "kind": "webcontent",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 295.094,
+            "rss_last_mib": 294.984,
+            "rss_max_mib": 295.094
+          },
+          {
+            "pid": "87786",
+            "kind": "webcontent",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 294.656,
+            "rss_last_mib": 294.484,
+            "rss_max_mib": 294.656
+          },
+          {
+            "pid": "87787",
+            "kind": "webcontent",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 295.312,
+            "rss_last_mib": 295.156,
+            "rss_max_mib": 295.312
+          },
+          {
+            "pid": "87788",
+            "kind": "webcontent",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.922,
+            "rss_last_mib": 278.906,
+            "rss_max_mib": 278.922
+          },
+          {
+            "pid": "87793",
+            "kind": "webkit_gpu",
+            "samples": 29,
+            "sample_duration_s": 28.273999999975786,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 162.875,
+            "rss_last_mib": 162.844,
+            "rss_max_mib": 162.875
+          }
+        ]
+      },
+      "sample_path": "/tmp/yuedu-reader-profiling/snapshot-idle-diagnosis2-before.sample.txt",
+      "sample_header_wall": "2026-09-08 02:02:15.920 +0800",
+      "requested_sample_duration_s": 30,
+      "main_samples": 20549,
+      "main_mach_msg2_trap_samples": 20251,
+      "main_wait_sample_percent": 98.54980777653414
+    },
+    "after": {
+      "event_enclosure": {
+        "start_uptime": 349913.123995666,
+        "end_uptime": 349955.3197936667,
+        "duration_s": 42.195798000728246,
+        "processes": [
+          {
+            "pid": "87765",
+            "kind": "reader",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.6600000000000001,
+            "cpu_percent": 1.5941258876382072,
+            "rss_first_mib": 768.453,
+            "rss_last_mib": 798.828,
+            "rss_max_mib": 799.047
+          },
+          {
+            "pid": "87771",
+            "kind": "webcontent",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 271.203,
+            "rss_last_mib": 271.203,
+            "rss_max_mib": 271.203
+          },
+          {
+            "pid": "87772",
+            "kind": "webcontent",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 271.109,
+            "rss_last_mib": 271.109,
+            "rss_max_mib": 271.109
+          },
+          {
+            "pid": "87773",
+            "kind": "webcontent",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 271.375,
+            "rss_last_mib": 271.375,
+            "rss_max_mib": 271.375
+          },
+          {
+            "pid": "87774",
+            "kind": "webcontent",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 271.141,
+            "rss_last_mib": 271.141,
+            "rss_max_mib": 271.141
+          },
+          {
+            "pid": "87776",
+            "kind": "webkit_network",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.010000000000000009,
+            "cpu_percent": 0.02415342253997285,
+            "rss_first_mib": 146.5,
+            "rss_last_mib": 146.531,
+            "rss_max_mib": 146.547
+          },
+          {
+            "pid": "87785",
+            "kind": "webcontent",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 294.656,
+            "rss_last_mib": 294.656,
+            "rss_max_mib": 294.656
+          },
+          {
+            "pid": "87786",
+            "kind": "webcontent",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 294.156,
+            "rss_last_mib": 294.156,
+            "rss_max_mib": 294.156
+          },
+          {
+            "pid": "87787",
+            "kind": "webcontent",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 294.828,
+            "rss_last_mib": 294.828,
+            "rss_max_mib": 294.828
+          },
+          {
+            "pid": "87788",
+            "kind": "webcontent",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.578,
+            "rss_last_mib": 278.578,
+            "rss_max_mib": 278.578
+          },
+          {
+            "pid": "87793",
+            "kind": "webkit_gpu",
+            "samples": 42,
+            "sample_duration_s": 41.40200000000186,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 180.422,
+            "rss_last_mib": 180.234,
+            "rss_max_mib": 180.422
+          }
+        ]
+      },
+      "sample_window": {
+        "start_uptime": 349913.1383140087,
+        "end_uptime": 349953.1383140087,
+        "duration_s": 40.0,
+        "processes": [
+          {
+            "pid": "87765",
+            "kind": "reader",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.6400000000000006,
+            "cpu_percent": 1.625149183616716,
+            "rss_first_mib": 768.453,
+            "rss_last_mib": 798.891,
+            "rss_max_mib": 799.047
+          },
+          {
+            "pid": "87771",
+            "kind": "webcontent",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 271.203,
+            "rss_last_mib": 271.203,
+            "rss_max_mib": 271.203
+          },
+          {
+            "pid": "87772",
+            "kind": "webcontent",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 271.109,
+            "rss_last_mib": 271.109,
+            "rss_max_mib": 271.109
+          },
+          {
+            "pid": "87773",
+            "kind": "webcontent",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 271.375,
+            "rss_last_mib": 271.375,
+            "rss_max_mib": 271.375
+          },
+          {
+            "pid": "87774",
+            "kind": "webcontent",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 271.141,
+            "rss_last_mib": 271.141,
+            "rss_max_mib": 271.141
+          },
+          {
+            "pid": "87776",
+            "kind": "webkit_network",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.010000000000000009,
+            "cpu_percent": 0.025392955994011188,
+            "rss_first_mib": 146.5,
+            "rss_last_mib": 146.531,
+            "rss_max_mib": 146.547
+          },
+          {
+            "pid": "87785",
+            "kind": "webcontent",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 294.656,
+            "rss_last_mib": 294.656,
+            "rss_max_mib": 294.656
+          },
+          {
+            "pid": "87786",
+            "kind": "webcontent",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 294.156,
+            "rss_last_mib": 294.156,
+            "rss_max_mib": 294.156
+          },
+          {
+            "pid": "87787",
+            "kind": "webcontent",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 294.828,
+            "rss_last_mib": 294.828,
+            "rss_max_mib": 294.828
+          },
+          {
+            "pid": "87788",
+            "kind": "webcontent",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 278.578,
+            "rss_last_mib": 278.578,
+            "rss_max_mib": 278.578
+          },
+          {
+            "pid": "87793",
+            "kind": "webkit_gpu",
+            "samples": 40,
+            "sample_duration_s": 39.380999999993946,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0,
+            "rss_first_mib": 180.422,
+            "rss_last_mib": 180.234,
+            "rss_max_mib": 180.422
+          }
+        ]
+      },
+      "sample_path": "/tmp/yuedu-reader-profiling/snapshot-idle-diagnosis2-after.sample.txt",
+      "sample_header_wall": "2026-09-08 02:03:26.821 +0800",
+      "requested_sample_duration_s": 40,
+      "main_samples": 28447,
+      "main_mach_msg2_trap_samples": 27893,
+      "main_wait_sample_percent": 98.05251871902134
+    },
+    "stack_observations": [
+      "Main thread mach_msg2_trap: before20251/20549 (98.55%), after27893/28447 (98.05%); sample fractions are not CPU percentages.",
+      "After: SwiftUI.prepare-image queue125 samples, including ImageIO/AppleJPEG decode71 samples; main _SwiftUIProxyImage finish126 samples waits for image preparation.",
+      "After: ReaderView.body getter4 inclusive samples, readerSurfaceBackground2; activeReaderBackgroundImage URL resolution1 and UIImage(contentsOfFile:)1. Does not establish invocation count or sustained repetition.",
+      "No CoreTextPageEngine, CommentBubble, or BookSourceSession frames in either sample. Firestore/gRPC and JSC background threads predominantly wait; no proven busy-loop stack.",
+      "GCAnalytics input poll timer before6/after10 samples. No evidence these small sampled callbacks explain prior6.47%.",
+      "Before/after exact sample wall windows contain no PID87765 application log entries; SourcePerf was not emitted for this diagnostic PID, so this absence is not an independently instrumented SourcePerf measurement."
+    ]
+  }
+}

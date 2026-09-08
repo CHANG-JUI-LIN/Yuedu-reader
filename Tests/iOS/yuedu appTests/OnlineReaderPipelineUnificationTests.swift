@@ -1,5 +1,6 @@
 import CoreText
 import Foundation
+import SwiftSoup
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -63,6 +64,38 @@ struct OnlineReaderPipelineUnificationTests {
     }
 
     // MARK: - Provider HTML paragraph boundaries
+
+    @Test("base64 review artwork never becomes estimated reading text")
+    func chapterSizeExcludesInlineSVGArtwork() async {
+        let text = "第一段。第二段。"
+        let artwork = String(repeating: "A", count: 500_000)
+        let sourceText = "第一段。<img src='data:image/svg+xml;base64,\(artwork)'>第二段。"
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(index: 0, title: "Chapter", plainText: text,
+                                  body: .html("<p>\(text)</p>"), sourceHref: nil),
+            ChapterContentPayload(index: 1, title: "Chapter", plainText: sourceText,
+                                  body: .html("<p>\(sourceText)</p>"), sourceHref: nil)
+        ])
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: provider, renderSize: CGSize(width: 320, height: 480)
+        )
+
+        #expect(await builder.chapterDataSize(at: 0) == text.utf8.count)
+        #expect(await builder.chapterDataSize(at: 1) == text.utf8.count)
+    }
+
+    @Test("plain-text chapter size preserves literal markup and Unicode bytes")
+    func plainChapterSizePreservesLiteralText() async {
+        let text = "正文 <img> 👨‍👩‍👧‍👦\n下一段"
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(index: 0, title: "Chapter", plainText: text,
+                                  body: .plainText(text), sourceHref: nil)
+        ])
+        let builder = OnlineProviderAttributedStringBuilder(
+            provider: provider, renderSize: CGSize(width: 320, height: 480)
+        )
+        #expect(await builder.chapterDataSize(at: 0) == text.utf8.count)
+    }
 
     @Test("provider HTML keeps paragraph boundaries")
     func providerHTMLKeepsParagraphs() async throws {
@@ -215,6 +248,60 @@ struct OnlineReaderPipelineUnificationTests {
             normalizedHTML.lowercased().contains("<br"),
             "normalizedHTML=>>>\(normalizedHTML)<<<"
         )
+    }
+
+    @Test("plain source body keeps retained title artwork out of visible text",
+          arguments: ["plain", "absent", "sanitizedEmpty"])
+    func plainBodyWithRetainedSourceTitleArtwork(rawKind: String) async throws {
+        // SVG shape captured from the source's qd_title_svg after its paragraph
+        // switches were disabled. Book/chapter IDs and text are inert fixture values.
+        let svg = #"<svg xmlns='http://www.w3.org/2000/svg' width='820' height='700' viewBox='0 0 120 104'><path d='M14 10 H106 a12 12 0 0 1 12 12 V60 a12 12 0 0 1 -12 12 H52 L34 92 V72 H14 a12 12 0 0 1 -12 -12 V22 a12 12 0 0 1 12 -12 Z' fill='#A9A9A9'/><text x='60' y='44' font-family='Arial,sans-serif' font-size='46' text-anchor='middle' dominant-baseline='middle' fill='#ffffff'>99</text></svg>"#
+        let title = "第10章 看不见的地带"
+        let config = #"{"style":"text","type":"qd","click":"showCmt(123,456,-1,999,'android-轻阅读','改版')"}"#
+        let retainedTitle = title + "data:image/svg+xml;base64,"
+            + Data(svg.utf8).base64EncodedString() + "," + config
+        let prose = "第一段保留 <literal> 與 & 符號。\n第二段。"
+        let content = title + "\n" + prose
+        let raw: String? = switch rawKind {
+        case "plain": title + "\n第一段。\n第二段。"
+        case "sanitizedEmpty": "<script>discarded()</script>"
+        default: nil
+        }
+        let html = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
+            title: retainedTitle,
+            plainTextContent: content,
+            rawHTMLContent: raw,
+            reviewContext: .init(sourceName: "Fixture", sourceURL: "https://example.com")
+        )
+        let document = try SwiftSoup.parse(html)
+        #expect(try document.title() == title)
+        #expect(try document.select("h1").text() == title)
+        #expect(try document.select("h1 a.yd-review-image img").size() == 1)
+        #expect(try document.select("p").size() == 2)
+        #expect(try document.select("p").first()?.text() == "第一段保留 <literal> 與 & 符號。")
+        #expect(try document.select("p img").isEmpty())
+
+        let provider = FixedChapterContentProvider([
+            ChapterContentPayload(index: 0, title: title, plainText: prose,
+                                  body: .html(html), sourceHref: "https://example.com/chapter/10")
+        ])
+        let attributed = try await OnlineProviderAttributedStringBuilder(
+            provider: provider, renderSize: CGSize(width: 640, height: 480)
+        ).buildChapter(at: 0, settings: Self.settings,
+                       themeTextColor: .label, themeBackgroundColor: .systemBackground).attributedString
+        #expect(!attributed.string.contains("data:image"))
+        #expect(!attributed.string.contains("showCmt"))
+        #expect(!attributed.string.contains("__YD_B64_"))
+        #expect(attributed.string.contains("第一段保留 <literal> 與 & 符號。"))
+        let text = attributed.string as NSString
+        let attachment = text.range(of: "\u{FFFC}")
+        try #require(attachment.location != NSNotFound)
+        #expect(NSLocationInRange(attachment.location, text.paragraphRange(for: text.range(of: title))))
+        let href = try #require(attributed.attribute(
+            HTMLAttributedStringBuilder.internalLinkAttribute,
+            at: attachment.location, effectiveRange: nil
+        ) as? String)
+        #expect(ReaderHTMLUtilities.isTitleReviewHref(href))
     }
 
     @Test("leading title review image joins the chapter heading")

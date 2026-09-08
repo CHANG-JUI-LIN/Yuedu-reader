@@ -37,7 +37,12 @@ extension ReaderView {
                 // A chapter that loads proves the chapter URLs are usable, so the run of
                 // failures that would have implicated the table of contents is over.
                 chaptersFailedSinceTOCCheck.removeAll()
-                prefetchAdjacentChapters(around: chapterIndex)
+                if let center = ReaderChapterPresentation.adjacentPrefetchCenter(
+                    readyChapterIndex: chapterIndex,
+                    currentChapterIndex: currentChapterIndex
+                ) {
+                    prefetchAdjacentChapters(around: center)
+                }
             }
             if newState == .cancelled {
                 reissueCancelledChapterFetch(chapterIndex)
@@ -107,6 +112,7 @@ extension ReaderView {
             // the book for failures the new table of contents may well not repeat.
             await dependencies.chapterFetcher.resetFailureBudget(for: bookId)
             chaptersFailedSinceTOCCheck.removeAll()
+            pendingChapterContentReplacements.formUnion(failedChapters)
             for index in failedChapters {
                 readerViewModel.resetChapterState(for: index)
             }
@@ -185,7 +191,7 @@ extension ReaderView {
             }
             return
         }
-        submitChapterContentRefresh(chapterIndex: chapterIndex)
+        submitChapterContentRefresh(chapterIndex: chapterIndex, update: .available)
     }
 
     func chapterContentRefreshRequest(chapterIndex: Int) -> ReaderRenderRefreshRequest {
@@ -212,7 +218,10 @@ extension ReaderView {
     /// land together and each used to submit its own refresh.
     ///
     /// The scroll engine was already fixed this way; this is the paged half of the rule.
-    func submitChapterContentRefresh(chapterIndex: Int) {
+    func submitChapterContentRefresh(
+        chapterIndex: Int,
+        update: ReaderChapterContentUpdate = .replaced
+    ) {
         guard epubRenderer.engine != nil || epubRenderer.scrollEngine != nil else { return }
         let renderer = epubRenderer
         let pagedEngine = epubRenderer.engine
@@ -220,11 +229,20 @@ extension ReaderView {
         // as they are at the moment the chapter arrived.
         let request = chapterContentRefreshRequest(chapterIndex: chapterIndex)
         let isVisibleChapter = chapterIndex == currentChapterIndex
+        // Cache probes and initial fetch completion can publish ready after the same
+        // bytes have already reached a preload. Only a recorded replacement may
+        // invalidate that document; a normal ready event joins its existing work.
+        let contentUpdate: ReaderChapterContentUpdate =
+            pendingChapterContentReplacements.remove(chapterIndex) != nil
+                || manuallyRefreshingChapterIndex == chapterIndex ? .replaced : update
         Task { @MainActor in
             // Per-chapter, idempotent, outside every transaction: no other chapter can
             // cancel it.
             if let pagedEngine {
-                await pagedEngine.notifyChapterDataChanged(at: chapterIndex)
+                let needsPlacement = await contentUpdate.supply(
+                    to: pagedEngine, chapterIndex: chapterIndex
+                )
+                guard needsPlacement else { return }
             }
             guard isVisibleChapter else {
                 if manuallyRefreshingChapterIndex == chapterIndex {
@@ -251,6 +269,7 @@ extension ReaderView {
         AppLogger.cache("⟐ offline cache cleared, resetting chapter states", context: [
             "chapter": currentChapterIndex,
         ])
+        pendingChapterContentReplacements.formUnion(0..<(book?.onlineChapters?.count ?? 0))
         readerViewModel.resetAllChapterStates()
         chapterConsistencyRecoveryAttempts.removeAll()
         // Resetting alone would leave the overlay spinning forever: nothing else refetches
@@ -385,6 +404,7 @@ extension ReaderView {
 
     private func refetchChapter(at idx: Int) {
         guard let currentBook = book else { return }
+        pendingChapterContentReplacements.insert(idx)
         dependencies.bookSourceFetcher.clearChapterCache(
             bookId: currentBook.id,
             chapterIndex: idx

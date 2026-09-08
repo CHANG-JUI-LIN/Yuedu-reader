@@ -240,6 +240,7 @@ struct ReaderSettingsView: View {
             Text(localized("頁首頁尾"))
         } footer: {
             Text(localized("組件的正文保留空間改在「頁面邊距」調整。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -266,6 +267,7 @@ struct ReaderSettingsView: View {
             Text(localized("閱讀設定備份"))
         } footer: {
             Text(localized("匯出的檔案包含排版參數、章節標題樣式與正則高亮，可在其他裝置匯入。匯入也接受 legado 的 readConfig.json。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -382,6 +384,7 @@ struct ReaderSettingsView: View {
                     ? localized("正文與畫面邊緣的距離。")
                     : localized("正文與畫面邊緣的距離；上下邊距同時是頁首頁尾組件的容身空間，改動只影響正文排版，不會移動組件本身。")
             )
+            .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -466,6 +469,7 @@ struct ReaderSettingsView: View {
             Text(localized("文字"))
         } footer: {
             Text(String(format: localized("文字顏色只套用到目前的閱讀背景（%@）。"), theme.localizedTitle))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -637,6 +641,7 @@ struct ReaderSettingsView: View {
             Text(localized("間距"))
         } footer: {
             Text(localized("關閉會還原行距、字距與段距的預設值。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

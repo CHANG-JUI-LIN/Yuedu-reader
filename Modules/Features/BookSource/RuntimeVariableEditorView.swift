@@ -37,7 +37,7 @@ struct RuntimeVariableEditorView: View {
                 } footer: {
                     if let errorText {
                         Label(errorText, systemImage: "exclamationmark.triangle")
-                            .foregroundColor(.red)
+                            .dsSectionFooter(color: DSColor.destructive)
                     }
                 }
                 .interfaceSectionSurface()

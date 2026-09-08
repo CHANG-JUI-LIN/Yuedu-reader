@@ -40,6 +40,7 @@ struct ReaderCommentBubbleSettingsView: View {
                 Text(localized("顯示偏好"))
             } footer: {
                 Text(localized("開啟後優先使用選取的氣泡樣式；關閉後依書源提供的 SVG 顯示。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -252,7 +253,7 @@ struct ReaderCommentBubbleSettingsView: View {
     }
 
     private func previewImage(svg: String) -> UIImage? {
-        guard let bubble = CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg) else {
+        guard let bubble = CommentBubbleSVGRecognizer.recognizeUserTemplate(svg) else {
             return nil
         }
         return CommentBubbleSVGRecognizer.draw(
@@ -454,17 +455,17 @@ struct ReaderCommentBubbleSettingsView: View {
     }
 
     private func validationMessage(for svg: String) -> String? {
-        if svg.utf8.count > CommentBubbleSVGRecognizer.maximumRecognizableSVGByteCount {
+        if svg.utf8.count > CommentBubbleSVGRecognizer.maximumUserTemplateSVGByteCount {
             return String(
                 format: localized("SVG 檔案過大，請使用小於 %d KB 的氣泡樣式。"),
-                CommentBubbleSVGRecognizer.maximumRecognizableSVGByteCount / 1024
+                CommentBubbleSVGRecognizer.maximumUserTemplateSVGByteCount / 1024
             )
         }
         guard svg.lowercased().contains("<svg") else {
             return localized("檔案不是可讀取的 SVG。")
         }
-        guard CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg) != nil else {
-            return localized("SVG 需要包含一個可替換的文字節點，才能作為段評氣泡。")
+        guard CommentBubbleSVGRecognizer.recognizeUserTemplate(svg) != nil else {
+            return localized("這個 SVG 沒有可繪製的內容，無法作為段評氣泡。")
         }
         return nil
     }

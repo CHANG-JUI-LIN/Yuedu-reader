@@ -36,6 +36,8 @@ final class BrowserLayoutSession {
     private(set) var pipelineFootnotes: [String: String] = [:]
     /// nodeID → owning `<a href>` for this chapter (Phase 3A link interaction).
     private(set) var pipelineLinkAnchors: [Int: LinkAnchorInfo] = [:]
+    private(set) var pipelineMediaAttachments: [Int: EPUBMediaAttachment] = [:]
+    private(set) var pipelinePronunciationHints: [TTSPronunciationHint] = []
 
     convenience init(
         html: String,
@@ -243,7 +245,8 @@ final class BrowserLayoutSession {
             cornerRadius: 0,
             borderTop: .zero, borderBottom: .zero, borderLeft: .zero, borderRight: .zero,
             nodeID: -1,
-            writingMode: config.writingMode
+            writingMode: config.writingMode,
+            isBackgroundPaint: true
         )))
         if let bg = background.image, let image = imageLoader(bg.source) {
             let rect = BrowserLayoutDocument.coverRect(
@@ -328,6 +331,8 @@ final class BrowserLayoutSession {
         pipelineBoxCount = result.boxCount
         pipelineFootnotes = result.footnotes
         pipelineLinkAnchors = result.linkAnchors
+        pipelineMediaAttachments = result.mediaAttachments
+        pipelinePronunciationHints = result.pronunciationHints
         pipeline = result
         walker = PageWalker(
             box: result.rootBox,

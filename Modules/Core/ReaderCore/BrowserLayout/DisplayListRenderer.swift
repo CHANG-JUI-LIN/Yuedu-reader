@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import UIKit
 
@@ -17,30 +18,76 @@ enum DisplayListRenderer {
     static func render(
         _ list: DisplayList,
         size: CGSize,
-        backgroundColor: UIColor = .white
+        backgroundColor: UIColor = .white,
+        readerBackgroundImage: UIImage? = nil
     ) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let bounds = CGRect(origin: .zero, size: size)
         return renderer.image { context in
             backgroundColor.setFill()
-            context.fill(CGRect(origin: .zero, size: size))
-            DisplayListDrawer.draw(list, in: context.cgContext)
+            context.fill(bounds)
+            // The snapshot stands in for a real page during the curl and cover
+            // transitions, so it has to carry the same surface that page draws
+            // — otherwise the flipping half is a flat colour and the resting
+            // half is the artwork.
+            if let readerBackgroundImage {
+                CoreTextPageView.drawPageBackground(readerBackgroundImage, in: bounds)
+            }
+            DisplayListDrawer.draw(
+                list,
+                in: context.cgContext,
+                skipAuthoredBackgroundPaint: readerBackgroundImage != nil
+            )
         }
     }
 }
 
 enum DisplayListDrawer {
     /// Draws the list into the CURRENT context. The caller owns the background.
-    static func draw(_ list: DisplayList, in context: CGContext) {
+    ///
+    /// - Parameter skipAuthoredBackgroundPaint: drops the injected page-canvas
+    ///   fill and image — the document's own `background-color`/`background-image`.
+    ///   Pass true when the caller has already painted a reader-chosen background
+    ///   image: that preference REPLACES the authored surface rather than sitting
+    ///   under it, which is the same precedence `CoreTextPageView` gets from
+    ///   `readerBackgroundImage ?? pageBackgroundImage`. Without it the artwork
+    ///   was painted and then covered by the book's own wallpaper.
+    static func draw(
+        _ list: DisplayList,
+        in context: CGContext,
+        skipAuthoredBackgroundPaint: Bool = false
+    ) {
+        var pendingText: [DisplayTextItem] = []
+        func flushText() {
+            let shaped = pendingText.map { item in
+                let string = item.attributedText
+                return (item, string, CTLineCreateWithAttributedString(string))
+            }
+            // Decorations may extend past an inline element's own bounds.
+            // Paint the complete text group underneath all its glyphs so a
+            // later span's padding cannot erase the preceding span's ink.
+            for (item, string, line) in shaped {
+                drawText(item, string: string, line: line, decorationOnly: true, in: context)
+            }
+            for (item, string, line) in shaped {
+                drawText(item, string: string, line: line, decorationOnly: false, in: context)
+            }
+            pendingText.removeAll(keepingCapacity: true)
+        }
         for item in list.items {
             switch item {
             case .fill(let f):
+                flushText()
+                if skipAuthoredBackgroundPaint, f.isBackgroundPaint { continue }
                 drawFill(f, in: context)
             case .text(let t):
-                drawText(t)
+                pendingText.append(t)
             case .image(let i):
+                flushText()
+                if skipAuthoredBackgroundPaint, i.isBackgroundPaint { continue }
                 if let image = i.image {
                     image.draw(in: i.rect.rawValue)
                 } else {
@@ -49,6 +96,7 @@ enum DisplayListDrawer {
                 }
             }
         }
+        flushText()
     }
 
     /// One bordered box: background (clipped to radius) + four border edges.
@@ -272,15 +320,24 @@ enum DisplayListDrawer {
         context.restoreGState()
     }
 
-    private static func drawText(_ item: DisplayTextItem) {
+    private static func drawText(
+        _ item: DisplayTextItem, string: NSAttributedString, line: CTLine,
+        decorationOnly: Bool, in context: CGContext
+    ) {
         guard !item.text.isEmpty else { return }
-        let string = NSAttributedString(string: item.text, attributes: [
-            .font: item.font,
-            .foregroundColor: item.color,
-        ])
-        // Draw with the glyph top aligned to the line box top (baseline math
-        // already accounts for ascent).
-        let drawPoint = CGPoint(x: item.rect.minX, y: item.baselineY - item.font.ascender)
-        string.draw(at: drawPoint)
+        context.saveGState()
+        context.translateBy(x: item.rect.minX, y: item.baselineY)
+        context.scaleBy(x: 1, y: -1)
+        context.textMatrix = .identity
+        context.textPosition = .zero
+        if decorationOnly {
+            RegexHighlightDecorationRenderer.drawHorizontal(
+                line: line, origin: .zero, attributedString: string,
+                range: NSRange(location: 0, length: string.length), context: context
+            )
+        } else {
+            CTLineDraw(line, context)
+        }
+        context.restoreGState()
     }
 }

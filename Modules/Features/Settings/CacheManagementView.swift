@@ -135,6 +135,7 @@ struct CacheManagementView: View {
                     .accessibilityHint(localized("將清除所有可重新下載的快取內容"))
                 } footer: {
                     Text(localized("書籍、設定與備份同步資料不會受影響。"))
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
             }
@@ -217,6 +218,7 @@ struct CacheManagementView: View {
             .disabled(viewModel.isLoading || viewModel.snapshot[category] == 0)
         } footer: {
             Text(localized(category.detailKey))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

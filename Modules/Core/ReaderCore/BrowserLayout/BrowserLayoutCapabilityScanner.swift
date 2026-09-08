@@ -100,7 +100,7 @@ enum BrowserLayoutCapabilityScanner {
             func hasAny(_ selector: String) -> Bool {
                 ((try? doc.select(selector).isEmpty()) ?? true) == false
             }
-            if hasAny("script, iframe, object, embed, canvas, audio, video") {
+            if hasAny("script, iframe, object, embed, canvas, audio") {
                 reasons.append(.scriptedInteractive)
             }
             if hasAny("math") {

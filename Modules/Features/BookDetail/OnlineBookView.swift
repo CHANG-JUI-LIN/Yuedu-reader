@@ -297,6 +297,7 @@ struct OnlineBookView: View {
             BookCoverImage(
                 coverURL: displayCoverUrl,
                 title: displayName,
+                author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
                 sourceBaseURL: source?.bookSourceUrl,
                 sourceHeaders: source?.parsedHeaders ?? [:]
             )

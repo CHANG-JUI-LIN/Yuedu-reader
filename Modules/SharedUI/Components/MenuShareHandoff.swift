@@ -34,6 +34,7 @@ struct ShareExportSheet<Item: Transferable>: View {
                     }
                 } footer: {
                     Text(export.name)
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
             }

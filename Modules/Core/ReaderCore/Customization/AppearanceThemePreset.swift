@@ -36,6 +36,16 @@ enum AppearanceReaderInterface: String, CaseIterable, Identifiable, Codable {
 /// Hand-authored dark-appearance colors for one custom theme. Absent means the
 /// dark version is derived from the light colors, which is what every built-in
 /// theme does and the default for custom ones too.
+/// UI text colours a theme may author, in the three levels iOS itself uses
+/// (`label` / `secondaryLabel` / `tertiaryLabel`). Optional everywhere: every
+/// built-in theme leaves these unset and keeps the system label colours, which
+/// is why adding them changes nothing until an appearance pack asks for them.
+struct AppearanceThemeTextColors: Hashable, Sendable {
+    var primary: UIColor
+    var secondary: UIColor
+    var tertiary: UIColor
+}
+
 struct AppearanceCustomThemeDarkColors: Codable, Hashable {
     var backgroundHex: UInt32
     var textHex: UInt32
@@ -60,6 +70,43 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
     /// `AppearanceThemePreset.palette(for:)`); themes saved before this field
     /// existed decode to nil and keep deriving, unchanged.
     var dark: AppearanceCustomThemeDarkColors?
+    /// UI text colours, three levels, light appearance. All optional so themes
+    /// saved before this existed decode unchanged and keep the system labels.
+    var textPrimaryHex: UInt32?
+    var textSecondaryHex: UInt32?
+    var textTertiaryHex: UInt32?
+    /// The same three for dark appearance. Independent of `dark` above, which is
+    /// the five-colour surface palette.
+    var darkTextPrimaryHex: UInt32?
+    var darkTextSecondaryHex: UInt32?
+    var darkTextTertiaryHex: UInt32?
+    /// Everything this theme owns beyond colours — tab icons, font, covers,
+    /// effects, card artwork. nil for a plain colour theme.
+    var extras: AppearanceThemeExtras?
+
+    /// The light-appearance trio, or nil unless all three were authored — a
+    /// partial set would leave one level system-coloured against two custom ones,
+    /// which reads as a bug rather than a theme.
+    var textColors: AppearanceThemeTextColors? {
+        Self.colors(textPrimaryHex, textSecondaryHex, textTertiaryHex)
+    }
+
+    var darkTextColors: AppearanceThemeTextColors? {
+        Self.colors(darkTextPrimaryHex, darkTextSecondaryHex, darkTextTertiaryHex)
+    }
+
+    private static func colors(
+        _ primary: UInt32?,
+        _ secondary: UInt32?,
+        _ tertiary: UInt32?
+    ) -> AppearanceThemeTextColors? {
+        guard let primary, let secondary, let tertiary else { return nil }
+        return AppearanceThemeTextColors(
+            primary: AppearanceThemePreset.hex(primary),
+            secondary: AppearanceThemePreset.hex(secondary),
+            tertiary: AppearanceThemePreset.hex(tertiary)
+        )
+    }
 
     init(
         id: String = UUID().uuidString,
@@ -70,7 +117,14 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
         accentHex: UInt32,
         dialogueHex: UInt32,
         pageBackgrounds: [String: AppearancePageBackgroundConfig]? = nil,
-        dark: AppearanceCustomThemeDarkColors? = nil
+        dark: AppearanceCustomThemeDarkColors? = nil,
+        textPrimaryHex: UInt32? = nil,
+        textSecondaryHex: UInt32? = nil,
+        textTertiaryHex: UInt32? = nil,
+        darkTextPrimaryHex: UInt32? = nil,
+        darkTextSecondaryHex: UInt32? = nil,
+        darkTextTertiaryHex: UInt32? = nil,
+        extras: AppearanceThemeExtras? = nil
     ) {
         self.id = id
         self.name = name
@@ -81,6 +135,13 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
         self.dialogueHex = dialogueHex
         self.pageBackgrounds = pageBackgrounds
         self.dark = dark
+        self.textPrimaryHex = textPrimaryHex
+        self.textSecondaryHex = textSecondaryHex
+        self.textTertiaryHex = textTertiaryHex
+        self.darkTextPrimaryHex = darkTextPrimaryHex
+        self.darkTextSecondaryHex = darkTextSecondaryHex
+        self.darkTextTertiaryHex = darkTextTertiaryHex
+        self.extras = extras
     }
 }
 
@@ -150,6 +211,12 @@ struct AppearanceThemePreset: Identifiable, Hashable {
     /// Dark colors the user authored for this theme (custom themes only). When
     /// set, `palette(for: .dark)` uses them verbatim instead of deriving.
     var authoredDarkColors: AppearanceThemeDarkColors?
+    /// UI text colours for *this* palette's appearance, or nil for the system
+    /// labels. `DSColor.textPrimary/​Secondary/​Tertiary` read this.
+    var authoredTextColors: AppearanceThemeTextColors?
+    /// The dark-appearance trio, kept on the light palette so `palette(for:)` has
+    /// something to hand the dark one. Never read directly by `DSColor`.
+    var authoredDarkTextColors: AppearanceThemeTextColors?
 
     var localizedName: String { displayName ?? localized(nameKey) }
     var backgroundColor: Color { Color(uiColor: background) }
@@ -204,6 +271,11 @@ struct AppearanceThemePreset: Identifiable, Hashable {
             dark = derivedDarkPalette()
         }
         dark.isDarkAppearancePalette = true
+        // Each branch above mints a fresh preset from the five surface colours, so
+        // the text trios have to be reattached here. A theme that authored none
+        // leaves both nil and keeps the system labels in both appearances.
+        dark.authoredTextColors = authoredDarkTextColors
+        dark.authoredDarkTextColors = authoredDarkTextColors
         return dark
     }
 
@@ -453,6 +525,8 @@ struct AppearanceThemePreset: Identifiable, Hashable {
             isCustom: true
         )
         preset.authoredDarkColors = custom.dark.map { AppearanceThemeDarkColors($0) }
+        preset.authoredTextColors = custom.textColors
+        preset.authoredDarkTextColors = custom.darkTextColors
         return preset
     }
 
@@ -467,7 +541,13 @@ struct AppearanceThemePreset: Identifiable, Hashable {
             // Only a hand-authored dark palette travels with the copy. A derived
             // one stays derived, so the copy tracks the derivation rule instead
             // of freezing today's output.
-            dark: authoredDarkColors?.stored
+            dark: authoredDarkColors?.stored,
+            textPrimaryHex: authoredTextColors?.primary.rgbHex,
+            textSecondaryHex: authoredTextColors?.secondary.rgbHex,
+            textTertiaryHex: authoredTextColors?.tertiary.rgbHex,
+            darkTextPrimaryHex: authoredDarkTextColors?.primary.rgbHex,
+            darkTextSecondaryHex: authoredDarkTextColors?.secondary.rgbHex,
+            darkTextTertiaryHex: authoredDarkTextColors?.tertiary.rgbHex
         )
     }
 

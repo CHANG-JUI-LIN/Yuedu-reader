@@ -166,6 +166,9 @@ struct ComputedStyle: Equatable {
     var borderRadius: CGFloat = 0
     var pendingBorderRadius: CSSLength? = nil
     var configParagraphSpacing: CGFloat = 0
+    var configLineSpacing: CGFloat = 0
+    var configLetterSpacing: CGFloat = 0
+    var configBold = false
 
     init(
         fontSize: CGFloat = 17,
@@ -243,6 +246,10 @@ extension ComputedStyle {
             lineHeight: parent.lineHeight,
             whiteSpace: parent.whiteSpace
         )
+        style.configParagraphSpacing = parent.configParagraphSpacing
+        style.configLineSpacing = parent.configLineSpacing
+        style.configLetterSpacing = parent.configLetterSpacing
+        style.configBold = parent.configBold
         style.rubyAlign = parent.rubyAlign
         style.rubyPosition = parent.rubyPosition
         style.rubyMerge = parent.rubyMerge

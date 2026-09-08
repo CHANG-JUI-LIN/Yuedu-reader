@@ -52,20 +52,9 @@ struct yuedu_appApp: App {
         // session record is what tells the next launch whether this one survived.
         DiagnosticLog.shared.beginSession()
         #if DEBUG
-        // Debug-only engine selection via launch arguments (UI tests / driver).
-        // The default is `.legacy` in every build — the browser engine is
-        // feature-incomplete and off; these flags are the only way to turn it
-        // back on, for development and the browser-layout UI tests.
-        //   -browser-mode browserForced | browserAuto | legacy
-        //   -browser-overlay 1        (show engine badge + geometry overlay)
+        // EPUB engine selection is fixed to legacy, including DEBUG builds.
+        // Old -browser-mode launch arguments must not re-enable browserAuto.
         let args = ProcessInfo.processInfo.arguments
-        if let idx = args.firstIndex(of: "-browser-mode"), args.indices.contains(idx + 1) {
-            switch args[idx + 1] {
-            case "browserForced": BrowserLayoutFeature.mode = .browserForced
-            case "browserAuto": BrowserLayoutFeature.mode = .browserAuto
-            default: BrowserLayoutFeature.mode = .legacy
-            }
-        }
         if args.contains("-browser-overlay") { BrowserLayoutFeature.showDebugOverlay = true }
         // UI-test automation: `-auto-import-epub <filename>` (relative to
         // Documents) imports the book once at launch (see runAutoImportIfNeeded).

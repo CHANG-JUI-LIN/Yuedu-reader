@@ -69,7 +69,7 @@ extension ReaderView {
                 } footer: {
                     if let err = changeSourceError {
                         Label(err, systemImage: "exclamationmark.triangle")
-                            .foregroundColor(.red)
+                            .dsSectionFooter(color: DSColor.destructive)
                     }
                 }
                 .interfaceSectionSurface()
@@ -509,8 +509,8 @@ extension ReaderView {
 
         let chapterIndex = ttsChapterIndex ?? currentChapterIndex
         guard chapters.indices.contains(chapterIndex),
-              let layout = engine.layouts[chapterIndex],
-              layout.attributedString.length > 0
+              let chapterText = engine.chapterText(forSpine: chapterIndex),
+              !chapterText.isEmpty
         else { return }
 
         let text = ttsCoordinator.currentSegmentText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -519,7 +519,7 @@ extension ReaderView {
         // Locate the spoken sentence inside the chapter string. Search forward from
         // the current page start so a repeated sentence resolves to the occurrence
         // actually being read (TTS always moves forward through the chapter).
-        let ns = layout.attributedString.string as NSString
+        let ns = chapterText as NSString
         let pageStart = engine.charOffset(forPage: currentPage)
         let searchStart = pageStart.spineIndex == chapterIndex
             ? min(max(0, pageStart.charOffset), ns.length)
@@ -567,17 +567,20 @@ extension ReaderView {
         guard let chapterIndex = mediaOverlayCoordinator.currentChapterIndex,
               let fragment = mediaOverlayCoordinator.currentFragment,
               let overlay = epubRenderer.mediaOverlaysByChapter[chapterIndex],
-              let layout = epubRenderer.engine?.layouts[chapterIndex],
-              layout.attributedString.length > 0
+              let engine = epubRenderer.engine,
+              let anchorOffsets = engine.chapterAnchorOffsets(forSpine: chapterIndex),
+              let chapterText = engine.chapterText(forSpine: chapterIndex),
+              !chapterText.isEmpty
         else {
             return mediaOverlayCoordinator.currentFragment?.textFragmentID
                 ?? mediaOverlayCoordinator.currentFragment?.id
         }
+        let chapterNS = chapterText as NSString
 
         let anchorID = fragment.textFragmentID ?? fragment.id
-        guard let start = layout.anchorOffsets[anchorID],
+        guard let start = anchorOffsets[anchorID],
               start >= 0,
-              start < layout.attributedString.length
+              start < chapterNS.length
         else {
             return anchorID
         }
@@ -586,14 +589,14 @@ extension ReaderView {
             .compactMap { next -> Int? in
                 guard next.id != fragment.id else { return nil }
                 let nextID = next.textFragmentID ?? next.id
-                guard let offset = layout.anchorOffsets[nextID], offset > start else { return nil }
+                guard let offset = anchorOffsets[nextID], offset > start else { return nil }
                 return offset
             }
             .min()
-        let end = min(nextStart ?? min(layout.attributedString.length, start + 180), layout.attributedString.length)
+        let end = min(nextStart ?? min(chapterNS.length, start + 180), chapterNS.length)
         guard end > start else { return anchorID }
 
-        let text = (layout.attributedString.string as NSString)
+        let text = chapterNS
             .substring(with: NSRange(location: start, length: end - start))
             .replacingOccurrences(of: "\u{FFFC}", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -627,15 +630,15 @@ extension ReaderView {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // The moment listening stops. Previously a `notice` buried among thousands:
             // a real user's export had seven of these and nothing marking them as the
-            // reason the audio went silent. `narrationForTTSChapter` reads
-            // `engine.layouts[chapterIndex]` first, so this fires when a layout was
-            // discarded out from under playback and neither fallback had the text.
+            // reason the audio went silent. `narrationForTTSChapter` asks the
+            // engine for the chapter's text first, so this fires when a layout was
+            // discarded out from under playback and no fallback had the text.
             AppLogger.anomaly(
                 localized("聽書取不到章節文字而停止"),
                 category: .tts,
                 detail: [
                     "chapter=\(chapterIndex)",
-                    "hasLayout=\(epubRenderer.engine?.layouts[chapterIndex] != nil)",
+                    "hasLayout=\(epubRenderer.engine?.chapterPagination(forSpine: chapterIndex, charOffset: 0) != nil)",
                     "usesCoreText=\(usesCoreTextEPUB)",
                     "pagesForChapter=\(allPages.filter { $0.chapterIndex == chapterIndex }.count)",
                 ].joined(separator: "\n")
@@ -655,7 +658,7 @@ extension ReaderView {
                 guard shifted.location >= 0,
                       NSMaxRange(shifted) <= (text as NSString).length
                 else { return nil }
-                return TTSPronunciationHint(range: shifted, ipa: hint.ipa)
+                return hint.rebased(to: shifted)
             }
         }
 
@@ -836,7 +839,7 @@ extension ReaderView {
                 detail: [
                     "chapter=\(target)",
                     "contentAvailable=\(isChapterContentAvailable(at: target))",
-                    "hasLayout=\(epubRenderer.engine?.layouts[target] != nil)",
+                    "hasLayout=\(epubRenderer.engine?.chapterPagination(forSpine: target, charOffset: 0) != nil)",
                     "usesCoreTextEPUB=\(usesCoreTextEPUB)",
                 ].joined(separator: "\n")
             )
@@ -946,8 +949,13 @@ extension ReaderView {
         guard chapters.indices.contains(chapterIndex) else {
             return TTSNarrationUnit(text: "")
         }
+        // The legacy delegate may retain chapter zero from its startup even
+        // after the browser owns that chapter. Its offsets are not browser offsets.
+        let browserOwnsChapter = (epubRenderer.engine as? BrowserLayoutPageEngine)?
+            .choice(for: chapterIndex)?.isBrowser == true
         if let engine = epubRenderer.engine,
            usesCoreTextEPUB,
+           !browserOwnsChapter,
            let layout = engine.layouts[chapterIndex],
            layout.attributedString.length > 0 {
             let hints = TTSPronunciationAnnotator.hints(
@@ -958,6 +966,22 @@ extension ReaderView {
             return TTSNarrationUnit(
                 text: Self.narratableText(from: layout.attributedString.string),
                 pronunciationHints: hints
+            )
+        }
+        // Browser semantics carry their own source ranges. Keep this text in
+        // chapter UTF-16 coordinates; the speech chunker trims spoken chunks.
+        if let engine = epubRenderer.engine,
+           usesCoreTextEPUB,
+           let chapterText = engine.chapterText(forSpine: chapterIndex),
+           !chapterText.isEmpty {
+            return TTSNarrationUnit(
+                text: chapterText,
+                pronunciationHints: TTSPronunciationAnnotator.hints(
+                    in: chapterText,
+                    authoredHints: engine.chapterPronunciationHints(forSpine: chapterIndex),
+                    lexicons: activePublicationSession?.pronunciationLexicons ?? [],
+                    bookLanguage: activePublicationSession?.language
+                )
             )
         }
         let pageText = allPages

@@ -1,0 +1,307 @@
+{
+  "start": 347907.296001625,
+  "end": 347984.053238708,
+  "requested_turns": 50,
+  "events": [
+    {
+      "command": 3,
+      "action": "tap",
+      "uptime": 347908.00295375,
+      "page": "2/13"
+    },
+    {
+      "command": 4,
+      "action": "tap",
+      "uptime": 347909.54742712504,
+      "page": "3/13"
+    },
+    {
+      "command": 5,
+      "action": "tap",
+      "uptime": 347911.121407125,
+      "page": "4/13"
+    },
+    {
+      "command": 6,
+      "action": "tap",
+      "uptime": 347912.6892881667,
+      "page": "5/13"
+    },
+    {
+      "command": 7,
+      "action": "tap",
+      "uptime": 347914.27997725003,
+      "page": "6/13"
+    },
+    {
+      "command": 8,
+      "action": "tap",
+      "uptime": 347915.8505614167,
+      "page": "7/13"
+    },
+    {
+      "command": 9,
+      "action": "tap",
+      "uptime": 347917.42077270837,
+      "page": "8/13"
+    },
+    {
+      "command": 10,
+      "action": "tap",
+      "uptime": 347919.0026752917,
+      "page": "9/13"
+    },
+    {
+      "command": 11,
+      "action": "tap",
+      "uptime": 347920.58015875,
+      "page": "10/13"
+    },
+    {
+      "command": 12,
+      "action": "tap",
+      "uptime": 347922.1522726667,
+      "page": "11/13"
+    },
+    {
+      "command": 13,
+      "action": "tap",
+      "uptime": 347923.7231669167,
+      "page": "12/13"
+    },
+    {
+      "command": 14,
+      "action": "tap",
+      "uptime": 347925.3051349167,
+      "page": "13/13"
+    },
+    {
+      "command": 15,
+      "action": "tap",
+      "uptime": 347926.83786483336,
+      "page": "1/12"
+    },
+    {
+      "command": 16,
+      "action": "tap",
+      "uptime": 347928.3784862083,
+      "page": "2/12"
+    },
+    {
+      "command": 17,
+      "action": "tap",
+      "uptime": 347929.93010133336,
+      "page": "3/12"
+    },
+    {
+      "command": 18,
+      "action": "tap",
+      "uptime": 347931.5208535,
+      "page": "4/12"
+    },
+    {
+      "command": 19,
+      "action": "tap",
+      "uptime": 347933.0591410417,
+      "page": "5/12"
+    },
+    {
+      "command": 20,
+      "action": "tap",
+      "uptime": 347934.5904476667,
+      "page": "6/12"
+    },
+    {
+      "command": 21,
+      "action": "tap",
+      "uptime": 347936.18707341666,
+      "page": "7/12"
+    },
+    {
+      "command": 22,
+      "action": "tap",
+      "uptime": 347937.7795346667,
+      "page": "8/12"
+    },
+    {
+      "command": 23,
+      "action": "tap",
+      "uptime": 347939.33914545836,
+      "page": "9/12"
+    },
+    {
+      "command": 24,
+      "action": "tap",
+      "uptime": 347940.8920180417,
+      "page": "10/12"
+    },
+    {
+      "command": 25,
+      "action": "tap",
+      "uptime": 347942.4374805834,
+      "page": "11/12"
+    },
+    {
+      "command": 26,
+      "action": "tap",
+      "uptime": 347943.9872991667,
+      "page": "12/12"
+    },
+    {
+      "command": 27,
+      "action": "tap",
+      "uptime": 347945.54904783337,
+      "page": "1/12"
+    },
+    {
+      "command": 28,
+      "action": "tap",
+      "uptime": 347947.059914125,
+      "page": "2/12"
+    },
+    {
+      "command": 29,
+      "action": "tap",
+      "uptime": 347948.58777333336,
+      "page": "3/12"
+    },
+    {
+      "command": 30,
+      "action": "tap",
+      "uptime": 347950.06541441666,
+      "page": "4/12"
+    },
+    {
+      "command": 31,
+      "action": "tap",
+      "uptime": 347951.62360633333,
+      "page": "5/12"
+    },
+    {
+      "command": 32,
+      "action": "tap",
+      "uptime": 347953.16632425,
+      "page": "6/12"
+    },
+    {
+      "command": 33,
+      "action": "tap",
+      "uptime": 347954.73277891666,
+      "page": "7/12"
+    },
+    {
+      "command": 34,
+      "action": "tap",
+      "uptime": 347956.28791475005,
+      "page": "8/12"
+    },
+    {
+      "command": 35,
+      "action": "tap",
+      "uptime": 347957.8526857084,
+      "page": "9/12"
+    },
+    {
+      "command": 36,
+      "action": "tap",
+      "uptime": 347959.40682562505,
+      "page": "10/12"
+    },
+    {
+      "command": 37,
+      "action": "tap",
+      "uptime": 347960.96611154167,
+      "page": "11/12"
+    },
+    {
+      "command": 38,
+      "action": "tap",
+      "uptime": 347962.52631183335,
+      "page": "12/12"
+    },
+    {
+      "command": 39,
+      "action": "tap",
+      "uptime": 347964.07805454166,
+      "page": "1/11"
+    },
+    {
+      "command": 40,
+      "action": "tap",
+      "uptime": 347965.61044225004,
+      "page": "2/11"
+    },
+    {
+      "command": 41,
+      "action": "tap",
+      "uptime": 347967.12897200003,
+      "page": "3/11"
+    },
+    {
+      "command": 42,
+      "action": "tap",
+      "uptime": 347968.6513758334,
+      "page": "4/11"
+    },
+    {
+      "command": 43,
+      "action": "tap",
+      "uptime": 347970.20228820835,
+      "page": "5/11"
+    },
+    {
+      "command": 44,
+      "action": "tap",
+      "uptime": 347971.7518580417,
+      "page": "6/11"
+    },
+    {
+      "command": 45,
+      "action": "tap",
+      "uptime": 347973.2856112917,
+      "page": "7/11"
+    },
+    {
+      "command": 46,
+      "action": "tap",
+      "uptime": 347974.8539185417,
+      "page": "8/11"
+    },
+    {
+      "command": 47,
+      "action": "tap",
+      "uptime": 347976.38512608333,
+      "page": "9/11"
+    },
+    {
+      "command": 48,
+      "action": "tap",
+      "uptime": 347977.9376522084,
+      "page": "10/11"
+    },
+    {
+      "command": 49,
+      "action": "tap",
+      "uptime": 347979.45946879167,
+      "page": "11/11"
+    },
+    {
+      "command": 50,
+      "action": "tap",
+      "uptime": 347981.0018620833,
+      "page": "1/10"
+    },
+    {
+      "command": 51,
+      "action": "tap",
+      "uptime": 347982.5212284167,
+      "page": "2/10"
+    },
+    {
+      "command": 52,
+      "action": "tap",
+      "uptime": 347984.04457495833,
+      "page": "3/10"
+    }
+  ]
+}

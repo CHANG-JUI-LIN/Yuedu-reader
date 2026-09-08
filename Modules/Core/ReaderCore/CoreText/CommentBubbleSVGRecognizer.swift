@@ -1,3 +1,5 @@
+import Darwin
+import ImageIO
 import UIKit
 
 struct CommentBubbleSVG {
@@ -60,9 +62,25 @@ extension CommentBubbleSVG.Element {
 }
 
 struct CommentBubbleSVGRecognizer {
-    /// Custom SVG templates are intentionally bounded to keep parsing and native rasterization
-    /// predictable, while still accepting detailed user-authored artwork such as 猫咪气泡.svg.
+    /// Bound for the *sniffing* path — deciding whether an unknown image from a book
+    /// source is a comment bubble. Kept tight: source SVGs arrive by the hundred per
+    /// chapter and a bubble authored for this purpose is small.
     static let maximumRecognizableSVGByteCount = 32 * 1024
+
+    /// Bound for a template the user explicitly chose as their bubble. String length is a
+    /// poor proxy for cost when the artwork is an embedded raster: 侠客.svg is 88KB of text
+    /// for a *single* `<image>` holding one 270×360 PNG, so the 32KB cap above rejected it
+    /// while there was exactly one element to parse. What actually costs us is the element
+    /// count and the pixels behind an embedded raster, so those are bounded directly.
+    static let maximumUserTemplateSVGByteCount = 1_024 * 1_024
+
+    /// Parsed elements in one template. Well past any real bubble (the most detailed one
+    /// seen is a handful of paths), while still bounding a pathological input.
+    static let maximumUserTemplateElementCount = 64
+
+    /// Pixels behind an embedded `data:` raster. Bounds decode memory so a small
+    /// highly-compressed PNG cannot expand into hundreds of megabytes.
+    static let maximumEmbeddedRasterPixelCount = 16_000_000
 
     static let builtinBubbleSVG = """
     <svg width="96" height="72" viewBox="0 0 96 72" style="color:#8E8E93" xmlns="http://www.w3.org/2000/svg">
@@ -192,10 +210,27 @@ struct CommentBubbleSVGRecognizer {
         return (normalized, displayText)
     }
 
-    /// Length-prefixed so a hash clash also needs equal length. The identity is the
-    /// normalized SVG template, not the count-baked source string.
-    private static func recognizeCacheKey(normalizedSVG: String) -> NSString {
-        "\(normalizedSVG.utf8.count)#\(normalizedSVG.hashValue)" as NSString
+    /// Why an SVG is being parsed. The two callers need different strictness, and
+    /// collapsing them into one gate is what kept raster bubbles out:
+    ///
+    /// - `.sourceSniff` asks "is this unknown image from a book source a comment bubble?".
+    ///   There, *exactly one count-formatted `<text>`* is the only thing separating a real
+    ///   bubble from an arbitrary source illustration, so it must stay strict — relaxing it
+    ///   would make every `<image>`-only source picture render as a bubble.
+    /// - `.userTemplate` parses an SVG the user picked as their bubble in 段評氣泡 settings.
+    ///   Nothing needs sniffing there, so artwork-only templates (no `<text>` at all — the
+    ///   shape QiReader exports with `showLabel:false`) are accepted and drawn without a
+    ///   count, which is what their author intended.
+    enum RecognitionMode: String, Sendable {
+        case sourceSniff
+        case userTemplate
+    }
+
+    /// Length-prefixed so a hash clash also needs equal length, and mode-prefixed so a
+    /// strict rejection is never served to the permissive caller (or the reverse). The
+    /// identity is the normalized SVG template, not the count-baked source string.
+    private static func recognizeCacheKey(normalizedSVG: String, mode: RecognitionMode) -> NSString {
+        "\(mode.rawValue)#\(normalizedSVG.utf8.count)#\(normalizedSVG.hashValue)" as NSString
     }
 
     /// Checks if the given image source or SVG string represents a recognizable simple comment bubble.
@@ -203,6 +238,30 @@ struct CommentBubbleSVGRecognizer {
     /// chapter calls this 2–3× per bubble (gate + resolve + template) over hundreds of paragraphs,
     /// and the parse is pure, so the first occurrence of each distinct SVG pays it and the rest hit.
     static func recognize(src: String, svgContent: String?) -> CommentBubbleSVG? {
+        recognize(src: src, svgContent: svgContent, mode: .sourceSniff)
+    }
+
+    /// Parses an SVG the user chose as their own bubble template. Permissive by design —
+    /// see `RecognitionMode.userTemplate`.
+    static func recognizeUserTemplate(_ svg: String) -> CommentBubbleSVG? {
+        recognize(src: "", svgContent: svg, mode: .userTemplate)
+    }
+
+    static func recognize(
+        src: String,
+        svgContent: String?,
+        mode: RecognitionMode
+    ) -> CommentBubbleSVG? {
+        ReaderDocumentTrace.measuringSync("bubbleRecognize") {
+            recognizeImpl(src: src, svgContent: svgContent, mode: mode)
+        }
+    }
+
+    private static func recognizeImpl(
+        src: String,
+        svgContent: String?,
+        mode: RecognitionMode
+    ) -> CommentBubbleSVG? {
         guard let rawSVG = getSVGString(src: src, svgContent: svgContent) else {
             diag("reject:no-svg", context: ["srcPrefix": String(src.prefix(48))])
             return nil
@@ -210,37 +269,71 @@ struct CommentBubbleSVGRecognizer {
 
         let cleaned = rawSVG.trimmingCharacters(in: .whitespacesAndNewlines)
         let input = normalizedTemplateInput(cleaned)
-        let cacheKey = recognizeCacheKey(normalizedSVG: input.template)
+        let cacheKey = recognizeCacheKey(normalizedSVG: input.template, mode: mode)
         if let box = recognizeCache.object(forKey: cacheKey) {
             return box.svg?.replacingDisplayText(with: input.displayText ?? box.svg?.displayText ?? "")
         }
 
-        let result = recognizeUncached(svg: input.template)
+        let result = recognizeUncached(svg: input.template, mode: mode)
         recognizeCache.setObject(RecognizedBox(result), forKey: cacheKey)
         return result?.replacingDisplayText(with: input.displayText ?? result?.displayText ?? "")
     }
 
-    private static func recognizeUncached(svg cleaned: String) -> CommentBubbleSVG? {
+    private static func recognizeUncached(
+        svg cleaned: String,
+        mode: RecognitionMode
+    ) -> CommentBubbleSVG? {
         // Bound the parse, but generously: iconfont 段評 bubbles (企点/光遇) embed a full
-        // outline <path> (~1.4–1.9k chars). The structural checks below — exactly one
-        // count-formatted <text> plus a shape — are what actually gate non-bubble SVGs, so
-        // a tight length cap only mis-rejected real bubbles (光遇's is ~1916 chars).
+        // outline <path> (~1.4–1.9k chars). The structural checks below — a count-formatted
+        // <text> plus a shape — are what actually gate non-bubble SVGs, so a tight length
+        // cap only mis-rejected real bubbles (光遇's is ~1916 chars).
+        let byteLimit = mode == .userTemplate
+            ? maximumUserTemplateSVGByteCount
+            : maximumRecognizableSVGByteCount
         let byteCount = cleaned.utf8.count
-        guard byteCount <= maximumRecognizableSVGByteCount else {
-            diag("reject:too-long", context: ["bytes": byteCount, "limit": maximumRecognizableSVGByteCount])
+        guard byteCount <= byteLimit else {
+            diag("reject:too-long", context: ["bytes": byteCount, "limit": byteLimit, "mode": mode.rawValue])
             return nil
         }
 
-        // Must contain exactly one text element
+        // Exactly one text element when sniffing an unknown source image — that is the
+        // discriminator. A user-chosen template may legitimately carry none (artwork-only
+        // bubble, count not drawn), but never more than one replaceable count.
         let textOpen = countOccurrences(of: "<text", in: cleaned)
         let textClose = countOccurrences(of: "</text>", in: cleaned)
-        guard textOpen == 1, textClose == 1 else {
-            diag("reject:text-count", context: ["open": textOpen, "close": textClose, "len": cleaned.count])
+        let textCountIsAcceptable = mode == .userTemplate
+            ? (textOpen == textClose && textOpen <= 1)
+            : (textOpen == 1 && textClose == 1)
+        guard textCountIsAcceptable else {
+            diag("reject:text-count",
+                 context: ["open": textOpen, "close": textClose, "len": cleaned.count, "mode": mode.rawValue])
             return nil
         }
 
         guard let parsed = parseSVG(cleaned) else {
             diag("reject:parse-fail", context: ["len": cleaned.count])
+            return nil
+        }
+        // A template with nothing to draw is not a bubble.
+        guard !parsed.elements.isEmpty else {
+            diag("reject:no-elements", context: ["len": cleaned.count, "mode": mode.rawValue])
+            return nil
+        }
+        // Sniffing additionally demands the classic bubble shape — a count text *and* a
+        // shape to sit in. That pairing is what tells a bubble apart from an arbitrary
+        // source illustration, so it stays exactly as strict as it has always been. A
+        // user-chosen template needs no such proof: they already said what it is.
+        if mode == .sourceSniff {
+            let hasText = parsed.elements.contains { if case .text = $0 { return true }; return false }
+            let hasShape = parsed.elements.contains { if case .text = $0 { return false }; return true }
+            guard hasText, hasShape else {
+                diag("reject:not-bubble-shaped",
+                     context: ["hasText": hasText, "hasShape": hasShape, "len": cleaned.count])
+                return nil
+            }
+        } else if parsed.elements.count > maximumUserTemplateElementCount {
+            diag("reject:too-many-elements",
+                 context: ["elements": parsed.elements.count, "limit": maximumUserTemplateElementCount])
             return nil
         }
         let hasTransform = parsed.elements.contains { !$0.transform.isIdentity }
@@ -260,13 +353,15 @@ struct CommentBubbleSVGRecognizer {
         themeTextColor: UIColor,
         recognizedBubble: CommentBubbleSVG? = nil
     ) -> UIImage? {
-        let cacheKey = bubbleImageCacheKey(
-            src: src,
-            svgContent: svgContent,
-            pointSize: pointSize,
-            themeTextColor: themeTextColor,
-            displayText: recognizedBubble?.displayText
-        )
+        let cacheKey = ReaderDocumentTrace.measuringSync("bubbleKey") {
+            bubbleImageCacheKey(
+                src: src,
+                svgContent: svgContent,
+                pointSize: pointSize,
+                themeTextColor: themeTextColor,
+                displayText: recognizedBubble?.displayText
+            )
+        }
         if let cached = bubbleImageCache.object(forKey: cacheKey) {
             noteBubbleCache(hit: true)
             return cached
@@ -350,16 +445,33 @@ struct CommentBubbleSVGRecognizer {
         }
 
         let bubbleText = sourceBubble.displayText ?? "0"
-        var templateSource = templateSVG(
-            for: settings.commentBubblePresetMode,
-            customSVG: settings.commentBubbleSelectedCustomStyle?.svg ?? ""
-        )
+        var templateSource = ReaderDocumentTrace.measuringSync("bubbleTemplateSource") {
+            templateSVG(
+                for: settings.commentBubblePresetMode,
+                customSVG: settings.commentBubbleSelectedCustomStyle?.svg ?? ""
+            )
+        }
         // bubble.json-imported styles keep a literal `${color}` placeholder in
         // their text fill (`fill="${color}"`). The parser can only resolve real
         // hex/rgb colours, so we substitute the JSON's day/night + normal/emphasis
         // hex into the raw SVG string *before* recognition. Styles authored in
         // the legacy SVG editor (no `${color}` token) are untouched.
-        if let style = settings.commentBubbleSelectedCustomStyle, style.usesColorTemplate {
+        // Only the active template and the two supported replacement tokens affect this
+        // operation. A retained custom artwork cannot change a builtin SVG, and lowercasing
+        // that artwork on every raster miss repeats work unrelated to the active template.
+        if let style = settings.commentBubbleSelectedCustomStyle,
+           ReaderDocumentTrace.measuringSync("bubbleColorTemplateCheck", {
+               // These replacement tokens are ASCII bytes. Bounded UTF-8 search avoids
+               // Unicode normalization/UTF-16 conversion of large base64 image payloads.
+               templateSource.withUTF8 { bytes in
+                   guard let base = bytes.baseAddress else { return false }
+                   return "${color}".withCString { token in
+                       memmem(base, bytes.count, token, 8) != nil
+                   } || "${Color}".withCString { token in
+                       memmem(base, bytes.count, token, 8) != nil
+                   }
+               }
+           }) {
             let hex = style.resolvedColorHex(
                 forCount: bubbleText,
                 isNight: isNightTheme(themeTextColor: themeTextColor)
@@ -369,8 +481,10 @@ struct CommentBubbleSVGRecognizer {
                 colorHex: hex
             )
         }
-        let template = recognize(src: "", svgContent: templateSource)
-            ?? recognize(src: "", svgContent: builtinBubbleSVG)
+        // The user picked this template explicitly, so it is parsed permissively — an
+        // artwork-only bubble (no <text>) draws its picture and simply shows no count.
+        let template = recognizeUserTemplate(templateSource)
+            ?? recognizeUserTemplate(builtinBubbleSVG)
 
         guard let template else {
             return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor)
@@ -618,12 +732,6 @@ struct CommentBubbleSVGRecognizer {
             }
         }
         
-        // Must contain at least one text element and one shape element to be a valid bubble
-        guard elements.contains(where: { if case .text = $0 { return true }; return false }),
-              elements.contains(where: { if case .text = $0 { return false }; return true }) else {
-            return nil
-        }
-        
         return CommentBubbleSVG(viewBox: viewBox, width: finalWidth, height: finalHeight, elements: elements)
     }
     
@@ -649,8 +757,29 @@ struct CommentBubbleSVGRecognizer {
         } else {
             data = (payload.removingPercentEncoding ?? payload).data(using: .utf8)
         }
-        guard let data, !data.isEmpty, UIImage(data: data) != nil else { return nil }
+        guard let data, !data.isEmpty, embeddedRasterIsWithinBounds(data) else { return nil }
         return data
+    }
+
+    /// Validates an embedded raster from its header only. `UIImage(data:)` used to serve as
+    /// the validity check, but it fully decodes: a small, highly-compressed PNG could expand
+    /// into hundreds of megabytes before anything looked at its size. CGImageSource reads the
+    /// dimensions without materializing pixels.
+    private static func embeddedRasterIsWithinBounds(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+              width > 0, height > 0 else {
+            return false
+        }
+        let pixels = width.multipliedReportingOverflow(by: height)
+        guard !pixels.overflow, pixels.partialValue <= maximumEmbeddedRasterPixelCount else {
+            diag("reject:raster-too-large", context: ["w": width, "h": height])
+            return false
+        }
+        return true
     }
     
     private static func parseDouble(_ val: String?) -> CGFloat {
@@ -899,7 +1028,8 @@ extension CommentBubbleSVGRecognizer {
         format.scale = 3
         let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
         
-        let rendered = renderer.image { rendererContext in
+        let rendered = ReaderDocumentTrace.measuringSync("bubbleDraw") {
+            renderer.image { rendererContext in
             let context = rendererContext.cgContext
 
             context.saveGState()
@@ -1024,10 +1154,14 @@ extension CommentBubbleSVGRecognizer {
             }
         }
 
+        }
+
         // Crop the baked-in viewBox / canvas padding (起点 fills it, but 企点·光遇·番茄
         // leave large transparent margins) so the bubble sits flush against the paragraph
         // text and starts at the left margin when it wraps to a new line.
-        let trimmed = rendered.trimmingTransparentPixels() ?? rendered
+        let trimmed = ReaderDocumentTrace.measuringSync("bubbleTrim") {
+            rendered.trimmingTransparentPixels() ?? rendered
+        }
         diag("draw:vb=\(Int(svg.viewBox.width))x\(Int(svg.viewBox.height))", context: [
             "canvasPt": "\(Int(canvasSize.width))x\(Int(canvasSize.height))",
             "trimmedPt": String(format: "%.0fx%.0f", trimmed.size.width, trimmed.size.height),

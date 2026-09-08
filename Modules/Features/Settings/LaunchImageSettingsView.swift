@@ -20,9 +20,10 @@ struct LaunchImageSettingsView: View {
             } footer: {
                 if settings.launchImageEnabled && !hasAnyLaunchImage {
                     Text(localized("尚未導入任何啟動圖，請在下方選擇圖片。"))
-                        .foregroundStyle(.orange)
+                        .dsSectionFooter(color: .orange)
                 } else {
                     Text(localized("開啟後，每次啟動 App 會短暫顯示你設定的啟動圖。"))
+                        .dsSectionFooter()
                 }
             }
             .interfaceSectionSurface()
@@ -33,6 +34,7 @@ struct LaunchImageSettingsView: View {
                 Text(localized("淺色啟動圖"))
             } footer: {
                 Text(localized("淺色模式啟動時顯示。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -42,6 +44,7 @@ struct LaunchImageSettingsView: View {
                 Text(localized("深色啟動圖"))
             } footer: {
                 Text(localized("深色模式啟動時顯示。若只設定一張，另一模式會沿用。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
         }

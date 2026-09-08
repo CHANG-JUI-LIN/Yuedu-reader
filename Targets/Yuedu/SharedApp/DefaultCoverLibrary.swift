@@ -110,8 +110,9 @@ final class DefaultCoverStorageManager {
 ///
 /// Two things matter here and both are about the shelf redrawing constantly:
 ///
-/// - The pick is a hash of the book's own key, not `randomElement()`. A fresh
-///   random pick per body evaluation would reshuffle every cover on each scroll.
+/// - The pick is a hash of the book's own key (`StableSeedHash`), not
+///   `randomElement()`. A fresh random pick per body evaluation would reshuffle
+///   every cover on each scroll.
 /// - Decoded bitmaps are cached and downsampled through `BookCoverLoader`. A
 ///   full-size photo decoded per cell is the same main-thread stall documented
 ///   there for downloaded covers.
@@ -136,7 +137,8 @@ enum DefaultCoverLibrary {
     }
 
     /// The default cover for `seed` (a book id / title — anything stable for that
-    /// book), or nil when the user has not added any.
+    /// book), or nil when the user has not added any — in which case the caller
+    /// falls back to `GeneratedBookCover`, which is always available.
     static func image(seed: String, colorScheme: ColorScheme) -> UIImage? {
         let names = fileNames(for: colorScheme == .dark ? .dark : .light)
         guard let fileName = stableFileName(seed: seed, in: names) else { return nil }
@@ -147,7 +149,7 @@ enum DefaultCoverLibrary {
     /// mapping can be tested without any files on disk.
     static func stableFileName(seed: String, in fileNames: [String]) -> String? {
         guard !fileNames.isEmpty else { return nil }
-        return fileNames[stableIndex(for: seed, count: fileNames.count)]
+        return fileNames[StableSeedHash.index(for: seed, count: fileNames.count)]
     }
 
     static func image(fileName: String) -> UIImage? {
@@ -163,17 +165,5 @@ enum DefaultCoverLibrary {
     /// image cannot keep drawing from memory.
     static func invalidateCache() {
         cache.removeAllObjects()
-    }
-
-    /// FNV-1a over the seed: stable across launches (unlike `hashValue`, which is
-    /// seeded per process and would reshuffle every cover on relaunch).
-    private static func stableIndex(for seed: String, count: Int) -> Int {
-        guard count > 1 else { return 0 }
-        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in seed.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x1000_0000_01b3
-        }
-        return Int(hash % UInt64(count))
     }
 }

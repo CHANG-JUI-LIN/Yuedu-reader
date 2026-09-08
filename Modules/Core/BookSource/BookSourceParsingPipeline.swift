@@ -133,11 +133,17 @@ struct BookSourceParsingPipeline {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) -> [String] {
-        BookSourceSession.session(for: source).withBridge { bridge in
-            bridge.extractNextContentURLs(
-                html: html, baseURL: baseURL,
-                source: source, runtimeVariables: runtimeVariables
-            )
+        SourcePerfTrace.span("chapter.nextContent", source.bookSourceName, thresholdMs: 0) {
+            // An absent rule needs no runtime context. Acquiring the shared parse lock
+            // first made a completed chapter wait for another chapter's review requests
+            // merely to discover that this source has no continuation page.
+            guard !source.ruleContent.nextContentUrl.isEmpty else { return [] }
+            return BookSourceSession.session(for: source).withBridge { bridge in
+                bridge.extractNextContentURLs(
+                    html: html, baseURL: baseURL,
+                    source: source, runtimeVariables: runtimeVariables
+                )
+            }
         }
     }
 

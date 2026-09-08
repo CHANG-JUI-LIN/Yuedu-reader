@@ -28,6 +28,42 @@ struct DisplayTextItem {
     let sourceMapping: TextSourceMapping
     let renderedTextOverride: String?
 
+    /// Recover the exact attributes used by shaping instead of discarding
+    /// kern, synthetic bold, and regex styles when constructing the draw list.
+    var attributedText: NSAttributedString {
+        let result = NSMutableAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: color,
+        ])
+        guard let ctLine else { return result }
+        let shapedRange: NSRange
+        switch sourceMapping {
+        case .linear(let range): shapedRange = range
+        case .wholeRange:
+            let range = CTLineGetStringRange(ctLine)
+            shapedRange = NSRange(location: range.location, length: range.length)
+        }
+        for run in CTLineGetGlyphRuns(ctLine) as! [CTRun] {
+            let runRange = CTRunGetStringRange(run)
+            let overlap = NSIntersectionRange(
+                shapedRange, NSRange(location: runRange.location, length: runRange.length)
+            )
+            guard overlap.length > 0 else { continue }
+            let local = NSIntersectionRange(
+                NSRange(location: overlap.location - shapedRange.location, length: overlap.length),
+                NSRange(location: 0, length: result.length)
+            )
+            guard local.length > 0 else { continue }
+            var attributes = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
+            // Theme-only redraws recolor inherited text, while explicit regex
+            // foreground colors remain part of the immutable rule snapshot.
+            if attributes[RegexHighlightEngine.originalAttributesKey] == nil {
+                attributes[.foregroundColor] = color
+            }
+            result.setAttributes(attributes, range: local)
+        }
+        return result
+    }
+
     init(
         sourceRange: NSRange,
         nodeID: Int,
@@ -71,6 +107,9 @@ struct DisplayFillItem {
     let nodeID: Int
     let writingMode: ReaderWritingMode
     let fragmentPosition: BlockDecorationFragmentPosition
+    /// See `FillFragment.isBackgroundPaint` — the authored page surface, which
+    /// a reader-chosen background image replaces.
+    let isBackgroundPaint: Bool
 
     init(
         rect: PageLocalRect,
@@ -82,7 +121,8 @@ struct DisplayFillItem {
         borderRight: BorderEdge,
         nodeID: Int,
         writingMode: ReaderWritingMode,
-        fragmentPosition: BlockDecorationFragmentPosition = .single
+        fragmentPosition: BlockDecorationFragmentPosition = .single,
+        isBackgroundPaint: Bool = false
     ) {
         self.rect = rect
         self.color = color
@@ -94,6 +134,7 @@ struct DisplayFillItem {
         self.nodeID = nodeID
         self.writingMode = writingMode
         self.fragmentPosition = fragmentPosition
+        self.isBackgroundPaint = isBackgroundPaint
     }
 
     var hasVisibleBorder: Bool {
@@ -178,7 +219,8 @@ enum DisplayListBuilder {
                     borderTop: f.borderTop, borderBottom: f.borderBottom,
                     borderLeft: f.borderLeft, borderRight: f.borderRight,
                     nodeID: f.nodeID, writingMode: f.writingMode,
-                    fragmentPosition: f.fragmentPosition
+                    fragmentPosition: f.fragmentPosition,
+                    isBackgroundPaint: f.isBackgroundPaint
                 )))
             case .image(let i):
                 items.append(.image(DisplayImageItem(

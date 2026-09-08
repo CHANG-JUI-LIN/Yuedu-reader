@@ -1368,25 +1368,18 @@ struct NodeAttributedStringRenderer {
         var image = src.isEmpty ? nil : await ReaderDocumentTrace.measuring("imageLoad") {
             await config.imageLoader?(src)
         }
-        // ⟐ bubble: this is the WebView-fallback path (recognize missed). Whether the baked-in
-        // SVG margins get cropped depends ENTIRELY on isTextSizedImage here. Log the decision +
-        // the before/after size so we can see if the gap survives trimming or trimming is skipped.
-        // MEASURING ONLY — this block is a diagnostic that costs a full-image pixel scan
-        // (`trimmingTransparentPixels`) on every SVG, just to build `after`. `diag` dedupes by
-        // signature and drops all but the first, and the real trim runs again three lines below,
-        // so the scan is pure waste on the second SVG onward. Bucketed as `diagTrim` to size the
-        // waste before removing it.
-        if svgContent != nil || src.lowercased().contains("svg") {
-            ReaderDocumentTrace.measuringSync("diagTrim") {
-                let fp = src.range(of: ";base64,").map { String(src[$0.upperBound...].prefix(10)) } ?? String(src.prefix(10))
-                let before = image.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "nil"
-                let after = (style.isTextSizedImage ? image?.trimmingTransparentPixels() : image).map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? before
-                CommentBubbleSVGRecognizer.diag("loaderTrim fp=\(fp) isTextSized=\(style.isTextSizedImage)",
-                    context: ["before": before, "after": after])
-            }
-        }
+        // Measure and apply the crop once. Diagnostics consume its actual output rather
+        // than rescanning every source SVG just to construct a deduplicated log message.
+        let sizeBeforeTrim = image?.size
         if style.isTextSizedImage, let img = image {
             image = ReaderDocumentTrace.measuringSync("imageTrim") { img.trimmingTransparentPixels() ?? img }
+        }
+        if svgContent != nil || src.lowercased().contains("svg") {
+            let fp = src.range(of: ";base64,").map { String(src[$0.upperBound...].prefix(10)) } ?? String(src.prefix(10))
+            let before = sizeBeforeTrim.map { "\(Int($0.width))x\(Int($0.height))" } ?? "nil"
+            let after = image.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? before
+            CommentBubbleSVGRecognizer.diag("loaderTrim fp=\(fp) isTextSized=\(style.isTextSizedImage)",
+                context: ["before": before, "after": after])
         }
         CoreTextPaginator.debugVerticalLog("EPUBFLOW render.inlineImage.node src=\(src) alt=\(alt) imageLoaded=\(image != nil) writingMode=\(config.writingMode) fontSize=\(ctx.font.pointSize) styleWidth=\(style.width.map { "\($0)" } ?? "nil") styleHeight=\(style.height.map { "\($0)" } ?? "nil")")
         if let side = style.floatSide {

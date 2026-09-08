@@ -15,6 +15,7 @@ protocol BrowserLayoutResourceProviding: AnyObject {
     func chapterTitle(at index: Int) -> String
     func chapterSourceHref(at index: Int) -> String?
     func chapterHTML(at index: Int) async throws -> String
+    func resolveMediaAttachment(forChapter index: Int, media: EPUBMediaAttachment) -> EPUBMediaAttachment
     /// CSS ready for the browser engine: @imports inlined, @font-face stripped,
     /// url() rewritten to absolute publication URLs.
     func cssFrontendInput(forChapter index: Int, html: String) async -> CSSFrontendInput
@@ -36,4 +37,8 @@ protocol BrowserLayoutResourceProviding: AnyObject {
     /// Resolves CSS font families (including registered @font-face families)
     /// to a concrete UIFont; nil falls back to UIFont(name:).
     func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)?
+}
+
+extension BrowserLayoutResourceProviding {
+    func resolveMediaAttachment(forChapter index: Int, media: EPUBMediaAttachment) -> EPUBMediaAttachment { media }
 }

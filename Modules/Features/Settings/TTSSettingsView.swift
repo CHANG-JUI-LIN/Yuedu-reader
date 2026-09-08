@@ -918,6 +918,7 @@ struct TTSSourceLoginView: View {
                 }
             } footer: {
                 Text(String(format: localized("在 %@ 登入後，Cookie 會自動帶進朗讀請求。"), webLogin.url.host ?? webLogin.url.absoluteString))
+                    .dsSectionFooter()
             }
         }
     }

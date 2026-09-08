@@ -60,7 +60,7 @@ UIKit 會在它自己選的時機、為使用者可能永遠不會翻到的頁�
 
 - **`readingPosition(forPage:)` 在頁面超出已排版範圍時回 `.chapterStart(spine)`**，而對稱的 `pageIndex(for:)` 回 `nil`。落在章中佔位頁時會把「章首」寫進持久化位置。沒有在這輪改掉：14 個呼叫點裡有數個寫成 `?? .chapterStart(0)`，直接改回 `nil`會讓它們錨到**第 0 章**，比現況更糟。要修得先給那些呼叫點更好的退路。資料源這條路徑已用 `committedReadingPosition(of:)` 擋住，不受影響。
 - **引擎的頁面供給仍由資料源查詢觸發**：`pageViewController(at:)` / `(for:)` 在被查詢時會啟動 `Task { preloadChapter; onChapterReady }`。架構上這違反不變量 3。沒有移除，因為 2026-08-05 那輪重構（`ReaderArchitectureDecision-2026-08-07.md` 路線 A）正是在「載入觸發點搬家後鏈條斷掉」上實機失敗、整輪回退的。不變量 2 的 gate 已經把它的實際危害——回呼內的堆疊寫入——擋掉了。要動它必須先把每一個 commit 點列全。
-- **`BrowserLayoutPageEngine` / `FixedLayoutPageEngine` 用索引推導的預設 `positionAfter/Before`**。固定版面永不重新編號，所以那裡是精確的；browser engine 目前是關閉的（`.legacy`），重新啟用前要給它真實實作。
+- **`BrowserLayoutPageEngine` / `FixedLayoutPageEngine` 用索引推導的預設 `positionAfter/Before`**。固定版面永不重新編號，所以那裡是精確的。browser engine 自 2026-09-07 起是 `.browserAuto`（開著的），而它**會**重新編號——章節先發佈第一頁、其餘頁在背景補完。目前安全的理由是時序而非設計：`pageIndex(for:) → page ± 1 → readingPosition(forPage:)` 三步在同一個 MainActor 呼叫內完成，中間插不進重新編號。仍應給它一個直接走 `pageSourceRanges` 的真實實作，別再依賴這個時序巧合。
 
 ## 護欄
 

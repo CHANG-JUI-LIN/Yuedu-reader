@@ -86,6 +86,9 @@ protocol LayoutLifecycle: AnyObject {
     func warmUpNext(currentGlobalPage: Int)
     func cancelPendingWork(cause: LayoutInvalidationCause)
     func notifyChapterDataChanged(at spineIndex: Int) async
+    func notifyChapterDataAvailable(at spineIndex: Int) async -> ChapterLayoutOutcome
+    /// The reader's authoritative stable destination/settled position, before loading.
+    func updateReadingPosition(_ position: CoreTextReadingPosition)
 
     var onChapterReady: ((Int?) -> Void)? { get set }
     var onNavigateToPage: ((Int) -> Void)? { get set }
@@ -98,6 +101,30 @@ protocol LayoutLifecycle: AnyObject {
     /// without this the paged view could see the 載入中 page but never learn that the
     /// attempt behind it had already given up.
     var onChapterLayoutUnresolved: ((Int, ChapterLayoutOutcome) -> Void)? { get set }
+}
+
+extension LayoutLifecycle {
+    func updateReadingPosition(_ position: CoreTextReadingPosition) {}
+
+    func notifyChapterDataAvailable(at spineIndex: Int) async -> ChapterLayoutOutcome {
+        await preloadChapter(at: spineIndex)
+    }
+}
+
+/// Where a char offset sits inside its own chapter, and how many pages that
+/// chapter has.
+///
+/// The reader used to read both straight off `layouts[spine]`. `layouts` is the
+/// **legacy paginator's** dictionary: the browser engine renders chapters that
+/// never appear in it, so every caller that reached in there saw a chapter with
+/// no layout at all — an empty `1/N` footer, "0 pages left", a progress save
+/// that silently skipped, and a TTS follow that gave up before it started.
+struct ChapterPagination: Equatable {
+    /// 0-based page index, within the chapter, of the requested char offset.
+    let localPageIndex: Int
+    /// Page count for progress math: exact once the chapter is fully
+    /// paginated, the extrapolated estimate while it is still partial.
+    let displayPageCount: Int
 }
 
 @MainActor
@@ -119,11 +146,53 @@ protocol StablePositionResolving: AnyObject {
     func localPosition(for globalPage: Int) -> (spineIndex: Int, localPage: Int)
     /// Global page index of the last page of a chapter.
     func lastPageIndex(ofChapter spineIndex: Int) -> Int?
+
+    /// Where `charOffset` sits in its chapter's pages — and, by returning nil,
+    /// the single honest answer to "is this chapter laid out yet".
+    ///
+    /// Ask this instead of testing `layouts[spineIndex] != nil`: an engine is
+    /// free to keep its layouts somewhere other than the legacy paginator's
+    /// dictionary, and the browser engine does.
+    func chapterPagination(forSpine spineIndex: Int, charOffset: Int) -> ChapterPagination?
+
+    /// The chapter's plain text in the same offset space as `charOffset`, or
+    /// nil when the chapter is not laid out.
+    ///
+    /// Materialises the whole chapter, so callers that only need "is it laid
+    /// out" or a page number must use `chapterPagination` instead.
+    func chapterText(forSpine spineIndex: Int) -> String?
+    func chapterPronunciationHints(forSpine spineIndex: Int) -> [TTSPronunciationHint]
+
+    /// Element id → char offset for one chapter (TOC fragments, EPUB CFI), or
+    /// nil when the chapter is not laid out.
+    func chapterAnchorOffsets(forSpine spineIndex: Int) -> [String: Int]?
 }
 
 extension StablePositionResolving {
+    func chapterPronunciationHints(forSpine spineIndex: Int) -> [TTSPronunciationHint] { [] }
     /// Default: engines without in-spine anchors fall back to the spine start.
     func charOffset(forSpine spineIndex: Int, fragment: String) -> Int? { nil }
+}
+
+extension StablePositionResolving where Self: LayoutLifecycle {
+    /// Default for every engine whose page space IS `layouts` — the CoreText
+    /// paged, TXT and fixed-layout engines. `BrowserLayoutPageEngine` overrides
+    /// all three, because its chapters live outside that dictionary.
+    func chapterPagination(forSpine spineIndex: Int, charOffset: Int) -> ChapterPagination? {
+        guard let layout = layouts[spineIndex], !layout.pageRanges.isEmpty else { return nil }
+        return ChapterPagination(
+            localPageIndex: layout.pageIndex(for: charOffset),
+            displayPageCount: layout.displayPageCount
+        )
+    }
+
+    func chapterText(forSpine spineIndex: Int) -> String? {
+        layouts[spineIndex]?.attributedString.string
+    }
+
+    func chapterAnchorOffsets(forSpine spineIndex: Int) -> [String: Int]? {
+        layouts[spineIndex]?.anchorOffsets
+    }
 }
 
 /// Steps one page forward or backward in **position** space.

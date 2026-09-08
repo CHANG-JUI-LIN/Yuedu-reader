@@ -15,6 +15,8 @@ struct InlineRun {
     let isHardBreak: Bool
     let atomic: AtomicInline?
     let ruby: RubyInlineUnit?
+    /// Shared immutable chapter attributes, indexed by source UTF-16 offsets.
+    var attributedSource: NSAttributedString? = nil
 
     init(
         text: String,
@@ -95,7 +97,7 @@ enum InlineLayout {
         for (index, run) in runs.enumerated() {
             runAttributedStart.append(attributedCursor)
             if let unit = run.ruby {
-                let ruby = RubyInlineLayout.measure(unit: unit, fontResolver: fontResolver)
+                let ruby = RubyInlineLayout.measure(unit: unit, fontResolver: fontResolver, attributedSource: run.attributedSource)
                 measuredRuby[index] = ruby
                 let box = RubyRunDelegateBox(ruby)
                 rubyDelegateBoxes.append(box)
@@ -104,10 +106,24 @@ enum InlineLayout {
                     &callbacks,
                     Unmanaged.passRetained(box).toOpaque()
                 )
-                attributed.append(NSAttributedString(string: "\u{FFFC}", attributes: [
+                var attributes: [NSAttributedString.Key: Any] = [
                     kCTRunDelegateAttributeName as NSAttributedString.Key: delegate as Any,
                     .font: resolveFont(run.style),
-                ]))
+                ]
+                // Ruby is atomic in the parent string, but a regex line-height
+                // on its base still contributes to that parent's line box.
+                var requestedHeight: CGFloat = 0
+                run.attributedSource?.enumerateAttribute(.paragraphStyle, in: run.sourceRange) { value, _, _ in
+                    if let paragraph = value as? NSParagraphStyle {
+                        requestedHeight = max(requestedHeight, paragraph.minimumLineHeight)
+                    }
+                }
+                if requestedHeight > 0 {
+                    let paragraph = NSMutableParagraphStyle()
+                    paragraph.minimumLineHeight = requestedHeight
+                    attributes[.paragraphStyle] = paragraph
+                }
+                attributed.append(NSAttributedString(string: "\u{FFFC}", attributes: attributes))
             } else if let atomic = run.atomic {
                 // CSS 2.1 §10.8.1: an inline replaced element with
                 // `vertical-align: baseline` sits with its BOTTOM margin edge ON
@@ -123,15 +139,30 @@ enum InlineLayout {
                     .font: resolveFont(run.style),
                 ]))
             } else {
-                attributed.append(NSAttributedString(string: run.text, attributes: [
-                    .font: resolveFont(run.style),
-                    .foregroundColor: run.style.color ?? .black,
-                ]))
+                if let source = run.attributedSource {
+                    attributed.append(source.attributedSubstring(from: run.sourceRange))
+                } else {
+                    attributed.append(NSAttributedString(
+                        string: run.text,
+                        attributes: textAttributes(for: run.style, resolver: fontResolver)
+                    ))
+                }
             }
             attributedCursor += shapedLength(of: run)
         }
 
         let cssHeight = lineHeight ?? runs.first?.style.lineHeight
+        let lineSpacing = runs.first?.style.configLineSpacing ?? 0
+        func usedHeight(_ info: CoreTextLineBreaker.LineBreak) -> CGFloat {
+            var requested = cssHeight ?? 0
+            attributed.enumerateAttribute(.paragraphStyle, in: info.range) { value, _, _ in
+                if let paragraph = value as? NSParagraphStyle {
+                    requested = max(requested, paragraph.minimumLineHeight)
+                }
+            }
+            let spacing = NSMaxRange(info.range) < attributed.length ? lineSpacing : 0
+            return max(requested, info.ascent + info.descent) + spacing
+        }
         func makeLayoutLine(
             _ breakInfo: CoreTextLineBreaker.LineBreak,
             interval: InlineInterval,
@@ -229,8 +260,9 @@ enum InlineLayout {
             }
 
             let contentHeight = breakInfo.ascent + breakInfo.descent
-            let height = max(cssHeight ?? contentHeight, contentHeight)
-            let extraLeading = max(0, height - contentHeight)
+            let height = usedHeight(breakInfo)
+            let trailingSpacing = NSMaxRange(breakInfo.range) < attributed.length ? lineSpacing : 0
+            let extraLeading = max(0, height - contentHeight - trailingSpacing)
             let baselineOffset = extraLeading / 2 + breakInfo.ascent
             let top = yTop
             let alignSlack = alignmentOffset(
@@ -338,8 +370,7 @@ enum InlineLayout {
                     break
                 }
 
-                let contentHeight = candidate.ascent + candidate.descent
-                let actualHeight = max(cssHeight ?? contentHeight, contentHeight)
+                let actualHeight = usedHeight(candidate)
                 if actualHeight > queryHeight + 0.001 {
                     queryHeight = actualHeight
                     continue
@@ -463,29 +494,51 @@ enum InlineLayout {
         for style: ComputedStyle,
         resolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil
     ) -> UIFont {
-        if let resolver,
-           let resolved = resolver(style.fontFamilies, style.fontWeight, style.isItalic, style.fontSize) {
-            return resolved
-        }
-        let family = style.fontFamilies.first ?? "PingFangSC-Regular"
-        let base = UIFont(name: family, size: style.fontSize)
+        let weight = style.configBold ? max(700, style.fontWeight) : style.fontWeight
+        let resolved = resolver?(style.fontFamilies, weight, style.isItalic, style.fontSize)
+        let base = resolved
+            ?? (style.fontFamilies.isEmpty ? ["PingFangSC-Regular"] : style.fontFamilies)
+                .compactMap { UIFont(name: $0, size: style.fontSize) }.first
             ?? UIFont.systemFont(ofSize: style.fontSize)
-        if style.isItalic && style.fontWeight >= 600 {
-            if let d = base.fontDescriptor.withSymbolicTraits([.traitItalic, .traitBold]) {
-                return UIFont(descriptor: d, size: style.fontSize)
+        var font = base
+        if style.fontWeight >= 600 || style.configBold {
+            font = UserReaderFontResolver.boldVersion(of: font, size: style.fontSize)
+        }
+        font = ReaderFontCascade.preservingPrimary(
+            font, size: style.fontSize, isBoldRequested: weight >= 600
+        )
+        if style.isItalic, !font.fontDescriptor.symbolicTraits.contains(.traitItalic) {
+            var traits = font.fontDescriptor.symbolicTraits
+            traits.insert(.traitItalic)
+            if let descriptor = font.fontDescriptor.withSymbolicTraits(traits),
+               descriptor.symbolicTraits.contains(.traitItalic) {
+                font = UIFont(descriptor: descriptor, size: style.fontSize)
+            } else {
+                // CJK and regular-only embedded families have no italic face.
+                // Use the shared oblique transform until these fonts expose a
+                // native italic variant; keep the already-resolved bold face.
+                font = HTMLAttributedStringBuilder.synthesizedObliqueFont(from: font)
             }
         }
-        if style.isItalic {
-            if let d = base.fontDescriptor.withSymbolicTraits(.traitItalic) {
-                return UIFont(descriptor: d, size: style.fontSize)
-            }
+        return font
+    }
+
+    static func textAttributes(
+        for style: ComputedStyle,
+        resolver: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil
+    ) -> [NSAttributedString.Key: Any] {
+        let font = resolvedFont(for: style, resolver: resolver)
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: style.color ?? UIColor.black,
+        ]
+        if style.configLetterSpacing != 0 {
+            attributes[.kern] = style.configLetterSpacing
         }
-        if style.fontWeight >= 600 {
-            if let d = base.fontDescriptor.withSymbolicTraits(.traitBold) {
-                return UIFont(descriptor: d, size: style.fontSize)
-            }
-        }
-        return base
+        attributes.merge(UserReaderFontResolver.syntheticBoldAttributes(
+            for: font, isBoldRequested: style.configBold || style.fontWeight >= 600
+        )) { _, new in new }
+        return attributes
     }
 
     static func font(

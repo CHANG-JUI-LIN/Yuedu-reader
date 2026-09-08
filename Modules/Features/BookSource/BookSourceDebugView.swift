@@ -27,6 +27,7 @@ struct BookSourceDebugView: View {
                     Text(localized("錄製"))
                 } footer: {
                     Text(localized("開啟後重新搜索或開啟章節，就會記下每一次請求與回應。規則比對數量遠多於網路請求，預設不收。"))
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
 

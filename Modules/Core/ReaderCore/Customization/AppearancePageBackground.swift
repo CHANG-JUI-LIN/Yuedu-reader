@@ -364,6 +364,17 @@ struct AppearanceThemeExportFile: Codable {
     var darkBarHex: UInt32?
     var darkAccentHex: UInt32?
     var darkDialogueHex: UInt32?
+    /// UI text colours, three levels per appearance. Optional so every file
+    /// written before they existed still decodes.
+    var textPrimaryHex: UInt32?
+    var textSecondaryHex: UInt32?
+    var textTertiaryHex: UInt32?
+    var darkTextPrimaryHex: UInt32?
+    var darkTextSecondaryHex: UInt32?
+    var darkTextTertiaryHex: UInt32?
+    /// The theme's non-colour half. Card artwork travels as a file name; the
+    /// bytes ride in `AppearanceCustomizationBundle`, same as every other image.
+    var extras: AppearanceThemeExtras?
 
     /// The dark colors to store on import, or nil when the file doesn't carry a
     /// complete set.
@@ -424,7 +435,14 @@ extension AppearanceThemeExportFile {
             darkTextHex: dark?.textHex,
             darkBarHex: dark?.barHex,
             darkAccentHex: dark?.accentHex,
-            darkDialogueHex: dark?.dialogueHex
+            darkDialogueHex: dark?.dialogueHex,
+            textPrimaryHex: theme.textPrimaryHex,
+            textSecondaryHex: theme.textSecondaryHex,
+            textTertiaryHex: theme.textTertiaryHex,
+            darkTextPrimaryHex: theme.darkTextPrimaryHex,
+            darkTextSecondaryHex: theme.darkTextSecondaryHex,
+            darkTextTertiaryHex: theme.darkTextTertiaryHex,
+            extras: theme.extras
         )
     }
 

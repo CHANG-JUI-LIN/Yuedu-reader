@@ -1,0 +1,159 @@
+2026-09-07 21:52:25.867 E  YueduReader[52028:60147e] [com.zhangruilin.yuedureader:parse] ⏱ toc.network 2331ms 神魔小说
+2026-09-07 21:52:25.913 E  YueduReader[52028:60147e] [com.zhangruilin.yuedureader:parse] ⏱ js.runtimeCreate 43ms 神魔小说
+2026-09-07 21:52:26.119 E  YueduReader[52028:60147e] [com.zhangruilin.yuedureader:parse] ⏱ toc.parse 252ms 神魔小说
+2026-09-07 21:52:41.128 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ reader.open.contentGate 173ms op=push
+2026-09-07 21:52:41.142 E  YueduReader[52028:6016f7] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.htmlParse 11ms spine=0 html=152 ok=true
+2026-09-07 21:52:41.145 E  YueduReader[52028:6016f7] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssCollect 2ms spine=0 sheets=0 css=0
+2026-09-07 21:52:41.145 E  YueduReader[52028:6016f7] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssParse 0ms spine=0 sheets=0 css=0 rules=0 cached=true
+2026-09-07 21:52:41.148 E  YueduReader[52028:6016f7] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssMatch 3ms spine=0 rules=0 topLevel=1 writing=horizontal
+2026-09-07 21:52:41.148 E  YueduReader[52028:6016f7] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.astBuild 3ms spine=0 html=152 rules=0 contains=cssMatch
+2026-09-07 21:52:41.160 E  YueduReader[52028:6016f7] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 9ms spine=0 nodes=1 chars=0 leaves=none walk=9.0ms
+2026-09-07 21:52:41.163 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 3ms spine=0 chars=5
+2026-09-07 21:52:41.237 E  YueduReader[52028:6016fe] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 170ms 神魔小说
+2026-09-07 21:52:41.291 E  YueduReader[52028:6016f8] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 170ms 神魔小说
+2026-09-07 21:52:41.807 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ reader.open.transition 1088ms committed=true startup=298ms stalls=3 worst=116ms@430ms lost=241ms
+2026-09-07 21:52:43.896 E  YueduReader[52028:6016fe] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 2573ms 神魔小说
+2026-09-07 21:52:43.921 E  YueduReader[52028:6016fe] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 2682ms 神魔小说
+2026-09-07 21:52:47.831 E  YueduReader[52028:6016f8] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 3783ms 神魔小说
+2026-09-07 21:52:47.863 E  YueduReader[52028:6016f8] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 6573ms 神魔小说
+2026-09-07 21:52:49.353 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.htmlParse 52ms spine=3 html=452697 ok=true
+2026-09-07 21:52:49.354 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssCollect 0ms spine=3 sheets=0 css=0
+2026-09-07 21:52:49.354 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssParse 0ms spine=3 sheets=0 css=0 rules=0 cached=true
+2026-09-07 21:52:49.372 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssMatch 18ms spine=3 rules=0 topLevel=4 writing=horizontal
+2026-09-07 21:52:49.372 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.astBuild 18ms spine=3 html=452697 rules=0 contains=cssMatch
+2026-09-07 21:52:49.373 E  YueduReader[52028:6016fb] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 186ms 神魔小说
+2026-09-07 21:52:49.423 E  YueduReader[52028:6016fa] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 18ms spine=3 nodes=1 chars=1 bubbleRecognize=15.7ms/2 bubbleDraw=0.7ms/1 bubbleTrim=0.4ms/1 bubbleColorTemplateCheck=0.1ms/1 mainActorHop=0.0ms/1 bubbleKey=0.0ms/1 bubbleTemplateSource=0.0ms/1 walk=1.2ms
+2026-09-07 21:52:49.451 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.htmlParse 56ms spine=3 html=452697 ok=true
+2026-09-07 21:52:49.451 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssCollect 0ms spine=3 sheets=0 css=0
+2026-09-07 21:52:49.452 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssParse 0ms spine=3 sheets=0 css=0 rules=0 cached=true
+2026-09-07 21:52:49.488 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssMatch 36ms spine=3 rules=0 topLevel=4 writing=horizontal
+2026-09-07 21:52:49.488 E  YueduReader[52028:601722] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.astBuild 36ms spine=3 html=452697 rules=0 contains=cssMatch
+2026-09-07 21:52:49.502 E  YueduReader[52028:601721] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 1ms spine=3 nodes=1 chars=1 bubbleRecognize=0.1ms/1 mainActorHop=0.0ms/1 bubbleKey=0.0ms/1 walk=0.4ms
+2026-09-07 21:52:49.541 E  YueduReader[52028:6016f8] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 354ms 神魔小说
+2026-09-07 21:52:49.618 E  YueduReader[52028:6016fd] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 195ms spine=3 nodes=1 chars=2663 bubbleDraw=43.1ms/34 bubbleTrim=27.4ms/34 imageLoad=26.3ms/5 bubbleRecognize=17.7ms/111 mainActorHop=14.4ms/77 bubbleColorTemplateCheck=3.9ms/34 bubbleKey=2.4ms/72 bubbleTemplateSource=0.1ms/34 walk=60.0ms
+2026-09-07 21:52:51.263 E  YueduReader[52028:6016f9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 1761ms spine=3 nodes=1 chars=2663 imageLoad=1725.2ms/5 bubbleRecognize=2.7ms/77 bubbleKey=2.1ms/72 mainActorHop=1.2ms/77 walk=29.9ms
+2026-09-07 21:52:51.420 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 81ms spine=3 chars=2672
+2026-09-07 21:52:55.170 E  YueduReader[52028:6016fb] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 5640ms 神魔小说
+2026-09-07 21:52:55.212 E  YueduReader[52028:6016fb] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 5838ms 神魔小说
+2026-09-07 21:53:10.091 E  YueduReader[52028:6016f8] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 14722ms 神魔小说
+2026-09-07 21:53:10.146 E  YueduReader[52028:6016f8] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 20602ms 神魔小说
+2026-09-07 21:57:08.140 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.htmlParse 0ms spine=2 html=151 ok=true
+2026-09-07 21:57:08.140 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssCollect 0ms spine=2 sheets=0 css=0
+2026-09-07 21:57:08.140 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssParse 0ms spine=2 sheets=0 css=0 rules=0 cached=true
+2026-09-07 21:57:08.142 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssMatch 2ms spine=2 rules=0 topLevel=1 writing=horizontal
+2026-09-07 21:57:08.142 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.astBuild 2ms spine=2 html=151 rules=0 contains=cssMatch
+2026-09-07 21:57:08.143 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 0ms spine=2 nodes=1 chars=0 leaves=none walk=0.3ms
+2026-09-07 21:57:15.201 E  YueduReader[52028:6031a9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.htmlParse 98ms spine=4 html=704877 ok=true
+2026-09-07 21:57:15.201 E  YueduReader[52028:6031a9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssCollect 0ms spine=4 sheets=0 css=0
+2026-09-07 21:57:15.201 E  YueduReader[52028:6031a9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssParse 0ms spine=4 sheets=0 css=0 rules=0 cached=true
+2026-09-07 21:57:15.233 E  YueduReader[52028:6031a9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssMatch 31ms spine=4 rules=0 topLevel=4 writing=horizontal
+2026-09-07 21:57:15.233 E  YueduReader[52028:6031a9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.astBuild 31ms spine=4 html=704877 rules=0 contains=cssMatch
+2026-09-07 21:57:15.247 E  YueduReader[52028:6031a9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 0ms spine=4 nodes=1 chars=1 bubbleRecognize=0.1ms/1 bubbleKey=0.0ms/1 mainActorHop=0.0ms/1 walk=0.3ms
+2026-09-07 21:57:15.791 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 545ms spine=4 nodes=1 chars=4121 imageLoad=329.8ms/6 mainActorHop=120.1ms/122 bubbleDraw=21.6ms/35 bubbleRecognize=12.9ms/157 bubbleTrim=12.6ms/35 bubbleColorTemplateCheck=1.9ms/35 bubbleKey=1.6ms/116 bubbleTemplateSource=0.1ms/35 walk=43.8ms
+2026-09-07 21:57:16.047 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 142ms spine=4 chars=4130
+2026-09-07 21:57:16.759 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ reader.open.deferredPreload 0ms spine=3 waited=false
+2026-09-07 21:57:16.760 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ reader.open.deferredPreload 0ms spine=5 waited=false
+2026-09-07 21:57:17.068 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.htmlParse 78ms spine=5 html=600183 ok=true
+2026-09-07 21:57:17.068 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssCollect 0ms spine=5 sheets=0 css=0
+2026-09-07 21:57:17.068 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssParse 0ms spine=5 sheets=0 css=0 rules=0 cached=true
+2026-09-07 21:57:17.095 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssMatch 27ms spine=5 rules=0 topLevel=4 writing=horizontal
+2026-09-07 21:57:17.095 E  YueduReader[52028:6031ac] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.astBuild 27ms spine=5 html=600183 rules=0 contains=cssMatch
+2026-09-07 21:57:17.118 E  YueduReader[52028:603158] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 0ms spine=5 nodes=1 chars=1 bubbleRecognize=0.0ms/1 bubbleKey=0.0ms/1 mainActorHop=0.0ms/1 walk=0.3ms
+2026-09-07 21:57:17.407 E  YueduReader[52028:6032f9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.htmlParse 103ms spine=4 html=704877 ok=true
+2026-09-07 21:57:17.407 E  YueduReader[52028:6032f9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssCollect 0ms spine=4 sheets=0 css=0
+2026-09-07 21:57:17.407 E  YueduReader[52028:6032f9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssParse 0ms spine=4 sheets=0 css=0 rules=0 cached=true
+2026-09-07 21:57:17.444 E  YueduReader[52028:6032f9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssMatch 37ms spine=4 rules=0 topLevel=4 writing=horizontal
+2026-09-07 21:57:17.444 E  YueduReader[52028:6032f9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.astBuild 37ms spine=4 html=704877 rules=0 contains=cssMatch
+2026-09-07 21:57:17.459 E  YueduReader[52028:6032fa] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 0ms spine=4 nodes=1 chars=1 bubbleRecognize=0.0ms/1 bubbleKey=0.0ms/1 mainActorHop=0.0ms/1 walk=0.3ms
+2026-09-07 21:57:17.504 E  YueduReader[52028:603335] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 45ms spine=4 nodes=1 chars=4121 bubbleRecognize=3.3ms/122 imageLoad=3.1ms/6 mainActorHop=2.6ms/122 bubbleKey=1.3ms/116 walk=34.8ms
+2026-09-07 21:57:17.518 E  YueduReader[52028:60339b] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 410ms 神魔小说
+2026-09-07 21:57:17.744 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 125ms spine=4 chars=4130
+2026-09-07 21:57:17.774 E  YueduReader[52028:6032f9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 656ms spine=5 nodes=1 chars=3267 imageLoad=589.1ms/4 mainActorHop=14.2ms/103 bubbleDraw=8.8ms/13 bubbleRecognize=6.8ms/116 bubbleTrim=4.8ms/13 bubbleKey=1.2ms/99 bubbleColorTemplateCheck=0.9ms/13 bubbleTemplateSource=0.0ms/13 walk=30.6ms
+2026-09-07 21:57:18.030 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 103ms spine=5 chars=3278
+2026-09-07 21:57:20.176 E  YueduReader[52028:60339b] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 2566ms 神魔小说
+2026-09-07 21:57:20.216 E  YueduReader[52028:60339b] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 2698ms 神魔小说
+2026-09-07 22:16:11.991 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 6132ms 神魔小说
+2026-09-07 22:16:18.374 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 6179ms 神魔小说
+2026-09-07 22:16:18.421 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 6430ms 神魔小说
+2026-09-07 22:16:20.857 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.htmlParse 110ms spine=12 html=738846 ok=true
+2026-09-07 22:16:20.859 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssCollect 2ms spine=12 sheets=0 css=0
+2026-09-07 22:16:20.860 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssParse 0ms spine=12 sheets=0 css=0 rules=0 cached=true
+2026-09-07 22:16:20.892 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.cssMatch 32ms spine=12 rules=0 topLevel=4 writing=horizontal
+2026-09-07 22:16:20.892 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.astBuild 32ms spine=12 html=738846 rules=0 contains=cssMatch
+2026-09-07 22:16:20.918 E  YueduReader[52028:60be26] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 12ms spine=12 nodes=1 chars=1 bubbleRecognize=0.2ms/1 bubbleKey=0.2ms/1 mainActorHop=0.0ms/1 walk=11.9ms
+2026-09-07 22:16:21.068 E  YueduReader[52028:60be26] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 500ms 神魔小说
+2026-09-07 22:16:21.072 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 506ms 神魔小说
+2026-09-07 22:16:21.363 E  YueduReader[52028:60be27] [com.zhangruilin.yuedureader:parse] ⏱ coreText.document.renderLeaves 445ms spine=12 nodes=1 chars=4334 imageLoad=396.2ms/6 bubbleRecognize=5.2ms/130 bubbleDraw=2.2ms/3 mainActorHop=1.6ms/127 bubbleKey=1.5ms/121 bubbleTrim=1.2ms/3 bubbleColorTemplateCheck=0.3ms/3 bubbleTemplateSource=0.0ms/3 walk=37.0ms
+2026-09-07 22:16:21.476 E  YueduReader[52028:60bcf1] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 909ms 神魔小说
+2026-09-07 22:16:21.480 E  YueduReader[52028:60bcd7] [com.zhangruilin.yuedureader:parse] ⏱ chapter.network 912ms 神魔小说
+2026-09-07 22:16:21.606 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 131ms spine=12 chars=4348
+2026-09-07 22:16:26.247 E  YueduReader[52028:60be26] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 5082ms 神魔小说
+2026-09-07 22:16:26.273 E  YueduReader[52028:60be26] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 5205ms 神魔小说
+2026-09-07 22:16:28.733 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:16:30.683 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 4334ms 神魔小说
+2026-09-07 22:16:30.707 E  YueduReader[52028:60bcef] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 9634ms 神魔小说
+2026-09-07 22:16:33.870 E  YueduReader[52028:60bcf1] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 3096ms 神魔小说
+2026-09-07 22:16:33.908 E  YueduReader[52028:60bcf1] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 12432ms 神魔小说
+2026-09-07 22:16:36.733 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:16:39.460 E  YueduReader[52028:60bcd7] [com.zhangruilin.yuedureader:parse] ⏱ chapter.jsNet 5476ms 神魔小说
+2026-09-07 22:16:39.511 E  YueduReader[52028:60bcd7] [com.zhangruilin.yuedureader:parse] ⏱ chapter.parse 18030ms 神魔小说
+2026-09-07 22:16:41.348 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 5ms spine=12 chars=4348
+2026-09-07 22:16:42.217 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:16:42.783 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:16:46.017 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:16:48.167 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:16:48.317 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:16:59.434 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:17:15.836 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 3ms spine=12 chars=4348
+2026-09-07 22:17:15.869 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 3ms spine=12 chars=4348
+2026-09-07 22:17:17.084 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:17:17.167 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:17:24.450 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:17:24.884 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:17:26.817 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:17:36.051 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:17:46.551 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:00.029 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 8ms spine=12 chars=4348
+2026-09-07 22:18:00.089 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:06.051 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:27.951 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:31.051 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:32.418 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:37.618 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:44.451 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:52.218 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:55.335 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:18:56.451 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:19:00.029 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 3ms spine=12 chars=4348
+2026-09-07 22:19:00.089 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:19:05.201 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:19:13.418 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:19:15.402 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:19:20.485 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:19:37.118 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:20:00.029 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 4ms spine=12 chars=4348
+2026-09-07 22:20:00.088 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 2ms spine=12 chars=4348
+2026-09-07 22:20:01.419 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:20:15.336 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:20:19.002 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:20:22.019 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:20:26.286 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:20:36.287 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 2ms spine=12 chars=4348
+2026-09-07 22:20:38.827 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:20:39.074 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 2ms spine=12 chars=4348
+2026-09-07 22:20:41.336 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:20:41.819 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:21:00.034 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 4ms spine=12 chars=4348
+2026-09-07 22:21:07.603 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:21:15.653 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:21:20.054 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 2ms spine=12 chars=4348
+2026-09-07 22:21:32.820 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:21:32.853 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:21:51.137 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:21:51.620 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:21:52.870 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:22:00.091 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 55ms spine=12 chars=4348
+2026-09-07 22:22:13.570 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:22:15.879 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:22:16.104 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 1ms spine=12 chars=4348
+2026-09-07 22:22:29.889 E  YueduReader[52028:6013c9] [com.zhangruilin.yuedureader:parse] ⏱ coreText.fullLayout 4ms spine=12 chars=4348

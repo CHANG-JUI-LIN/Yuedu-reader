@@ -41,6 +41,7 @@ enum BoxTreeBuilder {
             imageLoader: imageLoader, boxCount: &boxCount
         )
         Self.linkParents(box)
+        BrowserReaderTextStyling.prepare(root: box, sourceText: sourceText.text, config: config)
         #if DEBUG
         assertUnformatted(box)
         #endif

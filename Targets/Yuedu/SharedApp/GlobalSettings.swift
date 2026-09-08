@@ -485,6 +485,8 @@ class GlobalSettings: ObservableObject {
     private static let exploreUsesDefaultCoverKey = "yd_explore_default_cover"
     private static let defaultCoverLightFileNamesKey = "yd_default_cover_light_files"
     private static let defaultCoverDarkFileNamesKey = "yd_default_cover_dark_files"
+    private static let defaultCoverDrawsBookNameKey = "yd_default_cover_draw_name"
+    private static let defaultCoverDrawsBookAuthorKey = "yd_default_cover_draw_author"
 
     /// Cover corner radius the bookshelf clips its covers with. The ceiling is
     /// deliberately short of half a cover's width — past that the "rounded
@@ -515,6 +517,7 @@ class GlobalSettings: ObservableObject {
     private static let interfaceGlassCardsKey = "yd_interface_glass_list_sections"
     private static let customAppearanceThemesKey = "yd_custom_appearance_themes"
     private static let appearancePageBackgroundsKey = "yd_appearance_page_backgrounds"
+    private static let appearanceCardBackgroundKey = "yd_appearance_card_background"
     private static let globalFontPostScriptKey = "yd_global_font_postscript"
     private static let commentBubbleFollowsSourceSVGKey = "yd_comment_bubble_follows_source_svg"
     private static let commentBubblePresetModeKey = "yd_comment_bubble_preset_mode"
@@ -1007,10 +1010,30 @@ class GlobalSettings: ObservableObject {
     }
 
     @Published var appearanceThemeID: String {
-        didSet { UserDefaults.standard.set(appearanceThemeID, forKey: Self.appearanceThemeIDKey) }
+        didSet {
+            UserDefaults.standard.set(appearanceThemeID, forKey: Self.appearanceThemeIDKey)
+            guard appearanceThemeID != oldValue else { return }
+            synchronizeAppearanceThemeExtras()
+        }
     }
     @Published var appearanceDarkThemeID: String {
-        didSet { UserDefaults.standard.set(appearanceDarkThemeID, forKey: Self.appearanceDarkThemeIDKey) }
+        didSet {
+            UserDefaults.standard.set(appearanceDarkThemeID, forKey: Self.appearanceDarkThemeIDKey)
+            guard appearanceDarkThemeID != oldValue else { return }
+            synchronizeAppearanceThemeExtras()
+        }
+    }
+    /// Card artwork in force — set by the selected theme's extras, nil for a plain
+    /// theme. Read by `interfaceCardSurface` / `interfaceSectionSurface`.
+    @Published var appearanceCardBackground: AppearanceCardBackground? {
+        didSet {
+            guard let appearanceCardBackground,
+                  let data = try? JSONEncoder().encode(appearanceCardBackground) else {
+                UserDefaults.standard.removeObject(forKey: Self.appearanceCardBackgroundKey)
+                return
+            }
+            UserDefaults.standard.set(data, forKey: Self.appearanceCardBackgroundKey)
+        }
     }
     @Published var appearanceUsesSeparateDarkTheme: Bool {
         didSet { UserDefaults.standard.set(appearanceUsesSeparateDarkTheme, forKey: Self.appearanceSeparateDarkThemeKey) }
@@ -1314,6 +1337,25 @@ class GlobalSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(defaultCoverDarkFileNames, forKey: Self.defaultCoverDarkFileNamesKey)
             DefaultCoverLibrary.invalidateCache()
+        }
+    }
+
+    /// Draw the book's name down the generated cover. Legado's `coverShowName`,
+    /// which gates the same vertical title. Only affects `GeneratedBookCover` —
+    /// a cover the user imported into the library is shown as authored.
+    @Published var defaultCoverDrawsBookName: Bool {
+        didSet {
+            UserDefaults.standard.set(defaultCoverDrawsBookName, forKey: Self.defaultCoverDrawsBookNameKey)
+            GeneratedBookCoverRenderer.invalidateCache()
+        }
+    }
+
+    /// Draw the author down the generated cover's right edge. Legado's
+    /// `coverShowAuthor`.
+    @Published var defaultCoverDrawsBookAuthor: Bool {
+        didSet {
+            UserDefaults.standard.set(defaultCoverDrawsBookAuthor, forKey: Self.defaultCoverDrawsBookAuthorKey)
+            GeneratedBookCoverRenderer.invalidateCache()
         }
     }
 
@@ -1744,6 +1786,9 @@ class GlobalSettings: ObservableObject {
         readerCustomBackgroundImageFileName = UserDefaults.standard.string(forKey: Self.readerCustomBackgroundImageFileNameKey)
         customAppearanceThemes = Self.loadCustomAppearanceThemes()
         appearancePageBackgrounds = Self.loadPageBackgrounds()
+        appearanceCardBackground = UserDefaults.standard
+            .data(forKey: Self.appearanceCardBackgroundKey)
+            .flatMap { try? JSONDecoder().decode(AppearanceCardBackground.self, from: $0) }
         appearanceFollowsSystem =
             (UserDefaults.standard.object(forKey: Self.appearanceFollowsSystemKey) as? Bool)
             ?? Self.defaultAppearanceFollowsSystem
@@ -1830,6 +1875,10 @@ class GlobalSettings: ObservableObject {
             UserDefaults.standard.stringArray(forKey: Self.defaultCoverLightFileNamesKey) ?? []
         defaultCoverDarkFileNames =
             UserDefaults.standard.stringArray(forKey: Self.defaultCoverDarkFileNamesKey) ?? []
+        defaultCoverDrawsBookName =
+            (UserDefaults.standard.object(forKey: Self.defaultCoverDrawsBookNameKey) as? Bool) ?? true
+        defaultCoverDrawsBookAuthor =
+            (UserDefaults.standard.object(forKey: Self.defaultCoverDrawsBookAuthorKey) as? Bool) ?? true
 
         // MD3 defaults to 16. Current upstream Legado defaults to 32, while its
         // fixed CPU dispatcher is capped at 9; our URLSession work is asynchronous
@@ -2732,7 +2781,14 @@ class GlobalSettings: ObservableObject {
             accentHex: file.accentHex,
             dialogueHex: file.dialogueHex,
             pageBackgrounds: payloadConfigs.isEmpty ? nil : payloadConfigs,
-            dark: file.darkColors
+            dark: file.darkColors,
+            textPrimaryHex: file.textPrimaryHex,
+            textSecondaryHex: file.textSecondaryHex,
+            textTertiaryHex: file.textTertiaryHex,
+            darkTextPrimaryHex: file.darkTextPrimaryHex,
+            darkTextSecondaryHex: file.darkTextSecondaryHex,
+            darkTextTertiaryHex: file.darkTextTertiaryHex,
+            extras: file.extras
         )
     }
 
@@ -2933,8 +2989,12 @@ class GlobalSettings: ObservableObject {
         return luminance > 0.45 ? AppearanceThemePreset.hex(0x2E322F) : AppearanceThemePreset.hex(0xF5F5F5)
     }
 
+    /// Installs a font into the user's library **without** selecting it. Internal so
+    /// an appearance pack can add its font and let the theme's extras decide when it
+    /// is actually in use — selecting here would poison the extras baseline with the
+    /// pack's own font before the user's is captured.
     @discardableResult
-    private func importUserFont(from url: URL) throws -> UserFontInfo {
+    func importUserFont(from url: URL) throws -> UserFontInfo {
         let info = try UserFontStorageManager.shared.importFont(fileURL: url)
         userFonts.removeAll { $0.postScriptName == info.postScriptName }
         userFonts.append(info)

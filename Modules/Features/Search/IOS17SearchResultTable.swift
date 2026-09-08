@@ -195,7 +195,6 @@ final class IOS17SearchResultTableViewController: UITableViewController {
 private final class IOS17SearchResultTableCell: UITableViewCell {
     private let coverContainer = UIView()
     private let coverImageView = UIImageView()
-    private let coverTitleLabel = UILabel()
     private let audiobookBadge = UIImageView()
     private let titleLabel = UILabel()
     private let authorLabel = UILabel()
@@ -206,6 +205,12 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
 
     private var representedID: UUID?
     private var coverTask: Task<Void, Never>?
+    /// Title and author of the row on screen, so the generated cover can be
+    /// redrawn when the appearance flips under a cell that is already showing it.
+    private var generatedCoverSeed: (title: String, author: String)?
+    /// True once the book's real artwork has arrived — a trait change must not
+    /// paint the generated cover back over it.
+    private var showsRemoteCover = false
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -233,8 +238,8 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
         coverTask?.cancel()
         coverTask = nil
         coverImageView.image = nil
-        coverImageView.isHidden = true
-        coverTitleLabel.isHidden = false
+        generatedCoverSeed = nil
+        showsRemoteCover = false
     }
 
     override func layoutSubviews() {
@@ -253,7 +258,6 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
         authorLabel.isHidden = row.author.isEmpty
         introLabel.text = row.intro
         introLabel.isHidden = row.intro.isEmpty
-        coverTitleLabel.text = row.title
         sourceLabel.text = "\(row.sourceCount) " + localized("源")
         audiobookBadge.isHidden = !row.showsAudiobookBadge
         sourceBadge.backgroundColor = UIColor(
@@ -295,10 +299,6 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
         coverImageView.clipsToBounds = true
         coverImageView.isAccessibilityElement = false
 
-        coverTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        coverTitleLabel.numberOfLines = 6
-        coverTitleLabel.isAccessibilityElement = false
-
         audiobookBadge.translatesAutoresizingMaskIntoConstraints = false
         audiobookBadge.image = UIImage(systemName: "headphones")
         audiobookBadge.contentMode = .center
@@ -307,7 +307,6 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
         audiobookBadge.clipsToBounds = true
         audiobookBadge.isAccessibilityElement = false
 
-        coverContainer.addSubview(coverTitleLabel)
         coverContainer.addSubview(coverImageView)
         coverContainer.addSubview(audiobookBadge)
 
@@ -383,18 +382,6 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
             coverImageView.trailingAnchor.constraint(equalTo: coverContainer.trailingAnchor),
             coverImageView.topAnchor.constraint(equalTo: coverContainer.topAnchor),
             coverImageView.bottomAnchor.constraint(equalTo: coverContainer.bottomAnchor),
-            coverTitleLabel.leadingAnchor.constraint(
-                equalTo: coverContainer.leadingAnchor,
-                constant: DSSpacing.sm
-            ),
-            coverTitleLabel.trailingAnchor.constraint(
-                equalTo: coverContainer.trailingAnchor,
-                constant: -DSSpacing.sm
-            ),
-            coverTitleLabel.topAnchor.constraint(
-                equalTo: coverContainer.topAnchor,
-                constant: DSSpacing.sm
-            ),
             audiobookBadge.widthAnchor.constraint(
                 equalToConstant: DSLayout.searchResultAudiobookBadgeSize
             ),
@@ -435,12 +422,6 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
             weight: .medium,
             compatibleWith: traitCollection
         )
-        coverTitleLabel.font = GlobalAppTypography.uiFont(
-            .caption2,
-            postScriptName: postScriptName,
-            weight: .medium,
-            compatibleWith: traitCollection
-        )
         sourceIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
             font: sourceLabel.font
         )
@@ -453,8 +434,9 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
         titleLabel.textColor = UIColor(DSColor.textPrimary)
         authorLabel.textColor = UIColor(DSColor.textSecondary)
         introLabel.textColor = UIColor(DSColor.textSecondary)
-        coverTitleLabel.textColor = UIColor(DSColor.textSecondary)
         coverContainer.backgroundColor = UIColor(DSColor.surfaceTertiary)
+        // Light/dark flipped under a cell that is still on the generated cover.
+        if !showsRemoteCover { applyGeneratedCover() }
         audiobookBadge.tintColor = UIColor(DSColor.textOnAccent)
         audiobookBadge.backgroundColor = UIColor(DSColor.accent)
     }
@@ -462,15 +444,15 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
     private func loadCover(for row: IOS17SearchResultTableRow) {
         coverTask?.cancel()
         coverTask = nil
+        generatedCoverSeed = (row.title, row.author)
 
         if let cached = BookCoverLoader.cachedImage(for: row.coverURL) {
             showCover(cached, representedID: row.id)
             return
         }
 
-        coverImageView.image = nil
-        coverImageView.isHidden = true
-        coverTitleLabel.isHidden = false
+        showsRemoteCover = false
+        applyGeneratedCover()
         guard !row.coverURL.isEmpty else { return }
 
         coverTask = Task { [weak self] in
@@ -490,7 +472,28 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
     private func showCover(_ image: UIImage, representedID: UUID) {
         guard self.representedID == representedID else { return }
         coverImageView.image = image
-        coverImageView.isHidden = false
-        coverTitleLabel.isHidden = true
+        showsRemoteCover = true
+    }
+
+    /// What a result with no artwork shows: the same generated cover the shelf
+    /// draws, rather than the grey title card this cell used to inline.
+    private func applyGeneratedCover() {
+        guard let seed = generatedCoverSeed else {
+            coverImageView.image = nil
+            return
+        }
+        let settings = GlobalSettings.shared
+        coverImageView.image = GeneratedBookCoverRenderer.image(
+            title: seed.title,
+            author: seed.author,
+            size: CGSize(
+                width: DSLayout.searchResultCoverWidth,
+                height: DSLayout.searchResultCoverHeight
+            ),
+            colorScheme: traitCollection.userInterfaceStyle == .dark ? .dark : .light,
+            drawsName: settings.defaultCoverDrawsBookName,
+            drawsAuthor: settings.defaultCoverDrawsBookAuthor,
+            scale: traitCollection.displayScale
+        )
     }
 }

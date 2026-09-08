@@ -15,12 +15,19 @@ enum DSColor {
     static let destructive = Color.red
 
     // ── Text ──
+    // Themed the same way the surfaces below are: an appearance theme (or an
+    // imported appearance pack) may author all three levels, and anything that
+    // does not resolves to the exact system label colors it used before —
+    // `Color.primary` is `.label` and `Color.secondary` is `.secondaryLabel`, so
+    // a theme without text colors paints identically to the old constants.
     /// Primary text (auto-adapts to light/dark mode)
-    static let textPrimary = Color.primary
+    static var textPrimary: Color { themedText(\.primary, fallback: .label) }
     /// Text on strong functional fills.
     static let textOnAccent = Color.white
     /// Secondary text (captions, subtitles)
-    static let textSecondary = Color.secondary
+    static var textSecondary: Color { themedText(\.secondary, fallback: .secondaryLabel) }
+    /// Third-level text (footnotes, metadata) — the level iOS calls `tertiaryLabel`.
+    static var textTertiary: Color { themedText(\.tertiary, fallback: .tertiaryLabel) }
     /// Disabled text
     static let textDisabled = Color.secondary.opacity(0.5)
 
@@ -53,6 +60,22 @@ enum DSColor {
     static var separator: Color { themed(\.appSeparator, fallback: .separator) }
     /// Light border
     static var border: Color { themed(\.appBorder, fallback: .systemGray4) }
+
+    /// Resolves one authored text level as a **dynamic** color, falling back to the
+    /// system label for any appearance whose theme did not author the trio. Kept
+    /// separate from `themed(_:fallback:)` because text colors are optional on the
+    /// preset: a theme opts in, where every theme always has surface colors.
+    private static func themedText(
+        _ keyPath: KeyPath<AppearanceThemeTextColors, UIColor>,
+        fallback: UIColor
+    ) -> Color {
+        let themes = AppearanceThemePreset.activeAppThemes
+        guard themes.isActive else { return Color(uiColor: fallback) }
+        return Color(uiColor: UIColor { traits in
+            themes.theme(for: traits.userInterfaceStyle)?
+                .authoredTextColors?[keyPath: keyPath] ?? fallback
+        })
+    }
 
     /// Resolves a themed surface color as a **dynamic** color.
     ///
@@ -356,5 +379,14 @@ extension View {
         } else {
             self.toolbarTitleDisplayMode(.inline)
         }
+    }
+
+    /// Standardized section footer styling per Apple HIG (13pt Footnote + secondary color).
+    /// Used for all section-level explanatory texts to ensure proper typography,
+    /// dynamic type scaling, and consistent appearance across all themes.
+    func dsSectionFooter(color: Color = DSColor.textSecondary) -> some View {
+        self
+            .font(DSFont.footnote)
+            .foregroundStyle(color)
     }
 }

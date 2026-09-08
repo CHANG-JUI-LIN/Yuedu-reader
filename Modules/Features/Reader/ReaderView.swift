@@ -81,6 +81,9 @@ struct ReaderView: View {
     @State private var readerStyleImportRoute: ReaderStyleImportRoute?
     @State var showQuickThemePanel = false
     @State var showReaderSearch = false
+    @State var readerSearchSelection = ""
+    @State var readerTranslationSelection = ""
+    @State var showReaderTranslation = false
     @State var showTOC = false
     @State var showBookmarkList = false
     /// 目前正在編輯的段落筆記；nil 表示沒有開著編輯頁。
@@ -146,11 +149,6 @@ struct ReaderView: View {
     }
 
     @StateObject var epubRenderer = EPUBPageRenderer()
-    #if DEBUG
-    @State var debugSelectedLayoutEngine = ReaderDebugLayoutEngine(
-        featureMode: BrowserLayoutFeature.mode
-    )
-    #endif
 
     @State var showTTSPanel = false
     @State var showDownloadOptions = false
@@ -185,6 +183,7 @@ struct ReaderView: View {
     @State var scrollNavigationRequest: ReaderScrollNavigationRequest?
     @State var pendingScrollJumpTarget: CoreTextReadingPosition?
     @State var manuallyRefreshingChapterIndex: Int?
+    @State var pendingChapterContentReplacements: Set<Int> = []
 
     @State var readerSessionCoordinator: ReaderSessionCoordinator?
     @State var readingStatsTracker: ReadingStatsSessionTracker?
@@ -546,11 +545,12 @@ struct ReaderView: View {
                 manifestItemsByID: session.opfManifestItemsByID
             )
             let spineIndex = resolver.resolveSpineIndex(cfi, chapters: session.chapters) ?? chapter.index
-            guard let layout = engine.layouts[spineIndex] else { return nil }
+            guard let anchorOffsets = engine.chapterAnchorOffsets(forSpine: spineIndex),
+                  let text = engine.chapterText(forSpine: spineIndex) else { return nil }
             return resolver.resolveCharOffset(
                 cfi,
-                anchorOffsets: layout.anchorOffsets,
-                contentLength: layout.attributedString.length
+                anchorOffsets: anchorOffsets,
+                contentLength: (text as NSString).length
             )
         }
 
@@ -810,6 +810,7 @@ struct ReaderView: View {
         shouldPersist: Bool = true
     ) {
         ensureReaderNavigator(initialPosition: position)
+        epubRenderer.engine?.updateReadingPosition(position)
         recordReadingStatsPosition(position, source: source)
         declarePositionIntent(for: source, target: position)
         switch source {
@@ -884,6 +885,7 @@ struct ReaderView: View {
     }
 
     func setCoreTextExternalTarget(_ position: CoreTextReadingPosition) {
+        epubRenderer.engine?.updateReadingPosition(position)
         readerSessionCoordinator?.setExternalTarget(position)
         coreTextExternalTargetVersion &+= 1
     }
@@ -912,7 +914,9 @@ struct ReaderView: View {
         page: Int
     ) -> (spineIndex: Int, charOffset: Int)? {
         let (spineIndex, charOffset) = engine.charOffset(forPage: page)
-        guard engine.layouts[spineIndex] != nil else { return nil }
+        guard engine.chapterPagination(forSpine: spineIndex, charOffset: charOffset) != nil else {
+            return nil
+        }
         return (spineIndex, charOffset)
     }
 
@@ -959,7 +963,7 @@ struct ReaderView: View {
                 usesCoreText: usesCoreTextEPUB,
                 loadState: entryState,
                 isContentAvailable: entryContentAvailable,
-                isLayoutAvailable: engine.layouts[newChapter] != nil
+                isLayoutAvailable: engine.chapterPagination(forSpine: newChapter, charOffset: 0) != nil
             )
             ensureChapterReady(chapterIndex: newChapter)
             // Entering a chapter whose state was already `.ready` publishes no transition, so
@@ -968,7 +972,7 @@ struct ReaderView: View {
                 recoverInconsistentChapterOnce(newChapter)
             }
             if case .notifyChapterDataChanged = entryAction {
-                submitChapterContentRefresh(chapterIndex: newChapter)
+                submitChapterContentRefresh(chapterIndex: newChapter, update: .available)
             }
             // Switch the authored background soundtrack to the new chapter's (or stop it if none).
             if let session = activePublicationSession {
@@ -1103,11 +1107,12 @@ struct ReaderView: View {
     ) {
         if let engine = epubRenderer.engine, usesCoreTextEPUB, engine.totalPages > 0 {
             let position = readerOverlayCoreTextPosition(in: engine)
-            let layout = engine.layouts[position.spineIndex]
-            let chapterPageCount = layout?.displayPageCount ?? 0
-            let chapterPage = chapterPageCount > 0
-                ? (layout?.pageIndex(for: position.charOffset) ?? -1) + 1
-                : 0
+            let pagination = engine.chapterPagination(
+                forSpine: position.spineIndex,
+                charOffset: position.charOffset
+            )
+            let chapterPageCount = pagination?.displayPageCount ?? 0
+            let chapterPage = pagination.map { $0.localPageIndex + 1 } ?? 0
             return (
                 chapterPage,
                 chapterPageCount,
@@ -1261,11 +1266,13 @@ struct ReaderView: View {
         }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
-            guard let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty else {
+            guard let pagination = engine.chapterPagination(
+                forSpine: spineIndex,
+                charOffset: charOffset
+            ) else {
                 return ""
             }
-            let localPage = layout.pageIndex(for: charOffset) + 1
-            return "\(localPage)/\(layout.displayPageCount)"
+            return "\(pagination.localPageIndex + 1)/\(pagination.displayPageCount)"
         }
         guard !allPages.isEmpty else { return "" }
         let page = allPages[min(currentPage, allPages.count - 1)]
@@ -1582,14 +1589,6 @@ struct ReaderView: View {
                 .transition(.opacity.animation(.easeOut(duration: 0.2)))
             }
             if showBars { readerChrome }
-            #if DEBUG
-            if showBars, debugLayoutABAvailable {
-                debugLayoutABOverlay
-                    .padding(.top, DSLayout.minimumTapTarget + DSSpacing.lg)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .zIndex(80)
-            }
-            #endif
             if showBars,
                settings.appearanceReaderInterface == .appleBooks,
                appleBooksActivePanel != nil {
@@ -1798,7 +1797,12 @@ struct ReaderView: View {
         }
         .onDisappear {
             ttsLog("[TTS][Reader] onDisappear cleanup only ttsPlaying=\(ttsCoordinator.isPlaying)")
-            cancelPendingRenderWorkUnlessNarrating()
+            // No pagination cancel here. `onDisappear` also fires when the reader is
+            // merely *covered* — a pushed page, a sheet, a full-screen cover — and the
+            // reader is still on screen underneath, about to be uncovered. The comment
+            // on the fetch cancel below already established exactly this; the layout
+            // cancel that used to sit on this line never got the same treatment, so
+            // opening any sheet threw away every laid-out chapter in the book.
             if !settings.followSystemBrightness {
                 UIScreen.main.brightness = CGFloat(systemBrightness)
             }
@@ -1826,10 +1830,19 @@ struct ReaderView: View {
             ttsLog("[TTS][Reader] scenePhase=\(String(describing: phase)) ttsPlaying=\(ttsCoordinator.isPlaying)")
             if phase == .background || phase == .inactive {
                 ttsCoordinator.refreshNowPlayingForSystemSurfaces()
-                cancelPendingRenderWorkUnlessNarrating()
                 saveProgress()
                 finishReadingStatsSession()
-            } else if phase == .active {
+            }
+            // Only a real move to the background drops pagination. `.inactive` is
+            // transient and the user has not left: a notification banner, a Control
+            // Centre pull, an app-switcher glance, an incoming call. Cancelling there
+            // discarded every laid-out chapter mid-read — a device log showed 18 of 19
+            // generation bumps coming from this path, four of them inside the same four
+            // minutes as 26 page-turn anomalies.
+            if phase == .background {
+                cancelPendingRenderWorkUnlessNarrating()
+            }
+            if phase == .active {
                 restoreReaderDisplayStateAfterResume()
                 beginReadingStatsSession()
             }
@@ -1841,7 +1854,11 @@ struct ReaderView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
         ) { _ in
-            cancelPendingRenderWorkUnlessNarrating()
+            // Resign-active is the same moment `scenePhase` reports `.inactive`, so the
+            // pagination cancel that used to be here ran a second time for one phase
+            // change — the paired bumps a second apart in the device log. Saving
+            // progress twice is harmless and worth the belt-and-braces; discarding
+            // every layout twice is not.
             saveProgress()
             finishReadingStatsSession()
         }
@@ -1918,6 +1935,20 @@ struct ReaderView: View {
                 settings.readerBrightness = current
             }
         }
+        )
+        let selectionObservationLayers = AnyView(
+            settingsObservationLayers
+        .readerSelectionTranslation(isPresented: $showReaderTranslation, text: readerTranslationSelection)
+        .onReceive(NotificationCenter.default.publisher(for: .coreTextSearchSelectionRequested)) { notification in
+            guard let text = notification.userInfo?["text"] as? String else { return }
+            readerSearchSelection = text
+            showReaderSearch = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .coreTextTranslateSelectionRequested)) { notification in
+            guard let text = notification.userInfo?["text"] as? String else { return }
+            readerTranslationSelection = text
+            showReaderTranslation = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .coreTextUnderlineSelectionRequested)) { notification in
             guard let request = notification.userInfo?["request"] as? CoreTextUnderlineSelectionRequest else { return }
             addUnderlineBookmark(request)
@@ -1953,6 +1984,9 @@ struct ReaderView: View {
             guard notification.userInfo?["bookId"] as? UUID == bookId else { return }
             handleOnlineChapterCacheCleared()
         }
+        )
+        let positionObservationLayers = AnyView(
+            selectionObservationLayers
         .onChanged(of: settings.pageTurnStyle) { _ in
             if settings.pageTurnStyle == .curl {
                 beginCurlStartupTrace(reason: "style_changed")
@@ -2011,7 +2045,7 @@ struct ReaderView: View {
         }
         )
         let presentationLayers = AnyView(
-            settingsObservationLayers
+            positionObservationLayers
                 .sheet(isPresented: $showSettings, onDismiss: presentDeferredReaderSettingsRoute) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderSettingsView(
@@ -2066,10 +2100,11 @@ struct ReaderView: View {
             .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled()
         }
-        .sheet(isPresented: $showReaderSearch) {
+        .sheet(isPresented: $showReaderSearch, onDismiss: { readerSearchSelection = "" }) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderBookSearchView(
                     items: readerSearchItems,
+                    initialQuery: readerSearchSelection,
                     onSelect: { item in
                         showReaderSearch = false
                         showBars = false
@@ -2252,6 +2287,9 @@ struct ReaderView: View {
                 )
             }
         }
+        )
+        let mediaPresentationLayers = AnyView(
+            presentationLayers
         .sheet(isPresented: $showMediaOverlayPanel) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 if let chapterIndex = activeMediaOverlayChapterIndex,
@@ -2297,7 +2335,7 @@ struct ReaderView: View {
         }
         )
         return AnyView(
-            presentationLayers
+            mediaPresentationLayers
                 .fileImporter(
                     isPresented: $showReaderFontImporter,
                     allowedContentTypes: ReaderSettingsView.fontContentTypes,

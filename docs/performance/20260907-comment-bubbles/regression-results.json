@@ -1,0 +1,334 @@
+[
+  {
+    "result": "Passed",
+    "passedTests": 5,
+    "failedTests": 0,
+    "totalTestCount": 5,
+    "runtimeWarnings": [],
+    "startTime": 1788787136.737,
+    "finishTime": 1788787214.263,
+    "bundle": "/tmp/YueduCommentPerf-after3-20260907.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 12,
+    "failedTests": 0,
+    "totalTestCount": 12,
+    "runtimeWarnings": [],
+    "startTime": 1788787284.399,
+    "finishTime": 1788787309.69,
+    "bundle": "/tmp/YueduCommentRecognizer-after-20260907.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 6,
+    "failedTests": 0,
+    "totalTestCount": 6,
+    "runtimeWarnings": [],
+    "startTime": 1788787503.563,
+    "finishTime": 1788787529.721,
+    "bundle": "/tmp/YueduCommentRecognitionModes-after-20260907.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788787577.68,
+    "finishTime": 1788787603.512,
+    "bundle": "/tmp/YueduParagraphReviewRendering-after-20260907.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788787809.529,
+    "finishTime": 1788788003.663,
+    "bundle": "/tmp/ReaderUI-mainqueue-after.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 13,
+    "failedTests": 0,
+    "totalTestCount": 13,
+    "runtimeWarnings": [],
+    "startTime": 1788791076.605,
+    "finishTime": 1788791172.786,
+    "bundle": "/tmp/YueduChapterSupply-jump-20260907-1.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 2,
+    "failedTests": 0,
+    "totalTestCount": 2,
+    "runtimeWarnings": [],
+    "startTime": 1788791196.755,
+    "finishTime": 1788791222.679,
+    "bundle": "/tmp/YueduNextContent-20260907-1.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 26,
+    "failedTests": 0,
+    "totalTestCount": 26,
+    "runtimeWarnings": [],
+    "startTime": 1788791345.155,
+    "finishTime": 1788791402.908,
+    "bundle": "/tmp/YueduOnlinePipeline-size-20260907-1.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 8,
+    "failedTests": 0,
+    "totalTestCount": 8,
+    "runtimeWarnings": [],
+    "startTime": 1788791426.512,
+    "finishTime": 1788791451.247,
+    "bundle": "/tmp/YueduChapterDocumentStore-online-20260907.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 11,
+    "failedTests": 0,
+    "totalTestCount": 11,
+    "runtimeWarnings": [],
+    "startTime": 1788791489.169,
+    "finishTime": 1788791515.028,
+    "bundle": "/tmp/YueduReaderRefresh-online-20260907.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 10,
+    "failedTests": 0,
+    "totalTestCount": 10,
+    "runtimeWarnings": [],
+    "startTime": 1788791542.591,
+    "finishTime": 1788791567.572,
+    "bundle": "/tmp/YueduChapterPresentation-online-20260907.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 13,
+    "failedTests": 0,
+    "totalTestCount": 13,
+    "runtimeWarnings": [],
+    "startTime": 1788791788.539,
+    "finishTime": 1788791814.453,
+    "bundle": "/tmp/YueduBrowserLayout-online-20260907.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 27,
+    "failedTests": 0,
+    "totalTestCount": 27,
+    "runtimeWarnings": [],
+    "startTime": 1788794743.588,
+    "finishTime": 1788794811.381,
+    "bundle": "/tmp/YueduPlainTitle-20260907-1.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 12,
+    "failedTests": 0,
+    "totalTestCount": 12,
+    "runtimeWarnings": [],
+    "startTime": 1788794849.74,
+    "finishTime": 1788794875.067,
+    "bundle": "/tmp/YueduVisiblePrefetch-20260907-1.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 35,
+    "failedTests": 0,
+    "totalTestCount": 35,
+    "runtimeWarnings": [],
+    "startTime": 1788785277.815,
+    "finishTime": 1788785315.455,
+    "bundle": "/tmp/BrowserTypography-20260907-8.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 29,
+    "failedTests": 0,
+    "totalTestCount": 29,
+    "runtimeWarnings": [
+      {
+        "issueType": "Runtime Warning",
+        "message": "    AVAudioSession_iOS.mm:978   This method can lead to UI unresponsiveness if called on the main thread. Consider using the asynchronous activate/deactivate API instead for calls from the main thread.",
+        "sourceURL": "file:///Users/zhangruilin/Desktop/Yuedu-reader/Tests/iOS/yuedu%20appTests/BrowserMediaPronunciationParityTests.swift"
+      }
+    ],
+    "startTime": 1788785561.245,
+    "finishTime": 1788785783.34,
+    "bundle": "/tmp/BrowserMediaParity-20260907-1.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 13,
+    "failedTests": 0,
+    "totalTestCount": 13,
+    "runtimeWarnings": [
+      {
+        "issueType": "Runtime Warning",
+        "message": "    AVAudioSession_iOS.mm:978   This method can lead to UI unresponsiveness if called on the main thread. Consider using the asynchronous activate/deactivate API instead for calls from the main thread.",
+        "sourceURL": "file:///Users/zhangruilin/Desktop/Yuedu-reader/Tests/iOS/yuedu%20appTests/BrowserMediaPronunciationParityTests.swift"
+      }
+    ],
+    "startTime": 1788785821.75,
+    "finishTime": 1788785868.971,
+    "bundle": "/tmp/BrowserMediaParity-20260907-2.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 5,
+    "failedTests": 0,
+    "totalTestCount": 5,
+    "runtimeWarnings": [],
+    "startTime": 1788784772.903,
+    "finishTime": 1788784813.904,
+    "bundle": "/tmp/ReaderSelection-20260907-3.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788795933.233,
+    "finishTime": 1788796526.149,
+    "bundle": "/tmp/ReaderUI-final-default-off.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788796647.268,
+    "finishTime": 1788797645.878,
+    "bundle": "/tmp/ReaderUI-final-default-on.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788797772.876,
+    "finishTime": 1788798449.054,
+    "bundle": "/tmp/ReaderUI-final-jianghu-off.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788798475.4,
+    "finishTime": 1788799127.306,
+    "bundle": "/tmp/ReaderUI-final-jianghu-on.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 4,
+    "failedTests": 0,
+    "totalTestCount": 4,
+    "runtimeWarnings": [],
+    "startTime": 1788800146.115,
+    "finishTime": 1788800197.489,
+    "bundle": "/tmp/YueduSnapshot-after-20260908-2.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 13,
+    "failedTests": 0,
+    "totalTestCount": 13,
+    "runtimeWarnings": [],
+    "startTime": 1788800274.244,
+    "finishTime": 1788800304.817,
+    "bundle": "/tmp/YueduSnapshot-ReaderChapterSupplyTests-20260908.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 11,
+    "failedTests": 0,
+    "totalTestCount": 11,
+    "runtimeWarnings": [],
+    "startTime": 1788800319.242,
+    "finishTime": 1788800346.32,
+    "bundle": "/tmp/YueduSnapshot-ReaderRenderRefreshTests-20260908.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 17,
+    "failedTests": 0,
+    "totalTestCount": 17,
+    "runtimeWarnings": [],
+    "startTime": 1788800360.69,
+    "finishTime": 1788800388.645,
+    "bundle": "/tmp/YueduSnapshot-ReaderPresentationContractTests-20260908.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788800605.504,
+    "finishTime": 1788800790.442,
+    "bundle": "/tmp/ReaderUI-snapshot-after-default-on.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788801299.018,
+    "finishTime": 1788801439.267,
+    "bundle": "/tmp/ReaderUI-snapshot-settled-after-default-off.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788801503.264,
+    "finishTime": 1788801701.385,
+    "bundle": "/tmp/ReaderUI-snapshot-settled-after-default-on.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788801819.869,
+    "finishTime": 1788801960.293,
+    "bundle": "/tmp/ReaderUI-snapshot-settled-after-jianghu-off.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788802044.835,
+    "finishTime": 1788802576.699,
+    "bundle": "/tmp/ReaderUI-snapshot-settled-after-jianghu-on.xcresult"
+  },
+  {
+    "result": "Passed",
+    "passedTests": 1,
+    "failedTests": 0,
+    "totalTestCount": 1,
+    "runtimeWarnings": [],
+    "startTime": 1788804102.274,
+    "finishTime": 1788804251.015,
+    "bundle": "/tmp/ReaderUI-snapshot-idle-diagnosis2.xcresult"
+  }
+]

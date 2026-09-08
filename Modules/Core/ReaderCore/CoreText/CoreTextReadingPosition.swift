@@ -70,7 +70,8 @@ enum CoreTextReadingPositionMapper {
               !layout.pageRanges.isEmpty
         else { return nil }
 
-        let localPage = localPageIndex(for: position, in: layout)
+        let offset = clampedCharOffset(for: position, in: layout)
+        let localPage = layout.pageIndex(for: offset)
         if localPage + 1 < layout.pageRanges.count {
             return CoreTextReadingPosition(
                 spineIndex: spineIndex,
@@ -84,7 +85,24 @@ enum CoreTextReadingPositionMapper {
         if layout.isPartial {
             let coveredEnd = layout.pageRanges.last.map { Int($0.location + $0.length) } ?? 0
             if coveredEnd < layout.attributedString.length {
-                return CoreTextReadingPosition(spineIndex: spineIndex, charOffset: coveredEnd)
+                // Only when it is genuinely ahead of where we are.
+                //
+                // Handing `coveredEnd` back to a reader already standing on it made this
+                // walker a **fixed point**: "the next page is the page you are on". A
+                // device log caught it as 26 out of 26 `after == start` — every G1 report
+                // in a four-minute window, deterministic rather than racy. The reader gets
+                // parked on `coveredEnd` in the first place because the previous call
+                // handed it out as a destination, so it is reached by ordinary reading.
+                if coveredEnd > offset {
+                    return CoreTextReadingPosition(spineIndex: spineIndex, charOffset: coveredEnd)
+                }
+                // Nothing honest left to say: this chapter continues, but the text after
+                // `coveredEnd` has not been measured, so no position can name it. Falling
+                // through to the next chapter would skip the unmeasured remainder — which
+                // is 翻頁跳章節, the report this walker exists to prevent. `nil` refuses the
+                // turn until the full pagination lands and `onChapterReady` re-places the
+                // stack (`Technotes/ReaderChapterSupply.md` invariant 1).
+                return nil
             }
         }
 

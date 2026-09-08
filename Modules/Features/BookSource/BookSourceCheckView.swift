@@ -314,14 +314,11 @@ struct BookSourceCheckView: View {
                 Text(
                     "\(localized("共")) \(checker.items.count) \(localized("個書源，"))\(localized("通過")) \(passed) \(localized("個"))"
                 )
-                .font(DSFont.caption)
-                .foregroundColor(DSColor.textSecondary)
                 if let summary = checker.lastSummary {
                     Text(summary)
-                        .font(DSFont.caption)
-                        .foregroundColor(DSColor.textSecondary)
                 }
             }
+            .dsSectionFooter()
             .padding(.top, DSSpacing.sm)
         }
     }

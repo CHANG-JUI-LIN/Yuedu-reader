@@ -770,6 +770,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 page.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
                 }
+            case let page as BrowserLayoutPageViewController:
+                page.accessibilityUsesRTLPageOrder = isRTL
+                page.onAccessibilityAction = { [weak self] action in
+                    self?.performAccessibilityAction(action)
+                }
             case let placeholder as PlaceholderPageViewController:
                 placeholder.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
@@ -1279,6 +1284,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return
             }
             (viewController as? CoreTextPageViewController)?.setPlaybackHighlight(
+                text: currentPlaybackHighlightText
+            )
+            (viewController as? BrowserLayoutPageViewController)?.setPlaybackHighlight(
                 text: currentPlaybackHighlightText
             )
         }

@@ -83,6 +83,32 @@ struct CSSFrontendDiagnostic: Equatable {
     let message: String
 }
 
+struct FrontendWinningDeclaration: Equatable {
+    let nodeID: UInt64
+    let property: String
+    let value: String
+    let specificity: UInt32
+    let sourceOrder: UInt32
+    let origin: UInt8
+    let important: Bool
+}
+
+struct LexborFrontendSnapshot: Equatable {
+    let elements: [UInt64: HTMLDOMElementSnapshot]
+    let parentIDs: [UInt64: UInt64]
+    let textOrder: [(nodeID: UInt64, text: String)]
+    let winningDeclarations: [FrontendWinningDeclaration]
+    let diagnostics: [CSSFrontendDiagnostic]
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.elements == rhs.elements
+            && lhs.parentIDs == rhs.parentIDs
+            && lhs.textOrder.map { "\($0.nodeID):\($0.text)" } == rhs.textOrder.map { "\($0.nodeID):\($0.text)" }
+            && lhs.winningDeclarations == rhs.winningDeclarations
+            && lhs.diagnostics == rhs.diagnostics
+    }
+}
+
 /// Pointer-free DOM identity consumed after the frontend returns. Neither a
 /// SwiftSoup object nor a Lexbor handle may cross this boundary.
 struct HTMLDOMElementSnapshot: Equatable {

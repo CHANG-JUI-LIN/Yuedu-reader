@@ -1,0 +1,3909 @@
+{
+  "final-default-off-continuous": {
+    "label": "final-default-off-continuous",
+    "pid": "68738",
+    "start": "2026-09-07T23:47:25.430301",
+    "end": "2026-09-07T23:48:42.600956",
+    "event_duration_s": 77.17065487499349,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.0009138584136962891,
+    "event_file": "/tmp/yuedu-reader-profiling/final-default-off-continuous-events.json",
+    "processes": [
+      {
+        "pid": "68738",
+        "kind": "reader",
+        "samples": 76,
+        "sample_duration_s": 75.71100000001024,
+        "cpu_seconds": 7.169999999999998,
+        "cpu_percent": 9.470222292664246,
+        "rss_first_mib": 642.031,
+        "rss_last_mib": 647.016,
+        "rss_max_mib": 661.578
+      },
+      {
+        "pid": "68745",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.71100000001024,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.562,
+        "rss_last_mib": 278.562,
+        "rss_max_mib": 278.562
+      },
+      {
+        "pid": "68747",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.71100000001024,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.609,
+        "rss_last_mib": 278.609,
+        "rss_max_mib": 278.609
+      },
+      {
+        "pid": "68748",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.71100000001024,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.594,
+        "rss_last_mib": 278.594,
+        "rss_max_mib": 278.594
+      },
+      {
+        "pid": "68749",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.71100000001024,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.672,
+        "rss_last_mib": 278.672,
+        "rss_max_mib": 278.672
+      },
+      {
+        "pid": "68751",
+        "kind": "webkit_network",
+        "samples": 76,
+        "sample_duration_s": 75.71100000001024,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 119.484,
+        "rss_last_mib": 119.453,
+        "rss_max_mib": 119.484
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 342418.72115991666,
+        "page": "2/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 342420.299829125,
+        "page": "3/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 342421.84705854167,
+        "page": "4/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 342423.39436820836,
+        "page": "5/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 342424.9597320834,
+        "page": "6/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 342426.5027756667,
+        "page": "7/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 342428.0551626667,
+        "page": "8/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 342429.6197309167,
+        "page": "9/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 342431.18998675,
+        "page": "10/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 342432.72949825,
+        "page": "11/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 342434.31319645833,
+        "page": "12/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 342435.90212387504,
+        "page": "1/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 342437.4764824167,
+        "page": "2/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 342439.06489175,
+        "page": "3/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 342440.62896475004,
+        "page": "4/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 342442.1899037917,
+        "page": "5/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 342443.75258108333,
+        "page": "6/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 342445.326300875,
+        "page": "7/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 342446.8916763333,
+        "page": "8/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 342448.45192120835,
+        "page": "9/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 342450.0046086667,
+        "page": "10/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 342451.5394375,
+        "page": "1/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 342453.281798875,
+        "page": "2/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 342454.83618908335,
+        "page": "3/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 342456.3761125417,
+        "page": "4/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 342457.94635337504,
+        "page": "5/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 342459.51010558335,
+        "page": "6/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 342461.06880783336,
+        "page": "7/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 342462.6468024167,
+        "page": "8/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 342464.2059354167,
+        "page": "9/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 342465.7501337917,
+        "page": "10/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 342467.2663607917,
+        "page": "11/11",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 342468.82498420833,
+        "page": "1/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 342470.36847633333,
+        "page": "2/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 342471.9121657084,
+        "page": "3/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 342473.4273557917,
+        "page": "4/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 342474.9832060417,
+        "page": "5/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 342476.5201816667,
+        "page": "6/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 342478.0520580417,
+        "page": "7/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 342479.54730900005,
+        "page": "8/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 342481.0780225417,
+        "page": "9/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 342482.61298233335,
+        "page": "10/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 342484.1483989584,
+        "page": "1/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 342485.6857652917,
+        "page": "2/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 342487.23231083335,
+        "page": "3/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 342488.7630717084,
+        "page": "4/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 342490.30613795837,
+        "page": "5/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 342491.8423230417,
+        "page": "6/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 342493.37135083333,
+        "page": "7/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 342494.9299335417,
+        "page": "8/9",
+        "chapter_title": "第14章 首杀"
+      }
+    ],
+    "stages": {
+      "coreText.document.htmlParse": {
+        "count": 6,
+        "sum_ms": 11,
+        "max_ms": 2,
+        "values_ms": [
+          2,
+          2,
+          2,
+          2,
+          1,
+          2
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 6,
+        "sum_ms": 43,
+        "max_ms": 9,
+        "values_ms": [
+          9,
+          9,
+          7,
+          7,
+          5,
+          6
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 6,
+        "sum_ms": 44,
+        "max_ms": 9,
+        "values_ms": [
+          9,
+          9,
+          8,
+          7,
+          5,
+          6
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 6,
+        "sum_ms": 45,
+        "max_ms": 14,
+        "values_ms": [
+          14,
+          8,
+          7,
+          6,
+          5,
+          5
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 6,
+        "sum_ms": 31,
+        "max_ms": 6,
+        "values_ms": [
+          6,
+          6,
+          5,
+          5,
+          5,
+          4
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 8,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 4,
+        "sum_ms": 11,
+        "max_ms": 3,
+        "values_ms": [
+          3,
+          3,
+          3,
+          2
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 4,
+        "sum_ms": 27,
+        "max_ms": 8,
+        "values_ms": [
+          8,
+          7,
+          6,
+          6
+        ]
+      },
+      "chapter.network": {
+        "count": 4,
+        "sum_ms": 2115,
+        "max_ms": 1181,
+        "values_ms": [
+          1181,
+          551,
+          209,
+          174
+        ]
+      },
+      "chapter.parse": {
+        "count": 4,
+        "sum_ms": 73,
+        "max_ms": 25,
+        "values_ms": [
+          12,
+          25,
+          21,
+          15
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 4,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-07 23:47:43.635",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-07 23:47:59.302",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-07 23:48:16.569",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-07 23:48:31.903",
+        "from_spine": 15,
+        "to_spine": 16
+      }
+    ],
+    "verified_page_transitions": 50,
+    "invalid_page_transition_commands": [],
+    "initial_position": {
+      "chapter_number": 10,
+      "spine": 12,
+      "page": "1/12"
+    },
+    "final_position": {
+      "chapter_number": 14,
+      "spine": 16,
+      "page": "8/9"
+    },
+    "chapter_boundaries_crossed": 4,
+    "cold_load": {
+      "pid": "68738",
+      "loading": "2026-09-07T23:45:43.375000",
+      "first_real": "2026-09-07T23:45:44.112000",
+      "capture1": "2026-09-07T23:45:43.588533",
+      "capture2": "2026-09-07T23:45:45.892548",
+      "loading_to_real_s": 0.737,
+      "loading_to_first_observed_ready_upper_s": 2.517548,
+      "capture1_to_capture2_observation_gap_s": 2.304015,
+      "stages": [
+        {
+          "timestamp": "2026-09-07T23:45:43.911000",
+          "stage": "chapter.network",
+          "ms": 515
+        },
+        {
+          "timestamp": "2026-09-07T23:45:43.969000",
+          "stage": "chapter.parse",
+          "ms": 59
+        },
+        {
+          "timestamp": "2026-09-07T23:45:43.970000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-07T23:45:44.074000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 2
+        },
+        {
+          "timestamp": "2026-09-07T23:45:44.095000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 11,
+          "chars": 4201.0
+        },
+        {
+          "timestamp": "2026-09-07T23:45:44.108000",
+          "stage": "coreText.fullLayout",
+          "ms": 13,
+          "chars": 4213.0
+        }
+      ]
+    }
+  },
+  "final-default-on-continuous": {
+    "label": "final-default-on-continuous",
+    "pid": "70070",
+    "start": "2026-09-07T23:58:25.664382",
+    "end": "2026-09-07T23:59:42.445231",
+    "event_duration_s": 76.78084937500535,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.006277561187744141,
+    "event_file": "/tmp/yuedu-reader-profiling/final-default-on-continuous-events.json",
+    "processes": [
+      {
+        "pid": "70070",
+        "kind": "reader",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 14.719999999999999,
+        "cpu_percent": 19.436448622812254,
+        "rss_first_mib": 675.266,
+        "rss_last_mib": 761.141,
+        "rss_max_mib": 761.141
+      },
+      {
+        "pid": "70079",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.312,
+        "rss_last_mib": 278.312,
+        "rss_max_mib": 278.312
+      },
+      {
+        "pid": "70080",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.266,
+        "rss_last_mib": 278.266,
+        "rss_max_mib": 278.266
+      },
+      {
+        "pid": "70081",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.312,
+        "rss_last_mib": 278.312,
+        "rss_max_mib": 278.312
+      },
+      {
+        "pid": "70082",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.344,
+        "rss_last_mib": 278.344,
+        "rss_max_mib": 278.344
+      },
+      {
+        "pid": "70084",
+        "kind": "webkit_network",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.020000000000000018,
+        "cpu_percent": 0.026408218237516674,
+        "rss_first_mib": 119.578,
+        "rss_last_mib": 119.594,
+        "rss_max_mib": 119.625
+      },
+      {
+        "pid": "70105",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.16000000000000014,
+        "cpu_percent": 0.2112657459001334,
+        "rss_first_mib": 294.25,
+        "rss_last_mib": 297.266,
+        "rss_max_mib": 297.359
+      },
+      {
+        "pid": "70106",
+        "kind": "webkit_gpu",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.15000000000000008,
+        "cpu_percent": 0.19806163678137498,
+        "rss_first_mib": 153.188,
+        "rss_last_mib": 161.734,
+        "rss_max_mib": 161.734
+      },
+      {
+        "pid": "70107",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.859,
+        "rss_last_mib": 278.859,
+        "rss_max_mib": 278.859
+      },
+      {
+        "pid": "70108",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 279.156,
+        "rss_last_mib": 279.156,
+        "rss_max_mib": 279.156
+      },
+      {
+        "pid": "70109",
+        "kind": "webcontent",
+        "samples": 76,
+        "sample_duration_s": 75.73399999999674,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.828,
+        "rss_last_mib": 278.828,
+        "rss_max_mib": 278.828
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 343078.8859894167,
+        "page": "2/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 343080.4435451667,
+        "page": "3/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 343082.02216700005,
+        "page": "4/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 343083.5719761667,
+        "page": "5/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 343085.10241975,
+        "page": "6/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 343086.66475729167,
+        "page": "7/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 343088.230419,
+        "page": "8/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 343089.8064113334,
+        "page": "9/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 343091.3781667917,
+        "page": "10/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 343092.94836512505,
+        "page": "11/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 343094.48639800004,
+        "page": "12/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 343096.0308444584,
+        "page": "13/13",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 343097.61788100004,
+        "page": "1/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 343099.1731984167,
+        "page": "2/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 343100.7232855417,
+        "page": "3/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 343102.298147125,
+        "page": "4/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 343103.8762255834,
+        "page": "5/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 343105.4015459167,
+        "page": "6/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 343106.9858817917,
+        "page": "7/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 343108.561367375,
+        "page": "8/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 343110.1135176667,
+        "page": "9/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 343111.66951512505,
+        "page": "10/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 343113.212993375,
+        "page": "11/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 343114.7590772917,
+        "page": "12/12",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 343116.30648875004,
+        "page": "1/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 343117.82960858336,
+        "page": "2/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 343119.36027025,
+        "page": "3/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 343120.89141833334,
+        "page": "4/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 343122.434499375,
+        "page": "5/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 343123.93080800003,
+        "page": "6/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 343125.47066312504,
+        "page": "7/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 343127.01028262504,
+        "page": "8/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 343128.5615986667,
+        "page": "9/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 343130.1099867917,
+        "page": "10/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 343131.66241212504,
+        "page": "11/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 343133.21614675,
+        "page": "12/12",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 343134.76970604167,
+        "page": "1/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 343136.2932794167,
+        "page": "2/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 343137.8074250417,
+        "page": "3/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 343139.3103532917,
+        "page": "4/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 343140.8627192917,
+        "page": "5/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 343142.4152362917,
+        "page": "6/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 343143.97705275,
+        "page": "7/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 343145.51673537504,
+        "page": "8/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 343147.0715592083,
+        "page": "9/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 343148.61404354166,
+        "page": "10/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 343150.16011341667,
+        "page": "11/11",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 343151.70255595836,
+        "page": "1/10",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 343153.2286155417,
+        "page": "2/10",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 343154.76719745836,
+        "page": "3/10",
+        "chapter_title": "第14章 首杀"
+      }
+    ],
+    "stages": {
+      "coreText.document.htmlParse": {
+        "count": 6,
+        "sum_ms": 420,
+        "max_ms": 88,
+        "values_ms": [
+          88,
+          78,
+          79,
+          68,
+          55,
+          52
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 6,
+        "sum_ms": 144,
+        "max_ms": 31,
+        "values_ms": [
+          31,
+          25,
+          26,
+          25,
+          19,
+          18
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 6,
+        "sum_ms": 144,
+        "max_ms": 31,
+        "values_ms": [
+          31,
+          25,
+          26,
+          25,
+          19,
+          18
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 12,
+        "sum_ms": 1375,
+        "max_ms": 276,
+        "values_ms": [
+          0,
+          263,
+          0,
+          276,
+          0,
+          213,
+          0,
+          231,
+          0,
+          180,
+          0,
+          212
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 6,
+        "sum_ms": 593,
+        "max_ms": 125,
+        "values_ms": [
+          125,
+          102,
+          104,
+          98,
+          86,
+          78
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 8,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 4,
+        "sum_ms": 44,
+        "max_ms": 13,
+        "values_ms": [
+          11,
+          11,
+          13,
+          9
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 4,
+        "sum_ms": 151,
+        "max_ms": 41,
+        "values_ms": [
+          39,
+          40,
+          41,
+          31
+        ]
+      },
+      "chapter.network": {
+        "count": 4,
+        "sum_ms": 2346,
+        "max_ms": 1242,
+        "values_ms": [
+          633,
+          1242,
+          216,
+          255
+        ]
+      },
+      "chapter.jsNet": {
+        "count": 3,
+        "sum_ms": 12352,
+        "max_ms": 5303,
+        "values_ms": [
+          5303,
+          4584,
+          2465
+        ]
+      },
+      "chapter.parse": {
+        "count": 3,
+        "sum_ms": 12694,
+        "max_ms": 5443,
+        "values_ms": [
+          5443,
+          4700,
+          2551
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 3,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-07 23:58:45.359",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-07 23:59:04.060",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-07 23:59:22.527",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-07 23:59:39.457",
+        "from_spine": 15,
+        "to_spine": 16
+      }
+    ],
+    "verified_page_transitions": 50,
+    "invalid_page_transition_commands": [],
+    "initial_position": {
+      "chapter_number": 10,
+      "spine": 12,
+      "page": "1/13"
+    },
+    "final_position": {
+      "chapter_number": 14,
+      "spine": 16,
+      "page": "3/10"
+    },
+    "chapter_boundaries_crossed": 4,
+    "body_render_leaf_values_ms": [
+      263,
+      276,
+      213,
+      231,
+      180,
+      212
+    ],
+    "render_leaf_sum_ms": {
+      "bubbleRecognize": 23.4,
+      "bubbleKey": 6.3,
+      "mainActorHop": 7.2,
+      "imageLoad": 1232.8,
+      "bubbleTrim": 7.8,
+      "bubbleDraw": 8.7
+    },
+    "cold_load": {
+      "pid": "70070",
+      "loading": "2026-09-07T23:57:37.618000",
+      "first_real": "2026-09-07T23:57:48.823000",
+      "capture1": "2026-09-07T23:57:37.821615",
+      "capture2": "2026-09-07T23:57:49.036634",
+      "loading_to_real_s": 11.205,
+      "loading_to_first_observed_ready_upper_s": 11.418634,
+      "capture1_to_capture2_observation_gap_s": 11.215019,
+      "stages": [
+        {
+          "timestamp": "2026-09-07T23:57:38.121000",
+          "stage": "chapter.network",
+          "ms": 487
+        },
+        {
+          "timestamp": "2026-09-07T23:57:44.162000",
+          "stage": "chapter.jsNet",
+          "ms": 5910
+        },
+        {
+          "timestamp": "2026-09-07T23:57:44.206000",
+          "stage": "chapter.parse",
+          "ms": 6085
+        },
+        {
+          "timestamp": "2026-09-07T23:57:44.206000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-07T23:57:46.628000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 101
+        },
+        {
+          "timestamp": "2026-09-07T23:57:46.678000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 5,
+          "chars": 1.0
+        },
+        {
+          "timestamp": "2026-09-07T23:57:48.549000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 1871,
+          "chars": 4334.0,
+          "imageLoad": 1811.9
+        },
+        {
+          "timestamp": "2026-09-07T23:57:48.804000",
+          "stage": "coreText.fullLayout",
+          "ms": 141,
+          "chars": 4348.0
+        }
+      ]
+    }
+  },
+  "final-default-on-review-scroll": {
+    "kind": "review-scroll",
+    "pid": "70070",
+    "start_capture": 62,
+    "end_capture": 68,
+    "start_uptime": 343644.337823375,
+    "end_uptime": 343671.67119683337,
+    "event_duration_s": 27.333373458357528,
+    "start_wall": "2026-09-08T00:07:52.000338",
+    "end_wall": "2026-09-08T00:08:19.333971",
+    "drag_commands": [
+      63,
+      64,
+      65,
+      66,
+      67,
+      68
+    ],
+    "tap_capture_to_first_observed_loaded_s": 119.41587724996498,
+    "last_loading_to_first_loaded_observation_gap_s": 118.17932854167884,
+    "load_timing_caveat": "Observation gap includes orchestration; not network latency.",
+    "closed_captures": [
+      69,
+      70
+    ],
+    "closed_has_webview": false,
+    "processes": [
+      {
+        "pid": "70070",
+        "kind": "reader",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 2.3500000000000014,
+        "cpu_percent": 8.961940355423723,
+        "rss_first_mib": 734.797,
+        "rss_last_mib": 734.188,
+        "rss_max_mib": 735.578
+      },
+      {
+        "pid": "70079",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.891,
+        "rss_last_mib": 260.891,
+        "rss_max_mib": 260.891
+      },
+      {
+        "pid": "70080",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 261.125,
+        "rss_last_mib": 261.125,
+        "rss_max_mib": 261.125
+      },
+      {
+        "pid": "70081",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.891,
+        "rss_last_mib": 260.891,
+        "rss_max_mib": 260.891
+      },
+      {
+        "pid": "70082",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 260.859,
+        "rss_last_mib": 260.859,
+        "rss_max_mib": 260.859
+      },
+      {
+        "pid": "70084",
+        "kind": "webkit_network",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.16000000000000003,
+        "cpu_percent": 0.610174662496934,
+        "rss_first_mib": 153.188,
+        "rss_last_mib": 153.953,
+        "rss_max_mib": 153.953
+      },
+      {
+        "pid": "70105",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 286.516,
+        "rss_last_mib": 286.406,
+        "rss_max_mib": 286.516
+      },
+      {
+        "pid": "70106",
+        "kind": "webkit_gpu",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.8199999999999998,
+        "cpu_percent": 3.1271451452967858,
+        "rss_first_mib": 175.328,
+        "rss_last_mib": 177.5,
+        "rss_max_mib": 183.031
+      },
+      {
+        "pid": "70107",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 264.109,
+        "rss_last_mib": 264.109,
+        "rss_max_mib": 264.109
+      },
+      {
+        "pid": "70108",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 262.266,
+        "rss_last_mib": 262.266,
+        "rss_max_mib": 262.266
+      },
+      {
+        "pid": "70109",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 261.969,
+        "rss_last_mib": 261.969,
+        "rss_max_mib": 261.969
+      },
+      {
+        "pid": "71039",
+        "kind": "webcontent",
+        "samples": 27,
+        "sample_duration_s": 26.222000000008848,
+        "cpu_seconds": 3.42,
+        "cpu_percent": 13.042483410871963,
+        "rss_first_mib": 366.953,
+        "rss_last_mib": 443.922,
+        "rss_max_mib": 443.922
+      }
+    ],
+    "after_close_windows": [
+      {
+        "start_capture": 70,
+        "end_capture": 71,
+        "event_duration_s": 81.57905033329735,
+        "review_pid_samples": 0,
+        "processes": [
+          {
+            "pid": "70070",
+            "kind": "reader",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.7999999999999972,
+            "cpu_percent": 0.9899397374181902
+          },
+          {
+            "pid": "70079",
+            "kind": "webcontent",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70080",
+            "kind": "webcontent",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70081",
+            "kind": "webcontent",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70082",
+            "kind": "webcontent",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70084",
+            "kind": "webkit_network",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.020000000000000018,
+            "cpu_percent": 0.024748493435454866
+          },
+          {
+            "pid": "70105",
+            "kind": "webcontent",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70106",
+            "kind": "webkit_gpu",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70107",
+            "kind": "webcontent",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70108",
+            "kind": "webcontent",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70109",
+            "kind": "webcontent",
+            "samples": 81,
+            "sample_duration_s": 80.81300000002375,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          }
+        ]
+      },
+      {
+        "start_capture": 71,
+        "end_capture": 81,
+        "event_duration_s": 140.88268820836674,
+        "review_pid_samples": 0,
+        "processes": [
+          {
+            "pid": "70070",
+            "kind": "reader",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 7.480000000000004,
+            "cpu_percent": 5.366200113350094
+          },
+          {
+            "pid": "70079",
+            "kind": "webcontent",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70080",
+            "kind": "webcontent",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70081",
+            "kind": "webcontent",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70082",
+            "kind": "webcontent",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70084",
+            "kind": "webkit_network",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70105",
+            "kind": "webcontent",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70106",
+            "kind": "webkit_gpu",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70107",
+            "kind": "webcontent",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70108",
+            "kind": "webcontent",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          },
+          {
+            "pid": "70109",
+            "kind": "webcontent",
+            "samples": 139,
+            "sample_duration_s": 139.39100000000326,
+            "cpu_seconds": 0.0,
+            "cpu_percent": 0.0
+          }
+        ]
+      }
+    ],
+    "review_process_last_sample": {
+      "utc": "2026-09-07T16:10:20.789290+00:00",
+      "monotonic_s": "343793.059",
+      "scenario": "final-default-on-review-scroll",
+      "pid": "71039",
+      "kind": "webcontent",
+      "cpu_ps_percent": "1.5",
+      "cpu_total_s": "14.950",
+      "rss_mib": "470.625"
+    }
+  },
+  "final-jianghu-off-continuous": {
+    "label": "final-jianghu-off-continuous",
+    "pid": "72190",
+    "start": "2026-09-08T00:18:16.068106",
+    "end": "2026-09-08T00:19:33.327222",
+    "event_duration_s": 77.25911566696595,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.0007364749908447266,
+    "event_file": "/tmp/yuedu-reader-profiling/final-jianghu-off-continuous-events.json",
+    "processes": [
+      {
+        "pid": "72190",
+        "kind": "reader",
+        "samples": 77,
+        "sample_duration_s": 76.4440000000177,
+        "cpu_seconds": 22.6,
+        "cpu_percent": 29.56412537281509,
+        "rss_first_mib": 768.266,
+        "rss_last_mib": 681.172,
+        "rss_max_mib": 802.094
+      },
+      {
+        "pid": "72197",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.4440000000177,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.453,
+        "rss_last_mib": 257.281,
+        "rss_max_mib": 278.453
+      },
+      {
+        "pid": "72198",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.4440000000177,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.469,
+        "rss_last_mib": 257.312,
+        "rss_max_mib": 278.469
+      },
+      {
+        "pid": "72199",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.4440000000177,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.656,
+        "rss_last_mib": 257.469,
+        "rss_max_mib": 278.656
+      },
+      {
+        "pid": "72200",
+        "kind": "webcontent",
+        "samples": 77,
+        "sample_duration_s": 76.4440000000177,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.406,
+        "rss_last_mib": 257.297,
+        "rss_max_mib": 278.406
+      },
+      {
+        "pid": "72202",
+        "kind": "webkit_network",
+        "samples": 77,
+        "sample_duration_s": 76.4440000000177,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 119.375,
+        "rss_last_mib": 115.0,
+        "rss_max_mib": 119.375
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 344269.0234935,
+        "page": "2/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 344270.60921150004,
+        "page": "3/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 344272.189743375,
+        "page": "4/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 344273.77601025003,
+        "page": "5/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 344275.3589583334,
+        "page": "6/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 344276.91789391666,
+        "page": "7/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 344278.4947422917,
+        "page": "8/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 344280.07986625005,
+        "page": "9/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 344281.66199700005,
+        "page": "10/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 344283.24380450003,
+        "page": "11/11",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 344284.8293053334,
+        "page": "1/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 344286.43946537504,
+        "page": "2/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 344288.11425345833,
+        "page": "3/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 344289.6974071667,
+        "page": "4/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 344291.2813200417,
+        "page": "5/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 344292.8616447084,
+        "page": "6/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 344294.44024020835,
+        "page": "7/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 344296.01410525,
+        "page": "8/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 344297.57704970834,
+        "page": "9/9",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 344299.14117458335,
+        "page": "1/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 344300.71085825004,
+        "page": "2/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 344302.25929762505,
+        "page": "3/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 344303.83799383335,
+        "page": "4/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 344305.3980387084,
+        "page": "5/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 344306.9539044584,
+        "page": "6/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 344308.5125485417,
+        "page": "7/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 344310.06832350005,
+        "page": "8/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 344311.61394016666,
+        "page": "9/9",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 344313.177574875,
+        "page": "1/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 344314.733597,
+        "page": "2/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 344316.2922497084,
+        "page": "3/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 344317.8157089167,
+        "page": "4/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 344319.37665075,
+        "page": "5/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 344320.9288382917,
+        "page": "6/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 344322.48194637505,
+        "page": "7/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 344324.02265808336,
+        "page": "8/8",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 344325.5652470417,
+        "page": "1/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 344327.11608787504,
+        "page": "2/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 344328.6723640417,
+        "page": "3/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 344330.22283675004,
+        "page": "4/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 344331.75187854166,
+        "page": "5/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 344333.29396541667,
+        "page": "6/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 344334.823251625,
+        "page": "7/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 344336.37198,
+        "page": "8/8",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 344337.9122464167,
+        "page": "1/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 344339.45422658336,
+        "page": "2/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 344341.00121841667,
+        "page": "3/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 344342.554738625,
+        "page": "4/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 344344.09522275004,
+        "page": "5/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 344345.64746125,
+        "page": "6/8",
+        "chapter_title": "第15章 风雪中的刀光"
+      }
+    ],
+    "stages": {
+      "coreText.document.htmlParse": {
+        "count": 7,
+        "sum_ms": 12,
+        "max_ms": 2,
+        "values_ms": [
+          2,
+          2,
+          2,
+          2,
+          1,
+          2,
+          1
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 7,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 7,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 7,
+        "sum_ms": 47,
+        "max_ms": 9,
+        "values_ms": [
+          9,
+          9,
+          7,
+          8,
+          5,
+          5,
+          4
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 7,
+        "sum_ms": 48,
+        "max_ms": 9,
+        "values_ms": [
+          9,
+          9,
+          7,
+          8,
+          5,
+          5,
+          5
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 7,
+        "sum_ms": 83,
+        "max_ms": 14,
+        "values_ms": [
+          14,
+          13,
+          13,
+          14,
+          10,
+          10,
+          9
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 7,
+        "sum_ms": 21,
+        "max_ms": 4,
+        "values_ms": [
+          3,
+          3,
+          4,
+          3,
+          3,
+          3,
+          2
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 10,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 5,
+        "sum_ms": 12,
+        "max_ms": 3,
+        "values_ms": [
+          2,
+          3,
+          2,
+          2,
+          3
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 5,
+        "sum_ms": 31,
+        "max_ms": 7,
+        "values_ms": [
+          7,
+          7,
+          5,
+          6,
+          6
+        ]
+      },
+      "chapter.network": {
+        "count": 5,
+        "sum_ms": 2502,
+        "max_ms": 1379,
+        "values_ms": [
+          1379,
+          476,
+          363,
+          200,
+          84
+        ]
+      },
+      "chapter.parse": {
+        "count": 5,
+        "sum_ms": 86,
+        "max_ms": 36,
+        "values_ms": [
+          10,
+          36,
+          13,
+          10,
+          17
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 5,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 7,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 7,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-08 00:18:32.624",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-08 00:18:46.924",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-08 00:19:00.940",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-08 00:19:13.392",
+        "from_spine": 15,
+        "to_spine": 16
+      },
+      {
+        "time": "2026-09-08 00:19:25.724",
+        "from_spine": 16,
+        "to_spine": 17
+      }
+    ],
+    "verified_page_transitions": 50,
+    "invalid_page_transition_commands": [],
+    "initial_position": {
+      "chapter_number": 10,
+      "spine": 12,
+      "page": "1/11"
+    },
+    "final_position": {
+      "chapter_number": 15,
+      "spine": 17,
+      "page": "6/8"
+    },
+    "chapter_boundaries_crossed": 5,
+    "cold_load": {
+      "pid": "72190",
+      "loading": "2026-09-08T00:17:14.318000",
+      "first_real": "2026-09-08T00:17:15.043000",
+      "capture1": "2026-09-08T00:17:14.803422",
+      "capture2": "2026-09-08T00:17:17.109729",
+      "loading_to_real_s": 0.725,
+      "loading_to_first_observed_ready_upper_s": 2.791729,
+      "capture1_to_capture2_observation_gap_s": 2.306307,
+      "stages": [
+        {
+          "timestamp": "2026-09-08T00:17:14.745000",
+          "stage": "chapter.network",
+          "ms": 280
+        },
+        {
+          "timestamp": "2026-09-08T00:17:14.757000",
+          "stage": "chapter.parse",
+          "ms": 12
+        },
+        {
+          "timestamp": "2026-09-08T00:17:14.757000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-08T00:17:14.933000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 2
+        },
+        {
+          "timestamp": "2026-09-08T00:17:14.960000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 17,
+          "chars": 4201.0
+        },
+        {
+          "timestamp": "2026-09-08T00:17:15.041000",
+          "stage": "coreText.fullLayout",
+          "ms": 5,
+          "chars": 4213.0
+        }
+      ]
+    }
+  },
+  "final-jianghu-on-continuous": {
+    "label": "final-jianghu-on-continuous",
+    "pid": "73705",
+    "start": "2026-09-08T00:28:28.836696",
+    "end": "2026-09-08T00:29:47.355357",
+    "event_duration_s": 78.51866100000916,
+    "requested_taps": 50,
+    "clock_offset_spread_s": 0.0007550716400146484,
+    "event_file": "/tmp/yuedu-reader-profiling/final-jianghu-on-continuous-events.json",
+    "processes": [
+      {
+        "pid": "73705",
+        "kind": "reader",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 31.1,
+        "cpu_percent": 40.04687157960567,
+        "rss_first_mib": 767.594,
+        "rss_last_mib": 877.609,
+        "rss_max_mib": 890.594
+      },
+      {
+        "pid": "73741",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.297,
+        "rss_last_mib": 278.297,
+        "rss_max_mib": 278.297
+      },
+      {
+        "pid": "73743",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.672,
+        "rss_last_mib": 278.672,
+        "rss_max_mib": 278.672
+      },
+      {
+        "pid": "73744",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.141,
+        "rss_last_mib": 278.141,
+        "rss_max_mib": 278.141
+      },
+      {
+        "pid": "73746",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.344,
+        "rss_last_mib": 278.344,
+        "rss_max_mib": 278.344
+      },
+      {
+        "pid": "73750",
+        "kind": "webkit_network",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.02999999999999997,
+        "cpu_percent": 0.03863042274560029,
+        "rss_first_mib": 119.422,
+        "rss_last_mib": 119.422,
+        "rss_max_mib": 119.453
+      },
+      {
+        "pid": "73783",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.16000000000000014,
+        "cpu_percent": 0.20602892130986858,
+        "rss_first_mib": 294.5,
+        "rss_last_mib": 297.5,
+        "rss_max_mib": 297.562
+      },
+      {
+        "pid": "73784",
+        "kind": "webkit_gpu",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.14000000000000007,
+        "cpu_percent": 0.18027530614613493,
+        "rss_first_mib": 153.312,
+        "rss_last_mib": 161.562,
+        "rss_max_mib": 161.688
+      },
+      {
+        "pid": "73785",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 279.125,
+        "rss_last_mib": 279.109,
+        "rss_max_mib": 279.125
+      },
+      {
+        "pid": "73786",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 279.078,
+        "rss_last_mib": 279.062,
+        "rss_max_mib": 279.078
+      },
+      {
+        "pid": "73787",
+        "kind": "webcontent",
+        "samples": 78,
+        "sample_duration_s": 77.6589999999851,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.859,
+        "rss_last_mib": 278.844,
+        "rss_max_mib": 278.859
+      }
+    ],
+    "events": [
+      {
+        "command": 3,
+        "action": "tap",
+        "uptime": 344881.72510900005,
+        "page": "2/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 4,
+        "action": "tap",
+        "uptime": 344883.3078802917,
+        "page": "3/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 5,
+        "action": "tap",
+        "uptime": 344884.90283625,
+        "page": "4/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 6,
+        "action": "tap",
+        "uptime": 344886.50666687504,
+        "page": "5/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 7,
+        "action": "tap",
+        "uptime": 344888.11025495833,
+        "page": "6/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 8,
+        "action": "tap",
+        "uptime": 344889.70513508335,
+        "page": "7/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 9,
+        "action": "tap",
+        "uptime": 344891.273527375,
+        "page": "8/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 10,
+        "action": "tap",
+        "uptime": 344892.87088575005,
+        "page": "9/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 11,
+        "action": "tap",
+        "uptime": 344894.46151733334,
+        "page": "10/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 12,
+        "action": "tap",
+        "uptime": 344896.027962375,
+        "page": "11/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 13,
+        "action": "tap",
+        "uptime": 344897.622025125,
+        "page": "12/12",
+        "chapter_title": "第10章 看不见的地带"
+      },
+      {
+        "command": 14,
+        "action": "tap",
+        "uptime": 344899.2135697917,
+        "page": "1/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 15,
+        "action": "tap",
+        "uptime": 344900.79255062505,
+        "page": "2/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 16,
+        "action": "tap",
+        "uptime": 344902.38973645837,
+        "page": "3/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 17,
+        "action": "tap",
+        "uptime": 344903.95102516667,
+        "page": "4/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 18,
+        "action": "tap",
+        "uptime": 344905.52988437505,
+        "page": "5/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 19,
+        "action": "tap",
+        "uptime": 344907.1231225417,
+        "page": "6/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 20,
+        "action": "tap",
+        "uptime": 344908.72072287503,
+        "page": "7/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 21,
+        "action": "tap",
+        "uptime": 344910.330757625,
+        "page": "8/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 22,
+        "action": "tap",
+        "uptime": 344911.9321057917,
+        "page": "9/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 23,
+        "action": "tap",
+        "uptime": 344913.4898621667,
+        "page": "10/10",
+        "chapter_title": "第11章 堕落"
+      },
+      {
+        "command": 24,
+        "action": "tap",
+        "uptime": 344915.0977735417,
+        "page": "1/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 25,
+        "action": "tap",
+        "uptime": 344916.6825545417,
+        "page": "2/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 26,
+        "action": "tap",
+        "uptime": 344918.2766876667,
+        "page": "3/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 27,
+        "action": "tap",
+        "uptime": 344919.87309479166,
+        "page": "4/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 28,
+        "action": "tap",
+        "uptime": 344921.4539925417,
+        "page": "5/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 29,
+        "action": "tap",
+        "uptime": 344923.0545233334,
+        "page": "6/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 30,
+        "action": "tap",
+        "uptime": 344924.6569674167,
+        "page": "7/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 31,
+        "action": "tap",
+        "uptime": 344926.244308375,
+        "page": "8/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 32,
+        "action": "tap",
+        "uptime": 344927.8521362083,
+        "page": "9/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 33,
+        "action": "tap",
+        "uptime": 344929.42466012505,
+        "page": "10/10",
+        "chapter_title": "第12章 银藤镇"
+      },
+      {
+        "command": 34,
+        "action": "tap",
+        "uptime": 344931.0258805417,
+        "page": "1/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 35,
+        "action": "tap",
+        "uptime": 344932.60273208335,
+        "page": "2/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 36,
+        "action": "tap",
+        "uptime": 344934.20184925,
+        "page": "3/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 37,
+        "action": "tap",
+        "uptime": 344935.7966906667,
+        "page": "4/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 38,
+        "action": "tap",
+        "uptime": 344937.42258766666,
+        "page": "5/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 39,
+        "action": "tap",
+        "uptime": 344939.023244375,
+        "page": "6/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 40,
+        "action": "tap",
+        "uptime": 344940.624524375,
+        "page": "7/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 41,
+        "action": "tap",
+        "uptime": 344942.220727875,
+        "page": "8/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 42,
+        "action": "tap",
+        "uptime": 344943.821315,
+        "page": "9/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 43,
+        "action": "tap",
+        "uptime": 344945.4014024584,
+        "page": "10/10",
+        "chapter_title": "第13章 热血不在"
+      },
+      {
+        "command": 44,
+        "action": "tap",
+        "uptime": 344946.99350437504,
+        "page": "1/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 45,
+        "action": "tap",
+        "uptime": 344948.55441520835,
+        "page": "2/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 46,
+        "action": "tap",
+        "uptime": 344950.15531858336,
+        "page": "3/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 47,
+        "action": "tap",
+        "uptime": 344951.7531465417,
+        "page": "4/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 48,
+        "action": "tap",
+        "uptime": 344953.33096325,
+        "page": "5/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 49,
+        "action": "tap",
+        "uptime": 344954.92602787504,
+        "page": "6/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 50,
+        "action": "tap",
+        "uptime": 344956.49613879167,
+        "page": "7/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 51,
+        "action": "tap",
+        "uptime": 344958.08645241667,
+        "page": "8/9",
+        "chapter_title": "第14章 首杀"
+      },
+      {
+        "command": 52,
+        "action": "tap",
+        "uptime": 344959.66892716667,
+        "page": "9/9",
+        "chapter_title": "第14章 首杀"
+      }
+    ],
+    "stages": {
+      "coreText.document.htmlParse": {
+        "count": 6,
+        "sum_ms": 425,
+        "max_ms": 91,
+        "values_ms": [
+          91,
+          76,
+          77,
+          70,
+          58,
+          53
+        ]
+      },
+      "coreText.document.cssCollect": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssParse": {
+        "count": 6,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.document.cssMatch": {
+        "count": 6,
+        "sum_ms": 143,
+        "max_ms": 29,
+        "values_ms": [
+          29,
+          26,
+          26,
+          24,
+          20,
+          18
+        ]
+      },
+      "coreText.document.astBuild": {
+        "count": 6,
+        "sum_ms": 144,
+        "max_ms": 30,
+        "values_ms": [
+          30,
+          26,
+          26,
+          24,
+          20,
+          18
+        ]
+      },
+      "coreText.document.renderLeaves": {
+        "count": 12,
+        "sum_ms": 1536,
+        "max_ms": 376,
+        "values_ms": [
+          0,
+          376,
+          0,
+          286,
+          0,
+          267,
+          0,
+          236,
+          0,
+          203,
+          0,
+          168
+        ]
+      },
+      "coreText.fullLayout": {
+        "count": 6,
+        "sum_ms": 564,
+        "max_ms": 112,
+        "values_ms": [
+          112,
+          99,
+          101,
+          97,
+          78,
+          77
+        ]
+      },
+      "reader.open.deferredPreload": {
+        "count": 8,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "coreText.contentSize": {
+        "count": 4,
+        "sum_ms": 39,
+        "max_ms": 11,
+        "values_ms": [
+          11,
+          10,
+          10,
+          8
+        ]
+      },
+      "reader.chapter.available": {
+        "count": 4,
+        "sum_ms": 154,
+        "max_ms": 42,
+        "values_ms": [
+          41,
+          42,
+          38,
+          33
+        ]
+      },
+      "chapter.network": {
+        "count": 4,
+        "sum_ms": 1753,
+        "max_ms": 592,
+        "values_ms": [
+          404,
+          570,
+          592,
+          187
+        ]
+      },
+      "chapter.jsNet": {
+        "count": 4,
+        "sum_ms": 11992,
+        "max_ms": 3496,
+        "values_ms": [
+          2746,
+          3338,
+          3496,
+          2412
+        ]
+      },
+      "chapter.parse": {
+        "count": 4,
+        "sum_ms": 12386,
+        "max_ms": 3607,
+        "values_ms": [
+          2863,
+          3423,
+          3607,
+          2493
+        ]
+      },
+      "chapter.nextContent": {
+        "count": 4,
+        "sum_ms": 0,
+        "max_ms": 0,
+        "values_ms": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "preload_begin": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "preload_done": {
+      "count": 6,
+      "max_per_second": 1,
+      "same_spine_max_per_second": 1,
+      "missing_destination_after_done": 0
+    },
+    "anchor_transitions": [
+      {
+        "time": "2026-09-08 00:28:46.996",
+        "from_spine": 12,
+        "to_spine": 13
+      },
+      {
+        "time": "2026-09-08 00:29:02.879",
+        "from_spine": 13,
+        "to_spine": 14
+      },
+      {
+        "time": "2026-09-08 00:29:18.796",
+        "from_spine": 14,
+        "to_spine": 15
+      },
+      {
+        "time": "2026-09-08 00:29:34.832",
+        "from_spine": 15,
+        "to_spine": 16
+      }
+    ],
+    "verified_page_transitions": 50,
+    "invalid_page_transition_commands": [],
+    "initial_position": {
+      "chapter_number": 10,
+      "spine": 12,
+      "page": "1/12"
+    },
+    "final_position": {
+      "chapter_number": 14,
+      "spine": 16,
+      "page": "9/9"
+    },
+    "chapter_boundaries_crossed": 4,
+    "body_render_leaf_values_ms": [
+      376,
+      286,
+      267,
+      236,
+      203,
+      168
+    ],
+    "render_leaf_sum_ms": {
+      "bubbleRecognize": 33.5,
+      "bubbleKey": 7.4,
+      "mainActorHop": 32.3,
+      "imageLoad": 1239.7999999999997,
+      "bubbleDraw": 26.400000000000002,
+      "bubbleTrim": 14.8,
+      "bubbleColorTemplateCheck": 2.9,
+      "bubbleTemplateSource": 0.0
+    },
+    "cold_load": {
+      "pid": "73705",
+      "loading": "2026-09-08T00:28:07.119000",
+      "first_real": "2026-09-08T00:28:15.837000",
+      "capture1": "2026-09-08T00:28:07.542039",
+      "capture2": "2026-09-08T00:28:16.858797",
+      "loading_to_real_s": 8.718,
+      "loading_to_first_observed_ready_upper_s": 9.739797,
+      "capture1_to_capture2_observation_gap_s": 9.316758,
+      "stages": [
+        {
+          "timestamp": "2026-09-08T00:28:07.410000",
+          "stage": "chapter.network",
+          "ms": 214
+        },
+        {
+          "timestamp": "2026-09-08T00:28:11.194000",
+          "stage": "chapter.jsNet",
+          "ms": 3667
+        },
+        {
+          "timestamp": "2026-09-08T00:28:11.243000",
+          "stage": "chapter.parse",
+          "ms": 3832
+        },
+        {
+          "timestamp": "2026-09-08T00:28:11.243000",
+          "stage": "chapter.nextContent",
+          "ms": 0
+        },
+        {
+          "timestamp": "2026-09-08T00:28:13.737000",
+          "stage": "coreText.document.htmlParse",
+          "ms": 101
+        },
+        {
+          "timestamp": "2026-09-08T00:28:13.800000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 17,
+          "chars": 1.0
+        },
+        {
+          "timestamp": "2026-09-08T00:28:15.571000",
+          "stage": "coreText.document.renderLeaves",
+          "ms": 1771,
+          "chars": 4334.0,
+          "imageLoad": 1664.7
+        },
+        {
+          "timestamp": "2026-09-08T00:28:15.822000",
+          "stage": "coreText.fullLayout",
+          "ms": 135,
+          "chars": 4348.0
+        }
+      ]
+    },
+    "reverse_jump_after_stress": {
+      "command": 56,
+      "from_spine": 16,
+      "to_spine": 12,
+      "anchor_time": "2026-09-08T00:30:37.862",
+      "preload_begin": "2026-09-08T00:30:38.005",
+      "preload_done": "2026-09-08T00:30:38.016",
+      "first_real": "2026-09-08T00:30:38.025",
+      "layouts_before": [
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "layouts_after_target": [
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "layouts_after_neighbor": [
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "target_retained": true
+    }
+  },
+  "final-jianghu-on-review-scroll": {
+    "kind": "review-scroll",
+    "pid": "73705",
+    "review_pid": "74233",
+    "window_definition": "command62 write through capture67 ready: all six drag commands",
+    "start_uptime": 345145.89898063743,
+    "end_uptime": 345172.64050175,
+    "event_duration_s": 26.741521112562623,
+    "drag_commands": [
+      62,
+      63,
+      64,
+      65,
+      66,
+      67
+    ],
+    "processes": [
+      {
+        "pid": "73705",
+        "kind": "reader",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 2.0999999999999943,
+        "cpu_percent": 8.32045643646689,
+        "rss_first_mib": 893.781,
+        "rss_last_mib": 894.375,
+        "rss_max_mib": 924.469
+      },
+      {
+        "pid": "73741",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.016,
+        "rss_last_mib": 278.016,
+        "rss_max_mib": 278.016
+      },
+      {
+        "pid": "73743",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.391,
+        "rss_last_mib": 278.391,
+        "rss_max_mib": 278.391
+      },
+      {
+        "pid": "73744",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 277.859,
+        "rss_last_mib": 277.859,
+        "rss_max_mib": 277.859
+      },
+      {
+        "pid": "73746",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.062,
+        "rss_last_mib": 278.062,
+        "rss_max_mib": 278.062
+      },
+      {
+        "pid": "73750",
+        "kind": "webkit_network",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.06000000000000005,
+        "cpu_percent": 0.23772732675619768,
+        "rss_first_mib": 146.938,
+        "rss_last_mib": 147.906,
+        "rss_max_mib": 147.906
+      },
+      {
+        "pid": "73783",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 297.016,
+        "rss_last_mib": 297.016,
+        "rss_max_mib": 297.016
+      },
+      {
+        "pid": "73784",
+        "kind": "webkit_gpu",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.7799999999999998,
+        "cpu_percent": 3.0904552478305667,
+        "rss_first_mib": 181.781,
+        "rss_last_mib": 184.906,
+        "rss_max_mib": 187.953
+      },
+      {
+        "pid": "73785",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.734,
+        "rss_last_mib": 278.734,
+        "rss_max_mib": 278.734
+      },
+      {
+        "pid": "73786",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.688,
+        "rss_last_mib": 278.688,
+        "rss_max_mib": 278.688
+      },
+      {
+        "pid": "73787",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 0.0,
+        "cpu_percent": 0.0,
+        "rss_first_mib": 278.469,
+        "rss_last_mib": 278.469,
+        "rss_max_mib": 278.469
+      },
+      {
+        "pid": "74233",
+        "kind": "webcontent",
+        "samples": 26,
+        "sample_duration_s": 25.239000000001397,
+        "cpu_seconds": 3.2,
+        "cpu_percent": 12.678790760330532,
+        "rss_first_mib": 367.531,
+        "rss_last_mib": 463.469,
+        "rss_max_mib": 463.469
+      }
+    ],
+    "first_real_data_capture": 62,
+    "first_real_data_evidence": {
+      "total_reviews": 80,
+      "floor_labels": true
+    },
+    "last_capture_pager": "2 / 4",
+    "skeleton_capture": 61,
+    "tap_capture_to_first_real_data_observation_s": 105.3521782499738,
+    "skeleton_to_first_real_data_observation_s": 102.87604399997508,
+    "request_write_to_first_real_data_upper_s": 106.27745318412781,
+    "load_timing_caveat": "Observation bound includes a long orchestration gap; skeleton close button does not establish content completion. No timed XHR trace found in this window.",
+    "after_first_real_data_window": {
+      "start_capture": 62,
+      "end_capture": 67,
+      "event_duration_s": 22.256668083311524,
+      "processes": [
+        {
+          "pid": "73705",
+          "kind": "reader",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 1.6799999999999926,
+          "cpu_percent": 7.925275969418682,
+          "rss_first_mib": 894.312,
+          "rss_last_mib": 894.375,
+          "rss_max_mib": 924.469
+        },
+        {
+          "pid": "73741",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.016,
+          "rss_last_mib": 278.016,
+          "rss_max_mib": 278.016
+        },
+        {
+          "pid": "73743",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.391,
+          "rss_last_mib": 278.391,
+          "rss_max_mib": 278.391
+        },
+        {
+          "pid": "73744",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 277.859,
+          "rss_last_mib": 277.859,
+          "rss_max_mib": 277.859
+        },
+        {
+          "pid": "73746",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.062,
+          "rss_last_mib": 278.062,
+          "rss_max_mib": 278.062
+        },
+        {
+          "pid": "73750",
+          "kind": "webkit_network",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.06000000000000005,
+          "cpu_percent": 0.283045570336383,
+          "rss_first_mib": 146.938,
+          "rss_last_mib": 147.906,
+          "rss_max_mib": 147.906
+        },
+        {
+          "pid": "73783",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 297.016,
+          "rss_last_mib": 297.016,
+          "rss_max_mib": 297.016
+        },
+        {
+          "pid": "73784",
+          "kind": "webkit_gpu",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.5899999999999999,
+          "cpu_percent": 2.7832814416410967,
+          "rss_first_mib": 187.531,
+          "rss_last_mib": 184.906,
+          "rss_max_mib": 187.953
+        },
+        {
+          "pid": "73785",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.734,
+          "rss_last_mib": 278.734,
+          "rss_max_mib": 278.734
+        },
+        {
+          "pid": "73786",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.688,
+          "rss_last_mib": 278.688,
+          "rss_max_mib": 278.688
+        },
+        {
+          "pid": "73787",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.469,
+          "rss_last_mib": 278.469,
+          "rss_max_mib": 278.469
+        },
+        {
+          "pid": "74233",
+          "kind": "webcontent",
+          "samples": 22,
+          "sample_duration_s": 21.198000000033062,
+          "cpu_seconds": 2.62,
+          "cpu_percent": 12.35965657135538,
+          "rss_first_mib": 397.125,
+          "rss_last_mib": 463.469,
+          "rss_max_mib": 463.469
+        }
+      ]
+    },
+    "closed_captures": [
+      68,
+      69
+    ],
+    "after_close_first60": {
+      "start_capture": 69,
+      "event_duration_s": 60,
+      "processes": [
+        {
+          "pid": "73705",
+          "kind": "reader",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.5500000000000114,
+          "cpu_percent": 0.9387587901961431,
+          "rss_first_mib": 894.703,
+          "rss_last_mib": 924.453,
+          "rss_max_mib": 924.641
+        },
+        {
+          "pid": "73741",
+          "kind": "webcontent",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.016,
+          "rss_last_mib": 278.016,
+          "rss_max_mib": 278.016
+        },
+        {
+          "pid": "73743",
+          "kind": "webcontent",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.391,
+          "rss_last_mib": 278.391,
+          "rss_max_mib": 278.391
+        },
+        {
+          "pid": "73744",
+          "kind": "webcontent",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 277.859,
+          "rss_last_mib": 277.859,
+          "rss_max_mib": 277.859
+        },
+        {
+          "pid": "73746",
+          "kind": "webcontent",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.062,
+          "rss_last_mib": 278.062,
+          "rss_max_mib": 278.062
+        },
+        {
+          "pid": "73750",
+          "kind": "webkit_network",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 147.844,
+          "rss_last_mib": 147.906,
+          "rss_max_mib": 147.922
+        },
+        {
+          "pid": "73783",
+          "kind": "webcontent",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 297.016,
+          "rss_last_mib": 297.016,
+          "rss_max_mib": 297.016
+        },
+        {
+          "pid": "73784",
+          "kind": "webkit_gpu",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 178.844,
+          "rss_last_mib": 178.672,
+          "rss_max_mib": 178.844
+        },
+        {
+          "pid": "73785",
+          "kind": "webcontent",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.734,
+          "rss_last_mib": 278.734,
+          "rss_max_mib": 278.734
+        },
+        {
+          "pid": "73786",
+          "kind": "webcontent",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.688,
+          "rss_last_mib": 278.688,
+          "rss_max_mib": 278.688
+        },
+        {
+          "pid": "73787",
+          "kind": "webcontent",
+          "samples": 59,
+          "sample_duration_s": 58.587999999988824,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.469,
+          "rss_last_mib": 278.469,
+          "rss_max_mib": 278.469
+        }
+      ],
+      "review_pid_samples": 0
+    },
+    "review_process_last_sample": {
+      "utc": "2026-09-07T16:33:46.999663+00:00",
+      "monotonic_s": "345199.265",
+      "scenario": "final-jianghu-on-review-scroll",
+      "pid": "74233",
+      "kind": "webcontent",
+      "cpu_ps_percent": "1.6",
+      "cpu_total_s": "8.810",
+      "rss_mib": "468.078"
+    },
+    "after_close_complete_idle": {
+      "start_capture": 69,
+      "end_capture": 70,
+      "event_duration_s": 109.27649249997921,
+      "review_pid_samples": 0,
+      "processes": [
+        {
+          "pid": "73705",
+          "kind": "reader",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 1.0100000000000051,
+          "cpu_percent": 0.9346226807939512,
+          "rss_max_mib": 924.641
+        },
+        {
+          "pid": "73741",
+          "kind": "webcontent",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 278.016
+        },
+        {
+          "pid": "73743",
+          "kind": "webcontent",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 278.391
+        },
+        {
+          "pid": "73744",
+          "kind": "webcontent",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 277.859
+        },
+        {
+          "pid": "73746",
+          "kind": "webcontent",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 278.062
+        },
+        {
+          "pid": "73750",
+          "kind": "webkit_network",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 147.922
+        },
+        {
+          "pid": "73783",
+          "kind": "webcontent",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 297.016
+        },
+        {
+          "pid": "73784",
+          "kind": "webkit_gpu",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 178.844
+        },
+        {
+          "pid": "73785",
+          "kind": "webcontent",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 278.734
+        },
+        {
+          "pid": "73786",
+          "kind": "webcontent",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 278.688
+        },
+        {
+          "pid": "73787",
+          "kind": "webcontent",
+          "samples": 108,
+          "sample_duration_s": 108.06500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_max_mib": 278.469
+        }
+      ],
+      "idle_stack_sample": {
+        "path": "/tmp/yuedu-reader-profiling/final-jianghu-on-idle.sample.txt",
+        "main_thread_samples": 3174,
+        "main_mach_msg_trap_samples": 3149,
+        "main_wait_fraction": 0.9921235034656585,
+        "physical_footprint_mb": 199.8
+      }
+    }
+  }
+}

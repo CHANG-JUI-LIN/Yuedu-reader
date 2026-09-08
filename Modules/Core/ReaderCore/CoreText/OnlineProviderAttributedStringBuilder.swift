@@ -283,7 +283,20 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
               let payload = try? await provider.contentForChapter(index: index)
         else { return 0 }
         cacheSourceHref(from: payload)
-        return payload.body.byteCount
+        return SourcePerfTrace.span("coreText.contentSize", "spine=\(index)") {
+            switch payload.body {
+            case .plainText(let text):
+                return text.utf8.count
+            case .html:
+                // This feeds reading progress/page estimates, not a download byte count.
+                // Source plainText can still contain inline <img> review markers; strip
+                // those attributes so base64 artwork cannot become thousands of pages
+                // as soon as the chapter's actual layout leaves the bounded cache.
+                return ReaderHTMLUtilities.displayText(
+                    fromHTMLFragment: payload.plainText, preservingLineBreaks: true
+                ).utf8.count
+            }
+        }
     }
 
     func cssResourceHrefs() -> [String] {

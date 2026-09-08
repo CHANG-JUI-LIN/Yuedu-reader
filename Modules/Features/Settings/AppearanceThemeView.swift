@@ -28,6 +28,11 @@ struct AppearanceThemeView: View {
     @State private var showThemeImporter = false
     @State private var showResetPageBackgroundConfirm = false
     @State private var screenAlert: ThemeScreenAlert?
+    /// A parsed QiReader pack waiting on the user's answer about replacing their
+    /// hand-placed header/footer widgets. Held here rather than applied immediately so
+    /// the question is asked *after* the file parsed and *before* anything lands — the
+    /// same contract 匯入閱讀設定 uses.
+    @State private var pendingQiTheme: PendingQiThemeImport?
     /// Appearance slot the theme grid edits, once the user picks one by hand.
     /// nil means "whatever the device is showing", which is also the only
     /// behaviour available while 單獨設定深色主題 is off.
@@ -91,7 +96,6 @@ struct AppearanceThemeView: View {
         .scrollContentBackground(.hidden)
         .contentMargins(.bottom, DSSpacing.xxl * 2, for: .scrollContent)
         .themedAppSurface(for: .settings)
-        .font(DSFont.body)
         .navigationTitle(localized("外觀主題"))
         .toolbarTitleDisplayMode(.inline)
         .tint(activeTheme.isClassic ? nil : activeTheme.accentColor)
@@ -157,6 +161,7 @@ struct AppearanceThemeView: View {
         } footer: {
             if !subscriptionStore.hasAccess(.readerThemePacks) {
                 Text(localized("自訂應用配色、閱讀配色與頁面背景需開通會員。"))
+                    .dsSectionFooter()
             }
         }
         .interfaceSectionSurface()
@@ -195,6 +200,7 @@ struct AppearanceThemeView: View {
                         : "關閉時，切換此外觀主題不會影響閱讀主題。"
                 ))
             }
+            .dsSectionFooter()
         }
         .interfaceSectionSurface()
         .animation(DSAnimation.standard, value: settings.appearanceBindReaderTheme)
@@ -259,13 +265,6 @@ struct AppearanceThemeView: View {
                 Text(localized("預覽"))
             }
             .interfaceSectionSurface()
-
-            Section {
-                themeActionRows
-            } header: {
-                Text(localized("主題管理"))
-            }
-            .interfaceSectionSurface()
         } else {
             Section {
                 pageBackgroundLockedRow
@@ -274,6 +273,20 @@ struct AppearanceThemeView: View {
             }
             .interfaceSectionSurface()
         }
+
+        // Deliberately outside the Pro gate. An appearance pack — ours or a QiReader
+        // `.qitheme` — mostly carries things that are not Pro features at all: page
+        // backgrounds, tab icons, default covers, the bundled font, interface effects,
+        // reader layout, chapter title and comment bubble. Hiding the importer meant a
+        // non-Pro user handed a pack had no way to open it, and no explanation either.
+        // The custom theme a pack carries still needs Pro to take effect; `ContentView`'s
+        // `resolvedAppTheme` already downgrades it on its own, so nothing here has to.
+        Section {
+            themeActionRows
+        } header: {
+            Text(localized("主題管理"))
+        }
+        .interfaceSectionSurface()
     }
 
     private var themeSelectionCard: some View {
@@ -940,10 +953,33 @@ struct AppearanceThemeView: View {
         }
         .fileImporter(
             isPresented: $showThemeImporter,
-            allowedContentTypes: [.json, .yueduReaderStyle],
+            allowedContentTypes: [
+                .json,
+                .yueduReaderStyle,
+                UTType(filenameExtension: "qitheme") ?? .data,
+            ],
             allowsMultipleSelection: false,
             onCompletion: handleThemeImport
         )
+        .alert(
+            localized("套用匯入的頁首頁尾？"),
+            isPresented: Binding(
+                get: { pendingQiTheme != nil },
+                set: { if !$0 { pendingQiTheme = nil } }
+            ),
+            presenting: pendingQiTheme
+        ) { pending in
+            Button(localized("套用")) {
+                pendingQiTheme = nil
+                applyQiTheme(pending.theme, includeOverlayLayout: true)
+            }
+            Button(localized("略過")) {
+                pendingQiTheme = nil
+                applyQiTheme(pending.theme, includeOverlayLayout: false)
+            }
+        } message: { _ in
+            Text(localized("這會取代目前的頁首頁尾組件、位置與正文保留空間。選擇「略過」會匯入外觀包的其他部分。"))
+        }
 
         themeActionRow(titleKey: "重置為默認") {
             showResetPageBackgroundConfirm = true
@@ -1044,6 +1080,10 @@ struct AppearanceThemeView: View {
                 if didAccess { url.stopAccessingSecurityScopedResource() }
             }
             let data = try Data(contentsOf: url)
+            if QiThemeImporter.hasQiThemeExtension(url) {
+                handleQiThemeImport(data)
+                return
+            }
             Task { @MainActor in
                 do {
                     let summary = try await settings.importAppearanceCustomizationPackage(from: data)
@@ -1061,6 +1101,43 @@ struct AppearanceThemeView: View {
             showImportFailure(localized(error.messageKey))
         } catch {
             showImportFailure(localized("匯入主題失敗。"))
+        }
+    }
+
+    /// QiReader packs are a foreign archive: their manifest lives under a UUID directory,
+    /// so `ReaderStylePackage` cannot read them and they get their own parse before any of
+    /// the native routes are tried.
+    private func handleQiThemeImport(_ data: Data) {
+        Task { @MainActor in
+            do {
+                let theme = try await QiThemeImportService.load(data)
+                if theme.overlayLayout != nil {
+                    pendingQiTheme = PendingQiThemeImport(theme: theme)
+                } else {
+                    applyQiTheme(theme, includeOverlayLayout: false)
+                }
+            } catch let error as QiThemeImportError {
+                showImportFailure(error.errorDescription ?? localized("匯入主題失敗。"))
+            } catch {
+                showImportFailure(localized("匯入主題失敗。"))
+            }
+        }
+    }
+
+    private func applyQiTheme(_ theme: QiThemeImport, includeOverlayLayout: Bool) {
+        Task { @MainActor in
+            do {
+                let outcome = try await QiThemeImportService.apply(
+                    theme,
+                    includeOverlayLayout: includeOverlayLayout
+                )
+                screenAlert = ThemeScreenAlert(
+                    title: localized("導入主題"),
+                    message: outcome.localizedDescription
+                )
+            } catch {
+                showImportFailure(localized("匯入主題失敗。"))
+            }
         }
     }
 
@@ -1217,8 +1294,7 @@ private struct AppearanceReaderInterfaceView: View {
                     .foregroundStyle(DSColor.textPrimary)
             } footer: {
                 Text(localized("選擇閱讀界面的工具列與控制方式。"))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -1226,7 +1302,6 @@ private struct AppearanceReaderInterfaceView: View {
                 customizationSection(for: interface)
             }
         }
-        .font(DSFont.body)
         .scrollContentBackground(.hidden)
         .navigationTitle(localized("閱讀界面"))
         .toolbarTitleDisplayMode(.inline)
@@ -1272,8 +1347,7 @@ private struct AppearanceReaderInterfaceView: View {
             Text(localized(interface == .classic
                 ? "頂部是返回／書籤那條，底部是進度條與工具列，中間四顆圓鈕是刷新／換源／下載／聽書。強調色用在進度條和「深色」的選中狀態。未調整的部分跟隨目前的閱讀主題。"
                 : "現代的頂欄是系統玻璃，只能改圖示顏色；底部是浮動面板，書卡是點封面圓圈之後那張。未調整的部分跟隨目前的閱讀主題。"))
-                .font(DSFont.footnote)
-                .foregroundStyle(DSColor.textSecondary)
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -1537,6 +1611,7 @@ private struct AppearanceThemeCustomizationView: View {
                     }
                 } footer: {
                     Text(localized("刪除後，使用此主題的外觀會回到預設。"))
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
             } else {
@@ -1546,7 +1621,6 @@ private struct AppearanceThemeCustomizationView: View {
                     .interfaceSectionSurface()
             }
         }
-        .font(DSFont.body)
         .scrollContentBackground(.hidden)
         .background(DSColor.groupedBackground)
         // Same rule as the theme grid: the appearance being edited is the
@@ -1733,4 +1807,10 @@ private enum PageBackgroundColorSlot {
     return NavigationStack {
         AppearanceThemeCustomizationView(themeID: theme.id, initialScheme: .dark)
     }
+}
+
+/// A parsed QiReader pack held between the overlay-overwrite question and the apply.
+struct PendingQiThemeImport: Identifiable {
+    let id = UUID()
+    let theme: QiThemeImport
 }

@@ -15,16 +15,14 @@ struct AppearanceInterfaceEffectsView: View {
                     .listRowBackground(Color.clear)
             } footer: {
                 Text(localized("效果套用於底部迷你播放器與閱讀器的浮動工具列、控制欄。"))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .dsSectionFooter()
             }
 
             Section {
                 glowRow
             } footer: {
                 Text(localized("光暈從浮動元素的邊緣向外擴散，顏色跟隨主題色。"))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -40,8 +38,7 @@ struct AppearanceInterfaceEffectsView: View {
                 }
             } footer: {
                 Text(localized(frostedGlassFooterKey))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -56,13 +53,11 @@ struct AppearanceInterfaceEffectsView: View {
                     }
                 } footer: {
                     Text(localized("設定、統計、書籍詳情等頁面的卡片也改用玻璃材質，跟隨上方的透明度。系統設計建議玻璃只用於浮動控制項，因此預設關閉。"))
-                        .font(DSFont.footnote)
-                        .foregroundStyle(DSColor.textSecondary)
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
             }
         }
-        .font(DSFont.body)
         .scrollContentBackground(.hidden)
         .navigationTitle(localized("界面效果"))
         .toolbarTitleDisplayMode(.inline)

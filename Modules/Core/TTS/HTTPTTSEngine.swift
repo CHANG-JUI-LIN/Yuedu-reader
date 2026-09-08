@@ -58,6 +58,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private var activeTasks: [Int: Task<Void, Never>] = [:]
     private var audioCache: [Int: Data] = [:]
     private var chunks: [String] = []
+    private var speechChunks: [String] = []
     private var currentIndex = 0
     private var playbackToken = UUID()
     private var lastTitle = ""
@@ -115,7 +116,16 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
 
         resetPlaybackState()
-        chunks = isDirectChapterAudio ? [text] : splitText(text)
+        let ranges = isDirectChapterAudio
+            ? [TTSChunkRange(text: text, sourceRange: NSRange(location: 0, length: (text as NSString).length))]
+            : TTSPronunciationProjector.chunks(text, targetLength: targetChunkLength, hints: pronunciationHints)
+        chunks = ranges.map(\.text)
+        speechChunks = ranges.map { chunk in
+            TTSPronunciationSpeechText(
+                text: chunk.text,
+                hints: TTSPronunciationProjector.project(pronunciationHints, into: chunk.sourceRange)
+            ).text
+        }
         guard !chunks.isEmpty else {
             ttsLog("[TTS][HTTPEngine] speak aborted no chunks")
             return
@@ -349,7 +359,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             return
         }
 
-        let chunkText = chunks[index]
+        let chunkText = speechChunks[index]
         let title = lastTitle
         let rate = lastRate
         ttsLog("[TTS][HTTPEngine] provider request start index=\(index) provider=\(audioProvider.displayName) priority=\(priority) textCount=\(chunkText.count)")
@@ -699,6 +709,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         activeTasks.removeAll()
         audioCache.removeAll()
         chunks.removeAll()
+        speechChunks.removeAll()
         currentIndex = 0
         isPaused = false
         pendingPlaybackIndex = nil
@@ -709,12 +720,6 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         audioPlayer?.clear()
         stopSilence()
         endBackgroundTask()
-    }
-
-    // MARK: - Text splitting
-
-    private func splitText(_ text: String) -> [String] {
-        TTSTextChunker.split(text, targetChunkLength: targetChunkLength)
     }
 
     // MARK: - Silence keep-alive

@@ -4,6 +4,28 @@ import Testing
 @Suite("ReaderChapterPresentation", .serialized)
 struct ReaderChapterPresentationTests {
 
+    @Test("offscreen volume and prefetched chapters do not advance the network window")
+    func readyEventsPrefetchOnlyAroundVisibleChapter() {
+        // Reproduces launch at chapter one (spine 3), while the volume header
+        // (spine 0) publishes ready first. Its neighbors must not take the source lock.
+        let centers = [0, 3, 4, 2].compactMap {
+            ReaderChapterPresentation.adjacentPrefetchCenter(
+                readyChapterIndex: $0, currentChapterIndex: 3
+            )
+        }
+        #expect(centers == [3])
+    }
+
+    @Test("a previous chapter finishing after a jump does not prefetch behind the reader")
+    func readyEventsUseLatestVisibleChapter() {
+        #expect(ReaderChapterPresentation.adjacentPrefetchCenter(
+            readyChapterIndex: 12, currentChapterIndex: 19
+        ) == nil)
+        #expect(ReaderChapterPresentation.adjacentPrefetchCenter(
+            readyChapterIndex: 19, currentChapterIndex: 19
+        ) == 19)
+    }
+
     @Test("manual refresh relayouts validated cache without fetching")
     func manualRefreshRelayoutsValidatedCache() {
         #expect(

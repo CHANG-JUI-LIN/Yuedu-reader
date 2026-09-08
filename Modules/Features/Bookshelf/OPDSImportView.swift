@@ -238,6 +238,7 @@ struct OPDSFeedView: View {
                     BookCoverImage(
                         coverURL: entry.displayCoverURL?.absoluteString ?? "",
                         title: entry.title,
+                        author: entry.author,
                         sourceHeaders: client.coverHeaders
                     )
                     .frame(width: 44, height: 60)

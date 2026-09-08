@@ -1954,14 +1954,15 @@ enum ReaderHTMLUtilities {
     static func normalizedChapterHTML(
         title: String,
         paragraphs: [String],
-        language: String = "zh-Hant"
+        language: String = "zh-Hant",
+        titleReviewHTML: String? = nil
     ) -> String {
         let trimmedTitle = displayText(fromHTMLFragment: title)
         let escapedTitle = escapeHTML(trimmedTitle.isEmpty ? "Untitled" : trimmedTitle)
         let heading =
-            trimmedTitle.isEmpty
+            trimmedTitle.isEmpty && titleReviewHTML == nil
             ? ""
-            : "<h1>\(escapeHTML(trimmedTitle))</h1>\n"
+            : "<h1>\(escapeHTML(trimmedTitle))\(titleReviewHTML ?? "")</h1>\n"
         let body = paragraphs.enumerated()
             .map { _, paragraph in
                 "<p>\(escapeHTML(paragraph))</p>"

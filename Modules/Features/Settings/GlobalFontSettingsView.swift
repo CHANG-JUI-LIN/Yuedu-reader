@@ -9,14 +9,15 @@ struct GlobalFontSettingsView: View {
 
     var body: some View {
         Form {
-            Section(
-                footer: Text(localized("套用於 App 介面，閱讀正文仍使用閱讀設定。"))
-            ) {
+            Section {
                 selectionButton(
                     title: localized("系統字體"),
                     postScriptName: nil,
                     previewFont: GlobalAppTypography.font(.body, postScriptName: nil)
                 )
+            } footer: {
+                Text(localized("套用於 App 介面，閱讀正文仍使用閱讀設定。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -47,14 +48,15 @@ struct GlobalFontSettingsView: View {
             }
             .interfaceSectionSurface()
 
-            Section(
-                footer: Text(localized("匯入後，字體會同時出現在全局字體與閱讀設定。"))
-            ) {
+            Section {
                 Button {
                     showingImporter = true
                 } label: {
                     Label(localized("匯入字體..."), systemImage: "plus")
                 }
+            } footer: {
+                Text(localized("匯入後，字體會同時出現在全局字體與閱讀設定。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
         }

@@ -19,11 +19,6 @@ final class EPUBPageRenderer: ObservableObject {
     private var epubBuilder: EPUBAttributedStringBuilder?
     private var onlineBuilder: OnlineProviderAttributedStringBuilder?
     private var publicationSession: PublicationSession?
-    #if DEBUG
-    /// Retained only for the on-device Legacy/BrowserForced acceptance switch.
-    /// Release builds have no runtime engine switch and no extra state.
-    private var debugPublicationBookIdentifier: String?
-    #endif
 
     /// Scroll-mode-specific engine (alongside the page engine). Created automatically when builder is available.
     @Published private(set) var scrollEngine: CoreTextScrollEngine? {
@@ -141,6 +136,9 @@ final class EPUBPageRenderer: ObservableObject {
                     textColor: request.settings.textColor,
                     backgroundColor: request.settings.backgroundColor
                 )
+                if let browser = engine as? BrowserLayoutPageEngine {
+                    await browser.refreshRegexHighlightAppearanceIfNeeded()
+                }
                 coverage = RefreshRevisionCoverage(
                     layout: nil,
                     appearance: revisions.appearance,
@@ -283,12 +281,16 @@ final class EPUBPageRenderer: ObservableObject {
             if engine is FixedLayoutPageEngine {
                 return engine.pageIndex(for: position) != nil
             }
-            if let browserEngine = engine as? BrowserLayoutPageEngine {
-                // Browser chapters keep their layouts outside the legacy
-                // `layouts` dictionary.
-                return browserEngine.choice(for: position.spineIndex) != nil
-            }
-            return engine.layouts[position.spineIndex] != nil
+            // One question, one answer, whichever engine is installed. The
+            // browser engine keeps its chapters outside the legacy `layouts`
+            // dictionary and used to need a special case here that asked
+            // whether an engine had merely been CHOSEN for the chapter — a
+            // weaker claim than "it is laid out", and the reason a refresh
+            // could commit onto a chapter that had nothing to show.
+            return engine.chapterPagination(
+                forSpine: position.spineIndex,
+                charOffset: position.charOffset
+            ) != nil
         }
     }
 
@@ -365,9 +367,6 @@ final class EPUBPageRenderer: ObservableObject {
         fixedLayoutViewport = session.fixedLayoutViewport
         mediaOverlaysByChapter = session.mediaOverlaysByChapter
         publicationSession = session
-        #if DEBUG
-        debugPublicationBookIdentifier = bookIdentifier
-        #endif
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
@@ -404,25 +403,10 @@ final class EPUBPageRenderer: ObservableObject {
         )
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
-        if BrowserLayoutFeature.browserEnabled,
-           session.epubWritingMode != .verticalRL,
-           session.layoutMode != .prePaginated {
-            // Off in every shipping build: `BrowserLayoutFeature.mode` is
-            // `.legacy` (the browser engine is feature-incomplete), so this
-            // branch is dead unless a DEBUG build is launched with
-            // `-browser-mode browserAuto|browserForced`. Under that flag,
-            // browser-capable chapters render with the browser engine and
-            // everything else falls back to `newEngine` via the delegate.
-            let resourceAdapter = EPUBBrowserLayoutResourceAdapter(session: session)
-            let browserEngine = BrowserLayoutPageEngine(
-                resource: resourceAdapter,
-                delegate: newEngine,
-                settings: settings
-            )
-            self.engine = browserEngine
-        } else {
-            self.engine = newEngine
-        }
+        // EPUB stays on legacy for every chapter and page-turn style. Do not
+        // capability-scan into browserAuto: its pagination/rendering parity is
+        // not yet sufficient for the production reader.
+        self.engine = newEngine
         isCoreTextReady = false
 
         if effectiveSize.width > 0 {
@@ -440,47 +424,6 @@ final class EPUBPageRenderer: ObservableObject {
             logProgress("load deferred bookId=\(bookIdentifier) reason=invalidRenderSize size=\(renderSize)")
         }
     }
-
-    #if DEBUG
-    /// The engine currently installed in this renderer. BrowserForced never
-    /// falls back, so the concrete engine is the effective A/B answer.
-    var debugEffectiveLayoutEngine: EPUBLayoutEngineMode {
-        engine is BrowserLayoutPageEngine ? .browserForced : .legacy
-    }
-
-    /// Rebuilds the current reflowable horizontal EPUB with the other DEBUG
-    /// engine while reusing the caller's exact viewport and settings snapshot.
-    /// ReaderView owns stable-position capture/restore around this call.
-    @discardableResult
-    func debugReloadPublication(
-        mode: EPUBLayoutEngineMode,
-        renderSize: CGSize,
-        settings: ReaderRenderSettings
-    ) -> Bool {
-        switch mode {
-        case .legacy, .browserForced:
-            break
-        case .browserAuto:
-            return false
-        }
-        guard let session = publicationSession,
-              let bookIdentifier = debugPublicationBookIdentifier,
-              session.layoutMode != .prePaginated,
-              session.epubWritingMode != .verticalRL else {
-            return false
-        }
-
-        engine?.cancelPendingWork(cause: .engineModeSwitch)
-        BrowserLayoutFeature.mode = mode
-        load(
-            publicationSession: session,
-            bookIdentifier: bookIdentifier,
-            renderSize: renderSize,
-            settings: settings
-        )
-        return true
-    }
-    #endif
 
     func loadTXT(
         text: String,

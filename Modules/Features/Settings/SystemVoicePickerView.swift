@@ -109,6 +109,8 @@ struct SystemVoicePickerView: View {
                     Text(localized("這台裝置上沒有可用的語音。"))
                         .font(DSFont.subheadline)
                         .foregroundStyle(DSColor.textSecondary)
+                } footer: {
+                    voiceListFooter
                 }
                 .interfaceSectionSurface()
             }
@@ -121,19 +123,13 @@ struct SystemVoicePickerView: View {
                     }
                 } header: {
                     Text(group.displayName)
+                } footer: {
+                    if group.id == groups.last?.id {
+                        voiceListFooter
+                    }
                 }
                 .interfaceSectionSurface()
             }
-
-            Section {
-                Text(localized("想要更多音色，可到「設定 → 輔助使用 → 朗讀內容 → 語音」下載增強或優質語音，下載後會出現在這裡。Siri 音色由系統保留給內建 App，第三方 App 無法使用。"))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
-                Text(localized("iOS 會把尚未下載的語音一併列出，選了也發不出聲音。試聽沒有聲音的音色會標示為「此裝置未安裝」，到上面的系統設定把它下載下來就能用。"))
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
-            }
-            .interfaceSectionSurface()
         }
         .navigationTitle(localized("系統語音音色"))
         .toolbarTitleDisplayMode(.inline)
@@ -187,9 +183,19 @@ struct SystemVoicePickerView: View {
                 Text(localized("個人語音"))
             } footer: {
                 Text(localized("個人語音是你在「設定 → 輔助使用 → 個人語音」錄製的聲音。授權後會出現在下方語音列表中。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
         }
+    }
+
+    @ViewBuilder
+    private var voiceListFooter: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            Text(localized("想要更多音色，可到「設定 → 輔助使用 → 朗讀內容 → 語音」下載增強或優質語音，下載後會出現在這裡。Siri 音色由系統保留給內建 App，第三方 App 無法使用。"))
+            Text(localized("iOS 會把尚未下載的語音一併列出，選了也發不出聲音。試聽沒有聲音的音色會標示為「此裝置未安裝」，到上面的系統設定把它下載下來就能用。"))
+        }
+        .dsSectionFooter()
     }
 
     private func requestPersonalVoice() {

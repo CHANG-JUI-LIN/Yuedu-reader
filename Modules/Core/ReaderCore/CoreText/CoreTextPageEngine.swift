@@ -244,13 +244,18 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
 
     private(set) var totalPages: Int = 0
     private(set) var currentPage: Int = 0
+    private var readingAnchor = CoreTextReadingPosition.chapterStart(0)
 
     private let _layouts = LayoutCache<CoreTextPaginator.ChapterLayout>()
     var layouts: [Int: CoreTextPaginator.ChapterLayout] {
         _layouts.asDictionary
     }
-    private let chapterSnapshots: NSCache<NSNumber, UIImage> = {
-        let cache = NSCache<NSNumber, UIImage>()
+    // Identity belongs to one installed layout, including its appearance. Keep only
+    // the same bounded set of chapters as LayoutCache; image storage retains the
+    // existing device-tiered NSCache limits.
+    private var snapshotLayoutRevisions: [Int: UUID] = [:]
+    private let chapterSnapshots: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
         let physicalMemory = ProcessInfo.processInfo.physicalMemory
         // Device-tiered snapshot budget. The old floor of 64MB was too high for
         // low-memory devices (<4GB): a 3x screen snapshot is ~10-12MB, so 64MB
@@ -339,7 +344,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
                     level: .warning
                 )
                 MemoryFootprint.log("warning-before")
-                self?.chapterSnapshots.removeAllObjects()
+                self?.invalidateSnapshots()
                 self?._layouts.trim(keeping: 0)
                 self?.cancelPreloadTasks()
                 self?.chapterDocumentStore.invalidateAll()
@@ -641,9 +646,19 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         return (max(0, totalChapters - 1), 0)
     }
 
-    /// Track current chapter for distance-based LRU eviction (capacity 8).
-    private func evictDistantChapters(currentSpine: Int) {
-        _layouts.setCurrentChapter(currentSpine)
+    func updateReadingPosition(_ position: CoreTextReadingPosition) {
+        guard (0..<chapterCount).contains(position.spineIndex) else { return }
+        if readingAnchor != position {
+            AppLogger.render("[FlipTrace] readingAnchor \(readingAnchor) → \(position)")
+        }
+        readingAnchor = position
+        // A TOC jump must move the eviction anchor before its layout is inserted.
+        // Waiting for warmUpNext after a successful page turn discarded the distant
+        // destination itself from the full five-entry cache, causing endless rebuilds.
+        _layouts.setCurrentChapter(position.spineIndex)
+        if let page = pageIndex(for: position) ?? estimatedGlobalPage(for: position) {
+            currentPage = max(0, min(page, max(totalPages - 1, 0)))
+        }
     }
 
     private func cancelPreloadTasks() {
@@ -970,19 +985,13 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         return .supersededByGeneration
     }
 
-    func notifyChapterDataChanged(at spineIndex: Int) async {
-        guard (0..<chapterCount).contains(spineIndex) else { return }
-        AppLogger.render("[FetchTrace] engine.notifyChapterDataChanged enter ch=\(spineIndex)")
+    func notifyChapterDataAvailable(at spineIndex: Int) async -> ChapterLayoutOutcome {
+        guard (0..<chapterCount).contains(spineIndex) else { return .outOfRange }
+        await updateChapterDataSize(at: spineIndex)
+        return await preloadChapter(at: spineIndex)
+    }
 
-        // 1. Clear the old layout and any in-progress preload task
-_layouts[spineIndex] = nil
-        preloadTasks[spineIndex]?.cancel()
-        preloadTasks[spineIndex] = nil
-        preloadTaskIDs[spineIndex] = nil
-        chapterSnapshots.removeObject(forKey: NSNumber(value: spineIndex))
-        chapterDocumentStore.invalidate(spineIndex: spineIndex)
-
-        // 2. Incrementally update the chapter's byte size (O(1), no full rescan)
+    private func updateChapterDataSize(at spineIndex: Int) async {
         let size = await attributedBuilder.chapterDataSize(at: spineIndex)
         if spineIndex < chapterByteSizes.count {
             chapterByteSizes[spineIndex] = size
@@ -992,6 +1001,22 @@ _layouts[spineIndex] = nil
         if !attributedBuilder.prefersLazyByteScan {
             contentUnitMap = ReaderContentUnitMap(chapterUnitCounts: chapterByteSizes)
         }
+    }
+
+    func notifyChapterDataChanged(at spineIndex: Int) async {
+        guard (0..<chapterCount).contains(spineIndex) else { return }
+        AppLogger.render("[FetchTrace] engine.notifyChapterDataChanged enter ch=\(spineIndex)")
+
+        // 1. Clear the old layout and any in-progress preload task
+        _layouts[spineIndex] = nil
+        preloadTasks[spineIndex]?.cancel()
+        preloadTasks[spineIndex] = nil
+        preloadTaskIDs[spineIndex] = nil
+        invalidateSnapshots()
+        chapterDocumentStore.invalidate(spineIndex: spineIndex)
+
+        // 2. Incrementally update the chapter's byte size (O(1), no full rescan)
+        await updateChapterDataSize(at: spineIndex)
 
         // 3. Reload the chapter (preloadChapter checks layouts[spineIndex] == nil before executing)
         let outcome = await preloadChapter(at: spineIndex)
@@ -1036,6 +1061,8 @@ _layouts[spineIndex] = nil
         for spineIndex: Int
     ) {
         _layouts[spineIndex] = layout
+        snapshotLayoutRevisions = snapshotLayoutRevisions.filter { _layouts[$0.key] != nil }
+        snapshotLayoutRevisions[spineIndex] = UUID()
         generateSnapshot(for: spineIndex)
         rebuildPageOffsets()
         onChapterReady?(spineIndex)
@@ -1230,7 +1257,7 @@ _layouts[spineIndex] = nil
         ensuringSpine spineIndex: Int?
     ) async {
         AppLogger.render("[FlipTrace] invalidateLayout newSize=\(newSize) oldSize=\(renderSize) loaded=\(_layouts.keys.sorted()) pending=\(preloadTasks.keys.sorted())")
-        let restorePosition = readingPosition(forPage: currentPage)
+        let restorePosition: CoreTextReadingPosition? = readingAnchor
         cancelPendingWork()
         nextLayoutInvalidationOperationID &+= 1
         let operationID = nextLayoutInvalidationOperationID
@@ -1248,7 +1275,7 @@ _layouts[spineIndex] = nil
             spinesToReload.insert(spineIndex)
         }
 _layouts.removeAll()
-        chapterSnapshots.removeAllObjects()
+        invalidateSnapshots()
 
         await withTaskGroup(of: Void.self) { group in
             for i in spinesToReload.sorted() {
@@ -1293,6 +1320,7 @@ _layouts.removeAll()
             targetSpine = matchedIndex
         }
 
+        updateReadingPosition(.chapterStart(targetSpine))
         await preloadChapter(at: targetSpine)
         guard let layout = _layouts[targetSpine] else { return nil }
         let charOffset: Int
@@ -1301,14 +1329,12 @@ _layouts.removeAll()
         } else {
             charOffset = 0
         }
+        updateReadingPosition(CoreTextReadingPosition(spineIndex: targetSpine, charOffset: charOffset))
         return pageIndex(forSpine: targetSpine, charOffset: charOffset)
     }
 
     func warmUpNext(currentGlobalPage: Int) {
         let (spineIndex, localPage) = localPosition(for: currentGlobalPage)
-
-        // Evict distant chapters on page turn
-        evictDistantChapters(currentSpine: spineIndex)
 
         guard let layout = _layouts[spineIndex] else {
             AppLogger.render("[FlipTrace] warmUp skip missingCurrent page=\(currentGlobalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
@@ -1346,7 +1372,7 @@ _layouts.removeAll()
                 readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
             )
         }
-        chapterSnapshots.removeAllObjects()
+        invalidateSnapshots()
         onChapterReady?(nil)
         // Rebuild chapter boundary snapshots in the background (for cross-chapter animation)
         for spineIndex in _layouts.keys {
@@ -1356,7 +1382,15 @@ _layouts.removeAll()
 
     /// Offscreen renders any global page as a UIImage for use as an immediate snapshot during cover animation.
     func renderSnapshot(forPage globalPage: Int) -> UIImage? {
+        let traceStart = SourcePerfTrace.now
+        var traceOutcome = "unavailable"
         let (spineIndex, localPage) = localPosition(for: globalPage)
+        defer {
+            SourcePerfTrace.record(
+                "coreText.pageSnapshot", "spine=\(spineIndex) local=\(localPage) outcome=\(traceOutcome)",
+                since: traceStart, thresholdMs: 0
+            )
+        }
         guard let layout = _layouts[spineIndex] else {
             AppLogger.render("[FlipTrace] renderSnapshot MISS noLayout page=\(globalPage) spine=\(spineIndex) local=\(localPage) layouts=\(_layouts.keys.sorted())")
             return nil
@@ -1370,14 +1404,14 @@ _layouts.removeAll()
             return nil
         }
         
-        // Prefer the boundary cache (Key: (spine << 1) | isLastPage)
-        let isLastPage = localPage == (layout.pageRanges.count - 1)
-        if localPage == 0 || isLastPage {
-            let key = NSNumber(value: (spineIndex << 1) | (isLastPage ? 1 : 0))
-            if let cached = chapterSnapshots.object(forKey: key) {
-                AppLogger.render("[FlipTrace] renderSnapshot HIT cached page=\(globalPage) spine=\(spineIndex) local=\(localPage) key=\(key)")
-                return cached
-            }
+        guard let key = snapshotKey(spineIndex: spineIndex, localPage: localPage) else { return nil }
+        // UIKit may request the same middle-page back from both its data source
+        // and the programmatic curl stack. Share that render, just as boundaries
+        // do, within the existing bounded snapshot cache.
+        if let cached = chapterSnapshots.object(forKey: key) {
+            traceOutcome = "cached"
+            AppLogger.render("[FlipTrace] renderSnapshot HIT cached page=\(globalPage) spine=\(spineIndex) local=\(localPage)")
+            return cached
         }
         AppLogger.render("[FlipTrace] renderSnapshot render page=\(globalPage) spine=\(spineIndex) local=\(localPage)")
         
@@ -1391,7 +1425,33 @@ _layouts.removeAll()
             bgColor = .systemBackground
         }
 
-        return Self.renderImage(layout: layout, pageIndex: localPage, size: renderSize, bgColor: bgColor.cgColor)
+        traceOutcome = "rendered"
+        let image = Self.renderImage(layout: layout, pageIndex: localPage, size: renderSize, bgColor: bgColor.cgColor)
+        storeSnapshotIfCurrent(image, key: key, spineIndex: spineIndex, localPage: localPage)
+        return image
+    }
+
+    private func invalidateSnapshots() {
+        chapterSnapshots.removeAllObjects()
+        snapshotLayoutRevisions = Dictionary(uniqueKeysWithValues: _layouts.keys.map { ($0, UUID()) })
+    }
+
+    func snapshotKey(spineIndex: Int, localPage: Int) -> NSString? {
+        guard let revision = snapshotLayoutRevisions[spineIndex],
+              let layout = _layouts[spineIndex], layout.pageRanges.indices.contains(localPage) else { return nil }
+        return "\(revision.uuidString):\(spineIndex):\(localPage)" as NSString
+    }
+
+    /// Both synchronous curl requests and asynchronous boundary renders commit
+    /// through this check. An old background result must not repopulate the cache
+    /// after a refetch, partial-to-full layout install, resize, or appearance change.
+    @discardableResult
+    func storeSnapshotIfCurrent(_ image: UIImage, key: NSString, spineIndex: Int, localPage: Int) -> Bool {
+        guard snapshotKey(spineIndex: spineIndex, localPage: localPage) == key else { return false }
+        if chapterSnapshots.object(forKey: key) == nil {
+            chapterSnapshots.setObject(image, forKey: key, cost: Self.imageCost(image))
+        }
+        return true
     }
 
     // MARK: - Private helpers
@@ -1417,27 +1477,25 @@ _layouts.removeAll()
         // Convert UIColor to CGColor for passing in non-isolated context
         let bgCGColor = bgColor.cgColor
         
-        // First page snapshot (Key: (spine << 1))
-        let firstKey = NSNumber(value: (spineIndex << 1))
+        // Boundary pre-rendering uses the same key and budget as on-demand pages.
+        guard let firstKey = snapshotKey(spineIndex: spineIndex, localPage: 0) else { return }
         if chapterSnapshots.object(forKey: firstKey) == nil {
             Task {
                 let img = await Task.detached(priority: .userInitiated) {
                     Self.renderImage(layout: layout, pageIndex: 0, size: size, bgColor: bgCGColor)
                 }.value
-                self.chapterSnapshots.setObject(img, forKey: firstKey, cost: Self.imageCost(img))
+                self.storeSnapshotIfCurrent(img, key: firstKey, spineIndex: spineIndex, localPage: 0)
             }
         }
 
-        // Last page snapshot (Key: (spine << 1) | 1)
         let lastIdx = layout.pageRanges.count - 1
-        if lastIdx > 0 {
-            let lastKey = NSNumber(value: (spineIndex << 1) | 1)
+        if lastIdx > 0, let lastKey = snapshotKey(spineIndex: spineIndex, localPage: lastIdx) {
             if chapterSnapshots.object(forKey: lastKey) == nil {
                 Task {
                     let img = await Task.detached(priority: .userInitiated) {
                         Self.renderImage(layout: layout, pageIndex: lastIdx, size: size, bgColor: bgCGColor)
                     }.value
-                    self.chapterSnapshots.setObject(img, forKey: lastKey, cost: Self.imageCost(img))
+                    self.storeSnapshotIfCurrent(img, key: lastKey, spineIndex: spineIndex, localPage: lastIdx)
                 }
             }
         }
@@ -1492,7 +1550,7 @@ _layouts.removeAll()
     }
 
     private func rebuildPageOffsets() {
-        let anchoredPosition = readingPosition(forPage: currentPage) ?? .chapterStart(0)
+        let anchoredPosition = readingAnchor
         let oldOffsets = spinePageOffsets
         let oldPage = currentPage
         var offset = 0
@@ -1521,7 +1579,7 @@ _layouts.removeAll()
         }
         totalPages = offset
 
-        if let correctedPage = pageIndex(for: anchoredPosition) {
+        if let correctedPage = pageIndex(for: anchoredPosition) ?? estimatedGlobalPage(for: anchoredPosition) {
             currentPage = max(0, min(correctedPage, max(totalPages - 1, 0)))
         }
 

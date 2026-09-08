@@ -1,0 +1,557 @@
+{
+  "kind": "idle_diagnosis",
+  "pid": "87765",
+  "same_chapter": 10,
+  "cache_windows_verified": [
+    [
+      20,
+      24
+    ],
+    [
+      10,
+      14
+    ]
+  ],
+  "events_path": "/tmp/yuedu-reader-profiling/snapshot-idle-diagnosis2-events.json",
+  "result": "6.4693% prior idle observation not reproduced; no proven new root cause",
+  "clock_offset_method": "Median CSV UTC epoch minus monotonic_s for this PID; sample header plus requested duration excludes final snapshot overhead",
+  "review_actual_data_confirmed": true,
+  "review_drag_count": 6,
+  "prior_observation_preserved": "snapshot-settled-after-jianghu-on-idle",
+  "before": {
+    "event_enclosure": {
+      "start_uptime": 349842.23203125,
+      "end_uptime": 349875.3670840834,
+      "duration_s": 33.135052833356895,
+      "processes": [
+        {
+          "pid": "87765",
+          "kind": "reader",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.23999999999999844,
+          "cpu_percent": 0.7426891536437603,
+          "rss_first_mib": 825.516,
+          "rss_last_mib": 809.672,
+          "rss_max_mib": 825.516
+        },
+        {
+          "pid": "87771",
+          "kind": "webcontent",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.594,
+          "rss_last_mib": 277.266,
+          "rss_max_mib": 278.594
+        },
+        {
+          "pid": "87772",
+          "kind": "webcontent",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.547,
+          "rss_last_mib": 276.562,
+          "rss_max_mib": 278.547
+        },
+        {
+          "pid": "87773",
+          "kind": "webcontent",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.562,
+          "rss_last_mib": 276.828,
+          "rss_max_mib": 278.562
+        },
+        {
+          "pid": "87774",
+          "kind": "webcontent",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.531,
+          "rss_last_mib": 277.125,
+          "rss_max_mib": 278.531
+        },
+        {
+          "pid": "87776",
+          "kind": "webkit_network",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 119.578,
+          "rss_last_mib": 116.078,
+          "rss_max_mib": 119.578
+        },
+        {
+          "pid": "87785",
+          "kind": "webcontent",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 295.094,
+          "rss_last_mib": 294.984,
+          "rss_max_mib": 295.094
+        },
+        {
+          "pid": "87786",
+          "kind": "webcontent",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 294.656,
+          "rss_last_mib": 294.484,
+          "rss_max_mib": 294.656
+        },
+        {
+          "pid": "87787",
+          "kind": "webcontent",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 295.312,
+          "rss_last_mib": 295.156,
+          "rss_max_mib": 295.312
+        },
+        {
+          "pid": "87788",
+          "kind": "webcontent",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.922,
+          "rss_last_mib": 278.906,
+          "rss_max_mib": 278.922
+        },
+        {
+          "pid": "87793",
+          "kind": "webkit_gpu",
+          "samples": 33,
+          "sample_duration_s": 32.31500000000233,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 162.875,
+          "rss_last_mib": 162.844,
+          "rss_max_mib": 162.875
+        }
+      ]
+    },
+    "sample_window": {
+      "start_uptime": 349842.2373139858,
+      "end_uptime": 349872.2373139858,
+      "duration_s": 30.0,
+      "processes": [
+        {
+          "pid": "87765",
+          "kind": "reader",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.2099999999999973,
+          "cpu_percent": 0.7427318384387676,
+          "rss_first_mib": 825.516,
+          "rss_last_mib": 809.531,
+          "rss_max_mib": 825.516
+        },
+        {
+          "pid": "87771",
+          "kind": "webcontent",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.594,
+          "rss_last_mib": 277.266,
+          "rss_max_mib": 278.594
+        },
+        {
+          "pid": "87772",
+          "kind": "webcontent",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.547,
+          "rss_last_mib": 276.562,
+          "rss_max_mib": 278.547
+        },
+        {
+          "pid": "87773",
+          "kind": "webcontent",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.562,
+          "rss_last_mib": 276.828,
+          "rss_max_mib": 278.562
+        },
+        {
+          "pid": "87774",
+          "kind": "webcontent",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.531,
+          "rss_last_mib": 277.125,
+          "rss_max_mib": 278.531
+        },
+        {
+          "pid": "87776",
+          "kind": "webkit_network",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 119.578,
+          "rss_last_mib": 116.078,
+          "rss_max_mib": 119.578
+        },
+        {
+          "pid": "87785",
+          "kind": "webcontent",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 295.094,
+          "rss_last_mib": 294.984,
+          "rss_max_mib": 295.094
+        },
+        {
+          "pid": "87786",
+          "kind": "webcontent",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 294.656,
+          "rss_last_mib": 294.484,
+          "rss_max_mib": 294.656
+        },
+        {
+          "pid": "87787",
+          "kind": "webcontent",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 295.312,
+          "rss_last_mib": 295.156,
+          "rss_max_mib": 295.312
+        },
+        {
+          "pid": "87788",
+          "kind": "webcontent",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.922,
+          "rss_last_mib": 278.906,
+          "rss_max_mib": 278.922
+        },
+        {
+          "pid": "87793",
+          "kind": "webkit_gpu",
+          "samples": 29,
+          "sample_duration_s": 28.273999999975786,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 162.875,
+          "rss_last_mib": 162.844,
+          "rss_max_mib": 162.875
+        }
+      ]
+    },
+    "sample_path": "/tmp/yuedu-reader-profiling/snapshot-idle-diagnosis2-before.sample.txt",
+    "sample_header_wall": "2026-09-08 02:02:15.920 +0800",
+    "requested_sample_duration_s": 30,
+    "main_samples": 20549,
+    "main_mach_msg2_trap_samples": 20251,
+    "main_wait_sample_percent": 98.54980777653414
+  },
+  "after": {
+    "event_enclosure": {
+      "start_uptime": 349913.123995666,
+      "end_uptime": 349955.3197936667,
+      "duration_s": 42.195798000728246,
+      "processes": [
+        {
+          "pid": "87765",
+          "kind": "reader",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.6600000000000001,
+          "cpu_percent": 1.5941258876382072,
+          "rss_first_mib": 768.453,
+          "rss_last_mib": 798.828,
+          "rss_max_mib": 799.047
+        },
+        {
+          "pid": "87771",
+          "kind": "webcontent",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 271.203,
+          "rss_last_mib": 271.203,
+          "rss_max_mib": 271.203
+        },
+        {
+          "pid": "87772",
+          "kind": "webcontent",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 271.109,
+          "rss_last_mib": 271.109,
+          "rss_max_mib": 271.109
+        },
+        {
+          "pid": "87773",
+          "kind": "webcontent",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 271.375,
+          "rss_last_mib": 271.375,
+          "rss_max_mib": 271.375
+        },
+        {
+          "pid": "87774",
+          "kind": "webcontent",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 271.141,
+          "rss_last_mib": 271.141,
+          "rss_max_mib": 271.141
+        },
+        {
+          "pid": "87776",
+          "kind": "webkit_network",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.010000000000000009,
+          "cpu_percent": 0.02415342253997285,
+          "rss_first_mib": 146.5,
+          "rss_last_mib": 146.531,
+          "rss_max_mib": 146.547
+        },
+        {
+          "pid": "87785",
+          "kind": "webcontent",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 294.656,
+          "rss_last_mib": 294.656,
+          "rss_max_mib": 294.656
+        },
+        {
+          "pid": "87786",
+          "kind": "webcontent",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 294.156,
+          "rss_last_mib": 294.156,
+          "rss_max_mib": 294.156
+        },
+        {
+          "pid": "87787",
+          "kind": "webcontent",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 294.828,
+          "rss_last_mib": 294.828,
+          "rss_max_mib": 294.828
+        },
+        {
+          "pid": "87788",
+          "kind": "webcontent",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.578,
+          "rss_last_mib": 278.578,
+          "rss_max_mib": 278.578
+        },
+        {
+          "pid": "87793",
+          "kind": "webkit_gpu",
+          "samples": 42,
+          "sample_duration_s": 41.40200000000186,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 180.422,
+          "rss_last_mib": 180.234,
+          "rss_max_mib": 180.422
+        }
+      ]
+    },
+    "sample_window": {
+      "start_uptime": 349913.1383140087,
+      "end_uptime": 349953.1383140087,
+      "duration_s": 40.0,
+      "processes": [
+        {
+          "pid": "87765",
+          "kind": "reader",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.6400000000000006,
+          "cpu_percent": 1.625149183616716,
+          "rss_first_mib": 768.453,
+          "rss_last_mib": 798.891,
+          "rss_max_mib": 799.047
+        },
+        {
+          "pid": "87771",
+          "kind": "webcontent",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 271.203,
+          "rss_last_mib": 271.203,
+          "rss_max_mib": 271.203
+        },
+        {
+          "pid": "87772",
+          "kind": "webcontent",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 271.109,
+          "rss_last_mib": 271.109,
+          "rss_max_mib": 271.109
+        },
+        {
+          "pid": "87773",
+          "kind": "webcontent",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 271.375,
+          "rss_last_mib": 271.375,
+          "rss_max_mib": 271.375
+        },
+        {
+          "pid": "87774",
+          "kind": "webcontent",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 271.141,
+          "rss_last_mib": 271.141,
+          "rss_max_mib": 271.141
+        },
+        {
+          "pid": "87776",
+          "kind": "webkit_network",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.010000000000000009,
+          "cpu_percent": 0.025392955994011188,
+          "rss_first_mib": 146.5,
+          "rss_last_mib": 146.531,
+          "rss_max_mib": 146.547
+        },
+        {
+          "pid": "87785",
+          "kind": "webcontent",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 294.656,
+          "rss_last_mib": 294.656,
+          "rss_max_mib": 294.656
+        },
+        {
+          "pid": "87786",
+          "kind": "webcontent",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 294.156,
+          "rss_last_mib": 294.156,
+          "rss_max_mib": 294.156
+        },
+        {
+          "pid": "87787",
+          "kind": "webcontent",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 294.828,
+          "rss_last_mib": 294.828,
+          "rss_max_mib": 294.828
+        },
+        {
+          "pid": "87788",
+          "kind": "webcontent",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 278.578,
+          "rss_last_mib": 278.578,
+          "rss_max_mib": 278.578
+        },
+        {
+          "pid": "87793",
+          "kind": "webkit_gpu",
+          "samples": 40,
+          "sample_duration_s": 39.380999999993946,
+          "cpu_seconds": 0.0,
+          "cpu_percent": 0.0,
+          "rss_first_mib": 180.422,
+          "rss_last_mib": 180.234,
+          "rss_max_mib": 180.422
+        }
+      ]
+    },
+    "sample_path": "/tmp/yuedu-reader-profiling/snapshot-idle-diagnosis2-after.sample.txt",
+    "sample_header_wall": "2026-09-08 02:03:26.821 +0800",
+    "requested_sample_duration_s": 40,
+    "main_samples": 28447,
+    "main_mach_msg2_trap_samples": 27893,
+    "main_wait_sample_percent": 98.05251871902134
+  },
+  "stack_observations": [
+    "Main thread mach_msg2_trap: before20251/20549 (98.55%), after27893/28447 (98.05%); sample fractions are not CPU percentages.",
+    "After: SwiftUI.prepare-image queue125 samples, including ImageIO/AppleJPEG decode71 samples; main _SwiftUIProxyImage finish126 samples waits for image preparation.",
+    "After: ReaderView.body getter4 inclusive samples, readerSurfaceBackground2; activeReaderBackgroundImage URL resolution1 and UIImage(contentsOfFile:)1. Does not establish invocation count or sustained repetition.",
+    "No CoreTextPageEngine, CommentBubble, or BookSourceSession frames in either sample. Firestore/gRPC and JSC background threads predominantly wait; no proven busy-loop stack.",
+    "GCAnalytics input poll timer before6/after10 samples. No evidence these small sampled callbacks explain prior6.47%.",
+    "Before/after exact sample wall windows contain no PID87765 application log entries; SourcePerf was not emitted for this diagnostic PID, so this absence is not an independently instrumented SourcePerf measurement."
+  ]
+}

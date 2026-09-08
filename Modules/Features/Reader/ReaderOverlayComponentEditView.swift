@@ -194,7 +194,7 @@ struct ReaderOverlayComponentEditView: View {
                         .foregroundStyle(DSColor.destructive)
                 }
             }
-            .font(DSFont.caption)
+            .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

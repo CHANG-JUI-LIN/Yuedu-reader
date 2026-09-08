@@ -4,15 +4,11 @@ import UIKit
 @testable import yuedu_app
 
 struct BrowserLayoutFeatureTests {
-    /// The shipping mode is `legacy`: the browser engine is feature-incomplete
-    /// and switched off (2026-08-17), so every EPUB chapter renders through
-    /// `CoreTextPageEngine` and `EPUBPageRenderer` never constructs the browser
-    /// engine at all. Flipping this default back on is a deliberate release
-    /// decision, not an incidental edit — this test is the tripwire.
-    @Test func defaultModeIsLegacy() {
+    @Test func productionModeIsLegacy() {
         #expect(BrowserLayoutFeature.mode == .legacy)
         #expect(!BrowserLayoutFeature.browserEnabled)
     }
+
 }
 
 struct CSSLengthResolverTests {

@@ -63,6 +63,7 @@ struct ReaderDialogueBubbleSettingsView: View {
             Toggle(localized("啟用對話氣泡"), isOn: binding(\.isEnabled))
         } footer: {
             Text(localized("整段都是對話的段落會排成氣泡；夾在敘述裡的引號仍然沿用正則高亮。直排閱讀不套用。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -382,6 +383,7 @@ struct ReaderDialogueBubbleSettingsView: View {
             }
         } footer: {
             Text(localized("可以匯入對話氣泡腳本檔，只會取用它的顏色、邊距與皮膚圖，文字仍然照閱讀字級排版。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

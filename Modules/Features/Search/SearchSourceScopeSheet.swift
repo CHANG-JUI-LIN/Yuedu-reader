@@ -131,7 +131,7 @@ struct SearchSourceScopeSheet: View {
         } footer: {
             if !canSave {
                 Text(localized("請至少選擇一個可用書源"))
-                    .foregroundStyle(DSColor.destructive)
+                    .dsSectionFooter(color: DSColor.destructive)
             }
         }
     }

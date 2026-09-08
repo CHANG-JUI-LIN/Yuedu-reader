@@ -41,10 +41,11 @@ struct ChapterFetcher {
         }
     }
 
-    func buildNormalizedHTML(title: String, content: String) -> String {
+    func buildNormalizedHTML(title: String, content: String, titleReviewHTML: String? = nil) -> String {
         return ReaderHTMLUtilities.normalizedChapterHTML(
             title: title,
-            paragraphs: ReaderHTMLUtilities.paragraphs(fromPlainText: content)
+            paragraphs: ReaderHTMLUtilities.paragraphs(fromPlainText: content),
+            titleReviewHTML: titleReviewHTML
         )
     }
 
@@ -104,12 +105,16 @@ struct ChapterFetcher {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard looksHTML else {
+            // A source can return plain prose while its title still carries a review
+            // image. Keep that image as markup; escaping the unsplit title exposes
+            // the data URI and click configuration as reading text.
             return buildNormalizedHTML(
-                title: title,
+                title: trimmedTitle,
                 content: ReaderHTMLUtilities.stripLeadingDuplicateTitle(
                     plainTextContent,
                     title: trimmedTitle
-                )
+                ),
+                titleReviewHTML: titleBubbleHTML
             )
         }
         let originalRawHTML = raw
@@ -228,11 +233,12 @@ struct ChapterFetcher {
 
         guard !bodyHTML.isEmpty || leadingTitleBubbleHTML != nil else {
             return buildNormalizedHTML(
-                title: title,
+                title: trimmedTitle,
                 content: ReaderHTMLUtilities.stripLeadingDuplicateTitle(
                     plainTextContent,
                     title: trimmedTitle
-                )
+                ),
+                titleReviewHTML: titleBubbleHTML
             )
         }
 

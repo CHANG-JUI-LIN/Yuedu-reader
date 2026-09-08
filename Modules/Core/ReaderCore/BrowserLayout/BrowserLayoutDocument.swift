@@ -109,7 +109,10 @@ final class BrowserLayoutDocument {
             config: config,
             metrics: &metrics
         )
-        let rootNode = frontendResult.rootNode
+        let semanticMedia = metrics.time("semanticMedia") {
+            BrowserLayoutSemanticContent.prepareMedia(in: frontendResult.rootNode, renderWidth: config.renderWidth)
+        }
+        let rootNode = semanticMedia.root
         let linkAnchors = frontendResult.linkAnchors
         let rubyValidation = HorizontalRubySupport.validate(
             rootNode,
@@ -130,7 +133,7 @@ final class BrowserLayoutDocument {
             BoxTreeBuilder.buildBlock(
                 for: rootNode, config: config,
                 sourceText: &sourceText, anchors: &anchors,
-                imageLoader: imageLoader
+                imageLoader: { semanticMedia.images[$0] ?? self.imageLoader($0) }
             )
         }
         let contentWidth = max(1, containerSize.width - config.contentInsets.left - config.contentInsets.right)
@@ -166,7 +169,11 @@ final class BrowserLayoutDocument {
             nodeCount: frontendResult.nodeCount,
             boxCount: BoxTreeBuilder.countBoxes(in: rootBox),
             footnotes: frontendResult.footnotes,
-            linkAnchors: linkAnchors
+            linkAnchors: linkAnchors,
+            mediaAttachments: semanticMedia.attachments,
+            pronunciationHints: metrics.time("pronunciation") {
+                BrowserLayoutSemanticContent.pronunciationHints(root: rootNode, box: rootBox, sourceText: sourceText.text)
+            }
         )
     }
 
@@ -187,6 +194,8 @@ final class BrowserLayoutDocument {
         /// nodeID → owning `<a href>` (identity + EPUB semantics), for every
         /// node inside a link. Consumed by `LinkInteractionRegionSet`.
         let linkAnchors: [Int: LinkAnchorInfo]
+        let mediaAttachments: [Int: EPUBMediaAttachment]
+        let pronunciationHints: [TTSPronunciationHint]
     }
 
     enum BrowserLayoutError: Error {
@@ -369,7 +378,8 @@ final class BrowserLayoutDocument {
                     cornerRadius: 0,
                     borderTop: .zero, borderBottom: .zero, borderLeft: .zero, borderRight: .zero,
                     nodeID: -1,
-                    writingMode: config.writingMode
+                    writingMode: config.writingMode,
+                    isBackgroundPaint: true
                 )))
                 if let bg = background.image, let image = imageLoader(bg.source) {
                     let rect = Self.coverRect(

@@ -125,7 +125,8 @@ struct YueduProView: View {
             }
         } footer: {
             if let error = store.lastErrorMessage {
-                Text(error).foregroundColor(DSColor.destructive)
+                Text(error)
+                    .dsSectionFooter(color: DSColor.destructive)
             }
         }
         .interfaceSectionSurface()

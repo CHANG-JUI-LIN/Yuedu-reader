@@ -293,7 +293,10 @@ enum ReaderStylePackage {
         }
     }
 
-    private static func containedURL(for relativePath: String, under root: URL) throws -> URL {
+    /// Resolves `relativePath` under `root`, refusing anything that escapes it. Shared with
+    /// `QiThemeImporter`, which unpacks a foreign archive and needs the same guarantee — one
+    /// path-safety implementation, not a second copy that can drift out of step.
+    static func containedURL(for relativePath: String, under root: URL) throws -> URL {
         try validateEntryPaths([relativePath])
         let standardizedRoot = root.standardizedFileURL
         let candidate = standardizedRoot

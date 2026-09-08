@@ -101,6 +101,7 @@ struct ChapterTitleStyleSettingsView: View {
             }
         } footer: {
             Text(localized("開啟後使用 HTML/CSS 模板渲染章節標題，支持自定義排版和樣式。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -116,6 +117,7 @@ struct ChapterTitleStyleSettingsView: View {
             Text(localized("選擇預設"))
         } footer: {
             Text(localized("自動適配淺色和深色。選好後可繼續微調。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -189,6 +191,7 @@ struct ChapterTitleStyleSettingsView: View {
         } footer: {
             if style.advancedCSSEnabled {
                 Text(localized("切換淺色／深色查看對應外觀的模板。"))
+                    .dsSectionFooter()
             }
         }
     }

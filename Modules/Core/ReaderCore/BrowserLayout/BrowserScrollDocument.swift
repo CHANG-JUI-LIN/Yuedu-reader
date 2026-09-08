@@ -126,7 +126,8 @@ struct BrowserScrollDocument {
                     borderTop: f.borderTop, borderBottom: f.borderBottom,
                     borderLeft: f.borderLeft, borderRight: f.borderRight,
                     nodeID: f.nodeID, writingMode: f.writingMode,
-                    fragmentPosition: f.fragmentPosition
+                    fragmentPosition: f.fragmentPosition,
+                    isBackgroundPaint: f.isBackgroundPaint
                 )))
             case .image(let i):
                 guard i.rect.rawValue.intersects(documentRect) else { continue }

@@ -1,0 +1,202 @@
+{
+  "final-default-off-continuous": {
+    "pid": "68738",
+    "loading": "2026-09-07T23:45:43.375000",
+    "first_real": "2026-09-07T23:45:44.112000",
+    "capture1": "2026-09-07T23:45:43.588533",
+    "capture2": "2026-09-07T23:45:45.892548",
+    "loading_to_real_s": 0.737,
+    "loading_to_first_observed_ready_upper_s": 2.517548,
+    "capture1_to_capture2_observation_gap_s": 2.304015,
+    "stages": [
+      {
+        "timestamp": "2026-09-07T23:45:43.911000",
+        "stage": "chapter.network",
+        "ms": 515
+      },
+      {
+        "timestamp": "2026-09-07T23:45:43.969000",
+        "stage": "chapter.parse",
+        "ms": 59
+      },
+      {
+        "timestamp": "2026-09-07T23:45:43.970000",
+        "stage": "chapter.nextContent",
+        "ms": 0
+      },
+      {
+        "timestamp": "2026-09-07T23:45:44.074000",
+        "stage": "coreText.document.htmlParse",
+        "ms": 2
+      },
+      {
+        "timestamp": "2026-09-07T23:45:44.095000",
+        "stage": "coreText.document.renderLeaves",
+        "ms": 11,
+        "chars": 4201.0
+      },
+      {
+        "timestamp": "2026-09-07T23:45:44.108000",
+        "stage": "coreText.fullLayout",
+        "ms": 13,
+        "chars": 4213.0
+      }
+    ]
+  },
+  "final-default-on-continuous": {
+    "pid": "70070",
+    "loading": "2026-09-07T23:57:37.618000",
+    "first_real": "2026-09-07T23:57:48.823000",
+    "capture1": "2026-09-07T23:57:37.821615",
+    "capture2": "2026-09-07T23:57:49.036634",
+    "loading_to_real_s": 11.205,
+    "loading_to_first_observed_ready_upper_s": 11.418634,
+    "capture1_to_capture2_observation_gap_s": 11.215019,
+    "stages": [
+      {
+        "timestamp": "2026-09-07T23:57:38.121000",
+        "stage": "chapter.network",
+        "ms": 487
+      },
+      {
+        "timestamp": "2026-09-07T23:57:44.162000",
+        "stage": "chapter.jsNet",
+        "ms": 5910
+      },
+      {
+        "timestamp": "2026-09-07T23:57:44.206000",
+        "stage": "chapter.parse",
+        "ms": 6085
+      },
+      {
+        "timestamp": "2026-09-07T23:57:44.206000",
+        "stage": "chapter.nextContent",
+        "ms": 0
+      },
+      {
+        "timestamp": "2026-09-07T23:57:46.628000",
+        "stage": "coreText.document.htmlParse",
+        "ms": 101
+      },
+      {
+        "timestamp": "2026-09-07T23:57:46.678000",
+        "stage": "coreText.document.renderLeaves",
+        "ms": 5,
+        "chars": 1.0
+      },
+      {
+        "timestamp": "2026-09-07T23:57:48.549000",
+        "stage": "coreText.document.renderLeaves",
+        "ms": 1871,
+        "chars": 4334.0,
+        "imageLoad": 1811.9
+      },
+      {
+        "timestamp": "2026-09-07T23:57:48.804000",
+        "stage": "coreText.fullLayout",
+        "ms": 141,
+        "chars": 4348.0
+      }
+    ]
+  },
+  "final-jianghu-off-continuous": {
+    "pid": "72190",
+    "loading": "2026-09-08T00:17:14.318000",
+    "first_real": "2026-09-08T00:17:15.043000",
+    "capture1": "2026-09-08T00:17:14.803422",
+    "capture2": "2026-09-08T00:17:17.109729",
+    "loading_to_real_s": 0.725,
+    "loading_to_first_observed_ready_upper_s": 2.791729,
+    "capture1_to_capture2_observation_gap_s": 2.306307,
+    "stages": [
+      {
+        "timestamp": "2026-09-08T00:17:14.745000",
+        "stage": "chapter.network",
+        "ms": 280
+      },
+      {
+        "timestamp": "2026-09-08T00:17:14.757000",
+        "stage": "chapter.parse",
+        "ms": 12
+      },
+      {
+        "timestamp": "2026-09-08T00:17:14.757000",
+        "stage": "chapter.nextContent",
+        "ms": 0
+      },
+      {
+        "timestamp": "2026-09-08T00:17:14.933000",
+        "stage": "coreText.document.htmlParse",
+        "ms": 2
+      },
+      {
+        "timestamp": "2026-09-08T00:17:14.960000",
+        "stage": "coreText.document.renderLeaves",
+        "ms": 17,
+        "chars": 4201.0
+      },
+      {
+        "timestamp": "2026-09-08T00:17:15.041000",
+        "stage": "coreText.fullLayout",
+        "ms": 5,
+        "chars": 4213.0
+      }
+    ]
+  },
+  "final-jianghu-on-continuous": {
+    "pid": "73705",
+    "loading": "2026-09-08T00:28:07.119000",
+    "first_real": "2026-09-08T00:28:15.837000",
+    "capture1": "2026-09-08T00:28:07.542039",
+    "capture2": "2026-09-08T00:28:16.858797",
+    "loading_to_real_s": 8.718,
+    "loading_to_first_observed_ready_upper_s": 9.739797,
+    "capture1_to_capture2_observation_gap_s": 9.316758,
+    "stages": [
+      {
+        "timestamp": "2026-09-08T00:28:07.410000",
+        "stage": "chapter.network",
+        "ms": 214
+      },
+      {
+        "timestamp": "2026-09-08T00:28:11.194000",
+        "stage": "chapter.jsNet",
+        "ms": 3667
+      },
+      {
+        "timestamp": "2026-09-08T00:28:11.243000",
+        "stage": "chapter.parse",
+        "ms": 3832
+      },
+      {
+        "timestamp": "2026-09-08T00:28:11.243000",
+        "stage": "chapter.nextContent",
+        "ms": 0
+      },
+      {
+        "timestamp": "2026-09-08T00:28:13.737000",
+        "stage": "coreText.document.htmlParse",
+        "ms": 101
+      },
+      {
+        "timestamp": "2026-09-08T00:28:13.800000",
+        "stage": "coreText.document.renderLeaves",
+        "ms": 17,
+        "chars": 1.0
+      },
+      {
+        "timestamp": "2026-09-08T00:28:15.571000",
+        "stage": "coreText.document.renderLeaves",
+        "ms": 1771,
+        "chars": 4334.0,
+        "imageLoad": 1664.7
+      },
+      {
+        "timestamp": "2026-09-08T00:28:15.822000",
+        "stage": "coreText.fullLayout",
+        "ms": 135,
+        "chars": 4348.0
+      }
+    ]
+  }
+}

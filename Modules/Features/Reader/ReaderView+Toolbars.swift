@@ -265,7 +265,7 @@ extension ReaderView {
                     .resizable()
                     .scaledToFill()
             } else {
-                TitleCardPlaceholder(title: modernBookTitle)
+                GeneratedBookCover(title: modernBookTitle, author: modernBookAuthor)
             }
         }
         .frame(
@@ -499,11 +499,10 @@ extension ReaderView {
         let left: Int
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let (spineIndex, charOffset) = engine.charOffset(forPage: currentPage)
-            if let layout = engine.layouts[spineIndex], !layout.pageRanges.isEmpty {
-                let localPage = layout.pageIndex(for: charOffset)
+            if let pagination = engine.chapterPagination(forSpine: spineIndex, charOffset: charOffset) {
                 // displayPageCount: estimated total while the chapter is still
                 // partially paginated, exact once complete.
-                left = max(0, layout.displayPageCount - localPage - 1)
+                left = max(0, pagination.displayPageCount - pagination.localPageIndex - 1)
             } else {
                 left = 0
             }

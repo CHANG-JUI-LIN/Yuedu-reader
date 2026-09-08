@@ -86,6 +86,15 @@ struct DiagnosticReportBundle: Transferable {
     let session: DiagnosticSession
     let uncleanSessions: [DiagnosticSession]
 
+    /// Whether rendering this marks the log as reported, silencing the banner.
+    ///
+    /// True for the whole log, which is what 匯出並回報 sends. **False for a filtered
+    /// subset**, and that is not a nicety: acknowledgement is a single high-water
+    /// sequence, so a subset's highest sequence would also mark every lower-numbered
+    /// anomaly as reported — including ones the filter excluded, which never left the
+    /// device. The banner would go quiet over a report that does not contain them.
+    var acknowledgesReport: Bool = true
+
     static let exportedContentType = UTType.yueduLogFile
 
     static var transferRepresentation: some TransferRepresentation {
@@ -133,6 +142,11 @@ struct DiagnosticReportBundle: Transferable {
         let reportable = entries.filter { $0.severity.isReportable }
         out.append("--- summary ---")
         out.append("entries=\(entries.count)  reportable=\(reportable.count)")
+        if !acknowledgesReport {
+            // Whoever receives this needs to know it is a slice, not the session. The
+            // missing lines are the usual reason a report cannot be diagnosed.
+            out.append("scope=FILTERED SUBSET — not the complete log for this session")
+        }
         if !uncleanSessions.isEmpty {
             out.append("previous sessions that ended abnormally: \(uncleanSessions.count)")
             for session in uncleanSessions {
@@ -159,7 +173,7 @@ struct DiagnosticReportBundle: Transferable {
         // The log has now left the device, so the banner should stop asking for it.
         // Done here rather than at the button because both routes out — the ShareLink
         // file representation and 複製全部 — go through `render()`.
-        if let highest = entries.map(\.sequence).max() {
+        if acknowledgesReport, let highest = entries.map(\.sequence).max() {
             DiagnosticLog.shared.acknowledgeReported(through: highest)
         }
 

@@ -141,6 +141,8 @@ struct CoreTextNoteDeleteRequest {
 }
 
 extension Notification.Name {
+    static let coreTextSearchSelectionRequested = Notification.Name("coreTextSearchSelectionRequested")
+    static let coreTextTranslateSelectionRequested = Notification.Name("coreTextTranslateSelectionRequested")
     static let coreTextUnderlineSelectionRequested = Notification.Name("coreTextUnderlineSelectionRequested")
     static let coreTextReplaceSelectionRequested = Notification.Name("coreTextReplaceSelectionRequested")
     static let coreTextNoteEditRequested = Notification.Name("coreTextNoteEditRequested")

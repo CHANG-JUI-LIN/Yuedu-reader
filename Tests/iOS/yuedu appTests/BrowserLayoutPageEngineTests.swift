@@ -164,6 +164,48 @@ struct BrowserLayoutPageEngineTests {
         let layout = try #require(engine.testChapterLayout?.layout)
         #expect(layout.pageSourceRanges.count == layout.pages.count,
                 "stale page ranges: \(layout.pageSourceRanges.count) ranges for \(layout.pages.count) pages")
+        let pagination = try #require(engine.chapterPagination(forSpine: 0, charOffset: restoredOffset))
+        #expect(pagination.localPageIndex == page)
+        #expect(pagination.displayPageCount == layout.pages.count)
+        #expect(engine.chapterText(forSpine: 0)?.contains("quick brown fox") == true)
+    }
+
+    @Test func browserPageReceivesBackgroundAndSupportsVoiceOverAndPlayback() async throws {
+        let (engine, _, _) = await makeEngine(chapters: [plainChapter("The quick brown fox jumps.")])
+        let backgroundURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("browser-background-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: backgroundURL) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        try #require(image.pngData()).write(to: backgroundURL)
+        var settings = makeSettings()
+        settings.readerBackgroundImageURL = backgroundURL
+        engine.updateRenderSettings(settings)
+        let controller = try #require(engine.pageViewController(at: 0) as? BrowserLayoutPageViewController)
+        controller.loadViewIfNeeded()
+        let view = controller.pageView
+        #expect(view.readerBackgroundImage != nil)
+        var actions: [TouchAction] = []
+        view.onAccessibilityAction = { actions.append($0) }
+        #expect(view.accessibilityLabel?.contains("quick brown fox") == true)
+        #expect(view.accessibilityCustomActions?.count == 5)
+        #expect(view.accessibilityCustomActions?.contains { $0.name == localized("選取文字") } == true)
+        #expect(view.accessibilityActivate())
+        #expect(view.accessibilityScroll(.left))
+        #expect(actions == [.toggleMenu, .nextPage])
+
+        view.setPlaybackHighlight(text: "quick brown fox")
+        #expect(view.layer.sublayers?.contains {
+            guard let shape = $0 as? CAShapeLayer else { return false }
+            return !shape.isHidden && shape.path?.isEmpty == false
+        } == true)
+        view.setPlaybackHighlight(text: nil)
+        #expect(view.layer.sublayers?.allSatisfy {
+            guard let shape = $0 as? CAShapeLayer else { return true }
+            return shape.isHidden
+        } == true)
     }
 
     /// A page whose chapter layout has not reached it yet must still identify
@@ -225,6 +267,43 @@ struct BrowserLayoutPageEngineTests {
         #expect(pageLarge >= pageSmall)
         let (_, restored) = engine.charOffset(forPage: pageLarge)
         #expect(abs(restored - offset) < 600)
+    }
+
+
+    /// Toggling 粗體 — or any other relayout setting — on a local EPUB whose
+    /// visible chapter fell back to the legacy engine left the reader on the
+    /// pre-change page until the book was reopened.
+    ///
+    /// `invalidateLayout` cleared `choices` and then re-preloaded only the
+    /// chapters the BROWSER engine owned, so a legacy chapter's routing entry
+    /// never came back. `choices[spine] ?? .browser` then sent its pagination,
+    /// drawing and page count to a browser layout that had just been discarded:
+    /// `rebuildOffsets` fell back to its 1-page estimate and `EPUBPageRenderer`
+    /// refused the visible commit with `.layoutUnavailable`. Online books never
+    /// construct this engine, which is why only local books showed it.
+    @Test func legacyChapterKeepsRoutingAcrossRelayout() async throws {
+        let body = String(repeating: "The quick brown fox jumps over the lazy dog. ", count: 40)
+        let floaty = MockBrowserLayoutResource.Chapter(
+            // The legacy mock builds its content from the chapter title.
+            title: body,
+            href: "floaty.xhtml",
+            html: "<html><body><div style=\"float: left\">x</div><p>\(body)</p></body></html>",
+            css: []
+        )
+        let (engine, _, _) = await makeEngine(chapters: [floaty])
+        #expect(engine.choice(for: 0)?.isBrowser == false, "fixture must fall back to the legacy engine")
+        let pagesBefore = engine.totalPages
+        #expect(pagesBefore > 1, "fixture must paginate to more than the 1-page browser estimate")
+
+        engine.updateRenderSettings(makeSettings(fontSize: 24))
+        await engine.invalidateLayout(newSize: CGSize(width: 300, height: 400))
+
+        #expect(engine.choice(for: 0) != nil, "legacy chapter lost its engine choice")
+        #expect(
+            engine.chapterPagination(forSpine: 0, charOffset: 0) != nil,
+            "legacy chapter has no pagination after relayout"
+        )
+        #expect(engine.totalPages >= pagesBefore, "page count collapsed to the browser estimate")
     }
 
     @Test func anchorNavigation() async throws {

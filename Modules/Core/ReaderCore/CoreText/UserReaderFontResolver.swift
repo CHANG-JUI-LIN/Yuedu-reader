@@ -80,7 +80,7 @@ enum UserReaderFontResolver {
         return preservingFamily(font, resolved: UIFont(descriptor: descriptor, size: size))
     }
 
-    private static func boldVersion(of font: UIFont, size: CGFloat) -> UIFont {
+    static func boldVersion(of font: UIFont, size: CGFloat) -> UIFont {
         if font.fontDescriptor.symbolicTraits.contains(.traitBold) {
             return font
         }

@@ -170,6 +170,116 @@ struct ReaderChapterSupplyTests {
 
     // MARK: - Support
 
+    @Test("a distant TOC destination survives insertion into a full five-chapter cache")
+    func distantDestinationSurvivesFullLayoutCache() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 20)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+        for chapter in 0..<5 { await engine.preloadChapter(at: chapter) }
+        #expect(engine.layouts.count == 5)
+
+        let target = CoreTextReadingPosition(spineIndex: 12, charOffset: 120)
+        engine.updateReadingPosition(target)
+        let outcome = await engine.preloadChapter(at: 12)
+
+        #expect(outcome.isReady)
+        #expect(engine.layouts[12] != nil)
+        #expect(engine.layouts.count == 5)
+        #expect(engine.currentPage == engine.pageIndex(for: target))
+        #expect(await engine.preloadChapter(at: 12) == .alreadyLaidOut)
+        #expect(await builder.buildCount(chapter: 12) == 1)
+    }
+
+    @Test("a rapid reverse jump keeps its destination when the earlier distant build finishes")
+    func reverseJumpKeepsLatestDestination() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 20)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+        for chapter in 0..<5 { await engine.preloadChapter(at: chapter) }
+
+        engine.updateReadingPosition(.chapterStart(12))
+        await builder.gateNextBuild(chapter: 12)
+        let outward = Task { await engine.preloadChapter(at: 12) }
+        await builder.waitUntilBuilding(chapter: 12)
+
+        let reverseTarget = CoreTextReadingPosition(spineIndex: 1, charOffset: 80)
+        engine.updateReadingPosition(reverseTarget)
+        await engine.preloadChapter(at: 1)
+        await builder.releaseGate(chapter: 12)
+        _ = await outward.value
+
+        #expect(engine.layouts[1] != nil)
+        #expect(engine.currentPage == engine.pageIndex(for: reverseTarget))
+        #expect(await engine.preloadChapter(at: 1) == .alreadyLaidOut)
+        #expect(await builder.buildCount(chapter: 1) == 1)
+
+        await builder.replaceBody("Refetched reverse destination", chapter: 1)
+        _ = await ReaderChapterContentUpdate.replaced.supply(to: engine, chapterIndex: 1)
+        #expect(engine.layouts[1]?.attributedString.string == "Refetched reverse destination")
+        #expect(await builder.buildCount(chapter: 1) == 2)
+        #expect(engine.currentPage == engine.pageIndex(for: reverseTarget))
+    }
+
+    @Test("a late ready publication preserves the installed chapter and its revision")
+    func availabilityPreservesInstalledDocument() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 2)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+        await engine.preloadChapter(at: 1)
+        let original = try #require(engine.layouts[1])
+        let announcements = AnnouncementLog()
+        engine.onChapterReady = { announcements.record($0) }
+
+        let needsPlacement = await ReaderChapterContentUpdate.available.supply(
+            to: engine, chapterIndex: 1
+        )
+
+        #expect(needsPlacement == false)
+        #expect(await builder.buildCount(chapter: 1) == 1)
+        #expect(engine.layouts[1]?.attributedString === original.attributedString)
+        #expect(announcements.spines.isEmpty)
+    }
+
+    @Test("ready during an existing build joins it without cancelling image work")
+    func availabilityJoinsExistingDocumentBuild() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 2)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+        await builder.gateNextBuild(chapter: 1)
+        let owner = Task { await engine.preloadChapter(at: 1) }
+        await builder.waitUntilBuilding(chapter: 1)
+
+        // The available call enters its MainActor preload before it suspends; only
+        // then can this queued task release the builder it has joined.
+        let release = Task { await builder.releaseGate(chapter: 1) }
+        _ = await ReaderChapterContentUpdate.available.supply(to: engine, chapterIndex: 1)
+        await release.value
+        _ = await owner.value
+
+        #expect(await builder.buildCount(chapter: 1) == 1)
+        #expect(await builder.cancelledBuilds(chapter: 1) == 0)
+        #expect(engine.layouts[1] != nil)
+    }
+
+    @Test("a real content replacement rebuilds an existing chapter with its new text")
+    func replacementStillInvalidatesOldDocument() async throws {
+        let builder = ControllableChapterBuilder(chapterCount: 2)
+        let engine = makeEngine(builder: builder)
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+        await engine.preloadChapter(at: 1)
+        let original = try #require(engine.layouts[1])
+        await builder.replaceBody("Replacement chapter body", chapter: 1)
+
+        let needsPlacement = await ReaderChapterContentUpdate.replaced.supply(
+            to: engine, chapterIndex: 1
+        )
+
+        #expect(needsPlacement)
+        #expect(await builder.buildCount(chapter: 1) == 2)
+        #expect(engine.layouts[1]?.attributedString.string == "Replacement chapter body")
+        #expect(engine.layouts[1]?.attributedString !== original.attributedString)
+    }
+
     private static let renderSize = CGSize(width: 360, height: 560)
 
     private func makeEngine(builder: ControllableChapterBuilder) -> CoreTextPageEngine {
@@ -233,6 +343,8 @@ private actor ControllableChapterBuilder: AttributedStringBuilding {
     private var gatedChapters: Set<Int> = []
     private var failingChapters: Set<Int> = []
     private var buildCounts: [Int: Int] = [:]
+    private var cancellationCounts: [Int: Int] = [:]
+    private var replacementBodies: [Int: String] = [:]
     private var gateContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
     private var buildingWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
     private var building: Set<Int> = []
@@ -257,6 +369,14 @@ private actor ControllableChapterBuilder: AttributedStringBuilding {
 
     func buildCount(chapter: Int) -> Int {
         buildCounts[chapter, default: 0]
+    }
+
+    func cancelledBuilds(chapter: Int) -> Int {
+        cancellationCounts[chapter, default: 0]
+    }
+
+    func replaceBody(_ body: String, chapter: Int) {
+        replacementBodies[chapter] = body
     }
 
     func waitUntilBuilding(chapter: Int) async {
@@ -297,9 +417,10 @@ private actor ControllableChapterBuilder: AttributedStringBuilding {
         if failingChapters.contains(index) {
             throw AttributedStringBuildingError.contentNotCached(index)
         }
+        if Task.isCancelled { cancellationCounts[index, default: 0] += 1 }
 
         let attributed = NSAttributedString(
-            string: Self.chapterText,
+            string: replacementBodies[index] ?? Self.chapterText,
             attributes: [
                 .font: UIFont.systemFont(ofSize: settings.fontSize),
                 .foregroundColor: themeTextColor,

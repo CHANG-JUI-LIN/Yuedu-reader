@@ -512,6 +512,7 @@ private struct DiscoverFeaturedCard: View {
             BookCoverImage(
                 coverURL: display.book.coverUrl,
                 title: display.book.name,
+                author: display.book.author,
                 sourceBaseURL: section.coverBaseURL,
                 sourceHeaders: section.coverHeaders,
                 defaultCoverSeed: DiscoverDefaultCoverSeed.seed(for: display)
@@ -553,6 +554,7 @@ private struct DiscoverRankedRow: View {
             BookCoverImage(
                 coverURL: display.book.coverUrl,
                 title: display.book.name,
+                author: display.book.author,
                 sourceBaseURL: section.coverBaseURL,
                 sourceHeaders: section.coverHeaders,
                 defaultCoverSeed: DiscoverDefaultCoverSeed.seed(for: display)

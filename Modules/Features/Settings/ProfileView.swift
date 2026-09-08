@@ -64,12 +64,7 @@ struct SettingsView: View {
                     }
                     .interfaceSectionSurface()
                     // ── App Language ──
-                    Section(
-                        header: Text(localized("App 語言")),
-                        footer: Text(appLanguageFooter)
-                            .font(DSFont.caption)
-                            .foregroundColor(.secondary)
-                    ) {
+                    Section {
                         DSSettingsRow(
                             icon: "globe",
                             title: localized("語言"),
@@ -79,6 +74,11 @@ struct SettingsView: View {
                                 }
                             }
                         )
+                    } header: {
+                        Text(localized("App 語言"))
+                    } footer: {
+                        Text(appLanguageFooter)
+                            .dsSectionFooter()
                     }
                     .interfaceSectionSurface()
 
@@ -448,10 +448,7 @@ private struct AboutSupportView: View {
             }
             .interfaceSectionSurface()
 
-            Section(
-                header: Text(localized("政策與協議")),
-                footer: Text(localized("使用書源、第三方服務與未來付費功能前，請先閱讀相關條款。"))
-            ) {
+            Section {
                 actionRow(
                     icon: "hand.raised.fill",
                     title: localized("隱私權政策"),
@@ -484,6 +481,11 @@ private struct AboutSupportView: View {
                         openURL(url)
                     }
                 }
+            } header: {
+                Text(localized("政策與協議"))
+            } footer: {
+                Text(localized("使用書源、第三方服務與未來付費功能前，請先閱讀相關條款。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
         }

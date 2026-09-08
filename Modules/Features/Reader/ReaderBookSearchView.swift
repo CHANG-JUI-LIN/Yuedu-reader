@@ -13,7 +13,14 @@ struct ReaderBookSearchView: View {
     let onSelect: (ReaderBookSearchItem) -> Void
     let onClose: () -> Void
 
-    @State private var query = ""
+    @State private var query: String
+
+    init(items: [ReaderBookSearchItem], initialQuery: String = "", onSelect: @escaping (ReaderBookSearchItem) -> Void, onClose: @escaping () -> Void) {
+        self.items = items
+        self.onSelect = onSelect
+        self.onClose = onClose
+        _query = State(initialValue: initialQuery)
+    }
 
     private var matches: [ReaderBookSearchItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)

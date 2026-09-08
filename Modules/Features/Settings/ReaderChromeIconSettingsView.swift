@@ -25,7 +25,6 @@ struct ReaderChromeIconSettingsView: View {
                 footerKey: "經典把這四個畫成浮在正文上的圓鈕，現代放在點封面圓圈之後的書卡裡。原本就不適用這本書的動作仍然不會出現。"
             )
         }
-        .font(DSFont.body)
         .scrollContentBackground(.hidden)
         .navigationTitle(localized("按鈕圖示"))
         .toolbarTitleDisplayMode(.inline)
@@ -54,8 +53,7 @@ struct ReaderChromeIconSettingsView: View {
                 .foregroundStyle(DSColor.textPrimary)
         } footer: {
             Text(localized(footerKey))
-                .font(DSFont.footnote)
-                .foregroundStyle(DSColor.textSecondary)
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

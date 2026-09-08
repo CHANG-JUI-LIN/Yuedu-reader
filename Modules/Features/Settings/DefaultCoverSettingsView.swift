@@ -5,7 +5,8 @@ import UIKit
 ///
 /// Legado keeps one default cover per appearance; this keeps a small library and
 /// picks one per book (deterministically, see `DefaultCoverLibrary`), so a shelf
-/// of coverless books doesn't turn into the same picture repeated.
+/// of coverless books doesn't turn into the same picture repeated. With the
+/// library empty the book falls through to `GeneratedBookCover`.
 struct DefaultCoverSettingsView: View {
     @ObservedObject private var settings = GlobalSettings.shared
     @State private var importErrorMessage: String?
@@ -23,6 +24,7 @@ struct DefaultCoverSettingsView: View {
                 )
             } footer: {
                 Text(localized("開啟後所有書籍都使用預設封面，忽略書籍自帶的封面圖。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -51,6 +53,7 @@ struct DefaultCoverSettingsView: View {
                 .padding(.vertical, DSSpacing.xs)
             } footer: {
                 Text(localized("用於書架卡片中的封面裁切，不影響卡片背景圓角。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -61,8 +64,27 @@ struct DefaultCoverSettingsView: View {
                 )
             } footer: {
                 Text(localized("開啟後，探索頁中沒有封面的書卡也使用隨機預設封面圖（列表和網格均生效）。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
+
+            Section {
+                Toggle(
+                    localized("封面顯示書名"),
+                    isOn: $settings.defaultCoverDrawsBookName
+                )
+                Toggle(
+                    localized("封面顯示作者"),
+                    isOn: $settings.defaultCoverDrawsBookAuthor
+                )
+            } header: {
+                Text(localized("自動生成的封面"))
+            } footer: {
+                Text(localized("沒有封面的書會自動生成一張，這裡決定要不要把書名和作者直排寫上去。你自己匯入的封面圖不受影響。"))
+                    .dsSectionFooter()
+            }
+            .interfaceSectionSurface()
+
             coverLibrarySection(for: .light)
             coverLibrarySection(for: .dark)
         }
@@ -125,6 +147,7 @@ struct DefaultCoverSettingsView: View {
                     ? localized("深色模式下優先使用這裡的封面，未設置時跟隨亮色封面。")
                     : localized("書籍沒有封面時隨機使用其中一張作為預設封面。")
             )
+            .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

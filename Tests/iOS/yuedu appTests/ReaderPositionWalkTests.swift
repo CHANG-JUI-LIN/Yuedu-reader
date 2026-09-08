@@ -160,6 +160,88 @@ struct ReaderPositionWalkTests {
         #expect(stepped == .chapterStart(1))
     }
 
+    /// Standing **on** the first unmeasured character must not step to itself.
+    ///
+    /// The previous test hands `coveredEnd` out as a destination, so ordinary reading
+    /// walks the reader onto it. Asking what follows then returned `coveredEnd` again —
+    /// "the next page is the page you are on" — and the walker became a fixed point.
+    /// A device log caught this as **26 out of 26** page-turn anomalies in one four
+    /// minute window having `after == start`: deterministic, not a race.
+    @Test func standingOnTheFirstUnmeasuredCharacterIsNotItsOwnNextPage() {
+        let layouts: [Int: CoreTextPaginator.ChapterLayout] = [
+            0: layout(
+                spine: 0,
+                text: String(repeating: "a", count: 100),
+                pageStarts: [0],
+                coveredEnd: 10,
+                isPartial: true,
+                estimatedPageCount: 10
+            ),
+            1: layout(spine: 1, text: "next", pageStarts: [0]),
+        ]
+        let parked = CoreTextReadingPosition(spineIndex: 0, charOffset: 10)
+        let stepped = CoreTextReadingPositionMapper.positionAfter(
+            parked,
+            layouts: layouts,
+            chapterCount: 2
+        )
+
+        #expect(stepped != parked)
+        // Nor may it skip the 90 unmeasured characters by crossing into chapter 1 —
+        // that is 翻頁跳章節, the report this walker exists to prevent. There is no
+        // honest answer until the full pagination lands, so it refuses.
+        #expect(stepped != .chapterStart(1))
+        #expect(stepped == nil)
+    }
+
+    /// The same refusal applies past the covered range, not just exactly on it.
+    @Test func beyondTheMeasuredRangeHasNoNextPageYet() {
+        let layouts: [Int: CoreTextPaginator.ChapterLayout] = [
+            0: layout(
+                spine: 0,
+                text: String(repeating: "a", count: 100),
+                pageStarts: [0],
+                coveredEnd: 10,
+                isPartial: true,
+                estimatedPageCount: 10
+            ),
+            1: layout(spine: 1, text: "next", pageStarts: [0]),
+        ]
+        let beyond = CoreTextReadingPosition(spineIndex: 0, charOffset: 40)
+        #expect(
+            CoreTextReadingPositionMapper.positionAfter(
+                beyond, layouts: layouts, chapterCount: 2
+            ) == nil
+        )
+    }
+
+    /// Stepping forward before the covered end is unaffected — the fix must not turn
+    /// a working partial-layout turn into a refusal.
+    @Test func partialLayoutStillStepsWhileInsideTheMeasuredRange() {
+        let layouts: [Int: CoreTextPaginator.ChapterLayout] = [
+            0: layout(
+                spine: 0,
+                text: String(repeating: "a", count: 100),
+                pageStarts: [0, 10],
+                coveredEnd: 20,
+                isPartial: true,
+                estimatedPageCount: 10
+            ),
+            1: layout(spine: 1, text: "next", pageStarts: [0]),
+        ]
+        #expect(
+            CoreTextReadingPositionMapper.positionAfter(
+                .chapterStart(0), layouts: layouts, chapterCount: 2
+            ) == CoreTextReadingPosition(spineIndex: 0, charOffset: 10)
+        )
+        #expect(
+            CoreTextReadingPositionMapper.positionAfter(
+                CoreTextReadingPosition(spineIndex: 0, charOffset: 10),
+                layouts: layouts, chapterCount: 2
+            ) == CoreTextReadingPosition(spineIndex: 0, charOffset: 20)
+        )
+    }
+
     // MARK: - The invariant the bug violated
 
     /// Chapter 0 growing from 3 pages to 5 renumbers every global page after it. The

@@ -253,7 +253,9 @@ extension ReaderView {
         guard let engine = epubRenderer.engine else { return nil }
         let clamped = max(0, min(page, max(engine.totalPages - 1, 0)))
         let (spineIndex, charOffset) = engine.charOffset(forPage: clamped)
-        guard engine.layouts[spineIndex] != nil else { return nil }
+        guard engine.chapterPagination(forSpine: spineIndex, charOffset: charOffset) != nil else {
+            return nil
+        }
         return CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset)
     }
 

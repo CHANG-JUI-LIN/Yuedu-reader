@@ -74,8 +74,7 @@ enum EPUBMediaPlaceholderRenderer {
 
     /// A dark 16:9-ish "film" frame with a centered play button — tapping it opens the player.
     /// Honors the element's CSS width/height aspect when known, capped to the content width.
-    @MainActor
-    private static func videoImage(maxWidth: CGFloat, intrinsicSize: CGSize?) -> UIImage {
+    static func videoImage(maxWidth: CGFloat, intrinsicSize: CGSize?) -> UIImage {
         let aspect: CGFloat = {
             if let size = intrinsicSize, size.width > 0, size.height > 0 {
                 // Clamp to a sane range so a malformed size can't make a sliver or a tower.
@@ -88,7 +87,6 @@ enum EPUBMediaPlaceholderRenderer {
         let height = max(120, width * aspect)
 
         let format = UIGraphicsImageRendererFormat()
-        format.scale = UIScreen.main.scale
         format.opaque = false
 
         return UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format).image { _ in

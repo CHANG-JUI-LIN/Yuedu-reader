@@ -38,7 +38,7 @@ struct ICloudSyncView: View {
     }
 
     private var accountSection: some View {
-        Section(header: Text(localized("帳號狀態"))) {
+        Section {
             HStack {
                 Label(manager.statusTitle(isAppSignedIn: true), systemImage: statusIcon)
                     .foregroundColor(statusColor)
@@ -48,11 +48,12 @@ struct ICloudSyncView: View {
                         .foregroundColor(.green)
                 }
             }
-
+        } header: {
+            Text(localized("帳號狀態"))
+        } footer: {
             if !iCloudReady {
                 Text(localized("請確認系統設定中已登入 iCloud，且 iCloud Drive/CloudKit 可用"))
-                    .font(DSFont.footnote)
-                    .foregroundColor(DSColor.textSecondary)
+                    .dsSectionFooter()
             }
         }
         .interfaceSectionSurface()
@@ -67,6 +68,7 @@ struct ICloudSyncView: View {
                 }
         } footer: {
             Text(localized("開啟後，App 啟動與切到背景時會自動與 iCloud 合併同步（書庫、書源、替換規則與書檔）。多台裝置會智慧合併，不會互相覆蓋。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

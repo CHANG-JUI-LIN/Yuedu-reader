@@ -89,6 +89,7 @@ struct RegexHighlightSettingsView: View {
             )
         } footer: {
             Text(localized("關閉後下面的規則只做配置，不會參與閱讀頁匹配。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -172,6 +173,7 @@ struct RegexHighlightSettingsView: View {
             Text(localized("內置規則"))
         } footer: {
             Text(localized("內置規則不能刪除。需要改匹配方式時，直接複製一條為自定義規則再改。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -202,6 +204,7 @@ struct RegexHighlightSettingsView: View {
             Text(localized("自定義規則"))
         } footer: {
             Text(localized("自定義規則排在內置規則之後，適合做更具體的覆蓋高亮。左滑可刪除，點右上角「編輯」可排序。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

@@ -8,6 +8,13 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
 
     var displayList: DisplayList = .empty
     var backgroundColorFill: UIColor = .white
+    /// The reader's own background artwork, when the user has chosen one.
+    ///
+    /// This is the reading surface, not a decoration behind an opaque page:
+    /// `CoreTextPageView` draws it per page and so must this view, or a book
+    /// whose chapters render on the browser engine loses the background the
+    /// moment it leaves a legacy chapter.
+    var readerBackgroundImage: UIImage?
     /// Every tappable link on this page, in final page-local geometry, built by
     /// the engine from the SAME display list this view draws. The view never
     /// derives link geometry itself.
@@ -17,6 +24,21 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     var onLinkActivate: ((LinkInteractionRegion) -> Void)?
     var onImageTap: ((DisplayImageItem) -> Void)?
     var onLongPress: (() -> Void)?
+    private(set) var textInteraction: BrowserTextInteractionController?
+
+    func configureTextInteraction(sourceText: String, spineIndex: Int, annotations: [CoreTextTextAnnotation]) {
+        guard textInteraction == nil else { textInteraction?.annotations = annotations; return }
+        let interaction = BrowserTextInteractionController(page: self, sourceText: sourceText, spineIndex: spineIndex)
+        interaction.onSearch = { text in
+            NotificationCenter.default.post(name: .coreTextSearchSelectionRequested, object: nil, userInfo: ["text": text])
+        }
+        interaction.onTranslate = { text in
+            NotificationCenter.default.post(name: .coreTextTranslateSelectionRequested, object: nil, userInfo: ["text": text])
+        }
+        textInteraction = interaction
+        interaction.annotations = annotations
+        refreshAccessibility()
+    }
     /// Pressed-link wash. Paint only — never affects layout or pagination.
     var linkPressedColor: UIColor = UIColor.label.withAlphaComponent(0.15) {
         didSet { pressedHighlightLayer.fillColor = linkPressedColor.cgColor }
@@ -24,6 +46,14 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     /// Highlight rects (selection / TTS sentence) painted above the content.
     var highlightRects: [CGRect] = []
     var highlightColor: UIColor = UIColor.systemYellow.withAlphaComponent(0.35)
+    /// This page's plain text and where it starts in the chapter's offset space.
+    ///
+    /// The one place the view learns what it is showing in SOURCE terms. Both
+    /// VoiceOver (which reads the page) and the TTS wash (which has to find the
+    /// spoken sentence among the fragments) need it, and deriving it twice from
+    /// the display list is how the two would end up disagreeing.
+    var pageSourceText: String = ""
+    var pageSourceRange: NSRange = NSRange(location: 0, length: 0)
     /// When a selection is active, taps deselect instead of following links.
     var hasActiveSelection = false
     var onDeselect: (() -> Void)?
@@ -98,8 +128,10 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // The press overlay spans the page; its path is already page-local.
+        // The overlays span the page; their paths are already page-local.
         pressedHighlightLayer.frame = bounds
+        playbackHighlightLayer.frame = bounds
+        textInteraction?.layout()
         guard let spec = debugSpec else { return }
         BrowserLayoutDeviceDiagnostic.log(
             .pageViewLayout(spine: spec.spine, generation: spec.generation),
@@ -114,6 +146,8 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     /// press costs a compositing pass and never a CoreGraphics redraw of the
     /// page's text.
     private let pressedHighlightLayer = CAShapeLayer()
+    /// TTS sentence wash — same reasoning, its own layer.
+    private let playbackHighlightLayer = CAShapeLayer()
 
     private lazy var tapRecognizer: UITapGestureRecognizer = {
         let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
@@ -142,6 +176,9 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         tapRecognizer.require(toFail: longPressRecognizer)
         pressedHighlightLayer.fillColor = linkPressedColor.cgColor
         pressedHighlightLayer.isHidden = true
+        playbackHighlightLayer.fillColor = UIColor.systemYellow.withAlphaComponent(0.28).cgColor
+        playbackHighlightLayer.isHidden = true
+        layer.addSublayer(playbackHighlightLayer)
         layer.addSublayer(pressedHighlightLayer)
     }
 
@@ -158,7 +195,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         // Taps on links AND on images are owned by this page view (mirror
         // CoreTextPageView.shouldHandleTap, which also returns true for image
         // attachments). Anything else falls through to the reader's zones.
-        return interactionRegions.hitTest(point) != nil || imageTarget(at: point) != nil
+        return textInteraction?.ownsTap(at: point) == true || interactionRegions.hitTest(point) != nil || imageTarget(at: point) != nil
     }
 
     required init?(coder: NSCoder) {
@@ -195,7 +232,19 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         let ctmBefore = BrowserLayoutDeviceDiagnostic.ctm(context)
         backgroundColorFill.setFill()
         context.fill(bounds)
-        DisplayListDrawer.draw(displayList, in: context)
+        if let readerBackgroundImage {
+            // Aspect-fill and centred through the SAME helper the legacy page
+            // and the 載入中 placeholder use, so the artwork does not shift when
+            // a page turn crosses between the two engines.
+            CoreTextPageView.drawPageBackground(readerBackgroundImage, in: bounds)
+        }
+        DisplayListDrawer.draw(
+            displayList,
+            in: context,
+            // A reader-chosen background REPLACES the book's own page surface,
+            // exactly as in the legacy page.
+            skipAuthoredBackgroundPaint: readerBackgroundImage != nil
+        )
         for highlight in highlightRects {
             highlightColor.setFill()
             context.fill(highlight.intersection(bounds))
@@ -274,6 +323,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     /// space. Ruby annotations carry their base range, so hit-testing never
     /// invents a second offset space for `<rt>`.
     func sourceRange(at point: CGPoint) -> NSRange? {
+        if let textInteraction { return textInteraction.sourceRange(at: point) }
         for item in displayList.items.reversed() {
             guard case .text(let text) = item, text.rect.contains(point) else { continue }
             return text.sourceRange
@@ -282,8 +332,15 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
-        guard recognizer.state == .began else { return }
-        onLongPress?()
+        switch recognizer.state {
+        case .began:
+            cancelLinkPress()
+            textInteraction?.begin(at: recognizer.location(in: self))
+            onLongPress?()
+        case .ended: textInteraction?.finish()
+        case .cancelled: textInteraction?.clear()
+        default: break
+        }
     }
 
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
@@ -298,6 +355,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     /// RECOGNIZE a link tap: that is what fails the reader's ancestor page-turn
     /// recognizer, so following a link does not also turn the page.
     func routeTap(at point: CGPoint) {
+        if textInteraction?.tap(at: point) == true { return }
         // Selection takes priority over links: a tap inside an active selection
         // deselects. Tapping outside it can still follow links.
         if isInsideActiveSelection(point) {
@@ -308,6 +366,154 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         if let image = imageTarget(at: point) {
             onImageTap?(image)
         }
+    }
+
+    // MARK: - Accessibility
+
+    /// The browser engine draws straight into `draw(_:)`, exactly like
+    /// `CoreTextPageView`, so without this a browser-rendered page is an empty
+    /// `UIView` to VoiceOver: nothing to focus, and the reader's tap zones never
+    /// fire because VoiceOver swallows the touch. Same contract as the legacy
+    /// page — read the whole page as one element, activate → menu, accessibility
+    /// scroll → page turn.
+    var onAccessibilityAction: ((TouchAction) -> Void)? {
+        didSet { refreshAccessibility() }
+    }
+
+    /// RTL books flip the physical page order, so a VoiceOver "scroll right"
+    /// has to advance rather than go back.
+    var accessibilityUsesRTLPageOrder = false {
+        didSet {
+            guard accessibilityUsesRTLPageOrder != oldValue else { return }
+            refreshAccessibility()
+        }
+    }
+
+    /// Plain text of the page currently drawn.
+    var accessibilityPageText: String {
+        pageSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func refreshAccessibility() {
+        isAccessibilityElement = true
+        accessibilityTraits = .staticText
+        accessibilityLabel = accessibilityPageText
+        accessibilityHint = localized("點兩下展開閱讀工具，三指左右滑動翻頁")
+        accessibilityCustomActions = [
+            accessibilityAction(named: localized("下一頁"), action: .nextPage),
+            accessibilityAction(named: localized("上一頁"), action: .prevPage),
+            accessibilityAction(named: localized("選單"), action: .toggleMenu),
+            accessibilityAction(named: localized("目錄"), action: .tableOfContents),
+        ]
+        if textInteraction != nil {
+            accessibilityCustomActions?.append(UIAccessibilityCustomAction(name: localized("選取文字")) { [weak self] _ in
+                guard let self, let first = displayList.items.compactMap({ item -> CGRect? in
+                    if case .text(let text) = item { return text.rect.rawValue }; return nil
+                }).first else { return false }
+                textInteraction?.begin(at: CGPoint(x: first.midX, y: first.midY))
+                textInteraction?.finish()
+                return true
+            })
+        }
+    }
+
+    private func accessibilityAction(
+        named name: String,
+        action: TouchAction
+    ) -> UIAccessibilityCustomAction {
+        UIAccessibilityCustomAction(name: name) { [weak self] _ in
+            guard let handler = self?.onAccessibilityAction else { return false }
+            handler(action)
+            return true
+        }
+    }
+
+    override func accessibilityActivate() -> Bool {
+        guard let onAccessibilityAction else { return false }
+        onAccessibilityAction(.toggleMenu)
+        return true
+    }
+
+    override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
+        guard let onAccessibilityAction else { return false }
+        let action: TouchAction
+        switch direction {
+        case .left, .up:
+            action = accessibilityUsesRTLPageOrder ? .prevPage : .nextPage
+        case .right, .down:
+            action = accessibilityUsesRTLPageOrder ? .nextPage : .prevPage
+        default:
+            return false
+        }
+        onAccessibilityAction(action)
+        return true
+    }
+
+    // MARK: - TTS playback highlight
+
+    private var playbackHighlightText: String?
+
+    /// Washes the sentence TTS is speaking, matching `CoreTextPageView`.
+    ///
+    /// Its own `CAShapeLayer` rather than `highlightRects`: the wash changes once
+    /// per spoken sentence, and repainting every glyph of the page through
+    /// `draw(_:)` that often is a cost the reader can feel.
+    func setPlaybackHighlight(text: String?) {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != playbackHighlightText else { return }
+        playbackHighlightText = trimmed
+        updatePlaybackHighlight()
+    }
+
+    private func updatePlaybackHighlight() {
+        guard let needle = playbackHighlightText, !needle.isEmpty,
+              let range = sourceRange(ofSpokenText: needle) else {
+            clearPlaybackHighlight()
+            return
+        }
+        let path = UIBezierPath()
+        for rect in rects(intersectingSourceRange: range) {
+            path.append(UIBezierPath(roundedRect: rect.insetBy(dx: -1, dy: -1), cornerRadius: 3))
+        }
+        guard !path.isEmpty else {
+            clearPlaybackHighlight()
+            return
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playbackHighlightLayer.path = path.cgPath
+        playbackHighlightLayer.isHidden = false
+        CATransaction.commit()
+    }
+
+    private func clearPlaybackHighlight() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playbackHighlightLayer.isHidden = true
+        playbackHighlightLayer.path = nil
+        CATransaction.commit()
+    }
+
+    /// The spoken sentence located in CHAPTER offset space. Searching this
+    /// page's own text (not the whole chapter) is what keeps a sentence that
+    /// repeats later in the chapter from washing the wrong paragraph here.
+    private func sourceRange(ofSpokenText needle: String) -> NSRange? {
+        let page = pageSourceText as NSString
+        guard page.length > 0 else { return nil }
+        let found = page.range(
+            of: needle,
+            options: [.caseInsensitive, .diacriticInsensitive]
+        )
+        guard found.location != NSNotFound else { return nil }
+        return NSRange(
+            location: pageSourceRange.location + found.location,
+            length: found.length
+        )
+    }
+
+    /// Page-local rects of every text fragment overlapping a chapter-space range.
+    private func rects(intersectingSourceRange range: NSRange) -> [CGRect] {
+        BrowserTextGeometry.rects(in: displayList, range: range)
     }
 
     // MARK: - Link press lifecycle (normal → pressed → activated)
@@ -354,7 +560,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     @discardableResult
     func beginLinkPress(at point: CGPoint) -> LinkInteractionRegion? {
         cancelLinkPress()
-        guard !isInsideActiveSelection(point),
+        guard textInteraction?.ownsTap(at: point) != true, !isInsideActiveSelection(point),
               let region = interactionRegions.hitTest(point) else { return nil }
         pressedLinkRegion = region
         linkInteractionState = .pressed
@@ -465,22 +671,33 @@ final class BrowserLayoutPageViewController: UIViewController,
     let globalPageIndex: Int
     let coreTextReadingPosition: CoreTextReadingPosition?
     let pageView: BrowserLayoutPageView
+    private let mediaAttachments: [Int: EPUBMediaAttachment]
+    private lazy var inlineVideos = BrowserInlineVideoCoordinator(owner: self)
+    private var mediaAccessibilityActions: [UIAccessibilityCustomAction] = []
 
     init(
         globalPageIndex: Int,
         readingPosition: CoreTextReadingPosition?,
         displayList: DisplayList,
+        mediaAttachments: [Int: EPUBMediaAttachment] = [:],
         backgroundColor: UIColor,
+        readerBackgroundImage: UIImage? = nil,
+        pageSourceText: String = "",
+        pageSourceRange: NSRange = NSRange(location: 0, length: 0),
         statusText: String? = nil,
         interactionRegions: LinkInteractionRegionSet = .empty,
         pressedLinkColor: UIColor? = nil,
         onLinkActivate: ((LinkInteractionRegion) -> Void)?
     ) {
         self.globalPageIndex = globalPageIndex
+        self.mediaAttachments = mediaAttachments
         self.coreTextReadingPosition = readingPosition
         self.pageView = BrowserLayoutPageView(frame: .zero)
         self.pageView.displayList = displayList
         self.pageView.backgroundColorFill = backgroundColor
+        self.pageView.readerBackgroundImage = readerBackgroundImage
+        self.pageView.pageSourceText = pageSourceText
+        self.pageView.pageSourceRange = pageSourceRange
         self.pageView.interactionRegions = interactionRegions
         if let pressedLinkColor {
             self.pageView.linkPressedColor = pressedLinkColor
@@ -539,6 +756,20 @@ final class BrowserLayoutPageViewController: UIViewController,
         present(controller, animated: true)
     }
 
+    /// VoiceOver-originated reader commands, routed by the paged host through
+    /// the same sink the tap zones use.
+    var onAccessibilityAction: ((TouchAction) -> Void)? {
+        didSet { pageView.onAccessibilityAction = onAccessibilityAction }
+    }
+
+    var accessibilityUsesRTLPageOrder = false {
+        didSet { pageView.accessibilityUsesRTLPageOrder = accessibilityUsesRTLPageOrder }
+    }
+
+    func setPlaybackHighlight(text: String?) {
+        pageView.setPlaybackHighlight(text: text)
+    }
+
     override func loadView() {
         view = pageView
     }
@@ -547,9 +778,50 @@ final class BrowserLayoutPageViewController: UIViewController,
         super.viewDidLoad()
         view.backgroundColor = pageView.backgroundColorFill
         pageView.onImageTap = { [weak self] item in
-            self?.presentImagePreview(item)
+            guard let self else { return }
+            if inlineVideos.start(nodeID: item.nodeID) { return }
+            presentImagePreview(item)
         }
+        pageView.refreshAccessibility()
+        syncInlineVideos()
     }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        syncInlineVideos()
+        // Move VoiceOver to the page that just became visible; otherwise a page
+        // turn leaves focus on the previous (offscreen) page and reads nothing.
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(notification: .screenChanged, argument: pageView)
+    }
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        syncInlineVideos()
+    }
+
+    private func syncInlineVideos() {
+        let placements = pageView.displayList.items.compactMap { item -> BrowserInlineVideoPlacement? in
+            guard case .image(let image) = item, !image.isBackgroundPaint,
+                  let media = mediaAttachments[image.nodeID], media.kind == .video else { return nil }
+            return BrowserInlineVideoPlacement(nodeID: image.nodeID, media: media, rect: image.rect.rawValue)
+        }
+        inlineVideos.sync(placements)
+        if pageView.accessibilityPageText.isEmpty, let first = placements.first {
+            let title = first.media.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            pageView.accessibilityLabel = title.isEmpty ? localized("播放") : title
+        }
+        let readerActions = (pageView.accessibilityCustomActions ?? []).filter { action in
+            !mediaAccessibilityActions.contains { $0 === action }
+        }
+        mediaAccessibilityActions = placements.map { placement in
+            let title = placement.media.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return UIAccessibilityCustomAction(name: title.isEmpty ? localized("播放") : localized("播放") + " " + title) { [weak self] _ in
+                self?.inlineVideos.start(nodeID: placement.nodeID) ?? false
+            }
+        }
+        pageView.accessibilityCustomActions = readerActions + mediaAccessibilityActions
+    }
+
 }
 
 /// Terminal diagnostic page VC for `browserForced` chapters the browser engine

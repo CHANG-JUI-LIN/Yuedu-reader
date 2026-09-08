@@ -46,6 +46,19 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
         try await session.chapterHTML(at: index)
     }
 
+    func resolveMediaAttachment(forChapter index: Int, media: EPUBMediaAttachment) -> EPUBMediaAttachment {
+        guard let chapterHref = chapterSourceHref(at: index) else { return media }
+        func resolve(_ source: String) -> String {
+            if let url = URL(string: source), url.scheme != nil { return source }
+            let href = EPUBStyleResolver.resolveImageHref(source, chapterHref: chapterHref)
+            return resourceAdapter.resourceURL(for: href).absoluteString
+        }
+        return EPUBMediaAttachment(
+            kind: media.kind, sourceHref: resolve(media.sourceHref), mediaType: media.mediaType,
+            title: media.title, posterHref: media.posterHref.map(resolve)
+        )
+    }
+
     // MARK: - CSS
 
     func processedCSS(forChapter index: Int) async -> [String] {

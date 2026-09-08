@@ -1,0 +1,55 @@
+{
+  "label": "snapshot-settled-after-jianghu-off",
+  "condition": "current run chapter 10..14 official cache body+metadata+raw+normalized+last atomic package commit, matched SHA256/state/version/source; initial visible page observed",
+  "start_uptime": 348206.235852666,
+  "completed_uptime": 348206.236786041,
+  "start_wall": "2026-09-08T01:23:53.928853",
+  "completed_wall": "2026-09-08T01:23:53.929787",
+  "chapters": [
+    {
+      "spine": 10,
+      "content_bytes": 10380,
+      "content_sha256": "293e4ef4f9fc545a279f07e4db1309389914a37f1ae93d13ca29dcfdea5e353a",
+      "render_artifact_version": 3,
+      "package_commit_wall": "2026-09-08T01:23:52.402778",
+      "package_commit_epoch_s": 1788801832.4027777,
+      "source_url_sha256": "3f076db6434d37e50c1d810af6d3d7f8fc9a12032f797247db8c439d9ff99fec"
+    },
+    {
+      "spine": 11,
+      "content_bytes": 11150,
+      "content_sha256": "cec99d57f4ba1d2cb0dc3093ca9bdbe24bdedc9745e852b6d098e2e44c50311a",
+      "render_artifact_version": 3,
+      "package_commit_wall": "2026-09-08T01:23:52.395631",
+      "package_commit_epoch_s": 1788801832.3956308,
+      "source_url_sha256": "f269aaeae2eb6a00b6b899def54e1241684ffeab23a461e3f9c1a24b54089de5"
+    },
+    {
+      "spine": 12,
+      "content_bytes": 12354,
+      "content_sha256": "20149945d1242d3fcab78cccbde424507bfedf92003f56bc4092b2d3cc619b71",
+      "render_artifact_version": 3,
+      "package_commit_wall": "2026-09-08T01:23:51.576302",
+      "package_commit_epoch_s": 1788801831.576302,
+      "source_url_sha256": "57a441c61f70ced236d7bac8bb2d9d8f55153ff67ab1f0bf19ab9f2de66b3195"
+    },
+    {
+      "spine": 13,
+      "content_bytes": 10208,
+      "content_sha256": "c4990db6a369312dbf8b70b74f21c37b7e8b70aeaabbb7b5f0cff0e5312ff506",
+      "render_artifact_version": 3,
+      "package_commit_wall": "2026-09-08T01:23:52.104399",
+      "package_commit_epoch_s": 1788801832.1043992,
+      "source_url_sha256": "e352dc63fe115fa68b528b16e480f31a64770997512a5edc1757374ee7e8efea"
+    },
+    {
+      "spine": 14,
+      "content_bytes": 11267,
+      "content_sha256": "cbf000ec3602ac77bd884c07504d12bfb6bf10e26c1c4aad4af0948221a3e55b",
+      "render_artifact_version": 3,
+      "package_commit_wall": "2026-09-08T01:23:52.382774",
+      "package_commit_epoch_s": 1788801832.3827736,
+      "source_url_sha256": "bc59e1f0a07dcdaef3891ced87b65295b45c3d9f836170132851db1b4f2cc71f"
+    }
+  ]
+}

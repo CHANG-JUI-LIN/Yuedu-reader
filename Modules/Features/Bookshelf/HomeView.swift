@@ -11,7 +11,9 @@ enum BookshelfCoverStyle {
         CGFloat(GlobalSettings.shared.bookshelfCoverCornerRadius)
     }
 
-    /// The artwork a bookshelf card draws, or nil to fall back to the title card.
+    /// The bitmap a bookshelf card draws, or nil when the book has no artwork of
+    /// its own and the user's 預設封面 library is empty — `artwork(for:)`
+    /// generates one for that case.
     ///
     /// One resolver for the row, the grid cell and the open-book transition
     /// snapshot, so 強制使用預設封面 cannot end up honored in one of them and
@@ -22,11 +24,47 @@ enum BookshelfCoverStyle {
             seed: book.id.uuidString, colorScheme: colorScheme
         )
         // Forcing means the book's own artwork is never drawn, even when the
-        // library is empty — that case falls through to the title card, which is
-        // what Legado's built-in default cover does.
+        // library is empty — that case falls through to the generated cover,
+        // which is what Legado's built-in default cover does.
         if GlobalSettings.shared.useDefaultCoverForAllBooks { return defaultCover }
         return book.coverImagePath.flatMap { BookshelfCoverLoader.load(filename: $0) }
             ?? defaultCover
+    }
+
+    /// What a card actually shows. Always something: the book's own cover, the
+    /// user's 預設封面, or one generated from the title.
+    ///
+    /// Fills the frame the caller gives it. The row, the grid cell and the
+    /// reader's card all go through here — each used to inline its own grey
+    /// title card, which is how a local TXT with no artwork kept getting the old
+    /// placeholder after the generated covers landed.
+    @ViewBuilder
+    static func artwork(for book: ReadingBook, colorScheme: ColorScheme) -> some View {
+        if let uiImage = image(for: book, colorScheme: colorScheme) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+        } else {
+            GeneratedBookCover(title: book.title, author: book.author)
+        }
+    }
+
+    /// Bitmap form for the open-book transition, which lifts a picture rather
+    /// than a view and so cannot take `artwork(for:)`. Rendered larger than any
+    /// card because the lifted cover grows as it animates.
+    @MainActor
+    static func snapshot(for book: ReadingBook, colorScheme: ColorScheme) -> UIImage? {
+        if let uiImage = image(for: book, colorScheme: colorScheme) { return uiImage }
+        let settings = GlobalSettings.shared
+        return GeneratedBookCoverRenderer.image(
+            title: book.title,
+            author: book.author,
+            size: CGSize(width: 300, height: 400),
+            colorScheme: colorScheme,
+            drawsName: settings.defaultCoverDrawsBookName,
+            drawsAuthor: settings.defaultCoverDrawsBookAuthor,
+            scale: 2
+        )
     }
 }
 
@@ -176,7 +214,7 @@ struct HomeView: View {
             AppLogger.info("⟐ openBook staged token=\(requestToken) hasPendingToken=\(pendingReaderOpenToken != nil)")
             // Same resolver the cards use, so the lifted card carries the very
             // image the shelf was showing (including a 預設封面).
-            let snapshot = BookshelfCoverStyle.image(for: book, colorScheme: colorScheme)
+            let snapshot = BookshelfCoverStyle.snapshot(for: book, colorScheme: colorScheme)
             AppLogger.info("⟐ openBook snapshot resolved hasSnapshot=\(snapshot != nil)")
             Task { @MainActor in
                 AppLogger.info("⟐ openBook begin resolveOpeningDirection bookID=\(book.id)")
@@ -1028,6 +1066,7 @@ struct EditBookSheet: View {
             Text(localized("封面"))
         } footer: {
             Text(localized("封面搜索會上網找封面；換封面則在你已加入的書源裡，尋找同書名同作者的封面。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
 
@@ -1046,6 +1085,7 @@ struct EditBookSheet: View {
             .disabled(isApplyingCover || !canApplyCoverUrl)
         } footer: {
             Text(localized("貼上圖片網址後，點「套用網址」下載為封面。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -1072,6 +1112,7 @@ struct EditBookSheet: View {
             BookCoverImage(
                 coverURL: liveBook.coverUrl ?? "",
                 title: liveBook.title,
+                author: liveBook.author,
                 sourceBaseURL: source?.bookSourceUrl,
                 sourceHeaders: source?.parsedHeaders ?? [:]
             )
@@ -1385,34 +1426,14 @@ struct BookRow: View {
         }
     }
 
-    @ViewBuilder
     private var bookCover: some View {
-        if let uiImage = BookshelfCoverStyle.image(for: book, colorScheme: colorScheme) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
-                .frame(width: coverW, height: coverH)
-                .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
-                .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
-                .overlay(alignment: .bottomTrailing) {
-                    if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 7) }
-                }
-        } else {
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius)
-                    .fill(Color(.secondarySystemBackground))
-                    .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
-                Text(book.title)
-                    .font(DSFont.fixed(size: 9, weight: .medium))
-                    .foregroundColor(DSColor.textSecondary)
-                    .lineLimit(4)
-                    .padding(5)
-            }
+        BookshelfCoverStyle.artwork(for: book, colorScheme: colorScheme)
             .frame(width: coverW, height: coverH)
+            .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
+            .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
             .overlay(alignment: .bottomTrailing) {
                 if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 7) }
             }
-        }
     }
 
 }
@@ -1579,41 +1600,16 @@ struct BookGridCell: View {
         }
     }
 
-    @ViewBuilder
     private var coverView: some View {
-        let base = Color.clear
+        Color.clear
             .aspectRatio(2/3, contentMode: .fit)
-
-        if let uiImage = BookshelfCoverStyle.image(for: book, colorScheme: colorScheme) {
-            base.overlay(
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFill()
-            )
+            .overlay(BookshelfCoverStyle.artwork(for: book, colorScheme: colorScheme))
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
             .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
             .overlay(alignment: .bottomTrailing) {
                 if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 11) }
             }
-        } else {
-            base.overlay(
-                RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius)
-                    .fill(Color(.secondarySystemBackground))
-                    .overlay(
-                        Text(book.title)
-                            .font(DSFont.fixed(size: 11, weight: .medium))
-                            .foregroundColor(DSColor.textSecondary)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(6)
-                            .padding(8),
-                        alignment: .topLeading
-                    )
-            )
-            .overlay(alignment: .bottomTrailing) {
-                if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 11) }
-            }
-        }
     }
 
 }

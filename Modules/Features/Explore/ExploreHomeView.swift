@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 // MARK: - Explore Tabs
@@ -68,6 +69,8 @@ struct ExploreHomeView: View {
             .onChange(of: sourceStore.sources.count) { _, _ in discover.refreshSources() }
             .onReceive(
                 NotificationCenter.default.publisher(for: .bookSourceLoginInfoDidChange)
+                    // Source JS posts from its worker; only UI delivery moves to main.
+                    .receive(on: DispatchQueue.main)
             ) { notification in
                 guard let sourceURL = notification.userInfo?["sourceURL"] as? String,
                       discover.selectedSource?.bookSourceUrl == sourceURL else { return }
@@ -78,6 +81,7 @@ struct ExploreHomeView: View {
             }
             .onReceive(
                 NotificationCenter.default.publisher(for: .bookSourceUserVariableDidChange)
+                    .receive(on: DispatchQueue.main)
             ) { notification in
                 guard let sourceURL = notification.userInfo?["sourceURL"] as? String,
                       discover.selectedSource?.bookSourceUrl == sourceURL else { return }

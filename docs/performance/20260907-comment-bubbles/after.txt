@@ -1,0 +1,31 @@
+BUBBLE_PERF synthetic mode=off pass=0 paragraphs=120 totalMs=32.40116668166593 leaves=none
+BUBBLE_PERF synthetic mode=off pass=1 paragraphs=120 totalMs=8.871166675817221 leaves=none
+BUBBLE_PERF synthetic mode=off pass=2 paragraphs=120 totalMs=8.604374947026372 leaves=none
+BUBBLE_PERF synthetic mode=source pass=0 paragraphs=120 totalMs=89.07137502683327 bubbleTrim=39.3ms/120 bubbleDraw=12.2ms/120 mainActorHop=9.3ms/120 bubbleRecognize=6.0ms/120 bubbleKey=1.5ms/120
+BUBBLE_PERF synthetic mode=source pass=1 paragraphs=120 totalMs=20.790041657164693 bubbleRecognize=2.9ms/120 mainActorHop=2.2ms/120 bubbleKey=1.2ms/120
+BUBBLE_PERF synthetic mode=source pass=2 paragraphs=120 totalMs=23.02804170176387 bubbleRecognize=2.9ms/120 mainActorHop=2.3ms/120 bubbleKey=1.2ms/120
+BUBBLE_PERF synthetic mode=builtinClean pass=0 paragraphs=120 totalMs=159.88812502473593 bubbleTrim=106.9ms/120 bubbleDraw=13.9ms/120 mainActorHop=12.4ms/120 bubbleRecognize=5.4ms/240 bubbleKey=1.3ms/120 bubbleTemplateSource=0.1ms/120
+BUBBLE_PERF synthetic mode=builtinClean pass=1 paragraphs=120 totalMs=21.164958307053894 bubbleRecognize=3.0ms/120 mainActorHop=2.3ms/120 bubbleKey=1.1ms/120
+BUBBLE_PERF synthetic mode=builtinClean pass=2 paragraphs=120 totalMs=33.16162497503683 mainActorHop=10.8ms/120 bubbleRecognize=3.1ms/120 bubbleKey=1.1ms/120
+BUBBLE_PERF synthetic mode=builtinRetainedCustom pass=0 paragraphs=120 totalMs=168.38979168096557 bubbleTrim=106.5ms/120 bubbleDraw=16.1ms/120 mainActorHop=14.8ms/120 bubbleRecognize=5.8ms/240 bubbleKey=1.7ms/120 bubbleTemplateSource=0.1ms/120 bubbleColorTemplateCheck=0.1ms/120
+BUBBLE_PERF synthetic mode=builtinRetainedCustom pass=1 paragraphs=120 totalMs=21.795750013552606 bubbleRecognize=3.0ms/120 mainActorHop=2.1ms/120 bubbleKey=1.2ms/120
+BUBBLE_PERF synthetic mode=builtinRetainedCustom pass=2 paragraphs=120 totalMs=22.39333331817761 bubbleRecognize=3.1ms/120 mainActorHop=2.2ms/120 bubbleKey=1.3ms/120
+BUBBLE_PERF synthetic mode=custom pass=0 paragraphs=120 totalMs=270.91633330564946 bubbleDraw=82.7ms/120 bubbleRecognize=81.9ms/240 bubbleTrim=65.5ms/120 bubbleColorTemplateCheck=14.2ms/120 mainActorHop=2.0ms/120 bubbleKey=1.6ms/120 bubbleTemplateSource=0.2ms/120
+BUBBLE_PERF synthetic mode=custom pass=1 paragraphs=120 totalMs=21.535124978981912 bubbleRecognize=3.0ms/120 mainActorHop=2.0ms/120 bubbleKey=1.3ms/120
+BUBBLE_PERF synthetic mode=custom pass=2 paragraphs=120 totalMs=21.658666664734483 bubbleRecognize=3.0ms/120 mainActorHop=2.1ms/120 bubbleKey=1.3ms/120
+BUBBLE_PERF realJianghu mode=off pass=0 paragraphs=120 totalMs=8.358583378139883 leaves=none
+BUBBLE_PERF realJianghu mode=off pass=1 paragraphs=120 totalMs=8.503916673362255 leaves=none
+BUBBLE_PERF realJianghu mode=off pass=2 paragraphs=120 totalMs=8.355416648555547 leaves=none
+BUBBLE_PERF realJianghu mode=source pass=0 paragraphs=120 totalMs=81.3742500031367 bubbleTrim=38.3ms/120 bubbleDraw=11.9ms/120 mainActorHop=7.4ms/120 bubbleRecognize=3.7ms/120 bubbleKey=1.5ms/120
+BUBBLE_PERF realJianghu mode=source pass=1 paragraphs=120 totalMs=75.58108336525038 bubbleTrim=38.1ms/120 bubbleDraw=11.2ms/120 bubbleRecognize=3.5ms/120 mainActorHop=2.0ms/120 bubbleKey=1.4ms/120
+BUBBLE_PERF realJianghu mode=source pass=2 paragraphs=120 totalMs=21.03312499821186 bubbleRecognize=3.0ms/120 mainActorHop=2.0ms/120 bubbleKey=1.2ms/120
+BUBBLE_PERF realJianghu mode=builtinClean pass=0 paragraphs=120 totalMs=27.068625029642135 mainActorHop=7.4ms/120 bubbleRecognize=3.0ms/120 bubbleKey=1.1ms/120
+BUBBLE_PERF realJianghu mode=builtinClean pass=1 paragraphs=120 totalMs=20.83558333106339 bubbleRecognize=2.9ms/120 mainActorHop=1.9ms/120 bubbleKey=1.1ms/120
+BUBBLE_PERF realJianghu mode=builtinClean pass=2 paragraphs=120 totalMs=20.893333305139095 bubbleRecognize=2.9ms/120 mainActorHop=2.0ms/120 bubbleKey=1.1ms/120
+BUBBLE_PERF realJianghu mode=builtinRetainedCustom pass=0 paragraphs=120 totalMs=157.26929169613868 bubbleTrim=106.3ms/120 bubbleDraw=14.7ms/120 mainActorHop=6.4ms/120 bubbleRecognize=5.4ms/240 bubbleKey=1.6ms/120 bubbleTemplateSource=0.1ms/120 bubbleColorTemplateCheck=0.1ms/120
+BUBBLE_PERF realJianghu mode=builtinRetainedCustom pass=1 paragraphs=120 totalMs=21.938666701316833 bubbleRecognize=3.1ms/120 mainActorHop=2.2ms/120 bubbleKey=1.3ms/120
+BUBBLE_PERF realJianghu mode=builtinRetainedCustom pass=2 paragraphs=120 totalMs=21.59020834369585 bubbleRecognize=3.0ms/120 mainActorHop=2.2ms/120 bubbleKey=1.3ms/120
+BUBBLE_PERF realJianghu mode=custom pass=0 paragraphs=120 totalMs=235.51791661884636 bubbleDraw=81.1ms/120 bubbleTrim=64.9ms/120 bubbleRecognize=49.8ms/240 bubbleColorTemplateCheck=9.1ms/120 mainActorHop=2.2ms/120 bubbleKey=1.8ms/120 bubbleTemplateSource=0.2ms/120
+BUBBLE_PERF realJianghu mode=custom pass=1 paragraphs=120 totalMs=20.149208314251155 bubbleRecognize=2.8ms/120 mainActorHop=2.0ms/120 bubbleKey=1.2ms/120
+BUBBLE_PERF realJianghu mode=custom pass=2 paragraphs=120 totalMs=18.99279170902446 bubbleRecognize=2.7ms/120 mainActorHop=1.9ms/120 bubbleKey=1.1ms/120
+BUBBLE_PERF diagnosticTrim totalMs=708.6606249795295 imageTrim=667.1ms/120 imageLoad=19.3ms/120 mainActorHop=2.5ms/120 bubbleRecognize=0.2ms/120

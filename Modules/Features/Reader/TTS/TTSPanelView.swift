@@ -282,29 +282,18 @@ struct TTSPanelView: View {
                 }
                 .interfaceSectionSurface()
 
-                Section(header: Text(localized("播放行為"))) {
-                    Toggle(isOn: $gs.ttsKeepsScreenAwake) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(localized("朗讀時保持螢幕開啟"))
-                                .font(DSFont.body)
-                            Text(localized("只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。"))
-                                .font(DSFont.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                Section {
+                    Toggle(localized("朗讀時保持螢幕開啟"), isOn: $gs.ttsKeepsScreenAwake)
+                } header: {
+                    Text(localized("播放行為"))
+                } footer: {
+                    Text(localized("只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。"))
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
 
-                Section(header: Text(localized("高亮"))) {
-                    Toggle(isOn: ttsHighlightEnabledBinding) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(localized("朗讀高亮"))
-                                .font(DSFont.body)
-                            Text(localized("朗讀時高亮目前正在唸的文字。"))
-                                .font(DSFont.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                Section {
+                    Toggle(localized("朗讀高亮"), isOn: ttsHighlightEnabledBinding)
 
                     if gs.ttsHighlightEnabled {
                         ColorPicker(
@@ -313,15 +302,7 @@ struct TTSPanelView: View {
                             supportsOpacity: false
                         )
 
-                        Toggle(isOn: ttsHighlightBoxEnabledBinding) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(localized("朗讀底色框"))
-                                    .font(DSFont.body)
-                                Text(localized("為正在朗讀的文字加上底色方塊。"))
-                                    .font(DSFont.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Toggle(localized("朗讀底色框"), isOn: ttsHighlightBoxEnabledBinding)
 
                         if gs.ttsHighlightBoxEnabled {
                             Picker(localized("底色框樣式"), selection: ttsHighlightBoxStyleBinding) {
@@ -337,6 +318,11 @@ struct TTSPanelView: View {
                             )
                         }
                     }
+                } header: {
+                    Text(localized("高亮"))
+                } footer: {
+                    Text(localized("朗讀時高亮目前正在唸的文字。"))
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
             }

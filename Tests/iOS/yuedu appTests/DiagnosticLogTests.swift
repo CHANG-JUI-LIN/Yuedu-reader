@@ -354,6 +354,61 @@ struct DiagnosticSeverityClassifierTests {
         }
     }
 
+    // MARK: - Filtered export
+    //
+    // The screen's filters drive the list only; the main 匯出 button always sends the
+    // whole session. 匯出目前篩選 sends a slice, and a slice must never silence the
+    // report banner — acknowledgement is a single high-water sequence, so a subset's
+    // highest sequence would also mark every lower-numbered anomaly reported,
+    // including ones the filter excluded that never left the device.
+
+    private func makeBundle(
+        entries: [DiagnosticEntry],
+        acknowledges: Bool
+    ) -> DiagnosticReportBundle {
+        DiagnosticReportBundle(
+            filename: "t.txt",
+            entries: entries,
+            session: DiagnosticSession.current(),
+            uncleanSessions: [],
+            acknowledgesReport: acknowledges
+        )
+    }
+
+    private func entry(_ sequence: UInt64, _ severity: DiagnosticSeverity) -> DiagnosticEntry {
+        DiagnosticEntry(sequence: sequence, severity: severity, category: .reader, message: "m\(sequence)")
+    }
+
+    @Test("a filtered export does not mark anything as reported")
+    func filteredExportDoesNotAcknowledge() {
+        // Far above anything a test run produces, so the assertion is about this
+        // bundle and not about whatever else the shared log has seen.
+        let high = entry(9_000_000, .anomaly)
+        _ = makeBundle(entries: [high], acknowledges: false).render()
+
+        #expect(DiagnosticLog.shared.isUnreported(high))
+    }
+
+    @Test("a filtered export says so in the file")
+    func filteredExportIsLabelled() {
+        let rendered = makeBundle(entries: [entry(1, .anomaly)], acknowledges: false).render()
+        // Whoever receives it must not read a slice as the whole session; missing
+        // lines are the usual reason a report cannot be diagnosed.
+        #expect(rendered.contains("FILTERED SUBSET"))
+    }
+
+    @Test("a full export is the default and is not labelled a subset")
+    func fullExportIsTheDefault() {
+        let bundle = DiagnosticReportBundle(
+            filename: "t.txt",
+            entries: [entry(2, .anomaly)],
+            session: DiagnosticSession.current(),
+            uncleanSessions: []
+        )
+        #expect(bundle.acknowledgesReport)
+        #expect(!bundle.render().contains("FILTERED SUBSET"))
+    }
+
     @Test("leading whitespace does not hide a marker")
     func leadingWhitespaceIsTolerated() {
         #expect(AppLogger.resolvedSeverity(message: "  [FlipTrace] x", default: .notice) == .trace)

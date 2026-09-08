@@ -521,8 +521,8 @@ struct NowPlayingMiniPlayer: View {
     }
 
     /// The leading 56pt tappable artwork: both TTS and audiobook spin the book cover
-    /// like a record — the real cover when present, otherwise the same title-card
-    /// placeholder the bookshelf gives cover-less books.
+    /// like a record — the real cover when present, otherwise the same generated
+    /// cover the bookshelf gives cover-less books.
     private var leadingArtwork: some View {
         SpinningCoverIcon(isPlaying: hub.playbackState == .playing) {
             if let cover = hub.coverImage {
@@ -530,7 +530,7 @@ struct NowPlayingMiniPlayer: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                TitleCardPlaceholder(title: hub.coverTitle)
+                GeneratedBookCover(title: hub.coverTitle)
             }
         }
         .frame(width: 56, height: 56)

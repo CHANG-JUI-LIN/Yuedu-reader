@@ -47,7 +47,8 @@ enum RubyInlineLayout {
 
     static func measure(
         unit: RubyInlineUnit,
-        fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)?
+        fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)?,
+        attributedSource: NSAttributedString? = nil
     ) -> RubyBox {
         let base = shape(
             unit.base.map {
@@ -59,7 +60,8 @@ enum RubyInlineLayout {
                     linkTarget: $0.linkTarget
                 )
             },
-            fontResolver: fontResolver
+            fontResolver: fontResolver,
+            attributedSource: attributedSource
         )
         let annotation = shape(
             unit.annotation.pieces.map {
@@ -89,7 +91,8 @@ enum RubyInlineLayout {
 
     private static func shape(
         _ inputs: [InputPiece],
-        fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)?
+        fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)?,
+        attributedSource: NSAttributedString? = nil
     ) -> RubyLine {
         let attributed = NSMutableAttributedString()
         var starts: [Int] = []
@@ -98,13 +101,14 @@ enum RubyInlineLayout {
             starts.append(attributed.length)
             let font = InlineLayout.resolvedFont(for: input.style, resolver: fontResolver)
             fonts.append(font)
-            attributed.append(NSAttributedString(
-                string: input.text,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: input.style.color ?? UIColor.black,
-                ]
-            ))
+            if let attributedSource {
+                attributed.append(attributedSource.attributedSubstring(from: input.sourceRange))
+            } else {
+                attributed.append(NSAttributedString(
+                    string: input.text,
+                    attributes: InlineLayout.textAttributes(for: input.style, resolver: fontResolver)
+                ))
+            }
         }
         let line = CTLineCreateWithAttributedString(attributed)
         var ascent: CGFloat = 0

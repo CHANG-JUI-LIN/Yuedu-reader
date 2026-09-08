@@ -70,6 +70,7 @@ struct ReaderBatterySVGImportView: View {
                     .disabled(isImporting)
                 } footer: {
                     Text(localized("只會匯入通過安全驗證的 SVG，動態標記會保留供分享。"))
+                        .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
             }

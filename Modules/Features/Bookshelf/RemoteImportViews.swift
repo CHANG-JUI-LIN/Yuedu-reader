@@ -85,6 +85,7 @@ struct WebDAVImportView: View {
                 .disabled(!hasServer)
             } footer: {
                 Text(localized("WebDAV 匯入會沿用「WebDAV 同步」的伺服器設定。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
         }

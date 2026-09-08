@@ -75,6 +75,13 @@ struct BrowserLayoutConfig {
     var backgroundColor: UIColor = .white
     var contentInsets: UIEdgeInsets = .zero   // page margins from reader settings
     var lineHeight: CGFloat? = nil     // reader line-height override (applied after author CSS)
+    var lineSpacing: CGFloat = 0
+    var paragraphSpacing: CGFloat = 0
+    var letterSpacing: CGFloat = 0
+    var isBold: Bool = false
+    var regexHighlightConfiguration: RegexHighlightConfiguration = .disabled
+    var readerStyleAppearance: ReaderStyleAppearance = .light
+    var readerStyleAssetRevision: UInt64 = 0
     /// CSS font-family resolver (embedded @font-face families). nil → UIFont(name:).
     var fontResolver: (([String], Int, Bool, CGFloat) -> UIFont?)?
     /// Document writing mode. Phase 3A defaults to horizontal; the engine
@@ -95,25 +102,43 @@ final class ComputedStyleTreeBuilder {
     private let textColor: UIColor
     private let backgroundColor: UIColor
     private let configFontFamilies: [String]
+    private let readerLineHeightMultiple: CGFloat?
+    private let readerConfig: BrowserLayoutConfig
     private var nextNodeID = 1
 
     init(rules: [CSSRule], config: BrowserLayoutConfig) {
+        self.readerConfig = config
         self.rules = rules
         self.rootFontSize = config.rootFontSize
         self.textColor = config.textColor
         self.backgroundColor = config.backgroundColor
         self.configFontFamilies = config.fontFamilies
+        self.readerLineHeightMultiple = config.lineHeight
     }
 
     func buildTree(body: Element) -> ComputedStyleNode {
         // The root body element goes through the SAME cascade as every other
         // element (author rules like `body { margin: 0 }` must apply).
-        let defaultParent = ComputedStyle(
+        var defaultParent = ComputedStyle(
             fontSize: rootFontSize,
             fontFamilies: configFontFamilies,
             color: textColor,
             backgroundColor: backgroundColor
         )
+        // 行距. `BrowserLayoutConfig.lineHeight` was set from the reader
+        // setting and then read by nobody, so the slider moved and the page did
+        // not. Seeded as an inherited MULTIPLIER, not an absolute length: that
+        // is what an unitless CSS `line-height` means, so a heading at a larger
+        // font size scales with it, and any author `line-height` still wins on
+        // the element that declares it.
+        if let readerLineHeightMultiple, readerLineHeightMultiple > 0 {
+            defaultParent.lineHeightMultiplier = readerLineHeightMultiple
+            defaultParent.lineHeight = max(0, rootFontSize * readerLineHeightMultiple)
+        }
+        defaultParent.configLineSpacing = max(0, readerConfig.lineSpacing)
+        defaultParent.configParagraphSpacing = max(0, readerConfig.paragraphSpacing)
+        defaultParent.configLetterSpacing = readerConfig.letterSpacing
+        defaultParent.configBold = readerConfig.isBold
         let bodySemantic = SwiftSoupHTMLSemanticAdapter.snapshot(body)
         let bodyStyle = resolvedStyle(
             for: body,

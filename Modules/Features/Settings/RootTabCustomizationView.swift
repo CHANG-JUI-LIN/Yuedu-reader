@@ -48,10 +48,7 @@ struct RootTabCustomizationView: View {
     }
 
     private var visibleTabsSection: some View {
-        Section(
-            header: Text(localized("顯示頁面")),
-            footer: Text(localized("至少保留一個內容頁，設定固定顯示，避免無法恢復頁面。"))
-        ) {
+        Section {
             ForEach(RootTabItem.allCases) { tab in
                 if tab.isAlwaysVisible {
                     HStack {
@@ -70,15 +67,17 @@ struct RootTabCustomizationView: View {
                     .disabled(!canCustomize)
                 }
             }
+        } header: {
+            Text(localized("顯示頁面"))
+        } footer: {
+            Text(localized("至少保留一個內容頁，設定固定顯示，避免無法恢復頁面。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
 
     private var tabPresentationSection: some View {
-        Section(
-            header: Text(localized("Tab 圖標")),
-            footer: Text(localized("不調整時保持系統 Tab 默認大小；開啟自訂大小後才套用滑桿。"))
-        ) {
+        Section {
             Toggle(isOn: hidesLabelsBinding) {
                 VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text(localized("隱藏標籤文字"))
@@ -122,6 +121,11 @@ struct RootTabCustomizationView: View {
                     .accessibilityValue(iconSizeText)
                 }
             }
+        } header: {
+            Text(localized("Tab 圖標"))
+        } footer: {
+            Text(localized("不調整時保持系統 Tab 默認大小；開啟自訂大小後才套用滑桿。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

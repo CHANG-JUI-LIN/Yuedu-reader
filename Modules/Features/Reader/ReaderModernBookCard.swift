@@ -91,7 +91,7 @@ struct ReaderModernBookCard: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                TitleCardPlaceholder(title: bookTitle)
+                GeneratedBookCover(title: bookTitle, author: author)
             }
         }
         .frame(width: 62, height: 84)

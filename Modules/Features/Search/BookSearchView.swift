@@ -456,7 +456,8 @@ struct AggregatedResultRow: View {
             // ── Cover ──
             BookCoverImage(
                 coverURL: book.coverUrl,
-                title: book.displayName
+                title: book.displayName,
+                author: book.author
             )
             .frame(
                 width: DSLayout.searchResultCoverWidth,
@@ -533,7 +534,8 @@ struct SourcePickerSheet: View {
                 HStack(alignment: .top, spacing: 12) {
                     BookCoverImage(
                         coverURL: searchBook.coverUrl,
-                        title: searchBook.displayName
+                        title: searchBook.displayName,
+                        author: searchBook.author
                     )
                     .frame(width: 60, height: 80)
                     .clipShape(RoundedRectangle(cornerRadius: 6))

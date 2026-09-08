@@ -1,0 +1,337 @@
+2026-09-08 00:56:35.359618+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+2026-09-08 00:56:35.359800+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+2026-09-08 00:56:35.363784+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=2 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=2 outcome=rendered
+2026-09-08 00:56:35.363911+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=2 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=2 outcome=cached
+2026-09-08 00:56:35.367820+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=3 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=3 outcome=rendered
+2026-09-08 00:56:35.367989+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=3 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=3 outcome=cached
+2026-09-08 00:56:35.372016+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=4 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=4 outcome=rendered
+2026-09-08 00:56:35.372129+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=4 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=4 outcome=cached
+2026-09-08 00:56:35.376119+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=5 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=5 outcome=rendered
+2026-09-08 00:56:35.376262+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=5 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=5 outcome=cached
+2026-09-08 00:56:35.380209+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=6 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=6 outcome=rendered
+2026-09-08 00:56:35.380330+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=6 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=6 outcome=cached
+2026-09-08 00:56:35.384358+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=7 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=7 outcome=rendered
+2026-09-08 00:56:35.384487+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=7 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=7 outcome=cached
+2026-09-08 00:56:35.388477+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=8 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=8 outcome=rendered
+2026-09-08 00:56:35.388605+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=8 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=8 outcome=cached
+2026-09-08 00:56:35.392463+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=9 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=9 outcome=rendered
+2026-09-08 00:56:35.392587+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=9 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=9 outcome=cached
+2026-09-08 00:56:35.396500+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=10 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=10 outcome=rendered
+2026-09-08 00:56:35.396604+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=10 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=10 outcome=cached
+2026-09-08 00:56:35.400476+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=11 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=11 outcome=rendered
+2026-09-08 00:56:35.400613+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=11 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=11 outcome=cached
+2026-09-08 00:56:35.404662+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=12 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=12 outcome=rendered
+2026-09-08 00:56:35.404790+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=12 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=12 outcome=cached
+2026-09-08 00:56:35.408674+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=13 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=13 outcome=rendered
+2026-09-08 00:56:35.408795+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=13 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=13 outcome=cached
+2026-09-08 00:56:35.412803+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=14 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=14 outcome=rendered
+2026-09-08 00:56:35.412938+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=14 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=14 outcome=cached
+2026-09-08 00:56:35.416855+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=15 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=15 outcome=rendered
+2026-09-08 00:56:35.416965+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=15 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=15 outcome=cached
+2026-09-08 00:56:35.420884+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=16 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=16 outcome=rendered
+2026-09-08 00:56:35.421002+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=16 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=16 outcome=cached
+2026-09-08 00:56:35.424876+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=17 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=17 outcome=rendered
+2026-09-08 00:56:35.424980+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=17 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=17 outcome=cached
+2026-09-08 00:56:35.428875+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=18 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=18 outcome=rendered
+2026-09-08 00:56:35.429000+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=18 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=18 outcome=cached
+2026-09-08 00:56:35.433045+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=19 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=19 outcome=rendered
+2026-09-08 00:56:35.433172+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=19 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=19 outcome=cached
+2026-09-08 00:56:35.441237+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 8ms spine=0 local=20 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 8ms spine=0 local=20 outcome=rendered
+2026-09-08 00:56:35.441366+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=20 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=20 outcome=cached
+2026-09-08 00:56:35.445269+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=21 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=21 outcome=rendered
+2026-09-08 00:56:35.445392+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=21 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=21 outcome=cached
+2026-09-08 00:56:35.449305+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=22 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=22 outcome=rendered
+2026-09-08 00:56:35.449439+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=22 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=22 outcome=cached
+2026-09-08 00:56:35.453411+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=23 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=23 outcome=rendered
+2026-09-08 00:56:35.453642+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=23 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=23 outcome=cached
+2026-09-08 00:56:35.457542+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=24 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=24 outcome=rendered
+2026-09-08 00:56:35.457659+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=24 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=24 outcome=cached
+2026-09-08 00:56:35.457695+0800 YueduReader[79448:6647439] [parse] ⏱ fixture.curlSnapshotPairs 102ms pass=0 requests=48 sharedPairs=24
+[ERROR] ⏱ fixture.curlSnapshotPairs 102ms pass=0 requests=48 sharedPairs=24
+SNAPSHOT_PERF pass=0 pairs=24 requests=48 sharedPairs=24 elapsedMs=102.307
+2026-09-08 00:56:35.497954+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+2026-09-08 00:56:35.498092+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+2026-09-08 00:56:35.502077+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=2 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=2 outcome=rendered
+2026-09-08 00:56:35.502218+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=2 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=2 outcome=cached
+2026-09-08 00:56:35.506161+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=3 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=3 outcome=rendered
+2026-09-08 00:56:35.506282+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=3 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=3 outcome=cached
+2026-09-08 00:56:35.510304+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=4 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=4 outcome=rendered
+2026-09-08 00:56:35.510459+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=4 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=4 outcome=cached
+2026-09-08 00:56:35.514472+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=5 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=5 outcome=rendered
+2026-09-08 00:56:35.514626+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=5 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=5 outcome=cached
+2026-09-08 00:56:35.518512+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=6 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=6 outcome=rendered
+2026-09-08 00:56:35.518648+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=6 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=6 outcome=cached
+2026-09-08 00:56:35.522617+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=7 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=7 outcome=rendered
+2026-09-08 00:56:35.522734+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=7 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=7 outcome=cached
+2026-09-08 00:56:35.526692+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=8 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=8 outcome=rendered
+2026-09-08 00:56:35.526818+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=8 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=8 outcome=cached
+2026-09-08 00:56:35.530775+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=9 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=9 outcome=rendered
+2026-09-08 00:56:35.530902+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=9 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=9 outcome=cached
+2026-09-08 00:56:35.534827+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=10 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=10 outcome=rendered
+2026-09-08 00:56:35.534954+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=10 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=10 outcome=cached
+2026-09-08 00:56:35.538920+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=11 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=11 outcome=rendered
+2026-09-08 00:56:35.539061+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=11 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=11 outcome=cached
+2026-09-08 00:56:35.542955+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=12 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=12 outcome=rendered
+2026-09-08 00:56:35.543091+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=12 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=12 outcome=cached
+2026-09-08 00:56:35.547178+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=13 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=13 outcome=rendered
+2026-09-08 00:56:35.547288+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=13 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=13 outcome=cached
+2026-09-08 00:56:35.551279+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=14 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=14 outcome=rendered
+2026-09-08 00:56:35.551417+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=14 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=14 outcome=cached
+2026-09-08 00:56:35.555315+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=15 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=15 outcome=rendered
+2026-09-08 00:56:35.555420+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=15 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=15 outcome=cached
+2026-09-08 00:56:35.564167+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 9ms spine=0 local=16 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 9ms spine=0 local=16 outcome=rendered
+2026-09-08 00:56:35.564315+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=16 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=16 outcome=cached
+2026-09-08 00:56:35.568386+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=17 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=17 outcome=rendered
+2026-09-08 00:56:35.568526+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=17 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=17 outcome=cached
+2026-09-08 00:56:35.572468+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=18 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=18 outcome=rendered
+2026-09-08 00:56:35.572595+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=18 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=18 outcome=cached
+2026-09-08 00:56:35.576684+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=19 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=19 outcome=rendered
+2026-09-08 00:56:35.576820+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=19 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=19 outcome=cached
+2026-09-08 00:56:35.580760+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=20 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=20 outcome=rendered
+2026-09-08 00:56:35.580878+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=20 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=20 outcome=cached
+2026-09-08 00:56:35.584913+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=21 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=21 outcome=rendered
+2026-09-08 00:56:35.585059+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=21 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=21 outcome=cached
+2026-09-08 00:56:35.588945+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=22 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=22 outcome=rendered
+2026-09-08 00:56:35.589059+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=22 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=22 outcome=cached
+2026-09-08 00:56:35.592914+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=23 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=23 outcome=rendered
+2026-09-08 00:56:35.593038+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=23 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=23 outcome=cached
+2026-09-08 00:56:35.596989+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=24 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=24 outcome=rendered
+2026-09-08 00:56:35.597091+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=24 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=24 outcome=cached
+2026-09-08 00:56:35.597127+0800 YueduReader[79448:6647439] [parse] ⏱ fixture.curlSnapshotPairs 103ms pass=1 requests=48 sharedPairs=24
+[ERROR] ⏱ fixture.curlSnapshotPairs 103ms pass=1 requests=48 sharedPairs=24
+SNAPSHOT_PERF pass=1 pairs=24 requests=48 sharedPairs=24 elapsedMs=103.260
+2026-09-08 00:56:35.610810+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+2026-09-08 00:56:35.610892+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+2026-09-08 00:56:35.614920+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=2 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=2 outcome=rendered
+2026-09-08 00:56:35.615043+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=2 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=2 outcome=cached
+2026-09-08 00:56:35.618944+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=3 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=3 outcome=rendered
+2026-09-08 00:56:35.619098+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=3 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=3 outcome=cached
+2026-09-08 00:56:35.623147+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=4 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=4 outcome=rendered
+2026-09-08 00:56:35.623281+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=4 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=4 outcome=cached
+2026-09-08 00:56:35.627221+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=5 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=5 outcome=rendered
+2026-09-08 00:56:35.627349+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=5 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=5 outcome=cached
+2026-09-08 00:56:35.631263+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=6 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=6 outcome=rendered
+2026-09-08 00:56:35.631389+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=6 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=6 outcome=cached
+2026-09-08 00:56:35.635400+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=7 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=7 outcome=rendered
+2026-09-08 00:56:35.635540+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=7 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=7 outcome=cached
+2026-09-08 00:56:35.639401+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=8 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=8 outcome=rendered
+2026-09-08 00:56:35.639525+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=8 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=8 outcome=cached
+2026-09-08 00:56:35.643508+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=9 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=9 outcome=rendered
+2026-09-08 00:56:35.643637+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=9 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=9 outcome=cached
+2026-09-08 00:56:35.647873+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=10 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=10 outcome=rendered
+2026-09-08 00:56:35.647995+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=10 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=10 outcome=cached
+2026-09-08 00:56:35.651848+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=11 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=11 outcome=rendered
+2026-09-08 00:56:35.651976+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=11 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=11 outcome=cached
+2026-09-08 00:56:35.655904+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=12 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=12 outcome=rendered
+2026-09-08 00:56:35.656028+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=12 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=12 outcome=cached
+2026-09-08 00:56:35.660025+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=13 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=13 outcome=rendered
+2026-09-08 00:56:35.660162+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=13 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=13 outcome=cached
+2026-09-08 00:56:35.663989+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=14 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=14 outcome=rendered
+2026-09-08 00:56:35.664109+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=14 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=14 outcome=cached
+2026-09-08 00:56:35.668016+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=15 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=15 outcome=rendered
+2026-09-08 00:56:35.668154+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=15 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=15 outcome=cached
+2026-09-08 00:56:35.672204+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=16 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=16 outcome=rendered
+2026-09-08 00:56:35.672345+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=16 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=16 outcome=cached
+2026-09-08 00:56:35.676345+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=17 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=17 outcome=rendered
+2026-09-08 00:56:35.676473+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=17 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=17 outcome=cached
+2026-09-08 00:56:35.680459+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=18 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=18 outcome=rendered
+2026-09-08 00:56:35.680596+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=18 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=18 outcome=cached
+2026-09-08 00:56:35.684549+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=19 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=19 outcome=rendered
+2026-09-08 00:56:35.684678+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=19 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=19 outcome=cached
+2026-09-08 00:56:35.688607+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=20 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=20 outcome=rendered
+2026-09-08 00:56:35.688729+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=20 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=20 outcome=cached
+2026-09-08 00:56:35.692642+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=21 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=21 outcome=rendered
+2026-09-08 00:56:35.692771+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=21 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=21 outcome=cached
+2026-09-08 00:56:35.696713+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=22 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=22 outcome=rendered
+2026-09-08 00:56:35.696834+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=22 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=22 outcome=cached
+2026-09-08 00:56:35.700820+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=23 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=23 outcome=rendered
+2026-09-08 00:56:35.700962+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=23 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=23 outcome=cached
+2026-09-08 00:56:35.704789+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=24 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=24 outcome=rendered
+2026-09-08 00:56:35.704903+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=24 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=24 outcome=cached
+2026-09-08 00:56:35.704936+0800 YueduReader[79448:6647439] [parse] ⏱ fixture.curlSnapshotPairs 94ms pass=2 requests=48 sharedPairs=24
+[ERROR] ⏱ fixture.curlSnapshotPairs 94ms pass=2 requests=48 sharedPairs=24
+SNAPSHOT_PERF pass=2 pairs=24 requests=48 sharedPairs=24 elapsedMs=94.233
+2026-09-08 00:56:36.010603+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=0 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=0 outcome=rendered
+2026-09-08 00:56:36.010791+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=0 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=0 outcome=cached
+2026-09-08 00:56:36.044074+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=0 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=0 outcome=rendered
+2026-09-08 00:56:36.058769+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=0 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=0 outcome=cached
+2026-09-08 00:56:36.093509+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+2026-09-08 00:56:36.093639+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+2026-09-08 00:56:36.128217+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+2026-09-08 00:56:36.143118+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+2026-09-08 00:56:36.177809+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=104 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=104 outcome=rendered
+2026-09-08 00:56:36.177954+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=104 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=104 outcome=cached
+2026-09-08 00:56:36.211125+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=104 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=104 outcome=rendered
+2026-09-08 00:56:36.223313+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=104 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=104 outcome=cached
+2026-09-08 00:56:36.480024+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=0 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=0 outcome=rendered
+2026-09-08 00:56:36.484085+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+2026-09-08 00:56:36.662846+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=0 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=0 outcome=rendered
+2026-09-08 00:56:36.666919+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+2026-09-08 00:56:36.696869+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+2026-09-08 00:56:36.913023+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 4ms spine=0 local=1 outcome=rendered
+2026-09-08 00:56:37.184954+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 5ms spine=0 local=1 outcome=rendered
+[ERROR] ⏱ coreText.pageSnapshot 5ms spine=0 local=1 outcome=rendered
+2026-09-08 00:56:37.185098+0800 YueduReader[79448:6647439] [parse] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
+[ERROR] ⏱ coreText.pageSnapshot 0ms spine=0 local=1 outcome=cached
