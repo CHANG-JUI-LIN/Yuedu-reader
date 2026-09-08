@@ -194,6 +194,53 @@ struct EPUBRenderingTests {
         #expect(abs(collapsedGap + 43) < 0.1)
     }
 
+    @Test @MainActor func backgroundOnlyChapterStillOwnsOnePage() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 200)).image { ctx in
+            UIColor.blue.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 200))
+        }
+        let paginator = CoreTextPaginator()
+        let layout = await paginator.paginate(
+            spineIndex: 0, attrStr: NSAttributedString(string: ""),
+            pageBackgroundImage: image, anchorOffsets: [:],
+            renderSize: CGSize(width: 390, height: 844), fontSize: 17
+        )
+        #expect(layout.pageRanges.count == 1)
+        #expect(layout.pageRanges.first?.location == 0)
+        #expect(layout.pageRanges.first?.length == 0)
+        #expect(layout.pageBackgroundImage === image)
+        #expect(layout.attributedString.length == 0, "Do not invent source characters for an authored background")
+    }
+
+    @Test @MainActor func tableFootnotePopoverAnchorsToMarkerNotWholeTable() async throws {
+        let builder = HTMLAttributedStringBuilder()
+        let rendered = await builder.build(html: """
+        <html><body><table><tr><td>Version 1.0</td><td>Creation <a href="#note">[1]</a></td></tr>
+        <tr><td>Version 2.0</td><td>More content</td></tr></table></body></html>
+        """, config: testHTMLConfig())
+        let layout = await CoreTextPaginator().paginate(
+            spineIndex: 0, attrStr: rendered.attributedString, anchorOffsets: [:],
+            renderSize: CGSize(width: 390, height: 844), fontSize: 17
+        )
+        let attachments = (layout.inlineAttachments[0] ?? []) + (layout.blockAttachments[0] ?? [])
+        let table = try #require(attachments.first { !$0.linkRegions.isEmpty })
+        let region = try #require(table.linkRegions.first)
+        let point = CGPoint(x: table.rect.minX + region.normalizedRect.midX * table.rect.width,
+                            y: table.rect.minY + region.normalizedRect.midY * table.rect.height)
+        let target = try #require(table.linkTarget(at: point))
+        FootnoteStore.index(notes: ["note": "A table footnote"], spineIndex: 0)
+        defer { FootnoteStore.index(notes: [:], spineIndex: 0) }
+        let view = CoreTextPageView(frame: CGRect(origin: .zero, size: layout.renderSize))
+        view.configure(layout: layout, pageIndex: 0)
+        var anchor: CGRect?
+        view.onFootnoteTap = { text, rect in
+            #expect(text == "A table footnote")
+            anchor = rect
+        }
+        view.debugHandleTap(at: point)
+        #expect(anchor == target.rect)
+        #expect(anchor != table.rect)
+    }
+
     @Test func authoredBodyBackgroundColorSurvivesReaderThemeUpdates() async throws {
         let texture = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 40)).image { context in
             UIColor(white: 0.45, alpha: 0.3).setFill()

@@ -7,6 +7,15 @@ import UIKit
 /// (`CoreTextCollectionScrollViewController`) so both modes behave identically.
 final class FootnotePopoverHost: UIHostingController<FootnotePopoverContent>, UIPopoverPresentationControllerDelegate {
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // UIKit owns the complete popover material, including its arrow. The
+        // hosting view's default opaque background hides only the body material,
+        // producing a solid bubble attached to a translucent, differently colored arrow.
+        view.backgroundColor = .clear
+        view.isOpaque = false
+    }
+
     static func present(
         text: String,
         from presenter: UIViewController,

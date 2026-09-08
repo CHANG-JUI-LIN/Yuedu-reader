@@ -1,7 +1,8 @@
 import Foundation
 
 /// Modes retained for explicit browser-engine regression tests.
-/// The app's EPUB reader always uses the legacy engines.
+/// Production EPUB routing uses Legacy. Simulator interaction acceptance can
+/// explicitly inject BrowserAuto without changing this rollout policy.
 enum EPUBLayoutEngineMode: CustomStringConvertible {
     case legacy
     case browserAuto

@@ -8,6 +8,7 @@ struct ReaderSettingsView: View {
     @Binding var theme: ReaderTheme
     var capabilities: ReaderCapabilities = .reflowableText
     var allowsUserSelectedReaderFont = false
+    var usesPublicationFontDefault = false
     var isVerticalWritingMode = false
     var hasParagraphReviews = false
     var onOpenFontImporter: () -> Void
@@ -539,7 +540,7 @@ struct ReaderSettingsView: View {
                 Button {
                     settings.selectedReaderFontPostScript = nil
                 } label: {
-                    Label(localized("系統字體"), systemImage: settings.selectedReaderFontPostScript == nil ? "checkmark" : "textformat")
+                    Label(defaultFontName, systemImage: settings.selectedReaderFontPostScript == nil ? "checkmark" : "textformat")
                 }
 
                 if !settings.userFonts.isEmpty {
@@ -844,8 +845,12 @@ struct ReaderSettingsView: View {
         )
     }
 
+    private var defaultFontName: String {
+        localized(usesPublicationFontDefault ? "書籍預設字體" : "系統字體")
+    }
+
     private var currentFontName: String {
-        guard let selected = settings.selectedReaderFontPostScript else { return localized("系統字體") }
+        guard let selected = settings.selectedReaderFontPostScript else { return defaultFontName }
         return settings.userFonts.first { $0.postScriptName == selected }?.displayName ?? selected
     }
 

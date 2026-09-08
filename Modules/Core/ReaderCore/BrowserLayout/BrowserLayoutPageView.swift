@@ -26,9 +26,10 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     var onLongPress: (() -> Void)?
     private(set) var textInteraction: BrowserTextInteractionController?
 
-    func configureTextInteraction(sourceText: String, spineIndex: Int, annotations: [CoreTextTextAnnotation]) {
+    func configureTextInteraction(sourceText: String, spineIndex: Int, annotations: [CoreTextTextAnnotation], paragraphRanges: [NSRange] = []) {
         guard textInteraction == nil else { textInteraction?.annotations = annotations; return }
-        let interaction = BrowserTextInteractionController(page: self, sourceText: sourceText, spineIndex: spineIndex)
+        let interaction = BrowserTextInteractionController(page: self, sourceText: sourceText,
+                                                          spineIndex: spineIndex, paragraphRanges: paragraphRanges)
         interaction.onSearch = { text in
             NotificationCenter.default.post(name: .coreTextSearchSelectionRequested, object: nil, userInfo: ["text": text])
         }

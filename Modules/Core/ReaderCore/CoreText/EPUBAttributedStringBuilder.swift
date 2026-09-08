@@ -122,7 +122,9 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         let localBuilder = HTMLAttributedStringBuilder()
 
         localBuilder.resolvedFont = { [weak self] families, weight, italic, size in
-            self?.styleResolver.resolveRegisteredFont(
+            UserReaderFontResolver.epubOverride(postScriptName: settings.fontPostScriptName,
+                size: size, weight: weight, italic: italic)
+            ?? self?.styleResolver.resolveRegisteredFont(
                 families: families,
                 weight: weight,
                 italic: italic,
@@ -244,7 +246,9 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                     renderSize.height - settings.contentInsets.top - settings.contentInsets.bottom
                 ),
                 resolvedFont: { [weak self] families, weight, italic, size in
-                    self?.styleResolver.resolveRegisteredFont(
+                    UserReaderFontResolver.epubOverride(postScriptName: settings.fontPostScriptName,
+                        size: size, weight: weight, italic: italic)
+                    ?? self?.styleResolver.resolveRegisteredFont(
                         families: families,
                         weight: weight,
                         italic: italic,
@@ -480,7 +484,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             firstLineIndent: 0,
             textColor: textColor,
             backgroundColor: backgroundColor,
-            fontFamilyName: nil,
+            fontFamilyName: settings.fontPostScriptName,
             renderWidth: max(1, effectiveWidth - horizontalInsets),
             writingMode: settings.writingMode,
             baseWritingDirection: HTMLWritingDirectionResolver.defaultDirection(forLanguage: session.language)

@@ -7,6 +7,7 @@ import YueduCoreText
 final class BrowserTextInteractionController: NSObject, @preconcurrency UIEditMenuInteractionDelegate, UIGestureRecognizerDelegate {
     private weak var page: BrowserLayoutPageView?
     private let source: NSAttributedString
+    private let paragraphRanges: [NSRange]
     let spineIndex: Int
     let selection = TextSelectionInteractor()
     private let selectionOverlay = InteractionOverlayView()
@@ -25,9 +26,10 @@ final class BrowserTextInteractionController: NSObject, @preconcurrency UIEditMe
         set { selection.textAnnotations = newValue; refreshAnnotations() }
     }
 
-    init(page: BrowserLayoutPageView, sourceText: String, spineIndex: Int) {
+    init(page: BrowserLayoutPageView, sourceText: String, spineIndex: Int, paragraphRanges: [NSRange] = []) {
         self.page = page
         self.source = NSAttributedString(string: sourceText)
+        self.paragraphRanges = paragraphRanges
         self.spineIndex = spineIndex
         super.init()
         selectionOverlay.fillColor = selection.selectionFillColor
@@ -54,7 +56,8 @@ final class BrowserTextInteractionController: NSObject, @preconcurrency UIEditMe
 
     func begin(at point: CGPoint) {
         guard let range = sourceRange(at: point) else { return }
-        selection.beginSelection(at: range.location, in: source, spineIndex: spineIndex, maxLength: source.length)
+        selection.beginSelection(at: range.location, in: source, spineIndex: spineIndex, maxLength: source.length,
+                                 paragraphRange: paragraphRanges.first { NSLocationInRange(range.location, $0) })
         updateSelectionOverlay()
     }
 

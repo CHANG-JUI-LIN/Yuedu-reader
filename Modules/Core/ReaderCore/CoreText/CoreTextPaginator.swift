@@ -1042,7 +1042,11 @@ final class CoreTextPaginator {
                 executor: Thread.isMainThread ? "main" : "background"
             )
         )
-        var pageRanges: [CFRange] = []
+        // A background-only chapter is visible content even though it owns no
+        // text offsets. Keep its page without synthesizing a source character;
+        // otherwise its global page base aliases the following chapter.
+        var pageRanges: [CFRange] = attrStr.length == 0 && pageBackgroundImage != nil
+            ? [CFRangeMake(0, 0)] : []
         var currentLocation = 0
         let forcedPageBreakRanges = forcedPageBreakRanges(in: attrStr)
         let keepTogetherRanges = writingMode.isVertical ? [] : avoidPageBreakInsideRanges(in: attrStr)

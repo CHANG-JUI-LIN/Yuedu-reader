@@ -115,12 +115,14 @@ struct BrowserLayoutPageEngineTests {
     private func makeEngine(
         chapters: [MockBrowserLayoutResource.Chapter],
         fontSize: CGFloat = 17,
+        fontPostScriptName: String? = nil,
         mode: EPUBLayoutEngineMode = .browserAuto
     ) async -> (engine: BrowserLayoutPageEngine, resource: MockBrowserLayoutResource, delegate: CoreTextPageEngine) {
         let resource = MockBrowserLayoutResource(chapters: chapters)
         let builder = MockAttributedStringBuilder(texts: chapters.map { $0.title })
         let store = CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("bl-test-\(UUID().uuidString)"))
-        let settings = makeSettings(fontSize: fontSize)
+        var settings = makeSettings(fontSize: fontSize)
+        settings.fontPostScriptName = fontPostScriptName
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings, offsetStore: store)
         let engine = BrowserLayoutPageEngine(
             resource: resource, delegate: delegate, settings: settings, mode: mode
@@ -136,6 +138,26 @@ struct BrowserLayoutPageEngineTests {
             html: "<html><body><p>\(text)</p></body></html>",
             css: []
         )
+    }
+
+    @Test func selectedEPUBFontOverridesAuthorFamilyAndResets() async throws {
+        let chapter = MockBrowserLayoutResource.Chapter(title: "Fonts", href: "fonts.xhtml",
+            html: "<html><body><p style=\"font-family:Georgia\">Regular <b>Bold</b> <i>Italic</i></p></body></html>", css: [])
+        let (engine, _, _) = await makeEngine(chapters: [chapter], fontPostScriptName: "Courier")
+        func textItems() throws -> [DisplayTextItem] {
+            let vc = try #require(engine.pageViewController(at: 0) as? BrowserLayoutPageViewController)
+            return vc.pageView.displayList.items.compactMap { if case .text(let t) = $0 { return t }; return nil }
+        }
+        let items = try textItems()
+        #expect(!items.isEmpty)
+        #expect(items.allSatisfy { $0.font.familyName == "Courier" })
+        #expect(try #require(items.first { $0.text.contains("Bold") }).font.fontDescriptor.symbolicTraits.contains(.traitBold))
+        #expect(try #require(items.first { $0.text.contains("Italic") }).font.fontDescriptor.symbolicTraits.contains(.traitItalic))
+        let source = engine.chapterText(forSpine: 0)
+        engine.updateRenderSettings(makeSettings())
+        await engine.invalidateLayout(newSize: CGSize(width: 300, height: 400))
+        #expect(try textItems().allSatisfy { $0.font.familyName == "Georgia" })
+        #expect(engine.chapterText(forSpine: 0) == source)
     }
 
     @Test func browserChapterPagesAndOffsetMapping() async throws {
@@ -168,6 +190,76 @@ struct BrowserLayoutPageEngineTests {
         #expect(pagination.localPageIndex == page)
         #expect(pagination.displayPageCount == layout.pages.count)
         #expect(engine.chapterText(forSpine: 0)?.contains("quick brown fox") == true)
+    }
+
+    @Test func everyPageStartRoundTripsAndTapWalkerAdvances() async throws {
+        let (engine, _, _) = await makeEngine(chapters: [
+            plainChapter(String(repeating: "每一頁的起點必須屬於該頁，點擊翻頁不能返回原頁。", count: 120)),
+            .init(title: "Table fallback", href: "chapter1.xhtml",
+                  html: "<html><body><table><tr><td>Fallback content</td></tr></table></body></html>", css: []),
+            plainChapter(String(repeating: "Browser prose after the fallback chapter. ", count: 60), index: 2)
+        ])
+        _ = await engine.preloadChapter(at: 1)
+        _ = await engine.preloadChapter(at: 2)
+        #expect(engine.choice(for: 1)?.isBrowser == false)
+        #expect(engine.choice(for: 2)?.isBrowser == true)
+        #expect(engine.totalPages > 3)
+        for page in 0..<engine.totalPages {
+            let position = try #require(engine.readingPosition(forPage: page))
+            #expect(engine.pageIndex(for: position) == page, "page start round trip: \(page)")
+            let pageVC = try #require(engine.pageViewController(at: page) as? any PageIndexProviding)
+            #expect(pageVC.globalPageIndex == page, "A fallback controller must use its owning engine's page space")
+            let positionedVC = try #require(engine.pageViewController(for: position) as? any PageIndexProviding)
+            #expect(positionedVC.globalPageIndex == page)
+            if page + 1 < engine.totalPages {
+                let next = try #require(engine.positionAfter(position))
+                #expect(engine.pageIndex(for: next) == page + 1)
+                #expect(engine.positionBefore(next) == position)
+            }
+        }
+    }
+
+    @Test func fallbackNavigationCallbacksTranslateDelegatePageSpace() async throws {
+        let (engine, _, delegate) = await makeEngine(chapters: [
+            plainChapter(String(repeating: "Browser has more pages than its legacy test builder. ", count: 120)),
+            .init(title: "Fallback", href: "chapter1.xhtml",
+                  html: "<html><body><table><tr><td>Link destination</td></tr></table></body></html>", css: [])
+        ])
+        _ = await engine.preloadChapter(at: 1)
+        let position = CoreTextReadingPosition.chapterStart(1)
+        let legacyPage = try #require(delegate.pageIndex(for: position))
+        let compositePage = try #require(engine.pageIndex(for: position))
+        #expect(legacyPage != compositePage)
+        var linkedPage: Int?
+        var navigatedPage: Int?
+        engine.onLinkNavigate = { linkedPage = $0 }
+        engine.onNavigateToPage = { navigatedPage = $0 }
+        delegate.onLinkNavigate?(legacyPage)
+        delegate.onNavigateToPage?(legacyPage)
+        #expect(linkedPage == compositePage)
+        #expect(navigatedPage == compositePage)
+    }
+
+    @Test func longPressSelectsSemanticParagraphWithoutChangingSourceOffsets() async throws {
+        let chapter = MockBrowserLayoutResource.Chapter(
+            title: "paragraphs", href: "p.xhtml",
+            html: "<html><body><p>第一段<em>包含行內文字</em>。</p><p>第二段不應一起反白。</p></body></html>", css: []
+        )
+        let (engine, _, _) = await makeEngine(chapters: [chapter])
+        let controller = try #require(engine.pageViewController(at: 0) as? BrowserLayoutPageViewController)
+        let source = try #require(engine.chapterText(forSpine: 0))
+        #expect(source == "第一段包含行內文字。第二段不應一起反白。")
+        let range = (source as NSString).range(of: "第一段")
+        let rect = try #require(BrowserTextGeometry.rects(in: controller.pageView.displayList, range: range).first)
+        let interaction = try #require(controller.pageView.textInteraction)
+        interaction.begin(at: CGPoint(x: rect.midX, y: rect.midY))
+        #expect(interaction.selection.selectedTextForCopy == "第一段包含行內文字。")
+        let second = (source as NSString).range(of: "第二段")
+        let secondRect = try #require(BrowserTextGeometry.rects(in: controller.pageView.displayList, range: second).first)
+        interaction.clear()
+        interaction.begin(at: CGPoint(x: secondRect.midX, y: secondRect.midY))
+        #expect(interaction.selection.selectedRange?.location == second.location)
+        #expect(interaction.selection.selectedTextForCopy == "第二段不應一起反白。")
     }
 
     @Test func browserPageReceivesBackgroundAndSupportsVoiceOverAndPlayback() async throws {

@@ -487,6 +487,7 @@
 "字體" = "Font";
 "字體選單" = "Font Menu";
 "系統字體" = "System Font";
+"書籍預設字體" = "Book Default Font";
 "已匯入字體" = "Imported Fonts";
 "匯入字體..." = "Import Font...";
 "刪除字體" = "Delete Font";

@@ -1116,10 +1116,11 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             // resolved `linkHref`, so trust it directly — a 1em footnote glyph is too small to
             // reliably reverse-map a tap point back to its placeholder character.
             let renderPoint = pointInRenderCoordinates(point, layout: layout)
-            if let href = attachment.linkTarget(at: renderPoint)?.href, !href.isEmpty {
+            if let target = attachment.linkTarget(at: renderPoint), !target.href.isEmpty {
+                let href = target.href
                 // Duokan footnote → anchored popover at the marker (not a page jump / bottom sheet).
                 if let note = FootnoteStore.text(spineIndex: layout.spineIndex, href: href) {
-                    onFootnoteTap?(note, viewRect(forRenderRect: attachment.rect))
+                    onFootnoteTap?(note, viewRect(forRenderRect: target.rect))
                     return
                 }
                 // 段評 comment badge → the attachment handler (which opens the review sheet).
@@ -2083,6 +2084,9 @@ final class CoreTextPageViewController: UIViewController {
     private let pageView = CoreTextPageView()
     private(set) var globalPageIndex: Int = 0
     private(set) var coreTextReadingPosition: CoreTextReadingPosition?
+    /// Composite engines have their own page sequence. Rebase presentation
+    /// identity only; the displayed local page and source position stay intact.
+    func rebaseGlobalPageIndex(to index: Int) { globalPageIndex = index }
     var onInternalLinkTap: ((String) -> Void)? {
         didSet {
             if isViewLoaded {
@@ -2545,6 +2549,7 @@ final class PlaceholderPageViewController: UIViewController {
     private let spinner = UIActivityIndicatorView(style: .medium)
     private(set) var globalPageIndex: Int
     private(set) var coreTextReadingPosition: CoreTextReadingPosition?
+    func rebaseGlobalPageIndex(to index: Int) { globalPageIndex = index }
     /// VoiceOver-originated reader commands — see `configureAccessibility`.
     var onAccessibilityAction: ((TouchAction) -> Void)?
 

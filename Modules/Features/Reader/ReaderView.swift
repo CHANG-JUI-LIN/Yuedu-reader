@@ -2059,6 +2059,7 @@ struct ReaderView: View {
                     ),
                     capabilities: readerCapabilities,
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
+                    usesPublicationFontDefault: book?.resolvedPipelineKind == .epub,
                     isVerticalWritingMode: effectiveWritingMode.isVertical,
                     hasParagraphReviews: currentBookHasParagraphReviews,
                     onOpenFontImporter: requestFirstLevelReaderFontImporter,

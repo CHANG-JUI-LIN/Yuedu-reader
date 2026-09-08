@@ -38,6 +38,7 @@ final class BrowserLayoutSession {
     private(set) var pipelineLinkAnchors: [Int: LinkAnchorInfo] = [:]
     private(set) var pipelineMediaAttachments: [Int: EPUBMediaAttachment] = [:]
     private(set) var pipelinePronunciationHints: [TTSPronunciationHint] = []
+    private(set) var pipelineParagraphRanges: [NSRange] = []
 
     convenience init(
         html: String,
@@ -333,6 +334,7 @@ final class BrowserLayoutSession {
         pipelineLinkAnchors = result.linkAnchors
         pipelineMediaAttachments = result.mediaAttachments
         pipelinePronunciationHints = result.pronunciationHints
+        pipelineParagraphRanges = BrowserLayoutSemanticContent.paragraphRanges(in: result.rootBox)
         pipeline = result
         walker = PageWalker(
             box: result.rootBox,

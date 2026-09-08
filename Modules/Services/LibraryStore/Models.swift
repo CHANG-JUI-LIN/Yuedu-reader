@@ -393,9 +393,9 @@ enum BookPipelineKind: String, Codable {
 
     var allowsUserSelectedReaderFont: Bool {
         switch self {
-        case .txt:
+        case .txt, .epub:
             return true
-        case .epub, .html, .manga, .fixedPage, .audio:
+        case .html, .manga, .fixedPage, .audio:
             return false
         }
     }
@@ -723,9 +723,9 @@ struct ReaderRenderSettings: Equatable {
     let footerHeight: CGFloat
     let contentInsets: UIEdgeInsets
     var writingMode: ReaderWritingMode = .horizontal
-    /// PostScript name of the user-selected reader font (nil = system font).
-    /// Not consumed by the layout engine directly (it reads `UserReaderFontResolver`),
-    /// but included here so the relayout dedup check detects font changes.
+    /// PostScript name of the user-selected reader font (nil = publication default
+    /// for EPUB, system font for plain text). EPUB resolvers consume this snapshot
+    /// before measurement; equality also invalidates layout when the font changes.
     var fontPostScriptName: String? = nil
     var isBold: Bool = false
     // In-content chapter title (rendered at the top of each chapter). The full

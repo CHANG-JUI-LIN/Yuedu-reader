@@ -70,22 +70,60 @@ struct UserFontSettingsTests {
         #expect(bodyFont.fontName == selectedFont.fontName)
     }
 
-    @Test("EPUB pipeline does not expose user-selected font")
-    func epubPipelineDoesNotExposeUserSelectedFont() {
-        #expect(BookPipelineKind.epub.allowsUserSelectedReaderFont == false)
+    @Test("Reflowable EPUB exposes user-selected font")
+    func epubPipelineExposesUserSelectedFont() {
+        #expect(BookPipelineKind.epub.allowsUserSelectedReaderFont == true)
         #expect(BookPipelineKind.fixedPage.allowsUserSelectedReaderFont == false)
         #expect(BookPipelineKind.txt.allowsUserSelectedReaderFont == true)
     }
 
-    @Test("online books expose user-selected font while EPUB does not")
-    func onlineBooksExposeUserSelectedFontWhileEPUBDoesNot() {
+    @Test("Online books and EPUB expose user-selected font")
+    func onlineBooksAndEPUBExposeUserSelectedFont() {
         var onlineBook = ReadingBook(title: "線上書", source: "https://example.com/book", contentFilename: "")
         onlineBook.isOnline = true
 
         let epubBook = ReadingBook(title: "EPUB", source: "local_epub", contentFilename: "book.epub")
 
         #expect(onlineBook.allowsUserSelectedReaderFont == true)
-        #expect(epubBook.allowsUserSelectedReaderFont == false)
+        #expect(epubBook.allowsUserSelectedReaderFont == true)
+    }
+
+    @Test("EPUB selected font overrides author family before measurement and restores defaults")
+    func epubFontOverrideAndRestoration() async throws {
+        var entries = EPUBTestFixtures.linearAlgebra().entries
+        entries["OPS/chapter1.xhtml"] = Data(EPUBTestFixtures.xhtml(title: "Fonts", body:
+            "<p style=\"font-family: Georgia; font-size: 20px\">Regular <b>Bold</b> <i>Italic</i></p>"
+        ).utf8)
+        let url = try await EPUBTestFixtures.makeArchive(entries: entries)
+        let session = try await PublicationSession.open(sourceURL: url)
+        let builder = EPUBAttributedStringBuilder(session: session, renderSize: CGSize(width: 320, height: 640))
+        var settings = EPUBTestFixtures.renderSettings()
+        func build(_ settings: ReaderRenderSettings) async throws -> NSAttributedString {
+            try await builder.buildChapter(at: 0, settings: settings, themeTextColor: .black,
+                                           themeBackgroundColor: .white).attributedString
+        }
+        func font(_ text: String, in output: NSAttributedString) throws -> UIFont {
+            let index = (output.string as NSString).range(of: text).location
+            #expect(index != NSNotFound)
+            return try #require(output.attribute(.font, at: index, effectiveRange: nil) as? UIFont)
+        }
+        let original = try await build(settings)
+        settings.fontPostScriptName = "Courier"
+        let selected = try await build(settings)
+        #expect(selected.string == original.string)
+        #expect(try font("Regular", in: selected).familyName == "Courier")
+        #expect(try font("Regular", in: selected).pointSize == font("Regular", in: original).pointSize)
+        #expect(try font("Bold", in: selected).familyName == "Courier")
+        #expect(try font("Bold", in: selected).fontDescriptor.symbolicTraits.contains(.traitBold))
+        #expect(try font("Italic", in: selected).familyName == "Courier")
+        #expect(try font("Italic", in: selected).fontDescriptor.symbolicTraits.contains(.traitItalic))
+        settings.fontPostScriptName = nil
+        let restored = try await build(settings)
+        #expect(try font("Regular", in: restored).fontName == font("Regular", in: original).fontName)
+        #expect(restored.string == original.string)
+        settings.fontPostScriptName = "missing-font-for-regression"
+        let invalid = try await build(settings)
+        #expect(try font("Regular", in: invalid).fontName == font("Regular", in: original).fontName)
     }
 
     @Test("online HTML chapters use selected reader font as default")

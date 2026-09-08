@@ -52,8 +52,8 @@ struct yuedu_appApp: App {
         // session record is what tells the next launch whether this one survived.
         DiagnosticLog.shared.beginSession()
         #if DEBUG
-        // EPUB engine selection is fixed to legacy, including DEBUG builds.
-        // Old -browser-mode launch arguments must not re-enable browserAuto.
+        // EPUB rollout remains Legacy. The separate Simulator-only interaction
+        // hook lives in EPUBPageRenderer; old -browser-mode arguments stay inert.
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-browser-overlay") { BrowserLayoutFeature.showDebugOverlay = true }
         // UI-test automation: `-auto-import-epub <filename>` (relative to

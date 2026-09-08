@@ -180,7 +180,7 @@ The legacy path calls `build()` which internally calls `buildStyledAST()` + `cor
 - User-imported reader fonts live behind `UserFontStorageManager`, `GlobalSettings.userFonts`, and `GlobalSettings.selectedReaderFontPostScript`.
 - Gate the font picker with `ReadingBook.allowsUserSelectedReaderFont`, not only `BookPipelineKind`, because online books resolve to `.html` but should still expose user fonts.
 - Apply user fonts through `UserReaderFontResolver` for TXT and online TXT fallback. For online HTML, pass the selected PostScript name as `HTMLAttributedStringBuilder.Config.fontFamilyName` so it acts as the default font while CSS `font-family` can still override it.
-- Do not expose user-selected fonts for EPUB; EPUB embedded fonts and CSS font rules remain higher priority.
+- Reflowable EPUB exposes the existing reader font picker. An explicitly selected font overrides authored families through the EPUB font resolvers before measurement, preserving size/bold/italic; nil restores publication fonts. Fixed-page/image content remains non-reflowable. Use the immutable ReaderRenderSettings.fontPostScriptName snapshot, not mutable globals during chapter builds.
 
 ### Reader Settings UI
 

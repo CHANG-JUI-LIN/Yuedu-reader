@@ -5,7 +5,7 @@ import StoreKitTest
 /// Commands and captures stay outside the repository, including login inputs.
 /// XCTest supplies real taps, drags, typing and accessibility snapshots.
 final class LocalReaderProfilingUITests: XCTestCase {
-    private let directory = URL(fileURLWithPath: "/tmp/yuedu-reader-profiling", isDirectory: true)
+    private var directory = URL(fileURLWithPath: "/tmp/yuedu-reader-profiling", isDirectory: true)
     private var storeKitSession: SKTestSession?
 
     struct StoreKitScenario: Decodable {
@@ -22,6 +22,14 @@ final class LocalReaderProfilingUITests: XCTestCase {
         var endX: Double?
         var endY: Double?
         var duration: Double?
+        var launchArguments: [String]?
+    }
+
+    @MainActor
+    func testReaderInteractionSession() throws {
+        // Keep interaction captures and commands separate from profiling data.
+        directory = URL(fileURLWithPath: "/tmp/yuedu-reader-interaction", isDirectory: true)
+        try testLocalReadingSession()
     }
 
     @MainActor
@@ -41,6 +49,10 @@ final class LocalReaderProfilingUITests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW"]
+        let launchFile = directory.appendingPathComponent("launch.json")
+        if FileManager.default.fileExists(atPath: launchFile.path) {
+            app.launchArguments += try JSONDecoder().decode([String].self, from: Data(contentsOf: launchFile))
+        }
         app.launch()
         try capture(app, sequence: 0)
         for sequence in 1...1000 {
@@ -53,6 +65,10 @@ final class LocalReaderProfilingUITests: XCTestCase {
             }
             let command = try JSONDecoder().decode(Command.self, from: Data(contentsOf: file))
             switch command.action {
+            case "relaunch":
+                app.terminate()
+                app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW"] + (command.launchArguments ?? [])
+                app.launch()
             case "stop": try capture(app, sequence: sequence); return
             case "snapshot": break
             case "waitForPage":

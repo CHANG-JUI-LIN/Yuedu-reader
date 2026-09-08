@@ -407,6 +407,17 @@ final class EPUBPageRenderer: ObservableObject {
         // capability-scan into browserAuto: its pagination/rendering parity is
         // not yet sufficient for the production reader.
         self.engine = newEngine
+        #if DEBUG && targetEnvironment(simulator)
+        // Explicit Simulator acceptance hook, not a rollout setting. Device and
+        // Release readers remain Legacy; UI tests exercise BrowserAuto's real
+        // scanner, page host and gestures without bypassing capability checks.
+        if ProcessInfo.processInfo.arguments.contains("-reader-interaction-browser-auto") {
+            self.engine = BrowserLayoutPageEngine(
+                resource: EPUBBrowserLayoutResourceAdapter(session: session),
+                delegate: newEngine, settings: settings, mode: .browserAuto
+            )
+        }
+        #endif
         isCoreTextReady = false
 
         if effectiveSize.width > 0 {

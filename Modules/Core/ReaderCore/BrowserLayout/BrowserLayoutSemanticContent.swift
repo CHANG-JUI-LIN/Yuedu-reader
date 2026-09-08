@@ -4,6 +4,22 @@ import UIKit
 /// Adds speech/media semantics to the existing resolved tree. DOM parsing and
 /// source-text construction still have exactly one owner each.
 enum BrowserLayoutSemanticContent {
+    /// Inline formatting contexts retain paragraph boundaries independently of
+    /// the collapsed source text. Never insert separators into persisted offsets
+    /// just to let NSString discover paragraphs for selection.
+    static func paragraphRanges(in root: BlockBox) -> [NSRange] {
+        var ranges: [NSRange] = []
+        func walk(_ box: BlockBox) {
+            let content = box.inlineRuns.map(\.sourceRange).filter { $0.length > 0 }
+            if let start = content.map(\.location).min(), let end = content.map(NSMaxRange).max() {
+                ranges.append(NSRange(location: start, length: end - start))
+            }
+            for child in box.children { walk(child) }
+        }
+        walk(root)
+        return ranges.sorted { $0.location < $1.location }
+    }
+
     struct MediaTree {
         let root: ComputedStyleNode
         let attachments: [Int: EPUBMediaAttachment]

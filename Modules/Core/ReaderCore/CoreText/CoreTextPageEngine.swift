@@ -1132,6 +1132,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
         // read, yet neither the build nor the layout failed. It reads identically to a
         // stuck placeholder from outside, so it gets its own name.
         let documentIsEmpty = buildResult.attributedString.length == 0
+            && buildResult.imagePage == nil && buildResult.pageBackgroundImage == nil
         if documentIsEmpty {
             AppLogger.render(
                 "⟐ preload builtEmptyDocument spine=\(spineIndex) generation=\(generation)",

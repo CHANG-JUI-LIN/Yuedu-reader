@@ -122,6 +122,7 @@ struct BrowserChapterLayout {
     let linkAnchors: [Int: LinkAnchorInfo]
     let mediaAttachments: [Int: EPUBMediaAttachment]
     let pronunciationHints: [TTSPronunciationHint]
+    let paragraphRanges: [NSRange]
     /// Page-local source ranges (into `sourceText`), rebuilt whenever `pages`
     /// changes (incremental completion grows them).
     ///
@@ -148,6 +149,7 @@ struct BrowserChapterLayout {
          linkAnchors: [Int: LinkAnchorInfo] = [:],
          mediaAttachments: [Int: EPUBMediaAttachment] = [:],
          pronunciationHints: [TTSPronunciationHint] = [],
+         paragraphRanges: [NSRange] = [],
          fontSize: CGFloat, themeTextColor: UIColor, themeBackgroundColor: UIColor) {
         self.spineIndex = spineIndex
         self.pages = pages
@@ -156,6 +158,7 @@ struct BrowserChapterLayout {
         self.linkAnchors = linkAnchors
         self.mediaAttachments = mediaAttachments
         self.pronunciationHints = pronunciationHints
+        self.paragraphRanges = paragraphRanges
         // `didSet` does not run during init.
         self.pageSourceRanges = Self.buildPageRanges(pages, sourceText: sourceText)
         self.fontSize = fontSize
@@ -203,7 +206,9 @@ struct BrowserChapterLayout {
             let range = ranges[mid]
             if range.location > target {
                 high = mid - 1
-            } else if range.location + range.length < target {
+            } else if range.location + range.length <= target {
+                // Source ranges are half-open: the next page's first offset
+                // must never resolve back to the preceding page on a tap turn.
                 best = mid
                 low = mid + 1
             } else {
@@ -482,13 +487,18 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         self.themeTextColor = settings.textColor
         self.themeBackgroundColor = settings.backgroundColor
         delegate.onChapterReady = { [weak self] spine in
+            self?.rebuildOffsets()
             self?.onChapterReady?(spine)
         }
         delegate.onNavigateToPage = { [weak self] page in
-            self?.onNavigateToPage?(page)
+            guard let self, let position = self.delegate.readingPosition(forPage: page),
+                  let mapped = self.pageIndex(for: position) else { return }
+            self.onNavigateToPage?(mapped)
         }
         delegate.onLinkNavigate = { [weak self] page in
-            self?.onLinkNavigate?(page)
+            guard let self, let position = self.delegate.readingPosition(forPage: page),
+                  let mapped = self.pageIndex(for: position) else { return }
+            self.onLinkNavigate?(mapped)
         }
     }
 
@@ -729,6 +739,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                     resource.resolveMediaAttachment(forChapter: spineIndex, media: $0)
                 },
                 pronunciationHints: session.pipelinePronunciationHints,
+                paragraphRanges: session.pipelineParagraphRanges,
                 fontSize: settings.fontSize,
                 themeTextColor: self.themeTextColor,
                 themeBackgroundColor: themeBackgroundColor
@@ -790,10 +801,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     private func makeBrowserConfig(fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable) -> BrowserLayoutConfig {
-        // A/B font parity: mirror the legacy builder's base-font resolution
-        // (settings.fontPostScriptName when a user font is chosen; the CSS
-        // font-family rules then override per element on both engines).
-        BrowserLayoutConfig(
+        // Use the same reader-font policy as the EPUB builder before shaping.
+        // Snapshot the selection; an in-flight chapter must not read mutable UI state.
+        let selectedFont = settings.fontPostScriptName
+        let publicationResolver = resource.fontResolver()
+        return BrowserLayoutConfig(
             renderWidth: contentWidth,
             renderHeight: contentHeight,
             rootFontSize: fontScalePolicy.rootFontSize(userSetting: settings.fontSize),
@@ -809,7 +821,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             regexHighlightConfiguration: settings.regexHighlightConfiguration,
             readerStyleAppearance: settings.readerStyleAppearance,
             readerStyleAssetRevision: settings.readerStyleAssetRevision,
-            fontResolver: resource.fontResolver()
+            fontResolver: { families, weight, italic, size in
+                UserReaderFontResolver.epubOverride(postScriptName: selectedFont,
+                    size: size, weight: weight, italic: italic)
+                ?? publicationResolver?(families, weight, italic, size)
+            }
         )
     }
 
@@ -926,7 +942,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     func warmUpNext(currentGlobalPage: Int) {
-        delegate.warmUpNext(currentGlobalPage: currentGlobalPage)
+        if let position = readingPosition(forPage: currentGlobalPage),
+           let delegatePage = delegate.pageIndex(for: position) {
+            delegate.warmUpNext(currentGlobalPage: delegatePage)
+        }
         let (spine, _) = localPosition(for: currentGlobalPage)
         if spine + 1 < resource.chapterCount, choices[spine + 1] == nil {
             Task { [weak self] in
@@ -1270,7 +1289,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 // non-themed thing on screen.
                 pressedLinkColor: themeTextColor.withAlphaComponent(0.15)
             ) { _ in }
-            vc.pageView.configureTextInteraction(sourceText: layout.sourceText, spineIndex: spine, annotations: textAnnotations)
+            vc.pageView.configureTextInteraction(sourceText: layout.sourceText, spineIndex: spine,
+                                                annotations: textAnnotations, paragraphRanges: layout.paragraphRanges)
             annotationPages.add(vc.pageView)
             // Bound after construction so the closure can reference THIS page's
             // controller — it is the presenter, and it must be the instance that
@@ -1318,7 +1338,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             )
             return vc
         case .legacyFallback, .legacyEngineFailure:
-            return delegate.pageViewController(at: delegatePageIndex(for: spine, localPage: local))
+            return rebaseDelegatePage(
+                delegate.pageViewController(at: delegatePageIndex(for: spine, localPage: local)),
+                globalPage: index
+            )
         }
     }
 
@@ -1420,8 +1443,21 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             }
             return placeholder
         case .legacyFallback, .legacyEngineFailure:
-            return delegate.pageViewController(for: position)
+            return rebaseDelegatePage(delegate.pageViewController(for: position),
+                                      globalPage: pageIndex(forSpine: spine, charOffset: position.charOffset))
         }
+    }
+
+    /// UIKit tap/transition code consumes this adapter's global page sequence,
+    /// never the delegate's. Leaking the delegate index can make "previous"
+    /// equal the visible index and suppress a real cross-engine page turn.
+    private func rebaseDelegatePage(_ controller: UIViewController, globalPage: Int) -> UIViewController {
+        if let page = controller as? CoreTextPageViewController {
+            page.rebaseGlobalPageIndex(to: globalPage)
+        } else if let placeholder = controller as? PlaceholderPageViewController {
+            placeholder.rebaseGlobalPageIndex(to: globalPage)
+        }
+        return controller
     }
 
     /// The ONE place a link activation turns into an action. Every kind of link

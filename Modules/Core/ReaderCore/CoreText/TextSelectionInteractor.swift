@@ -31,9 +31,10 @@ final class TextSelectionInteractor {
         at index: Int,
         in attributedString: NSAttributedString,
         spineIndex: Int,
-        maxLength: Int
+        maxLength: Int,
+        paragraphRange: NSRange? = nil
     ) {
-        let paragraphRange = defaultSelectionRange(around: index, in: attributedString)
+        let paragraphRange = defaultSelectionRange(around: index, in: attributedString, constrainedTo: paragraphRange)
         let snappedRange = AnnotationStore.expandedSelectionRange(
             spineIndex: spineIndex,
             start: paragraphRange.location,
@@ -93,13 +94,17 @@ final class TextSelectionInteractor {
     /// Falls back to a single character if the trimmed paragraph is empty.
     private func defaultSelectionRange(
         around index: Int,
-        in attributedString: NSAttributedString
+        in attributedString: NSAttributedString,
+        constrainedTo semanticRange: NSRange? = nil
     ) -> NSRange {
         guard attributedString.length > 0 else { return NSRange(location: 0, length: 0) }
         let nsString = attributedString.string as NSString
         var range = nsString.paragraphRange(
             for: NSRange(location: min(max(index, 0), attributedString.length - 1), length: 0)
         )
+        if let semanticRange, NSLocationInRange(index, semanticRange) {
+            range = NSIntersectionRange(range, semanticRange)
+        }
         // `character(at:)` yields one UTF-16 code unit; a lone surrogate half (emoji / non-BMP
         // glyph) maps to nil via `UnicodeScalar(_:)`. A surrogate half is never whitespace, so a
         // failed conversion means "stop trimming" — never force-unwrap it into a crash.

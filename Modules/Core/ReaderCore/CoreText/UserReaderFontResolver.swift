@@ -2,6 +2,24 @@ import CoreText
 import UIKit
 
 enum UserReaderFontResolver {
+    /// Reader policy applied before EPUB measurement, not an author CSS mutation.
+    /// Nil/unavailable selections leave the publication resolver in control.
+    static func epubOverride(postScriptName: String?, size: CGFloat, weight: Int, italic: Bool) -> UIFont? {
+        guard let postScriptName, let base = UIFont(name: postScriptName, size: size) else { return nil }
+        var font = weight >= 600 ? boldVersion(of: base, size: size) : base
+        if italic && !font.fontDescriptor.symbolicTraits.contains(.traitItalic) {
+            var traits = font.fontDescriptor.symbolicTraits
+            traits.insert(.traitItalic)
+            if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
+                font = preservingFamily(font, resolved: UIFont(descriptor: descriptor, size: size))
+            }
+            if !font.fontDescriptor.symbolicTraits.contains(.traitItalic) {
+                font = HTMLAttributedStringBuilder.synthesizedObliqueFont(from: font)
+            }
+        }
+        return font
+    }
+
     /// A negative stroke width fills the glyph and expands its outline. CoreText
     /// interprets the value as a percentage of the point size, so this scales
     /// with the reader font without changing line metrics.
