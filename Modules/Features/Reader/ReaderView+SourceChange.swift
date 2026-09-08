@@ -469,6 +469,12 @@ extension ReaderView {
     }
 
     func setActiveTTSAnchor(_ anchor: CoreTextReadingPosition, alignReader: Bool) {
+        // Narration moving the reader is one of the four things allowed to, and
+        // `JumpIntent.ttsAnchor` has existed for it since the sentry was written — with
+        // **zero** call sites. So every page turn narration drove looked to the sentry
+        // like the position moving on its own. Harmless while the guard only fired two
+        // chapters out; not harmless now that A1 records every unaccounted move.
+        ReaderPositionSentry.shared.declareIntent(.ttsAnchor, target: anchor)
         ttsPlaybackAnchor = anchor
         showTTSJumpPrompt = false
         ttsJumpPromptChapterIndex = nil

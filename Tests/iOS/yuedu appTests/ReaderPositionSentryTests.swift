@@ -30,6 +30,195 @@ struct ReaderPositionSentryTests {
         CoreTextReadingPosition(spineIndex: spine, charOffset: offset)
     }
 
+    // MARK: - A1: every move is accounted for
+    //
+    // The guards below this line all grew out of *reported symptoms*, and each carries a
+    // threshold chosen to avoid false positives on the input that prompted it: G2 needs two
+    // whole chapters, G3 needs two consecutive no-op swipes, S1 allows 120 characters. The
+    // consequence is a hole none of them can see into — a move of one chapter, one page, or
+    // half a paragraph that nobody asked for.
+    //
+    // A1 is the invariant those thresholds were standing in for: a commit is accounted for
+    // when an intent declared it, an expectation predicted it, or the reader's own finger
+    // made it. Otherwise it is recorded — **at any distance**. It stays a notice until the
+    // logs say how often it fires; the point is that the threshold gets deleted from
+    // evidence rather than re-guessed.
+
+    private var unaccounted: (ReaderPositionSentry.Report) -> Bool {
+        { $0.detail.contains("guard=A1") }
+    }
+
+    @Test("a move the reader made themselves is accounted for")
+    func readerDrivenCommitIsAccounted() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeCommit(position(3, 0), source: .scrollSettle, readerDriven: true)
+        sentry.observeCommit(position(3, 4000), source: .scrollSettle, readerDriven: true)
+        #expect(!recorder.reports.contains(where: unaccounted))
+    }
+
+    /// The hole G2 leaves: one chapter is not "two or more", so this was silent.
+    @Test("an unexplained one-chapter move is recorded")
+    func unexplainedSingleChapterMoveIsRecorded() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeCommit(position(3, 0), source: .pagedTurn, readerDriven: true)
+        sentry.observeCommit(position(4, 0), source: .pagedTurn, readerDriven: false)
+
+        #expect(recorder.reports.contains(where: unaccounted))
+        // Still not an anomaly — the threshold stands until there are numbers — but it is
+        // no longer invisible, which is the whole point.
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// The hole every guard leaves: a move inside one chapter.
+    @Test("an unexplained move inside a chapter is recorded with its distance")
+    func unexplainedWithinChapterMoveIsRecorded() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeCommit(position(3, 100), source: .scrollSettle, readerDriven: true)
+        sentry.observeCommit(position(3, 2600), source: .scrollSettle, readerDriven: false)
+
+        let report = try! #require(recorder.reports.first(where: unaccounted))
+        #expect(report.detail.contains("charDelta=2500"))
+        #expect(report.severity == .notice)
+    }
+
+    /// Distance is not the test — being unaccounted for is. A one-character move nobody
+    /// asked for is still nobody asking for it.
+    @Test("even a tiny unexplained move is recorded")
+    func tinyUnexplainedMoveIsRecorded() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeCommit(position(3, 100), source: .scrollSettle, readerDriven: true)
+        sentry.observeCommit(position(3, 101), source: .scrollSettle, readerDriven: false)
+        #expect(recorder.reports.contains(where: unaccounted))
+    }
+
+    @Test("a declared jump accounts for a move the reader did not make")
+    func declaredIntentAccountsForMove() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeCommit(position(3, 0), source: .pagedTurn, readerDriven: true)
+        sentry.declareIntent(.tocJump, target: position(9, 0))
+        sentry.observeCommit(position(9, 0), source: .pagedTurn, readerDriven: false)
+        #expect(!recorder.reports.contains(where: unaccounted))
+    }
+
+    /// A page turn that landed where the walker said accounts for itself through G1 and
+    /// must not also be reported as unaccounted for.
+    @Test("an expected page turn is not also called unaccounted")
+    func expectedTurnIsNotUnaccounted() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeCommit(position(3, 0), source: .pagedTurn, readerDriven: true)
+        sentry.expectGesture(from: position(3, 0), before: nil, after: position(3, 200))
+        sentry.observeCommit(position(3, 200), source: .pagedTurn, readerDriven: false)
+        #expect(!recorder.reports.contains(where: unaccounted))
+    }
+
+    // MARK: - S1/S2: scroll mode
+    //
+    // None of G1–G3 can say anything about scrolling: G1 and G3 need an expectation only a
+    // page turn creates, and G2 only fires two whole chapters out. A jump *within* a
+    // chapter — the thing scrolling actually suffers from — was invisible to all three.
+
+    @Test("a structural change that leaves the reader in place is silent")
+    func scrollRestoreInPlaceIsClean() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeScrollGeometryChange(
+            expected: position(4, 900), landed: position(4, 900), cause: .chunkInsertion
+        )
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// The restore converts a character offset to a y offset and the check converts it
+    /// back by hit-testing; landing mid-line costs a few dozen characters either way.
+    @Test("the geometry round trip is allowed to be inexact")
+    func scrollRestoreToleratesRoundTripError() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeScrollGeometryChange(
+            expected: position(4, 900), landed: position(4, 940), cause: .chunkInsertion
+        )
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// The reported symptom: background, return, and the reader is somewhere else.
+    @Test("coming back from the background somewhere else is an anomaly")
+    func foregroundResumeThatMovesIsAnomalous() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeScrollGeometryChange(
+            expected: position(4, 900), landed: position(4, 3200), cause: .foregroundResume
+        )
+        #expect(recorder.anomalies.count == 1)
+        let detail = recorder.anomalies[0].detail
+        #expect(detail.contains("guard=S1"))
+        #expect(detail.contains("cause=foregroundResume"))
+        // The displacement has to be in the report; "it moved" without how far is not
+        // actionable, and the tolerance is a first cut that these numbers will calibrate.
+        #expect(detail.contains("charDelta=2300"))
+    }
+
+    /// A chapter arriving must not move the reader — that is the whole reason the restore
+    /// re-applies the position instead of compensating for the content that moved.
+    @Test("a chapter arriving must not move the reader")
+    func chunkInsertionThatMovesIsAnomalous() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeScrollGeometryChange(
+            expected: position(4, 900), landed: position(5, 12), cause: .chunkInsertion
+        )
+        #expect(recorder.anomalies.count == 1)
+        #expect(recorder.anomalies[0].detail.contains("crossedChapter=4 → 5"))
+    }
+
+    /// Crossing a chapter is a jump however small the offsets look — the numbers are not
+    /// comparable across chapters, so distance cannot be the test.
+    @Test("a small offset in another chapter is still a jump")
+    func crossingChaptersIgnoresOffsetDistance() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeScrollGeometryChange(
+            expected: position(4, 100), landed: position(3, 100), cause: .reload
+        )
+        #expect(recorder.anomalies.count == 1)
+    }
+
+    /// The same escape hatch page turns get: a declared navigation explains any distance.
+    @Test("a declared jump explains a scroll move")
+    func declaredIntentExplainsScrollMove() {
+        let (sentry, recorder) = makeSentry()
+        sentry.declareIntent(.tocJump, target: position(9, 0))
+        sentry.observeScrollGeometryChange(
+            expected: position(4, 900), landed: position(9, 40), cause: .reload
+        )
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// A restore that cannot be verified is recorded but not reported: not knowing where
+    /// the reader is differs from knowing they are in the wrong place.
+    @Test("an unresolvable landing is not called an anomaly")
+    func unresolvedLandingIsNotAnomalous() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeScrollGeometryChange(
+            expected: position(4, 900), landed: nil, cause: .chunkInsertion
+        )
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    @Test("chapters in reading order are silent")
+    func chunkOrderInOrderIsClean() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeChunkOrder([256, 256, 257, 257, 258], cause: .chunkInsertion)
+        #expect(recorder.anomalies.isEmpty)
+    }
+
+    /// The real ordering defect from the device log: 258's text sat physically above
+    /// 257's, so scrolling down from 256 arrived in 258 and only then 257. Nothing
+    /// "jumped" — the book itself was out of order — so it needs its own guard.
+    @Test("a chapter laid out above an earlier one is an anomaly")
+    func chunkOrderRegressionIsAnomalous() {
+        let (sentry, recorder) = makeSentry()
+        sentry.observeChunkOrder([256, 258, 257, 259], cause: .chunkInsertion)
+        #expect(recorder.anomalies.count == 1)
+        let detail = recorder.anomalies[0].detail
+        #expect(detail.contains("guard=S2"))
+        #expect(detail.contains("firstBreakAt=1"))
+        #expect(detail.contains("[256, 258, 257, 259]"))
+    }
+
     // MARK: - G1: a step lands where the walker said it would
 
     @Test("a gesture landing on the computed next page is silent")

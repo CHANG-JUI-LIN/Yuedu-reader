@@ -32,7 +32,70 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     /// computed their offset delta against geometry the other had already changed, which a device
     /// log caught red-handed: `insertCompensation … applied=27195.3` immediately followed by
     /// `… applied=13908.3`, a whole chapter down and back up again.
-    private var readingPosition: CoreTextReadingPosition?
+    /// Read freely; write only through `setReadingPosition`.
+    ///
+    /// The invariant above was documented and unenforced: four places assigned this and
+    /// one of them told the sentry. Naming the writer at each site is what turns the
+    /// comment into something the log can check — in particular the engine-reset write,
+    /// which is the chapter-load path the invariant says must not move anyone.
+    private var storedReadingPosition: CoreTextReadingPosition?
+    private var readingPosition: CoreTextReadingPosition? { storedReadingPosition }
+
+    private enum ReadingPositionWrite {
+        var label: String {
+            switch self {
+            case .handoff: return "handoff"
+            case .reslice: return "reslice"
+            case .engineReset: return "engineReset"
+            case .settle: return "settle"
+            }
+        }
+
+        /// Opening the book, or arriving from paged mode. Declared upstream by
+        /// `moveReaderSession`, so it is not re-reported here.
+        case handoff
+        /// Re-asserting the same position across a re-slice; not a move.
+        case reslice
+        /// The engine overriding what this controller held. The one write the invariant
+        /// above says should not be able to move anyone — so it is checked, not trusted.
+        case engineReset
+        /// The reader came to rest.
+        case settle(readerDriven: Bool)
+    }
+
+    private func setReadingPosition(
+        _ position: CoreTextReadingPosition?,
+        _ write: ReadingPositionWrite
+    ) {
+        let previous = storedReadingPosition
+        storedReadingPosition = position
+
+        switch write {
+        case .handoff, .reslice:
+            posTrace(
+                "position.\(write.label)",
+                "to=\(position.map(Self.describe) ?? "nil")"
+            )
+        case .engineReset:
+            posTrace(
+                "position.engineReset",
+                "from=\(previous.map(Self.describe) ?? "nil") to=\(position.map(Self.describe) ?? "nil")"
+            )
+            // A reset is allowed to *hold* the position; it is not allowed to *change* it.
+            if let previous, let position, previous != position {
+                ReaderPositionSentry.shared.observeScrollGeometryChange(
+                    expected: previous,
+                    landed: position,
+                    cause: .reload
+                )
+            }
+        case let .settle(readerDriven):
+            guard let position else { return }
+            ReaderPositionSentry.shared.observeCommit(
+                position, source: .scrollSettle, readerDriven: readerDriven
+            )
+        }
+    }
     /// Whether `readingPosition` has been put on screen at least once. Until it has, the reader is
     /// showing whatever the collection view happened to lay out, not a position anyone chose.
     private var hasAppliedReadingPosition = false
@@ -41,6 +104,15 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     /// the position it had just restored: the device log shows the saved offset flipping
     /// `off253 → off0 → off253` across successive reader instances.
     private var isApplyingReadingPosition = false
+    /// Where the reader was when the app last left the foreground, held until the next
+    /// layout pass after it comes back. Coming back must not move anyone; this is what
+    /// turns that sentence into something the log can check.
+    private var positionAtResignActive: CoreTextReadingPosition?
+    private var awaitingForegroundVerification = false
+    /// Last observed content offset on the scrolling axis, for attributing movement.
+    private var lastObservedAxisOffset: CGFloat?
+    /// The previous committed position, so each commit can record how far it moved.
+    private var lastCommittedPosition: CoreTextReadingPosition?
     private var hasKickedOffEngine = false
     private var pendingInitialChapter: Int = 0
     private var displayedCount: Int = 0
@@ -112,6 +184,32 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     override func viewDidLoad() {
         super.viewDidLoad()
         view.addInteraction(editMenuInteraction)
+
+        // Leaving and returning is a structural change like any other: chapters may be
+        // re-sliced, cells rebuilt, the viewport re-laid-out. The reader must come back to
+        // the same place. Verified on the next layout pass rather than after a delay —
+        // that pass is the real signal that the rebuild finished.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.positionAtResignActive = self.visibleCanonicalPosition()
+                self.posTrace(
+                    "phase.resign",
+                    "at=\(self.positionAtResignActive.map(Self.describe) ?? "unresolved")"
+                )
+            }
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.awaitingForegroundVerification = self.positionAtResignActive != nil
+                self.posTrace("phase.active", "verifying=\(self.awaitingForegroundVerification)")
+            }
+        }
 
         collectionView.dataSource = self
         collectionView.delegate = self
@@ -402,8 +500,26 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         kickoffEngineIfNeeded()
-        applyReadingPositionIfPossible()
+        applyReadingPositionIfPossible(cause: .initialLayout)
+        verifyForegroundRestoreIfNeeded()
         reconcileInlineVideos()
+    }
+
+    /// The first layout pass after returning to the foreground, compared against where the
+    /// reader was when the app left it.
+    private func verifyForegroundRestoreIfNeeded() {
+        guard awaitingForegroundVerification, let before = positionAtResignActive else { return }
+        awaitingForegroundVerification = false
+        positionAtResignActive = nil
+        ReaderPositionSentry.shared.observeScrollGeometryChange(
+            expected: before,
+            landed: visibleCanonicalPosition(),
+            cause: .foregroundResume
+        )
+    }
+
+    private static func describe(_ position: CoreTextReadingPosition) -> String {
+        "(ch\(position.spineIndex),off\(position.charOffset))"
     }
 
     func setInitialPosition(chapter: Int, charOffset: Int) {
@@ -411,10 +527,12 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         // that land wrong. If the target logged here is already wrong, the fault is upstream in
         // whoever computed the handover position, not in this controller.
         posTrace("setInitialPosition", "target=(ch\(chapter),off\(charOffset))")
-        readingPosition = CoreTextReadingPosition(spineIndex: chapter, charOffset: charOffset)
+        setReadingPosition(
+            CoreTextReadingPosition(spineIndex: chapter, charOffset: charOffset), .handoff
+        )
         hasAppliedReadingPosition = false
         pendingInitialChapter = chapter
-        applyReadingPositionIfPossible()
+        applyReadingPositionIfPossible(cause: .initialLayout)
     }
 
     func update(axis: CoreTextScrollAxis, horizontal: CGFloat, vertical: CGFloat, bottomMargin: CGFloat = 0) {
@@ -535,9 +653,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         resliceTask = Task { [weak self] in
             guard let self = self else { return }
             self.hasAppliedReadingPosition = false
-            self.readingPosition = CoreTextReadingPosition(
-                spineIndex: chapter,
-                charOffset: charOffset
+            self.setReadingPosition(
+                CoreTextReadingPosition(spineIndex: chapter, charOffset: charOffset), .reslice
             )
             let succeeded = await self.engine.reslice(
                 restoreAt: chapter,
@@ -553,7 +670,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 self.resliceTask = nil
                 return
             }
-            self.applyReadingPositionIfPossible(force: true)
+            self.applyReadingPositionIfPossible(force: true, cause: .refresh)
             self.resliceTask = nil
         }
     }
@@ -688,13 +805,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             // offset survived the rebuild was an accident. The controller now holds it, so an
             // engine reset can only ever *override* it, never erase it.
             if let restorePosition {
-                readingPosition = restorePosition
+                setReadingPosition(restorePosition, .engineReset)
             }
             hasAppliedReadingPosition = false
             displayedCount = engine.chunks.count
             lastWarmRow = nil
             collectionView.reloadData()
-            applyReadingPositionIfPossible(force: true)
+            applyReadingPositionIfPossible(force: true, cause: .reload)
         case .chunksInserted(let range, _):
             applyChunkInsertion(range)
         }
@@ -732,7 +849,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             } completion: { [weak self] _ in
                 guard let self else { return }
                 self.collectionView.layoutIfNeeded()
-                self.applyReadingPositionIfPossible(force: true)
+                self.applyReadingPositionIfPossible(force: true, cause: .chunkInsertion)
             }
             return
         }
@@ -741,7 +858,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         lastWarmRow = nil
         collectionView.reloadData()
         collectionView.layoutIfNeeded()
-        applyReadingPositionIfPossible(force: true)
+        applyReadingPositionIfPossible(force: true, cause: .chunkInsertion)
     }
 
     /// Puts `readingPosition` back on screen.
@@ -755,7 +872,10 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     /// - Parameter force: re-apply even if the position is already on screen. Structural changes
     ///   pass `true`; idle layout passes pass `false` so the user's own scrolling is left alone.
     @discardableResult
-    private func applyReadingPositionIfPossible(force: Bool = false) -> Bool {
+    private func applyReadingPositionIfPossible(
+        force: Bool = false,
+        cause: ReaderPositionSentry.ScrollGeometryCause = .unspecified
+    ) -> Bool {
         guard force || !hasAppliedReadingPosition else { return false }
         guard let target = readingPosition else { return false }
         guard let row = engine.chunkIndex(
@@ -779,6 +899,19 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         )
         guard scrollToRow(row, charOffset: target.charOffset) else { return false }
         warmChunks(around: row, force: true)
+        // The whole contract of this method is that the reader ends up where they were.
+        // Checking it here rather than at each caller is deliberate: every structural
+        // change funnels through this one call, so a new one cannot be added without
+        // being covered.
+        ReaderPositionSentry.shared.observeScrollGeometryChange(
+            expected: target,
+            landed: visibleCanonicalPosition(),
+            cause: cause
+        )
+        ReaderPositionSentry.shared.observeChunkOrder(
+            engine.chunks.map(\.chapterIndex),
+            cause: cause
+        )
         hasAppliedReadingPosition = true
         let completion = pendingVisibleRefreshCompletion
         pendingVisibleRefreshCompletion = nil
@@ -1234,7 +1367,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private func didFinishAnimatedScroll(source: ScrollOffsetSource) {
         guard source == .ttsFollow else { return }
         isAutoScrollingPlayback = false
-        commitProgress()
+        // Narration moved the reader, not their finger — and narration declares itself as
+        // an intent, so this is accounted for without claiming the reader did it.
+        commitProgress(readerDriven: false)
     }
 
     // MARK: - Position diagnostics
@@ -1342,6 +1477,8 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        noteScrollAttribution(scrollView)
+
         let chunks = engine.chunks
         guard !chunks.isEmpty else { return }
 
@@ -1370,16 +1507,45 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         }
     }
 
+    /// Records movement nobody admits to causing.
+    ///
+    /// Three things may legitimately move the offset: the reader's finger (dragging or the
+    /// momentum after it), and our own restore. Anything else is UIKit adjusting the offset
+    /// because the content around the reader changed — which is exactly the mechanism
+    /// behind a jump, and the one thing the old logs never showed. Narration, not a report:
+    /// UIKit does this for benign reasons too, and its value is being the line immediately
+    /// before an S1 anomaly that says *when* the content slid.
+    private func noteScrollAttribution(_ scrollView: UIScrollView) {
+        let offset = scrollAxis == .vertical
+            ? scrollView.contentOffset.y
+            : scrollView.contentOffset.x
+        defer { lastObservedAxisOffset = offset }
+        guard let previous = lastObservedAxisOffset else { return }
+
+        let delta = offset - previous
+        // Sub-point adjustments are device-pixel quantisation, not movement.
+        guard abs(delta) > 1 else { return }
+        guard !isApplyingReadingPosition,
+              !scrollView.isDragging,
+              !scrollView.isDecelerating
+        else { return }
+
+        ReaderPositionSentry.shared.noteUnattributedScroll(delta: delta, offset: offset)
+    }
+
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        commitProgress()
+        // Momentum from the reader's own flick.
+        commitProgress(readerDriven: true)
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if !decelerate { commitProgress() }
+        if !decelerate { commitProgress(readerDriven: true) }
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-        commitProgress()
+        // An animation the app started, not a finger. If this lands somewhere nobody
+        // asked for, that is exactly what the sentry should say.
+        commitProgress(readerDriven: false)
     }
 
     /// The only place the screen is allowed to redefine `readingPosition`.
@@ -1389,13 +1555,22 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
     /// `commitProgress` → `readingPosition` overwritten with wherever the restore happened to
     /// land. That is how a precise saved offset degraded to the chapter start between reader
     /// instances (`off253 → off0` in the device log).
-    private func commitProgress() {
+    private func commitProgress(readerDriven: Bool) {
         guard !isApplyingReadingPosition else { return }
         guard let pos = visibleCanonicalPosition() else { return }
-        readingPosition = pos
-        ReaderPositionSentry.shared.observeCommit(pos, source: .scrollSettle)
+        setReadingPosition(pos, .settle(readerDriven: readerDriven))
+        // The displacement, not just the destination: reading a jump out of a column of
+        // absolute offsets means subtracting them by hand, and the interesting ones are
+        // exactly those a reader could not have scrolled through.
+        let moved = lastCommittedPosition.map { previous -> String in
+            previous.spineIndex == pos.spineIndex
+                ? "\(pos.charOffset - previous.charOffset)"
+                : "ch\(previous.spineIndex)→ch\(pos.spineIndex)"
+        } ?? "first"
+        lastCommittedPosition = pos
         AppLogger.render(
-            "[ProgressTrace][ScrollVC] commit spine=\(pos.spineIndex) charOffset=\(pos.charOffset)"
+            "[ProgressTrace][ScrollVC] commit spine=\(pos.spineIndex)"
+                + " charOffset=\(pos.charOffset) moved=\(moved)"
         )
         onProgressCommit?(pos)
     }

@@ -2233,6 +2233,9 @@
 "筆記內容" = "Note Text";
 "筆記：%@" = "Note: %@";
 "翻頁動畫跑完但頁面沒有前進" = "A completed swipe left the reader on the same page";
+"位置變動沒有來源" = "The reading position changed with nothing accounting for it";
+"捲動時內容在讀者底下移動了" = "Content moved under the reader while scrolling";
+"章節在捲動視圖裡順序錯亂" = "Chapters are out of reading order in the scroll view";
 "章節停在載入中且沒有再次嘗試" = "A chapter is stuck on its loading page with no further attempt";
 "匯出目前篩選" = "Export current filter";
 "匯出的檔案包含這次啟動的完整紀錄，不受下方篩選影響。只想分享其中一段時，用右上角的「匯出目前篩選」。" = "The exported file holds the complete log for this launch, regardless of the filters below. To share just part of it, use Export current filter in the top-right menu.";

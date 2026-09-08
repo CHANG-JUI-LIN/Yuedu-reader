@@ -337,7 +337,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         var externalTargetPosition: CoreTextReadingPosition? {
             didSet {
                 guard let externalTargetPosition else { return }
-                currentCoreTextPosition = externalTargetPosition
+                setCurrentPosition(externalTargetPosition, .externalTarget)
                 pendingNavigation = PendingNavigation(target: .position(externalTargetPosition))
             }
         }
@@ -379,7 +379,39 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private static let normalFlipDuration: CFAbsoluteTime = 0.28
         private static let maxBurstSpeed: Float = 3.0
         private static let slideTransitionKey = "readerSlideTurn"
-        fileprivate var currentCoreTextPosition: CoreTextReadingPosition?
+        /// Where the reader is, and the only thing allowed to say so.
+        ///
+        /// `private(set)` is the point. Four separate places used to assign this directly
+        /// and exactly **one** of them told the sentry, so every position guard — A1, G1,
+        /// G2, G3 — was blind to the other three. The whole 覆蓋 page-turn style lived in
+        /// that blind spot: turning pages with it reported nothing at all.
+        ///
+        /// Instrumenting the *paths* is what let that happen; a path can be added without
+        /// anyone remembering. Instrumenting the *variable* cannot be bypassed, because
+        /// assignment from outside `setCurrentPosition` no longer compiles.
+        fileprivate private(set) var currentCoreTextPosition: CoreTextReadingPosition?
+
+        /// Why the position is changing. A new caller has to choose, which is the job.
+        enum PositionWrite {
+            /// A turn that landed — any animation style, gesture or command.
+            case settled(readerDriven: Bool, isPlaceholder: Bool)
+            /// The navigator handed down a destination. Deliberately *not* a settle: the
+            /// stack write that follows reports where it actually lands, and counting both
+            /// would report one navigation twice.
+            case externalTarget
+        }
+
+        func setCurrentPosition(_ position: CoreTextReadingPosition?, _ write: PositionWrite) {
+            currentCoreTextPosition = position
+            guard case let .settled(readerDriven, isPlaceholder) = write,
+                  let position else { return }
+            ReaderPositionSentry.shared.observeCommit(
+                position,
+                source: .pagedTurn,
+                isPlaceholder: isPlaceholder,
+                readerDriven: readerDriven
+            )
+        }
         private var pendingNavigation: PendingNavigation?
         weak var coverPageViewController: UIPageViewController?
         weak var instantPanPageViewController: UIPageViewController?
@@ -643,6 +675,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             self.onTapZone = onTapZone
             self.onSwipeUpExit = onSwipeUpExit
             if let externalTargetPosition {
+                // Direct, because a method call before `super.init` does not compile. Safe
+                // to leave outside the funnel only because `.externalTarget` reports
+                // nothing anyway — the stack write that follows is what lands and reports.
                 self.currentCoreTextPosition = externalTargetPosition
                 self.pendingNavigation = PendingNavigation(target: .position(externalTargetPosition))
             }
@@ -1273,8 +1308,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             DispatchQueue.main.async { self.onTapZone(action) }
         }
 
-        func captureStablePosition(from viewController: UIViewController) {
-            currentCoreTextPosition = readingPosition(from: viewController)
+        /// The landing of a 覆蓋 turn, and the initial stack.
+        ///
+        /// - Parameter readerDriven: 覆蓋 turns are all the reader asking — an interactive
+        ///   drag, or a turn command from a tap or a volume key. The initial stack is not.
+        func captureStablePosition(from viewController: UIViewController, readerDriven: Bool = false) {
+            setCurrentPosition(
+                readingPosition(from: viewController),
+                .settled(readerDriven: readerDriven, isPlaceholder: isPlaceholderDisplay(viewController))
+            )
         }
 
         func applyPlaybackHighlight(to viewController: UIViewController) {
@@ -1292,15 +1334,24 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         @discardableResult
-        func syncStablePosition(afterShowing viewController: UIViewController, notifyFallback: Bool) -> Int? {
+        /// - Parameter readerDriven: true only when a swipe the reader made is what put
+        ///   this page on screen. Every other caller here is the app re-placing the stack
+        ///   — a chapter landing, a queued transition, a link — and those are precisely the
+        ///   moves that have to justify themselves.
+        func syncStablePosition(
+            afterShowing viewController: UIViewController,
+            notifyFallback: Bool,
+            readerDriven: Bool = false
+        ) -> Int? {
             let fallbackPage = (viewController as? any PageIndexProviding)?.globalPageIndex ?? currentPage
 
             if let position = readingPosition(from: viewController) {
-                currentCoreTextPosition = position
-                ReaderPositionSentry.shared.observeCommit(
+                setCurrentPosition(
                     position,
-                    source: .pagedTurn,
-                    isPlaceholder: isPlaceholderDisplay(viewController)
+                    .settled(
+                        readerDriven: readerDriven,
+                        isPlaceholder: isPlaceholderDisplay(viewController)
+                    )
                 )
 
                 if let resolvedPage = currentEngine.pageIndex(for: position) {
@@ -1570,7 +1621,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             } else {
                 pendingNavigation = nil
             }
-            if let resolvedPage = syncStablePosition(afterShowing: vc, notifyFallback: false) {
+            if let resolvedPage = syncStablePosition(
+                afterShowing: vc,
+                notifyFallback: false,
+                // The gate is counting animations we started ourselves, so it is what
+                // separates the reader's swipe from a transition the app issued.
+                readerDriven: !stackWriteGate.isAnimatingTransition
+            ) {
                 continueQueuedTransitionIfNeeded(on: pvc, showing: resolvedPage)
             } else {
                 continueQueuedTransitionIfNeeded(on: pvc, showing: vc.globalPageIndex)
@@ -1792,7 +1849,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                             self.applyPlaybackHighlight(to: realVC)
                             pvc.setViewControllers([realVC], direction: .forward, animated: false)
                             pvc.view.layoutIfNeeded()
-                            self.captureStablePosition(from: realVC)
+                            self.captureStablePosition(from: realVC, readerDriven: true)
                             settledPosition = self.readingPosition(from: realVC)
                         }
                         self.publishCurrentPage(
@@ -1872,7 +1929,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
                     
-                    self.captureStablePosition(from: realVC)
+                    self.captureStablePosition(from: realVC, readerDriven: true)
                     self.publishCurrentPage(
                         latestPage,
                         position: self.readingPosition(from: realVC),
@@ -1891,7 +1948,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.applyPlaybackHighlight(to: realVC)
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
-                    self.captureStablePosition(from: realVC)
+                    self.captureStablePosition(from: realVC, readerDriven: true)
                     self.publishCurrentPage(
                         latestPage,
                         position: self.readingPosition(from: realVC),
@@ -1917,7 +1974,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     pvc.setViewControllers([realVC], direction: direction, animated: false)
                     pvc.view.layoutIfNeeded()
                     
-                    self.captureStablePosition(from: realVC)
+                    self.captureStablePosition(from: realVC, readerDriven: true)
                     self.publishCurrentPage(
                         latestPage,
                         position: self.readingPosition(from: realVC),

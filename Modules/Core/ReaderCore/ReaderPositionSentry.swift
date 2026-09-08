@@ -56,6 +56,29 @@ final class ReaderPositionSentry {
         case scrollSettle
     }
 
+    /// What changed under the reader in scroll mode.
+    ///
+    /// Every one of these ends by calling `applyReadingPositionIfPossible(force:)` —
+    /// the contract is that the reader is *put back* where they belong rather than the
+    /// app working out how far the content moved and compensating
+    /// (`CoreTextCollectionScrollViewController`). So the cause is only ever a label for
+    /// the report; none of them is allowed to move the reader.
+    enum ScrollGeometryCause: String {
+        /// A chapter arrived and its chunks were spliced in.
+        case chunkInsertion
+        /// The collection view was rebuilt wholesale.
+        case reload
+        /// First time the position was put on screen for this reader.
+        case initialLayout
+        /// The app came back to the foreground.
+        case foregroundResume
+        /// The viewport changed size — rotation, split view, a keyboard.
+        case renderSizeChange
+        /// Settings changed enough to re-slice the text.
+        case refresh
+        case unspecified
+    }
+
     /// How far a declared intent may stay outstanding, counted in commits rather
     /// than seconds. A jump normally settles in two — the placeholder, then the real
     /// page (`Technotes/ReaderChapterSupply.md` invariant 1). Past this the intent is
@@ -211,10 +234,15 @@ final class ReaderPositionSentry {
     /// character offset but its chapter has not finished paginating. By contract it
     /// should not move when the layout lands; until that is proven on real devices,
     /// a disagreement involving one is reported a notch quieter.
+    /// - Parameter readerDriven: the reader's own finger put them here — a completed
+    ///   swipe, or a scroll that came to rest after a drag. This is the input the sentry
+    ///   was missing, and its absence is why the guard below had to fall back to guessing
+    ///   from distance. Both modes already know the answer; neither was telling it.
     func observeCommit(
         _ position: CoreTextReadingPosition,
         source: CommitSource,
-        isPlaceholder: Bool = false
+        isPlaceholder: Bool = false,
+        readerDriven: Bool = false
     ) {
         defer { lastCommitted = position }
         note("commit \(source.rawValue)\(isPlaceholder ? " placeholder" : "") \(Self.describe(position))")
@@ -272,7 +300,36 @@ final class ReaderPositionSentry {
         }
 
         guard let previous = lastCommitted else { return }
-        let delta = abs(position.spineIndex - previous.spineIndex)
+
+        // Nothing declared this move, no page-turn expectation predicted it, and the
+        // reader did not make it themselves. That is the definition of unaccounted for,
+        // and it does not depend on how far it went.
+        //
+        // Recorded at **every** distance on purpose. The `>= 2` below is the only reason a
+        // one-chapter or within-chapter move has ever been invisible, and nobody has ever
+        // measured how often those happen — so this line exists to measure it, and the
+        // threshold is meant to be **deleted** once there are numbers rather than
+        // re-guessed. It is `notice`, so it survives with verbose off.
+        let spineDelta = position.spineIndex - previous.spineIndex
+        if !readerDriven {
+            report(
+                localized("位置變動沒有來源"),
+                english: "the reading position changed with nothing accounting for it",
+                severity: .notice,
+                lines: [
+                    "guard=A1",
+                    "source=\(source.rawValue)",
+                    "from=\(Self.describe(previous))",
+                    "to=\(Self.describe(position))",
+                    spineDelta == 0
+                        ? "charDelta=\(position.charOffset - previous.charOffset)"
+                        : "spineDelta=\(spineDelta)",
+                    "placeholder=\(isPlaceholder)",
+                ]
+            )
+        }
+
+        let delta = abs(spineDelta)
         guard delta >= 2 else { return }
         report(
             localized("章節位置無故跳動"),
@@ -317,6 +374,113 @@ final class ReaderPositionSentry {
                 "placeholder=\(isPlaceholder)",
             ]
         )
+    }
+
+    // MARK: - Scroll mode
+    //
+    // Paged mode's guards are all about a *step*: one turn moves to one neighbour, and
+    // G1/G2/G3 judge the landing against that. None of them can say anything about
+    // scrolling, which has no steps — G1 and G3 need an expectation that only a page
+    // turn creates, and G2 only fires two whole chapters out. A jump *within* a chapter,
+    // which is what scrolling actually suffers from, was invisible to all three.
+    //
+    // Scrolling has a stronger invariant available instead, and it needs no expectation:
+    // **nothing except the reader's own finger, a declared navigation, or narration may
+    // change where they are.** A chapter arriving, a reload, a rotation, coming back from
+    // the background — every one of those is required to leave the reader exactly where
+    // they were, because each ends by re-applying the reading position rather than
+    // compensating for the content that moved.
+
+    /// How far the round trip through geometry may legitimately land from where it aimed.
+    ///
+    /// The restore converts a character offset to a y offset; the check converts the
+    /// visible y offset back to a character by hit-testing. That round trip is not exact —
+    /// device-pixel quantisation and landing mid-line cost a few dozen characters — but a
+    /// paragraph is far outside it.
+    ///
+    /// ⚠️ **First cut, to be calibrated from real logs.** Every restore records its delta
+    /// as narration, so the distribution is in the export whether or not it crossed this
+    /// line. Tighten it once there are numbers, rather than guessing again.
+    private static let scrollRestoreToleranceChars = 120
+
+    /// Where the reader ended up after something changed under them, against where the
+    /// app put them.
+    ///
+    /// - Parameter expected: the `readingPosition` the restore aimed at.
+    /// - Parameter landed: what is actually on screen afterwards, or nil when the hit test
+    ///   could not resolve one — itself worth recording, because a restore that cannot be
+    ///   verified is how a fabricated position used to get saved over a real one.
+    func observeScrollGeometryChange(
+        expected: CoreTextReadingPosition,
+        landed: CoreTextReadingPosition?,
+        cause: ScrollGeometryCause
+    ) {
+        guard let landed else {
+            note("scroll \(cause.rawValue) unverified expected=\(Self.describe(expected))")
+            return
+        }
+
+        let sameChapter = landed.spineIndex == expected.spineIndex
+        let delta = landed.charOffset - expected.charOffset
+        note(
+            "scroll \(cause.rawValue) expected=\(Self.describe(expected))"
+                + " landed=\(Self.describe(landed)) delta=\(sameChapter ? String(delta) : "chapter")"
+        )
+
+        if sameChapter, abs(delta) <= Self.scrollRestoreToleranceChars { return }
+
+        // A declared jump explains any distance, same as it does for a page turn.
+        if resolveIntent(against: landed) { return }
+
+        report(
+            localized("捲動時內容在讀者底下移動了"),
+            english: "content moved under the reader in scroll mode",
+            severity: .anomaly,
+            lines: [
+                "guard=S1",
+                "cause=\(cause.rawValue)",
+                "expected=\(Self.describe(expected))",
+                "landed=\(Self.describe(landed))",
+                sameChapter
+                    ? "charDelta=\(delta) tolerance=\(Self.scrollRestoreToleranceChars)"
+                    : "crossedChapter=\(expected.spineIndex) → \(landed.spineIndex)",
+            ]
+        )
+    }
+
+    /// Chapters must sit in the scroll view in reading order.
+    ///
+    /// They are placed by chapter index (`insertionIndex(forChapter:)`), but a reserved
+    /// placeholder slot can override that, and a wrong slot puts one chapter's text
+    /// physically above another's — the reader scrolls down and arrives in the wrong
+    /// chapter with nothing having jumped. It reads as a jump and is not one, so it gets
+    /// its own guard rather than being left to S1.
+    func observeChunkOrder(_ chapterIndices: [Int], cause: ScrollGeometryCause) {
+        guard let firstBreak = chapterIndices.indices.dropFirst().first(where: {
+            chapterIndices[$0 - 1] > chapterIndices[$0]
+        }).map({ $0 - 1 }) else { return }
+
+        report(
+            localized("章節在捲動視圖裡順序錯亂"),
+            english: "chapters are laid out in the scroll view out of reading order",
+            severity: .anomaly,
+            lines: [
+                "guard=S2",
+                "cause=\(cause.rawValue)",
+                "firstBreakAt=\(firstBreak)",
+                "order=\(chapterIndices)",
+            ]
+        )
+    }
+
+    /// The content offset moved with nobody claiming to have moved it.
+    ///
+    /// Narration, not a report: UIKit adjusts the offset for its own reasons during
+    /// layout, and calling every one of those an anomaly would bury the ones that matter.
+    /// It earns its place by being the line immediately before an S1 report that says
+    /// *when* the content slid.
+    func noteUnattributedScroll(delta: CGFloat, offset: CGFloat) {
+        note("scroll unattributed delta=\(delta) offset=\(offset)")
     }
 
     // MARK: - Intent bookkeeping

@@ -138,6 +138,23 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     /// Sets the chapter layout and page index to render, automatically triggering a redraw.
     func configure(layout: CoreTextPaginator.ChapterLayout, pageIndex: Int, fallbackBackgroundColor: UIColor = .systemBackground) {
+        // The single point where content is bound to a view, so the single place that can
+        // say what this page is *about* to draw. A position guard being green does not
+        // mean the right text is on screen: the view holds a **copy** of the layout, so a
+        // re-pagination leaves it drawing the old content at a position everyone now
+        // agrees on — "位置對但畫錯", which no guard in this app can currently see.
+        //
+        // Cross-reference the character range here against the `⟐ layoutGeneration` lines
+        // in the same log and a stale draw is identifiable. It is not *detectable*: that
+        // needs a generation stamp on `ChapterLayout` itself, which is a change to a
+        // widely constructed struct and is deliberately not in this pass.
+        let range = pageIndex < layout.pageRanges.count
+            ? "chars=\(layout.pageRanges[pageIndex].location)+\(layout.pageRanges[pageIndex].length)"
+            : "chars=OUT_OF_RANGE"
+        AppLogger.render(
+            "[RenderTrace] pageView.configure spine=\(layout.spineIndex) local=\(pageIndex)"
+                + " \(range) pages=\(layout.pageRanges.count) len=\(layout.attributedString.length)"
+        )
         self.layout = layout
         self.localPageIndex = pageIndex
         clearSelection()
@@ -1355,19 +1372,31 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         }
     }
 
+    /// Whether this touch belongs to the page's own content.
+    ///
+    /// Returning `false` drops the touch through to the reader's tap zones — page turn or
+    /// menu. So a wrong `false` here does not look like a tap bug, it looks like "the page
+    /// turned when I tapped my note". Nothing recorded which branch decided, which made
+    /// that class of report unanswerable; `trace`, because it fires on every tap and its
+    /// value is being in the flight recorder when someone says the tap did the wrong thing.
     private func shouldHandleTap(at point: CGPoint) -> Bool {
+        func decide(_ verdict: Bool, _ because: String) -> Bool {
+            AppLogger.render("[TapTrace] shouldHandleTap=\(verdict) because=\(because)")
+            return verdict
+        }
+
         if interactor.selectionManager.hasSelection {
-            return true
+            return decide(true, "hasSelection")
         }
 
         // 這是 linkTapGesture 收不收這個觸控的閘門，回 false 就整個落到閱讀器的
         // 點擊區（翻頁／選單）。筆記圓圈既不是連結也不是圖片，不在這裡宣告就永遠點不到。
         if noteMarkerHitTargets.contains(where: { $0.rect.contains(point) }) {
-            return true
+            return decide(true, "noteMarker")
         }
 
         if imageAttachment(at: point) != nil {
-            return true
+            return decide(true, "imageAttachment")
         }
 
         guard let layout,
@@ -1376,7 +1405,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
               let index = stringIndex(at: point, in: context),
               HTMLAttributedStringBuilder.linkHref(at: index, in: layout.attributedString) != nil
         else {
-            return false
+            // Names which precondition failed, because "no link here" and "no layout at
+            // all" send the touch to the same place while meaning completely different
+            // things about the state of the reader.
+            let because: String
+            if layout == nil { because = "noLayout" }
+            else if localPageIndex >= (layout?.pageRanges.count ?? 0) { because = "pageOutOfRange" }
+            else if makeInteractionContext() == nil { because = "noInteractionContext" }
+            else if stringIndex(at: point, in: makeInteractionContext()!) == nil { because = "noCharacterAtPoint" }
+            else { because = "notALink" }
+            return decide(false, because)
         }
         return true
     }

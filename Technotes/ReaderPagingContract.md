@@ -68,8 +68,78 @@ UIKit 會在它自己選的時機、為使用者可能永遠不會翻到的頁�
 - `Tests/iOS/yuedu appTests/ReaderStackWriteGateTests.swift` — 所有權窗口、巢狀轉場、一次只重播一筆、優先序不受回呼順序影響。
 - `Tests/iOS/yuedu appTests/ReaderPageTransitionQueueTests.swift` — 排隊翻頁的重新錨定。
 
+## 儀器覆蓋率審計（2026-09-08）
+
+起因：使用者問「分頁模式是不是通用的日誌系統」。答案當時是**不是**，而且不是靠評估得出的，
+是靠數的。方法很簡單，之後每加一個軸都該重跑一次：
+
+> **列出真正改變狀態的機制，數有幾個經過儀器。**
+
+| 軸 | 機制數 | 經過儀器 | 結論 |
+|---|---|---|---|
+| 分頁位置 | `currentCoreTextPosition` **4 個寫入者** | 1 | ❌ → **已修**（`private(set)` + `setCurrentPosition`）|
+| 捲動位置 | `readingPosition` **4 個寫入者** | 1 | ❌ → **已修**（`setReadingPosition(_:_:)`）|
+| 章節供給 | `_layouts` 安裝只走 `installLayout` | 全部 | ✅ 本來就是咽喉點 |
+| 排版世代 | `cancelPendingWorkInternal` 是 private、單一呼叫者 | 全部 | ✅ 本來就是咽喉點 |
+| TTS 跟隨 | `setActiveTTSAnchor` 3 個呼叫點 | **0** | ❌ → **已修**（`JumpIntent.ttsAnchor` 有 case 但零呼叫點）|
+| 渲染內容 | 內容綁到視圖只走 `CoreTextPageView.configure` | 全部 | ⚠️ **可辨識、尚不可偵測**（見下）|
+| 點擊 | `shouldHandleTap` 1 | 全部 | ✅ **已修**（每個分支具名）|
+
+**最貴的教訓：儀器要裝在機制上，不要裝在路徑上。** 位置守衛原本掛在 `syncStablePosition`
+這條*路徑*上，於是「覆蓋」翻頁動畫整個樣式從來沒被看到過——它走的是
+`captureStablePosition` → `publishCurrentPage`。路徑可以被新增而沒人記得補；變數不行。
+現在兩個模式的位置變數都是 `private(set)`／私有儲存 + 具名寫入方法，**直接賦值編不過**。
+
+### 渲染這軸還缺什麼
+
+`CoreTextPageView.configure` 是內容綁到視圖的**唯一**機制點，現在每次綁定都記下身分與**實際
+字元範圍**（`[RenderTrace] pageView.configure`）。跟同一份日誌的 `⟐ layoutGeneration` 交叉比對，
+「畫的是舊排版的內容」**辨識得出來**。
+
+但**偵測不出來**：視圖持有的是 `ChapterLayout` 的**複本**，重新排版後它照舊畫，沒有任何東西
+會發現。要變成結構性守衛，得給 `ChapterLayout` 一個世代戳並在繪製時比對——那是動一個廣泛
+建構的 struct，這輪刻意沒做。**在那之前不要說渲染這軸有守衛。**
+
+### 點擊
+
+`shouldHandleTap` 的四個出口全部具名（`[TapTrace]`，trace 級、靠飛行記錄器帶出）。回 `false`
+會讓觸控整個落到翻頁／選單，所以錯誤的 `false` 不長得像點擊 bug，長得像「我點筆記結果翻頁了」
+（見 `project_page_view_tap_gate`）。失敗分支特別分開 `noLayout` / `pageOutOfRange` /
+`noInteractionContext` / `noCharacterAtPoint` / `notALink`——它們去同一個地方，但對閱讀器狀態
+的含意完全不同。
+
+## 位置守衛（`ReaderPositionSentry`）
+
+**A1 是通用的那一條，其餘都是它的特例。** 一筆位置提交是「有來源的」，當且僅當：
+宣告過的意圖解釋了它（`declareIntent`，由 `moveReaderSession` 對 `ReaderLocation.Source`
+的**窮舉**映射餵入）、翻頁的 expectation 預測了它、或**讀者自己的手指**造成了它
+（`readerDriven:`）。否則就記一筆 `guard=A1`，**不看距離**。
+
+`readerDriven` 是原本缺的那個輸入。兩個模式一直都知道答案——分頁看
+`stackWriteGate.isAnimatingTransition`，捲動看是哪個 delegate 回呼——只是從來沒告訴 sentry，
+於是守衛只能退回去用距離猜。
+
+| 守衛 | 覆蓋 | 現況 |
+|---|---|---|
+| **A1** 位置變動沒有來源 | 兩個模式，任何距離 | `notice`。**刻意不設門檻。** |
+| G1 落點與步進目的地不符 | 分頁手勢 | anomaly |
+| G2 章節位置無故跳動 | 兩個模式，**≥2 章** | anomaly |
+| G3 翻頁動畫跑完但沒前進 | 分頁，**連續 2 次** | anomaly |
+| S1 內容在讀者底下移動 | 捲動，結構變動後，**>120 字元** | anomaly |
+| S2 章節順序錯亂 | 捲動 | anomaly |
+
+⚠️ **G2 的 `≥2`、G3 的連續 2 次、S1 的 120 字元都是猜的。** 它們是照著當時回報的症狀選來
+避免誤報的，代價是「跳剛好一章／一頁／半段」對三者都是隱形的。A1 存在就是為了把這個洞
+量出來：它記下每一筆無主變動與距離，**下一份真機日誌會給出真實分布，然後這些門檻應該被
+刪掉，而不是再猜一次。** 在那之前不要用它們的存在來論證什麼是「正常」。
+
 ## 日誌判準（Release Console 可見）
 
+- `⟐ positionSentry 位置變動沒有來源` — A1。無主的位置變動，帶 `charDelta`／`spineDelta`。
 - `[FlipTrace] pageForward from=<position> to=<position>` — 步進兩端都是 position。出現絕對頁碼就是回歸。
-- `[FlipTrace] stackWrite deferred <kind>` / `stackWrite replay <kind>` — gate 有在擋。
+- `⟐ stackWrite deferred <kind>` / `[FlipTrace] stackWrite replay <kind>` — gate 有在擋。
+- `⟐ stackWrite dropped <kind> inFavourOf=<kind>` — 欠著的堆疊寫入被更高優先級蓋掉。
 - `⟐ stackWrite watchdog` — 有 completion 掉了，該查。
+- `⟲ scrollpos.phase.resign` / `.phase.active` — 捲動模式進出前台，附當下位置。
+- `⟲ scrollpos.*` — 捲動的還原全程（`restore.resolve` / `restore.deferred` / `insert`）。
+- `[ProgressTrace][ScrollVC] commit … moved=<Δ>` — 每次捲動落定的**位移量**，不只落點。
