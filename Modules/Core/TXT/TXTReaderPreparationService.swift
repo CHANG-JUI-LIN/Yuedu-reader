@@ -3,6 +3,7 @@ import Foundation
 struct TXTReaderPreparation: Sendable {
     let mappedTextFile: TXTMappedTextFile
     let cachedChapterIndexes: [TXTMappedChapterIndex]?
+    let previousChapterIndexes: [TXTMappedChapterIndex]?
     let previewText: String
     let bookId: UUID
     let bookTitle: String
@@ -23,15 +24,17 @@ enum TXTReaderPreparationService {
         let fileSize = mappedTextFile.byteCount
         let fingerprint = TXTFileReader.fileFingerprint(data: mappedTextFile.data)
         let encoding = mappedTextFile.encoding
-        let cached = TXTChapterParser.loadCachedIndexes(
+        let snapshot = try TXTChapterParser.cachedIndexesForMigration(
             bookId: bookId,
             fileSize: fileSize,
             fingerprint: fingerprint,
             encoding: encoding
         )
+        let cached = snapshot?.version == TXTChapterParser.indexVersion ? snapshot?.indexes : nil
+        let previous = snapshot?.version == 5 ? snapshot?.indexes : nil
 
         let previewText: String
-        if cached == nil {
+        if cached == nil, previous == nil {
             previewText = try SourcePerfTrace.span(
                 "txt.preview",
                 "bytes=\(fileSize) limit=\(TXTInitialPreviewPlanner.maximumByteCount)"
@@ -45,6 +48,7 @@ enum TXTReaderPreparationService {
         return TXTReaderPreparation(
             mappedTextFile: mappedTextFile,
             cachedChapterIndexes: cached,
+            previousChapterIndexes: previous,
             previewText: previewText,
             bookId: bookId,
             bookTitle: bookTitle,
@@ -54,7 +58,9 @@ enum TXTReaderPreparationService {
         )
     }
 
-    static func completeChapterIndexes(
+    /// Builds a candidate index without publishing it. Only the transactional
+    /// migration service may replace a persisted index after validating locations.
+    static func buildChapterIndexes(
         for preparation: TXTReaderPreparation
     ) -> [TXTMappedChapterIndex] {
         if let cached = preparation.cachedChapterIndexes {
@@ -70,13 +76,6 @@ enum TXTReaderPreparationService {
                 bookTitle: preparation.bookTitle
             )
         }
-        TXTChapterParser.saveCachedIndexes(
-            indexes,
-            bookId: preparation.bookId,
-            fileSize: preparation.fileSize,
-            fingerprint: preparation.fingerprint,
-            encoding: preparation.encoding
-        )
         return indexes
     }
 

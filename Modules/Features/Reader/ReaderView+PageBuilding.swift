@@ -277,6 +277,8 @@ extension ReaderView {
             return
         }
         isLoadingPipeline = true
+        txtIndexReady = false
+        showTXTIndexFailure = false
         isRestoringPosition = true
         refreshInitialRestoreState()
 
@@ -334,6 +336,9 @@ extension ReaderView {
                             book: targetBook,
                             chapters: markdownChapters
                         )
+                        // Markdown has its own canonical parser but shares the
+                        // TXT rendering kind; it does not use TXT reindexing.
+                        self.txtIndexReady = true
                         self.applyDocument(document)
 
                         self.epubRenderer.loadTXT(
@@ -378,7 +383,10 @@ extension ReaderView {
                         return
                     }
 
-                    if preparation.cachedChapterIndexes == nil {
+                    if preparation.cachedChapterIndexes == nil,
+                       preparation.previousChapterIndexes == nil,
+                       savedCoreTextRestoreTarget == nil,
+                       targetBook.bookmarks.isEmpty {
                         let previewIndexes = TXTChapterParser.parseChapterIndexes(
                             preparation.previewText,
                             bookTitle: bookTitle
@@ -402,13 +410,19 @@ extension ReaderView {
                         )
                     }
 
-                    let mappedChapterIndexes = await Task.detached(priority: .userInitiated) {
-                        TXTReaderPreparationService.completeChapterIndexes(
-                            for: preparation
-                        )
-                    }.value
+                    let completion = try await TXTReaderIndexMigrationService.complete(
+                        preparation, store: store, positions: dependencies.readingPositionStore,
+                        settings: settings
+                    )
+                    let mappedChapterIndexes = completion.indexes
 
                     guard self.book?.id == targetBook.id else { return }
+                    txtIndexReady = true
+                    // Re-read the canonical migrated location before the final
+                    // engine can restore/settle against the corrected index.
+                    if completion.restoredPosition != nil {
+                        refreshInitialRestoreState()
+                    }
                     let finalBuilder = TXTLazyAttributedStringBuilder(
                         mappedTextFile: preparation.mappedTextFile,
                         chapterIndexes: mappedChapterIndexes
@@ -428,6 +442,8 @@ extension ReaderView {
                 } catch {
                     guard self.book?.id == targetBook.id else { return }
                     AppLogger.error("TXT reader preparation failed", error: error)
+                    showTXTIndexFailure = true
+                    showBars = true
                     self.applyDocument(nil)
                     self.isLoadingPipeline = false
                     self.isRestoringPosition = false

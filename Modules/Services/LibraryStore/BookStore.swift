@@ -1955,6 +1955,26 @@ class BookStore: ObservableObject, BookProvider {
         persistMetadataIfChanged()
     }
 
+    /// Reindexing changes the meaning of chapter numbers. Publish bookmark changes
+    /// only after their full metadata snapshot is durably written, and reject edits
+    /// made while the migration was measuring source/rendered correspondence.
+    @MainActor
+    func commitTXTBookmarks(bookId: UUID, original: [Bookmark], migrated: [Bookmark]) throws {
+        guard let index = books.firstIndex(where: { $0.id == bookId }),
+              books[index].bookmarks == original || books[index].bookmarks == migrated else {
+            throw TXTLocationMigration.Failure.missingSourceIdentity
+        }
+        var updated = books
+        updated[index].bookmarks = migrated
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(updated)
+        try data.write(to: metadataFileURL, options: .atomic)
+        books = updated
+        markMetadataPersisted(data)
+        syncWidgetData()
+    }
+
     private func persistPositionUpdateIfNeeded(
         bookId: UUID,
         updatedBook: ReadingBook,

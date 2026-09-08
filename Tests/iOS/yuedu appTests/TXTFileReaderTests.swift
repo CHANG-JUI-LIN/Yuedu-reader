@@ -170,7 +170,7 @@ struct TXTFileReaderTests {
                 <= TXTInitialPreviewPlanner.maximumByteCount
         )
 
-        let indexes = TXTReaderPreparationService.completeChapterIndexes(
+        let indexes = TXTReaderPreparationService.buildChapterIndexes(
             for: preparation
         )
         #expect(indexes.count > 1)
@@ -180,7 +180,7 @@ struct TXTFileReaderTests {
                 fileSize: preparation.fileSize,
                 fingerprint: preparation.fingerprint,
                 encoding: preparation.encoding
-            ) == indexes
+            ) == nil
         )
     }
 

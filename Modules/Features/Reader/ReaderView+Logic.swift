@@ -376,6 +376,9 @@ extension ReaderView {
     }
 
     func autoSaveProgress(force: Bool = false) {
+        guard ReaderProgressSyncPolicy.canPublishIndexPosition(
+            isTXT: book?.resolvedPipelineKind == .txt, indexReady: txtIndexReady
+        ) else { return }
         guard !isRestoringPosition else { return }
 
         if effectiveScrollMode {
@@ -431,6 +434,9 @@ extension ReaderView {
     }
 
     func saveProgress() {
+        guard ReaderProgressSyncPolicy.canPublishIndexPosition(
+            isTXT: book?.resolvedPipelineKind == .txt, indexReady: txtIndexReady
+        ) else { return }
         let wasRestoring = isRestoringPosition
         AppLogger.render("saveProgress begin wasRestoring=\(wasRestoring)")
         isRestoringPosition = false

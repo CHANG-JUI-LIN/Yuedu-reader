@@ -196,6 +196,8 @@ struct ReaderView: View {
     @State var showSourceVariableEditor = false
     @State private var isApplyingCoreTextRestore = false
     @State var isLoadingPipeline = false
+    @State var txtIndexReady = false
+    @State var showTXTIndexFailure = false
     @State private var curlStartupStartedAt: CFAbsoluteTime?
     @State private var hasLoggedCurlInteractiveReady = false
     @State private var hasPerformedInitialLoad = false
@@ -809,6 +811,9 @@ struct ReaderView: View {
         isEstimated: Bool = false,
         shouldPersist: Bool = true
     ) {
+        guard ReaderProgressSyncPolicy.canPublishIndexPosition(
+            isTXT: book?.resolvedPipelineKind == .txt, indexReady: txtIndexReady
+        ) else { return }
         ensureReaderNavigator(initialPosition: position)
         epubRenderer.engine?.updateReadingPosition(position)
         recordReadingStatsPosition(position, source: source)
@@ -935,6 +940,9 @@ struct ReaderView: View {
         engine: any PageRenderingProvider,
         visiblePosition: CoreTextReadingPosition? = nil
     ) {
+        guard ReaderProgressSyncPolicy.canPublishIndexPosition(
+            isTXT: book?.resolvedPipelineKind == .txt, indexReady: txtIndexReady
+        ) else { return }
         let newChapter = visiblePosition?.spineIndex ?? engine.charOffset(forPage: newPage).spineIndex
         let chapterChanged = newChapter != currentChapterIndex
 
@@ -1694,6 +1702,11 @@ struct ReaderView: View {
             showModernBookCard = false
         }
         .modifier(HideTabBarModifier())
+        .alert(localized("TXT 目錄修復未完成"), isPresented: $showTXTIndexFailure) {
+            Button(localized("確定"), role: .cancel) { showBars = true }
+        } message: {
+            Text(localized("為避免閱讀進度或書籤錯移，尚未套用新目錄。原有位置資料已保留。請保留原始 TXT，並匯出診斷記錄以供檢查。"))
+        }
         .alert(
             localized("頁首頁尾編輯"),
             isPresented: $showReaderOverlaySVGStoreError

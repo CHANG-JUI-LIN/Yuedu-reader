@@ -39,6 +39,9 @@ extension ReaderView {
                     withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
                 },
                 onProgressCommit: { position in
+                    guard ReaderProgressSyncPolicy.canPublishIndexPosition(
+                        isTXT: book?.resolvedPipelineKind == .txt, indexReady: txtIndexReady
+                    ) else { return }
                     pendingScrollJumpTarget = nil
                     scrollVisibleChapter = position.spineIndex
                     currentChapterIndex = position.spineIndex

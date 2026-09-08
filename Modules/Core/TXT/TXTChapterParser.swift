@@ -9,7 +9,7 @@ struct TXTChapterIndex: Equatable {
     var sourceHref: String { String(index) }
 }
 
-struct TXTMappedChapterIndex: Equatable, Sendable {
+struct TXTMappedChapterIndex: Equatable, Sendable, Codable {
     let index: Int
     let title: String
     let byteRange: Range<Int>
@@ -18,6 +18,11 @@ struct TXTMappedChapterIndex: Equatable, Sendable {
 }
 
 enum TXTChapterParser {
+    static let indexVersion = 6
+    struct CachedIndexes: Sendable {
+        let version: Int
+        let indexes: [TXTMappedChapterIndex]
+    }
     private struct TXTChapterIndexCache: Codable {
         let version: Int
         let fileSize: Int
@@ -237,7 +242,7 @@ enum TXTChapterParser {
         let cacheURL = Self.cacheURL(for: bookId)
         guard let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(TXTChapterIndexCache.self, from: data),
-              cache.version == 5,
+              cache.version == indexVersion,
               cache.fileSize == fileSize,
               cache.fingerprint == fingerprint,
               cache.encodingRawValue == encoding.rawValue
@@ -248,14 +253,44 @@ enum TXTChapterParser {
     }
 
     static func saveCachedIndexes(_ indexes: [TXTMappedChapterIndex], bookId: UUID, fileSize: Int, fingerprint: String, encoding: String.Encoding) {
+        do {
+            try writeCachedIndexes(indexes, bookId: bookId, fileSize: fileSize, fingerprint: fingerprint, encoding: encoding)
+        } catch {
+            AppLogger.error("TXT index cache write failed", error: error)
+        }
+    }
+
+    /// Read the old generation without deleting it: it is evidence for location
+    /// migration, not a usable current index. Unknown/corrupt identities must stop
+    /// migration instead of silently interpreting old chapter numbers as new ones.
+    static func cachedIndexesForMigration(bookId: UUID, fileSize: Int, fingerprint: String, encoding: String.Encoding) throws -> CachedIndexes? {
+        let url = cacheURL(for: bookId)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let cache = try JSONDecoder().decode(TXTChapterIndexCache.self, from: Data(contentsOf: url))
+        guard [5, indexVersion].contains(cache.version), cache.fileSize == fileSize,
+              cache.fingerprint == fingerprint, cache.encodingRawValue == encoding.rawValue else {
+            throw TXTLocationMigration.Failure.missingSourceIdentity
+        }
+        var previousEnd = 0
+        var indexes: [TXTMappedChapterIndex] = []
+        for (ordinal, item) in cache.indexes.enumerated() {
+            guard item.index == ordinal, item.lower >= previousEnd, item.upper >= item.lower,
+                  item.upper <= fileSize else { throw TXTLocationMigration.Failure.invalidIndex }
+            indexes.append(.init(index: ordinal, title: sanitizedTitle(item.title), byteRange: item.lower..<item.upper))
+            previousEnd = item.upper
+        }
+        guard !indexes.isEmpty else { throw TXTLocationMigration.Failure.invalidIndex }
+        return CachedIndexes(version: cache.version, indexes: indexes)
+    }
+
+    static func writeCachedIndexes(_ indexes: [TXTMappedChapterIndex], bookId: UUID, fileSize: Int, fingerprint: String, encoding: String.Encoding) throws {
         let cacheDir = cacheDirectoryURL()
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         let codable = indexes.map { CodableChapterIndex(index: $0.index, title: $0.title, lower: $0.byteRange.lowerBound, upper: $0.byteRange.upperBound) }
-        // v5: overlong chapters are auto-split into "(1)(2)…" pieces; older
-        // cached lists don't have the split and must re-parse.
-        let cache = TXTChapterIndexCache(version: 5, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
-        guard let data = try? JSONEncoder().encode(cache) else { return }
-        try? data.write(to: Self.cacheURL(for: bookId))
+        // v6: primary and secondary headings share contextual selection. Callers
+        // must finish location migration before replacing a v5 index.
+        let cache = TXTChapterIndexCache(version: indexVersion, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
+        try JSONEncoder().encode(cache).write(to: Self.cacheURL(for: bookId), options: .atomic)
     }
 
     static func deleteCachedIndexes(bookId: UUID) {
@@ -393,58 +428,14 @@ enum TXTChapterParser {
     }
 
     private static func detectTitleMatches(in text: String) -> [TitleMatch] {
-        let nsText = text as NSString
-        let fullRange = NSRange(location: 0, length: nsText.length)
-        var selected: [TitleMatch] = []
-        var singleMatchFallback: [TitleMatch] = []
-
-        for regex in chapterPatterns {
-            let results = regex.matches(in: text, range: fullRange)
-            let mapped = results.compactMap { match -> TitleMatch? in
-                let raw = nsText.substring(with: match.range)
-                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return nil }
-                return TitleMatch(range: match.range, title: sanitizedTitle(trimmed))
-            }
-            if mapped.count == 1, singleMatchFallback.isEmpty {
-                singleMatchFallback = mapped
-            }
-            if results.count >= 2 {
-                selected = mapped
-                break
-            }
+        // NSString indexes are UTF-16. This adapter feeds the same line scanner
+        // and selector as a file, without a second multiline-regex policy.
+        let units = text.utf16.map { $0.littleEndian }
+        let file = TXTMappedTextFile(data: units.withUnsafeBytes { Data($0) }, encoding: .utf16LittleEndian)
+        return detectMappedTitleMatches(in: file).map {
+            TitleMatch(range: NSRange(location: $0.lineByteRange.lowerBound / 2,
+                                      length: $0.lineByteRange.count / 2), title: $0.title)
         }
-
-        if selected.isEmpty, !singleMatchFallback.isEmpty {
-            selected = singleMatchFallback
-        }
-
-        if let specialRegex = specialTitlePattern {
-            let special = specialRegex.matches(in: text, range: fullRange).compactMap { match -> TitleMatch? in
-                let raw = nsText.substring(with: match.range)
-                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return nil }
-                return TitleMatch(range: match.range, title: sanitizedTitle(trimmed))
-            }
-            selected.append(contentsOf: special)
-        }
-
-        if selected.isEmpty { return [] }
-
-        selected.sort {
-            if $0.range.location == $1.range.location {
-                return $0.range.length < $1.range.length
-            }
-            return $0.range.location < $1.range.location
-        }
-
-        var deduped: [TitleMatch] = []
-        var seenLocations = Set<Int>()
-        for item in selected where !seenLocations.contains(item.range.location) {
-            deduped.append(item)
-            seenLocations.insert(item.range.location)
-        }
-        return deduped
     }
 
     /// First characters accepted by `chapterPatterns` and `specialTitlePattern`.
@@ -531,26 +522,6 @@ enum TXTChapterParser {
         }
     }
 
-    /// Sample window for rule selection (Legado getTocRule idea): within the
-    /// first 512KB every pattern competes; past it, the winning pattern is
-    /// locked and the remainder of the file only runs the winner (+ volume
-    /// patterns when the winner is chapter-level) instead of all 11.
-    private static let patternSampleByteLimit = 512 * 1024
-
-    /// Selection mirror of the final pass: first bucket with ≥2 matches wins.
-    /// nil = no winner yet → keep testing every pattern.
-    private static func lockedPatternIndices(fromBuckets buckets: [[MappedTitleMatch]]) -> [Int]? {
-        guard let winner = buckets.indices.first(where: { buckets[$0].count >= 2 }) else {
-            return nil
-        }
-        let chapterLevelIndexes: Set<Int> = [0, 1, 3]
-        let volumeLevelIndexes: [Int] = [2, 4, 5, 6]
-        if chapterLevelIndexes.contains(winner) {
-            return [winner] + volumeLevelIndexes
-        }
-        return [winner]
-    }
-
     private static func detectMappedTitleMatches(in mappedTextFile: TXTMappedTextFile) -> [MappedTitleMatch] {
         // Allocate one bucket per chapterPattern
         var buckets: [[MappedTitleMatch]] = Array(repeating: [], count: chapterPatterns.count)
@@ -558,23 +529,14 @@ enum TXTChapterParser {
 
         let titleMatcher = EncodedTitleStartMatcher(encoding: mappedTextFile.encoding)
 
-        // nil while sampling (or when no rule has won yet) → test all patterns.
-        var lockedIndices: [Int]? = nil
-
         enumerateMappedTitleLines(in: mappedTextFile, matcher: titleMatcher) { lineByteRange, decodeLine in
-            // Past the sample window, try to lock the winning pattern. Locking
-            // mid-file is safe: buckets frozen below 2 matches can never win the
-            // final "first with ≥2" selection, so the outcome is unchanged.
-            if lockedIndices == nil, lineByteRange.lowerBound >= patternSampleByteLimit {
-                lockedIndices = lockedPatternIndices(fromBuckets: buckets)
-            }
-
             // Decode the line and test patterns
             let lineText = decodeLine()
             let nsLine = lineText as NSString
+            guard nsLine.length <= 100 else { return }
             let fullRange = NSRange(location: 0, length: nsLine.length)
 
-            for i in lockedIndices ?? Array(chapterPatterns.indices) {
+            for i in chapterPatterns.indices {
                 let regex = chapterPatterns[i]
                 guard let match = regex.firstMatch(in: lineText, range: fullRange),
                       let range = Range(match.range, in: lineText) else { continue }
@@ -592,41 +554,9 @@ enum TXTChapterParser {
             }
         }
 
-        // First pattern with >=2 matches wins; track which bucket index won
-        var selected: [MappedTitleMatch] = []
-        var singleMatchFallback: [MappedTitleMatch] = []
-        var selectedBucketIndex: Int? = nil
-        var fallbackBucketIndex: Int? = nil
-
-        for (i, bucket) in buckets.enumerated() {
-            if bucket.count == 1, singleMatchFallback.isEmpty {
-                singleMatchFallback = bucket
-                fallbackBucketIndex = i
-            }
-            if bucket.count >= 2 {
-                selected = bucket
-                selectedBucketIndex = i
-                break
-            }
-        }
-
-        if selected.isEmpty, !singleMatchFallback.isEmpty {
-            selected = singleMatchFallback
-            selectedBucketIndex = fallbackBucketIndex
-        }
-
-        // chapterPatterns index mapping:
-        //   0=第X章 (Chapter)  1=第X節 (Section)  2=第X卷 (Volume)  3=第X回 (Chapter)
-        //   4=第X篇 (Part)  5=第X部 (Book)  6=卷X (Volume)
-        // If the winning pattern is chapter-level (e.g. 章/節/回),
-        // also include volume-level matches (e.g. 卷/篇/部) as structural markers.
-        let chapterLevelIndexes: Set<Int> = [0, 1, 3]
-        let volumeLevelIndexes: Set<Int> = [2, 4, 5, 6]
-        if let idx = selectedBucketIndex, chapterLevelIndexes.contains(idx) {
-            for vi in volumeLevelIndexes {
-                selected.append(contentsOf: buckets[vi])
-            }
-        }
+        var selected = selectNumberedHeadings(buckets, range: { $0.lineByteRange }, isWhitespace: {
+            mappedTextFile.string(in: $0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })
 
         selected.append(contentsOf: specialMatches)
 
@@ -646,6 +576,33 @@ enum TXTChapterParser {
             seenStart.insert(item.lineByteRange.lowerBound)
         }
         return deduped
+    }
+
+    /// Coordinates belong to the input adapter; structural decisions do not.
+    /// A secondary volume introduces a primary chapter, rather than an embedded
+    /// list followed by more prose. Require that association explicitly. Primary
+    /// headings retain short/empty chapters, and part-only books still select Part.
+    private static func selectNumberedHeadings<T>(
+        _ buckets: [[T]], range: (T) -> Range<Int>, isWhitespace: (Range<Int>) -> Bool
+    ) -> [T] {
+        guard let winner = buckets.indices.first(where: { buckets[$0].count >= 2 })
+                ?? buckets.indices.first(where: { !buckets[$0].isEmpty }) else { return [] }
+        let primary = buckets[winner]
+        guard [0, 1, 3].contains(winner) else { return primary }
+        var selected = primary
+        for bucket in [2, 4, 5, 6] {
+            var nextPrimary = 0
+            for candidate in buckets[bucket] {
+                let end = range(candidate).upperBound
+                while nextPrimary < primary.count, range(primary[nextPrimary]).lowerBound < end {
+                    nextPrimary += 1
+                }
+                guard nextPrimary < primary.count else { continue }
+                let next = range(primary[nextPrimary]).lowerBound
+                if isWhitespace(end..<next) { selected.append(candidate) }
+            }
+        }
+        return selected
     }
 
     private static func skipLeadingWhitespace(in text: NSString, from start: Int, upperBound: Int) -> Int {
@@ -862,7 +819,9 @@ enum TXTChapterParser {
             guard !bytes.isEmpty else { return }
 
             func emitCandidate(_ range: Range<Int>) {
-                guard range.count <= 200,
+                // Byte prefilter accommodates every supported encoding; the
+                // decoded UTF-16 limit above is shared with in-memory input.
+                guard range.count <= 400,
                       matcher.lineMayBeTitle(bytes: bytes, range: range)
                 else { return }
                 body(range, {
