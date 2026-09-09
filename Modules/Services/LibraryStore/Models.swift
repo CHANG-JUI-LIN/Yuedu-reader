@@ -823,6 +823,70 @@ enum ReaderLayoutMetrics {
         return rawHeight - lineCount * lineHeight
     }
 
+    /// The text area's top and bottom insets with the header/footer bars taken
+    /// into account. Both reading modes call this, which is what stops the text
+    /// from sliding under a bar in one of them.
+    ///
+    /// Replaces the hand-tuned "content reservation" numbers the free-position
+    /// overlays needed: a bar's height is known, so the space it needs can be
+    /// computed instead of guessed. The safe-area inset is added on top because
+    /// the reading surface spans the whole screen — a bar sitting at
+    /// `headerTopPadding` alone would land under the notch.
+    /// - Parameter verticalMargin: the reader's 上下邊距, in points. Now honoured in
+    ///   *both* modes. Paged mode used to take its vertical margin from the overlay
+    ///   layout's hand-tuned "content reservation" while scroll mode used
+    ///   `pageMarginV`, so the same slider meant different things depending on how
+    ///   you happened to be reading. A bar's height is known, so the margin no
+    ///   longer has to absorb it and one value can serve both.
+    /// - Parameters:
+    ///   - headerExtent: the header band's own height. Defaults to the historical
+    ///     flat 16pt; the reader passes `ReaderBarRenderer.extent(...)`, which
+    ///     follows the bar's font size and its divider. A bar drawn taller than
+    ///     the band reserved here would overlap the text, so these two must come
+    ///     from the same calculation.
+    ///   - footerExtent: the same, for the footer.
+    static func barContentInsets(
+        safeTop: CGFloat,
+        safeBottom: CGFloat,
+        showsHeader: Bool,
+        showsFooter: Bool,
+        verticalMargin: CGFloat,
+        headerTopPadding: CGFloat = defaultHeaderTopPadding,
+        footerBottomPadding: CGFloat = defaultFooterBottomPadding,
+        headerExtent: CGFloat = headerHeight,
+        footerExtent: CGFloat = footerHeight
+    ) -> (top: CGFloat, bottom: CGFloat) {
+        let margin = max(0, verticalMargin)
+        let top = showsHeader
+            ? headerBarTopOffset(safeTop: safeTop, headerTopPadding: headerTopPadding)
+                + headerExtent + margin
+            : max(minimumVerticalPadding, safeTop + margin)
+        let bottom = showsFooter
+            ? footerBarBottomOffset(safeBottom: safeBottom, footerBottomPadding: footerBottomPadding)
+                + footerExtent + margin
+            : max(minimumVerticalPadding, safeBottom + margin)
+        return (top: top, bottom: bottom)
+    }
+
+    /// Distance from the top of the reading surface to the header bar's own top
+    /// edge. The renderer offsets the bar by this and `barContentInsets` reserves
+    /// the matching band, so the two cannot drift apart.
+    static func headerBarTopOffset(
+        safeTop: CGFloat,
+        headerTopPadding: CGFloat = defaultHeaderTopPadding
+    ) -> CGFloat {
+        safeTop + headerTopPadding
+    }
+
+    /// Distance from the bottom of the reading surface to the footer bar's own
+    /// bottom edge.
+    static func footerBarBottomOffset(
+        safeBottom: CGFloat,
+        footerBottomPadding: CGFloat = defaultFooterBottomPadding
+    ) -> CGFloat {
+        safeBottom + footerBottomPadding
+    }
+
     static func bottomInset(
         safeBottom: CGFloat,
         footerVisible: Bool = true,

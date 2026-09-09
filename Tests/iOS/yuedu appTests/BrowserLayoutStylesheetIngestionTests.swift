@@ -67,6 +67,18 @@ struct BrowserLayoutStylesheetIngestionTests {
         #expect(!provider.requests.contains { $0.contains("example.invalid") })
     }
 
+    @Test func distinguishesFailedSheetFromSuccessfullyLoadedEmptySheet() async throws {
+        let input = await collect(
+            "<head><link rel='stylesheet' href='empty.css'><link rel='stylesheet' href='missing.css'></head><body>Text</body>",
+            provider: IngestionResources(["OPS/Text/empty.css": ""])
+        )
+        #expect(input.activeAuthorStylesheets.count == 1)
+        #expect(input.activeAuthorStylesheets.first?.source == .linked(href: "OPS/Text/empty.css"))
+        #expect(input.activeAuthorStylesheets.first?.text == "")
+        #expect(input.stylesheets.contains { $0.source == .linked(href: "OPS/Text/missing.css") && $0.loadFailed })
+        #expect(input.diagnostics.contains { $0.message.contains("load failed") })
+    }
+
     @Test func stringCompatibilityInputRemainsOrderedAndActive() {
         let input = CSSFrontendInput.currentCompatibility(html: "<p>x</p>", cssTexts: ["a", "b"])
         #expect(input.activeAuthorStylesheets.map(\.text) == ["a", "b"])

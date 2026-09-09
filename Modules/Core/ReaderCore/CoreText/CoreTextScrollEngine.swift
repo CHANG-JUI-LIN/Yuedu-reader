@@ -21,7 +21,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     // MARK: - Published
 
     /// Linear chunk array; UICollectionView maps 1:1 to cells
-    @Published private(set) var chunks: [CoreTextChunk] = [] {
+    @Published private(set) var chunks: [ReaderScrollItem] = [] {
         didSet { geometryStoreIsStale = true }
     }
     /// chapter → index range within chunks (inclusive start, exclusive end)
@@ -118,6 +118,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
     // MARK: - Inputs
 
+    var browserAutoEngine: BrowserLayoutPageEngine?
     private let builder: any AttributedStringBuilding
     private let chapterDocumentStore: ChapterDocumentStore
     private(set) var renderSettings: ReaderRenderSettings
@@ -128,7 +129,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     private var viewportExtent: CGFloat = 0
 
     /// Chapters currently being sliced (deduplication)
-    private var slicingChapters: Set<Int> = []
+    private var slicingChapters: [Int: UUID] = [:]
     /// Chapters that have been fully sliced
     private var loadedChapters: Set<Int> = []
     /// Chapters that could not be sliced because their online content was not cached yet.
@@ -170,16 +171,19 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         viewportExtent: CGFloat = 0,
         loadAdjacentChapters: Bool = true
     ) async {
+        let generation = resliceGeneration
         self.contentWidth = contentWidth
         self.imageContentWidth = imageContentWidth
         self.viewportExtent = viewportExtent
         let clamped = max(0, min(initialChapter, max(0, builder.chapterCount - 1)))
         await loadChapter(clamped)
+        guard generation == resliceGeneration, !Task.isCancelled else { return }
         isReady = true
         guard loadAdjacentChapters else { return }
         if clamped + 1 < builder.chapterCount {
             await loadChapter(clamped + 1)
         }
+        guard generation == resliceGeneration, !Task.isCancelled else { return }
         if clamped - 1 >= 0 {
             await loadChapter(clamped - 1)
         }
@@ -195,7 +199,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         let next = chapterIndex + 1
         guard next < builder.chapterCount,
               !loadedChapters.contains(next),
-              !slicingChapters.contains(next),
+              slicingChapters[next] == nil,
               !pendingMissingChapters.contains(next) else { return }
         Task { await loadChapter(next) }
     }
@@ -206,7 +210,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         let prev = chapterIndex - 1
         guard prev >= 0,
               !loadedChapters.contains(prev),
-              !slicingChapters.contains(prev),
+              slicingChapters[prev] == nil,
               !pendingMissingChapters.contains(prev) else { return }
         Task { await loadChapter(prev) }
     }
@@ -230,6 +234,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             renderSettings: renderSettings,
             chapterDocumentStore: chapterDocumentStore
         )
+        replacement.browserAutoEngine = browserAutoEngine
         replacement.onChapterContentRequired = onChapterContentRequired
         await replacement.start(
             initialChapter: chapterIndex,
@@ -242,6 +247,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         guard generation == resliceGeneration, !Task.isCancelled else {
             return false
         }
+        // Loads may start on the displayed engine while the replacement is building.
+        // They also belong to the old viewport, even though they began after this reslice.
+        resliceGeneration &+= 1
         self.contentWidth = contentWidth
         self.imageContentWidth = resolvedImageContentWidth
         self.viewportExtent = resolvedViewportExtent
@@ -249,7 +257,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         chapterRanges = replacement.chapterRanges
         chapterCharacterCounts = replacement.chapterCharacterCounts
         loadedChapters = replacement.loadedChapters
-        slicingChapters = []
+        slicingChapters = [:]
         pendingMissingChapters = replacement.pendingMissingChapters
         placeholderChapters = replacement.placeholderChapters
         isReady = replacement.isReady
@@ -394,7 +402,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         // the loading placeholder in place that strands a visible 載入中 block.
         guard pendingMissingChapters.contains(chapterIndex),
               !loadedChapters.contains(chapterIndex),
-              !slicingChapters.contains(chapterIndex)
+              slicingChapters[chapterIndex] == nil
         else { return false }
 
         // The boundary-order repair that used to live here is gone: `insert` now places by
@@ -420,9 +428,18 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// Loads and slices a single chapter, placing it in chapter order (see `insertionIndex`).
     private func loadChapter(_ chapterIndex: Int) async {
         guard chapterIndex >= 0, chapterIndex < builder.chapterCount else { return }
-        guard !loadedChapters.contains(chapterIndex), !slicingChapters.contains(chapterIndex) else { return }
-        slicingChapters.insert(chapterIndex)
-        defer { slicingChapters.remove(chapterIndex) }
+        guard !Task.isCancelled,
+              !loadedChapters.contains(chapterIndex), slicingChapters[chapterIndex] == nil else { return }
+        let generation = resliceGeneration
+        let loadID = UUID()
+        slicingChapters[chapterIndex] = loadID
+        defer {
+            // Reslice can replace this chapter's owner while the old builder is suspended.
+            // Only the task that installed this entry may release it.
+            if slicingChapters[chapterIndex] == loadID {
+                slicingChapters.removeValue(forKey: chapterIndex)
+            }
+        }
 
         // Stage-0 baseline for `Technotes/ViewportScrollArchitecture.md`. The migration's only
         // success criterion is that this wall time decouples from chapter length, so the phases
@@ -430,6 +447,19 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         // layout can improve, while `slice` is exactly what it removes from the critical path.
         let loadStart = CoreTextSliceMetrics.now
         do {
+            if let browserAutoEngine, let chapter = try await browserAutoEngine.makeScrollChapter(
+                at: chapterIndex, settings: renderSettings,
+                contentSize: CGSize(width: contentWidth, height: max(1, viewportExtent))) {
+                guard generation == resliceGeneration, !Task.isCancelled else { return }
+                chapterCharacterCounts[chapterIndex] = (chapter.document.sourceText as NSString).length
+                let vacatedIndex = removeLoadingPlaceholder(for: chapterIndex)
+                insert(items: chapter.tiles(width: contentWidth), chapterIndex: chapterIndex, at: vacatedIndex)
+                loadedChapters.insert(chapterIndex)
+                pendingMissingChapters.remove(chapterIndex)
+                SourcePerfTrace.record("browser.scroll.loadChapter", "spine=\(chapterIndex) height=\(chapter.document.contentHeight)",
+                                       since: loadStart, thresholdMs: 0)
+                return
+            }
             let documentStart = CoreTextSliceMetrics.now
             let result = try await ReaderPerfTrace.spanAsync(
                 .chapterLoad,
@@ -448,6 +478,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     )
                 )
             }
+            // Shared document tasks can finish after cancellation or after reslice has
+            // installed a replacement. Such documents must never enter the current layout.
+            guard generation == resliceGeneration, !Task.isCancelled else { return }
             let documentSeconds = CoreTextSliceMetrics.now - documentStart
 
             let prepareStart = CoreTextSliceMetrics.now
@@ -472,7 +505,6 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                 attrStr = prepareAttributedString(appearanceResolvedDocument)
             }
             let prepareSeconds = CoreTextSliceMetrics.now - prepareStart
-            chapterCharacterCounts[chapterIndex] = attrStr.length
             let width = contentWidth
             let cIdx = chapterIndex
             // A user-selected reader background has the same precedence in scroll mode as it
@@ -490,6 +522,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
             // Single-image page (cover / chapter illustration): builder puts the image in result.imagePage while attrStr is just a placeholder.
             if let imagePage = result.imagePage, let img = imagePage.image {
+                chapterCharacterCounts[chapterIndex] = attrStr.length
                 let chunk = makeImageOnlyChunk(
                     image: img,
                     chapterIndex: cIdx,
@@ -549,6 +582,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                     executor: "background"
                 )
             )
+            // Detached slicing does not inherit the consumer's cancellation. Recheck at
+            // the publication boundary, before changing chunks, ranges or chapter state.
+            guard generation == resliceGeneration, !Task.isCancelled else { return }
             // `slice` measures itself; this stage measures the hop to the detached task as
             // well, so the two numbers together show what scheduling costs on top of layout.
             SourcePerfTrace.record(
@@ -561,6 +597,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             // The placeholder already holds this chapter's slot, so the real content takes
             // exactly that index rather than being re-placed by chapter order.
             let insertStart = CoreTextSliceMetrics.now
+            chapterCharacterCounts[chapterIndex] = attrStr.length
             let vacatedIndex = removeLoadingPlaceholder(for: chapterIndex)
             insert(
                 chunks: output.chunks,
@@ -586,12 +623,14 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                 thresholdMs: 0
             )
         } catch AttributedStringBuildingError.contentNotCached(let missingChapter) {
+            guard generation == resliceGeneration, !Task.isCancelled else { return }
             let requestedChapter = missingChapter == chapterIndex ? missingChapter : chapterIndex
             pendingMissingChapters.insert(requestedChapter)
             AppLogger.render("[ScrollEngine] chapter content missing chapter=\(requestedChapter)")
             insertLoadingPlaceholder(for: requestedChapter)
             onChapterContentRequired?(requestedChapter)
         } catch {
+            guard generation == resliceGeneration, !Task.isCancelled else { return }
             AppLogger.render("[ScrollEngine] buildChapter error chapter=\(chapterIndex) error=\(error)")
         }
     }
@@ -708,8 +747,12 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         chunks.firstIndex { $0.chapterIndex > chapterIndex } ?? chunks.endIndex
     }
 
+    private func insert(chunks: [CoreTextChunk], chapterIndex: Int, at index: Int? = nil) {
+        insert(items: chunks.map(ReaderScrollItem.legacy), chapterIndex: chapterIndex, at: index)
+    }
+
     private func insert(
-        chunks newChunks: [CoreTextChunk],
+        items newChunks: [ReaderScrollItem],
         chapterIndex: Int,
         at vacatedIndex: Int? = nil
     ) {
@@ -817,6 +860,14 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// Finds the chunk index for a given (chapterIndex, charOffset)
     func chunkIndex(forChapter chapter: Int, charOffset: Int) -> Int? {
         guard let range = chapterRanges[chapter] else { return nil }
+        if let first = range.first, case .browser(let tile) = chunks[first] {
+            if charOffset <= 0 { return first }
+            let y = tile.chapter.document.documentY(forCharOffset: charOffset)
+            return range.first { index in
+                guard case .browser(let candidate) = chunks[index] else { return false }
+                return y >= candidate.documentRect.minY && y < candidate.documentRect.maxY
+            } ?? range.last
+        }
         for i in range {
             let r = chunks[i].charRange
             if charOffset >= r.location && charOffset < r.location + r.length {

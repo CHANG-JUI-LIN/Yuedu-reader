@@ -1,6 +1,17 @@
 import SwiftUI
 import UIKit
 
+/// Lets 自動閱讀 drive the scroll view without the reader holding a UIKit
+/// controller. The host fills it in; `AutoReadController` calls through it once a
+/// frame.
+@MainActor
+final class ReaderAutoScrollHandle {
+    /// Advance by this many points. `false` once the content cannot move further.
+    var scrollBy: ((CGFloat) -> Bool)?
+    /// The visible text band's height — already the clipped one, not the screen.
+    var viewportHeight: (() -> CGFloat)?
+}
+
 /// Wraps CoreTextCollectionScrollViewController as a SwiftUI representable, forwarding engine, insets, and theme.
 struct CoreTextScrollHostView: UIViewControllerRepresentable {
 
@@ -9,6 +20,10 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
     let horizontalInset: CGFloat
     let verticalInset: CGFloat
     let bottomMargin: CGFloat
+    /// Vertical axis only: how much of the top and bottom is taken by the two
+    /// fixed bars, and the 上下邊距 inside what is left.
+    var barInsets: ReaderScrollBarInsets = .zero
+    var autoScrollHandle: ReaderAutoScrollHandle?
     let backgroundColor: UIColor
     let initialChapter: Int
     let initialCharOffset: Int
@@ -38,6 +53,11 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         vc.setTextAnnotations(textAnnotations)
         vc.setPlaybackHighlight(text: playbackHighlightText)
         vc.bottomMargin = bottomMargin
+        // Before the view loads, so `viewDidLoad` builds the collection view's
+        // constraints already inset — no first-frame flash of full-bleed text
+        // under the bars.
+        vc.setInitialBarInsets(axis == .vertical ? barInsets : .zero)
+        bindAutoScroll(to: vc)
         return vc
     }
 
@@ -49,8 +69,15 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         engine.onChapterContentRequired = onChapterContentRequired
         collectionVC.setTextAnnotations(textAnnotations)
         collectionVC.setPlaybackHighlight(text: playbackHighlightText)
-        collectionVC.update(axis: axis, horizontal: horizontalInset, vertical: verticalInset, bottomMargin: bottomMargin)
+        collectionVC.update(
+            axis: axis,
+            horizontal: horizontalInset,
+            vertical: verticalInset,
+            bottomMargin: bottomMargin,
+            barInsets: barInsets
+        )
         collectionVC.updateBackgroundColor(backgroundColor)
+        bindAutoScroll(to: collectionVC)
         if let navigationRequest,
            context.coordinator.lastNavigationVersion != navigationRequest.version {
             context.coordinator.lastNavigationVersion = navigationRequest.version
@@ -72,6 +99,16 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
             collectionVC.applyVisibleRefresh(commit) { transactionID, outcome in
                 DispatchQueue.main.async { finish(transactionID, outcome) }
             }
+        }
+    }
+
+    private func bindAutoScroll(to vc: CoreTextCollectionScrollViewController) {
+        guard let autoScrollHandle else { return }
+        autoScrollHandle.scrollBy = { [weak vc] points in
+            vc?.autoScroll(by: points) ?? false
+        }
+        autoScrollHandle.viewportHeight = { [weak vc] in
+            vc?.autoScrollViewportHeight ?? 0
         }
     }
 

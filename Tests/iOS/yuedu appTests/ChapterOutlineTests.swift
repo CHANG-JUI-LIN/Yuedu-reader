@@ -392,7 +392,7 @@ struct ChapterOutlineTests {
 
     @Test("grouping an empty chunk list yields no outlines")
     func groupingEmptyChunksYieldsNothing() {
-        #expect(ChapterOutline.grouped(chunks: []) { $0.height }.isEmpty)
+        #expect(ChapterOutline.grouped(chunks: [CoreTextChunk]()) { $0.height }.isEmpty)
     }
 
     @Test("vertical writing measures chunks along the horizontal axis")

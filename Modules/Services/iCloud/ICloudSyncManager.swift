@@ -138,6 +138,11 @@ final class ICloudSyncManager: ObservableObject {
     /// devices merge the same record instead of appending duplicates.
     private static let bubbleSelectionRecordID = "comment_bubble_selection"
     private static let readerOverlayLayoutRecordID = "reader_overlay_layout"
+    /// A new record name rather than a new payload under the old one. A build that
+    /// predates the bar model still syncs `reader_overlay_layout`, and would fail
+    /// to decode a bar layout written into it — the two records coexist instead,
+    /// and each build reads the one it understands.
+    private static let readerBarLayoutRecordID = "reader_bar_layout"
 
     // Local merge shadows (per-id updatedAt/hash/deleted) for the auto-merge sync.
     private static let shadowBooks = "icloud_books"
@@ -146,6 +151,7 @@ final class ICloudSyncManager: ObservableObject {
     private static let shadowCommentBubbleStyles = "icloud_commentBubbleStyles"
     private static let shadowCommentBubbleSelection = "icloud_commentBubbleSelection"
     private static let shadowReaderOverlayLayout = "icloud_readerOverlayLayout"
+    private static let shadowReaderBarLayout = "icloud_readerBarLayout"
 
     /// Bound at launch so the merge sync can read/write the live bookshelf.
     /// `BookStore` is not a singleton (created in the app entry point).
@@ -338,27 +344,27 @@ final class ICloudSyncManager: ObservableObject {
             //    constant id, whose merge clock advances only on a real user
             //    edit — never when a sync applies a remote layout, which would
             //    make both devices claim to be newest on every pass.
-            let (localOverlayLayout, overlayLayoutClock) = await MainActor.run {
+            let (localBarLayout, barLayoutClock) = await MainActor.run {
                 let settings = GlobalSettings.shared
-                return (settings.readerOverlayLayout, settings.readerOverlayLayoutSyncClock)
+                return (settings.readerBarLayout, settings.readerBarLayoutSyncClock)
             }
-            let overlayLayoutMerge = try await mergeType(
-                recordName: "reader_overlay_layout",
-                shadowKey: Self.shadowReaderOverlayLayout,
+            let barLayoutMerge = try await mergeType(
+                recordName: Self.readerBarLayoutRecordID,
+                shadowKey: Self.shadowReaderBarLayout,
                 local: [
-                    ReaderOverlayLayoutSyncRecord(
-                        layout: localOverlayLayout,
-                        modifiedAt: overlayLayoutClock
+                    ReaderBarLayoutSyncRecord(
+                        layout: localBarLayout,
+                        modifiedAt: barLayoutClock
                     )
                 ],
-                id: { _ in Self.readerOverlayLayoutRecordID },
+                id: { _ in Self.readerBarLayoutRecordID },
                 hash: { Self.stableHash($0) },
                 fallbackUpdatedAt: { $0.modifiedAt ?? .distantPast }
             )
-            changedRemote = changedRemote || overlayLayoutMerge.uploaded
-            if overlayLayoutMerge.shouldApplyLocally, let merged = overlayLayoutMerge.values.first {
+            changedRemote = changedRemote || barLayoutMerge.uploaded
+            if barLayoutMerge.shouldApplyLocally, let merged = barLayoutMerge.values.first {
                 await MainActor.run {
-                    GlobalSettings.shared.applyReaderOverlayLayoutFromSync(
+                    GlobalSettings.shared.applyReaderBarLayoutFromSync(
                         merged.layout,
                         modifiedAt: merged.modifiedAt
                     )

@@ -193,10 +193,100 @@ struct CoreTextScrollOnlineCacheTests {
         )
     }
 
+    @Test("A chapter build finishing after reslice cannot append obsolete content")
+    func obsoleteBuildCannotOverwriteReslice() async throws {
+        let builder = SuspendedScrollBuilder()
+        let engine = CoreTextScrollEngine(builder: builder, renderSettings: makeSettings())
+        let initialLoad = Task {
+            await engine.start(initialChapter: 0, contentWidth: 320, loadAdjacentChapters: false)
+        }
+        await builder.waitForFirstBuild()
+
+        builder.body = "Replacement chapter"
+        engine.invalidateChapterDocument(at: 0)
+        #expect(await engine.reslice(restoreAt: 0, contentWidth: 280))
+        let installedChunkCount = engine.chunks.count
+        builder.releaseFirstBuild()
+        await initialLoad.value
+
+        #expect(renderedText(in: engine) == "Replacement chapter")
+        #expect(engine.chunks.count == installedChunkCount)
+        #expect(engine.chapterRanges[0] == 0..<engine.chunks.count)
+        #expect(engine.characterCount(forChapter: 0) == "Replacement chapter".utf16.count)
+    }
+
+    @Test("Cancelling initial scroll load cannot install its late document")
+    func cancelledStartCannotInstallContent() async {
+        let builder = SuspendedScrollBuilder()
+        let engine = CoreTextScrollEngine(builder: builder, renderSettings: makeSettings())
+        let initialLoad = Task {
+            await engine.start(initialChapter: 0, contentWidth: 320, loadAdjacentChapters: false)
+        }
+        await builder.waitForFirstBuild()
+        initialLoad.cancel()
+        builder.releaseFirstBuild()
+        await initialLoad.value
+
+        #expect(engine.chunks.isEmpty)
+        #expect(engine.chapterRanges.isEmpty)
+        #expect(!engine.isReady)
+    }
+
     private func renderedText(in engine: CoreTextScrollEngine) -> String {
         engine.chunks
             .map(\.attributedString.string)
             .joined(separator: "\n")
+    }
+}
+
+/// Completion is controlled by a real continuation, including when the consumer is cancelled.
+@MainActor
+private final class SuspendedScrollBuilder: AttributedStringBuilding {
+    let chapterCount = 1
+    var body = "Obsolete chapter body"
+    private var buildCount = 0
+    private var started = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func chapterTitle(at index: Int) -> String { "Chapter" }
+    func chapterDataSize(at index: Int) async -> Int { body.utf8.count }
+
+    func waitForFirstBuild() async {
+        guard !started else { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+
+    func releaseFirstBuild() {
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+
+    func buildChapter(
+        at index: Int,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async throws -> AttributedChapterBuildResult {
+        let capturedBody = body
+        buildCount += 1
+        if buildCount == 1 {
+            await withCheckedContinuation { continuation in
+                releaseWaiter = continuation
+                started = true
+                startWaiter?.resume()
+                startWaiter = nil
+            }
+        }
+        return AttributedChapterBuildResult(
+            attributedString: NSAttributedString(
+                string: capturedBody,
+                attributes: [.font: UIFont.systemFont(ofSize: settings.fontSize)]
+            ),
+            imagePage: nil,
+            pageBackgroundImage: nil,
+            anchorOffsets: [:]
+        )
     }
 }
 

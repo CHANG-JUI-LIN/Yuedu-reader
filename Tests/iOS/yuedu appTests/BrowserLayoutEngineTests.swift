@@ -4,9 +4,9 @@ import UIKit
 @testable import yuedu_app
 
 struct BrowserLayoutFeatureTests {
-    @Test func productionModeIsLegacy() {
-        #expect(BrowserLayoutFeature.mode == .legacy)
-        #expect(!BrowserLayoutFeature.browserEnabled)
+    @Test func productionModeIsBrowserAuto() {
+        #expect(BrowserLayoutFeature.mode == .browserAuto)
+        #expect(BrowserLayoutFeature.browserEnabled)
     }
 
 }

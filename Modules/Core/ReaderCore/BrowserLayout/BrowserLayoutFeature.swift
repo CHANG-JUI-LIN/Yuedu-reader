@@ -1,8 +1,6 @@
 import Foundation
 
-/// Modes retained for explicit browser-engine regression tests.
-/// Production EPUB routing uses Legacy. Simulator interaction acceptance can
-/// explicitly inject BrowserAuto without changing this rollout policy.
+/// EPUB layout selection. Normal reading uses BrowserAuto; tests can force a mode.
 enum EPUBLayoutEngineMode: CustomStringConvertible {
     case legacy
     case browserAuto
@@ -17,16 +15,14 @@ enum EPUBLayoutEngineMode: CustomStringConvertible {
     }
 }
 
-/// EPUB browser rollout is disabled until pagination and rendering parity are
-/// verified. Production routing in EPUBPageRenderer uses legacy directly;
-/// browser tests opt in by passing a mode to BrowserLayoutPageEngine.init.
+/// Normal EPUB reading evaluates each chapter with BrowserAuto.
 enum BrowserLayoutFeature {
-    static let mode: EPUBLayoutEngineMode = .legacy
+    static let mode: EPUBLayoutEngineMode = .browserAuto
     #if DEBUG
     static var showDebugOverlay = false
     #else
     static let showDebugOverlay = false
     #endif
 
-    static let browserEnabled = false
+    static let browserEnabled = true
 }

@@ -11,11 +11,16 @@ struct OnlineBookView: View {
     /// cannot update the reader's `ReadingBook`.
     private let sourceSwitchBookId: UUID?
     private let onRemoveFromShelf: (() -> Void)?
+    /// Reader-owned details return to their retained reader instead of opening another.
+    private let onContinueReading: ((Int?) -> Void)?
 
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appDependencies) private var dependencies
+    @State private var readerRoute: DetailReaderRoute?
+    @State private var pendingChapterSelection: Int?
+
     private var gs: GlobalSettings { GlobalSettings.shared }
     private var source: BookSource? { BookSourceStore.shared.sources.first(where: { $0.id == currentBook.sourceId }) }
 
@@ -43,11 +48,13 @@ struct OnlineBookView: View {
     init(
         book: OnlineBook,
         sourceSwitchBookId: UUID? = nil,
-        onRemoveFromShelf: (() -> Void)? = nil
+        onRemoveFromShelf: (() -> Void)? = nil,
+        onContinueReading: ((Int?) -> Void)? = nil
     ) {
         self.searchBook = nil
         self.sourceSwitchBookId = sourceSwitchBookId
         self.onRemoveFromShelf = onRemoveFromShelf
+        self.onContinueReading = onContinueReading
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
@@ -57,11 +64,13 @@ struct OnlineBookView: View {
     init(
         searchBook: SearchBook,
         sourceSwitchBookId: UUID? = nil,
-        onRemoveFromShelf: (() -> Void)? = nil
+        onRemoveFromShelf: (() -> Void)? = nil,
+        onContinueReading: ((Int?) -> Void)? = nil
     ) {
         self.searchBook = searchBook
         self.sourceSwitchBookId = sourceSwitchBookId
         self.onRemoveFromShelf = onRemoveFromShelf
+        self.onContinueReading = onContinueReading
         if let origin = searchBook.origins.first {
             _currentBook = State(initialValue: Self.makeOnlineBook(from: searchBook, origin: origin))
         } else {
@@ -251,33 +260,42 @@ struct OnlineBookView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showReader, onDismiss: {
-            if let tempId = temporaryReaderBookId {
-                if shouldKeepTemporaryReaderBook(tempId) {
-                    temporaryReaderBookId = nil
-                    addedBookId = tempId
-                    alreadyInShelf = true
-                } else {
-                    bookStore.delete(bookId: tempId)
-                    temporaryReaderBookId = nil
-                    if addedBookId == tempId {
-                        addedBookId = nil
-                    }
-                    checkAlreadyInShelf()
+        .navigationDestination(item: $readerRoute) { route in
+            BookReaderView(bookId: route.id)
+                .environmentObject(bookStore)
+                // SwiftUI owns this destination and its return path. Never attach
+                // the shelf's UIKit card driver to an Explore/Search route.
+                .environment(\.readerNavigator, nil)
+                .environment(\.readerUsesParentNavigationStack, true)
+                .navigationBarBackButtonHidden(true)
+                .reservingNavigationBackSwipe()
+                .onDisappear {
+                    // Opening details above this reader also makes it disappear;
+                    // only a removed reader route releases the trial book.
+                    if readerRoute == nil { readerDidClose() }
                 }
-            }
-        }) {
+        }
+        .fullScreenCover(isPresented: $showReader, onDismiss: readerDidClose) {
+            // Audiobooks keep their dedicated modal player.
             if let bid = addedBookId {
                 BookReaderView(bookId: bid)
                     .environmentObject(bookStore)
+                    .environment(\.readerNavigator, nil)
             }
         }
-        .sheet(isPresented: $showChapterList) {
+        .sheet(isPresented: $showChapterList, onDismiss: {
+            guard let chapterIndex = pendingChapterSelection else { return }
+            pendingChapterSelection = nil
+            openReader(chapterIndex: chapterIndex)
+        }) {
             NavigationStack {
                 ChapterListSheet(
                     chapters: chapters,
                     bookName: displayName,
-                    onSelect: { openReader(chapterIndex: $0) }
+                    onSelect: {
+                        pendingChapterSelection = $0
+                        showChapterList = false
+                    }
                 )
             }
         }
@@ -292,15 +310,19 @@ struct OnlineBookView: View {
 
     // MARK: Header
 
+    private var coverArtwork: some View {
+        BookCoverImage(
+            coverURL: displayCoverUrl,
+            title: displayName,
+            author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
+            sourceBaseURL: source?.bookSourceUrl,
+            sourceHeaders: source?.parsedHeaders ?? [:]
+        )
+    }
+
     private var header: some View {
         HStack(alignment: .top, spacing: DSSpacing.lg) {
-            BookCoverImage(
-                coverURL: displayCoverUrl,
-                title: displayName,
-                author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
-                sourceBaseURL: source?.bookSourceUrl,
-                sourceHeaders: source?.parsedHeaders ?? [:]
-            )
+            coverArtwork
             .frame(width: 96, height: 132)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.md))
             .overlay(
@@ -897,9 +919,28 @@ struct OnlineBookView: View {
         return book.offlineDownloadState != .none || book.offlineDownloadTask != nil
     }
 
+    private func readerDidClose() {
+        guard let tempId = temporaryReaderBookId else { return }
+        if shouldKeepTemporaryReaderBook(tempId) {
+            temporaryReaderBookId = nil
+            addedBookId = tempId
+            alreadyInShelf = true
+        } else {
+            bookStore.delete(bookId: tempId)
+            temporaryReaderBookId = nil
+            if addedBookId == tempId { addedBookId = nil }
+            checkAlreadyInShelf()
+        }
+    }
+
     /// Ensure the book is on the shelf before opening, so the reader has a valid bookId.
     private func openReader(chapterIndex: Int? = nil) {
         guard !chapters.isEmpty, let source, !openingReader else { return }
+        if let onContinueReading {
+            onContinueReading(chapterIndex)
+            return
+        }
+        guard readerRoute == nil, !showReader else { return }
         openingReader = true
 
         var targetBookId: UUID
@@ -932,15 +973,24 @@ struct OnlineBookView: View {
             targetBookId = tempBook.id
         }
 
-        if let chapterIndex {
-            let position = CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: 0)
-            Task {
+        Task { @MainActor in
+            // Finish persisting a selected chapter before the new reader restores it.
+            if let chapterIndex {
+                let position = CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: 0)
                 await dependencies.readingPositionStore.save(position, for: targetBookId.uuidString)
             }
+            guard let readingBook = bookStore.books.first(where: { $0.id == targetBookId }) else {
+                openingReader = false
+                return
+            }
+            if readingBook.resolvedPipelineKind == .audio {
+                openingReader = false
+                showReader = true
+                return
+            }
+            readerRoute = DetailReaderRoute(id: targetBookId)
+            openingReader = false
         }
-
-        openingReader = false
-        showReader = true
     }
 }
 

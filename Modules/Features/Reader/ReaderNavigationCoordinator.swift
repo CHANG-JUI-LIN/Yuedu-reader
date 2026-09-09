@@ -117,6 +117,11 @@ final class ReaderNavigationCoordinator: ObservableObject {
     private weak var presentedReaderController: UIViewController?
     private var pendingOpenCompletion: (@MainActor () -> Void)?
     private var pendingPushRetryTask: Task<Void, Never>?
+    private var presentedDetailController: UIViewController?
+    private var detailReturnCompletion: (() -> Void)?
+    private var afterDetailReturn: (() -> Void)?
+    private var readerClosedCompletion: (() -> Void)?
+
     private var pendingCloseAfterPush = false
     private var isProgrammaticPopPending = false
 
@@ -128,6 +133,10 @@ final class ReaderNavigationCoordinator: ObservableObject {
             return self.source ?? ReaderTransitionSource.fallback(bookID: bookID)
         }
         driver.readerIsPresented = { [weak self] in self?.isReaderPresented == true }
+        driver.readerIsTopmost = { [weak self] in
+            guard let self, let reader = self.presentedReaderController else { return false }
+            return self.transitionDriver.navigationController?.topViewController === reader
+        }
         driver.contentReadyGate = { [weak self] in
             await self?.awaitReaderContentReady()
         }
@@ -154,7 +163,8 @@ final class ReaderNavigationCoordinator: ObservableObject {
         bookID: UUID,
         source: ReaderTransitionSource? = nil,
         destination: @escaping @MainActor () -> UIViewController,
-        onTransitionCompleted: (@MainActor () -> Void)? = nil
+        onTransitionCompleted: (@MainActor () -> Void)? = nil,
+        onReaderClosed: (() -> Void)? = nil
     ) {
         AppLogger.info("⟐ coordinator.open bookID=\(bookID) hasSource=\(source != nil) readerBookID=\(String(describing: readerBookID)) isReaderPresented=\(isReaderPresented)")
 
@@ -194,6 +204,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
         pendingPushRetryTask?.cancel()
         pendingPushRetryTask = nil
         pendingOpenCompletion = onTransitionCompleted
+        readerClosedCompletion = onReaderClosed
         self.source = source ?? ReaderTransitionSource.fallback(bookID: bookID)
         self.readerBookID = bookID
         pendingDestinationFactory = destination
@@ -398,6 +409,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
     func navigationTransitionDidSettle() {
         pendingPushRetryTask?.cancel()
         pendingPushRetryTask = nil
+        reconcileDetailIfDetached()
         reconcileIfReaderDetached()
         beginPendingPushIfPossible()
     }
@@ -432,6 +444,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
         presentedReaderController = nil
         pendingDestinationFactory = nil
         pendingDestinationViewController = nil
+        notifyReaderClosed()
     }
 
     /// Pop the directly-owned reader. State is cleared only after UIKit says
@@ -440,6 +453,10 @@ final class ReaderNavigationCoordinator: ObservableObject {
         guard !transitionDriver.isInteractivePopInFlight else { return }
         guard isReaderPresented else { return }
         guard !isProgrammaticPopPending else { return }
+        if presentedDetailController != nil {
+            returnFromDetail { [weak self] in self?.close() }
+            return
+        }
 
         if transitionDriver.isPushTransitionInFlight {
             pendingCloseAfterPush = true
@@ -451,6 +468,65 @@ final class ReaderNavigationCoordinator: ObservableObject {
             isProgrammaticPopPending = false
             return
         }
+    }
+
+    /// A single native detail page may cover the retained reader. In particular,
+    /// do not push it through ReaderView's inner SwiftUI NavigationStack: that
+    /// can reconcile the UIKit-owned reader out of its parent stack.
+    @discardableResult
+    func showDetail(
+        _ detail: UIViewController,
+        onReturn: @escaping () -> Void = {}
+    ) -> Bool {
+        guard isReaderPresented, presentedDetailController == nil,
+              let reader = presentedReaderController else { return false }
+        presentedDetailController = detail
+        detailReturnCompletion = onReturn
+        guard transitionDriver.pushDetail(detail, above: reader) else {
+            presentedDetailController = nil
+            detailReturnCompletion = nil
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func returnFromDetail(afterReturn: (() -> Void)? = nil) -> Bool {
+        guard let detail = presentedDetailController,
+              let reader = presentedReaderController else { return false }
+        self.afterDetailReturn = afterReturn
+        guard transitionDriver.popDetail(detail, returningTo: reader) else {
+            self.afterDetailReturn = nil
+            return false
+        }
+        return true
+    }
+
+    var isShowingDetail: Bool { presentedDetailController != nil }
+
+    private func reconcileDetailIfDetached() {
+        guard !transitionDriver.isTransitionActive,
+              !transitionDriver.hasBlockingSystemTransition,
+              let detail = presentedDetailController,
+              !transitionDriver.stackContains(detail) else { return }
+        let onReturn = detailReturnCompletion
+        let afterReturn = afterDetailReturn
+        presentedDetailController = nil
+        detailReturnCompletion = nil
+        self.afterDetailReturn = nil
+        onReturn?()
+        afterReturn?()
+    }
+
+    private func notifyReaderClosed() {
+        // Release the callbacks before invoking them: temporary-book cleanup can
+        // publish shelf changes and synchronously re-enter navigation code.
+        let completion = readerClosedCompletion
+        readerClosedCompletion = nil
+        presentedDetailController = nil
+        detailReturnCompletion = nil
+        afterDetailReturn = nil
+        completion?()
     }
 
     /// Clear only the transition source, leaving the reader mounted. Kept for
@@ -473,6 +549,18 @@ final class ReaderNavigationCoordinator: ObservableObject {
         // here or a parked preload leaks its continuation with the shelf.
         endOpeningTransition(committed: false)
         transitionDriver.detach()
+        pendingPushRetryTask?.cancel()
+        pendingPushRetryTask = nil
+        isReaderPresented = false
+        readerBookID = nil
+        source = nil
+        presentedReaderController = nil
+        pendingDestinationFactory = nil
+        pendingDestinationViewController = nil
+        pendingOpenCompletion = nil
+        pendingCloseAfterPush = false
+        isProgrammaticPopPending = false
+        notifyReaderClosed()
     }
 
     /// EPUB metadata becomes authoritative once the publication session is
@@ -491,6 +579,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
         readerBookID = nil
         source = nil
         presentedReaderController = nil
+        notifyReaderClosed()
     }
 
     private func completePushTransition(completed: Bool) {
@@ -508,6 +597,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
             presentedReaderController = nil
             pendingDestinationFactory = nil
             pendingDestinationViewController = nil
+            notifyReaderClosed()
         }
 
         if pendingCloseAfterPush {
@@ -534,6 +624,7 @@ final class ReaderNavigationCoordinator: ObservableObject {
             readerBookID = nil
             source = nil
             presentedReaderController = nil
+            notifyReaderClosed()
         }
     }
 

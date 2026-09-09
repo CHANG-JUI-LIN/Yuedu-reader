@@ -1,0 +1,126 @@
+{
+  "scope": "Shared horizontal decoration extraction and paged EPUB bar ownership/painting; not all-format convergence",
+  "mainResults": [
+    {
+      "result": "Passed",
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 1,
+      "testFailures": [],
+      "suite": "CoreTextPagedScrollAppearanceTests",
+      "exitCode": 0,
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/main-shared-decorations-CoreTextPagedScrollAppearanceTests.xcresult"
+    },
+    {
+      "result": "Passed",
+      "passedTests": 25,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 25,
+      "testFailures": [],
+      "suite": "CoreTextWritingModeTests",
+      "exitCode": 0,
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/main-shared-decorations-CoreTextWritingModeTests.xcresult"
+    },
+    {
+      "result": "Passed",
+      "passedTests": 3,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 3,
+      "testFailures": [],
+      "suite": "ChapterTitleRenderableLayoutTests",
+      "exitCode": 0,
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/main-shared-decorations-ChapterTitleRenderableLayoutTests.xcresult"
+    },
+    {
+      "result": "Passed",
+      "passedTests": 3,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 3,
+      "testFailures": [],
+      "suite": "CoreTextScrollTests",
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/main-final-scroll.xcresult",
+      "exitCode": 0
+    },
+    {
+      "result": "Passed",
+      "passedTests": 5,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 5,
+      "testFailures": [],
+      "suite": "EPUBRenderingTests",
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/main-final-epub.xcresult",
+      "exitCode": 0
+    },
+    {
+      "result": "Passed",
+      "passedTests": 6,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 6,
+      "testFailures": [],
+      "suite": "ReaderBarRendererTests",
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/main-final-bar-renderer.xcresult",
+      "exitCode": 0
+    },
+    {
+      "result": "Passed",
+      "passedTests": 3,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 3,
+      "suite": "EPUBPageBarsLifecycleTests",
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/main-bars-final.xcresult"
+    }
+  ],
+  "mainPassedTests": 46,
+  "files": {
+    "Modules/Core/ReaderCore/CoreText/CoreTextPaginator.swift": "d92c162eaf8b51ee86db9fce0b5f2f92ff5affab3f52092127af97169fb90b8a",
+    "Modules/Core/ReaderCore/CoreText/CoreTextChunkSlicer.swift": "dbac028ceb2fec66c4f495e26c2bcaaa493caab11af7e42fe6c83a6ce39a9f31",
+    "Modules/Core/ReaderCore/CoreText/CoreTextPageView.swift": "4304fd6922e7cba4797a81495aa8845dd52fc89061fb320d2dc2e86b907864b3",
+    "Modules/Core/ReaderCore/EPUBPageRenderer.swift": "c9d478a9fcc50e86f23c98560b02718b512f3f50e45408e8753c492f4b5ab31a",
+    "Modules/Features/Reader/ReaderView+PageBars.swift": "0a908378180b9f0ec0ab07698e8a33875549857dc3e6f9f74cbd16880df39bcd",
+    "Tests/iOS/yuedu appTests/EPUBPageBarsLifecycleTests.swift": "db4d37cfa81b76966a8e6fae0acd168714592c9c08556c57c854f8f66e78d297",
+    "Tests/iOS/yuedu appTests/CoreTextPagedScrollAppearanceTests.swift": "ff3a4b6f3efcef32ff9e856a700f456c84055d0a945beb65ec5759fdd5b8d6b0"
+  },
+  "reportedBooks": {
+    "result": "Passed",
+    "suite": "CoreTextReportedAppearanceTests",
+    "passedTests": 1,
+    "chapterComparisons": 2,
+    "xcresult": "/tmp/yuedu-layout-fix-20260909/reported-coretext-appearance-final.xcresult",
+    "testSource": "/Users/zhangruilin/Desktop/Yuedu-reader/.worktrees/lexbor-computed-style/Tests/iOS/yuedu appTests/CoreTextReportedAppearanceTests.swift",
+    "testSourceSHA256": "79079a24710bea4a6ed9f4fc1172306b754966517d8a00c273df9f225e552d00",
+    "execution": "isolated worktree, legacy CoreText path; Paginator and ChunkSlicer byte-identical to tested main sources",
+    "conditions": {
+      "width": 390,
+      "height": 844,
+      "contentInsets": 0,
+      "fontSize": 17,
+      "sameCTFrame": true
+    },
+    "cases": [
+      {
+        "book": "红楼梦+大观红楼",
+        "spine": 4,
+        "marker": "A Dream"
+      },
+      {
+        "book": "全能游戏设计师1",
+        "spine": 10,
+        "marker": "294MB"
+      }
+    ]
+  },
+  "earlierAttempts": [
+    "main-appearance-red: cancelled before test execution",
+    "worktree-appearance-red: zero tests selected before file discovery; not counted",
+    "worktree-appearance-red-compiled: actual compositor regression failed before fix",
+    "appearance-regression-EPUBRenderingTests: cancelled; replaced with focused method executions",
+    "reported-coretext-appearance: resource outer-background mismatch; shared extraction fix subsequently passed actual comparison"
+  ]
+}

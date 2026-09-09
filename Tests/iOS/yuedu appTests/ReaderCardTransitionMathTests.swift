@@ -138,7 +138,7 @@ struct ReaderCardTransitionMathTests {
     func phaseRamp() {
         #expect(ReaderCardTransitionMath.phase(-0.2, in: 0.15...0.70) == 0)
         #expect(ReaderCardTransitionMath.phase(0.15, in: 0.15...0.70) == 0)
-        #expect(ReaderCardTransitionMath.phase(0.425, in: 0.15...0.70) == 0.5)
+        #expect(abs(ReaderCardTransitionMath.phase(0.425, in: 0.15...0.70) - 0.5) < 0.000_001)
         #expect(ReaderCardTransitionMath.phase(0.70, in: 0.15...0.70) == 1)
         #expect(ReaderCardTransitionMath.phase(0.9, in: 0.15...0.70) == 1)
         // Degenerate range collapses to a step at the upper bound.
@@ -472,11 +472,15 @@ struct BookCardNavigationGateTests {
         #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .html), idiom: .phone))
     }
 
-    @Test("audiobook, manga, and fixed-page stay on the modal path")
+    @Test("fixed-page and manga shelf books use the existing card push path",
+          arguments: [BookPipelineKind.manga, .fixedPage])
+    func fixedPageKindsUseCardTransition(kind: BookPipelineKind) {
+        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: kind), idiom: .phone))
+    }
+
+    @Test("audiobooks stay on the modal path")
     func ineligibleKinds() {
         #expect(!BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .audio), idiom: .phone))
-        #expect(!BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .manga), idiom: .phone))
-        #expect(!BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .fixedPage), idiom: .phone))
     }
 
     @Test("iPad keeps the existing modal reader presentation")

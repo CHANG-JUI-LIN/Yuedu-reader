@@ -5,10 +5,8 @@ import UIKit
 //
 // Decides whether a book should use the migrated card navigation
 // (push/pop with the card transition) or keep its existing modal
-// presentation. The first delivery covers text / reflowable EPUB / online
-// HTML reading only; audiobook, manga, and fixed-page readers keep their
-// existing `fullScreenCover` presentation until they are explicitly
-// migrated.
+// presentation. Text, reflowable EPUB, online HTML, and the shared
+// fixed-page reader use the same card transition; audiobooks stay modal.
 
 enum BookCardNavigationGate {
     /// True when `book` belongs to a presentation kind that has been migrated
@@ -30,9 +28,9 @@ enum BookCardNavigationGate {
         // until it receives a separately designed split-view transition.
         guard idiom == .phone else { return false }
         let kind = book.resolvedPipelineKind
-        // Audio, manga, and fixed-page are explicitly out of scope.
+        // Audiobooks retain their dedicated modal presentation.
         switch kind {
-        case .audio, .manga, .fixedPage:
+        case .audio:
             return false
         default:
             return true

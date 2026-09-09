@@ -1,5 +1,23 @@
 import SwiftUI
 
+// MARK: - Slider centreline alignment
+
+/// Lets 上一章／下一章 line up with the progress slider itself rather than with the
+/// column that also carries the 「4/12 · 25.60%」 line beneath it.
+///
+/// The default resolves to the view's own centre, so only the slider has to declare
+/// the guide explicitly; every other child of the row keeps behaving as it did under
+/// `.center`.
+private enum ReaderSliderCenterAlignment: AlignmentID {
+    static func defaultValue(in context: ViewDimensions) -> CGFloat {
+        context[VerticalAlignment.center]
+    }
+}
+
+extension VerticalAlignment {
+    static let readerSliderCenter = VerticalAlignment(ReaderSliderCenterAlignment.self)
+}
+
 struct ReaderBottomControlBar: View {
     @Binding var readerTheme: ReaderTheme
     let overlayContentMaxWidth: CGFloat
@@ -149,7 +167,7 @@ struct ReaderBottomControlBar: View {
     }
 
     private var progressSliderRow: some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .readerSliderCenter, spacing: 4) {
             Button {
                 onPrevChapter()
             } label: {
@@ -182,6 +200,13 @@ struct ReaderBottomControlBar: View {
                         }
                     }
                 ).accentColor(palette.bottomAccent)
+                // 上一章／下一章 line up with the slider's own centreline, not with the
+                // centre of the column that also holds the progress line underneath it.
+                // Without this the two buttons sit half a line low, because the HStack
+                // centres them on the whole VStack. Custom alignment guides propagate up
+                // out of nested stacks, so declaring it here is enough — the buttons take
+                // the AlignmentID's default, which is their own centre.
+                .alignmentGuide(.readerSliderCenter) { $0[VerticalAlignment.center] }
                 // A bare Slider announces a percentage of its 0…1 range and no name at all
                 // (docs/design.md §7.1, third trap). Value shares `progressStatusText` with
                 // the line printed underneath so the two can't drift apart.

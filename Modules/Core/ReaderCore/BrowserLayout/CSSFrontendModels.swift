@@ -17,7 +17,7 @@ struct CSSFrontendInput {
     /// Lexbor consumes each active authored sheet exactly once, in DOM order.
     /// Unsupported media remains in `stylesheets` and diagnostics for the gate.
     var activeAuthorStylesheets: [AuthorStylesheet] {
-        stylesheets.filter { !$0.currentCompatibilityOnly && !$0.isAlternate && $0.hasSupportedMedia }
+        stylesheets.filter { !$0.currentCompatibilityOnly && !$0.isAlternate && !$0.loadFailed && $0.hasSupportedMedia }
             .sorted { $0.sourceOrder < $1.sourceOrder }
     }
 
@@ -53,6 +53,32 @@ struct AuthorStylesheet: Equatable {
     let currentCompatibilityOnly: Bool
     let media: String?
     let isAlternate: Bool
+
+    /// Failed resource entries retain their identity/diagnostic but never enter cascade.
+    /// An empty successfully loaded stylesheet remains a valid author entry.
+    let loadFailed: Bool
+
+    init(source: Source, text: String, sourceOrder: Int,
+         currentCompatibilityOrder: Int?, currentCompatibilityOnly: Bool,
+         media: String?, isAlternate: Bool, loadFailed: Bool = false) {
+        self.source = source
+        self.text = text
+        self.sourceOrder = sourceOrder
+        self.currentCompatibilityOrder = currentCompatibilityOrder
+        self.currentCompatibilityOnly = currentCompatibilityOnly
+        self.media = media
+        self.isAlternate = isAlternate
+        self.loadFailed = loadFailed
+    }
+
+    var identity: StylesheetIdentity {
+        let label: String
+        switch source {
+        case .inline(let ordinal): label = "inline[\(ordinal)]"
+        case .linked(let href): label = href
+        }
+        return StylesheetIdentity(sourceOrder: sourceOrder, label: label)
+    }
 
     var hasSupportedMedia: Bool {
         let value = (media ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -91,19 +117,89 @@ struct FrontendWinningDeclaration: Equatable {
     let sourceOrder: UInt32
     let origin: UInt8
     let important: Bool
+    let selector: String?
+    let stylesheet: StylesheetIdentity?
+
+    init(nodeID: UInt64, property: String, value: String, specificity: UInt32,
+         sourceOrder: UInt32, origin: UInt8, important: Bool,
+         selector: String? = nil, stylesheet: StylesheetIdentity? = nil) {
+        self.nodeID = nodeID
+        self.property = property
+        self.value = value
+        self.specificity = specificity
+        self.sourceOrder = sourceOrder
+        self.origin = origin
+        self.important = important
+        self.selector = selector
+        self.stylesheet = stylesheet
+    }
+
+    var source: StyleSourceIdentity {
+        StyleSourceIdentity(origin: origin == 1 ? .inlineStyle : .authorStylesheet,
+                            stylesheet: stylesheet, selector: selector,
+                            specificity: specificity, sourceOrder: Int(sourceOrder), important: important)
+    }
+}
+
+struct StyleSourceIdentity: Hashable, Codable {
+    enum Origin: String, Codable { case authorStylesheet, inlineStyle }
+    let origin: Origin
+    let stylesheet: StylesheetIdentity?
+    let selector: String?
+    let specificity: UInt32
+    let sourceOrder: Int
+    let important: Bool
+}
+
+enum FrontendDOMFeature: String, Hashable {
+    case table, mathML, scriptedInteractive, unsupportedSVG, hiddenRoot
+}
+
+struct FrontendUnsupportedDeclaration: Equatable {
+    let semanticPath: String
+    let property: String
+    let value: String
+    let source: StyleSourceIdentity
+    let feature: UnsupportedFeature
+    let reason: String
+}
+
+struct FrontendCapabilityFacts: Equatable {
+    var unsupportedDeclarations: [FrontendUnsupportedDeclaration] = []
+    var domFeatures: Set<FrontendDOMFeature> = []
+    var ingestionFailures: [StylesheetIdentity] = []
+
+    var blocksCutover: Bool {
+        !unsupportedDeclarations.isEmpty || !domFeatures.isEmpty || !ingestionFailures.isEmpty
+    }
+
+    mutating func recordAdapterGap(_ declaration: FrontendWinningDeclaration,
+                                  semanticPath: String = "", reason: String = "Unsupported value") {
+        let fact = FrontendUnsupportedDeclaration(
+            semanticPath: semanticPath, property: declaration.property, value: declaration.value,
+            source: declaration.source, feature: .unparseableLayoutCSS, reason: "ADAPTER_GAP: " + reason
+        )
+        if !unsupportedDeclarations.contains(fact) { unsupportedDeclarations.append(fact) }
+    }
+}
+
+struct LexborTextSnapshot: Equatable {
+    let nodeID: UInt64
+    let parentID: UInt64
+    let text: String
 }
 
 struct LexborFrontendSnapshot: Equatable {
     let elements: [UInt64: HTMLDOMElementSnapshot]
     let parentIDs: [UInt64: UInt64]
-    let textOrder: [(nodeID: UInt64, text: String)]
+    let textOrder: [LexborTextSnapshot]
     let winningDeclarations: [FrontendWinningDeclaration]
     let diagnostics: [CSSFrontendDiagnostic]
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.elements == rhs.elements
             && lhs.parentIDs == rhs.parentIDs
-            && lhs.textOrder.map { "\($0.nodeID):\($0.text)" } == rhs.textOrder.map { "\($0.nodeID):\($0.text)" }
+            && lhs.textOrder == rhs.textOrder
             && lhs.winningDeclarations == rhs.winningDeclarations
             && lhs.diagnostics == rhs.diagnostics
     }

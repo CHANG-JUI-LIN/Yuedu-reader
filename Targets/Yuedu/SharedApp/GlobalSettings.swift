@@ -559,6 +559,9 @@ class GlobalSettings: ObservableObject {
     private static let readerOverlayLayoutMigrationVersionKey = "yd_reader_overlay_layout_migration_version"
     private static let readerOverlayLayoutCorruptBackupKey = "yd_reader_overlay_layout_corrupt_backup"
     private static let readerOverlayLayoutSyncClockKey = "yd_reader_overlay_layout_sync_clock"
+    private static let readerBarLayoutDataKey = "yd_reader_bar_layout_data"
+    private static let readerBarLayoutCorruptBackupKey = "yd_reader_bar_layout_corrupt_backup"
+    private static let readerBarLayoutSyncClockKey = "yd_reader_bar_layout_sync_clock"
     private static let launchImageEnabledKey = "yd_launch_image_enabled"
     private static let launchImageLightFileNameKey = "yd_launch_image_light_file_name"
     private static let launchImageDarkFileNameKey = "yd_launch_image_dark_file_name"
@@ -771,6 +774,29 @@ class GlobalSettings: ObservableObject {
                 )
             } else {
                 UserDefaults.standard.removeObject(forKey: Self.readerOverlayLayoutSyncClockKey)
+            }
+        }
+    }
+    /// Which info field sits in which of the six header/footer slots.
+    ///
+    /// Supersedes `readerOverlayLayout` for everything the reader actually draws.
+    /// That one survives only as the format `.qitheme` packs and exported presets
+    /// arrive in — free coordinates get snapped onto slots on the way in, and are
+    /// never rendered.
+    @Published private(set) var readerBarLayout: ReaderBarLayout
+    /// Merge clock for the iCloud-synced bar layout. Advances only when *this
+    /// device's user* edits the layout, never when a sync applies a remote one —
+    /// otherwise every sync would re-stamp the record as newest and the two
+    /// devices would fight forever. See `ReaderBarLayoutSyncRecord`.
+    @Published private(set) var readerBarLayoutSyncClock: Date? {
+        didSet {
+            if let readerBarLayoutSyncClock {
+                UserDefaults.standard.set(
+                    readerBarLayoutSyncClock,
+                    forKey: Self.readerBarLayoutSyncClockKey
+                )
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.readerBarLayoutSyncClockKey)
             }
         }
     }
@@ -1426,6 +1452,25 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - TTS Settings
 
+    @Published var edgeTtsVoiceID: String {
+        didSet { UserDefaults.standard.set(edgeTtsVoiceID, forKey: "yd_edge_tts_voice_id") }
+    }
+
+    var selectedEdgeTTSVoice: EdgeTTSVoice {
+        EdgeTTSVoice.voice(id: edgeTtsVoiceID) ?? EdgeTTSVoice.defaultVoice
+    }
+
+    var usesEdgeTTS: Bool {
+        !ttsUseSystemVoice && EdgeTTSVoice.isEdgeSource(httpTtsUrlTemplate)
+    }
+
+    func selectEdgeTTSVoice(_ voice: EdgeTTSVoice) {
+        edgeTtsVoiceID = voice.id
+        httpTtsUrlTemplate = voice.sourceIdentifier
+        httpTtsHeaders = [:]
+        ttsUseSystemVoice = false
+    }
+
     @Published var httpTtsUrlTemplate: String {
         didSet { UserDefaults.standard.set(httpTtsUrlTemplate, forKey: "yd_http_tts_url_template") }
     }
@@ -1629,6 +1674,27 @@ class GlobalSettings: ObservableObject {
                 proposed: overlayResolution.layout
             ) { data in
                 Self.persistReaderOverlayLayoutData(data, defaults: overlayDefaults)
+            }
+        }
+        // Snap the free-position layout onto the six bar slots the first time this
+        // build runs; afterwards the stored bar layout is the only thing consulted.
+        let barResolution = ReaderBarLayoutMigration.resolve(
+            storedData: overlayDefaults.data(forKey: Self.readerBarLayoutDataKey),
+            legacyLayout: overlayResolution.layout
+        )
+        readerBarLayout = barResolution.layout
+        readerBarLayoutSyncClock = overlayDefaults.object(
+            forKey: Self.readerBarLayoutSyncClockKey
+        ) as? Date
+        if let corruptData = barResolution.corruptData {
+            overlayDefaults.set(corruptData, forKey: Self.readerBarLayoutCorruptBackupKey)
+        }
+        if barResolution.shouldPersistPrimary {
+            _ = ReaderBarLayoutPersistence.save(
+                current: barResolution.layout,
+                proposed: barResolution.layout
+            ) { data in
+                Self.persistReaderBarLayoutData(data, defaults: overlayDefaults)
             }
         }
         let rawPageTurn = UserDefaults.standard.string(forKey: "yd_page_turn_style") ?? ""
@@ -1893,6 +1959,7 @@ class GlobalSettings: ObservableObject {
             (UserDefaults.standard.object(forKey: "yd_change_source_load_toc") as? Bool) ?? false
         iCloudAutoSync =
             (UserDefaults.standard.object(forKey: "yd_icloud_auto_sync") as? Bool) ?? true
+        edgeTtsVoiceID = UserDefaults.standard.string(forKey: "yd_edge_tts_voice_id") ?? EdgeTTSVoice.defaultVoice.id
         httpTtsUrlTemplate = UserDefaults.standard.string(forKey: "yd_http_tts_url_template") ?? ""
         httpTtsHeaders = Self.loadTTSHeaders()
         importedTTSSources = Self.loadImportedTTSSources()
@@ -2191,6 +2258,50 @@ class GlobalSettings: ObservableObject {
             forKey: readerOverlayLayoutMigrationVersionKey
         )
         return true
+    }
+
+    @discardableResult
+    func saveReaderBarLayout(_ proposedLayout: ReaderBarLayout) -> Bool {
+        persistReaderBarLayout(proposedLayout, stampsSyncClock: true)
+    }
+
+    /// Applies the iCloud-merged bar layout. Deliberately does **not** stamp the
+    /// sync clock: the merged value already carries the winning device's
+    /// timestamp, and re-stamping it here would make every device declare itself
+    /// newest on the next pass.
+    func applyReaderBarLayoutFromSync(_ layout: ReaderBarLayout, modifiedAt: Date?) {
+        guard layout != readerBarLayout || modifiedAt != readerBarLayoutSyncClock else {
+            return
+        }
+        guard persistReaderBarLayout(layout, stampsSyncClock: false) else { return }
+        readerBarLayoutSyncClock = modifiedAt
+    }
+
+    @discardableResult
+    private func persistReaderBarLayout(
+        _ proposedLayout: ReaderBarLayout,
+        stampsSyncClock: Bool
+    ) -> Bool {
+        let result = ReaderBarLayoutPersistence.save(
+            current: readerBarLayout,
+            proposed: proposedLayout
+        ) { data in
+            Self.persistReaderBarLayoutData(data)
+        }
+        guard result.didPersist else { return false }
+        readerBarLayout = result.layout
+        if stampsSyncClock {
+            readerBarLayoutSyncClock = Date()
+        }
+        return true
+    }
+
+    private static func persistReaderBarLayoutData(
+        _ data: Data,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        defaults.set(data, forKey: readerBarLayoutDataKey)
+        return defaults.data(forKey: readerBarLayoutDataKey) == data
     }
 
     static func sanitizedCommentBubbleScale(_ value: Double) -> Double {

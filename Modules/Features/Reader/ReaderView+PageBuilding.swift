@@ -57,32 +57,28 @@ extension ReaderView {
         let surface: ReaderRenderSurface
         switch mode {
         case .paged:
-            let reservations = ReaderOverlayPaginationPolicy.insets(
-                for: settings.readerOverlayLayout
-            )
-            // Fixed overlays are a paged-reading feature. Their coordinates, size,
-            // style, and count never enter render settings; only these explicit body
-            // reservations can change pagination geometry.
+            // The bars are structural: whatever height they occupy is taken out of
+            // the text area, in both modes, from one calculation. This replaced the
+            // hand-tuned 內容保留 sliders — a bar's height is known, so reserving the
+            // right amount is arithmetic rather than a number the reader had to guess.
+            let pagedInsets = readerBarContentInsets
             surface = .paged(
                 contentInsets: UIEdgeInsets(
-                    top: CGFloat(reservations.top),
+                    top: pagedInsets.top,
                     left: effectivePageMarginH,
-                    bottom: CGFloat(reservations.bottom),
+                    bottom: pagedInsets.bottom,
                     right: effectivePageMarginH
                 ),
                 marginV: systemVerticalPadding,
                 footerHeight: footerOverlayHeight
             )
         case .scroll:
+            let scrollInsets = readerBarContentInsets
             surface = .scroll(
                 contentInsets: UIEdgeInsets(
-                    top: ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop),
+                    top: scrollInsets.top,
                     left: effectivePageMarginH,
-                    bottom: ReaderLayoutMetrics.bottomInset(
-                        safeBottom: 0,
-                        footerBottomPadding: readerConfig.footerBottomPadding,
-                        footerTextGap: readerConfig.footerTextGap
-                    ),
+                    bottom: scrollInsets.bottom,
                     right: effectivePageMarginH
                 ),
                 marginV: readerConfig.pageMarginV,

@@ -230,6 +230,13 @@ struct BrowserLayoutPageEngineTests {
         let legacyPage = try #require(delegate.pageIndex(for: position))
         let compositePage = try #require(engine.pageIndex(for: position))
         #expect(legacyPage != compositePage)
+        var barsPage: Int?
+        engine.pageBarsProvider = { page in
+            barsPage = page
+            return nil
+        }
+        _ = delegate.pageBars(forGlobalPage: legacyPage)
+        #expect(barsPage == compositePage, "Fallback bars must use BrowserAuto's page numbering")
         var linkedPage: Int?
         var navigatedPage: Int?
         engine.onLinkNavigate = { linkedPage = $0 }

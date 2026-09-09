@@ -62,8 +62,12 @@ struct HTMLPresentationalHintProductionEPUBTests {
             BrowserLayoutTestSupport.allImageFragments(browserPages)
                 .first { $0.source == "../Images/gm3.png" }
         )
-        #expect(abs(browserImage.rect.width - 62.7) < 0.1)
-        #expect(abs(browserImage.rect.height - 62.7) < 0.1)
+        // This fixture authors body margins of 1% on each side. The image's
+        // 15% hint resolves against that content box, not the 418pt viewport.
+        // Legacy's separate image pipeline retains its own 62.7pt expectation.
+        let expectedBrowserImageSize = Self.contentWidth * (1 - 0.01 - 0.01) * 0.15
+        #expect(abs(browserImage.rect.width - expectedBrowserImageSize) < 0.1)
+        #expect(abs(browserImage.rect.height - expectedBrowserImageSize) < 0.1)
 
         let legacyBuilder = EPUBAttributedStringBuilder(
             session: session,

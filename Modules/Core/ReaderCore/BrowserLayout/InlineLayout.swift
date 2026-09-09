@@ -17,6 +17,10 @@ struct InlineRun {
     let ruby: RubyInlineUnit?
     /// Shared immutable chapter attributes, indexed by source UTF-16 offsets.
     var attributedSource: NSAttributedString? = nil
+    var inlineDecorations: [InlineDecoration] = []
+    /// A shaped-only inline box edge; true is inline-start, false inline-end.
+    /// It reserves advance without inserting anything into chapter sourceText.
+    var decorationEdge: Bool? = nil
 
     init(
         text: String,
@@ -96,7 +100,17 @@ enum InlineLayout {
         var rubyDelegateBoxes: [RubyRunDelegateBox] = []
         for (index, run) in runs.enumerated() {
             runAttributedStart.append(attributedCursor)
-            if let unit = run.ruby {
+            if let isStart = run.decorationEdge {
+                let width = edgeAdvance(run.style, isStart: isStart, context: context)
+                let box = AtomicInlineBox(width: width, ascent: 0, descent: 0)
+                delegateBoxes.append(box)
+                var callbacks = AtomicInlineBox.callbacks
+                let delegate = CTRunDelegateCreate(&callbacks, Unmanaged.passRetained(box).toOpaque())
+                let edge = NSMutableAttributedString(string: run.text, attributes: [.font: resolveFont(run.style)])
+                edge.addAttribute(kCTRunDelegateAttributeName as NSAttributedString.Key,
+                    value: delegate as Any, range: NSRange(location: isStart ? 0 : 1, length: 1))
+                attributed.append(edge)
+            } else if let unit = run.ruby {
                 let ruby = RubyInlineLayout.measure(unit: unit, fontResolver: fontResolver, attributedSource: run.attributedSource)
                 measuredRuby[index] = ruby
                 let box = RubyRunDelegateBox(ruby)
@@ -170,6 +184,17 @@ enum InlineLayout {
         ) -> LayoutLine {
             let lineRange = breakInfo.range
             let lineEnd = lineRange.location + lineRange.length
+            let alignment = runs.first?.style.textAlign ?? .natural
+            let shapedLine = alignment == .justified
+                ? justifiedLine(breakInfo, attributed: attributed, width: interval.lineWidth)
+                : breakInfo.line
+            // A newly spaced line is shaped from its own substring; retain that
+            // local index space in every fragment rather than mixing it with
+            // paragraph/source offsets on the second and later lines.
+            let shapedOffset = CTLineGetStringRange(shapedLine).location - lineRange.location
+            let usedWidth = shapedLine === breakInfo.line ? breakInfo.width
+                : CGFloat(CTLineGetTypographicBounds(shapedLine, nil, nil, nil)
+                    - CTLineGetTrailingWhitespaceWidth(shapedLine))
 
             // Attribute runs intersecting this line's char range, by offset.
             var lineRuns: [LineRun] = []
@@ -185,7 +210,7 @@ enum InlineLayout {
                 // Source range of this slice: shift by the run's source offset.
                 let sliceLen: Int
                 let sourceOffset: Int
-                if run.atomic != nil {
+                if run.atomic != nil || run.decorationEdge != nil {
                     sliceLen = 0
                     sourceOffset = run.sourceRange.location
                 } else if run.ruby != nil {
@@ -198,22 +223,23 @@ enum InlineLayout {
                 let sliceSource = NSRange(location: sourceOffset, length: sliceLen)
 
                 let width: CGFloat
-                if let atomic = run.atomic {
+                if let isStart = run.decorationEdge {
+                    width = edgeAdvance(run.style, isStart: isStart, context: context)
+                } else if let atomic = run.atomic {
                     width = atomic.usedSize.width
                 } else if let ruby = measuredRuby[index] {
                     width = ruby.advance
                 } else {
-                    let sub = attributed.attributedSubstring(
-                        from: NSRange(location: intersectStart, length: intersectEnd - intersectStart)
+                    width = shapedAdvance(
+                        in: shapedLine,
+                        range: NSRange(location: intersectStart + shapedOffset, length: intersectEnd - intersectStart)
                     )
-                    let subLine = CTLineCreateWithAttributedString(sub)
-                    width = CTLineGetTypographicBounds(subLine, nil, nil, nil)
                 }
 
-                lineRuns.append(LineRun(
+                var laidOutRun = LineRun(
                     sourceRange: sliceSource,
                     shapedRange: NSRange(
-                        location: intersectStart,
+                        location: intersectStart + shapedOffset,
                         length: intersectEnd - intersectStart
                     ),
                     x: xCursor,
@@ -224,18 +250,21 @@ enum InlineLayout {
                     linkTarget: run.linkTarget,
                     atomic: run.atomic,
                     ruby: measuredRuby[index]
-                ))
+                )
+                laidOutRun.inlineDecorations = run.inlineDecorations
+                laidOutRun.isDecorationEdge = run.decorationEdge != nil
+                lineRuns.append(laidOutRun)
                 xCursor += width
             }
 
             // The breaker's measured line width (≤ maxWidth) is authoritative.
-            if let last = lineRuns.last, last.atomic == nil, last.ruby == nil {
+            if let last = lineRuns.last, last.atomic == nil, last.ruby == nil, !last.isDecorationEdge {
                 let clampedWidth: CGFloat
                 if lineRuns.count == 1 {
-                    clampedWidth = breakInfo.width
+                    clampedWidth = usedWidth
                 } else {
                     let sumOthers = lineRuns.dropLast().reduce(CGFloat(0)) { $0 + $1.width }
-                    clampedWidth = max(0, breakInfo.width - sumOthers)
+                    clampedWidth = max(0, usedWidth - sumOthers)
                 }
                 lineRuns[lineRuns.count - 1] = LineRun(
                     sourceRange: last.sourceRange,
@@ -248,6 +277,7 @@ enum InlineLayout {
                     atomic: last.atomic,
                     ruby: last.ruby
                 )
+                lineRuns[lineRuns.count - 1].inlineDecorations = last.inlineDecorations
             }
 
             // Collapsing whitespace modes remove leading whitespace at the
@@ -266,8 +296,8 @@ enum InlineLayout {
             let baselineOffset = extraLeading / 2 + breakInfo.ascent
             let top = yTop
             let alignSlack = alignmentOffset(
-                alignment: lineRuns.first?.style.textAlign ?? .natural,
-                lineWidth: breakInfo.width,
+                alignment: alignment,
+                lineWidth: usedWidth,
                 maxWidth: interval.lineWidth
             )
             let contentX = interval.lineX + alignSlack
@@ -279,7 +309,10 @@ enum InlineLayout {
                 top: top,
                 baseline: yTop + baselineOffset,
                 contentX: contentX,
-                ctLine: breakInfo.line
+                ctLine: shapedLine,
+                inlineDecorations: decorations(
+                    for: lineRuns, baseline: top + baselineOffset, context: context
+                )
             )
         }
 
@@ -436,6 +469,7 @@ enum InlineLayout {
                     atomic: first.atomic,
                     ruby: first.ruby
                 )
+                first.inlineDecorations = runs[0].inlineDecorations
                 runs[0] = first
                 return
             }
@@ -471,9 +505,144 @@ enum InlineLayout {
                 atomic: last.atomic,
                 ruby: last.ruby
             )
+            last.inlineDecorations = runs[runs.count - 1].inlineDecorations
             runs[runs.count - 1] = last
         } else {
             runs.removeLast()
+        }
+    }
+
+    /// Measure the retained line instead of reshaping each DOM slice. A slice
+    /// can end inside a kerned pair or ligature; standalone shaping loses that
+    /// context and shifts every following fragment away from its drawn glyphs.
+    private static func shapedAdvance(in line: CTLine, range: NSRange) -> CGFloat {
+        var advance: CGFloat = 0
+        for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+            let rawRange = CTRunGetStringRange(run)
+            let runRange = NSRange(location: rawRange.location, length: rawRange.length)
+            let part = NSIntersectionRange(range, runRange)
+            guard part.length > 0, CTRunGetGlyphCount(run) > 0 else { continue }
+            let width = CGFloat(CTRunGetTypographicBounds(run, CFRange(location: 0, length: 0), nil, nil, nil))
+            if part == runRange {
+                advance += width
+                continue
+            }
+            var origin = CGPoint.zero
+            CTRunGetPositions(run, CFRange(location: 0, length: 1), &origin)
+            let rtl = CTRunGetStatus(run).contains(.rightToLeft)
+            func offset(at index: Int) -> CGFloat {
+                // A bidi boundary has two caret offsets. The run's own edges
+                // select its affinity; interior indices retain ligature carets.
+                if index == runRange.location { return origin.x + (rtl ? width : 0) }
+                if index == NSMaxRange(runRange) { return origin.x + (rtl ? 0 : width) }
+                return CTLineGetOffsetForStringIndex(line, index, nil)
+            }
+            advance += abs(offset(at: NSMaxRange(part)) - offset(at: part.location))
+        }
+        return advance
+    }
+
+    /// Match the reader's horizontal policy: paragraph tails and hard breaks
+    /// stay natural; ordinary wrapped lines expand through interword/CJK gaps.
+    /// Only add kern. CoreText's built-in justification also compresses CJK
+    /// punctuation, which can overlap adjacent marks even while expanding a line.
+    private static func justifiedLine(
+        _ info: CoreTextLineBreaker.LineBreak,
+        attributed: NSAttributedString,
+        width: CGFloat
+    ) -> CTLine {
+        let end = NSMaxRange(info.range)
+        guard end < attributed.length, width > 0, width.isFinite else { return info.line }
+        let slice = NSMutableAttributedString(attributedString: attributed.attributedSubstring(from: info.range))
+        let text = slice.string as NSString
+        guard text.length > 1 else { return info.line }
+        let terminal = text.character(at: text.length - 1)
+        guard terminal != 0x0A && terminal != 0x0D && terminal != 0x2028 && terminal != 0x2029 else { return info.line }
+        var clusters: [NSRange] = []
+        var index = 0
+        while index < text.length {
+            let cluster = text.rangeOfComposedCharacterSequence(at: index)
+            clusters.append(cluster)
+            index = NSMaxRange(cluster)
+        }
+        while let last = clusters.last,
+              text.substring(with: last).allSatisfy({ $0.isWhitespace }) {
+            clusters.removeLast()
+        }
+        guard clusters.count > 1, let last = clusters.last else { return info.line }
+        slice.removeAttribute(.kern, range: NSRange(location: NSMaxRange(last) - 1, length: 1))
+        let natural = CTLineCreateWithAttributedString(slice)
+        let naturalWidth = CGFloat(CTLineGetTypographicBounds(natural, nil, nil, nil)
+            - CTLineGetTrailingWhitespaceWidth(natural))
+        let residual = width - naturalWidth
+        guard naturalWidth / width >= 0.7, residual > 0.5 else { return info.line }
+        let gaps = Array(clusters.dropLast())
+        let spaces = gaps.filter { text.substring(with: $0) == " " }
+        let targets: [NSRange]
+        if !spaces.isEmpty {
+            targets = spaces
+        } else {
+            func canSeparate(_ range: NSRange) -> Bool {
+                let value = text.substring(with: range)
+                return !value.unicodeScalars.contains {
+                    CharacterSet.punctuationCharacters.contains($0)
+                        || CharacterSet.whitespacesAndNewlines.contains($0)
+                        || $0.value == 0xFFFC || $0.value == 0x2060
+                }
+            }
+            targets = gaps.indices.compactMap { i in
+                guard canSeparate(clusters[i]), canSeparate(clusters[i + 1]) else { return nil }
+                let pair = text.substring(with: clusters[i]) + text.substring(with: clusters[i + 1])
+                let isCJK = pair.unicodeScalars.contains {
+                    (0x2E80...0x9FFF).contains($0.value) || (0xF900...0xFAFF).contains($0.value)
+                        || (0x20000...0x323AF).contains($0.value) || (0x3040...0x30FF).contains($0.value)
+                        || (0xAC00...0xD7AF).contains($0.value)
+                }
+                return isCJK ? clusters[i] : nil
+            }
+        }
+        guard !targets.isEmpty else { return info.line }
+        let extra = residual / CGFloat(targets.count)
+        for cluster in targets {
+            let tail = NSRange(location: NSMaxRange(cluster) - 1, length: 1)
+            let existing = (slice.attribute(.kern, at: tail.location, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0
+            slice.addAttribute(.kern, value: CGFloat(existing) + extra, range: tail)
+        }
+        return CTLineCreateWithAttributedString(slice)
+    }
+
+    private static func resolvedPadding(_ length: CSSLength, style: ComputedStyle, context: InlineFormattingContext) -> CGFloat {
+        max(0, CSSLengthResolver.resolve(length, emBase: style.fontSize,
+            remBase: context.rootFontSize, percentBase: context.containingInlineSize) ?? 0)
+    }
+
+    private static func edgeAdvance(_ style: ComputedStyle, isStart: Bool, context: InlineFormattingContext) -> CGFloat {
+        resolvedPadding(isStart ? style.paddingLeft : style.paddingRight, style: style, context: context)
+            + (isStart ? style.borderLeftWidth : style.borderRightWidth)
+    }
+
+    private static func decorations(for runs: [LineRun], baseline: CGFloat, context: InlineFormattingContext) -> [InlineLineDecoration] {
+        var owners: [InlineDecoration] = []
+        for run in runs {
+            for owner in run.inlineDecorations where !owners.contains(where: { $0.nodeID == owner.nodeID }) {
+                owners.append(owner)
+            }
+        }
+        return owners.compactMap { owner in
+            let owned = runs.filter { $0.inlineDecorations.contains { $0.nodeID == owner.nodeID } }
+            guard let first = owned.first, let last = owned.last else { return nil }
+            let style = owner.style
+            let font = resolvedFont(for: style, resolver: context.fontResolver)
+            let top = resolvedPadding(style.paddingTop, style: style, context: context) + style.borderTopWidth
+            let bottom = resolvedPadding(style.paddingBottom, style: style, context: context) + style.borderBottomWidth
+            return InlineLineDecoration(
+                rect: CGRect(x: first.x, y: baseline - font.ascender - top,
+                    width: last.x + last.width - first.x,
+                    height: font.ascender - font.descender + top + bottom),
+                owner: owner,
+                paintsStartEdge: first.sourceRange.location == owner.sourceRange.location,
+                paintsEndEdge: NSMaxRange(last.sourceRange) == NSMaxRange(owner.sourceRange)
+            )
         }
     }
 

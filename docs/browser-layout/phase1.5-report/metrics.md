@@ -5,9 +5,9 @@
 - cssParse: 0.0001
 - styleTree: 0.0002
 - boxTree: 0.0000
-- layout: 0.0001
+- layout: 0.0002
 - fragment: 0.0000
-- total: 0.0006
+- total: 0.0007
 - peak footprint delta: 0 bytes
 
 ## Source-range parity

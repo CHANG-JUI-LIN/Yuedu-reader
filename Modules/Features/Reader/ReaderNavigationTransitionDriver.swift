@@ -1,55 +1,4 @@
 import UIKit
-import UIKit.UIGestureRecognizerSubclass
-
-// MARK: - ReaderLeadingEdgePanGestureRecognizer
-
-/// `UIPanGestureRecognizer.location(in:)` has already moved by the time its
-/// delegate is asked whether it should begin. Recording the first touch here
-/// makes the edge start region enforceable without an invisible overlay that
-/// would steal taps.
-///
-/// This must be a `UIScreenEdgePanGestureRecognizer`, not a plain pan: the
-/// reader's page-turn surfaces (`UIPageViewController`'s queuing scroll view,
-/// the cover-mode custom pan, curl) sit deeper in the hierarchy and win
-/// arbitration against an outer plain pan, so a plain pan never begins.
-/// UIScrollView has built-in deference to screen-edge recognizers — an
-/// edge-started touch waits for this recognizer to fail before scrolling.
-@MainActor
-private final class ReaderLeadingEdgePanGestureRecognizer: UIScreenEdgePanGestureRecognizer {
-    private(set) var initialLocation: CGPoint = .zero
-
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        if let touch = touches.first, let view {
-            initialLocation = touch.location(in: view)
-        }
-        super.touchesBegan(touches, with: event)
-    }
-
-    override func reset() {
-        super.reset()
-        initialLocation = .zero
-    }
-
-    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool {
-        true
-    }
-
-    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
-        false
-    }
-
-    /// Every competing pan — page-turn pans (scroll/cover/curl) and UIKit's
-    /// own pop recognizers, which are pan subclasses — must wait for this edge
-    /// pan to fail before it may begin. A screen-edge recognizer fails
-    /// immediately for touches that start away from the edge, so page turns
-    /// and taps outside the 10-point strip see no added latency. Taps are
-    /// deliberately not gated: an edge touch that never pans lets this
-    /// recognizer fail on release and the tap fires normally.
-    override func shouldBeRequiredToFail(by otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        if otherGestureRecognizer is UIPanGestureRecognizer { return true }
-        return super.shouldBeRequiredToFail(by: otherGestureRecognizer)
-    }
-}
 
 // MARK: - ResumeOnceBox
 
@@ -90,9 +39,10 @@ final class ReaderNavigationTransitionDriver: NSObject {
 
     weak var navigationController: UINavigationController?
     private weak var forwardedDelegate: UINavigationControllerDelegate?
-    private var edgePan: ReaderLeadingEdgePanGestureRecognizer?
+    private var edgePan: NavigationBackEdgePanGestureRecognizer?
     private var interactionController: UIPercentDrivenInteractiveTransition?
     private var pendingOperation: PendingOperation?
+    private var isDetailTransitionActive = false
     private var activeAnimator: ReaderCardTransitionAnimator?
     /// Safety-net watchdog fired after a push/pop request. UIKit may drop the
     /// transition silently (e.g. when NavigationStack is still settling from a
@@ -124,6 +74,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
 
     var sourceProvider: () -> ReaderTransitionSource? = { nil }
     var readerIsPresented: () -> Bool = { false }
+    var readerIsTopmost: () -> Bool = { true }
     /// Awaited by an opening animator before it starts driving, so the reader's
     /// first-page work happens with the card still at rest instead of inside
     /// the animation window. Nil (the default) starts the animation at once.
@@ -169,6 +120,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
         edgePan = nil
         interactionController = nil
         pendingOperation = nil
+        isDetailTransitionActive = false
         activeAnimator = nil
         expectedFromViewController = nil
         expectedToViewController = nil
@@ -231,9 +183,45 @@ final class ReaderNavigationTransitionDriver: NSObject {
         return true
     }
 
+    /// Detail pages share the reader's outer UIKit stack, but never use its
+    /// book animator. The reader remains underneath until its own pop commits.
+    @discardableResult
+    func pushDetail(
+        _ detail: UIViewController,
+        above reader: UIViewController,
+        animated: Bool = true
+    ) -> Bool {
+        guard let navigationController,
+              navigationController.topViewController === reader,
+              canStartNavigationTransition else { return false }
+        claimNavigationDelegate()
+        isDetailTransitionActive = true
+        navigationController.pushViewController(detail, animated: animated)
+        return true
+    }
+
+    @discardableResult
+    func popDetail(
+        _ detail: UIViewController,
+        returningTo reader: UIViewController,
+        animated: Bool = true
+    ) -> Bool {
+        guard let navigationController,
+              navigationController.topViewController === detail,
+              navigationController.viewControllers.dropLast().last === reader,
+              canStartNavigationTransition else { return false }
+        claimNavigationDelegate()
+        isDetailTransitionActive = true
+        guard navigationController.popViewController(animated: animated) != nil else {
+            isDetailTransitionActive = false
+            return false
+        }
+        return true
+    }
+
     private func installEdgePanIfNeeded(on navigationController: UINavigationController) {
         guard edgePan == nil else { return }
-        let pan = ReaderLeadingEdgePanGestureRecognizer(
+        let pan = NavigationBackEdgePanGestureRecognizer(
             target: self,
             action: #selector(handleEdgePan(_:))
         )
@@ -282,7 +270,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
         schedulePendingReconciliation(for: .pop)
     }
 
-    @objc private func handleEdgePan(_ gesture: ReaderLeadingEdgePanGestureRecognizer) {
+    @objc private func handleEdgePan(_ gesture: NavigationBackEdgePanGestureRecognizer) {
         guard let navigationController else { return }
         let translation = gesture.translation(in: navigationController.view)
         let popProgress = ReaderCardTransitionMath.popProgress(
@@ -468,7 +456,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
     /// Used by the coordinator to avoid reconciling reader state while a real
     /// transition is still running.
     var isTransitionActive: Bool {
-        pendingOperation != nil || activeAnimator != nil
+        pendingOperation != nil || activeAnimator != nil || isDetailTransitionActive
     }
 
     /// Whether `viewController` is still in the owned navigation stack. The
@@ -486,6 +474,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
             return false
         }
         let result = pendingOperation == nil
+            && !isDetailTransitionActive
             && activeAnimator == nil
             && navigationController.transitionCoordinator == nil
         if !result {
@@ -735,6 +724,7 @@ extension ReaderNavigationTransitionDriver: UINavigationControllerDelegate {
         willShow viewController: UIViewController,
         animated: Bool
     ) {
+        if pendingOperation == nil { isDetailTransitionActive = true }
         forwardedDelegate?.navigationController?(
             navigationController,
             willShow: viewController,
@@ -747,6 +737,7 @@ extension ReaderNavigationTransitionDriver: UINavigationControllerDelegate {
         didShow viewController: UIViewController,
         animated: Bool
     ) {
+        isDetailTransitionActive = false
         forwardedDelegate?.navigationController?(
             navigationController,
             didShow: viewController,
@@ -783,7 +774,7 @@ extension ReaderNavigationTransitionDriver: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard
             let navigationController,
-            let pan = gestureRecognizer as? ReaderLeadingEdgePanGestureRecognizer
+            let pan = gestureRecognizer as? NavigationBackEdgePanGestureRecognizer
         else { return false }
 
         // Fires once per attempted swipe, so each denial names its gate in the
@@ -821,6 +812,9 @@ extension ReaderNavigationTransitionDriver: UIGestureRecognizerDelegate {
         }
         if !readerIsPresented() {
             return "reader not presented via coordinator"
+        }
+        if !readerIsTopmost() {
+            return "a detail page is above the reader"
         }
         if isInteractivePopInFlight {
             return "pop already in flight"

@@ -76,42 +76,151 @@ final class BrowserScrollTileView: UIView {
     }
 }
 
-/// Collection view cell hosting one `BrowserScrollTileView`.
+/// Hosts a bounded browser paint window with the same interaction geometry as
+/// paged reading. The document remains the sole owner of chapter layout.
+@MainActor
 final class BrowserScrollTileCell: UICollectionViewCell {
-
     static let reuseIdentifier = "BrowserScrollTileCell"
 
-    let tileView = BrowserScrollTileView(frame: .zero)
+    private(set) var currentTile: BrowserScrollTile?
+    private(set) var interactiveView = BrowserLayoutPageView(frame: .zero)
+    var onAccessibilityMenu: (() -> Void)?
+    var onLinkActivate: ((LinkInteractionRegion) -> Void)?
+    var onImageTap: ((DisplayImageItem) -> Void)?
+    private var horizontalInset: CGFloat = 0
+    private var leadingSpacing: CGFloat = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         contentView.backgroundColor = .clear
         backgroundColor = .clear
-        contentView.addSubview(tileView)
+        contentView.clipsToBounds = true
+        installInteractiveView()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        tileView.frame = contentView.bounds
+        guard let tile = currentTile else { interactiveView.frame = .zero; return }
+        interactiveView.frame = CGRect(
+            x: horizontalInset, y: leadingSpacing,
+            width: tile.documentRect.width, height: tile.documentRect.height
+        )
     }
 
-    func configure(
-        document: BrowserScrollDocument,
-        documentRect: CGRect,
-        backgroundFill: UIColor
-    ) {
-        tileView.backgroundFill = backgroundFill
-        tileView.document = document
-        tileView.documentRect = documentRect
+    func configure(tile: BrowserScrollTile, horizontalInset: CGFloat, leadingSpacing: CGFloat) {
+        let isSameBinding = currentTile.map {
+            $0.chapter === tile.chapter && $0.documentRect == tile.documentRect
+                && $0.charRange.location == tile.charRange.location
+                && $0.charRange.length == tile.charRange.length
+        } ?? false
+        if !isSameBinding { replaceInteractiveView() }
+        currentTile = tile
+        self.horizontalInset = horizontalInset
+        self.leadingSpacing = leadingSpacing
+        if !isSameBinding {
+            let chapter = tile.chapter
+            let source = chapter.document.sourceText as NSString
+            let start = min(max(0, tile.charRange.location), source.length)
+            let range = NSRange(location: start, length: min(max(0, tile.charRange.length), source.length - start))
+            interactiveView.displayList = chapter.document.items(in: tile.documentRect)
+            interactiveView.pageSourceRange = range
+            interactiveView.pageSourceText = source.substring(with: range)
+            interactiveView.backgroundColorFill = chapter.usesReaderBackground ? .clear : chapter.backgroundColor
+            interactiveView.skipAuthoredBackgroundPaint = chapter.usesReaderBackground
+            interactiveView.interactionRegions = .build(
+                from: interactiveView.displayList, spineIndex: chapter.spineIndex,
+                anchors: chapter.document.linkAnchors
+            )
+            interactiveView.configureTextInteraction(
+                sourceText: chapter.document.sourceText, spineIndex: chapter.spineIndex, annotations: [],
+                paragraphRanges: chapter.paragraphRanges
+            )
+            interactiveView.setNeedsDisplay()
+        }
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
+    func applyAnnotations(_ annotations: [CoreTextTextAnnotation]) {
+        interactiveView.textInteraction?.annotations = annotations
+    }
+
+    func applyPlaybackHighlight(text: String?) {
+        guard let tile = currentTile,
+              let needle = text?.trimmingCharacters(in: .whitespacesAndNewlines), !needle.isEmpty else {
+            interactiveView.setPlaybackHighlight(sourceRange: nil)
+            return
+        }
+        // Search chapter coordinates so a sentence crossing a tile seam still
+        // highlights both visible pieces. Restrict matches to this tile's range.
+        let source = tile.chapter.document.sourceText as NSString
+        var searchRange = NSRange(location: 0, length: source.length)
+        while searchRange.length > 0 {
+            let found = source.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive], range: searchRange)
+            guard found.location != NSNotFound else { break }
+            if NSIntersectionRange(found, interactiveView.pageSourceRange).length > 0 {
+                interactiveView.setPlaybackHighlight(sourceRange: found)
+                return
+            }
+            let next = NSMaxRange(found)
+            searchRange = NSRange(location: next, length: source.length - next)
+        }
+        interactiveView.setPlaybackHighlight(sourceRange: nil)
+    }
+
+    func playbackHighlightBounds(in view: UIView) -> CGRect? {
+        interactiveView.playbackHighlightBounds(in: view)
+    }
+
+    /// The point is cell-local, matching collection tap routing.
+    func ownsTap(at point: CGPoint) -> Bool {
+        let local = interactiveView.convert(point, from: self)
+        guard interactiveView.bounds.contains(local) else { return false }
+        return interactiveView.textInteraction?.ownsTap(at: local) == true
+            || interactiveView.interactionRegions.hitTest(local) != nil
+            || interactiveView.imageTarget(at: local) != nil
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        // Drop the chapter reference so a recycled tile cannot briefly paint the
-        // previous chapter's content at the new tile's offset.
-        tileView.document = .empty
-        tileView.documentRect = .zero
+        currentTile = nil
+        horizontalInset = 0
+        leadingSpacing = 0
+        onAccessibilityMenu = nil
+        onLinkActivate = nil
+        onImageTap = nil
+        replaceInteractiveView()
+    }
+
+    private func replaceInteractiveView() {
+        // Source text and spine identity are immutable in the interaction
+        // controller. Replace their owner on rebind rather than reusing stale
+        // selection state or stacking another edit menu and handle recognizer.
+        interactiveView.textInteraction?.clear()
+        interactiveView.cancelLinkPress()
+        interactiveView.onLinkActivate = nil
+        interactiveView.onImageTap = nil
+        interactiveView.onAccessibilityAction = nil
+        interactiveView.removeFromSuperview()
+        interactiveView = BrowserLayoutPageView(frame: .zero)
+        installInteractiveView()
+    }
+
+    private func installInteractiveView() {
+        interactiveView.backgroundColor = .clear
+        interactiveView.backgroundColorFill = .clear
+        interactiveView.isOpaque = false
+        interactiveView.clipsToBounds = true
+        interactiveView.usesContinuousScrolling = true
+        // Scroll bars and background artwork belong to the stationary host.
+        interactiveView.pageBars = nil
+        interactiveView.onAccessibilityAction = { [weak self] action in
+            if action == .toggleMenu { self?.onAccessibilityMenu?() }
+        }
+        interactiveView.onLinkActivate = { [weak self] region in self?.onLinkActivate?(region) }
+        interactiveView.onImageTap = { [weak self] image in self?.onImageTap?(image) }
+        contentView.addSubview(interactiveView)
     }
 }

@@ -15,6 +15,12 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private(set) var scrollAxis: CoreTextScrollAxis
     private var horizontalInset: CGFloat
     private var verticalInset: CGFloat
+    /// Vertical axis only. The bands come out of the collection view's frame so
+    /// the text is genuinely clipped at the bars; the margins are ordinary
+    /// `contentInset` inside what is left.
+    private var barInsets: ReaderScrollBarInsets = .zero
+    private var collectionTopConstraint: NSLayoutConstraint?
+    private var collectionBottomConstraint: NSLayoutConstraint?
     var bottomMargin: CGFloat = 0
     var onProgressCommit: ((CoreTextReadingPosition) -> Void)?
     var onTap: (() -> Void)?
@@ -227,14 +233,25 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         }
         #endif
         collectionView.register(CoreTextChunkCollectionCell.self, forCellWithReuseIdentifier: CoreTextChunkCollectionCell.reuseIdentifier)
+        collectionView.register(BrowserScrollTileCell.self, forCellWithReuseIdentifier: BrowserScrollTileCell.reuseIdentifier)
         collectionView.contentInset = contentInset
 
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.allowsSelection = false
         view.addSubview(collectionView)
+        let topConstraint = collectionView.topAnchor.constraint(
+            equalTo: view.topAnchor,
+            constant: barInsets.topBand
+        )
+        let bottomConstraint = view.bottomAnchor.constraint(
+            equalTo: collectionView.bottomAnchor,
+            constant: barInsets.bottomBand
+        )
+        collectionTopConstraint = topConstraint
+        collectionBottomConstraint = bottomConstraint
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            topConstraint,
+            bottomConstraint,
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
@@ -242,6 +259,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         collectionView.addGestureRecognizer(tapGesture)
 
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        longPress.delegate = self
         longPress.minimumPressDuration = 0.4
         longPress.cancelsTouchesInView = false
         collectionView.addGestureRecognizer(longPress)
@@ -269,6 +287,14 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        let point = touch.location(in: collectionView)
+        if let index = collectionView.indexPathForItem(at: point),
+           let cell = collectionView.cellForItem(at: index) as? BrowserScrollTileCell {
+            if gestureRecognizer is UILongPressGestureRecognizer { return false }
+            if gestureRecognizer === tapGesture {
+                return !cell.ownsTap(at: touch.location(in: cell))
+            }
+        }
         return true
     }
 
@@ -535,7 +561,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         applyReadingPositionIfPossible(cause: .initialLayout)
     }
 
-    func update(axis: CoreTextScrollAxis, horizontal: CGFloat, vertical: CGFloat, bottomMargin: CGFloat = 0) {
+    func update(
+        axis: CoreTextScrollAxis,
+        horizontal: CGFloat,
+        vertical: CGFloat,
+        bottomMargin: CGFloat = 0,
+        barInsets: ReaderScrollBarInsets = .zero
+    ) {
         let oldExtent = currentContentExtent
         let oldImageExtent = currentImageContentWidth
         let restoreChapter = visibleProgressChapter()
@@ -544,6 +576,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         horizontalInset = horizontal
         verticalInset = vertical
         self.bottomMargin = bottomMargin
+        applyBarInsets(axis == .vertical ? barInsets : .zero)
         collectionView.contentInset = contentInset
         collectionView.semanticContentAttribute = axis.semanticContentAttribute
         if let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout {
@@ -579,6 +612,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         for indexPath in collectionView.indexPathsForVisibleItems {
             if let cell = collectionView.cellForItem(at: indexPath) as? CoreTextChunkCollectionCell {
                 cell.applyAnnotations(annotations)
+            } else if let cell = collectionView.cellForItem(at: indexPath) as? BrowserScrollTileCell {
+                cell.applyAnnotations(annotations)
             }
         }
     }
@@ -588,6 +623,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         let changed = trimmed != playbackHighlightText
         playbackHighlightText = trimmed
         for cell in collectionView.visibleCells.compactMap({ $0 as? CoreTextChunkCollectionCell }) {
+            cell.applyPlaybackHighlight(text: playbackHighlightText)
+        }
+        for cell in collectionView.visibleCells.compactMap({ $0 as? BrowserScrollTileCell }) {
             cell.applyPlaybackHighlight(text: playbackHighlightText)
         }
         if changed, !(trimmed?.isEmpty ?? true) {
@@ -612,6 +650,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 highlightRect = rect
                 break
             }
+        }
+        if highlightRect == nil {
+            highlightRect = collectionView.visibleCells.compactMap { ($0 as? BrowserScrollTileCell)?.playbackHighlightBounds(in: collectionView) }.first
         }
         guard let rect = highlightRect else { return }
 
@@ -710,7 +751,15 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private var contentInset: UIEdgeInsets {
         switch scrollAxis {
         case .vertical:
-            return UIEdgeInsets(top: verticalInset, left: 0, bottom: verticalInset, right: 0)
+            // Only the 上下邊距. The header/footer bands are gone from the frame,
+            // not padded around inside it — padding does not clip, and text that
+            // scrolled into a padded region drew straight over the bars.
+            return UIEdgeInsets(
+                top: barInsets.topMargin,
+                left: 0,
+                bottom: barInsets.bottomMargin,
+                right: 0
+            )
         case .horizontalRTL:
             return UIEdgeInsets(top: 0, left: horizontalInset, bottom: 0, right: horizontalInset)
         }
@@ -738,6 +787,55 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     /// backdrop image is padded to. Deliberately the full viewport, not the inset content
     /// box: paged mode paints that backdrop across the entire page including its margins
     /// (`CoreTextPageView.drawContent`), and the padding exists to match it.
+    /// What one "page" is worth in 捲動 mode: the visible band between the bars,
+    /// which is what the reader actually sees move.
+    var autoScrollViewportHeight: CGFloat {
+        collectionView.bounds.height
+    }
+
+    /// 自動閱讀 in 捲動 mode: legado's `ContentTextView.scroll(-scrollOffset)`.
+    ///
+    /// Goes through `setScrollOffset` like everything else — six call sites once
+    /// wrote `contentOffset` with their own clamping and two of them disagreed,
+    /// which is how a restore could land 16pt off.
+    ///
+    /// - Returns: false once the content cannot move any further, which ends the
+    ///   mode the way legado's `fillPage` returning false does.
+    @discardableResult
+    func autoScroll(by points: CGFloat) -> Bool {
+        guard scrollAxis == .vertical, points > 0, points.isFinite else { return true }
+        let before = collectionView.contentOffset
+        setScrollOffset(
+            CGPoint(x: before.x, y: before.y + points),
+            source: .autoRead,
+            animated: false
+        )
+        return collectionView.contentOffset.y > before.y
+    }
+
+    /// Assigned before the view loads; `viewDidLoad` builds the constraints from it.
+    func setInitialBarInsets(_ insets: ReaderScrollBarInsets) {
+        guard !isViewLoaded else {
+            applyBarInsets(insets)
+            collectionView.contentInset = contentInset
+            return
+        }
+        barInsets = insets
+    }
+
+    /// Moves the two bands in or out of the collection view's frame.
+    ///
+    /// A frame change here alters the visible height, so the layout has to be
+    /// invalidated: cells are sized against `collectionView.bounds`.
+    private func applyBarInsets(_ newValue: ReaderScrollBarInsets) {
+        guard newValue != barInsets else { return }
+        barInsets = newValue
+        collectionTopConstraint?.constant = newValue.topBand
+        collectionBottomConstraint?.constant = newValue.bottomBand
+        collectionView.collectionViewLayout.invalidateLayout()
+        view.setNeedsLayout()
+    }
+
     private var currentViewportExtent: CGFloat {
         switch scrollAxis {
         case .vertical:
@@ -779,6 +877,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 self?.textAnnotations = annotations
                 for indexPath in self?.collectionView.indexPathsForVisibleItems ?? [] {
                     if let cell = self?.collectionView.cellForItem(at: indexPath) as? CoreTextChunkCollectionCell {
+                        cell.applyAnnotations(annotations)
+                    } else if let cell = self?.collectionView.cellForItem(at: indexPath) as? BrowserScrollTileCell {
                         cell.applyAnnotations(annotations)
                     }
                 }
@@ -1154,7 +1254,18 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     }
 
     private func visibleVideoAttachments() -> [(media: EPUBMediaAttachment, frame: CGRect)] {
-        collectionView.visibleCells.compactMap { $0 as? CoreTextChunkCollectionCell }
+        let browserVideos = collectionView.visibleCells.compactMap { $0 as? BrowserScrollTileCell }
+            .flatMap { cell -> [(media: EPUBMediaAttachment, frame: CGRect)] in
+                guard let tile = cell.currentTile else { return [] }
+                return cell.interactiveView.displayList.items.compactMap { item in
+                    guard case .image(let image) = item,
+                          let media = tile.chapter.mediaAttachments[image.nodeID], media.kind == .video else { return nil }
+                    let frame = cell.interactiveView.convert(image.rect.rawValue, to: view)
+                    guard frame.intersects(view.bounds.insetBy(dx: -32, dy: -32)) else { return nil }
+                    return (media, frame)
+                }
+            }
+        return browserVideos + collectionView.visibleCells.compactMap { $0 as? CoreTextChunkCollectionCell }
             .flatMap { cell -> [(media: EPUBMediaAttachment, frame: CGRect)] in
                 guard let chunk = cell.currentChunk else { return [] }
                 let attachments = chunk.attachments + chunk.blockRenderables.compactMap(\.imageAttachment)
@@ -1301,6 +1412,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private enum ScrollOffsetSource: String {
         case restore
         case ttsFollow
+        /// 自動閱讀's continuous scroll. Sixty writes a second, so it is the one
+        /// source that does not trace — see `setScrollOffset`.
+        case autoRead
     }
 
     /// **The only place `contentOffset` is written.**
@@ -1329,6 +1443,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         } else {
             collectionView.setContentOffset(clamped, animated: false)
         }
+        // A per-frame source would fill the log with sixty identical lines a
+        // second and drown the traces that exist to explain position bugs.
+        guard source != .autoRead else { return }
         posTrace(
             "offset.\(source.rawValue)",
             "from=\(String(format: "%.1f", scrollAxis == .vertical ? before.y : before.x)) "
@@ -1424,13 +1541,41 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        if indexPath.item < engine.chunks.count, case .browser(let tile) = engine.chunks[indexPath.item] {
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: BrowserScrollTileCell.reuseIdentifier,
+                                                         for: indexPath) as! BrowserScrollTileCell
+            cell.onAccessibilityMenu = { [weak self] in self?.onTap?() }
+            cell.onLinkActivate = { [weak self, weak cell] region in
+                guard let self, let cell else { return }
+                if let note = FootnoteStore.text(spineIndex: region.spineIndex, href: region.href) {
+                    FootnotePopoverHost.present(text: note, from: self, sourceView: cell.interactiveView,
+                                                sourceRect: region.pageLocalRect)
+                } else { onInternalLinkTap?(region.href) }
+            }
+            cell.onImageTap = { [weak self] item in
+                guard let self else { return }
+                if let media = tile.chapter.mediaAttachments[item.nodeID] {
+                    handleMediaTap(media)
+                    return
+                }
+                guard let image = item.image else { return }
+                let attachment = CoreTextPaginator.RenderedAttachment(rect: item.rect.rawValue, image: image,
+                    opacity: 1, sourceHref: item.source, alt: item.alt, linkHref: item.linkTarget,
+                    originalSize: image.size)
+                let preview = CoreTextImagePreviewController(attachment: attachment)
+                preview.modalPresentationStyle = .fullScreen
+                present(preview, animated: true)
+            }
+            cell.configure(tile: tile, horizontalInset: horizontalInset, leadingSpacing: chapterGap(for: indexPath.item))
+            return cell
+        }
         let cell = collectionView.dequeueReusableCell(
             withReuseIdentifier: CoreTextChunkCollectionCell.reuseIdentifier,
             for: indexPath
         )
         if let chunkCell = cell as? CoreTextChunkCollectionCell,
-           indexPath.item < engine.chunks.count {
-            let chunk = engine.chunks[indexPath.item]
+           indexPath.item < engine.chunks.count,
+           let chunk = engine.chunks[indexPath.item].legacyChunk {
             // Same sink as the centre tap, so VoiceOver reaches the reader toolbar.
             chunkCell.onAccessibilityMenu = { [weak self] in self?.onTap?() }
             chunkCell.bind(
@@ -1473,6 +1618,9 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             chunkCell.applyPlaybackHighlight(text: playbackHighlightText)
             chunkCell.applyAnnotations(textAnnotations)
             reconcileInlineVideos()
+        } else if let tileCell = cell as? BrowserScrollTileCell {
+            tileCell.applyPlaybackHighlight(text: playbackHighlightText)
+            tileCell.applyAnnotations(textAnnotations)
         }
     }
 
@@ -1607,6 +1755,15 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         // it, throws the hit test past the content, and drops every caller into the fallback
         // below — which is what made `reloadPreservingVisiblePosition` snap to the chunk start
         // and produced the "scroll down, stop, jump back" symptom.
+        if let index = collectionView.indexPathForItem(at: visibleAnchorPoint),
+           let cell = collectionView.cellForItem(at: index) as? BrowserScrollTileCell,
+           index.item < engine.chunks.count {
+            let item = engine.chunks[index.item]
+            let local = collectionView.convert(visibleAnchorPoint, to: cell.interactiveView)
+            if let char = item.stringIndex(atLocalPoint: local) {
+                return CoreTextReadingPosition(spineIndex: item.chapterIndex, charOffset: char)
+            }
+        }
         if let (_, chunk, localPoint) = hitTestChunk(at: visibleAnchorPoint) {
             let char = chunk.stringIndex(atLocalPoint: localPoint) ?? chunk.charRange.location
             return CoreTextReadingPosition(spineIndex: chunk.chapterIndex, charOffset: char)

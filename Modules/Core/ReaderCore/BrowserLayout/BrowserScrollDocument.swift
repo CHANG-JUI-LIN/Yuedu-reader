@@ -159,14 +159,9 @@ struct BrowserScrollDocument {
     func documentY(forCharOffset charOffset: Int) -> CGFloat {
         var best: CGFloat?
         for item in displayList.items {
-            guard case .text(let t) = item, t.sourceRange.length > 0 else { continue }
-            let end = t.sourceRange.location + t.sourceRange.length
-            if t.sourceRange.location <= charOffset, charOffset < end {
-                return t.rect.minY
-            }
-            if t.sourceRange.location >= charOffset {
-                best = min(best ?? t.rect.minY, t.rect.minY)
-            }
+            guard let (range, rect) = Self.sourceGeometry(item) else { continue }
+            if NSLocationInRange(charOffset, range) || (range.length == 0 && range.location == charOffset) { return rect.minY }
+            if range.location >= charOffset { best = min(best ?? rect.minY, rect.minY) }
         }
         return best ?? 0
     }
@@ -177,12 +172,22 @@ struct BrowserScrollDocument {
     func charOffset(atDocumentY y: CGFloat) -> Int {
         var best: (distance: CGFloat, offset: Int)?
         for item in displayList.items {
-            guard case .text(let t) = item, t.sourceRange.length > 0 else { continue }
-            let distance = abs(t.rect.minY - y)
+            guard let (range, rect) = Self.sourceGeometry(item) else { continue }
+            let distance = y < rect.minY ? rect.minY - y : max(0, y - rect.maxY)
             if best == nil || distance < best!.distance {
-                best = (distance, t.sourceRange.location)
+                best = (distance, range.location)
             }
         }
         return best?.offset ?? 0
     }
+    private static func sourceGeometry(_ item: DisplayItem) -> (NSRange, CGRect)? {
+        switch item {
+        case .text(let text) where text.sourceRange.length > 0:
+            return (text.sourceRange, text.rect.rawValue)
+        case .image(let image) where !image.isBackgroundPaint:
+            return (image.sourceRange, image.rect.rawValue)
+        default: return nil
+        }
+    }
+
 }

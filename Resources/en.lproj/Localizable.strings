@@ -2404,3 +2404,67 @@
 "翻譯" = "Translate";
 
 "選取文字" = "Select Text";
+
+// Built-in Microsoft Edge voices
+"微軟線上語音" = "Microsoft Online Voice";
+"微軟語音音色" = "Microsoft Voice";
+"內建語音" = "Built-in Voices";
+"停止試聽" = "Stop Preview";
+"正在連接微軟語音…" = "Connecting to Microsoft voice…";
+"你好，歡迎使用微軟語音朗讀。選一本喜歡的書，開始聆聽吧。" = "Hello, welcome to Microsoft voice reading. Choose a book you love and start listening.";
+"微軟語音無效，請重新選擇音色。" = "Invalid Microsoft voice. Please select a voice again.";
+"微軟語音回應格式異常，請稍後再試。" = "Microsoft returned an unexpected speech response. Please try again later.";
+"微軟語音未傳回音訊，請更換音色或稍後再試。" = "Microsoft returned no audio. Choose another voice or try again later.";
+"微軟語音服務無法使用（HTTP %d），請稍後再試。" = "Microsoft speech is unavailable (HTTP %d). Please try again later.";
+"微軟語音回應超過大小限制。" = "The Microsoft speech response exceeded the size limit.";
+"曉臻・台灣華語・女聲" = "HsiaoChen · Taiwan Mandarin · Female";
+"曉雨・台灣華語・女聲" = "HsiaoYu · Taiwan Mandarin · Female";
+"雲哲・台灣華語・男聲" = "YunJhe · Taiwan Mandarin · Male";
+"曉曉・普通話・女聲" = "Xiaoxiao · Mandarin · Female";
+"雲希・普通話・男聲" = "Yunxi · Mandarin · Male";
+"雲健・普通話・男聲" = "Yunjian · Mandarin · Male";
+"曉佳・粵語・女聲" = "HiuGaai · Cantonese · Female";
+"雲龍・粵語・男聲" = "WanLung · Cantonese · Male";
+"Aria・美式英語・女聲" = "Aria · American English · Female";
+"Guy・美式英語・男聲" = "Guy · American English · Male";
+"已匯入語音源" = "Imported Voices";
+
+/* 頁首頁尾條（欄位模型） */
+"頁眉" = "Header";
+"頁腳" = "Footer";
+"頁眉靠左" = "Header Left";
+"頁眉置中" = "Header Centre";
+"頁眉靠右" = "Header Right";
+"頁腳靠左" = "Footer Left";
+"頁腳置中" = "Footer Centre";
+"頁腳靠右" = "Footer Right";
+"欄位" = "Fields";
+"分隔線" = "Divider";
+"章節首頁隱藏頁眉" = "Hide Header on Chapter Openings";
+"顯示電量百分比" = "Show Battery Percentage";
+"字級" = "Text Size";
+"細" = "Light";
+"粗" = "Bold";
+"半粗" = "Semibold";
+"分數" = "Fraction";
+"正文預覽" = "Body preview";
+"示例書名" = "Sample Book";
+"第一章 示例章節" = "Chapter 1 Sample Chapter";
+"預覽使用示例書名與章節名，時間與電量為實際數值。" = "The preview uses a sample title and chapter; the time and battery are real.";
+"同一格可以放多個欄位，會以「·」分隔並排。" = "Several fields can share one slot; they sit side by side, separated by a middle dot.";
+"章節首頁的頁眉只是不畫出來，保留的空間不變——否則該頁會比其他頁多容納一行。" = "On a chapter's first page the header is only left undrawn; its space stays reserved, otherwise that page would fit one line more than the rest.";
+"兩條共用同一種樣式。顏色跟隨正文顏色。" = "Both bars share one style. The colour follows the body text.";
+"正文與兩條的距離改在「頁面邊距」的上下邊距調整。" = "Adjust the gap between the text and the bars under Page Margins → Vertical.";
+"這會恢復預設的欄位配置與樣式。" = "This restores the default field placement and style.";
+
+/* 快捷面板 · 自動閱讀 */
+"跟隨裝置深淺色" = "Match Device Appearance";
+"淡出" = "Fade";
+"捲動" = "Scroll";
+"退出自動閱讀" = "Exit Auto Read";
+"AutoRead.Format.Interval" = "About one page every %@s";
+"自動閱讀中" = "Auto Read On";
+"設置自動閱讀" = "Auto Read Settings";
+"上下滾屏" = "Scroll";
+"快" = "Fast";
+"翻頁方式" = "Page Turn Style";

@@ -71,10 +71,10 @@ struct ChapterOutline: Equatable {
     /// by construction rather than by luck.
     ///
     /// Stage 3 replaces this with `make(attributedString:…)` driving layout instead of trailing it.
-    static func measured(
+    static func measured<Item: ScrollFragmentMeasuring>(
         chapterIndex: Int,
-        chunks: ArraySlice<CoreTextChunk>,
-        extent: (CoreTextChunk) -> CGFloat
+        chunks: ArraySlice<Item>,
+        extent: (Item) -> CGFloat
     ) -> ChapterOutline {
         let fragments = chunks.map { chunk -> FragmentDescriptor in
             let height = extent(chunk)
@@ -95,9 +95,9 @@ struct ChapterOutline: Equatable {
     /// two can be read out of step, and any chunk the map fails to cover silently drops off the
     /// flat index and reports zero extent. Reading one source makes the mapping total by
     /// construction: every chunk lands in exactly one outline, and flat index `i` is `chunks[i]`.
-    static func grouped(
-        chunks: [CoreTextChunk],
-        extent: (CoreTextChunk) -> CGFloat
+    static func grouped<Item: ScrollFragmentMeasuring>(
+        chunks: [Item],
+        extent: (Item) -> CGFloat
     ) -> [ChapterOutline] {
         var result: [ChapterOutline] = []
         var index = 0

@@ -248,10 +248,17 @@ enum DSLayout {
     static let readerQuickPanelTopMenuWidth: CGFloat = 120
     /// Height of a landscape reading-background preview button.
     static let readerQuickPanelReadingBackgroundTileHeight: CGFloat = 82
-    /// Height reserved for a 3x2 reading-background page and its page indicator.
-    static let readerQuickPanelReadingBackgroundPagerHeight: CGFloat = 214
-    /// Fixed iOS 17 detent height for the reader quick settings sheet.
-    static let readerQuickPanelSheetHeight: CGFloat = 508
+    /// Width of one background tile in the quick panel's scrolling row. Sized so a
+    /// compact phone shows four and a half of them — enough that the fifth is
+    /// visibly cut off, which is what tells the reader the row scrolls.
+    static let readerQuickPanelBackgroundTileWidth: CGFloat = 74
+    /// Starting detent for the reader quick settings sheet, replaced by the
+    /// measured content height on the first layout pass.
+    static let readerQuickPanelSheetHeight: CGFloat = 420
+    /// Breathing room above and below the quick panel's content.
+    static let readerQuickPanelVerticalInset: CGFloat = 10
+    /// Room the sheet's own grabber needs above the content.
+    static let readerQuickPanelGrabberInset: CGFloat = 16
     /// Maximum width of the Apple Books-style floating reader controls.
     static let readerAppleBooksPanelWidth: CGFloat = 252
     /// Minimum hit target and visible size of Apple Books reader chrome controls.

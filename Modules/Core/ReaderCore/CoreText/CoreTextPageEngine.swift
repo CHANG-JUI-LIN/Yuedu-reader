@@ -240,7 +240,7 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
 }
 
 @MainActor
-final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding {
+final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, PageBarsProviding {
 
     private(set) var totalPages: Int = 0
     private(set) var currentPage: Int = 0
@@ -1427,7 +1427,13 @@ _layouts.removeAll()
         }
 
         traceOutcome = "rendered"
-        let image = Self.renderImage(layout: layout, pageIndex: localPage, size: renderSize, bgColor: bgColor.cgColor)
+        let image = Self.renderImage(
+            layout: layout,
+            pageIndex: localPage,
+            size: renderSize,
+            bgColor: bgColor.cgColor,
+            bars: pageBars(forGlobalPage: globalPage)
+        )
         storeSnapshotIfCurrent(image, key: key, spineIndex: spineIndex, localPage: localPage)
         return image
     }
@@ -1437,10 +1443,34 @@ _layouts.removeAll()
         snapshotLayoutRevisions = Dictionary(uniqueKeysWithValues: _layouts.keys.map { ($0, UUID()) })
     }
 
+    // MARK: - Page bars (頁眉／頁腳)
+
+    /// Global page index → the bars that page draws. Set by the reader.
+    var pageBarsProvider: ((Int) -> ReaderPageBars?)?
+
+    /// Bumped whenever the bars say something new without the pagination changing.
+    /// Part of `snapshotKey`, so a baked curl back-page or cover snapshot cannot
+    /// keep showing the clock from a minute ago.
+    private var pageBarsRevision: UInt = 0
+
+    func refreshPageBars() {
+        pageBarsRevision &+= 1
+        chapterSnapshots.removeAllObjects()
+    }
+
+    func pageBars(forGlobalPage globalPage: Int) -> ReaderPageBars? {
+        pageBarsProvider?(globalPage)
+    }
+
+    private func globalPage(spineIndex: Int, localPage: Int) -> Int {
+        guard spinePageOffsets.indices.contains(spineIndex) else { return localPage }
+        return spinePageOffsets[spineIndex] + localPage
+    }
+
     func snapshotKey(spineIndex: Int, localPage: Int) -> NSString? {
         guard let revision = snapshotLayoutRevisions[spineIndex],
               let layout = _layouts[spineIndex], layout.pageRanges.indices.contains(localPage) else { return nil }
-        return "\(revision.uuidString):\(spineIndex):\(localPage)" as NSString
+        return "\(revision.uuidString):\(spineIndex):\(localPage):\(pageBarsRevision)" as NSString
     }
 
     /// Both synchronous curl requests and asynchronous boundary renders commit
@@ -1481,9 +1511,10 @@ _layouts.removeAll()
         // Boundary pre-rendering uses the same key and budget as on-demand pages.
         guard let firstKey = snapshotKey(spineIndex: spineIndex, localPage: 0) else { return }
         if chapterSnapshots.object(forKey: firstKey) == nil {
+            let firstBars = pageBars(forGlobalPage: globalPage(spineIndex: spineIndex, localPage: 0))
             Task {
                 let img = await Task.detached(priority: .userInitiated) {
-                    Self.renderImage(layout: layout, pageIndex: 0, size: size, bgColor: bgCGColor)
+                    Self.renderImage(layout: layout, pageIndex: 0, size: size, bgColor: bgCGColor, bars: firstBars)
                 }.value
                 self.storeSnapshotIfCurrent(img, key: firstKey, spineIndex: spineIndex, localPage: 0)
             }
@@ -1492,9 +1523,10 @@ _layouts.removeAll()
         let lastIdx = layout.pageRanges.count - 1
         if lastIdx > 0, let lastKey = snapshotKey(spineIndex: spineIndex, localPage: lastIdx) {
             if chapterSnapshots.object(forKey: lastKey) == nil {
+                let lastBars = pageBars(forGlobalPage: globalPage(spineIndex: spineIndex, localPage: lastIdx))
                 Task {
                     let img = await Task.detached(priority: .userInitiated) {
-                        Self.renderImage(layout: layout, pageIndex: lastIdx, size: size, bgColor: bgCGColor)
+                        Self.renderImage(layout: layout, pageIndex: lastIdx, size: size, bgColor: bgCGColor, bars: lastBars)
                     }.value
                     self.storeSnapshotIfCurrent(img, key: lastKey, spineIndex: spineIndex, localPage: lastIdx)
                 }
@@ -1513,7 +1545,8 @@ _layouts.removeAll()
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
         size: CGSize,
-        bgColor: CGColor
+        bgColor: CGColor,
+        bars: ReaderPageBars? = nil
     ) -> UIImage {
         return UIGraphicsImageRenderer(size: size).image { ctx in
             let c = ctx.cgContext
@@ -1523,7 +1556,8 @@ _layouts.removeAll()
                 layout: layout,
                 pageIndex: pageIndex,
                 in: c,
-                bounds: CGRect(origin: .zero, size: size)
+                bounds: CGRect(origin: .zero, size: size),
+                bars: bars
             )
         }
     }
@@ -1619,6 +1653,7 @@ _layouts.removeAll()
                 (self.onLinkNavigate ?? self.onNavigateToPage)?(targetPage)
             }
         }
+        vc.pageBars = pageBars(forGlobalPage: globalPage)
         let readingPosition = CoreTextReadingPosition(
             spineIndex: spineIndex,
             charOffset: Int(layout.pageRanges[localPage].location)

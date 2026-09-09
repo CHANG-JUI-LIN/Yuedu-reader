@@ -79,6 +79,8 @@ struct BrowserLayoutConfig {
     var paragraphSpacing: CGFloat = 0
     var letterSpacing: CGFloat = 0
     var isBold: Bool = false
+    /// Reader default; an authored text-align declaration still wins in the cascade.
+    var defaultTextAlignment: NSTextAlignment = .natural
     var regexHighlightConfiguration: RegexHighlightConfiguration = .disabled
     var readerStyleAppearance: ReaderStyleAppearance = .light
     var readerStyleAssetRevision: UInt64 = 0
@@ -123,7 +125,8 @@ final class ComputedStyleTreeBuilder {
             fontSize: rootFontSize,
             fontFamilies: configFontFamilies,
             color: textColor,
-            backgroundColor: backgroundColor
+            backgroundColor: backgroundColor,
+            textAlign: readerConfig.defaultTextAlignment
         )
         // 行距. `BrowserLayoutConfig.lineHeight` was set from the reader
         // setting and then read by nobody, so the slider moved and the page did
@@ -268,7 +271,7 @@ final class ComputedStyleTreeBuilder {
         // HTML presentational hints form their own cascade origin between UA
         // defaults and author CSS. Keep normalization outside the CSS frontend
         // so a future Lexbor DOM adapter can feed the same typed declarations.
-        applyPresentationalHints(
+        Self.applyPresentationalHints(
             HTMLPresentationalHintExtractor.extract(
                 from: semanticElement.htmlSemanticElement
             ),
@@ -302,7 +305,7 @@ final class ComputedStyleTreeBuilder {
         return style
     }
 
-    private func applyPresentationalHints(
+    static func applyPresentationalHints(
         _ hints: [HTMLPresentationalHint],
         to style: inout ComputedStyle
     ) {
@@ -333,7 +336,7 @@ fileprivate struct ApplyContext {
     let configFontFamilies: [String]
 }
 
-private extension ComputedStyle {
+extension ComputedStyle {
     /// Applies UA defaults onto an inherited style: UA sets non-inherited box
     /// props, and UA font-size overrides are *absolute* unless UA said relative.
     mutating func applyingUA(_ ua: ComputedStyle) -> ComputedStyle {

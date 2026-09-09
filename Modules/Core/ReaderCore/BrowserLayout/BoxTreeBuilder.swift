@@ -191,6 +191,14 @@ enum BoxTreeBuilder {
     ) {
         var localStack = anchorStack
         if let anchor = node.anchorID { localStack.append(anchor) }
+        let firstRun = runs.count
+        let sourceStart = sourceText.currentOffset
+        defer {
+            if runs.count > firstRun {
+                preserveInlineDecoration(node, firstRun: firstRun, sourceStart: sourceStart,
+                    sourceEnd: sourceText.currentOffset, runs: &runs)
+            }
+        }
         for child in node.children {
             switch child {
             case .text(let raw):
@@ -240,6 +248,35 @@ enum BoxTreeBuilder {
                 }
             }
         }
+    }
+
+    private static func preserveInlineDecoration(
+        _ node: ComputedStyleNode, firstRun: Int, sourceStart: Int,
+        sourceEnd: Int, runs: inout [InlineRun]
+    ) {
+        let style = node.style
+        let startEdge = style.paddingLeft != .px(0) || style.borderLeftWidth > 0
+        let endEdge = style.paddingRight != .px(0) || style.borderRightWidth > 0
+        let hasPaint = style.backgroundColor != nil || style.borderTopWidth > 0
+            || style.borderBottomWidth > 0 || startEdge || endEdge
+        guard hasPaint else { return }
+        let decoration = InlineDecoration(nodeID: node.nodeID, style: style,
+            sourceRange: NSRange(location: sourceStart, length: sourceEnd - sourceStart))
+        for index in firstRun..<runs.count {
+            runs[index].inlineDecorations.insert(decoration, at: 0)
+        }
+        // U+FFFC reserves shaped-only padding. U+2060 joins each edge to
+        // its adjacent glyph so padding cannot be orphaned on a wrapped line.
+        func edge(_ isStart: Bool) -> InlineRun {
+            var run = InlineRun(text: isStart ? "\u{FFFC}\u{2060}" : "\u{2060}\u{FFFC}", style: style,
+                sourceRange: NSRange(location: isStart ? sourceStart : sourceEnd, length: 0),
+                nodeID: node.nodeID, linkTarget: node.linkTarget)
+            run.inlineDecorations = [decoration]
+            run.decorationEdge = isStart
+            return run
+        }
+        if endEdge { runs.append(edge(false)) }
+        if startEdge { runs.insert(edge(true), at: firstRun) }
     }
 
     // MARK: - Anchor registration

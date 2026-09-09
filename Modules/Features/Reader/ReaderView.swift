@@ -28,10 +28,17 @@ struct ReaderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var systemColorScheme
+    /// Pixel density for rasterizing an imported battery template. Read from the
+    /// environment rather than `UIScreen.main`: everything the bars compute runs
+    /// during body evaluation, and reaching into UIKit from there is what froze
+    /// the shelf entry once already (see `effectiveReaderSafeTop`).
+    @Environment(\.displayScale) var readerDisplayScale
     @ObservedObject var settings = GlobalSettings.shared
     @ObservedObject var subscriptionStore = SubscriptionStore.shared
     @StateObject var readerConfig = ReaderConfig.shared
-    @StateObject private var readerOverlayClock = ClockBatteryModel()
+    /// Not private: the per-page bars are built in `ReaderView+PageBars` and the
+    /// clock is what makes them tick.
+    @StateObject var readerOverlayClock = ClockBatteryModel()
 
     // MARK: - Speculative Pre-Layout for Cross-Chapter Scrolling
     @State private var scrollVelocity: CGFloat = 0.0
@@ -80,6 +87,12 @@ struct ReaderView: View {
     @State private var readerFontImportError: ReaderFontImportPresentationError?
     @State private var readerStyleImportRoute: ReaderStyleImportRoute?
     @State var showQuickThemePanel = false
+    /// What the quick panel asked to open. iOS drops a sheet requested while the
+    /// sheet it came from is still dismissing, so the request is recorded here and
+    /// run from the panel's real `onDismiss` — the same contract
+    /// `Technotes/iOS17MenuModalPresentation.md` sets out, and the reason 現代's
+    /// book card lost 聽書 before it was applied there.
+    @State var quickPanelDeferredRoute: ReaderQuickPanelRoute?
     @State var showReaderSearch = false
     @State var readerSearchSelection = ""
     @State var readerTranslationSelection = ""
@@ -97,10 +110,8 @@ struct ReaderView: View {
     /// 開著的付費牆；`nil` 表示沒開。
     @State var paywallFeature: PremiumFeature?
     @State var showTouchZoneEditor = false
-    @State var readerHeaderFooterEditorModel: ReaderHeaderFooterEditorModel?
     @State var readerOverlaySVGAssetStore: ReaderOverlaySVGAssetStore?
     @State var readerOverlaySVGAssetStoreIsPersistent = false
-    @State var showReaderOverlaySVGStoreError = false
 
     // Online chapter lazy loading
     @StateObject var readerViewModel = ReaderViewModel()
@@ -117,10 +128,27 @@ struct ReaderView: View {
 
     /// Top safe area (points), passed to EPUB engine as minimum margin-top.
     @State var readerSafeAreaTop: CGFloat = 59
+    /// Tracked the same way as the top, and for the same reason — the bars ask for
+    /// it while the body is being evaluated. Seeded with the common home-indicator
+    /// inset so the first layout is close before the real value arrives.
+    @State var readerSafeAreaBottom: CGFloat = 34
     @State var readerViewportSize: CGSize = UIScreen.main.bounds.size
     @StateObject private var volumeHandler = VolumeKeyHandler()
 
-    @StateObject private var autoReader = AutoReadController()
+    /// Not private: the footer pill in `ReaderView+Footer` reads its running state.
+    @StateObject var autoReader = AutoReadController()
+
+    /// Builds 頁眉／頁腳 for any page the paged engine asks about. A reference type
+    /// so the escaping closure the engine holds cannot freeze a copy of this
+    /// struct's state — see `bindPageBarsProvider`.
+    /// `@State`, not `@StateObject`: it publishes nothing, and a `@MainActor`
+    /// class cannot satisfy `ObservableObject`'s nonisolated requirements.
+    @State var pageBarsController = ReaderPageBarsController()
+    /// Bumped when the bars say something new without the pagination changing, so
+    /// pages already on screen get told.
+    @State var pageBarsRevision: UInt = 0
+    /// 自動閱讀's route into the scroll view, filled in by `CoreTextScrollHostView`.
+    @State var autoScrollHandle = ReaderAutoScrollHandle()
     @StateObject var ttsCoordinator = TTSCoordinator()
     @StateObject var mediaOverlayCoordinator = EPUBMediaOverlayPlaybackCoordinator()
     /// Plays an EPUB chapter's authored background soundtrack (controls-less autoplay/loop `<audio>`).
@@ -153,6 +181,8 @@ struct ReaderView: View {
     @State var showTTSPanel = false
     @State var showDownloadOptions = false
     @State var showOnlineBookDetail = false
+    @State var onlineBookDetailSnapshot: OnlineBook?
+    @State var pendingDetailChapterIndex: Int?
     /// 現代 interface: the card hanging off the cover thumbnail in the top bar.
     @State var showModernBookCard = false
     /// 書卡裡按下的動作。每個動作都要開 sheet，而 sheet 在 popover 還在收的時候會被系統丟掉
@@ -163,7 +193,9 @@ struct ReaderView: View {
     /// Cover art for the 現代 chrome, read from disk once instead of on every body
     /// pass (the top bar and the book card both draw it).
     @State var modernCoverImage: UIImage?
-    @State private var showAutoReadPanel = false
+    /// Whether the auto-read controls are showing over the page. Not private: the
+    /// footer pill in `ReaderView+Footer` is what opens them.
+    @State var showAutoReadPanel = false
     @State var ttsChapterIndex: Int? = nil
     /// Chapter the narration is blocked on at a chapter boundary, while the engine holds the
     /// audio session open. Non-nil only between `beginWaitingForTTSChapter` and its resolution.
@@ -423,24 +455,17 @@ struct ReaderView: View {
     /// Extra offset that CoreText paginator's grid alignment adds to the bottom
     /// content inset. Footer overlay must shift up by this amount so the visual
     /// gap matches `footerTextGap + footerBottomPadding`.
+    /// Grid alignment has to be computed from the *same* insets pagination uses.
+    /// It was not: this read a header-aware `topInset` overload while paged
+    /// pagination took its inset from the hand-tuned content reservation, so the
+    /// two could differ by 50pt and the footer gap drifted accordingly. Both now
+    /// come from `readerBarContentInsets`.
     var gridAdjustment: CGFloat {
-        let topInset = ReaderLayoutMetrics.topInset(
-            safeTop: effectiveReaderSafeTop,
-            headerVisible: readerConfig.readerHeaderVisible && !effectiveScrollMode,
-            headerTopPadding: readerConfig.readerHeaderTopPadding,
-            headerTextGap: readerConfig.readerHeaderTextGap
-        )
-        let footerVisible = readerConfig.readerFooterVisible && !effectiveScrollMode
-        let bottomInset = ReaderLayoutMetrics.bottomInset(
-            safeBottom: footerVisible ? 0 : windowSafeBottom,
-            footerVisible: footerVisible,
-            footerBottomPadding: readerConfig.footerBottomPadding,
-            footerTextGap: readerConfig.footerTextGap
-        )
+        let insets = readerBarContentInsets
         return ReaderLayoutMetrics.gridAdjustment(
             viewHeight: currentReaderRenderSize.height,
-            topInset: topInset,
-            bottomInset: bottomInset,
+            topInset: insets.top,
+            bottomInset: insets.bottom,
             fontSize: readerConfig.fontSize,
             lineSpacing: readerConfig.lineSpacing
         )
@@ -1364,7 +1389,7 @@ struct ReaderView: View {
 
     // ── Body ──
     var body: some View {
-        NavigationStack {
+        ReaderNavigationContainer {
             buildBody()
                 .navigationBarBackButtonHidden(true)
                 .toolbar {
@@ -1444,9 +1469,12 @@ struct ReaderView: View {
     }
 
     private func buildBody() -> AnyView {
-        let overlayVisibility = ReaderOverlayPresentationPolicy.visibility(
-            isScrolling: effectiveScrollMode,
-            isEditing: readerHeaderFooterEditorModel != nil
+        let barContent = readerOverlayContentSnapshot
+        let barVisibility = ReaderOverlayPresentationPolicy.visibility(
+            layout: settings.readerBarLayout,
+            headerEnabled: readerConfig.readerHeaderVisible,
+            footerEnabled: readerConfig.readerFooterVisible,
+            isChapterOpeningPage: barContent.chapterPage == 1
         )
         let readerLayers = AnyView(
             ZStack(alignment: .top) {
@@ -1492,9 +1520,6 @@ struct ReaderView: View {
                 )
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
-                .disablesReaderContentInteraction(
-                    whileOverlayEditorIsActive: readerHeaderFooterEditorModel != nil
-                )
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if effectiveScrollMode {
                 // scrollBody must stay mounted so the collection host drives the
@@ -1509,9 +1534,6 @@ struct ReaderView: View {
                             .transition(.opacity)
                     }
                 }
-                .disablesReaderContentInteraction(
-                    whileOverlayEditorIsActive: readerHeaderFooterEditorModel != nil
-                )
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
                 .animation(.easeOut(duration: 0.2), value: epubRenderer.scrollEngineReady)
             } else if let ctEngine = epubRenderer.engine, epubRenderer.isCoreTextReady {
@@ -1532,6 +1554,8 @@ struct ReaderView: View {
                     pageTurnCommand: pageTurnCommand,
                     clearExternalTargetPosition: { clearCoreTextExternalTarget() },
                     currentPage: $currentPage,
+                    pageBarsRevision: pageBarsRevision,
+                    autoReadReveal: autoReadReveal,
                     onPageChanged: { newPage, visiblePosition in
                         scheduleCoreTextPageChanged(newPage, engine: ctEngine, visiblePosition: visiblePosition)
                     },
@@ -1547,9 +1571,6 @@ struct ReaderView: View {
                 )
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
-                .disablesReaderContentInteraction(
-                    whileOverlayEditorIsActive: readerHeaderFooterEditorModel != nil
-                )
                 .transition(.opacity.animation(.easeOut(duration: 0.25)))
             } else if usesCoreTextEPUB {
                 VStack {
@@ -1578,23 +1599,57 @@ struct ReaderView: View {
                 chapterLoadFailureOverlay(message: message)
             }
 
-            if overlayVisibility.showsRuntimeCanvas,
-               !chapters.isEmpty,
-               let svgAssetStore = readerOverlaySVGAssetStore {
-                let overlayContent = readerOverlayContentSnapshot
-                ReaderOverlayCanvas(
-                    layout: settings.readerOverlayLayout,
-                    scope: ReaderOverlayPageScope.resolve(
-                        chapterPage: overlayContent.chapterPage
-                    ),
-                    content: overlayContent,
-                    readerStyle: readerOverlayEditorReaderStyle,
-                    mode: .runtime,
-                    svgAssetStore: svgAssetStore,
-                    editorActions: nil
-                )
-                .ignoresSafeArea()
-                .transition(.opacity.animation(.easeOut(duration: 0.2)))
+            // Paged CoreText draws its own bars inside each page, so they turn with
+            // it. What is left here is the two cases that cannot: scroll mode, where
+            // a stationary band is the whole point, and fixed-layout pages, which
+            // are images with no CoreText surface to draw into.
+            if !chapters.isEmpty,
+               !usesPageBakedBars,
+               barVisibility.showsHeader || barVisibility.showsFooter {
+                readerBars(content: barContent, visibility: barVisibility)
+                    .transition(.opacity.animation(.easeOut(duration: 0.2)))
+            }
+
+            // The pill lives at the bottom of the screen, independent of the
+            // footer bar — it shows with the footer off and overlaps whatever the
+            // footer's centre slot happens to hold.
+            if autoReader.isActive, !showAutoReadPanel {
+                VStack {
+                    Spacer()
+                    AutoReadPill(secondsPerPage: autoReader.secondsPerPage) {
+                        withAnimation(DSAnimation.standard) { showAutoReadPanel = true }
+                    }
+                    .padding(.bottom, effectiveReaderSafeBottom + DSSpacing.sm)
+                }
+                .transition(.opacity)
+                .zIndex(44)
+            }
+
+            // Sits where the pill was, over the page rather than in a sheet: the
+            // reader has just collapsed every other surface to watch the page turn
+            // itself, and a modal would put one straight back.
+            if autoReader.isActive, showAutoReadPanel {
+                VStack {
+                    Spacer()
+                    AutoReadControlPanel(
+                        autoReader: autoReader,
+                        onOpenTOC: {
+                            withAnimation(DSAnimation.standard) { showAutoReadPanel = false }
+                            showTOC = true
+                        },
+                        onOpenSettings: {
+                            withAnimation(DSAnimation.standard) { showAutoReadPanel = false }
+                            showSettings = true
+                        },
+                        onClose: {
+                            withAnimation(DSAnimation.standard) { showAutoReadPanel = false }
+                            exitAutoRead()
+                        }
+                    )
+                    .padding(.bottom, effectiveReaderSafeBottom + DSSpacing.sm)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(45)
             }
             if showBars { readerChrome }
             if showBars,
@@ -1630,22 +1685,6 @@ struct ReaderView: View {
                 .zIndex(100)
             }
 
-            if overlayVisibility.showsEditorCanvas,
-               let editorModel = readerHeaderFooterEditorModel,
-               let svgAssetStore = readerOverlaySVGAssetStore {
-                ReaderHeaderFooterEditorView(
-                    model: editorModel,
-                    content: readerOverlayContentSnapshot,
-                    readerStyle: readerOverlayEditorReaderStyle,
-                    safeAreaInsets: readerOverlayEditorSafeAreaInsets,
-                    horizontalPageMargin: effectivePageMarginH,
-                    svgAssetStore: svgAssetStore,
-                    importedFonts: settings.userFonts,
-                    onDismiss: { readerHeaderFooterEditorModel = nil }
-                )
-                .transition(.opacity)
-                .zIndex(110)
-            }
             }
         )
         let configuredLayers = AnyView(
@@ -1654,14 +1693,29 @@ struct ReaderView: View {
             GeometryReader { g in
                 Color.clear
                     .preference(key: ReaderSafeAreaTopKey.self, value: g.safeAreaInsets.top)
+                    .preference(key: ReaderSafeAreaBottomKey.self, value: g.safeAreaInsets.bottom)
                     .preference(key: ReaderViewportSizeKey.self, value: g.size)
             }
         )
         .onPreferenceChange(ReaderSafeAreaTopKey.self) {
             readerSafeAreaTop = max($0, windowSafeTop)
         }
+        .onPreferenceChange(ReaderSafeAreaBottomKey.self) {
+            // An event handler is the correct place to consult UIKit; the getter
+            // the bars call must not.
+            readerSafeAreaBottom = max($0, windowSafeBottom)
+        }
         .onPreferenceChange(ReaderViewportSizeKey.self) { newSize in
             handleReaderViewportSizeChange(newSize)
+        }
+        // Everything the bars show, in one Equatable value: the clock ticking, the
+        // battery moving, a theme or style edit, the safe area settling. Any of
+        // them and the pages already on screen need their bars rebuilt.
+        .onChange(of: readerPageBarsEnvironment) { _, _ in
+            refreshPageBars()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .readerPageBarsNeedRedraw)) { _ in
+            refreshPageBars()
         }
         // iPad rotation fix: SwiftUI does NOT re-evaluate the reader's geometry on rotation, so the
         // `.background` GeometryReader / `onPreferenceChange` above never fires and the spread mode
@@ -1676,7 +1730,7 @@ struct ReaderView: View {
         .statusBarHidden(
             ReaderOverlayPresentationPolicy.hidesStatusBar(
                 showsReaderChrome: showBars,
-                isEditing: readerHeaderFooterEditorModel != nil
+                isEditing: false
             )
         )
         // The home indicator is the other half of the system chrome the immersive
@@ -1688,7 +1742,7 @@ struct ReaderView: View {
         .persistentSystemOverlays(
             ReaderOverlayPresentationPolicy.hidesHomeIndicator(
                 showsReaderChrome: showBars,
-                isEditing: readerHeaderFooterEditorModel != nil
+                isEditing: false
             ) ? .hidden : .automatic
         )
         .animation(.easeInOut(duration: 0.25), value: showBars)
@@ -1697,23 +1751,19 @@ struct ReaderView: View {
         // this at each `showBars = false` site left panels that popped back up the next
         // time the bars were shown.
         .onChange(of: showBars) { _, visible in
+            applyAutoReadMenuPause(barsVisible: visible)
             guard !visible else { return }
             appleBooksActivePanel = nil
             showModernBookCard = false
+        }
+        .onChange(of: showAutoReadPanel) { _, _ in
+            applyAutoReadMenuPause(barsVisible: showBars)
         }
         .modifier(HideTabBarModifier())
         .alert(localized("TXT 目錄修復未完成"), isPresented: $showTXTIndexFailure) {
             Button(localized("確定"), role: .cancel) { showBars = true }
         } message: {
             Text(localized("為避免閱讀進度或書籤錯移，尚未套用新目錄。原有位置資料已保留。請保留原始 TXT，並匯出診斷記錄以供檢查。"))
-        }
-        .alert(
-            localized("頁首頁尾編輯"),
-            isPresented: $showReaderOverlaySVGStoreError
-        ) {
-            Button(localized("確定"), role: .cancel) {}
-        } message: {
-            Text(localized("無法建立頁首頁尾資產儲存空間，請稍後再試。"))
         }
         .alert(String(format: localized("將「%@」加入書架？"), snapshotBook?.title ?? ""), isPresented: $showAddToShelfAlert) {
             Button(localized("加入書架")) {
@@ -1765,6 +1815,10 @@ struct ReaderView: View {
                 snapshotBook = book
                 restoreReaderDisplayStateAfterResume()
             }
+            if let chapterIndex = pendingDetailChapterIndex {
+                pendingDetailChapterIndex = nil
+                jumpToChapter(chapterIndex)
+            }
             rebuildReaderOverlayLegacyContentIndex()
             beginReadingStatsSession()
             syncCoreTextTextAnnotations()
@@ -1781,7 +1835,8 @@ struct ReaderView: View {
                 }
             }
             if volumeHandler.isEnabled { volumeHandler.startListening() }
-            autoReader.onNextPage = { goToNextPage() }
+            bindAutoRead()
+            bindPageBarsProvider()
             ttsCoordinator.showsGlobalFloatingPlayer = true
             // Allow the in-reader mini-player the whole time the reader is on screen,
             // independent of the bars — bar visibility only repositions it now.
@@ -1833,7 +1888,8 @@ struct ReaderView: View {
                 }
             }
             volumeHandler.stopListening()
-            autoReader.pause()
+            autoReader.stopForReaderExit()
+            applyAutoReadIdleTimer()
             mediaOverlayCoordinator.stop()
             EPUBVideoPlaybackManager.shared.stopAll()
             backgroundAudioCoordinator.stop()
@@ -2009,10 +2065,6 @@ struct ReaderView: View {
             }
         }
         .onChanged(of: settings.scrollMode) { enabled in
-            if enabled, let editorModel = readerHeaderFooterEditorModel {
-                editorModel.cancel()
-                readerHeaderFooterEditorModel = nil
-            }
             handleScrollModeChanged(enabled)
         }
         .onChanged(of: settings.readerWritingMode) { writingMode in
@@ -2076,10 +2128,6 @@ struct ReaderView: View {
                     isVerticalWritingMode: effectiveWritingMode.isVertical,
                     hasParagraphReviews: currentBookHasParagraphReviews,
                     onOpenFontImporter: requestFirstLevelReaderFontImporter,
-                    onOpenHeaderFooterEditor: {
-                        guard !effectiveScrollMode else { return }
-                        presentReaderHeaderFooterEditor()
-                    },
                     onOpenTouchZoneEditor: {
                         guard subscriptionStore.isProActive, !effectiveScrollMode else { return }
                         showBars = false
@@ -2089,7 +2137,7 @@ struct ReaderView: View {
                 )
             }
         }
-        .sheet(isPresented: $showQuickThemePanel) {
+        .sheet(isPresented: $showQuickThemePanel, onDismiss: presentDeferredQuickPanelRoute) {
             ReaderQuickThemePanelView(
                 fontSize: Binding(
                     get: { fontSize },
@@ -2102,17 +2150,20 @@ struct ReaderView: View {
                 pageTurnOption: quickPageTurnOption,
                 isVerticalWritingMode: effectiveWritingMode.isVertical,
                 onSelectPageTurnOption: { applyQuickPageTurnOption($0) },
-                onCustomize: {
+                onStartAutoRead: {
+                    // The whole flow: enter the mode, put every surface away, and
+                    // leave the reader on the page. From here the only control is
+                    // the footer pill, which starts collapsed and opens on tap.
+                    enterAutoRead()
+                    showAutoReadPanel = false
+                    showBars = false
                     showQuickThemePanel = false
-                    DispatchQueue.main.async {
-                        showSettings = true
-                    }
                 },
-                onClose: { showQuickThemePanel = false }
+                onCustomize: {
+                    quickPanelDeferredRoute = .settings
+                    showQuickThemePanel = false
+                },
             )
-            .presentationDetents([.height(DSLayout.readerQuickPanelSheetHeight)])
-            .presentationDragIndicator(.hidden)
-            .interactiveDismissDisabled()
         }
         .sheet(isPresented: $showReaderSearch, onDismiss: { readerSearchSelection = "" }) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
@@ -2164,35 +2215,15 @@ struct ReaderView: View {
                 }
             }
         }
-        // Modal, NOT a `navigationDestination`. Verified twice on device: pushing the
-        // detail onto the reader's own NavigationStack pops the reader itself off the
-        // shelf's stack, so 返回 lands on the bookshelf instead of the page — and
-        // because that removal never goes through `ReaderNavigationCoordinator`, the
-        // coordinator stays convinced a reader is presented and refuses every later
-        // open ("can't get back into the reader", see HomeView.openBook and
-        // ReaderNavigationCoordinator.reconcileIfReaderDetached).
-        //
-        // The reader is a UIKit controller pushed directly onto the shelf's SwiftUI
-        // NavigationStack (BookCardNavigationGate), and its inner NavigationStack is
-        // not insulated from that. Do not reintroduce a push here.
-        .fullScreenCover(isPresented: $showOnlineBookDetail) {
-            if let detail = onlineBookDetail {
-                NavigationStack {
-                    OnlineBookView(book: detail, sourceSwitchBookId: bookId)
-                        .environmentObject(store)
-                        .navigationTitle(localized("書籍詳情"))
-                        .toolbarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarLeading) {
-                                Button {
-                                    showOnlineBookDetail = false
-                                } label: {
-                                    Image(systemName: "xmark")
-                                }
-                                .accessibilityLabel(localized("關閉"))
-                            }
-                        }
-                }
+        // UIKit-pushed readers route details through their outer coordinator.
+        // Activating an inner SwiftUI destination there previously reconciled
+        // the reader off the shelf stack. SwiftUI-owned readers use this route.
+        .navigationDestination(isPresented: Binding(
+            get: { readerNavigator == nil && showOnlineBookDetail },
+            set: { showOnlineBookDetail = $0 }
+        )) {
+            if let detail = onlineBookDetailSnapshot {
+                onlineBookDetailDestination(detail)
             }
         }
         .sheet(isPresented: $showTOC) {
@@ -2324,11 +2355,7 @@ struct ReaderView: View {
                 }
             }
         }
-        .sheet(isPresented: $showAutoReadPanel) {
-            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-                AutoReadPanelView(autoReader: autoReader)
-            }
-        }
+
         .sheet(isPresented: $showChangeSourceSheet) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableExpandedWidth) {
                 changeSourceSheetContent
@@ -2422,6 +2449,16 @@ struct ReaderView: View {
         }
         readerSettingsDeferredPresentation.select(.styleImporter(route))
         showSettings = false
+    }
+
+    /// Runs whatever the quick panel asked for, once its sheet is actually gone.
+    private func presentDeferredQuickPanelRoute() {
+        guard let route = quickPanelDeferredRoute else { return }
+        quickPanelDeferredRoute = nil
+        switch route {
+        case .settings:
+            showSettings = true
+        }
     }
 
     private func presentDeferredReaderSettingsRoute() {

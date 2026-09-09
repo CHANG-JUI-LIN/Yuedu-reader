@@ -46,7 +46,7 @@ enum GeneratedCoverPalette {
         tone(top: 0xEDF2F0, bottom: 0xDCE8E3, line: 0x93B0A6, ink: 0x3F6459),  // 淡青
         tone(top: 0xF8F0F0, bottom: 0xEEDEDE, line: 0xC2A0A0, ink: 0x7A4B4B),  // 淺藕
         tone(top: 0xEEF2F7, bottom: 0xDCE5EF, line: 0x9FB2CA, ink: 0x42587A),  // 霧藍
-        tone(top: 0xF2F5EB, bottom: 0xE3E9D7, line: 0xA9B98C, ink: 0x556438),  // 淺豆
+        tone(top: 0xF2F5EB, bottom: 0xE3E9D7, line: 0xA9B98C, ink: 0x556438),  // 淺豆    
         tone(top: 0xF5EFF5, bottom: 0xE7DCE8, line: 0xB09EB6, ink: 0x63496C),  // 淡紫
     ]
 

@@ -1,0 +1,283 @@
+{
+  "baseCommit": "b06801ded952625cb33c57274765327603476abb",
+  "mainHead": "3016d1d36f03062761b1eca96eacec5f95f74e87",
+  "goldenCommit": "b674e672",
+  "goldenSHA256": "bb8ce279d3f7b3254705d07bc62557956d29a27f9e68f012e0dcbd1619a24f5f",
+  "device": "56B241AC-0378-48AD-B0AB-86C260DE8E34",
+  "diagnosticSimulator": "9022EC10-D454-4270-AA9B-36D15CAD67C6",
+  "fixtureSHA256": "39ebcb0a2daa37adc8ebd3bf84a252b03c92e0a051ad9f84c8aa566902609005",
+  "fixtureBytes": 60212162,
+  "historicalSourceCommit": "a4715bc156239795542789452aeb967ba87f89c5",
+  "historicalVerifiedRuntime": "26.5 (23F77)",
+  "currentRuntime": "27.0 (24A5423a)",
+  "fullComparison": {
+    "counts": {
+      "UNCHANGED": 187,
+      "CURRENT_SOURCE_ONLY": 30,
+      "HISTORICAL_AND_CURRENT_SOURCE": 241
+    },
+    "historicalChanged": 241,
+    "currentChanged": 271,
+    "sourceChanged": 271,
+    "coverage": 458,
+    "totals": {
+      "golden": {
+        "pages": 3820,
+        "fragments": 137294
+      },
+      "historical": {
+        "pages": 3809,
+        "fragments": 137018
+      },
+      "current": {
+        "pages": 4204,
+        "fragments": 139402
+      }
+    }
+  },
+  "goldenModified": false,
+  "committed": false,
+  "status": "attribution_in_progress",
+  "testRuns": {
+    "current-font-sample": {
+      "result": "Passed",
+      "passedMethods": 1,
+      "failedMethods": 0,
+      "skipped": 0,
+      "executedCasesPassed": 1,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/current-font-sample.xcresult"
+    },
+    "old-font-sample": {
+      "result": "Passed",
+      "passedMethods": 1,
+      "failedMethods": 0,
+      "skipped": 0,
+      "executedCasesPassed": 1,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/old-font-sample.xcresult"
+    },
+    "old-font-zero-cascade-sample": {
+      "result": "Passed",
+      "passedMethods": 1,
+      "failedMethods": 0,
+      "skipped": 0,
+      "executedCasesPassed": 1,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/old-font-zero-cascade-sample.xcresult"
+    },
+    "historical-source-sample": {
+      "result": "Passed",
+      "passedMethods": 1,
+      "failedMethods": 0,
+      "skipped": 0,
+      "executedCasesPassed": 1,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/historical-source-sample.xcresult"
+    },
+    "historical-source-full": {
+      "result": "Passed",
+      "passedMethods": 1,
+      "failedMethods": 0,
+      "skipped": 0,
+      "executedCasesPassed": 1,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/historical-source-full.xcresult"
+    },
+    "current-source-full": {
+      "result": "Passed",
+      "passedMethods": 14,
+      "failedMethods": 0,
+      "skipped": 0,
+      "executedCasesPassed": 16,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/current-source-full.xcresult"
+    },
+    "restored-policy-full": {
+      "result": "Passed",
+      "passedMethods": 1,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/restored-policy-full.xcresult"
+    },
+    "first-line-font-context": {
+      "result": "Passed",
+      "passedMethods": 1,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/first-line-font-context.xcresult"
+    },
+    "first-line-feature-runs": {
+      "result": "Passed",
+      "passedMethods": 1,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/first-line-feature-runs.xcresult"
+    },
+    "restored-current-regression": {
+      "result": "Passed",
+      "passedMethods": 13,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/restored-current-regression.xcresult"
+    },
+    "inline-run-geometry-red-2": {
+      "result": "Failed",
+      "passedMethods": 0,
+      "failedMethods": 1,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/inline-run-geometry-red-2.xcresult"
+    },
+    "inline-run-geometry-green": {
+      "result": "Passed",
+      "passedMethods": 14,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/inline-run-geometry-green.xcresult"
+    },
+    "inline-run-geometry-corpus": {
+      "result": "Failed",
+      "passedMethods": 12,
+      "failedMethods": 1,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/inline-run-geometry-corpus.xcresult",
+      "note": "Capture and determinism/source-mapping methods passed; the newly added soft-break caret oracle failed and was corrected and rerun in inline-run-geometry-final."
+    },
+    "inline-run-geometry-final": {
+      "result": "Passed",
+      "passedMethods": 4,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/inline-run-geometry-final.xcresult",
+      "executedCasesPassed": 9
+    },
+    "worktree-BrowserLayoutRubyMeasurementTests": {
+      "result": "Passed",
+      "passedMethods": 3,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/worktree-BrowserLayoutRubyMeasurementTests.xcresult"
+    },
+    "worktree-BrowserLayoutRubyFragmentTests": {
+      "result": "Passed",
+      "passedMethods": 2,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/worktree-BrowserLayoutRubyFragmentTests.xcresult"
+    },
+    "worktree-BrowserLayoutRubyInteractionTests": {
+      "result": "Passed",
+      "passedMethods": 3,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/worktree-BrowserLayoutRubyInteractionTests.xcresult"
+    },
+    "worktree-BrowserLayoutImageTests": {
+      "result": "Passed",
+      "passedMethods": 20,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/worktree-BrowserLayoutImageTests.xcresult"
+    },
+    "main-BrowserLayoutInlineRunGeometryTests": {
+      "result": "BuildFailed",
+      "testsExecuted": false,
+      "reason": "Concurrent AutoReadController changes temporarily redeclared DisplayLinkProxy. User confirmed another task owns this work.",
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-BrowserLayoutInlineRunGeometryTests.xcresult"
+    },
+    "main-retry-BrowserLayoutFontFallbackTests": {
+      "result": "Passed",
+      "passedMethods": 9,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-retry-BrowserLayoutFontFallbackTests.xcresult"
+    },
+    "main-retry-BrowserLayoutInlineRunGeometryTests": {
+      "result": "Passed",
+      "passedMethods": 4,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-retry-BrowserLayoutInlineRunGeometryTests.xcresult",
+      "executedCasesPassed": 9
+    },
+    "main-retry-BrowserLayoutRubyFragmentTests": {
+      "result": "Passed",
+      "passedMethods": 2,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-retry-BrowserLayoutRubyFragmentTests.xcresult"
+    },
+    "main-retry-BrowserLayoutRubyMeasurementTests": {
+      "result": "Passed",
+      "passedMethods": 3,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-retry-BrowserLayoutRubyMeasurementTests.xcresult"
+    },
+    "main-retry-BrowserLayoutSelectionContractTests": {
+      "result": "Passed",
+      "passedMethods": 4,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-retry-BrowserLayoutSelectionContractTests.xcresult"
+    },
+    "main-retry-BrowserLayoutImageTests": {
+      "result": "Passed",
+      "passedMethods": 20,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-retry-BrowserLayoutImageTests.xcresult"
+    },
+    "main-retry-BrowserLayoutRubyInteractionTests": {
+      "result": "Passed",
+      "passedMethods": 3,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-retry-BrowserLayoutRubyInteractionTests.xcresult"
+    },
+    "main-retry-BrowserLayoutSourceMappingTests": {
+      "result": "Passed",
+      "passedMethods": 5,
+      "failedMethods": 0,
+      "skipped": 0,
+      "resultBundle": "/tmp/yuedu-linebreak-20260909/main-retry-BrowserLayoutSourceMappingTests.xcresult"
+    }
+  },
+  "restoredPolicyControl": {
+    "coverage": 458,
+    "matchesHistoricalRows": 458,
+    "extraDifferences": 0,
+    "productPoliciesRestored": true
+  },
+  "firstFragmentProbe": {
+    "spine": 17,
+    "sourceRange": {
+      "location": 1,
+      "length": 20
+    },
+    "textDigest": "391c3e45",
+    "goldenWidthRounded": 337.49,
+    "historicalWidthRounded": 333.24,
+    "historicalCTLineWidth": 333.23638132295713,
+    "physicalFont": ".PingFangUITextTC-Regular",
+    "fontSize": 17,
+    "goldenGlyphEvidenceAvailable": false,
+    "rootCauseEstablished": false,
+    "paragraphContextReproducesRoundedFirstWidth": true,
+    "successfulChapterGoldenRestorations": 0
+  },
+  "inlineRunGeometryFix": {
+    "coverage": 458,
+    "changedFingerprints": 163,
+    "changedPageOrFragmentCounts": 0,
+    "changedVersusGolden": 272,
+    "historicalSourceLengthMismatches": 0,
+    "sourceLengthTotal": 2231613,
+    "newGoldenMismatchSpines": [
+      135
+    ],
+    "mainIntegrated": true,
+    "mainVerification": "passed",
+    "rootCause": "DOM slices were independently reshaped and lost contextual kerning.",
+    "sourcePath": "Modules/Core/ReaderCore/BrowserLayout/InlineLayout.swift",
+    "testClass": "BrowserLayoutInlineRunGeometryTests",
+    "changedRowsArtifact": "attribution-2026-09-09-run-geometry.tsv",
+    "mainRegressionClasses": 8,
+    "mainRegressionPassedMethods": 50,
+    "concurrentCompileConflict": "Resolved by concurrent work; this task did not edit AutoReadController or DisplayLinkProxy."
+  }
+}

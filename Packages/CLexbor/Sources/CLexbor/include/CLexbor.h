@@ -30,8 +30,10 @@ typedef struct {
 typedef struct {
     YLXBytes property;
     YLXBytes value;
+    /* Complete originating selector list; empty for an inline attribute. */
     YLXBytes selector;
     uint32_t specificity;
+    /* Caller-supplied stylesheet identity; attach order determines cascade order. */
     uint32_t source_order;
     uint8_t origin;
     uint8_t important;
@@ -39,7 +41,8 @@ typedef struct {
 
 typedef int (*YLXElementCallback)(const YLXElementSnapshot *, void *);
 typedef int (*YLXAttributeCallback)(uint64_t, YLXBytes, YLXBytes, void *);
-typedef int (*YLXTextCallback)(uint64_t, YLXBytes, void *);
+/* Text and element IDs share document preorder; parent IDs preserve mixed content. */
+typedef int (*YLXTextCallback)(uint64_t, uint64_t, YLXBytes, void *);
 typedef int (*YLXDeclarationCallback)(uint64_t, const YLXWinningDeclaration *, void *);
 
 const char *ylx_lexbor_version(void);
@@ -47,6 +50,11 @@ YLXDocument *ylx_document_create(const uint8_t *bytes, size_t length,
                                  YLXStatus *status);
 void ylx_document_destroy(YLXDocument *document);
 size_t ylx_document_element_count(const YLXDocument *document);
+/* Parsed __UNDEF declarations, counted once per authored declaration. Includes
+   both invalid CSS and valid syntax unsupported by the pinned parser. */
+size_t ylx_document_unparsed_declaration_count(const YLXDocument *document);
+/* Rules outside the flat style-rule subset; an ignored subtree counts once. */
+size_t ylx_document_unsupported_rule_count(const YLXDocument *document);
 size_t ylx_debug_live_document_count(void);
 
 YLXStatus ylx_document_attach_stylesheet(YLXDocument *, const uint8_t *, size_t,

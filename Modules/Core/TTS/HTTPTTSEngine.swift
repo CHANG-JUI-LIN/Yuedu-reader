@@ -54,7 +54,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// session after a seek/new chapter from accidentally resuming the previous chunk.
     private var audioPlayer: TTSChunkAudioPlayer?
     private var loadedPlayerIndex: Int?
-    private let audioProvider: TTSAudioProvider
+    private var audioProvider: TTSAudioProvider
+    private let injectedAudioProvider: TTSAudioProvider?
     private var activeTasks: [Int: Task<Void, Never>] = [:]
     private var audioCache: [Int: Data] = [:]
     private var chunks: [String] = []
@@ -89,8 +90,9 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     // cloud-TTS request (and its first-audio latency) reasonable.
     private let targetChunkLength = 300
 
-    init(audioProvider: TTSAudioProvider = CustomHTTPProvider()) {
-        self.audioProvider = audioProvider
+    init(audioProvider: TTSAudioProvider? = nil) {
+        self.injectedAudioProvider = audioProvider
+        self.audioProvider = audioProvider ?? CustomHTTPProvider()
         super.init()
     }
 
@@ -116,6 +118,17 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
 
         resetPlaybackState()
+        do {
+            // Capture the voice for this narration unit so queued preloads cannot change
+            // voice when the settings screen edits the selection mid-request.
+            audioProvider = try injectedAudioProvider ?? TTSAudioProviderSelection.make(
+                template: GlobalSettings.shared.httpTtsUrlTemplate,
+                isDirectChapterAudio: isDirectChapterAudio
+            )
+        } catch {
+            onError?(error)
+            return
+        }
         let ranges = isDirectChapterAudio
             ? [TTSChunkRange(text: text, sourceRange: NSRange(location: 0, length: (text as NSString).length))]
             : TTSPronunciationProjector.chunks(text, targetLength: targetChunkLength, hints: pronunciationHints)
@@ -135,7 +148,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         lastTitle = title
         lastRate = rate
         serverControlsSpeed = !isDirectChapterAudio
-            && GlobalSettings.shared.httpTtsUrlTemplate.contains("speakSpeed")
+            && (audioProvider is EdgeTTSAudioProvider
+                || GlobalSettings.shared.httpTtsUrlTemplate.contains("speakSpeed"))
         currentIndex = 0
         isPaused = false
         isPlaying = true
@@ -399,6 +413,11 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         rate: Float,
         index: Int
     ) async throws -> Data {
+        // Edge returns explicit protocol/service failures. Surface them without the legacy
+        // imported-source retry delay; retrying an incompatible handshake cannot repair it.
+        if provider is EdgeTTSAudioProvider {
+            return try await provider.audioData(for: text, title: title, rate: rate)
+        }
         var lastError: Error?
         for attempt in 0...maxDownloadRetries {
             do {
@@ -477,6 +496,12 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// Move past a segment the provider could not deliver, or end the session once too many
     /// in a row have failed. See `shouldEndSessionAfterSkips` for why both outcomes exist.
     private func skipOrFailCurrentChunk(index: Int, token: UUID, error: Error) {
+        // Built-in Edge must report a failed synthesis/decoder at the current position.
+        // Its service errors are not imported-source paragraph omissions to skip over.
+        if audioProvider is EdgeTTSAudioProvider {
+            failPlayback(TTSPlaybackError.chunkUnavailable(index: index, underlying: error), token: token)
+            return
+        }
         consecutiveChunkFailures += 1
         guard !Self.shouldEndSessionAfterSkips(consecutiveFailures: consecutiveChunkFailures) else {
             // Playback is about to stop with the user listening. Skipping a segment is

@@ -8,7 +8,22 @@ final class EPUBPageRenderer: ObservableObject {
 
     // MARK: - CoreText engine
 
-    private(set) var engine: (any PageRenderingProvider)?
+    private(set) var engine: (any PageRenderingProvider)? {
+        didSet { bindPageBarsToEngine() }
+    }
+
+    /// The reader owns this before an asynchronous EPUB open creates its engine.
+    /// Keep it on the renderer so every engine creation/replacement receives the
+    /// same bar settings, including TXT and online source replacements.
+    var pageBarsProvider: ((Int) -> ReaderPageBars?)? {
+        didSet { bindPageBarsToEngine() }
+    }
+
+    private func bindPageBarsToEngine() {
+        guard let provider = engine as? PageBarsProviding else { return }
+        provider.pageBarsProvider = pageBarsProvider
+        provider.refreshPageBars()
+    }
     @Published private(set) var layoutMode: EPUBLayoutMode = .reflowable
     @Published private(set) var pageProgressionDirection: EPUBPageProgressionDirection = .default
     @Published private(set) var fixedLayoutSpread: FixedLayoutSpread = .auto
@@ -403,21 +418,11 @@ final class EPUBPageRenderer: ObservableObject {
         )
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
-        // EPUB stays on legacy for every chapter and page-turn style. Do not
-        // capability-scan into browserAuto: its pagination/rendering parity is
-        // not yet sufficient for the production reader.
-        self.engine = newEngine
-        #if DEBUG && targetEnvironment(simulator)
-        // Explicit Simulator acceptance hook, not a rollout setting. Device and
-        // Release readers remain Legacy; UI tests exercise BrowserAuto's real
-        // scanner, page host and gestures without bypassing capability checks.
-        if ProcessInfo.processInfo.arguments.contains("-reader-interaction-browser-auto") {
-            self.engine = BrowserLayoutPageEngine(
-                resource: EPUBBrowserLayoutResourceAdapter(session: session),
-                delegate: newEngine, settings: settings, mode: .browserAuto
-            )
-        }
-        #endif
+        self.engine = BrowserLayoutPageEngine(
+            resource: EPUBBrowserLayoutResourceAdapter(session: session),
+            delegate: newEngine, settings: settings, mode: .browserAuto
+        )
+        self.scrollEngine?.browserAutoEngine = self.engine as? BrowserLayoutPageEngine
         isCoreTextReady = false
 
         if effectiveSize.width > 0 {

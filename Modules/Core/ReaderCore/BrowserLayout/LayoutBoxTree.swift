@@ -39,6 +39,21 @@ struct AtomicInline {
 /// One run of inline content inside a line box. `sourceRange` points into the
 /// chapter's `sourceText` (see `BrowserLayoutDocument`) — concatenating line-run
 /// ranges in document order reassembles the visible text.
+/// Non-inherited paint/edge ownership survives flattening nested inline nodes.
+struct InlineDecoration {
+    let nodeID: Int
+    let style: ComputedStyle
+    let sourceRange: NSRange
+}
+
+struct InlineLineDecoration {
+    /// X is relative to line.contentX; Y is relative to the block content top.
+    var rect: CGRect
+    let owner: InlineDecoration
+    let paintsStartEdge: Bool
+    let paintsEndEdge: Bool
+}
+
 struct LineRun {
     let sourceRange: NSRange
     let shapedRange: NSRange?
@@ -50,6 +65,8 @@ struct LineRun {
     let linkTarget: String?
     let atomic: AtomicInline?         // non-nil = replaced element run (image)
     let ruby: RubyBox?
+    var inlineDecorations: [InlineDecoration] = []
+    var isDecorationEdge = false
 
     init(
         sourceRange: NSRange,
@@ -88,6 +105,7 @@ struct LayoutLine {
     /// for precise string-index → typographic-offset mapping (kerning,
     /// ligatures, RTL, emoji clusters). Nil when unavailable.
     let ctLine: CTLine?
+    var inlineDecorations: [InlineLineDecoration] = []
 }
 
 enum BlockBoxType {

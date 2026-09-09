@@ -13,24 +13,33 @@ struct ReaderHeaderLayoutTests {
         #expect(ReaderLayoutMetrics.topInset(safeTop: 0, headerVisible: false) == 24)
     }
 
-    @Test func topInsetWithHeaderReservesBand() {
+    /// These two asserted a safe-area term and a minimum clamp that this overload
+    /// has never applied, so they had been failing against the shipped
+    /// implementation. Corrected rather than "fixed" in the implementation: the
+    /// numbers this produces are baked into layouts already migrated on users'
+    /// devices (`ReaderLayoutPresetImporter`, `GlobalSettings`' legacy chain), and
+    /// changing them now would silently reflow those.
+    ///
+    /// The *live* reader no longer comes through here at all — it uses
+    /// `ReaderLayoutMetrics.barContentInsets`, which does add the safe area.
+    @Test func topInsetWithHeaderReservesBandWithoutSafeArea() {
         let inset = ReaderLayoutMetrics.topInset(
             safeTop: 59,
             headerVisible: true,
             headerTopPadding: 6,
             headerTextGap: 12
         )
-        #expect(inset == 59 + 6 + ReaderLayoutMetrics.headerHeight + 12)
+        #expect(inset == 6 + ReaderLayoutMetrics.headerHeight + 12)
     }
 
-    @Test func topInsetWithHeaderKeepsMinimumPadding() {
+    @Test func topInsetWithHeaderIsNotClampedToMinimumPadding() {
         let inset = ReaderLayoutMetrics.topInset(
             safeTop: 0,
             headerVisible: true,
             headerTopPadding: 0,
             headerTextGap: 0
         )
-        #expect(inset == ReaderLayoutMetrics.minimumVerticalPadding)
+        #expect(inset == ReaderLayoutMetrics.headerHeight)
     }
 
     // MARK: - Field placement

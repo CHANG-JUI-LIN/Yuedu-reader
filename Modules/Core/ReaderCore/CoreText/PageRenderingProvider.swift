@@ -293,6 +293,20 @@ extension SnapshotRenderable {
     func renderSnapshot(forPage globalPage: Int) -> UIImage? { nil }
 }
 
+/// Engines that draw 頁眉／頁腳 as part of the page.
+///
+/// CoreText and BrowserLayout both carry bars in page views and snapshots.
+/// Fixed-layout readers retain their separate overlay presentation.
+@MainActor
+protocol PageBarsProviding: AnyObject {
+    /// Global page index → the bars that page should carry.
+    var pageBarsProvider: ((Int) -> ReaderPageBars?)? { get set }
+    /// The bars' *content* changed (clock tick, battery, style) without the
+    /// pagination changing. Drops baked snapshots so a curl back-page cannot show
+    /// last minute's clock.
+    func refreshPageBars()
+}
+
 @MainActor
 protocol PageViewControllerVending: AnyObject {
     func pageViewController(at index: Int) -> UIViewController

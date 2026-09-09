@@ -484,8 +484,7 @@ extension ReaderView {
     }
 
     func alignReaderToTTSAnchorIfNeeded() {
-        guard readerHeaderFooterEditorModel == nil,
-              let anchor = ttsPlaybackAnchor,
+        guard               let anchor = ttsPlaybackAnchor,
               chapters.indices.contains(anchor.spineIndex),
               !isReaderAtTTSAnchor(anchor)
         else { return }
@@ -506,8 +505,7 @@ extension ReaderView {
     /// turns the page only when that text now sits on a different page. Paged CoreText
     /// mode only — scroll mode and the "jump back to TTS" browse state are left alone.
     func followTTSPlaybackHighlight() {
-        guard readerHeaderFooterEditorModel == nil,
-              ttsCoordinator.playbackState == .playing,
+        guard               ttsCoordinator.playbackState == .playing,
               !showTTSJumpPrompt,            // user navigated away — let them browse
               !effectiveScrollMode,
               let engine = epubRenderer.engine, usesCoreTextEPUB
@@ -628,7 +626,7 @@ extension ReaderView {
             }
             return startTTSChapter(target, syncReader: syncReader)
         }
-        let shouldSyncReader = syncReader && readerHeaderFooterEditorModel == nil
+        let shouldSyncReader = syncReader
         mediaOverlayCoordinator.stop()
         let narration = narrationForTTSChapter(chapterIndex)
         var text = narration.text
@@ -733,7 +731,7 @@ extension ReaderView {
         ttsPendingChapterIndex = nil
         setActiveTTSAnchor(
             .chapterStart(target),
-            alignReader: readerHeaderFooterEditorModel == nil
+            alignReader: true
         )
         ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title, text: text)
         prepareNextTTSChapter(after: target)

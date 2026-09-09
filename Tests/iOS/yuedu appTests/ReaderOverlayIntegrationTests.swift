@@ -1,3 +1,4 @@
+import CoreFoundation
 import Testing
 @testable import yuedu_app
 
@@ -9,48 +10,89 @@ struct ReaderOverlayIntegrationTests {
         #expect(ReaderOverlayPageScope.resolve(chapterPage: 0) == .chapterBody)
     }
 
-    @Test("Paged reading shows one runtime overlay canvas")
-    func pagedReadingShowsRuntimeOverlay() {
+    /// The whole point of the bar model: `visibility` has no scroll parameter, so
+    /// there is no expression in which scroll mode loses its bars. This test would
+    /// stop compiling — not merely fail — if one were reintroduced.
+    @Test("Both bars show whenever they are enabled and carry a field")
+    func enabledBarsShow() {
         let visibility = ReaderOverlayPresentationPolicy.visibility(
-            isScrolling: false,
-            isEditing: false
+            layout: .default,
+            headerEnabled: true,
+            footerEnabled: true,
+            isChapterOpeningPage: false
         )
 
-        #expect(visibility.showsRuntimeCanvas)
-        #expect(!visibility.showsEditorCanvas)
+        #expect(visibility.showsHeader)
+        #expect(visibility.showsFooter)
     }
 
-    @Test("Scrolling reading hides fixed overlays")
-    func scrollingReadingHidesOverlays() {
+    @Test("A bar with no assigned field reserves nothing")
+    func emptyBarIsHidden() {
+        var layout = ReaderBarLayout.default
+        for kind in ReaderOverlayComponentKind.allCases {
+            layout.setSlot(.hidden, for: kind)
+        }
+
         let visibility = ReaderOverlayPresentationPolicy.visibility(
-            isScrolling: true,
-            isEditing: false
+            layout: layout,
+            headerEnabled: true,
+            footerEnabled: true,
+            isChapterOpeningPage: false
         )
 
-        #expect(!visibility.showsRuntimeCanvas)
-        #expect(!visibility.showsEditorCanvas)
+        #expect(!visibility.showsHeader)
+        #expect(!visibility.showsFooter)
     }
 
-    @Test("Editor replaces the runtime overlay canvas")
-    func editorDoesNotDuplicateRuntimeOverlay() {
+    @Test("Turning a bar off hides it even when fields are assigned")
+    func disabledBarIsHidden() {
         let visibility = ReaderOverlayPresentationPolicy.visibility(
-            isScrolling: false,
-            isEditing: true
+            layout: .default,
+            headerEnabled: false,
+            footerEnabled: true,
+            isChapterOpeningPage: false
         )
 
-        #expect(!visibility.showsRuntimeCanvas)
-        #expect(visibility.showsEditorCanvas)
+        #expect(!visibility.showsHeader)
+        #expect(visibility.showsFooter)
     }
 
-    @Test("Scrolling mode suppresses an active fixed-overlay editor")
-    func scrollingModeSuppressesEditor() {
+    @Test("Chapter-opening pages can drop the header without touching the footer")
+    func chapterOpeningHidesHeaderOnly() {
         let visibility = ReaderOverlayPresentationPolicy.visibility(
-            isScrolling: true,
-            isEditing: true
+            layout: .default,
+            headerEnabled: true,
+            footerEnabled: true,
+            isChapterOpeningPage: true
         )
 
-        #expect(!visibility.showsRuntimeCanvas)
-        #expect(!visibility.showsEditorCanvas)
+        #expect(!visibility.showsHeader)
+        #expect(visibility.showsFooter)
+    }
+
+    /// Pagination must reserve the header band on every page. If the chapter's
+    /// first page kept its band back, that page would fit more lines than the
+    /// rest and the paginator would disagree with itself at every chapter
+    /// boundary — which is why `ReaderView.readerBarContentInsets` always asks
+    /// with `isChapterOpeningPage: false`.
+    @Test("Hiding the header on chapter openings never changes reserved height")
+    func chapterOpeningDoesNotReflow() {
+        let reserved = ReaderOverlayPresentationPolicy.visibility(
+            layout: .default,
+            headerEnabled: true,
+            footerEnabled: true,
+            isChapterOpeningPage: false
+        )
+        let insets = ReaderLayoutMetrics.barContentInsets(
+            safeTop: 59,
+            safeBottom: 34,
+            showsHeader: reserved.showsHeader,
+            showsFooter: reserved.showsFooter,
+            verticalMargin: 12
+        )
+
+        #expect(insets.top > 59)
+        #expect(insets.bottom > 34)
     }
 
     @Test("Overlay editor always hides the system status bar")
@@ -107,34 +149,65 @@ struct ReaderOverlayIntegrationTests {
         )
     }
 
-    @Test("Component movement never changes content reservations")
-    func movementDoesNotReflow() {
-        var layout = ReaderOverlayLayout.default
-        let original = ReaderOverlayPaginationPolicy.insets(for: layout)
 
-        layout.components[0].position = ReaderOverlayNormalizedPoint(x: 0.5, y: 0.5)
-
-        #expect(ReaderOverlayPaginationPolicy.insets(for: layout) == original)
-    }
-
-    @Test("Only explicit content reservations change pagination insets")
-    func onlyReservationsChangeInsets() {
-        var layout = ReaderOverlayLayout.default
-        let original = ReaderOverlayPaginationPolicy.insets(for: layout)
-
-        layout.components.append(
-            ReaderOverlayComponent.make(
-                kind: .customText,
-                position: ReaderOverlayNormalizedPoint(x: 0.25, y: 0.75)
-            )
+    /// The free-position model needed a policy to promise that dragging a
+    /// component never reflowed the text — position and pagination were separate
+    /// systems that had to be kept in step by hand. Slots removed the problem:
+    /// what changes the reserved band is whether a bar is shown, nothing else.
+    @Test("Only a bar appearing or disappearing changes the reserved band")
+    func onlyBarPresenceChangesReservation() {
+        var layout = ReaderBarLayout.default
+        let baseline = ReaderLayoutMetrics.barContentInsets(
+            safeTop: 59,
+            safeBottom: 34,
+            showsHeader: true,
+            showsFooter: true,
+            verticalMargin: 12
         )
-        layout.components[0].style.fontSize = 72
-        #expect(ReaderOverlayPaginationPolicy.insets(for: layout) == original)
 
-        layout.contentReservations = ReaderOverlayContentReservations(top: 44, bottom: 52)
+        // Moving a field between slots, restyling it, adding another one — none of
+        // these touch the band.
+        layout.setSlot(.headerRight, for: .chapterTitle)
+        layout.setSlot(.headerCenter, for: .bookTitle)
+        layout.style.fontSize = ReaderBarStyle.fontSizeRange.upperBound
+        let visibility = ReaderOverlayPresentationPolicy.visibility(
+            layout: layout,
+            headerEnabled: true,
+            footerEnabled: true,
+            isChapterOpeningPage: false
+        )
         #expect(
-            ReaderOverlayPaginationPolicy.insets(for: layout)
-                == ReaderOverlayContentReservations(top: 44, bottom: 52)
+            ReaderLayoutMetrics.barContentInsets(
+                safeTop: 59,
+                safeBottom: 34,
+                showsHeader: visibility.showsHeader,
+                showsFooter: visibility.showsFooter,
+                verticalMargin: 12
+            ) == baseline
+        )
+
+        // Emptying the header does.
+        for kind in ReaderOverlayComponentKind.allCases {
+            layout.setSlot(ReaderBarSlot.slots(in: .footer).contains(layout.slot(for: kind))
+                ? layout.slot(for: kind)
+                : .hidden,
+                for: kind)
+        }
+        let emptied = ReaderOverlayPresentationPolicy.visibility(
+            layout: layout,
+            headerEnabled: true,
+            footerEnabled: true,
+            isChapterOpeningPage: false
+        )
+        #expect(!emptied.showsHeader)
+        #expect(
+            ReaderLayoutMetrics.barContentInsets(
+                safeTop: 59,
+                safeBottom: 34,
+                showsHeader: emptied.showsHeader,
+                showsFooter: emptied.showsFooter,
+                verticalMargin: 12
+            ).top < baseline.top
         )
     }
 }

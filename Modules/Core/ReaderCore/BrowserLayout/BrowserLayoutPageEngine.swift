@@ -365,7 +365,27 @@ final class BrowserLayoutImageStore {
 /// The browser engine depends only on `BrowserLayoutResourceProviding` and
 /// reader MODEL types — never on ReaderView/GlobalSettings/Readium UI.
 @MainActor
-final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProviding {
+final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProviding, PageBarsProviding {
+    var pageBarsProvider: ((Int) -> ReaderPageBars?)? {
+        didSet { refreshPageBars() }
+    }
+
+    func refreshPageBars() {
+        delegate.pageBarsProvider = { [weak self] page in
+            guard let self else { return nil }
+            let (spine, local) = self.delegate.localPosition(for: page)
+            guard self.spinePageOffsets.indices.contains(spine) else { return nil }
+            return self.pageBarsProvider?(self.spinePageOffsets[spine] + local)
+        }
+        delegate.refreshPageBars()
+        for page in annotationPages.allObjects {
+            if let position = page.readingPositionForBars,
+               let index = pageIndex(for: position) {
+                page.pageBars = pageBarsProvider?(index)
+            }
+        }
+    }
+
 
     // MARK: - Protocol state
 
@@ -800,7 +820,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         rebuildOffsets()
     }
 
-    private func makeBrowserConfig(fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable) -> BrowserLayoutConfig {
+    private func makeBrowserConfig(fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable,
+        scrollSettings: ReaderRenderSettings? = nil, scrollSize: CGSize? = nil) -> BrowserLayoutConfig {
+        let settings = scrollSettings ?? self.settings
+        let contentWidth = scrollSize?.width ?? self.contentWidth
+        let contentHeight = scrollSize?.height ?? self.contentHeight
+        let themeTextColor = scrollSettings?.textColor ?? self.themeTextColor
+        let themeBackgroundColor = scrollSettings?.backgroundColor ?? self.themeBackgroundColor
         // Use the same reader-font policy as the EPUB builder before shaping.
         // Snapshot the selection; an in-flight chapter must not read mutable UI state.
         let selectedFont = settings.fontPostScriptName
@@ -818,6 +844,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             paragraphSpacing: settings.paragraphSpacing,
             letterSpacing: settings.letterSpacing,
             isBold: settings.isBold,
+            defaultTextAlignment: .justified,
             regexHighlightConfiguration: settings.regexHighlightConfiguration,
             readerStyleAppearance: settings.readerStyleAppearance,
             readerStyleAssetRevision: settings.readerStyleAssetRevision,
@@ -1237,7 +1264,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 list,
                 size: renderSize,
                 backgroundColor: themeBackgroundColor,
-                readerBackgroundImage: currentReaderBackgroundImage()
+                readerBackgroundImage: currentReaderBackgroundImage(),
+                bars: pageBarsProvider?(globalPage)
             )
         case .legacyFallback, .legacyEngineFailure:
             return delegate.renderSnapshot(forPage: delegatePageIndex(for: spine, localPage: local))
@@ -1291,6 +1319,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             ) { _ in }
             vc.pageView.configureTextInteraction(sourceText: layout.sourceText, spineIndex: spine,
                                                 annotations: textAnnotations, paragraphRanges: layout.paragraphRanges)
+            vc.pageView.readingPositionForBars = CoreTextReadingPosition(spineIndex: spine, charOffset: offset)
+            vc.pageView.pageBars = pageBarsProvider?(index)
             annotationPages.add(vc.pageView)
             // Bound after construction so the closure can reference THIS page's
             // controller — it is the presenter, and it must be the instance that
@@ -1684,6 +1714,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         spinePageOffsets = offsets
         chapterPageCounts = counts
         totalPages = running
+        // Chapter counts change the composite page space. Invalidate delegate
+        // snapshots and update visible bars after that mapping becomes valid.
+        refreshPageBars()
     }
 
     // MARK: - DisplayList window cache
@@ -1841,5 +1874,69 @@ extension BrowserLayoutPageEngine {
             }
         }
         return nil
+    }
+}
+
+
+extension BrowserLayoutPageEngine {
+    /// Both hosts consult this engine's chapter decision. A rejected chapter
+    /// keeps the existing Legacy route; supported chapters use continuous flow.
+    func makeScrollChapter(at spine: Int, settings: ReaderRenderSettings,
+                           contentSize: CGSize) async throws -> BrowserScrollChapter? {
+        // Browser scroll tiles currently advance on y. Keep the existing RTL
+        // column host until continuous x-axis fragmentation is implemented.
+        guard !settings.writingMode.isVertical else { return nil }
+        await preloadChapter(at: spine)
+        guard choice(for: spine)?.isBrowser == true else { return nil }
+        let html = try await resource.chapterHTML(at: spine)
+        let input = await resource.cssFrontendInput(forChapter: spine, html: html)
+        let store = BrowserLayoutImageStore(await resource.prefetchImages(
+            forChapter: spine, html: html, renderWidth: contentSize.width))
+        var config = makeBrowserConfig(fontScalePolicy: Self.fontScalePolicy(for: html),
+                                       scrollSettings: settings, scrollSize: contentSize)
+        // The scroll host owns the reader's outer margins and fixed bars.
+        config.contentInsets = .zero
+        if config.regexHighlightConfiguration.isEnabled {
+            await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
+                configuration: config.regexHighlightConfiguration, appearance: config.readerStyleAppearance)
+        }
+        try Task.checkCancellation()
+        let pipeline = try BrowserLayoutDocument(input: input, config: config,
+            imageLoader: { [store] in store.image(for: $0) }).makeLayout(containerSize: contentSize)
+        let background = BrowserLayoutDocument.bodyBackground(rootBox: pipeline.rootBox)
+        if let source = background.image?.source, store.image(for: source) == nil {
+            store.set(await resource.loadImage(forChapter: spine, source: source,
+                                              renderWidth: contentSize.width), for: source)
+        }
+        FootnoteStore.index(notes: pipeline.footnotes, spineIndex: spine)
+        let flow = BrowserScrollDocument.make(pipeline: pipeline, contentWidth: contentSize.width,
+                                             contentInsets: .zero)
+        let hasBackdrop = background.color != nil || background.image != nil
+        let height = hasBackdrop ? max(contentSize.height, flow.contentHeight) : flow.contentHeight
+        let canvas = CGRect(x: 0, y: 0, width: contentSize.width, height: height)
+        var items: [DisplayItem] = []
+        if let color = background.color {
+            items.append(.fill(DisplayFillItem(rect: PageLocalRect(rawValue: canvas), color: color,
+                cornerRadius: 0, borderTop: .zero, borderBottom: .zero, borderLeft: .zero,
+                borderRight: .zero, nodeID: -1, writingMode: .horizontal, isBackgroundPaint: true)))
+        }
+        if let backgroundImage = background.image, let image = store.image(for: backgroundImage.source) {
+            items.append(.image(DisplayImageItem(source: backgroundImage.source, image: image,
+                sourceRange: NSRange(location: 0, length: 0), nodeID: -1, linkTarget: nil,
+                writingMode: .horizontal, rect: PageLocalRect(rawValue: BrowserLayoutDocument.coverRect(
+                    for: image.size, container: canvas.size, positionX: backgroundImage.positionX,
+                    positionY: backgroundImage.positionY)), alt: nil, isBackgroundPaint: true)))
+        }
+        items.append(contentsOf: flow.displayList.items)
+        let document = BrowserScrollDocument(displayList: DisplayList(items: items),
+            contentHeight: height, sourceText: flow.sourceText,
+            anchorOffsets: flow.anchorOffsets, linkAnchors: flow.linkAnchors)
+        return BrowserScrollChapter(spineIndex: spine, document: document,
+            backgroundColor: settings.backgroundColor,
+            usesReaderBackground: settings.readerBackgroundImageURL != nil,
+            paragraphRanges: BrowserLayoutSemanticContent.paragraphRanges(in: pipeline.rootBox),
+            mediaAttachments: pipeline.mediaAttachments.mapValues {
+                resource.resolveMediaAttachment(forChapter: spine, media: $0)
+            })
     }
 }

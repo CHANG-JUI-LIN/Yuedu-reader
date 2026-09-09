@@ -30,3 +30,13 @@ enum ReaderModernBookCardRoute: Hashable {
     case secondary(ReaderSecondaryAction.ID)
     case bookDetail
 }
+
+/// What the reader quick panel asked to open after it closes.
+///
+/// Both destinations are sheets, and iOS drops a sheet requested while the sheet
+/// it came from is still dismissing. Recording the request and running it from the
+/// panel's real `onDismiss` is the contract in
+/// `Technotes/iOS17MenuModalPresentation.md`.
+enum ReaderQuickPanelRoute: Hashable {
+    case settings
+}

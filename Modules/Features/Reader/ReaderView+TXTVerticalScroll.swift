@@ -22,6 +22,8 @@ extension ReaderView {
                         footerTextGap: readerConfig.footerTextGap
                       )
                     : 0,
+                barInsets: scrollAxis.isHorizontalRTL ? .zero : readerScrollBarInsets,
+                autoScrollHandle: autoScrollHandle,
                 backgroundColor: readerScrollBackgroundColor,
                 initialChapter: initialPos.chapter,
                 initialCharOffset: initialPos.charOffset,
@@ -214,6 +216,21 @@ extension ReaderView {
         issuePageTurn(to: previousReaderPage(before: currentPage))
     }
 
+    /// 自動閱讀's page advance: instant, and it reports the end of the book so the
+    /// mode can end itself.
+    @discardableResult
+    func advanceAutoReadPage() -> Bool {
+        let maxPage: Int
+        if let engine = epubRenderer.engine, usesCoreTextEPUB {
+            maxPage = engine.totalPages - 1
+        } else {
+            maxPage = allPages.count - 1
+        }
+        guard currentPage < maxPage else { return false }
+        issuePageTurn(to: nextReaderPage(after: currentPage, maxPage: maxPage), animated: false)
+        return true
+    }
+
     func goToNextPage() {
         let maxPage: Int
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
@@ -236,14 +253,17 @@ extension ReaderView {
     /// inside one pagination; resolving the turn against live layout at execution
     /// time keeps it anchored to content across renumbering (CLAUDE.md: positions
     /// are (spineIndex, charOffset), never a global page index).
-    func issuePageTurn(to targetPage: Int) {
-        guard readerHeaderFooterEditorModel == nil else { return }
+    /// - Parameter animated: overrides the reader's own page-turn animation.
+    ///   自動閱讀 passes `false`: its curtain *is* the animation, and running the
+    ///   reader's 仿真／覆蓋／滑動 underneath it would be two transitions at once —
+    ///   legado bypasses its `PageDelegate` for the same reason.
+    func issuePageTurn(to targetPage: Int, animated: Bool? = nil) {
         currentPage = targetPage
         pageTurnVersion &+= 1
         pageTurnCommand = ReaderPageTurnCommand(
             target: targetPage,
             targetPosition: resolvedTargetPosition(forPage: targetPage),
-            animated: effectivePageTurnStyle != .none,
+            animated: animated ?? (effectivePageTurnStyle != .none),
             version: pageTurnVersion
         )
     }

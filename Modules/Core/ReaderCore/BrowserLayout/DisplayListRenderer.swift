@@ -19,7 +19,8 @@ enum DisplayListRenderer {
         _ list: DisplayList,
         size: CGSize,
         backgroundColor: UIColor = .white,
-        readerBackgroundImage: UIImage? = nil
+        readerBackgroundImage: UIImage? = nil,
+        bars: ReaderPageBars? = nil
     ) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -41,6 +42,7 @@ enum DisplayListRenderer {
                 in: context.cgContext,
                 skipAuthoredBackgroundPaint: readerBackgroundImage != nil
             )
+            bars?.draw(in: bounds, context: context.cgContext)
         }
     }
 }

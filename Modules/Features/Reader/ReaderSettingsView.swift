@@ -12,7 +12,6 @@ struct ReaderSettingsView: View {
     var isVerticalWritingMode = false
     var hasParagraphReviews = false
     var onOpenFontImporter: () -> Void
-    var onOpenHeaderFooterEditor: (() -> Void)?
     var onOpenTouchZoneEditor: (() -> Void)?
     /// Hands a style/layout import to the reader's first-level presenter. Nil in
     /// contexts that already are one; see `ReaderSettingsPresentationPolicy`.
@@ -148,7 +147,7 @@ struct ReaderSettingsView: View {
             }
             Button(localized("取消"), role: .cancel) {}
         } message: {
-            Text(localized("這會恢復預設組件、位置與正文保留空間。"))
+            Text(localized("這會恢復預設的欄位配置與樣式。"))
         }
         .onAppear {
             customLayoutEnabled = hasCustomLayoutOverrides
@@ -171,15 +170,15 @@ struct ReaderSettingsView: View {
         premiumVisibility.showsCommentBubbleSettings(hasParagraphReviews: hasParagraphReviews)
     }
 
-    /// Paged-only chrome and gestures. Scroll mode has no page turns, no fixed
-    /// header/footer and no tap zones, so the whole section stands down there.
+    /// Paged-only chrome and gestures: scroll mode has no page turns and no tap
+    /// zones. It *does* have a header and footer now, so those moved out of here.
     private var showsPagingSection: Bool {
         !settings.scrollMode
     }
 
-    private var showsHeaderFooterSection: Bool {
-        !settings.scrollMode && onOpenHeaderFooterEditor != nil
-    }
+    /// No longer gated on paged mode. The bars are structural in both modes now,
+    /// so hiding their settings in scroll mode would hide live behaviour.
+    private var showsHeaderFooterSection: Bool { true }
 
     private var pagingSection: some View {
         Section {
@@ -221,26 +220,26 @@ struct ReaderSettingsView: View {
         .interfaceSectionSurface()
     }
 
+    /// A pushed page, not a sheet handed back to the reader to present. This sheet
+    /// is already inside a `NavigationStack`, so pushing keeps the whole flow at
+    /// one presentation level — the iOS 17 sheet-from-sheet trap never arises.
     private var headerFooterSection: some View {
         Section {
-            if let onOpenHeaderFooterEditor {
-                Button {
-                    dismiss()
-                    DispatchQueue.main.async { onOpenHeaderFooterEditor() }
-                } label: {
-                    Label(localized("頁首頁尾編輯"), systemImage: "rectangle.split.3x1")
-                }
+            NavigationLink {
+                ReaderBarLayoutEditorView(theme: theme)
+            } label: {
+                Label(localized("頁首頁尾編輯"), systemImage: "rectangle.split.3x1")
+            }
 
-                Button(role: .destructive) {
-                    showingOverlayResetConfirmation = true
-                } label: {
-                    Label(localized("重設頁首頁尾"), systemImage: "arrow.counterclockwise")
-                }
+            Button(role: .destructive) {
+                showingOverlayResetConfirmation = true
+            } label: {
+                Label(localized("重設頁首頁尾"), systemImage: "arrow.counterclockwise")
             }
         } header: {
             Text(localized("頁首頁尾"))
         } footer: {
-            Text(localized("組件的正文保留空間改在「頁面邊距」調整。"))
+            Text(localized("正文與兩條的距離改在「頁面邊距」的上下邊距調整。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
@@ -287,29 +286,8 @@ struct ReaderSettingsView: View {
         onOpenStyleImporter(route)
     }
 
-    private func overlayReservationBinding(
-        _ keyPath: WritableKeyPath<ReaderOverlayContentReservations, Double>
-    ) -> Binding<CGFloat> {
-        Binding(
-            get: {
-                CGFloat(settings.readerOverlayLayout.contentReservations[keyPath: keyPath])
-            },
-            set: { value in
-                var layout = settings.readerOverlayLayout
-                layout.contentReservations[keyPath: keyPath] = Double(value)
-                guard settings.saveReaderOverlayLayout(layout) else {
-                    layoutImportAlert = LayoutImportAlert(
-                        titleKey: "無法儲存頁首頁尾設定",
-                        message: localized("請稍後再試。")
-                    )
-                    return
-                }
-            }
-        )
-    }
-
     private func resetReaderOverlayLayout() {
-        guard settings.saveReaderOverlayLayout(.default) else {
+        guard settings.saveReaderBarLayout(.default) else {
             layoutImportAlert = LayoutImportAlert(
                 titleKey: "無法儲存頁首頁尾設定",
                 message: localized("請稍後再試。")
@@ -323,9 +301,11 @@ struct ReaderSettingsView: View {
     /// 「正文頂部/底部保留空間」 under 閱讀工具 — which read as if 頁面留白 covered every
     /// side. Same underlying values, one group, names that say which edge.
     ///
-    /// Paged and scroll mode genuinely inset the body through different values:
-    /// paged reserves top/bottom via the overlay layout (that reservation *is* the
-    /// vertical margin there), scroll uses `pageMarginV` for both edges at once.
+    /// 上下邊距 now means the same thing in both modes. It used to not: paged mode
+    /// took its vertical margin from the header/footer layout's hand-tuned
+    /// "content reservation" while scroll mode used `pageMarginV`, so moving the
+    /// same slider did different things depending on how you were reading. The
+    /// bars' heights are known now, so the margin no longer has to absorb them.
     private var pageMarginSection: some View {
         Section {
             LayoutSliderRow(
@@ -337,40 +317,14 @@ struct ReaderSettingsView: View {
                 step: 1
             )
 
-            if settings.scrollMode {
-                LayoutSliderRow(
-                    title: localized("上下邊距"),
-                    icon: .pageMarginVertical,
-                    valueText: String(format: localized("ReaderOverlay.Format.Points"), Int(readerConfig.pageMarginV)),
-                    value: $readerConfig.pageMarginV,
-                    range: 0...50,
-                    step: 1
-                )
-            } else {
-                LayoutSliderRow(
-                    title: localized("上邊距"),
-                    icon: .pageMarginTop,
-                    valueText: String(
-                        format: localized("ReaderOverlay.Format.Points"),
-                        Int(settings.readerOverlayLayout.contentReservations.top)
-                    ),
-                    value: overlayReservationBinding(\.top),
-                    range: 0...ReaderOverlayContentReservations.topMaximum,
-                    step: 1
-                )
-
-                LayoutSliderRow(
-                    title: localized("下邊距"),
-                    icon: .pageMarginBottom,
-                    valueText: String(
-                        format: localized("ReaderOverlay.Format.Points"),
-                        Int(settings.readerOverlayLayout.contentReservations.bottom)
-                    ),
-                    value: overlayReservationBinding(\.bottom),
-                    range: 0...ReaderOverlayContentReservations.bottomMaximum,
-                    step: 1
-                )
-            }
+            LayoutSliderRow(
+                title: localized("上下邊距"),
+                icon: .pageMarginVertical,
+                valueText: String(format: localized("ReaderOverlay.Format.Points"), Int(readerConfig.pageMarginV)),
+                value: $readerConfig.pageMarginV,
+                range: 0...50,
+                step: 1
+            )
 
             Button {
                 resetPageMargins()
@@ -390,18 +344,11 @@ struct ReaderSettingsView: View {
         .interfaceSectionSurface()
     }
 
+    /// Only the margins. The bars' own space is computed from their height now, so
+    /// there is no separate reservation left to reset here.
     private func resetPageMargins() {
         readerConfig.pageMarginH = defaultPageMarginH
         readerConfig.pageMarginV = defaultPageMarginV
-        var layout = settings.readerOverlayLayout
-        layout.contentReservations = ReaderOverlayLayout.default.contentReservations
-        guard settings.saveReaderOverlayLayout(layout) else {
-            layoutImportAlert = LayoutImportAlert(
-                titleKey: "無法儲存頁首頁尾設定",
-                message: localized("請稍後再試。")
-            )
-            return
-        }
     }
 
     private func spreadTitleKey(for mode: ReaderSpreadMode) -> String {

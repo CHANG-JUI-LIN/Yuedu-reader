@@ -168,10 +168,8 @@ struct HomeView: View {
     @StateObject private var readerGeometryStore = BookshelfReaderGeometryStore()
     @State private var pendingReaderOpenToken: UUID?
 
-    /// Reader id presented modally (kept fullScreenCover) for kinds that are
-    /// explicitly out of scope for the card-navigation migration: audiobook,
-    /// manga, fixed-page. Text / reflowable EPUB / online HTML go through the
-    /// `readerCoordinator` push path instead.
+    /// Audiobooks and the iPad shell retain their modal reader presentation.
+    /// Other iPhone shelf readers share the coordinator and card transition.
     @State private var modalReaderBookId: UUID? = nil
 
     #if DEBUG
@@ -275,7 +273,7 @@ struct HomeView: View {
                 )
             }
         } else {
-            AppLogger.info("⟐ openBook MODAL path bookID=\(book.id) (audiobook/manga/fixed-page)")
+            AppLogger.info("⟐ openBook MODAL path bookID=\(book.id) (audiobook or non-phone shell)")
             pendingReaderOpenToken = nil
             store.updateLastOpened(bookId: book.id)
             modalReaderBookId = book.id
@@ -285,6 +283,13 @@ struct HomeView: View {
     private func resolveOpeningDirection(
         for book: ReadingBook
     ) async -> ReaderBookOpeningDirection {
+        if book.resolvedPipelineKind == .manga || book.resolvedPipelineKind == .fixedPage {
+            let configuration = FixedPageReadingMode.savedConfiguration(for: book.id)
+            return ReaderBookOpeningDirection.resolve(
+                writingMode: .horizontal,
+                pageProgressionIsRTL: configuration.progression == .rightToLeft
+            )
+        }
         if book.resolvedPipelineKind == .epub {
             let url = store.localEPUBURL(for: book)
             AppLogger.info("⟐ resolveOpeningDirection EPUB url=\(url.lastPathComponent) starting inspect")
@@ -504,6 +509,7 @@ struct HomeView: View {
                         selectedOnlineBookDetail = nil
                     })
                         .environmentObject(store)
+                        .environment(\.readerNavigator, readerCoordinator)
                 }
             }
             // 書籍資訊 owns the cover pickers, so on iOS 17 it is pushed rather
@@ -582,9 +588,7 @@ struct HomeView: View {
                     #endif
             }
         }
-        // Non-migrated reader kinds (audiobook / manga / fixed-page) keep the
-        // original modal presentation. They are explicitly out of scope for the
-        // first delivery of the card-navigation migration.
+        // Audiobooks and the iPad shell retain their original modal presentation.
         .fullScreenCover(
             isPresented: Binding(
                 get: { modalReaderBookId != nil },

@@ -8,17 +8,27 @@ struct CSSFrontendResult {
     let linkAnchors: [Int: LinkAnchorInfo]
     let footnotes: [String: String]
     let nodeCount: Int
+    /// Value-only evidence for differential/cutover gates. Production remains Current.
+    let capabilityFacts: FrontendCapabilityFacts
+    let diagnostics: [CSSFrontendDiagnostic]
+    let styleSources: [String: [String: StyleSourceIdentity]]
 
     init(
         rootNode: ComputedStyleNode,
         linkAnchors: [Int: LinkAnchorInfo],
         footnotes: [String: String],
-        nodeCount: Int
+        nodeCount: Int,
+        capabilityFacts: FrontendCapabilityFacts = .init(),
+        diagnostics: [CSSFrontendDiagnostic] = [],
+        styleSources: [String: [String: StyleSourceIdentity]] = [:]
     ) {
         self.rootNode = rootNode
         self.linkAnchors = linkAnchors
         self.footnotes = footnotes
         self.nodeCount = nodeCount
+        self.capabilityFacts = capabilityFacts
+        self.diagnostics = diagnostics
+        self.styleSources = styleSources
     }
 }
 

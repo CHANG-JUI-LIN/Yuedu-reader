@@ -1,29 +1,19 @@
 import Foundation
 import SwiftUI
 
-private enum ReaderOverlayEditorPersistenceError: Error {
-    case writeFailed
-}
-
 extension ReaderView {
-    var readerOverlayEditorReaderStyle: ReaderOverlayReaderStyle {
-        ReaderOverlayReaderStyle(
-            font: UserReaderFontResolver.bodyFont(size: max(fontSize, 8)),
-            textColor: readerTheme.uiTextColor,
-            availablePostScriptNames: Set(settings.userFonts.map(\.postScriptName))
-        )
-    }
 
-    var readerOverlayEditorSafeAreaInsets: EdgeInsets {
-        let insets = keyWindowScene?.windows.first(where: \.isKeyWindow)?.safeAreaInsets ?? .zero
-        return EdgeInsets(
-            top: insets.top,
-            leading: insets.left,
-            bottom: insets.bottom,
-            trailing: insets.right
-        )
-    }
-
+    /// Opens the store the header/footer bars read imported battery SVGs from.
+    ///
+    /// All that survives of the in-place overlay editor. Editing moved to
+    /// `ReaderBarLayoutEditorView`, a pushed settings page — so there is no longer
+    /// a mode in which the reader hands its own surface over to an editor, and the
+    /// interaction-suppression, scope-jumping and safe-area plumbing that mode
+    /// needed went with it.
+    ///
+    /// The disposable fallback store matters: a text-only bar must still draw when
+    /// the persistent store cannot be opened. Only a persistent store may mint
+    /// asset IDs, which is why the flag is tracked separately.
     func ensureReaderOverlaySVGAssetStore() {
         guard readerOverlaySVGAssetStore == nil
                 || !readerOverlaySVGAssetStoreIsPersistent
@@ -32,8 +22,6 @@ extension ReaderView {
             readerOverlaySVGAssetStore = try ReaderOverlaySVGAssetStore.live()
             readerOverlaySVGAssetStoreIsPersistent = true
         } catch {
-            // Runtime text/system-battery components must still render. The editor is
-            // blocked below so this disposable store can never create persisted IDs.
             if readerOverlaySVGAssetStore == nil {
                 readerOverlaySVGAssetStore = ReaderOverlaySVGAssetStore(
                     rootDirectory: FileManager.default.temporaryDirectory
@@ -42,42 +30,5 @@ extension ReaderView {
             }
             readerOverlaySVGAssetStoreIsPersistent = false
         }
-    }
-
-    func presentReaderHeaderFooterEditor() {
-        guard !effectiveScrollMode else { return }
-        ensureReaderOverlaySVGAssetStore()
-        guard readerOverlaySVGAssetStoreIsPersistent else {
-            showReaderOverlaySVGStoreError = true
-            return
-        }
-
-        readerHeaderFooterEditorModel = ReaderHeaderFooterEditorModel(
-            initial: settings.readerOverlayLayout,
-            activeScope: ReaderOverlayPageScope.resolve(
-                chapterPage: readerOverlayContentSnapshot.chapterPage
-            ),
-            onScopeChange: { scope in
-                guard scope == .chapterOpening else { return }
-                jumpToReaderOverlayChapterOpening()
-            },
-            onSave: { layout in
-                guard settings.saveReaderOverlayLayout(layout) else {
-                    throw ReaderOverlayEditorPersistenceError.writeFailed
-                }
-            }
-        )
-        showBars = false
-    }
-
-    private func jumpToReaderOverlayChapterOpening() {
-        jumpToChapter(currentChapterIndex, charOffset: 0)
-        pageTurnVersion &+= 1
-        pageTurnCommand = ReaderPageTurnCommand(
-            target: currentPage,
-            targetPosition: CoreTextReadingPosition.chapterStart(currentChapterIndex),
-            animated: false,
-            version: pageTurnVersion
-        )
     }
 }

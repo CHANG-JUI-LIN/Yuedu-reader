@@ -9,6 +9,7 @@ private enum TTSImportPresentationRoute: Hashable {
 
 struct TTSSettingsView: View {
     @ObservedObject private var gs = GlobalSettings.shared
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.presentationMode) private var presentationMode
     @StateObject private var testCoordinator = TTSCoordinator()
     @State private var sourceListURL = ""
@@ -188,28 +189,40 @@ struct TTSSettingsView: View {
 
     private var sourceList: some View {
         List {
-            systemVoiceSourceRow
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                .listRowSeparator(.visible)
-                .interfaceSectionSurface()
-
-            systemVoicePickerRow
-                .listRowSeparator(.visible)
-                .interfaceSectionSurface()
-
-            ForEach(filteredSources) { source in
-                sourceRow(source)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                    .listRowSeparator(.visible)
-                    .interfaceSectionSurface()
+            Section {
+                systemVoiceSourceRow
+                systemVoicePickerRow
+                    .frame(minHeight: DSLayout.minimumTapTarget)
+                edgeVoiceRows
+            } header: {
+                Text(localized("內建語音"))
+                    .accessibilityIdentifier("tts_builtin_section")
+            } footer: {
+                if let error = testCoordinator.errorMessage {
+                    Text(error)
+                        .dsSectionFooter(color: DSColor.destructive)
+                        .accessibilityIdentifier("tts_preview_error")
+                }
             }
+            .interfaceSectionSurface()
+
+            Section {
+                if filteredSources.isEmpty {
+                    Text(localized("尚無語音源"))
+                        .foregroundStyle(DSColor.textSecondary)
+                        .frame(minHeight: DSLayout.minimumTapTarget)
+                } else {
+                    ForEach(filteredSources) { source in
+                        sourceRow(source)
+                    }
+                }
+            } header: {
+                Text(localized("已匯入語音源"))
+                    .accessibilityIdentifier("tts_imported_section")
+            }
+            .interfaceSectionSurface()
         }
-        .listStyle(.plain)
-        // Same contract as 書源管理's list: hiding the list background is not enough,
-        // because a `.plain` row still paints an opaque `systemBackground` of its own
-        // unless handed a row background. `interfaceSectionSurface` puts the rows on the
-        // shared 毛玻璃／分組卡片／透明度 surface instead of a flat white slab sitting on
-        // top of the page background.
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
     }
 
@@ -222,6 +235,7 @@ struct TTSSettingsView: View {
         sourceRowContent(source)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(source.name)
+            .accessibilityIdentifier("tts_imported_\(source.id)")
             .accessibilityValue(sourceAccessibilityValue(source))
             .accessibilityAddTraits(sourceAccessibilityTraits(source))
             .accessibilityHint(localized("點兩下設為使用中"))
@@ -230,7 +244,7 @@ struct TTSSettingsView: View {
             .accessibilityActions { sourceRotorActions(source) }
     }
 
-    /// State the row shows visually: the 使用中 badge and the 需設定帳號 note.
+    /// Announce selection and account requirements without adding visual subtitles.
     /// Checkbox selection rides on the `.isSelected` trait instead.
     private func sourceAccessibilityValue(_ source: ImportedTTSSource) -> String {
         var parts: [String] = []
@@ -272,54 +286,29 @@ struct TTSSettingsView: View {
     }
 
     private func sourceRowContent(_ source: ImportedTTSSource) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: DSSpacing.sm) {
             Button {
                 toggleSelection(source.id)
             } label: {
                 Image(systemName: selectedSourceIds.contains(source.id) ? "checkmark.square.fill" : "square")
                     .font(DSFont.fixed(size: 20))
                     .foregroundColor(
-                        selectedSourceIds.contains(source.id) ? DSColor.accent : Color(UIColor.systemGray3)
+                        selectedSourceIds.contains(source.id) ? DSColor.accent : DSColor.textSecondary
                     )
             }
             .buttonStyle(.plain)
-            .padding(.leading, 16)
-            .padding(.trailing, 12)
+            .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget)
 
             Button {
                 selectSource(source)
             } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(source.name)
-                            .font(DSFont.toolbarIcon)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-
-                        if isSelected(source) {
-                            Text(localized("使用中"))
-                                .font(DSFont.fixed(size: 11, weight: .medium))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(DSColor.accent)
-                                .clipShape(Capsule())
-                        }
-                    }
-
-                    Text(source.urlTemplate)
-                        .font(DSFont.fixed(size: 11))
-                        .foregroundColor(DSColor.textSecondary.opacity(0.6))
-                        .lineLimit(1)
-
-                    if source.loginUi != nil {
-                        Text(localized("需設定帳號"))
-                            .font(DSFont.fixed(size: 10))
-                            .foregroundColor(DSColor.accent)
-                            .lineLimit(1)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(isSelected(source)
+                     ? "\(source.name) · \(localized("使用中"))"
+                     : source.name)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
 
@@ -361,12 +350,12 @@ struct TTSSettingsView: View {
                 Image(systemName: "ellipsis")
                     .font(DSFont.toolbarIcon)
                     .foregroundColor(DSColor.textSecondary)
-                    .frame(width: 24, height: 24)
                     .rotationEffect(.degrees(90))
+                    .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
             }
-            .padding(.trailing, 12)
+            .accessibilityLabel(localized("更多"))
         }
-        .padding(.vertical, 14)
+        .frame(minHeight: DSLayout.minimumTapTarget)
     }
 
     private var bottomToolbar: some View {
@@ -524,42 +513,122 @@ struct TTSSettingsView: View {
     }
 
     private var isSystemVoiceSelected: Bool {
-        gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        gs.ttsUseSystemVoice || gs.httpTtsUrlTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Merged the same way as the imported-source rows, so the list reads uniformly:
-    /// the 試聽 button becomes a rotor action instead of a second focus stop.
-    private var systemVoiceSourceRow: some View {
-        systemVoiceSourceRowContent
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(localized("系統離線語音"))
-            .accessibilityValue(
-                isSystemVoiceSelected
-                    ? localized("使用中")
-                    : localized("免網路，使用裝置內建語音朗讀")
+    private var edgeVoiceRows: some View {
+        Group {
+            builtInVoiceRow(
+                title: localized("微軟線上語音"),
+                isSelected: gs.usesEdgeTTS,
+                identifier: "tts_edge",
+                select: {
+                    testCoordinator.stop(reason: "selected Edge voice")
+                    gs.selectEdgeTTSVoice(gs.selectedEdgeTTSVoice)
+                },
+                preview: {
+                    gs.selectEdgeTTSVoice(gs.selectedEdgeTTSVoice)
+                    testCoordinator.speak(
+                        text: localized("你好，歡迎使用微軟語音朗讀。選一本喜歡的書，開始聆聽吧。"),
+                        title: localized("測試播放")
+                    )
+                }
             )
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint(localized("點兩下設為使用中"))
-            .accessibilityAction { selectSystemVoice() }
-            .accessibilityActions {
-                Button(localized("測試播放")) { testSystemPlayback() }
+
+            Picker(localized("微軟語音音色"), selection: Binding(
+                get: { gs.selectedEdgeTTSVoice.id },
+                set: { id in
+                    guard let voice = EdgeTTSVoice.voice(id: id) else { return }
+                    testCoordinator.stop(reason: "changed Edge voice")
+                    gs.selectEdgeTTSVoice(voice)
+                }
+            )) {
+                ForEach(EdgeTTSVoice.voices) { voice in
+                    Text(voice.displayName).tag(voice.id)
+                }
             }
+            .pickerStyle(.navigationLink)
+            .accessibilityIdentifier("tts_edge_voice")
+            .frame(minHeight: DSLayout.minimumTapTarget)
+
+            if gs.usesEdgeTTS, testCoordinator.playbackState == .playing,
+               !testCoordinator.hasAudiblePlaybackStarted {
+                ProgressView(localized("正在連接微軟語音…"))
+                    .accessibilityIdentifier("tts_edge_connecting")
+            }
+        }
     }
 
-    /// Which installed voice 系統離線語音 speaks with. Its own row rather than a
-    /// third control inside the source row above, which is one VoiceOver element
-    /// by contract.
+    private func builtInVoiceRow(
+        title: String,
+        isSelected: Bool,
+        identifier: String,
+        select: @escaping () -> Void,
+        preview: @escaping () -> Void
+    ) -> some View {
+        let isPreviewing = isSelected && testCoordinator.playbackState != .stopped
+        return HStack(spacing: DSSpacing.sm) {
+            Button(action: select) {
+                Text(isSelected ? "\(title) · \(localized("使用中"))" : title)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("\(identifier)_source")
+            .accessibilityLabel(title)
+            .accessibilityValue(isSelected ? localized("使用中") : localized("未選取"))
+            .accessibilityHint(localized("點兩下設為使用中"))
+
+            Button {
+                testCoordinator.stop(reason: "changed voice preview")
+                if !isPreviewing { preview() }
+            } label: {
+                Image(systemName: isPreviewing ? "stop.circle" : "play.circle")
+                    .font(DSFont.title2)
+                    .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("\(identifier)_preview")
+            .accessibilityLabel(localized(isPreviewing ? "停止試聽" : "測試播放"))
+        }
+    }
+
+    private var systemVoiceSourceRow: some View {
+        builtInVoiceRow(
+            title: localized("系統離線語音"),
+            isSelected: isSystemVoiceSelected,
+            identifier: "tts_system",
+            select: {
+                testCoordinator.stop(reason: "selected system voice")
+                selectSystemVoice()
+            },
+            preview: { testSystemPlayback() }
+        )
+    }
+
+    /// Keep voice configuration separate from source selection and preview controls.
     private var systemVoicePickerRow: some View {
         NavigationLink {
             SystemVoicePickerView()
         } label: {
-            HStack {
-                Text(localized("系統語音音色"))
-                Spacer()
-                Text(selectedSystemVoiceSummary)
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .lineLimit(1)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    Text(localized("系統語音音色"))
+                    Text(selectedSystemVoiceSummary)
+                        .font(DSFont.subheadline)
+                        .foregroundStyle(DSColor.textSecondary)
+                }
+            } else {
+                HStack {
+                    Text(localized("系統語音音色"))
+                    Spacer()
+                    Text(selectedSystemVoiceSummary)
+                        .font(DSFont.subheadline)
+                        .foregroundStyle(DSColor.textSecondary)
+                }
             }
         }
     }
@@ -574,53 +643,6 @@ struct TTSSettingsView: View {
             return localized("跟隨系統預設")
         }
         return voice.name
-    }
-
-    private var systemVoiceSourceRowContent: some View {
-        HStack(spacing: 0) {
-            Button {
-                selectSystemVoice()
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(localized("系統離線語音"))
-                            .font(DSFont.toolbarIcon)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-
-                        if isSystemVoiceSelected {
-                            Text(localized("使用中"))
-                                .font(DSFont.fixed(size: 11, weight: .medium))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(DSColor.accent)
-                                .clipShape(Capsule())
-                        }
-                    }
-
-                    Text(localized("免網路，使用裝置內建語音朗讀"))
-                        .font(DSFont.fixed(size: 11))
-                        .foregroundColor(DSColor.textSecondary.opacity(0.6))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                testSystemPlayback()
-            } label: {
-                Image(systemName: "play.circle")
-                    .font(DSFont.fixed(size: 22))
-                    .foregroundColor(DSColor.accent)
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 16)
-        }
-        .padding(.vertical, 14)
-        .padding(.leading, 16)
-        .contentShape(Rectangle())
     }
 
     private func testSystemPlayback() {
@@ -701,14 +723,17 @@ struct TTSSettingsView: View {
     }
 
     private func clearSources() {
+        let keepsBuiltInVoice = gs.usesEdgeTTS
         for source in gs.importedTTSSources {
             LoginManager.shared.clearLogin(sourceUrl: source.id)
         }
         gs.importedTTSSources = []
         selectedSourceIds.removeAll()
-        gs.httpTtsUrlTemplate = ""
-        gs.httpTtsHeaders = [:]
-        testCoordinator.stop(reason: "cleared sources")
+        if !keepsBuiltInVoice {
+            gs.httpTtsUrlTemplate = ""
+            gs.httpTtsHeaders = [:]
+            testCoordinator.stop(reason: "cleared sources")
+        }
     }
 
     /// Opens the web login once the login form's own sheet has finished dismissing.

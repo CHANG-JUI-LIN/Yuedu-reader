@@ -15,6 +15,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let pageTurnCommand: ReaderPageTurnCommand?
     let clearExternalTargetPosition: () -> Void
     @Binding var currentPage: Int
+    /// Changes when 頁眉／頁腳 say something new — a clock tick, the battery, a
+    /// style edit — without the pagination changing. Pages already on screen were
+    /// handed their bars when they were built, so they need telling.
+    var pageBarsRevision: UInt = 0
+    /// 自動閱讀's curtain: which page is being revealed over the current one, and
+    /// how far. `nil` when the mode is off.
+    var autoReadReveal: (nextPage: Int, progress: Double)?
     let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
     let onTapZone: (TouchAction) -> Void
     var onSwipeUpExit: () -> Void = {}
@@ -130,6 +137,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ).isDoubleSided && !isDoublePageSpread
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
+        context.coordinator.applyAutoReadReveal(autoReadReveal, on: uiViewController)
+        if context.coordinator.lastAppliedPageBarsRevision != pageBarsRevision {
+            context.coordinator.lastAppliedPageBarsRevision = pageBarsRevision
+            uiViewController.viewControllers?.forEach {
+                context.coordinator.applyPageBars(to: $0)
+            }
+        }
         if let commit = visibleRefreshCommit,
            commit.mode == .paged,
            context.coordinator.lastAppliedRefreshTransactionID != commit.transactionID {
@@ -1317,6 +1331,55 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 readingPosition(from: viewController),
                 .settled(readerDriven: readerDriven, isPlaceholder: isPlaceholderDisplay(viewController))
             )
+        }
+
+        var lastAppliedPageBarsRevision: UInt = 0
+
+        /// Sits above every page, outside `UIPageViewController`'s own hierarchy,
+        /// exactly like `coverOverlayView`. It never receives touches.
+        let autoReadRevealView = AutoReadRevealView()
+
+        /// Puts the next page over the current one and moves the clip line.
+        ///
+        /// The snapshot already carries 頁眉／頁腳 because it comes from
+        /// `renderSnapshot` → `renderPage`, the same function that draws the live
+        /// page — so the revealed page brings its own bars, as it does in legado.
+        func applyAutoReadReveal(
+            _ reveal: (nextPage: Int, progress: Double)?,
+            on pageViewController: UIPageViewController
+        ) {
+            guard let reveal else {
+                autoReadRevealView.removeFromSuperview()
+                autoReadRevealView.setPageImage(nil, pageIndex: nil)
+                return
+            }
+            if autoReadRevealView.superview !== pageViewController.view {
+                pageViewController.view.addSubview(autoReadRevealView)
+            }
+            autoReadRevealView.frame = pageViewController.view.bounds
+            pageViewController.view.bringSubviewToFront(autoReadRevealView)
+            if autoReadRevealView.imagePageIndex != reveal.nextPage {
+                autoReadRevealView.setPageImage(
+                    currentEngine.renderSnapshot(forPage: reveal.nextPage),
+                    pageIndex: reveal.nextPage
+                )
+            }
+            autoReadRevealView.setEdgeColor(.tintColor)
+            autoReadRevealView.setProgress(CGFloat(reveal.progress))
+        }
+
+        /// Re-hands a page its bars. New pages get theirs from the engine when they
+        /// are built; this is only for the ones already on screen.
+        func applyPageBars(to viewController: UIViewController) {
+            guard let engine = currentEngine as? PageBarsProviding,
+                  let provider = engine.pageBarsProvider
+            else { return }
+            if let spread = viewController as? ReaderSpreadPageViewController {
+                spread.pageViewControllers.forEach { applyPageBars(to: $0) }
+                return
+            }
+            guard let page = viewController as? CoreTextPageViewController else { return }
+            page.pageBars = provider(page.globalPageIndex)
         }
 
         func applyPlaybackHighlight(to viewController: UIViewController) {

@@ -2473,298 +2473,318 @@ final class CoreTextPaginator {
         attrStr: NSAttributedString,
         writingMode: ReaderWritingMode
     ) -> [Int: [RenderedBlockRenderable]] {
-        var pageRenderables: [Int: [RenderedBlockRenderable]] = [:]
+        var result: [Int: [RenderedBlockRenderable]] = [:]
+        for (index, artifact) in pageArtifacts.enumerated() {
+            let items = autoreleasepool {
+                extractFrameBlockRenderables(
+                    frame: artifact.frame, range: artifact.range,
+                    lineOrigins: artifact.lineOrigins,
+                    contentPathRect: contentPathRect, renderSize: renderSize,
+                    attributedString: attrStr, writingMode: writingMode
+                )
+            }
+            if !items.isEmpty { result[index] = items }
+        }
+        return result
+    }
 
-        for (pageIdx, artifact) in pageArtifacts.enumerated() { autoreleasepool {
-            let range = artifact.range
-            let frame = artifact.frame
-            let lines = CTFrameGetLines(frame) as! [CTLine]
-            guard !lines.isEmpty else { return }
+    /// One decoration contract for pages and scroll chunks: authored layers,
+    /// flow geometry, source text ownership and image placement cannot diverge.
+    static func extractFrameBlockRenderables(
+        frame: CTFrame,
+        range: CFRange,
+        lineOrigins origins: [CGPoint],
+        contentPathRect: CGRect,
+        renderSize: CGSize,
+        attributedString attrStr: NSAttributedString,
+        writingMode: ReaderWritingMode,
+        includeHTMLDecorations: Bool = true
+    ) -> [RenderedBlockRenderable] {
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return [] }
 
-            let titleRenderables = extractChapterTitleRenderables(
-                frame: frame,
-                frameRange: range,
-                lineOrigins: artifact.lineOrigins,
+        let titleRenderables = extractChapterTitleRenderables(
+            frame: frame,
+            frameRange: range,
+            lineOrigins: origins,
+            contentPathRect: contentPathRect,
+            renderSize: renderSize,
+            attributedString: attrStr,
+            writingMode: writingMode
+        )
+
+        guard includeHTMLDecorations else { return titleRenderables }
+
+        struct DecorationGroup {
+            let blockID: String
+            let style: HTMLAttributedStringBuilder.BlockRenderStyle
+            let ranges: [NSRange]
+            var rect: CGRect
+            var usesExplicitGeometry: Bool
+            let layer: Int
+
+            var isContainer: Bool {
+                layer > 0
+            }
+        }
+
+        struct SpanGroup {
+            let blockID: String
+            let style: HTMLAttributedStringBuilder.BlockRenderStyle
+            var ranges: [NSRange]
+            let layer: Int
+        }
+
+        var spanGroupsByID: [String: SpanGroup] = [:]
+        let pageNSRange = NSRange(location: range.location, length: range.length)
+        func collectSpanGroups(
+            styleKey: NSAttributedString.Key,
+            idKey: NSAttributedString.Key,
+            layer: Int
+        ) {
+            attrStr.enumerateAttribute(styleKey, in: pageNSRange, options: []) { value, effectiveRange, _ in
+                guard let renderStyle = value as? HTMLAttributedStringBuilder.BlockRenderStyle,
+                      let blockID = attrStr.attribute(
+                          idKey,
+                          at: effectiveRange.location,
+                          effectiveRange: nil
+                      ) as? String
+                else { return }
+                if var existing = spanGroupsByID[blockID] {
+                    existing.ranges.append(effectiveRange)
+                    spanGroupsByID[blockID] = existing
+                } else {
+                    spanGroupsByID[blockID] = SpanGroup(
+                        blockID: blockID,
+                        style: renderStyle,
+                        ranges: [effectiveRange],
+                        layer: layer
+                    )
+                }
+            }
+        }
+
+        collectSpanGroups(
+            styleKey: HTMLAttributedStringBuilder.outerContainerBlockRenderStyleAttribute,
+            idKey: HTMLAttributedStringBuilder.outerContainerBlockRenderIDAttribute,
+            layer: 2
+        )
+        collectSpanGroups(
+            styleKey: HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
+            idKey: HTMLAttributedStringBuilder.containerBlockRenderIDAttribute,
+            layer: 1
+        )
+        collectSpanGroups(
+            styleKey: HTMLAttributedStringBuilder.blockRenderStyleAttribute,
+            idKey: HTMLAttributedStringBuilder.blockRenderIDAttribute,
+            layer: 0
+        )
+
+        var groups: [DecorationGroup] = spanGroupsByID.values.map {
+            DecorationGroup(
+                blockID: $0.blockID,
+                style: $0.style,
+                ranges: $0.ranges,
+                rect: .null,
+                usesExplicitGeometry: false,
+                layer: $0.layer
+            )
+        }
+        for groupIndex in groups.indices {
+            // Horizontal CSS dimensions size a decoration, not its page position.
+            // Its background, border and source glyphs must all follow the laid-out
+            // frame, as they do in scrolling. Re-anchoring fixed-height fills at
+            // the page top made gallery headings and resource bars overlap there.
+            // Keep the existing vertical geometry contract separate.
+            guard writingMode.isVertical, !groups[groupIndex].isContainer else { continue }
+            if let explicitRect = computeExplicitBlockRenderableRect(
+                style: groups[groupIndex].style,
+                ranges: groups[groupIndex].ranges,
+                attrStr: attrStr,
                 contentPathRect: contentPathRect,
-                renderSize: renderSize,
-                attributedString: attrStr,
-                writingMode: writingMode
-            )
-
-            let origins = artifact.lineOrigins
-
-            struct DecorationGroup {
-                let blockID: String
-                let style: HTMLAttributedStringBuilder.BlockRenderStyle
-                let ranges: [NSRange]
-                var rect: CGRect
-                var usesExplicitGeometry: Bool
-                let layer: Int
-
-                var isContainer: Bool {
-                    layer > 0
-                }
-            }
-
-            struct SpanGroup {
-                let blockID: String
-                let style: HTMLAttributedStringBuilder.BlockRenderStyle
-                var ranges: [NSRange]
-                let layer: Int
-            }
-
-            var spanGroupsByID: [String: SpanGroup] = [:]
-            let pageNSRange = NSRange(location: range.location, length: range.length)
-            func collectSpanGroups(
-                styleKey: NSAttributedString.Key,
-                idKey: NSAttributedString.Key,
-                layer: Int
+                renderSize: renderSize
             ) {
-                attrStr.enumerateAttribute(styleKey, in: pageNSRange, options: []) { value, effectiveRange, _ in
-                    guard let renderStyle = value as? HTMLAttributedStringBuilder.BlockRenderStyle,
-                          let blockID = attrStr.attribute(
-                              idKey,
-                              at: effectiveRange.location,
-                              effectiveRange: nil
-                          ) as? String
-                    else { return }
-                    if var existing = spanGroupsByID[blockID] {
-                        existing.ranges.append(effectiveRange)
-                        spanGroupsByID[blockID] = existing
-                    } else {
-                        spanGroupsByID[blockID] = SpanGroup(
-                            blockID: blockID,
-                            style: renderStyle,
-                            ranges: [effectiveRange],
-                            layer: layer
-                        )
-                    }
-                }
+                groups[groupIndex].rect = explicitRect
+                groups[groupIndex].usesExplicitGeometry = true
             }
+        }
 
-            collectSpanGroups(
-                styleKey: HTMLAttributedStringBuilder.outerContainerBlockRenderStyleAttribute,
-                idKey: HTMLAttributedStringBuilder.outerContainerBlockRenderIDAttribute,
-                layer: 2
-            )
-            collectSpanGroups(
-                styleKey: HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
-                idKey: HTMLAttributedStringBuilder.containerBlockRenderIDAttribute,
-                layer: 1
-            )
-            collectSpanGroups(
-                styleKey: HTMLAttributedStringBuilder.blockRenderStyleAttribute,
-                idKey: HTMLAttributedStringBuilder.blockRenderIDAttribute,
-                layer: 0
+        for (lineIdx, line) in lines.enumerated() {
+            let lineRange = CTLineGetStringRange(line)
+            let lineStart = lineRange.location
+            guard lineStart < attrStr.length else { continue }
+
+            let lineNSRange = NSRange(location: lineRange.location, length: lineRange.length)
+
+            var lineAscent: CGFloat = 0
+            var lineDescent: CGFloat = 0
+            var lineWidth: CGFloat = 0
+            lineWidth = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+
+            let lineOrigin = origins[lineIdx]
+            let adjustedOrigin = CGPoint(
+                x: lineOrigin.x + contentPathRect.minX,
+                y: lineOrigin.y + contentPathRect.minY
             )
 
-            var groups: [DecorationGroup] = spanGroupsByID.values.map {
-                DecorationGroup(
-                    blockID: $0.blockID,
-                    style: $0.style,
-                    ranges: $0.ranges,
-                    rect: .null,
-                    usesExplicitGeometry: false,
-                    layer: $0.layer
-                )
-            }
             for groupIndex in groups.indices {
-                // Container decorations wrap already-flowed children; their Y must come from line origins.
-                guard !groups[groupIndex].isContainer else { continue }
-                if let explicitRect = computeExplicitBlockRenderableRect(
-                    style: groups[groupIndex].style,
-                    ranges: groups[groupIndex].ranges,
-                    attrStr: attrStr,
-                    contentPathRect: contentPathRect,
-                    renderSize: renderSize
-                ) {
-                    groups[groupIndex].rect = explicitRect
-                    groups[groupIndex].usesExplicitGeometry = true
+                if groups[groupIndex].usesExplicitGeometry {
+                    continue
                 }
-            }
+                let intersects = groups[groupIndex].ranges.contains { span in
+                    NSIntersectionRange(span, lineNSRange).length > 0
+                }
+                guard intersects else { continue }
 
-            for (lineIdx, line) in lines.enumerated() {
-                let lineRange = CTLineGetStringRange(line)
-                let lineStart = lineRange.location
-                guard lineStart < attrStr.length else { continue }
-
-                let lineNSRange = NSRange(location: lineRange.location, length: lineRange.length)
-
-                var lineAscent: CGFloat = 0
-                var lineDescent: CGFloat = 0
-                var lineWidth: CGFloat = 0
-                lineWidth = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
-
-                let lineOrigin = origins[lineIdx]
-                let adjustedOrigin = CGPoint(
-                    x: lineOrigin.x + contentPathRect.minX,
-                    y: lineOrigin.y + contentPathRect.minY
+                let standaloneImageRect = standaloneImageRenderableRect(
+                    line: line,
+                    lineOrigin: lineOrigin,
+                    contentPathRect: contentPathRect,
+                    renderSize: renderSize,
+                    attrStr: attrStr,
+                    ranges: groups[groupIndex].ranges,
+                    writingMode: writingMode
                 )
 
-                for groupIndex in groups.indices {
-                    if groups[groupIndex].usesExplicitGeometry {
-                        continue
-                    }
-                    let intersects = groups[groupIndex].ranges.contains { span in
-                        NSIntersectionRange(span, lineNSRange).length > 0
-                    }
-                    guard intersects else { continue }
+                let attributeLocation = max(
+                    lineStart,
+                    groups[groupIndex].ranges
+                        .compactMap { span -> Int? in
+                            let intersection = NSIntersectionRange(span, lineNSRange)
+                            return intersection.length > 0 ? intersection.location : nil
+                        }
+                        .min() ?? lineStart
+                )
+                guard let paragraphStyle = attrStr.attribute(
+                    .paragraphStyle,
+                    at: attributeLocation,
+                    effectiveRange: nil
+                ) as? NSParagraphStyle else { continue }
 
-                    let standaloneImageRect = standaloneImageRenderableRect(
-                        line: line,
-                        lineOrigin: lineOrigin,
-                        contentPathRect: contentPathRect,
-                        renderSize: renderSize,
-                        attrStr: attrStr,
-                        ranges: groups[groupIndex].ranges,
-                        writingMode: writingMode
+                let leftInset = min(paragraphStyle.headIndent, paragraphStyle.firstLineHeadIndent)
+                let rightInset = paragraphStyle.tailIndent < 0 ? -paragraphStyle.tailIndent : 0
+                let availableWidth = max(1, contentPathRect.width - leftInset - rightInset)
+                let preferredWidth = max(
+                    1,
+                    min(
+                        availableWidth,
+                        groups[groupIndex].style.blockImage.map { $0.drawSize.width + $0.paddingLeft + $0.paddingRight }
+                            ?? groups[groupIndex].style.width
+                            ?? availableWidth
                     )
-
-                    let attributeLocation = max(
-                        lineStart,
-                        groups[groupIndex].ranges
-                            .compactMap { span -> Int? in
-                                let intersection = NSIntersectionRange(span, lineNSRange)
-                                return intersection.length > 0 ? intersection.location : nil
-                            }
-                            .min() ?? lineStart
-                    )
-                    guard let paragraphStyle = attrStr.attribute(
-                        .paragraphStyle,
-                        at: attributeLocation,
-                        effectiveRange: nil
-                    ) as? NSParagraphStyle else { continue }
-
-                    let leftInset = min(paragraphStyle.headIndent, paragraphStyle.firstLineHeadIndent)
-                    let rightInset = paragraphStyle.tailIndent < 0 ? -paragraphStyle.tailIndent : 0
-                    let availableWidth = max(1, contentPathRect.width - leftInset - rightInset)
-                    let preferredWidth = max(
-                        1,
-                        min(
-                            availableWidth,
-                            groups[groupIndex].style.blockImage.map { $0.drawSize.width + $0.paddingLeft + $0.paddingRight }
-                                ?? groups[groupIndex].style.width
-                                ?? availableWidth
-                        )
-                    )
-                    let blockX: CGFloat
-                    if groups[groupIndex].style.isHorizontallyCentered {
+                )
+                let blockX: CGFloat
+                if groups[groupIndex].style.isHorizontallyCentered {
+                    blockX = contentPathRect.minX + leftInset + max(0, (availableWidth - preferredWidth) / 2)
+                } else {
+                    switch groups[groupIndex].style.textAlign {
+                    case .center:
                         blockX = contentPathRect.minX + leftInset + max(0, (availableWidth - preferredWidth) / 2)
-                    } else {
-                        switch groups[groupIndex].style.textAlign {
-                        case .center:
-                            blockX = contentPathRect.minX + leftInset + max(0, (availableWidth - preferredWidth) / 2)
-                        case .right:
-                            blockX = contentPathRect.minX + leftInset + max(0, availableWidth - preferredWidth)
-                        default:
-                            blockX = contentPathRect.minX + leftInset
-                        }
+                    case .right:
+                        blockX = contentPathRect.minX + leftInset + max(0, availableWidth - preferredWidth)
+                    default:
+                        blockX = contentPathRect.minX + leftInset
                     }
-                    let lineHeight: CGFloat
-                    let blockHeight: CGFloat
-                    let uiY: CGFloat
-                    let rectX: CGFloat
-                    let rectW: CGFloat
-                    if writingMode.isVertical {
-                        // blockImage.drawSize: .width = physical width (X), .height = physical height (Y)
-                        // lineWidth = inline (Y) extent; ascent/descent = block (X) extent
-                        let blockExtent = lineAscent + abs(lineDescent)
-                        lineHeight = lineWidth
-                        blockHeight = max(
-                            lineWidth,
-                            groups[groupIndex].style.blockImage?.drawSize.height
-                                ?? groups[groupIndex].style.height
-                                ?? lineWidth
-                        )
-                        rectW = max(preferredWidth,
-                            groups[groupIndex].style.blockImage?.drawSize.width
-                            ?? blockExtent)
-                        rectX = adjustedOrigin.x - rectW / 2   // center on column baseline
-                        uiY = renderSize.height - adjustedOrigin.y
-                    } else if let standaloneImageRect {
-                        lineHeight = standaloneImageRect.height
-                        blockHeight = standaloneImageRect.height
-                        rectX = standaloneImageRect.minX
-                        rectW = min(standaloneImageRect.width, preferredWidth)
-                        uiY = standaloneImageRect.minY
-                    } else {
-                        lineHeight = max(paragraphStyle.minimumLineHeight, lineAscent + lineDescent)
-                        blockHeight = max(
-                            lineHeight,
-                            groups[groupIndex].style.blockImage?.drawSize.height
-                                ?? groups[groupIndex].style.height
-                                ?? lineHeight
-                        )
-                        if groups[groupIndex].style.hugsContent {
-                            // Shrink-to-fit bubble: size the box to the line's actual glyph run so
-                            // it hugs the text exactly, immune to column-width rounding (a right
-                            // float otherwise drifts a few points and clips its last glyph).
-                            rectX = adjustedOrigin.x
-                            rectW = max(1, lineWidth)
-                        } else {
-                            rectX = blockX
-                            rectW = preferredWidth
-                        }
-                        uiY = renderSize.height - (adjustedOrigin.y + lineAscent)
-                    }
-                    let rect = CGRect(
-                        x: rectX,
-                        y: uiY,
-                        width: rectW,
-                        height: blockHeight
-                    )
-
-                    groups[groupIndex].rect = groups[groupIndex].rect.isNull
-                        ? rect
-                        : groups[groupIndex].rect.union(rect)
                 }
+                let lineHeight: CGFloat
+                let blockHeight: CGFloat
+                let uiY: CGFloat
+                let rectX: CGFloat
+                let rectW: CGFloat
+                if writingMode.isVertical {
+                    // blockImage.drawSize: .width = physical width (X), .height = physical height (Y)
+                    // lineWidth = inline (Y) extent; ascent/descent = block (X) extent
+                    let blockExtent = lineAscent + abs(lineDescent)
+                    lineHeight = lineWidth
+                    blockHeight = max(
+                        lineWidth,
+                        groups[groupIndex].style.blockImage?.drawSize.height
+                            ?? groups[groupIndex].style.height
+                            ?? lineWidth
+                    )
+                    rectW = max(preferredWidth,
+                        groups[groupIndex].style.blockImage?.drawSize.width
+                        ?? blockExtent)
+                    rectX = adjustedOrigin.x - rectW / 2   // center on column baseline
+                    uiY = renderSize.height - adjustedOrigin.y
+                } else if let standaloneImageRect {
+                    lineHeight = standaloneImageRect.height
+                    blockHeight = standaloneImageRect.height
+                    rectX = standaloneImageRect.minX
+                    rectW = min(standaloneImageRect.width, preferredWidth)
+                    uiY = standaloneImageRect.minY
+                } else {
+                    lineHeight = max(paragraphStyle.minimumLineHeight, lineAscent + lineDescent)
+                    blockHeight = max(
+                        lineHeight,
+                        groups[groupIndex].style.blockImage?.drawSize.height
+                            ?? groups[groupIndex].style.height
+                            ?? lineHeight
+                    )
+                    if groups[groupIndex].style.hugsContent {
+                        // Shrink-to-fit bubble: size the box to the line's actual glyph run so
+                        // it hugs the text exactly, immune to column-width rounding (a right
+                        // float otherwise drifts a few points and clips its last glyph).
+                        rectX = adjustedOrigin.x
+                        rectW = max(1, lineWidth)
+                    } else {
+                        rectX = blockX
+                        rectW = preferredWidth
+                    }
+                    uiY = renderSize.height - (adjustedOrigin.y + lineAscent)
+                }
+                let rect = CGRect(
+                    x: rectX,
+                    y: uiY,
+                    width: rectW,
+                    height: blockHeight
+                )
+
+                groups[groupIndex].rect = groups[groupIndex].rect.isNull
+                    ? rect
+                    : groups[groupIndex].rect.union(rect)
             }
+        }
 
-            let htmlRenderables = groups
-                .filter { !$0.rect.isNull }
-                .sorted { lhs, rhs in
-                    if lhs.layer != rhs.layer { return lhs.layer > rhs.layer }
-                    if lhs.rect.minY != rhs.rect.minY { return lhs.rect.minY < rhs.rect.minY }
-                    return lhs.rect.minX < rhs.rect.minX
-                }
-                .map { group -> RenderedBlockRenderable in
-                    let renderRect = blockDecorationRect(
-                        from: group.rect,
-                        style: group.style,
-                        isContainer: group.isContainer,
-                        writingMode: writingMode
-                    )
-                    // Container groups only render decoration (border/background), don't take over text rendering
-                    let text: NSAttributedString? = (group.isContainer || !group.usesExplicitGeometry) ? nil : explicitRenderableText(
+        let htmlRenderables = groups
+            .filter { !$0.rect.isNull }
+            .sorted { lhs, rhs in
+                if lhs.layer != rhs.layer { return lhs.layer > rhs.layer }
+                if lhs.rect.minY != rhs.rect.minY { return lhs.rect.minY < rhs.rect.minY }
+                return lhs.rect.minX < rhs.rect.minX
+            }
+            .map { group -> RenderedBlockRenderable in
+                let renderRect = blockDecorationRect(
+                    from: group.rect,
+                    style: group.style,
+                    isContainer: group.isContainer,
+                    writingMode: writingMode
+                )
+                // Container groups only render decoration (border/background), don't take over text rendering
+                let text: NSAttributedString? = (group.isContainer || !group.usesExplicitGeometry) ? nil : explicitRenderableText(
+                    style: group.style,
+                    ranges: group.ranges,
+                    attrStr: attrStr,
+                    explicitRect: renderRect
+                )
+                return RenderedBlockRenderable(
+                    rect: renderRect,
+                    style: group.style,
+                    content: .htmlBlock(attributedText: text),
+                    sourceRanges: text != nil ? group.ranges : [],
+                    imageAttachment: makeBlockImageAttachment(
+                        rect: renderRect,
                         style: group.style,
                         ranges: group.ranges,
                         attrStr: attrStr,
-                        explicitRect: renderRect
+                        isVertical: writingMode.isVertical
                     )
-                    return RenderedBlockRenderable(
-                        rect: renderRect,
-                        style: group.style,
-                        content: .htmlBlock(attributedText: text),
-                        sourceRanges: text != nil ? group.ranges : [],
-                        imageAttachment: makeBlockImageAttachment(
-                            rect: renderRect,
-                            style: group.style,
-                            ranges: group.ranges,
-                            attrStr: attrStr,
-                            isVertical: writingMode.isVertical
-                        )
-                    )
-                }
-            let renderables = htmlRenderables + titleRenderables
-            if !renderables.isEmpty {
-                pageRenderables[pageIdx] = renderables.sorted { lhs, rhs in
-                    if lhs.rect.minY != rhs.rect.minY { return lhs.rect.minY < rhs.rect.minY }
-                    return lhs.rect.minX < rhs.rect.minX
-                }
+                )
             }
-        } } // end autoreleasepool + for pageIdx
-
-        return pageRenderables
+        return (htmlRenderables + titleRenderables).sorted { lhs, rhs in
+            if lhs.rect.minY != rhs.rect.minY { return lhs.rect.minY < rhs.rect.minY }
+            return lhs.rect.minX < rhs.rect.minX
+        }
     }
 
     struct ChapterTitleRenderableExtraction {

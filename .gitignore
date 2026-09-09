@@ -1,4 +1,7 @@
 .DS_Store
+# Obsidian vault: keep personal UI state and recoverable trash local.
+docs/.obsidian/
+docs/.trash/
 *.xcuserstate
 xcuserdata/
 DerivedData/
@@ -59,3 +62,8 @@ CLAUDE.md
 
 # Local theme-pack sample material (IP images, ~52MB) — not shipped; theme packs deferred
 Resources/Assets/ReaderThemes/
+
+# legado reference sources (read-only, cloned for comparison — see CLAUDE.md)
+legado-upstream/
+legado-md3/
+legado-E/

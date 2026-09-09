@@ -109,6 +109,12 @@ final class BrowserLayoutDocument {
             config: config,
             metrics: &metrics
         )
+        // A partial frontend snapshot is diagnostic evidence, never permission
+        // to render dropped declarations. Task 8 will route these facts through
+        // whole-chapter admission; direct frontend injection must also fail closed.
+        guard !frontendResult.capabilityFacts.blocksCutover else {
+            throw BrowserLayoutError.unsupportedFrontendCapabilities
+        }
         let semanticMedia = metrics.time("semanticMedia") {
             BrowserLayoutSemanticContent.prepareMedia(in: frontendResult.rootNode, renderWidth: config.renderWidth)
         }
@@ -200,6 +206,7 @@ final class BrowserLayoutDocument {
 
     enum BrowserLayoutError: Error {
         case emptyBody
+        case unsupportedFrontendCapabilities
         case unsupportedFloatFragmentation(nodeID: Int)
         case unsupportedRubySubset
         case unsupportedTextIndentSubset

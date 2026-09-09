@@ -1,18 +1,36 @@
 import Foundation
 
-struct ReaderOverlayVisibility: Equatable, Sendable {
-    var showsRuntimeCanvas: Bool
-    var showsEditorCanvas: Bool
+struct ReaderBarVisibility: Equatable, Sendable {
+    var showsHeader: Bool
+    var showsFooter: Bool
 }
 
 enum ReaderOverlayPresentationPolicy {
+
+    /// Whether each bar is drawn — and, by the same call, whether the paginator
+    /// reserves space for it.
+    ///
+    /// **There is deliberately no `isScrolling` parameter.** The bars used to be
+    /// free-positioned components that only paged mode drew, which is why scroll
+    /// mode had no header or footer at all. Bars are structural: the text area is
+    /// inset by their height in both modes, exactly as legado's
+    /// `view_book_page.xml` constrains its `ContentTextView` between the two
+    /// dividers and then scrolls only the content.
+    ///
+    /// Both the renderer and `ReaderLayoutMetrics` must ask this one function. If
+    /// they ever disagree, the text either slides under a bar or leaves a blank
+    /// strip where one was reserved but never drawn.
     static func visibility(
-        isScrolling: Bool,
-        isEditing: Bool
-    ) -> ReaderOverlayVisibility {
-        ReaderOverlayVisibility(
-            showsRuntimeCanvas: !isScrolling && !isEditing,
-            showsEditorCanvas: !isScrolling && isEditing
+        layout: ReaderBarLayout,
+        headerEnabled: Bool,
+        footerEnabled: Bool,
+        isChapterOpeningPage: Bool
+    ) -> ReaderBarVisibility {
+        ReaderBarVisibility(
+            showsHeader: headerEnabled
+                && layout.hasContent(in: .header)
+                && !(isChapterOpeningPage && layout.hidesHeaderOnChapterOpening),
+            showsFooter: footerEnabled && layout.hasContent(in: .footer)
         )
     }
 
@@ -33,13 +51,5 @@ enum ReaderOverlayPresentationPolicy {
         isEditing: Bool
     ) -> Bool {
         hidesStatusBar(showsReaderChrome: showsReaderChrome, isEditing: isEditing)
-    }
-}
-
-enum ReaderOverlayPaginationPolicy {
-    static func insets(
-        for layout: ReaderOverlayLayout
-    ) -> ReaderOverlayContentReservations {
-        layout.contentReservations.normalized
     }
 }

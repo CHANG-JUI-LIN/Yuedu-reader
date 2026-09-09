@@ -90,7 +90,6 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             self.loadChapter(at: self.chapterIndex, startPage: self.reader?.currentPageIndex() ?? 0)
         }
 
-        store?.updateLastOpened(bookId: book.id)
         installReader()
         if isSingleChapterDocumentBook { chapterIndex = 0 }
         loadChapter(at: chapterIndex, startPage: restoredStartPage)

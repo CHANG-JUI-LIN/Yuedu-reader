@@ -248,6 +248,9 @@ final class TTSCoordinator: ObservableObject {
     @Published private(set) var currentSegmentIndex = 0
     @Published private(set) var totalSegments = 0
     @Published private(set) var currentSegmentText = ""
+    /// A queued segment is published before its audio arrives. Preview loading UI must
+    /// follow the player's real start callback, not the text/highlight callback.
+    @Published private(set) var hasAudiblePlaybackStarted = false
     @Published private(set) var errorMessage: String?
     /// Something went wrong but narration is still running — a segment the provider could not
     /// deliver, which playback skipped past. Shown inline in the panel, never as an alert.
@@ -375,6 +378,7 @@ final class TTSCoordinator: ObservableObject {
         currentSegmentIndex = 0
         totalSegments = 0
         currentSegmentText = ""
+        hasAudiblePlaybackStarted = false
         currentEngine.speak(
             text: text,
             title: title,
@@ -589,6 +593,7 @@ final class TTSCoordinator: ObservableObject {
     }
 
     private func finishStopped(reason: String) {
+        hasAudiblePlaybackStarted = false
         let ownsSystemMedia = Self.activeSystemMediaCoordinator === self
         isPlaying = false
         playbackState = .stopped
@@ -1066,6 +1071,7 @@ final class TTSCoordinator: ObservableObject {
             ttsLog("[TTS][NowPlaying] playback started ignored because coordinator is not active owner")
             return
         }
+        hasAudiblePlaybackStarted = true
         nowPlayingStartedAt = isPlaying ? Date() : nil
         updateNowPlaying()
         publishFloatingPlayerState()

@@ -102,7 +102,7 @@ enum EPUBStylesheetIngestion {
                 let sheet = AuthorStylesheet(
                     source: source, text: result?.text ?? "", sourceOrder: ordinal,
                     currentCompatibilityOrder: nil, currentCompatibilityOnly: false,
-                    media: media, isAlternate: alternate
+                    media: media, isAlternate: alternate, loadFailed: result == nil
                 )
                 sheets.append(sheet)
                 if !sheet.hasSupportedMedia { report("unsupported media: \(media ?? "")", order: ordinal, label: label) }

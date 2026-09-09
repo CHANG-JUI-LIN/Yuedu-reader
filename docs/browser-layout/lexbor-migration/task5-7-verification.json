@@ -1,0 +1,85 @@
+{
+  "recordedOn": "2026-09-08",
+  "baseCommit": "b06801ded952625cb33c57274765327603476abb",
+  "scope": "Task 5/6 verification and Task 7 longhand subset; shorthand remains a cutover blocker",
+  "device": {
+    "architecture": "arm64",
+    "deviceId": "56B241AC-0378-48AD-B0AB-86C260DE8E34",
+    "deviceName": "iPhone 17 Pro Max",
+    "modelName": "iPhone 17 Pro Max",
+    "osBuildNumber": "24A5423a",
+    "osVersion": "27.0",
+    "platform": "iOS Simulator"
+  },
+  "baselineFocused": {
+    "passedMethods": 8,
+    "failedMethods": 1,
+    "failedTest": "BrowserLayoutStylesheetIngestionTests/retainsInactiveMetadataAndLoadDiagnostics()"
+  },
+  "packageFinal": {
+    "passed": 19,
+    "failed": 0,
+    "log": "/tmp/yuedu-lexbor-task7/package-final.log"
+  },
+  "expandedRegression": {
+    "passedMethods": 72,
+    "failedMethods": 2,
+    "executedPassedCases": 102,
+    "resultBundle": "/tmp/yuedu-lexbor-task7/mapping-2.xcresult"
+  },
+  "unmodifiedHeadControl": {
+    "passedMethods": 0,
+    "failedMethods": 2,
+    "resultBundle": "/tmp/yuedu-lexbor-task7/control-head.xcresult",
+    "comparison": {
+      "HTMLPresentationalHintProductionEPUBTests/gm3WidthHintReachesBothProductionPipelines()": {
+        "identicalFailureText": true,
+        "changedChapters": []
+      },
+      "BrowserLayoutLineBreakBaselineTests/lineBreakingMatchesGolden()": {
+        "identicalFailureText": true,
+        "changedChapters": [
+          "271"
+        ]
+      }
+    },
+    "note": "Stopped only the post-test simctl diagnose collection; both test failures retained in xcresult."
+  },
+  "goldenModified": false,
+  "productionCutover": "NO",
+  "committed": false,
+  "finalFocused": {
+    "passedMethods": 76,
+    "failedMethods": 0,
+    "executedPassedCases": 106,
+    "skipped": 0,
+    "resultBundle": "/tmp/yuedu-lexbor-task7/final-focused-2.xcresult",
+    "classes": [
+      "BrowserLayoutStylesheetIngestionTests",
+      "LexborCSSFrontendSyntheticTests",
+      "LexborCSSFrontendLifetimeTests",
+      "LexborComputedStyleCoverageTests",
+      "CurrentCSSFrontendNeutralDOMParityTests",
+      "BrowserLayoutFloatStyleTests",
+      "BrowserLayoutTextIndentTests",
+      "HTMLPresentationalHintProductionEPUBTests",
+      "EPUBStyleResolverPerformanceTests"
+    ]
+  },
+  "integrationBaseCommit": "3016d1d36f03062761b1eca96eacec5f95f74e87",
+  "upstreamParserGaps": [
+    "clear: both",
+    "var()"
+  ],
+  "mainIntegration": {
+    "passedMethods": 16,
+    "failedMethods": 0,
+    "skipped": 0,
+    "resultBundle": "/tmp/yuedu-lexbor-task7/main-integration.xcresult",
+    "classes": [
+      "LexborCSSFrontendSyntheticTests",
+      "CurrentCSSFrontendNeutralDOMParityTests",
+      "HTMLPresentationalHintProductionEPUBTests"
+    ]
+  }
+}

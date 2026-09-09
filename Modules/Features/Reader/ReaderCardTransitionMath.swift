@@ -25,7 +25,7 @@ enum ReaderCardTransitionMath {
     /// legitimate swipes reporting initialX of 8/11/18), so a tight strip
     /// rejects most honest attempts. The system recognizer is what guarantees
     /// the touch actually started at the edge.
-    static let edgeStartWidth: CGFloat = 30
+    static let edgeStartWidth = NavigationBackSwipePolicy.reservedWidth
 
     /// Closing progress required before a slow release commits the pop.
     /// Below this point the physical book transition reverses to fully open.
@@ -206,7 +206,7 @@ enum ReaderCardTransitionMath {
     /// edge of the given container width. `pointX` is in the container's
     /// coordinate space (0 at the leading edge).
     static func isWithinEdgeStart(pointX: CGFloat, containerWidth: CGFloat) -> Bool {
-        pointX >= 0 && pointX <= edgeStartWidth && containerWidth > 0
+        NavigationBackSwipePolicy.contains(initialX: pointX, containerWidth: containerWidth)
     }
 
     /// True when horizontal drag intent is dominant over vertical, i.e. the
@@ -228,17 +228,11 @@ enum ReaderCardTransitionMath {
         translationY: CGFloat,
         containerWidth: CGFloat
     ) -> Bool {
-        guard isWithinEdgeStart(pointX: initialX, containerWidth: containerWidth) else {
-            return false
-        }
-        // A screen-edge recognizer consults its delegate the moment its own
-        // edge decision succeeds — before any translation accumulates (device
-        // logs: dx=0 dy=0). Zero translation therefore means "the system
-        // already vetted an inward edge swipe"; direction checks apply only
-        // once real movement exists.
-        if translationX == 0 && translationY == 0 { return true }
-        guard translationX > 0 else { return false }
-        return isPredominantlyHorizontal(dx: translationX, dy: translationY)
+        NavigationBackSwipePolicy.shouldBegin(
+            initialX: initialX,
+            translation: CGPoint(x: translationX, y: translationY),
+            containerWidth: containerWidth
+        )
     }
 
     /// Convert a rightward drag into UIKit's interactive-pop percentage.

@@ -4,10 +4,17 @@ import SwiftUI
 import UIKit
 import YueduCoreText
 import YueduCoreTextTypography
+import Accessibility
 
 /// Single-page CoreText rendering view.
 /// Draws line-by-line using draw(_ rect:) (supporting CJK justified alignment), without snapshot caching or layer caching.
-final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate {
+final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate,
+    AXCustomContentProvider {
+
+    /// `AXCustomContentProvider` storage. Carries 頁眉／頁腳 — see
+    /// `refreshBarAccessibilityContent`.
+    var accessibilityCustomContent: [AXCustomContent]! = []
+
     private static let emphasisEditMenuIdentifier = NSString(string: "CoreTextPageView.emphasis")
 
     nonisolated static func frameForRendering(
@@ -211,10 +218,39 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 頁眉／頁腳 as rotor-reachable custom content rather than extra stops.
+    ///
+    /// The bars are drawn into the page now, so there is no view for VoiceOver to
+    /// land on — and the page is a single element whose label is the page text.
+    /// Custom content keeps the bars available without putting two more swipes
+    /// between the reader and the words, which is the same reason the bars were
+    /// one stop each rather than one per field when they were a SwiftUI overlay.
+    private func refreshBarAccessibilityContent() {
+        var entries: [AXCustomContent] = []
+        if let header = pageBars?.header, !header.accessibilityValue.isEmpty {
+            entries.append(
+                AXCustomContent(
+                    label: localized(ReaderBar.header.titleKey),
+                    value: header.accessibilityValue
+                )
+            )
+        }
+        if let footer = pageBars?.footer, !footer.accessibilityValue.isEmpty {
+            entries.append(
+                AXCustomContent(
+                    label: localized(ReaderBar.footer.titleKey),
+                    value: footer.accessibilityValue
+                )
+            )
+        }
+        accessibilityCustomContent = entries
+    }
+
     private func refreshAccessibility() {
         isAccessibilityElement = true
         accessibilityTraits = .staticText
         accessibilityLabel = accessibilityPageText
+        refreshBarAccessibilityContent()
         accessibilityHint = localized("點兩下展開閱讀工具，三指左右滑動翻頁")
         accessibilityCustomActions = [
             accessibilityAction(named: localized("下一頁"), action: .nextPage),
@@ -414,6 +450,19 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         }
     }
 
+    /// 頁眉／頁腳 for *this* page.
+    ///
+    /// Held on the view rather than folded into `ChapterLayout` because it changes
+    /// on a different clock: the clock field ticks every minute and the battery
+    /// whenever it moves, neither of which should invalidate a pagination.
+    var pageBars: ReaderPageBars? {
+        didSet {
+            guard pageBars != oldValue else { return }
+            setNeedsDisplay()
+            refreshBarAccessibilityContent()
+        }
+    }
+
     override func draw(_ rect: CGRect) {
         guard
             let layout,
@@ -425,15 +474,23 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             layout: layout,
             pageIndex: localPageIndex,
             in: ctx,
-            bounds: bounds
+            bounds: bounds,
+            bars: pageBars
         )
     }
 
+    /// - Parameter bars: 頁眉／頁腳 drawn as part of the page.
+    ///   Everything that shows a page goes through here — the live view, curl
+    ///   back-pages, cover-transition snapshots, the auto-read reveal image — so
+    ///   drawing the bars here is what makes them turn with the page in every
+    ///   animation. A UIKit subview on the page controller would have been visible
+    ///   only on the first of those four.
     nonisolated static func renderPage(
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
         in ctx: CGContext,
-        bounds: CGRect
+        bounds: CGRect,
+        bars: ReaderPageBars? = nil
     ) {
         guard pageIndex < layout.pageRanges.count else { return }
 
@@ -460,6 +517,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         ctx.saveGState()
         ctx.translateBy(x: bounds.minX, y: bounds.minY)
         ctx.scaleBy(x: scaleX, y: scaleY)
+        // Both text and image-only EPUB pages carry the configured bars. Keeping
+        // this at the shared exit also covers curl/cover snapshot rendering.
+        defer {
+            bars?.draw(in: canonicalBounds, context: ctx)
+            ctx.restoreGState()
+        }
 
         ctx.setFillColor(layout.backgroundColor.cgColor)
         ctx.fill(canonicalBounds)
@@ -472,7 +535,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             for attachment in layout.blockAttachments[pageIndex] ?? [] {
                 attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
             }
-            ctx.restoreGState()
             return
         }
 
@@ -580,7 +642,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             )
         }
 
-        ctx.restoreGState()
     }
 
     nonisolated static func drawAttachments(_ attachments: [CoreTextPaginator.RenderedAttachment]) {
@@ -2149,6 +2210,17 @@ final class CoreTextPageViewController: UIViewController {
         }
     }
 
+    /// 頁眉／頁腳 for the page this controller shows. Settable after `configure`
+    /// so a clock tick or a battery change can refresh the bars without touching
+    /// the layout.
+    var pageBars: ReaderPageBars? {
+        didSet {
+            if isViewLoaded {
+                pageView.pageBars = pageBars
+            }
+        }
+    }
+
     private var pendingLayout: CoreTextPaginator.ChapterLayout?
     private var pendingLocalPage: Int = 0
     private var pendingFallbackColor: UIColor = .systemBackground
@@ -2178,6 +2250,7 @@ final class CoreTextPageViewController: UIViewController {
             pageView.onInternalLinkTap = onInternalLinkTap
             pageView.onAccessibilityAction = onAccessibilityAction
             pageView.accessibilityUsesRTLPageOrder = accessibilityUsesRTLPageOrder
+            pageView.pageBars = pageBars
             installImageTapHandler()
             pageView.configure(layout: layout, pageIndex: localPage, fallbackBackgroundColor: fallbackBackgroundColor)
             pageView.setTextAnnotations(pendingTextAnnotations)
@@ -2209,6 +2282,7 @@ final class CoreTextPageViewController: UIViewController {
         pageView.onAccessibilityAction = onAccessibilityAction
         pageView.accessibilityUsesRTLPageOrder = accessibilityUsesRTLPageOrder
         installImageTapHandler()
+        pageView.pageBars = pageBars
         view.addSubview(pageView)
         if let layout = pendingLayout {
             pageView.configure(layout: layout, pageIndex: pendingLocalPage, fallbackBackgroundColor: pendingFallbackColor)

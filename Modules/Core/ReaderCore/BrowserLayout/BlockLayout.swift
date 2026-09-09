@@ -529,7 +529,7 @@ enum BlockLayout {
                 rootFontSize: rootFontSize
             )
             guard usedSize != atomic.usedSize else { return run }
-            return InlineRun(
+            var resolved = InlineRun(
                 text: run.text,
                 style: run.style,
                 sourceRange: run.sourceRange,
@@ -544,6 +544,10 @@ enum BlockLayout {
                     linkTarget: atomic.linkTarget
                 )
             )
+            resolved.attributedSource = run.attributedSource
+            resolved.inlineDecorations = run.inlineDecorations
+            resolved.decorationEdge = run.decorationEdge
+            return resolved
         }
     }
 }

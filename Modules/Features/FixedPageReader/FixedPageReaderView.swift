@@ -53,6 +53,7 @@ struct FixedPageReaderView: View {
     let bookId: UUID
     @EnvironmentObject var store: BookStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.readerNavigator) private var readerNavigator
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appDependencies) private var dependencies
     @StateObject private var state = FixedPageReaderState()
@@ -83,7 +84,13 @@ struct FixedPageReaderView: View {
                 if state.showControls {
                     FixedPageReaderControlsOverlay(
                         state: state,
-                        onClose: { dismiss() },
+                        onClose: {
+                            if let readerNavigator {
+                                readerNavigator.close()
+                            } else {
+                                dismiss()
+                            }
+                        },
                         onOpenTouchZoneEditor: {
                             state.showControls = false
                             showTouchZoneEditor = true
@@ -124,6 +131,7 @@ struct FixedPageReaderView: View {
             }
         }
         .animation(DSAnimation.fast, value: state.showControls)
+        .toolbar(.hidden, for: .tabBar)
         .statusBarHidden(!state.showControls)
         // Same immersive rule as the flowing reader: the home indicator fades with
         // the controls and comes back with them.
@@ -133,7 +141,26 @@ struct FixedPageReaderView: View {
                 isEditing: false
             ) ? .hidden : .automatic
         )
+        .onChange(of: state.isLoading) { _, isLoading in
+            if !isLoading {
+                // The page container or its error state has been installed.
+                readerNavigator?.signalReaderContentReady()
+            }
+        }
+        .onChange(of: state.fixedPageReaderConfiguration) { _, configuration in
+            readerNavigator?.updateOpeningDirection(
+                ReaderBookOpeningDirection.resolve(
+                    writingMode: .horizontal,
+                    pageProgressionIsRTL: configuration.progression == .rightToLeft
+                )
+            )
+        }
         .onAppear {
+            // A pushed reader updates recency after its card transition finishes,
+            // so a recently-read shelf does not move the source cover mid-open.
+            if readerNavigator == nil {
+                store.updateLastOpened(bookId: bookId)
+            }
             beginReadingStatsSession()
         }
         .onDisappear {
@@ -228,8 +255,10 @@ struct FixedPageReaderControlsOverlay: View {
                 Image(systemName: "chevron.left")
                     .font(DSFont.fixed(size: 17, weight: .medium))
                     .foregroundColor(.white)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
+                    .accessibilityHidden(true)
             }
+            .accessibilityLabel(localized("返回"))
             if !state.chapterListItems.isEmpty {
                 Button {
                     state.showChapterList = true
@@ -501,4 +530,9 @@ struct FixedPageChapterListView: View {
             }
         }
     }
+}
+
+#Preview {
+    FixedPageReaderView(bookId: UUID())
+        .environmentObject(BookStore())
 }

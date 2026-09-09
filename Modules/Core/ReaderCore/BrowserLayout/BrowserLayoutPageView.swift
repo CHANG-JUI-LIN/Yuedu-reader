@@ -1,11 +1,20 @@
+import Accessibility
 import UIKit
 
 /// Draws one page's DisplayList directly with CoreGraphics — no intermediate
 /// UIImage. Also performs link hit-testing from the fragment rects and paints
 /// a selection/TTS highlight overlay.
 @MainActor
-final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
+final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconcurrency AXCustomContentProvider {
+    var accessibilityCustomContent: [AXCustomContent]! = []
 
+    var readingPositionForBars: CoreTextReadingPosition?
+    var pageBars: ReaderPageBars? {
+        didSet {
+            setNeedsDisplay()
+            refreshAccessibility()
+        }
+    }
     var displayList: DisplayList = .empty
     var backgroundColorFill: UIColor = .white
     /// The reader's own background artwork, when the user has chosen one.
@@ -15,6 +24,11 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     /// whose chapters render on the browser engine loses the background the
     /// moment it leaves a legacy chapter.
     var readerBackgroundImage: UIImage?
+    /// Scroll hosts paint the reader artwork once behind their collection.
+    /// Their bounded tiles must suppress the authored canvas without repainting it.
+    var skipAuthoredBackgroundPaint = false
+    /// Let UICollectionView own VoiceOver scrolling for continuous tiles.
+    var usesContinuousScrolling = false
     /// Every tappable link on this page, in final page-local geometry, built by
     /// the engine from the SAME display list this view draws. The view never
     /// derives link geometry itself.
@@ -244,12 +258,13 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
             in: context,
             // A reader-chosen background REPLACES the book's own page surface,
             // exactly as in the legacy page.
-            skipAuthoredBackgroundPaint: readerBackgroundImage != nil
+            skipAuthoredBackgroundPaint: skipAuthoredBackgroundPaint || readerBackgroundImage != nil
         )
         for highlight in highlightRects {
             highlightColor.setFill()
             context.fill(highlight.intersection(bounds))
         }
+        pageBars?.draw(in: bounds, context: context)
         if let spec = debugSpec {
             BrowserLayoutDeviceDiagnostic.log(
                 .pageViewDraw(spine: spec.spine, generation: spec.generation),
@@ -399,8 +414,16 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
         isAccessibilityElement = true
         accessibilityTraits = .staticText
         accessibilityLabel = accessibilityPageText
-        accessibilityHint = localized("點兩下展開閱讀工具，三指左右滑動翻頁")
-        accessibilityCustomActions = [
+        accessibilityCustomContent = [pageBars?.header, pageBars?.footer].compactMap { model in
+            guard let model, !model.accessibilityValue.isEmpty else { return nil }
+            return AXCustomContent(label: localized(model.bar.titleKey), value: model.accessibilityValue)
+        }
+        accessibilityHint = usesContinuousScrolling
+            ? localized("點兩下展開閱讀工具")
+            : localized("點兩下展開閱讀工具，三指左右滑動翻頁")
+        accessibilityCustomActions = usesContinuousScrolling ? [
+            accessibilityAction(named: localized("選單"), action: .toggleMenu),
+        ] : [
             accessibilityAction(named: localized("下一頁"), action: .nextPage),
             accessibilityAction(named: localized("上一頁"), action: .prevPage),
             accessibilityAction(named: localized("選單"), action: .toggleMenu),
@@ -436,6 +459,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
     }
 
     override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
+        guard !usesContinuousScrolling else { return false }
         guard let onAccessibilityAction else { return false }
         let action: TouchAction
         switch direction {
@@ -472,6 +496,25 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate {
             clearPlaybackHighlight()
             return
         }
+        paintPlaybackHighlight(sourceRange: range)
+    }
+
+    /// A continuous document can supply a sentence spanning two paint tiles.
+    /// Both tiles use its chapter range and paint only their own geometry.
+    func setPlaybackHighlight(sourceRange: NSRange?) {
+        playbackHighlightText = nil
+        guard let sourceRange else { clearPlaybackHighlight(); return }
+        paintPlaybackHighlight(sourceRange: sourceRange)
+    }
+
+    func playbackHighlightBounds(in view: UIView) -> CGRect? {
+        guard !playbackHighlightLayer.isHidden, let path = playbackHighlightLayer.path else { return nil }
+        let rect = path.boundingBoxOfPath.intersection(bounds)
+        guard !rect.isNull, !rect.isEmpty else { return nil }
+        return convert(rect, to: view)
+    }
+
+    private func paintPlaybackHighlight(sourceRange range: NSRange) {
         let path = UIBezierPath()
         for rect in rects(intersectingSourceRange: range) {
             path.append(UIBezierPath(roundedRect: rect.insetBy(dx: -1, dy: -1), cornerRadius: 3))

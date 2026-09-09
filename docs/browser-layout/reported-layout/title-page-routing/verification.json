@@ -1,0 +1,74 @@
+{
+  "passed": 25,
+  "failed": 0,
+  "skipped": 0,
+  "suites": [
+    {
+      "result": "Passed",
+      "passedTests": 4,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 4,
+      "testFailures": [],
+      "suite": "EPUBPageBarsLifecycleTests",
+      "exitCode": 0,
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/browser-auto-final-verification-EPUBPageBarsLifecycleTests.xcresult"
+    },
+    {
+      "result": "Passed",
+      "passedTests": 17,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 17,
+      "testFailures": [],
+      "suite": "BrowserLayoutPageEngineTests",
+      "exitCode": 0,
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/browser-auto-final-verification-BrowserLayoutPageEngineTests.xcresult"
+    },
+    {
+      "result": "Passed",
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 1,
+      "testFailures": [],
+      "suite": "BrowserLayoutReportedTitlePageTests",
+      "exitCode": 0,
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/browser-auto-final-verification-BrowserLayoutReportedTitlePageTests.xcresult"
+    },
+    {
+      "result": "Passed",
+      "passedTests": 2,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 2,
+      "testFailures": [],
+      "suite": "EPUBAutoRoutingTests",
+      "exitCode": 0,
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/browser-auto-final-verification-EPUBAutoRoutingTests.xcresult"
+    },
+    {
+      "result": "Passed",
+      "passedTests": 1,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 1,
+      "testFailures": [],
+      "suite": "BrowserLayoutFeatureTests",
+      "exitCode": 0,
+      "xcresult": "/tmp/yuedu-layout-fix-20260909/browser-auto-final-verification-BrowserLayoutFeatureTests.xcresult"
+    }
+  ],
+  "sourceSHA256": {
+    "Modules/Core/ReaderCore/EPUBPageRenderer.swift": "0fe5ca43c22e4881b252c5a6fe2afafc4c039bdf2c0e3ea851698d7240e77f98",
+    "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutFeature.swift": "36173ff5c20683565fbe86f810cc7cb7ff7e8abf9020dc3319396f46b6b99fab",
+    "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutPageEngine.swift": "b61d3f528c69f768ae72c4a8031e94677cd08429f115bba0b05067481d2e3af9",
+    "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutPageView.swift": "c61ffa74feb43259384690d24ad9c9d7242deb7c806ce03e3f4c56a8f6845bc7",
+    "Modules/Core/ReaderCore/BrowserLayout/DisplayListRenderer.swift": "42009d19c198f850656ffcb57782305aeff237e5c0c04ce02f0f470ff2740c60",
+    "Tests/iOS/yuedu appTests/EPUBPageBarsLifecycleTests.swift": "7b89795a1eb27e8b1e9cb31a2b321f3c0fc6c3df8ec41ed0873ea524278429ef",
+    "Tests/iOS/yuedu appTests/BrowserLayoutReportedTitlePageTests.swift": "e5ecc1228b09fcd286de7392b7023a52c3d184e457170ddac80cb726bff964f3",
+    "Tests/iOS/yuedu appTests/EPUBAutoRoutingTests.swift": "93a275f8b04411bd427a0fb5c18c1f431932f7d7794e4f7731662a90094d9c79",
+    "Tests/iOS/yuedu appTests/BrowserLayoutPageEngineTests.swift": "0d2a2351d5c363fc0770c385b0f69410ba70a126245705d5845cbeffeba261c2",
+    "Tests/iOS/yuedu appTests/BrowserLayoutEngineTests.swift": "f90d8ed57b0870289f33f8ba6eda5f80c3554b4a732622b33a6dfc95ffa03524"
+  }
+}

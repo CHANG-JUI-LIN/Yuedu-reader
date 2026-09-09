@@ -103,7 +103,7 @@ extension ReaderView {
                 }
             },
             onOpenBookDetail: onlineBookDetail == nil ? nil : {
-                showOnlineBookDetail = true
+                openOnlineBookDetail()
             }
         )
     }
@@ -335,7 +335,7 @@ extension ReaderView {
         guard let route = modernBookCardPresentation.consumeAfterDismissal() else { return }
         switch route {
         case .bookDetail:
-            showOnlineBookDetail = true
+            openOnlineBookDetail()
         case .secondary(let id):
             readerSecondaryActions.first { $0.id == id }?.action()
         }

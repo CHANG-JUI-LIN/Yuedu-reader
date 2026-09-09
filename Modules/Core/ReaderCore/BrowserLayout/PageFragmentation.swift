@@ -201,12 +201,18 @@ struct PageWalker {
 
     /// Document-space step emitted by `nextStep` (BEFORE paging).
     enum Step {
+        case inlineLineStart(StepInlineLineStart)
         case floatBoundary(StepFloat)
         case fill(StepFill)
         case fillEnd(StepFillEnd)
         case text(StepText)
         case ruby(StepRuby)
         case image(StepImage)
+    }
+
+    struct StepInlineLineStart {
+        let placementRect: DocumentRect
+        let fills: [StepFill]
     }
 
     struct StepFloat {
@@ -273,6 +279,7 @@ struct PageWalker {
         var childIndex = 0
         var lineIndex = 0
         var runIndex = 0
+        var inlineDecorationsEmitted = false
         var fillsEmitted = false
         var decorationStarted = false
         var decorationEndEmitted = false
@@ -555,9 +562,37 @@ struct PageWalker {
             }
             if stack[index].lineIndex < stack[index].box.lines.count {
                 let line = stack[index].box.lines[stack[index].lineIndex]
+                if !stack[index].inlineDecorationsEmitted {
+                    stack[index].inlineDecorationsEmitted = true
+                    if !line.inlineDecorations.isEmpty {
+                        let frame = stack[index]
+                        return .inlineLineStart(StepInlineLineStart(
+                            placementRect: DocumentRect(rawValue: CGRect(
+                                x: frame.contentOrigin.x + line.contentX,
+                                y: frame.contentOrigin.y + line.top,
+                                width: frame.box.contentSize.width, height: line.height
+                            )),
+                            fills: line.inlineDecorations.map { decoration in
+                                let style = decoration.owner.style
+                                return StepFill(
+                                    rect: DocumentRect(rawValue: decoration.rect.offsetBy(
+                                        dx: frame.contentOrigin.x + line.contentX, dy: frame.contentOrigin.y)),
+                                    color: style.backgroundColor ?? .clear,
+                                    cornerRadius: style.borderRadius,
+                                    borderTop: Self.edge(style.borderTopWidth, style.borderTopStyle, style.borderColor),
+                                    borderBottom: Self.edge(style.borderBottomWidth, style.borderBottomStyle, style.borderColor),
+                                    borderLeft: decoration.paintsStartEdge ? Self.edge(style.borderLeftWidth, style.borderLeftStyle, style.borderColor) : .zero,
+                                    borderRight: decoration.paintsEndEdge ? Self.edge(style.borderRightWidth, style.borderRightStyle, style.borderColor) : .zero,
+                                    nodeID: decoration.owner.nodeID, writingMode: writingMode
+                                )
+                            }
+                        ))
+                    }
+                }
                 if stack[index].runIndex < line.runs.count {
                     let run = line.runs[stack[index].runIndex]
                     stack[index].runIndex += 1
+                    if run.isDecorationEdge { continue }
                     let frame = stack[index]
                     if let ruby = run.ruby {
                         return .ruby(StepRuby(
@@ -630,6 +665,7 @@ struct PageWalker {
                 }
                 stack[index].lineIndex += 1
                 stack[index].runIndex = 0
+                stack[index].inlineDecorationsEmitted = false
                 continue
             }
             if stack[index].decorationStarted, !stack[index].decorationEndEmitted {
@@ -661,6 +697,8 @@ struct PageWalker {
         // bytes of *accounting*, which is exactly the monotonic growth
         // MemoryTracker exists to disprove. One owner per artifact type.
         switch step {
+        case .inlineLineStart(let line):
+            return placeInlineLineStart(line)
         case .floatBoundary(let marker):
             return placeFloatBoundary(marker)
         case .fill(let frag):
@@ -800,6 +838,32 @@ struct PageWalker {
         // up with it — same mechanism as any other displacement.
         flowShift -= discard
         return blockStart - discard
+    }
+
+    private mutating func placeInlineLineStart(_ step: StepInlineLineStart) -> PageFragments? {
+        var flushed: PageFragments?
+        if !isContinuous {
+            let shiftedY = step.placementRect.minY + flowShift
+            var target = max(0, Int(floor(shiftedY / pageHeight)))
+            if step.placementRect.height <= pageHeight,
+               shiftedY - CGFloat(target) * pageHeight + step.placementRect.height > pageHeight + 0.001 {
+                target += 1
+                flowShift += CGFloat(target) * pageHeight - shiftedY
+            }
+            flushed = advanceToPage(target)
+            _ = discardMarginAdjoiningBreak(step.placementRect.minY + flowShift, target: target)
+        }
+        for fill in step.fills {
+            let document = DocumentRect(rawValue: fill.rect.rawValue.offsetBy(dx: 0, dy: flowShift))
+            currentPage.append(.fill(FillFragment(
+                rect: canvasRect(forDocument: document, pageIndex: currentIndex),
+                documentRect: fill.rect, color: fill.color, cornerRadius: fill.cornerRadius,
+                borderTop: fill.borderTop, borderBottom: fill.borderBottom,
+                borderLeft: fill.borderLeft, borderRight: fill.borderRight,
+                nodeID: fill.nodeID, writingMode: fill.writingMode
+            )))
+        }
+        return flushed
     }
 
     private mutating func placeText(_ step: StepText) -> PageFragments? {

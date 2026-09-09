@@ -201,11 +201,16 @@ enum ReaderSettingsImportService {
         let settings = GlobalSettings.shared
         let readerConfig = ReaderConfig.shared
 
-        // The overlay layout goes first and can veto the whole apply: a partial
-        // import that changed the type size but silently dropped the header/footer
+        // The header/footer layout goes first and can veto the whole apply: a
+        // partial import that changed the type size but silently dropped the bars
         // is worse than a reported failure.
+        //
+        // Presets carry free coordinates — that is the legado-compatible schema,
+        // and every `.qitheme` pack uses it too — so they are snapped onto slots on
+        // the way in. A preset exported by this build round-trips exactly, because
+        // `freePositionLayout(from:)` writes the anchors `snap` maps back.
         if let overlayLayout = preset.readerOverlayLayout,
-           !settings.saveReaderOverlayLayout(overlayLayout) {
+           !settings.saveReaderBarLayout(ReaderBarLayoutMigration.snap(overlayLayout)) {
             throw ReaderOverlayLayoutPersistenceError.writeFailed
         }
 
@@ -300,7 +305,11 @@ enum ReaderSettingsExportSnapshot {
             titleBottomSpacing: style.bottomSpacing,
             pageTurnStyle: settings.pageTurnStyle,
             scrollMode: settings.scrollMode,
-            readerOverlayLayout: settings.readerOverlayLayout
+            // Rendered out of the bar layout rather than read from the stored
+            // free-position one, which no longer reflects what the reader draws.
+            readerOverlayLayout: ReaderBarLayoutMigration.freePositionLayout(
+                from: settings.readerBarLayout
+            )
         )
         return ReaderSettingsExportInputs(
             layout: snapshot,
