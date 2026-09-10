@@ -38,9 +38,23 @@ enum ReaderFontCascade {
     }
 
     static func preservingPrimary(_ font: UIFont, size: CGFloat, isBoldRequested: Bool = false) -> UIFont {
-        UIFont(
+        // Publication CSS fallbacks precede the reader's last-resort coverage.
+        // Preparation runs in the resolver and again in layout; replacing this
+        // list loses author-selected faces on every missing primary glyph.
+        let existing = font.fontDescriptor.object(forKey: .cascadeList) as? [UIFontDescriptor] ?? []
+        let authored = existing.map { descriptor in
+            guard isBoldRequested else { return descriptor.withSize(size) }
+            return UserReaderFontResolver.boldVersion(
+                of: UIFont(descriptor: descriptor, size: size), size: size
+            ).fontDescriptor
+        }
+        var names: Set<String> = [font.fontName]
+        let cascade = (authored + descriptors(size: size, isBoldRequested: isBoldRequested))
+            .filter { names.insert($0.postscriptName).inserted }
+            .map { $0.withSize(size) }
+        return UIFont(
             descriptor: font.fontDescriptor.addingAttributes(
-                attributes(size: size, isBoldRequested: isBoldRequested)
+                [.cascadeList: cascade]
             ),
             size: size
         )

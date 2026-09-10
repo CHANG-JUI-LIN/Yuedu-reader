@@ -34,3 +34,12 @@ struct ReaderQuickPanelContentHeightKey: PreferenceKey {
         value = max(value, nextValue())
     }
 }
+
+/// UIKit adds this inset to a custom sheet detent; the quick panel accounts for
+/// it once when fitting the complete content, including its own bottom padding.
+struct ReaderQuickPanelSafeAreaBottomKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}

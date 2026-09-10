@@ -2465,6 +2465,7 @@
 "AutoRead.Format.Interval" = "About one page every %@s";
 "自動閱讀中" = "Auto Read On";
 "設置自動閱讀" = "Auto Read Settings";
+"主選單" = "Reading Menu";
 "上下滾屏" = "Scroll";
 "快" = "Fast";
 "翻頁方式" = "Page Turn Style";

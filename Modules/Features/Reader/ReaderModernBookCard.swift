@@ -6,10 +6,13 @@ import UIKit
 /// actions underneath — 刷新 / 換源 / 下載 / 聽書, the same
 /// `ReaderView.readerSecondaryActions` list Apple Books renders in its menu.
 ///
-/// The popover supplies the shape and shadow; 自定義 supplies the fill, which is why
-/// the card paints `palette.panelFill` behind itself rather than leaving the system
-/// material bare. Local books have no detail page, so `onOpenDetail` is nil for them
-/// and the identity block simply isn't tappable.
+/// The popover supplies the shape, the arrow and the shadow; the surface comes from
+/// 界面效果 through `presentationBackground` at the call site, so on iOS 26 the card
+/// is the same Liquid Glass as the 現代 bottom bar below it and 自定義's `panelFill`
+/// is what shows through as 透明度 drops. The card itself paints no fill — an opaque
+/// background here would sit on top of that surface and hide it, which is what made
+/// the card read as a flat slab over a glass toolbar. Local books have no detail
+/// page, so `onOpenDetail` is nil for them and the identity block isn't tappable.
 struct ReaderModernBookCard: View {
     let coverImage: UIImage?
     let bookTitle: String
@@ -37,10 +40,6 @@ struct ReaderModernBookCard: View {
         }
         .frame(width: contentWidth)
         .foregroundStyle(palette.panelText)
-        // `.presentationBackground` is what actually reaches the popover's own
-        // surface; painting only this view would leave the system material showing
-        // through the corners.
-        .background(palette.panelFill)
     }
 
     @ViewBuilder
@@ -174,4 +173,11 @@ struct ReaderModernBookCard: View {
         palette: ReaderChromePalette(interface: .modern, theme: .sepia, settings: .shared),
         onOpenDetail: {}
     )
+    // The popover supplies this in the reader; the preview has to stand it in or the
+    // card floats on nothing.
+    .floatingSurface(
+        in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous),
+        fill: ReaderTheme.sepia.barColor
+    )
+    .padding()
 }

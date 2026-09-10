@@ -78,6 +78,23 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
             let directFont = CTFontCreateWithGraphicsFont(cgFont, 12, nil, nil)
             sourceFont = directFont
 
+            let name = CTFontCopyPostScriptName(directFont) as String
+            if let existing = UIFont(name: name, size: 12),
+               !Self.hasMatchingGlyphMap(source: directFont, registered: existing as CTFont) {
+                // EPUBs can embed unrelated subsets named "Undefined". A
+                // family-name lookup may succeed during registration, but a
+                // later PostScript lookup would silently pick the other book.
+                // Give this asset its own internal identity before registration.
+                guard let isolated = EmbeddedTrueTypeFontIdentity.namespaced(data, digest: digest) else {
+                    // Unsupported/non-SFNT collisions must use the next authored
+                    // CSS family, never the unrelated registered font. Remove
+                    // this limitation when CFF/collection renaming is supported.
+                    AppLogger.render("[CoreTextEngine] unsupported embedded font name collision ps=\(name)")
+                    return nil
+                }
+                return registerUncached(data: isolated, alias: alias, digest: digest, existingTempURL: nil)
+            }
+
             var graphicsError: Unmanaged<CFError>?
             let registered = CTFontManagerRegisterGraphicsFont(cgFont, &graphicsError)
             if let resolved = Self.resolveRegisteredGraphicsFont(
@@ -211,32 +228,21 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
         return nil
     }
 
-    /// A name resolving to a UIFont is insufficient: malformed legacy EPUB
-    /// names can resolve to a dynamic placeholder face whose every supported
-    /// scalar becomes the same glyph. Compare representative glyphs from every
-    /// populated BMP page against the font created directly from the bytes.
+    /// Matching a few glyph IDs misses both subset coverage differences and
+    /// unrelated outlines with the same cmap. Verify the actual font tables.
     private static func hasMatchingGlyphMap(source: CTFont, registered: CTFont) -> Bool {
-        let characterSet = CTFontCopyCharacterSet(source) as CharacterSet
-        var characters: [UniChar] = []
-        var lastPage: UInt32?
-        for value in UInt32(0)...0xFFFF {
-            if value >= 0xD800 && value <= 0xDFFF { continue }
-            guard let scalar = UnicodeScalar(value), characterSet.contains(scalar) else { continue }
-            let page = value >> 8
-            guard page != lastPage else { continue }
-            characters.append(UniChar(value))
-            lastPage = page
+        let tags: [CTFontTableTag] = [
+            CTFontTableTag(kCTFontTableCmap), CTFontTableTag(kCTFontTableGlyf),
+            CTFontTableTag(kCTFontTableCFF), 0x43464632, CTFontTableTag(kCTFontTableHmtx)
+        ]
+        guard CTFontGetGlyphCount(source) == CTFontGetGlyphCount(registered) else { return false }
+        return tags.allSatisfy { tag in
+            let lhs = CTFontCopyTable(source, tag, []).map { $0 as Data }
+            let rhs = CTFontCopyTable(registered, tag, []).map { $0 as Data }
+            return lhs == rhs
         }
-        guard !characters.isEmpty else {
-            return CTFontGetGlyphCount(source) == CTFontGetGlyphCount(registered)
-        }
-
-        var sourceGlyphs = Array(repeating: CGGlyph(), count: characters.count)
-        var registeredGlyphs = Array(repeating: CGGlyph(), count: characters.count)
-        _ = CTFontGetGlyphsForCharacters(source, characters, &sourceGlyphs, characters.count)
-        _ = CTFontGetGlyphsForCharacters(registered, characters, &registeredGlyphs, characters.count)
-        return sourceGlyphs == registeredGlyphs
     }
+
 }
 
 @MainActor

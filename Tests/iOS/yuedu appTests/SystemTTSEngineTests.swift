@@ -85,6 +85,26 @@ struct SystemTTSEngineTests {
         #expect(chunks.isEmpty)
     }
 
+    @Test func chunkerOmitsDecorativeParagraphsWithoutChangingSourceOffsets() {
+        let separator = String(repeating: "=", count: 58)
+        let text = "Preface\n\(separator)\n更多精校小说\n\(separator)\n正文開始。"
+        let chunks = TTSTextChunker.splitWithRanges(text, targetChunkLength: 120)
+        #expect(chunks.map(\.text) == ["Preface", "更多精校小说", "正文開始。"])
+        for chunk in chunks {
+            #expect((text as NSString).substring(with: chunk.sourceRange) == chunk.text)
+        }
+    }
+
+    @Test func chunkerPreservesPunctuationSplitWithinSameParagraph() {
+        let chunks = TTSTextChunker.split("你好啊！……\n下一段。", targetChunkLength: 3)
+        #expect(chunks == ["你好啊！……", "下一段。"])
+    }
+
+    @Test func chunkerOmitsLongSeparatorsAcrossLengthCaps() {
+        let text = "章節一\n" + String(repeating: "*", count: 160) + "\n章節二"
+        #expect(TTSTextChunker.split(text, targetChunkLength: 30) == ["章節一", "章節二"])
+    }
+
     // MARK: - Rate mapping
 
     @Test func utteranceRateMapsNormalToSystemDefault() {

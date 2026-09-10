@@ -226,38 +226,43 @@ final class EPUBStyleResolver {
         // entries per chapter in exported diagnostics.
         guard !normalizedFamilies.isEmpty else { return nil }
 
-        for family in normalizedFamilies {
-            guard let matchedFace = bestVariant(for: family, weight: weight, italic: italic) else { continue }
-
-            let baseFont =
-                UIFont(name: matchedFace.postScriptName, size: size)
-                ?? UIFont(name: matchedFace.familyName, size: size)
-            guard let baseFont else {
-                AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont matched variant but UIFont init FAILED family=\(family) ps=\(matchedFace.postScriptName) fam=\(matchedFace.familyName)")
-                continue
+        // CSS font-family is a glyph fallback list, not just a search for the
+        // first installed name. Resolve aliases before building the cascade so
+        // subset EPUB faces can hand missing characters to the next authored face.
+        let fonts = families.compactMap { authoredName -> UIFont? in
+            let family = Self.normalizeFontName(authoredName)
+            guard !family.isEmpty else { return nil }
+            let baseFont: UIFont?
+            if let face = bestVariant(for: family, weight: weight, italic: italic) {
+                baseFont = UIFont(name: face.postScriptName, size: size)
+                    ?? UIFont(name: face.familyName, size: size)
+            } else {
+                let name = authoredName.trimmingCharacters(in:
+                    .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'")))
+                baseFont = UIFont(name: name, size: size)
             }
-
-            var descriptor = baseFont.fontDescriptor
-            var traits = descriptor.symbolicTraits
-            let wantBold = weight >= 600
-            if italic { traits.insert(.traitItalic) }
-            if wantBold { traits.insert(.traitBold) }
-            let traitApplied = descriptor.withSymbolicTraits(traits)
-            if let styledDescriptor = traitApplied {
-                descriptor = styledDescriptor
+            guard var font = baseFont else { return nil }
+            if weight >= 600 {
+                font = UserReaderFontResolver.boldVersion(of: font, size: size)
             }
-            descriptor = descriptor.addingAttributes([.cascadeList: fontCascadeDescriptors(size: size)])
-            let result = UIFont(descriptor: descriptor, size: size)
-            let finalTraits = result.fontDescriptor.symbolicTraits
-            // Did the bold/italic request actually land on a face? `withSymbolicTraits` returns nil when
-            // the embedded family has no matching face (e.g. only an upright file registered). Compare
-            // requested vs. delivered so we can see whether the embedded font silently dropped the trait.
-            AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont req families=\(families) weight=\(weight) italic=\(italic) -> picked alias=\(family) pickedFaceWeight=\(matchedFace.weight) pickedFaceItalic=\(matchedFace.isItalic) ps=\(matchedFace.postScriptName) | withTraitsOK=\(traitApplied != nil) finalFont=\(result.fontName) finalBold=\(finalTraits.contains(.traitBold)) finalItalic=\(finalTraits.contains(.traitItalic)) (wantedBold=\(wantBold) wantedItalic=\(italic))", level: .trace)
-            return addFontFallbacks(to: result, size: size)
+            if italic {
+                var traits = font.fontDescriptor.symbolicTraits
+                traits.insert(.traitItalic)
+                if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
+                    font = UIFont(descriptor: descriptor, size: size)
+                } else {
+                    font = HTMLAttributedStringBuilder.synthesizedObliqueFont(from: font)
+                }
+            }
+            return font
         }
-
-        AppLogger.parse("[EPUBStyleResolver] resolveRegisteredFont NO VARIANT families=\(families) weight=\(weight) italic=\(italic) registeredAliases=\(registeredFontVariants.keys.sorted()) variantsPerAlias=\(registeredFontVariants.mapValues { $0.map { "w\($0.weight)\($0.isItalic ? "i" : "n")/\($0.familyName)" } })", level: .trace)
-        return nil
+        guard let primary = fonts.first else { return nil }
+        let descriptor = primary.fontDescriptor.addingAttributes([
+            .cascadeList: fonts.dropFirst().map(\.fontDescriptor)
+        ])
+        return ReaderFontCascade.preservingPrimary(
+            UIFont(descriptor: descriptor, size: size), size: size, isBoldRequested: weight >= 600
+        )
     }
 
     /// Picks the registered variant closest to the requested weight/style — weight distance first,

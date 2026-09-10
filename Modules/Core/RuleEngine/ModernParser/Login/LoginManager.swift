@@ -3,6 +3,7 @@
 // persistence, and login-check evaluation.
 
 import Foundation
+import Security
 import JavaScriptCore
 
 extension Notification.Name {
@@ -581,7 +582,11 @@ final class LoginManager {
         guard let data = try? JSONSerialization.data(withJSONObject: info),
               let json = String(data: data, encoding: .utf8) else { return }
         let previous = getLoginInfo(sourceUrl: sourceUrl)
-        KeychainHelper.save(account: LoginManager.loginInfoPrefix + sourceUrl, data: json)
+        guard KeychainHelper.save(
+            account: LoginManager.loginInfoPrefix + sourceUrl,
+            data: json,
+            accessibility: kSecAttrAccessibleAfterFirstUnlock
+        ) else { return }
         if previous != info {
             markLoginInfoChanged(sourceUrl: sourceUrl)
         }
@@ -610,7 +615,11 @@ final class LoginManager {
         let account = LoginManager.loginInfoPrefix + sourceUrl
 
         // Primary: Keychain
-        if let json = KeychainHelper.load(account: account),
+        // TTS rules read this for every segment, including locked-screen playback and
+        // authenticated chapter transitions. Keep it in Keychain, but allow access after
+        // the first unlock; the default WhenUnlocked class made a saved MiMo key disappear
+        // mid-session. load also migrates credentials saved by earlier app versions.
+        if let json = KeychainHelper.load(account: account, accessibility: kSecAttrAccessibleAfterFirstUnlock),
            let data = json.data(using: .utf8),
            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
             return dict
@@ -620,8 +629,9 @@ final class LoginManager {
         if let json = defaults.string(forKey: account),
            let data = json.data(using: .utf8),
            let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
-            KeychainHelper.save(account: account, data: json)
-            defaults.removeObject(forKey: account)
+            if KeychainHelper.save(account: account, data: json, accessibility: kSecAttrAccessibleAfterFirstUnlock) {
+                defaults.removeObject(forKey: account)
+            }
             return dict
         }
 

@@ -149,6 +149,8 @@ struct ReaderView: View {
     @State var pageBarsRevision: UInt = 0
     /// 自動閱讀's route into the scroll view, filled in by `CoreTextScrollHostView`.
     @State var autoScrollHandle = ReaderAutoScrollHandle()
+    /// 自動閱讀's route to the curtain layer, filled in by the paged host.
+    @State var autoReadRevealHandle = ReaderAutoReadRevealHandle()
     @StateObject var ttsCoordinator = TTSCoordinator()
     @StateObject var mediaOverlayCoordinator = EPUBMediaOverlayPlaybackCoordinator()
     /// Plays an EPUB chapter's authored background soundtrack (controls-less autoplay/loop `<audio>`).
@@ -709,6 +711,9 @@ struct ReaderView: View {
     /// chapter that never arrives is not a dead end: the toolbar is the only way to
     /// refresh, change source, or leave, and without it the reader had to be force-quit.
     func toggleReaderChrome() {
+        // 自動閱讀's panel is chrome too, and it goes first: one tap puts it away,
+        // the next one is what raises the reading menu.
+        guard !consumeTapForAutoReadPanel() else { return }
         withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
     }
 
@@ -1555,7 +1560,8 @@ struct ReaderView: View {
                     clearExternalTargetPosition: { clearCoreTextExternalTarget() },
                     currentPage: $currentPage,
                     pageBarsRevision: pageBarsRevision,
-                    autoReadReveal: autoReadReveal,
+                    autoReadRevealPage: autoReadRevealPage,
+                    autoReadRevealHandle: autoReadRevealHandle,
                     onPageChanged: { newPage, visiblePosition in
                         scheduleCoreTextPageChanged(newPage, engine: ctEngine, visiblePosition: visiblePosition)
                     },
@@ -1612,11 +1618,18 @@ struct ReaderView: View {
 
             // The pill lives at the bottom of the screen, independent of the
             // footer bar — it shows with the footer off and overlaps whatever the
-            // footer's centre slot happens to hold.
-            if autoReader.isActive, !showAutoReadPanel {
+            // footer's centre slot happens to hold. It stands down for the reading
+            // menu, which anchors its own control bar to the same safe area and has
+            // already paused the mode: two stacked bottom bars, one of them for a
+            // mode that is not currently running.
+            if autoReader.isActive, !showAutoReadPanel, !showBars {
                 VStack {
                     Spacer()
-                    AutoReadPill(secondsPerPage: autoReader.secondsPerPage) {
+                    AutoReadPill(
+                        secondsPerPage: autoReader.secondsPerPage,
+                        fill: autoReadChrome.fill,
+                        tint: autoReadChrome.tint
+                    ) {
                         withAnimation(DSAnimation.standard) { showAutoReadPanel = true }
                     }
                     .padding(.bottom, effectiveReaderSafeBottom + DSSpacing.sm)
@@ -1633,14 +1646,24 @@ struct ReaderView: View {
                     Spacer()
                     AutoReadControlPanel(
                         autoReader: autoReader,
+                        fill: autoReadChrome.fill,
+                        tint: autoReadChrome.tint,
+                        accent: autoReadChrome.accent,
                         onOpenTOC: {
                             withAnimation(DSAnimation.standard) { showAutoReadPanel = false }
                             showTOC = true
+                        },
+                        onOpenReadingMenu: {
+                            withAnimation(DSAnimation.standard) {
+                                showAutoReadPanel = false
+                                showBars = true
+                            }
                         },
                         onOpenSettings: {
                             withAnimation(DSAnimation.standard) { showAutoReadPanel = false }
                             showSettings = true
                         },
+                        onCollapse: { consumeTapForAutoReadPanel() },
                         onClose: {
                             withAnimation(DSAnimation.standard) { showAutoReadPanel = false }
                             exitAutoRead()
@@ -1751,13 +1774,15 @@ struct ReaderView: View {
         // this at each `showBars = false` site left panels that popped back up the next
         // time the bars were shown.
         .onChange(of: showBars) { _, visible in
-            applyAutoReadMenuPause(barsVisible: visible)
             guard !visible else { return }
             appleBooksActivePanel = nil
             showModernBookCard = false
         }
-        .onChange(of: showAutoReadPanel) { _, _ in
-            applyAutoReadMenuPause(barsVisible: showBars)
+        // The reveal holds while the reading menu or one of the panel's own sheets
+        // is over the page — and only then. 目錄 and 設置 used to let it run on
+        // behind them, because the pause was keyed to the panel closing.
+        .onChange(of: autoReadIsCoveredBySurface) { _, _ in
+            applyAutoReadPause()
         }
         .modifier(HideTabBarModifier())
         .alert(localized("TXT 目錄修復未完成"), isPresented: $showTXTIndexFailure) {
@@ -2491,6 +2516,11 @@ struct ReaderView: View {
     }
 
     func handleTouchAction(_ action: TouchAction) {
+        // While 自動閱讀's panel is up the page behaves like the area outside
+        // legado's `AutoReadDialog`: the first touch anywhere dismisses it and does
+        // nothing else, whichever tap zone it landed in. Only the touch after that
+        // means what the zone says.
+        guard !consumeTapForAutoReadPanel() else { return }
         switch action.readerCommand {
         case .none:
             return

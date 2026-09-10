@@ -72,70 +72,7 @@ final class ClockBatteryModel: ObservableObject {
     }
 }
 
-// MARK: - Bottom Overlay Footer
-
-struct ReaderOverlayFooter: View {
-    let pageInfo: String
-    let progress: String
-    let textColor: Color
-    let footerPadding: CGFloat
-    let horizontalPadding: CGFloat
-    @StateObject private var clock = ClockBatteryModel()
-
-    var body: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Text("\(pageInfo)  ·  \(progress)")
-                    .font(DSFont.fixed(size: 10).monospacedDigit())
-                    .foregroundColor(textColor.opacity(0.4))
-                Spacer()
-                HStack(spacing: DSSpacing.xs) {
-                    Text(clock.displayTime).font(DSFont.fixed(size: 10).monospacedDigit())
-                    Image(systemName: clock.batteryIcon).font(DSFont.fixed(size: 10))
-                }
-                .foregroundColor(textColor.opacity(0.4))
-            }
-            .frame(height: ReaderLayoutMetrics.footerHeight)
-            .padding(.horizontal, horizontalPadding)
-            .padding(.bottom, footerPadding)
-        }
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(String(format: localized("第 %@ 頁，進度 %@，%@"), "\(pageInfo)", "\(progress)", clock.displayTime))
-    }
-}
-
-// MARK: - Inline Footer
-
-struct ReaderInlineFooter: View {
-    let pageInfo: String
-    let progress: String
-    let textColor: Color
-    let footerPadding: CGFloat
-    let horizontalPadding: CGFloat
-    @StateObject private var clock = ClockBatteryModel()
-
-    var body: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Text("\(pageInfo)  ·  \(progress)")
-                    .font(DSFont.fixed(size: 10).monospacedDigit())
-                    .foregroundColor(textColor.opacity(0.4))
-                Spacer()
-                HStack(spacing: DSSpacing.xs) {
-                    Text(clock.displayTime).font(DSFont.fixed(size: 10).monospacedDigit())
-                    Image(systemName: clock.batteryIcon).font(DSFont.fixed(size: 10))
-                }
-                .foregroundColor(textColor.opacity(0.4))
-            }
-            .frame(height: ReaderLayoutMetrics.footerHeight)
-            .padding(.horizontal, horizontalPadding)
-            .padding(.bottom, footerPadding)
-        }
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(String(format: localized("第 %@ 頁，進度 %@，%@"), "\(pageInfo)", "\(progress)", clock.displayTime))
-    }
-}
+// `ReaderOverlayFooter` and `ReaderInlineFooter` lived here — two structs with
+// byte-identical bodies, neither of them called any more. `ReaderBarRenderer`
+// draws both bars now. `ClockBatteryModel` above stays: it is what makes the
+// bars tick, and the 頁首頁尾 editor's preview uses it too.

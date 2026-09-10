@@ -1,5 +1,19 @@
 import SwiftUI
 
+#Preview {
+    TTSPanelView(
+        tts: TTSCoordinator(),
+        chapters: [],
+        currentReaderChapterIndex: 0,
+        activeTTSChapterIndex: nil,
+        activeChapterTitle: "",
+        onPlayPause: {},
+        onPreviousChapter: { false },
+        onNextChapter: { false },
+        onSelectChapter: { _ in }
+    )
+}
+
 // MARK: - TTS Control Panel
 
 struct TTSPanelView: View {
@@ -88,11 +102,9 @@ struct TTSPanelView: View {
                         HStack {
                             Image(systemName: "waveform")
                                 .foregroundColor(DSColor.accent)
+                                .accessibilityHidden(true)
                             Text(localized("語音源設定"))
                             Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(DSFont.caption)
-                                .foregroundColor(DSColor.textSecondary)
                         }
                     }
                     if usesSystemVoice {

@@ -37,9 +37,7 @@ extension ReaderView {
                         outcome: outcome
                     )
                 },
-                onTap: {
-                    withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
-                },
+                onTap: { toggleReaderChrome() },
                 onProgressCommit: { position in
                     guard ReaderProgressSyncPolicy.canPublishIndexPosition(
                         isTXT: book?.resolvedPipelineKind == .txt, indexReady: txtIndexReady
@@ -206,13 +204,12 @@ extension ReaderView {
         }
         .background(readerSurfaceBackground)
         .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) { showBars.toggle() }
-        }
+        .onTapGesture { toggleReaderChrome() }
     }
 
     func goToPrevPage() {
         guard currentPage > 0 else { return }
+        autoReader.resetReveal()
         issuePageTurn(to: previousReaderPage(before: currentPage))
     }
 
@@ -239,6 +236,7 @@ extension ReaderView {
             maxPage = allPages.count - 1
         }
         guard currentPage < maxPage else { return }
+        autoReader.resetReveal()
         issuePageTurn(to: nextReaderPage(after: currentPage, maxPage: maxPage))
     }
 

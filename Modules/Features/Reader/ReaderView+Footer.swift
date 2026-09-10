@@ -125,17 +125,6 @@ extension ReaderView {
         .ignoresSafeArea()
     }
 
-    // MARK: - Bottom Footer (overlay for slide/cover/tab modes)
-    var bottomFooter: some View {
-        ReaderOverlayFooter(
-            pageInfo: chapterPageInfo,
-            progress: totalProgressPercent,
-            textColor: readerTheme.textColor,
-            footerPadding: readerConfig.footerBottomPadding,
-            horizontalPadding: readerConfig.readerFooterHorizontalPadding
-        )
-    }
-
     var windowSafeTop: CGFloat {
         (UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -218,38 +207,9 @@ extension ReaderView {
         readerSafeAreaBottom
     }
 
-    // MARK: - Inline Footer (curl mode: baked into page texture, moves with the page)
-    func inlineFooter(forPage idx: Int) -> some View {
-        let info = pageFooterInfo(forPage: idx)
-        return ReaderInlineFooter(
-            pageInfo: info.pageInfo,
-            progress: info.progress,
-            textColor: readerTheme.textColor,
-            footerPadding: readerConfig.footerBottomPadding,
-            horizontalPadding: readerConfig.readerFooterHorizontalPadding
-        )
-    }
-
-    /// Computes footer info (chapter page + progress percentage) for the given page.
-    func pageFooterInfo(forPage idx: Int) -> (pageInfo: String, progress: String) {
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let (spineIndex, charOffset) = engine.charOffset(forPage: idx)
-            guard let pagination = engine.chapterPagination(
-                forSpine: spineIndex,
-                charOffset: charOffset
-            ) else {
-                return ("", "0.00%")
-            }
-            let localPage = pagination.localPageIndex + 1
-            let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset) * 100
-            return ("\(localPage)/\(pagination.displayPageCount)", String(format: "%.2f%%", pct))
-        } else {
-            guard !allPages.isEmpty, idx >= 0, idx < allPages.count else { return ("", "0.00%") }
-            let page = allPages[idx]
-            let total = allPages.filter { $0.chapterIndex == page.chapterIndex }.count
-            let pct = Double(idx) / Double(max(allPages.count - 1, 1)) * 100
-            return ("\(page.pageInChapter + 1)/\(total)", String(format: "%.2f%%", pct))
-        }
-    }
-
+    // The inline (curl) footer and `pageFooterInfo(forPage:)` lived here. The
+    // comment on them claimed the footer was "baked into the page texture" — it
+    // never was; neither had a call site. Both are now real, and singular:
+    // `ReaderView+PageBars.pageBarsContent(forGlobalPage:)` computes what a bar
+    // says on any page, and `CoreTextPageView.renderPage` bakes it in.
 }

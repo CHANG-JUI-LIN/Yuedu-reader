@@ -1,5 +1,15 @@
 import UIKit
 
+/// Lets `AutoReadController` move the curtain without going through SwiftUI.
+///
+/// The reveal advances every frame; routing that through `@Published` would
+/// re-evaluate the entire reader body sixty times a second. The paged host points
+/// this at its reveal view, and the controller calls straight through it.
+@MainActor
+final class ReaderAutoReadRevealHandle {
+    var setProgress: ((Double) -> Void)?
+}
+
 /// The 自動閱讀 curtain: the next page, unmasked from the top down.
 ///
 /// legado's `AutoPager.onDraw` in one view. Nothing translates and nothing

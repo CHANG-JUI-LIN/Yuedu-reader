@@ -32,6 +32,19 @@ extension View {
         modifier(FloatingSurfaceModifier(shape: shape, fill: fill, glowTint: glowTint))
     }
 
+    /// The floating surface without the 光暈, for a surface something else clips —
+    /// a glow drawn behind it could never show past the clip anyway.
+    ///
+    /// 現代's book card is the caller: its surface is the popover's, handed over
+    /// through `presentationBackground`, and the popover clips it to its own
+    /// rounded shape and cuts the arrow out of it.
+    func floatingSurfaceBackground<SurfaceShape: Shape>(
+        in shape: SurfaceShape,
+        fill: Color = DSColor.surface
+    ) -> some View {
+        modifier(InterfaceSurfaceModifier(shape: shape, fill: fill, glassAllowed: true))
+    }
+
     /// The 光暈 alone, for elements that already own their background and only need
     /// the glow (e.g. chrome painted with an opaque theme color).
     func interfaceGlow<SurfaceShape: Shape>(

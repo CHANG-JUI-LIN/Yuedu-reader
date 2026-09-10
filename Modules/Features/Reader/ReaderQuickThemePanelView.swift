@@ -49,6 +49,7 @@ struct ReaderQuickThemePanelView: View {
     /// as what it holds. A fixed detent left a band of dead space under the last
     /// row whenever the content came out shorter than the constant.
     @State private var contentHeight = DSLayout.readerQuickPanelSheetHeight
+    @State private var bottomSafeAreaInset: CGFloat = 0
     @State private var customBackgroundColor = Color(uiColor: ReaderTheme.white.uiBackgroundColor)
 
     private let minFontSize = GlobalSettings.readerFontSizeRange.lowerBound
@@ -71,11 +72,13 @@ struct ReaderQuickThemePanelView: View {
                     typeAndPageTurnRow
                     brightnessSlider
                     readingBackgroundRow
+                        .padding(.bottom, DSSpacing.lg)
                     followSystemAppearanceToggle
                     quickActionRow
                 }
                 .padding(.horizontal, DSSpacing.xl)
-                .padding(.vertical, DSLayout.readerQuickPanelVerticalInset)
+                .padding(.top, DSSpacing.xl)
+                .padding(.bottom, DSSpacing.xl)
                 .background(
                     GeometryReader { proxy in
                         Color.clear.preference(
@@ -90,6 +93,9 @@ struct ReaderQuickThemePanelView: View {
                 contentHeight = height
             }
             .scrollBounceBehavior(.basedOnSize)
+            // This panel supplies its own bottom padding. Let the scroll viewport
+            // use the whole sheet instead of reserving another home-indicator band.
+            .ignoresSafeArea(.container, edges: .bottom)
             .frame(maxWidth: DSLayout.readableCompactWidth, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
             .pageBackgroundToolbar(for: .settings)
@@ -108,9 +114,25 @@ struct ReaderQuickThemePanelView: View {
                 )
             }
         }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: ReaderQuickPanelSafeAreaBottomKey.self,
+                    value: proxy.safeAreaInsets.bottom
+                )
+            }
+        }
+        .onPreferenceChange(ReaderQuickPanelSafeAreaBottomKey.self) {
+            bottomSafeAreaInset = $0
+        }
         // The grabber is the only way out now that the title bar is gone, so the
         // sheet must stay draggable and the indicator visible.
-        .presentationDetents([.height(contentHeight + DSLayout.readerQuickPanelGrabberInset)])
+        // A height detent excludes the bottom safe area, which UIKit adds back.
+        // Our measurement already includes the panel's complete bottom padding.
+        .presentationDetents([.height(max(
+            DSLayout.minimumTapTarget,
+            contentHeight - bottomSafeAreaInset
+        ))])
         .presentationDragIndicator(.visible)
     }
 
@@ -246,6 +268,7 @@ struct ReaderQuickThemePanelView: View {
             Image(systemName: "sun.max.fill")
                 .font(DSFont.body)
         }
+        .frame(minHeight: DSLayout.minimumTapTarget)
         .foregroundStyle(DSColor.textPrimary)
     }
 
@@ -316,29 +339,13 @@ struct ReaderQuickThemePanelView: View {
                 RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
                     .fill(background.previewBackgroundColor)
 
-                VStack(spacing: DSSpacing.xs) {
-                    HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        Text(localized("閱讀背景預覽大字"))
-                            .font(DSFont.title2.weight(settings.readerFontBold ? .bold : .regular))
-                        Text(localized("閱讀背景預覽小字"))
-                            .font(DSFont.subheadline.weight(settings.readerFontBold ? .bold : .regular))
-                    }
-                    .accessibilityHidden(true)
-
-                    Text(background.localizedTitle)
-                        .font(DSFont.subheadline)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .foregroundStyle(background.previewTextColor)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
                 if selected {
                     Image(systemName: "asterisk")
                         .font(DSFont.subheadline.weight(.semibold))
                         .foregroundStyle(background.previewTextColor.opacity(0.6))
                         .padding(.top, DSSpacing.sm)
                         .padding(.trailing, DSSpacing.md)
+                        .accessibilityHidden(true)
                 }
             }
             .frame(height: DSLayout.readerQuickPanelReadingBackgroundTileHeight)

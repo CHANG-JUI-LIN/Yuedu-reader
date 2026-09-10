@@ -255,10 +255,6 @@ enum DSLayout {
     /// Starting detent for the reader quick settings sheet, replaced by the
     /// measured content height on the first layout pass.
     static let readerQuickPanelSheetHeight: CGFloat = 420
-    /// Breathing room above and below the quick panel's content.
-    static let readerQuickPanelVerticalInset: CGFloat = 10
-    /// Room the sheet's own grabber needs above the content.
-    static let readerQuickPanelGrabberInset: CGFloat = 16
     /// Maximum width of the Apple Books-style floating reader controls.
     static let readerAppleBooksPanelWidth: CGFloat = 252
     /// Minimum hit target and visible size of Apple Books reader chrome controls.

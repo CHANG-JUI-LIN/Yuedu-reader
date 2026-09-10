@@ -19,9 +19,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     /// style edit — without the pagination changing. Pages already on screen were
     /// handed their bars when they were built, so they need telling.
     var pageBarsRevision: UInt = 0
-    /// 自動閱讀's curtain: which page is being revealed over the current one, and
-    /// how far. `nil` when the mode is off.
-    var autoReadReveal: (nextPage: Int, progress: Double)?
+    /// 自動閱讀's curtain: which page is being revealed over the current one.
+    /// `nil` when the mode is off. Changes once per page, not once per frame —
+    /// the reveal's *position* comes through `autoReadRevealHandle` instead.
+    var autoReadRevealPage: Int?
+    var autoReadRevealHandle: ReaderAutoReadRevealHandle?
     let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
     let onTapZone: (TouchAction) -> Void
     var onSwipeUpExit: () -> Void = {}
@@ -137,7 +139,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ).isDoubleSided && !isDoublePageSpread
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
-        context.coordinator.applyAutoReadReveal(autoReadReveal, on: uiViewController)
+        context.coordinator.applyAutoReadReveal(
+            page: autoReadRevealPage,
+            handle: autoReadRevealHandle,
+            on: uiViewController
+        )
         if context.coordinator.lastAppliedPageBarsRevision != pageBarsRevision {
             context.coordinator.lastAppliedPageBarsRevision = pageBarsRevision
             uiViewController.viewControllers?.forEach {
@@ -1345,10 +1351,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// `renderSnapshot` → `renderPage`, the same function that draws the live
         /// page — so the revealed page brings its own bars, as it does in legado.
         func applyAutoReadReveal(
-            _ reveal: (nextPage: Int, progress: Double)?,
+            page: Int?,
+            handle: ReaderAutoReadRevealHandle?,
             on pageViewController: UIPageViewController
         ) {
-            guard let reveal else {
+            guard let page else {
+                handle?.setProgress = nil
                 autoReadRevealView.removeFromSuperview()
                 autoReadRevealView.setPageImage(nil, pageIndex: nil)
                 return
@@ -1358,14 +1366,19 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             autoReadRevealView.frame = pageViewController.view.bounds
             pageViewController.view.bringSubviewToFront(autoReadRevealView)
-            if autoReadRevealView.imagePageIndex != reveal.nextPage {
+            if autoReadRevealView.imagePageIndex != page {
                 autoReadRevealView.setPageImage(
-                    currentEngine.renderSnapshot(forPage: reveal.nextPage),
-                    pageIndex: reveal.nextPage
+                    currentEngine.renderSnapshot(forPage: page),
+                    pageIndex: page
                 )
+                // A new page starts its curtain closed, whatever the last frame of
+                // the previous one left behind.
+                autoReadRevealView.setProgress(0)
             }
             autoReadRevealView.setEdgeColor(.tintColor)
-            autoReadRevealView.setProgress(CGFloat(reveal.progress))
+            handle?.setProgress = { [weak autoReadRevealView] progress in
+                autoReadRevealView?.setProgress(CGFloat(progress))
+            }
         }
 
         /// Re-hands a page its bars. New pages get theirs from the engine when they

@@ -245,9 +245,18 @@ extension ReaderView {
                 // Keep it a popover on iPhone too — the card belongs to the cover it
                 // hangs off, which a sheet would break.
                 .presentationCompactAdaptation(.popover)
-                // The card paints its own fill; this is what reaches the popover's
-                // surface behind the corners and the arrow.
-                .presentationBackground(modernPalette.panelFill)
+                // The popover's own surface — corners and arrow included, which is
+                // why the card itself paints nothing. On iOS 26 this is the same
+                // glass the 現代 bottom bar wears, with 自定義's panelFill fading in
+                // as 透明度 drops; a flat `panelFill` is what it was before, and what
+                // it still is with 毛玻璃 off. A plain rectangle because the popover
+                // does the clipping.
+                .presentationBackground {
+                    Color.clear.floatingSurfaceBackground(
+                        in: Rectangle(),
+                        fill: modernPalette.panelFill
+                    )
+                }
                 // `.popover` has no `onDismiss`, so the card's own disappearance is the
                 // dismissal signal the deferred route waits on. Deliberately a real
                 // lifecycle callback, not a timer.

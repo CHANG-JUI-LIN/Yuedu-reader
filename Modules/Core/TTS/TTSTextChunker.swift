@@ -5,7 +5,8 @@ import Foundation
 /// paragraph exceeds `targetChunkLength` (a safety cap so a runaway paragraph can't become one
 /// enormous utterance). Sentence terminators no longer split, so a paragraph is spoken as one
 /// continuous unit without a gap at every sentence. Punctuation-only fragments fold back into
-/// the previous chunk so every chunk has spoken content.
+/// the previous chunk only within the same paragraph. Decorative separator paragraphs
+/// are omitted so speech models never try to voice long runs of symbols.
 enum TTSTextChunker {
     static func split(_ text: String, targetChunkLength: Int) -> [String] {
         splitWithRanges(text, targetChunkLength: targetChunkLength).map(\.text)
@@ -63,6 +64,12 @@ enum TTSTextChunker {
         guard containsSpeakableContent(trimmed) else {
             if let lastIndex = result.indices.last {
                 let last = result[lastIndex]
+                let gapStart = String.Index(utf16Offset: NSMaxRange(last.sourceRange), in: source)
+                // A symbol-only paragraph is a visual separator, not spoken text.
+                // Keep punctuation split by the length cap within its original paragraph.
+                guard !source[gapStart..<start].unicodeScalars.contains(where: CharacterSet.newlines.contains) else {
+                    return
+                }
                 let unionStart = min(last.sourceRange.location, sourceRange.location)
                 let unionEnd = max(
                     last.sourceRange.location + last.sourceRange.length,

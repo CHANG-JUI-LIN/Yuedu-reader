@@ -44,7 +44,16 @@ final class AutoReadController: NSObject, ObservableObject {
     /// Survives leaving the reader.
     @Published private(set) var secondsPerPage: Double
     /// How far the next page has been revealed, 0…1. Only meaningful in 翻頁 mode.
-    @Published private(set) var progress: Double = 0
+    ///
+    /// Deliberately **not** `@Published`. It changes every frame, and publishing it
+    /// would re-evaluate the whole reader body sixty times a second for a value
+    /// only one CALayer cares about. The reveal view is driven directly through
+    /// `onProgressChanged`; SwiftUI only hears about the low-frequency facts
+    /// (`isActive`, which page).
+    private(set) var progress: Double = 0
+
+    /// Pushed straight at the reveal layer, bypassing SwiftUI.
+    var onProgressChanged: ((Double) -> Void)?
 
     /// Advance one page, unanimated. `false` means there was no next page, which
     /// ends the mode — legado's `fillPage(NEXT)` returning false.
@@ -71,7 +80,7 @@ final class AutoReadController: NSObject, ObservableObject {
         guard !isActive else { return }
         isActive = true
         isPaused = false
-        progress = 0
+        setProgress(0)
         startDisplayLink()
     }
 
@@ -79,7 +88,7 @@ final class AutoReadController: NSObject, ObservableObject {
         guard isActive else { return }
         isActive = false
         isPaused = false
-        progress = 0
+        setProgress(0)
         stopDisplayLink()
     }
 
@@ -91,7 +100,7 @@ final class AutoReadController: NSObject, ObservableObject {
     func stopForReaderExit() {
         isActive = false
         isPaused = false
-        progress = 0
+        setProgress(0)
         stopDisplayLink()
     }
 
@@ -114,10 +123,19 @@ final class AutoReadController: NSObject, ObservableObject {
     }
 
     /// A manual page turn or a chapter change invalidates the reveal — the page
-    /// underneath is no longer the one being revealed over.
+    /// underneath is no longer the one being revealed over. legado does this from
+    /// `ReadView.onPageChange`; the difference is that it resets on *every* page
+    /// change including its own, which is the per-page drift `advance` avoids by
+    /// subtracting. So this is for turns the mode did not ask for, only.
     func resetReveal() {
-        progress = 0
+        guard isActive else { return }
+        setProgress(0)
         lastTimestamp = nil
+    }
+
+    private func setProgress(_ value: Double) {
+        progress = value
+        onProgressChanged?(value)
     }
 
     // MARK: - Speed
@@ -202,7 +220,7 @@ final class AutoReadController: NSObject, ObservableObject {
         }
 
         let advance = Self.advance(progress: progress, by: fraction)
-        progress = advance.progress
+        setProgress(advance.progress)
         for _ in 0..<advance.pageTurns {
             guard onAdvancePage?() == true else {
                 exit()
