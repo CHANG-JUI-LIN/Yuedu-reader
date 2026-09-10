@@ -26,9 +26,9 @@ final class LexborCSSFrontend: CSSFrontend {
         config: BrowserLayoutConfig,
         metrics: inout LayoutMetrics
     ) throws -> CSSFrontendResult {
-        let snapshot = try metrics.time("lexborFrontendSnapshot") { try snapshot(input: input) }
+        let frontendSnapshot = try metrics.time("lexborFrontendSnapshot") { try self.snapshot(input: input) }
         return try metrics.time("styleTree") {
-            try LexborValueStyleTree(snapshot: snapshot, config: config).build()
+            try LexborValueStyleTree(snapshot: frontendSnapshot, config: config).build()
         }
     }
 }
