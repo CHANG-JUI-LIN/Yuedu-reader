@@ -87,48 +87,97 @@ export function mapBodyParserError(error: unknown): ApiError | null {
 /**
  * Identity Toolkit errors arrive as `{error: {message: "EMAIL_EXISTS"}}` with an
  * HTTP status. Map the messages the app actually distinguishes; everything else
- * becomes a generic code so we never echo raw upstream text.
+ * becomes a generic code so we never echo raw upstream text. The upstream code
+ * (when identifiable) is attached as `details.upstream` so a caller can see
+ * which layer rejected the request without server log access.
  */
 export function mapIdentityToolkitError(status: number, message: string): ApiError {
   const normalized = message.toUpperCase();
+  const code = extractUpstreamCode(message);
+  const details = code === null ? {upstreamStatus: status} : {upstreamStatus: status, upstream: code};
+
   if (normalized.includes("EMAIL_EXISTS")) {
-    return new ApiError("email-exists", "An account with this email already exists.");
+    return new ApiError("email-exists", "An account with this email already exists.", details);
   }
   if (normalized.includes("EMAIL_NOT_FOUND")) {
-    return new ApiError("invalid-credentials", "Incorrect email or password.");
+    return new ApiError("invalid-credentials", "Incorrect email or password.", details);
   }
   if (normalized.includes("INVALID_PASSWORD") || normalized.includes("INVALID_LOGIN_CREDENTIALS")) {
-    return new ApiError("invalid-credentials", "Incorrect email or password.");
+    return new ApiError("invalid-credentials", "Incorrect email or password.", details);
   }
   if (normalized.includes("USER_DISABLED")) {
-    return new ApiError("user-disabled", "This account has been disabled.");
+    return new ApiError("user-disabled", "This account has been disabled.", details);
   }
   if (normalized.includes("USER_NOT_FOUND")) {
-    return new ApiError("user-not-found", "This account no longer exists.");
+    return new ApiError("user-not-found", "This account no longer exists.", details);
   }
   if (normalized.includes("CREDENTIAL_TOO_OLD_LOGIN_AGAIN")) {
-    return new ApiError("reauth-required", "Sign in again to continue.");
+    return new ApiError("reauth-required", "Sign in again to continue.", details);
   }
   if (normalized.includes("FEDERATED_USER_ID_ALREADY_LINKED")) {
-    return new ApiError("credential-already-in-use", "This sign-in method belongs to another account.");
+    return new ApiError("credential-already-in-use", "This sign-in method belongs to another account.", details);
   }
   if (normalized.includes("EMAIL_ALREADY_IN_USE") || normalized.includes("ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL")) {
-    return new ApiError("email-exists", "An account with this email already exists.");
+    return new ApiError("email-exists", "An account with this email already exists.", details);
   }
   if (normalized.includes("INVALID_IDP_RESPONSE") || normalized.includes("INVALID_ID_TOKEN")) {
-    return new ApiError("invalid-credentials", "The identity provider rejected this credential.");
+    return new ApiError("invalid-credentials", "The identity provider rejected this credential.", details);
+  }
+  if (normalized.includes("INVALID_EMAIL") || normalized.includes("INVALID_EMAIL_ADDRESS")) {
+    return new ApiError("invalid-argument", "The email address was rejected by the identity service.", details);
+  }
+  if (normalized.includes("WEAK_PASSWORD") || normalized.includes("MISSING_PASSWORD")) {
+    return new ApiError("invalid-argument", "The password was rejected by the identity service.", details);
   }
   if (normalized.includes("TOKEN_EXPIRED") || normalized.includes("INVALID_REFRESH_TOKEN")) {
-    return new ApiError("unauthenticated", "The session is no longer valid.");
+    return new ApiError("unauthenticated", "The session is no longer valid.", details);
   }
   if (normalized.includes("MISSING_REFRESH_TOKEN") || normalized.includes("INVALID_GRANT")) {
-    return new ApiError("unauthenticated", "The session is no longer valid.");
+    return new ApiError("unauthenticated", "The session is no longer valid.", details);
+  }
+  // API key / provider configuration problems are permission problems, never a
+  // malformed user request. Surfacing them as 400 hid this layer during
+  // deployment testing.
+  if (
+    normalized.includes("API_KEY_SERVICE_BLOCKED") ||
+    normalized.includes("API_KEY_IP_ADDRESS_BLOCKED") ||
+    normalized.includes("API_KEY_HTTP_REFERRER_BLOCKED") ||
+    normalized.includes("API_KEY_IOS_APP_BLOCKED") ||
+    normalized.includes("API_KEY_ANDROID_APP_BLOCKED") ||
+    normalized.includes("API KEY NOT VALID") ||
+    normalized.includes("API_KEY_INVALID") ||
+    normalized.includes("PERMISSION_DENIED")
+  ) {
+    return new ApiError(
+      "permission-denied",
+      "The server API key is not allowed for this request. Allow both Identity Toolkit API and Token Service API, and remove incompatible application restrictions.",
+      details
+    );
+  }
+  if (normalized.includes("OPERATION_NOT_ALLOWED") || normalized.includes("CONFIGURATION_NOT_FOUND")) {
+    return new ApiError(
+      "permission-denied",
+      "This sign-in provider is not enabled for the Firebase project.",
+      details
+    );
+  }
+  if (normalized.includes("TOO_MANY_ATTEMPTS") || normalized.includes("QUOTA_EXCEEDED")) {
+    return new ApiError("rate-limited", "Too many attempts. Try again shortly.", details);
   }
   if (status === 429) {
-    return new ApiError("rate-limited", "Too many attempts. Try again shortly.");
+    return new ApiError("rate-limited", "Too many attempts. Try again shortly.", details);
   }
   if (status >= 500) {
-    return new ApiError("upstream-unavailable", "The identity service is temporarily unavailable.");
+    return new ApiError("upstream-unavailable", "The identity service is temporarily unavailable.", details);
   }
-  return new ApiError("invalid-argument", "The identity service rejected the request.");
+  return new ApiError("invalid-argument", "The identity service rejected the request.", details);
+}
+
+/** Pulls the first token-style error code out of an upstream message. */
+export function extractUpstreamCode(message: string): string | null {
+  const parenthesized = /\(([A-Z][A-Z0-9_]{3,})\)/.exec(message);
+  if (parenthesized?.[1] !== undefined) return parenthesized[1];
+  const first = message.trim().split(/[\s:]+/)[0];
+  if (first !== undefined && /^[A-Z][A-Z0-9_]{3,}$/.test(first)) return first;
+  return null;
 }

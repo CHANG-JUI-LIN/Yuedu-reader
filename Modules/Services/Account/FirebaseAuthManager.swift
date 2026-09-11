@@ -511,7 +511,13 @@ final class FirebaseAuthManager: ObservableObject {
 
     /// Resolves the route from persisted mode + memory + a regional hint. Never
     /// from Remote Config: that would require the very connection being fixed.
+    /// A DEBUG-only launch argument can pin the route for integration builds.
     func resolveRoute() -> AuthRoute {
+        #if DEBUG
+        if let forced = AuthRouteOverride.forcedRoute() {
+            return forced
+        }
+        #endif
         let decision = AuthRoutePolicy.decide(
             mode: GlobalSettings.shared.authRouteMode,
             gatewayConfigured: GatewayConfiguration.isConfigured,
@@ -528,6 +534,16 @@ final class FirebaseAuthManager: ObservableObject {
         operation: AccountOperation,
         _ body: (AuthRoute) async throws -> AccountUser
     ) async throws -> AccountUser {
+        #if DEBUG
+        // A pinned integration build never falls back: switching routes after a
+        // connectivity failure would let a direct success masquerade as a
+        // Gateway pass.
+        if let forced = AuthRouteOverride.forcedRoute() {
+            let user = try await body(forced)
+            adoptIfDirect(user, route: forced)
+            return user
+        }
+        #endif
         let route = resolveRoute()
         AppLogger.network("auth route selected: \(route.rawValue)")
         do {

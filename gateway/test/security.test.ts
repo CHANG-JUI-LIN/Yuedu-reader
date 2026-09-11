@@ -2,8 +2,42 @@ import assert from "node:assert/strict";
 import {describe, it} from "node:test";
 
 import {callableError} from "../src/callableProxy.js";
-import {mapBodyParserError, mapIdentityToolkitError} from "../src/errors.js";
+import {accountUserPayload} from "../src/auth.js";
+import {extractUpstreamCode, mapBodyParserError, mapIdentityToolkitError} from "../src/errors.js";
+import {secureTokenURL} from "../src/identityToolkit.js";
 import {RateLimiter} from "../src/rateLimit.js";
+
+describe("secureTokenURL", () => {
+  it("always carries the API key, which Token Service requires", () => {
+    assert.equal(
+      secureTokenURL("AIza-test"),
+      "https://securetoken.googleapis.com/v1/token?key=AIza-test"
+    );
+    assert.equal(
+      secureTokenURL("a b/c"),
+      "https://securetoken.googleapis.com/v1/token?key=a%20b%2Fc"
+    );
+  });
+});
+
+describe("accountUserPayload", () => {
+  it("normalizes null optional fields to empty strings for the Swift model", () => {
+    const record = {
+      uid: "u1",
+      email: null,
+      displayName: null,
+      photoURL: null,
+      emailVerified: false,
+      disabled: false,
+      providerData: [{providerId: "password"}],
+    } as unknown as Parameters<typeof accountUserPayload>[0];
+    const payload = accountUserPayload(record);
+    assert.equal(payload.email, "");
+    assert.equal(payload.displayName, "");
+    assert.equal(payload.photoURL, null);
+    assert.deepEqual(payload.providerIds, ["password"]);
+  });
+});
 
 describe("mapIdentityToolkitError", () => {
   it("maps wrong credentials without revealing account existence", () => {
@@ -29,6 +63,33 @@ describe("mapIdentityToolkitError", () => {
   it("maps upstream outages to a retryable code", () => {
     assert.equal(mapIdentityToolkitError(503, "backend down").code, "upstream-unavailable");
     assert.equal(mapIdentityToolkitError(429, "quota").code, "rate-limited");
+  });
+
+  it("classifies API key and provider configuration problems as permission, not bad input", () => {
+    const blocked = mapIdentityToolkitError(
+      403,
+      "Requests to this API identitytoolkit.googleapis.com method are blocked. (API_KEY_SERVICE_BLOCKED)"
+    );
+    assert.equal(blocked.code, "permission-denied");
+    assert.equal(blocked.details?.upstream, "API_KEY_SERVICE_BLOCKED");
+    assert.equal(mapIdentityToolkitError(400, "OPERATION_NOT_ALLOWED").code, "permission-denied");
+    assert.equal(mapIdentityToolkitError(400, "API key not valid. Please pass a valid API key.").code, "permission-denied");
+  });
+
+  it("classifies password abuse throttling as rate limited", () => {
+    assert.equal(
+      mapIdentityToolkitError(400, "TOO_MANY_ATTEMPTS_TRY_LATER").code,
+      "rate-limited"
+    );
+  });
+
+  it("extracts an upstream code for diagnostics without echoing the message", () => {
+    assert.equal(extractUpstreamCode("API_KEY_SERVICE_BLOCKED"), "API_KEY_SERVICE_BLOCKED");
+    assert.equal(
+      extractUpstreamCode("Requests ... are blocked. (API_KEY_IP_ADDRESS_BLOCKED)"),
+      "API_KEY_IP_ADDRESS_BLOCKED"
+    );
+    assert.equal(extractUpstreamCode("Incorrect email or password"), null);
   });
 });
 

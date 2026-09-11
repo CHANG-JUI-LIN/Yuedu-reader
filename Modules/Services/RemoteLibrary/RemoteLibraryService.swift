@@ -55,11 +55,12 @@ final class RemoteLibraryService: RemoteLibraryServing {
                 existing.remoteSource?.cachedFilename = nil
             }
             existing.remoteSource?.format = format
+            existing.source = readerSource(for: format)
             store.saveReadingBook(existing)
             return existing
         }
         var book = ReadingBook(title: item.title, author: item.author ?? localized("未知作者"),
-            source: format.fileExtension == "epub" ? "local_epub" : "local",
+            source: readerSource(for: format),
             contentFilename: UUID().uuidString + "." + format.fileExtension)
         book.isInBookshelf = false
         book.remoteSource = RemoteBookReference(connectionID: item.connectionID, entryID: item.id, format: format)
@@ -67,6 +68,16 @@ final class RemoteLibraryService: RemoteLibraryServing {
         if format.fileExtension == "pdf" { book.contentPipelineKind = .fixedPage }
         store.saveReadingBook(book)
         return book
+    }
+
+    /// These markers select the same file readers as local import. In
+    /// particular, a fixed-page PDF tagged "local" is treated as a manga archive.
+    private func readerSource(for format: RemoteLibraryFormat) -> String {
+        switch format.fileExtension.lowercased() {
+        case "epub": return "local_epub"
+        case "pdf": return "local_pdf"
+        default: return "local"
+        }
     }
 
     func addToShelf(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) throws -> ReadingBook {
@@ -255,6 +266,11 @@ final class RemoteLibraryService: RemoteLibraryServing {
         // Awaiting transport/parser work does not grant ownership of reading
         // progress, bookmarks, metadata, shelf membership or an offline copy.
         current.contentFilename = prepared.contentFilename
+        // Also repair persisted references created before PDF format routing
+        // was distinguished from other remote files. Keep their reading IDs.
+        if let reference = prepared.remoteSource {
+            current.source = readerSource(for: reference.format)
+        }
         current.remoteSource?.version = prepared.remoteSource?.version
         current.remoteSource?.entityTag = prepared.remoteSource?.entityTag
         current.remoteSource?.lastModified = prepared.remoteSource?.lastModified

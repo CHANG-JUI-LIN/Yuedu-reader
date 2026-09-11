@@ -197,6 +197,35 @@ struct GatewayProfilePayloadTests {
     }
 }
 
+@Suite("Account user decoding")
+struct AccountUserDecodingTests {
+    @Test("null optional fields from a fresh email account decode to empty defaults")
+    func decodesNulls() throws {
+        let json = #"{"uid":"u1","email":null,"displayName":null,"photoURL":null,"providerIds":["password"],"emailVerified":false}"#
+            .data(using: .utf8)!
+        let user = try JSONDecoder().decode(AccountUser.self, from: json)
+        #expect(user.email == "")
+        #expect(user.displayName == "")
+        #expect(user.photoURL == nil)
+        #expect(user.providerIds == ["password"])
+    }
+
+    @Test("keychain cache encoding round-trips")
+    func roundTrips() throws {
+        let user = AccountUser(
+            uid: "u",
+            email: "",
+            displayName: "",
+            photoURL: nil,
+            providerIds: [],
+            emailVerified: false
+        )
+        let data = try JSONEncoder().encode(user)
+        let decoded = try JSONDecoder().decode(AccountUser.self, from: data)
+        #expect(decoded == user)
+    }
+}
+
 @Suite("Gateway avatar URL resolution")
 struct GatewayAvatarURLResolverTests {
     private let gateway = URL(string: "https://gateway.example.com")!

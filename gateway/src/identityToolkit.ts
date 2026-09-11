@@ -1,4 +1,5 @@
-import {ApiError, mapIdentityToolkitError} from "./errors.js";
+import {ApiError, extractUpstreamCode, mapIdentityToolkitError} from "./errors.js";
+import {logEvent} from "./logger.js";
 
 /**
  * Thin client for the Identity Toolkit (Firebase Auth) REST API. The Gateway
@@ -30,6 +31,17 @@ interface IdentityToolkitConfig {
 const IDENTITY_TOOLKIT_BASE = "https://identitytoolkit.googleapis.com/v1";
 const SECURE_TOKEN_URL = "https://securetoken.googleapis.com/v1/token";
 
+/**
+ * Token Service requires the API key in the query string like every other
+ * Identity Toolkit endpoint. The gateway's first refresh implementation omitted
+ * it, so securetoken answered "Method doesn't allow unregistered callers" (403)
+ * for every refresh while direct probes with ?key= worked. Exported so the URL
+ * shape is unit-tested.
+ */
+export function secureTokenURL(apiKey: string): string {
+  return `${SECURE_TOKEN_URL}?key=${encodeURIComponent(apiKey)}`;
+}
+
 async function postJson(
   config: IdentityToolkitConfig,
   url: string,
@@ -57,6 +69,13 @@ async function postJson(
   }
   if (!response.ok) {
     const message = extractErrorMessage(parsed) ?? `identity toolkit error ${response.status}`;
+    // Status + upstream code + a capped upstream message: enough to identify
+    // the layer without logging request bodies, passwords or tokens.
+    logEvent("identity toolkit rejected request", {
+      status: response.status,
+      upstream: extractUpstreamCode(message) ?? "unknown",
+      detail: message.slice(0, 200),
+    });
     throw mapIdentityToolkitError(response.status, message);
   }
   if (parsed === null || typeof parsed !== "object") {
@@ -218,7 +237,7 @@ export async function refreshSession(
 ): Promise<IdentitySession> {
   let response: Response;
   try {
-    response = await fetch(SECURE_TOKEN_URL, {
+    response = await fetch(secureTokenURL(config.apiKey), {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: new URLSearchParams({
@@ -241,6 +260,11 @@ export async function refreshSession(
   }
   if (!response.ok) {
     const message = extractErrorMessage(parsed) ?? `secure token error ${response.status}`;
+    logEvent("token service rejected request", {
+      status: response.status,
+      upstream: extractUpstreamCode(message) ?? "unknown",
+      detail: message.slice(0, 200),
+    });
     throw mapIdentityToolkitError(response.status, message);
   }
   if (parsed === null || typeof parsed !== "object") {

@@ -149,16 +149,39 @@ and RSS, upstream error mix. Capacity statements may only cite these numbers.
 
 ## 8. Results table (fill during execution)
 
-| Step | Result | Evidence (command output / console screenshot date) |
+Executed 2026-09-11/12 against `https://gateway.yuedureader.com` (Tencent
+Cloud Lighthouse, Hong Kong). Deployment topology on the host is a single
+`docker run` container on `127.0.0.1:8080` behind host Caddy; the compose file
+in this repo is not used there.
+
+| Step | Result | Evidence |
 | --- | --- | --- |
-| Unit tests `npm test` | | |
-| Local smoke `npm run smoke` | | |
-| `docker compose config` / Caddyfile validation | 未執行 (Docker/Caddy not installed on the dev machine) | |
-| Credential validation on host (`/readyz` ready) | | |
-| App Check enforcement state confirmed | | |
-| API key restricted to Identity Toolkit + Token Service | | |
-| Forged `X-Forwarded-For` cannot bypass rate limit | | |
-| `npm run integration:auth` | 未執行 (no credentials) | |
-| China network test | 未執行 (no China network) | |
-| Load test | 未執行 (no host) | |
-| Release `GATEWAY_BASE_URL` empty | | |
+| Unit tests `npm test` | PASS (44 tests) | gateway workspace |
+| Local smoke `npm run smoke` | PASS (11 checks) | gateway workspace |
+| Caddyfile validation / XFF hardening | PASS | `caddy validate` + reload; `header_up X-Forwarded-For {remote_host}` added |
+| Credential validation on host (`/readyz` ready) | PASS | `{"status":"ready",...}` |
+| API key works for sign-in and refresh | PASS with the project's public client key | real signup/signin/refresh through the gateway |
+| Dedicated server API key with both APIs | 未執行（目前沿用公開 client key；上線前建議更換為伺服器專用 key） | — |
+| App Check enforcement state confirmed | 未執行 (no Console evidence; status remains unconfirmed) | — |
+| Forged `X-Forwarded-For` cannot bypass rate limit | PASS (unit) + deployment `TRUST_PROXY_HOPS=1` | `test/proxy.test.ts`; `docker exec printenv TRUST_PROXY_HOPS` → 1 |
+| Real-account integration (iOS client code against deployed Gateway) | PASS | `GatewayLiveIntegrationTests` — signup/signin/wrong-password/duplicate/refresh/restore/profile/avatar/entitlement/account-token/bind-rejection/link-guard/unlink-guard/revoke/delete |
+| Apple sign-in through Gateway | 未執行 (interactive Apple ID required) | — |
+| Google sign-in through Gateway | 未執行 (interactive provider authorization) | — |
+| StoreKit purchase binding / restore | 未執行 (no sandbox Apple ID; invalid-JWS rejection path verified) | — |
+| Firebase `disabled` user | 未執行 (needs Console disable); revocation path verified via `/v1/auth/logout {revokeAllDevices:true}` | — |
+| China network test | 未執行 (no China network) | — |
+| Load test | 未執行 (no host) | — |
+| Release `GATEWAY_BASE_URL` empty | PASS | built Release `Info.plist` → `""` |
+
+Deployment notes:
+
+- The running image was rebuilt from the current revision; the previous image is
+  kept as `yuedu-gateway:previous` for rollback.
+- `FIREBASE_API_KEY` in `/home/ubuntu/yuedu-gateway/.env` was the
+  `.env.example` placeholder (`AIzaSy...replace-me`, 19 chars) and is now the
+  project's public client key. Replace with a dedicated server key before a wide
+  rollout.
+- `TRUST_PROXY_HOPS=1` is set on the container; Caddy replaces the forwarded
+  client address.
+- The SSH deploy key added for this session can be removed from
+  `~/.ssh/authorized_keys` when integration work is finished.

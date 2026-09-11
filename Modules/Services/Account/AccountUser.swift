@@ -46,6 +46,28 @@ struct AccountUser: Equatable, Codable {
         self.emailVerified = emailVerified
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case uid
+        case email
+        case displayName
+        case photoURL
+        case providerIds
+        case emailVerified
+    }
+
+    /// Lenient decoding: Firebase reports `displayName` (and occasionally
+    /// `email`) as null for brand-new or provider-hidden accounts. The model
+    /// keeps those fields non-optional for UI, so null/missing becomes "".
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uid = try container.decode(String.self, forKey: .uid)
+        email = (try? container.decodeIfPresent(String.self, forKey: .email)) ?? ""
+        displayName = (try? container.decodeIfPresent(String.self, forKey: .displayName)) ?? ""
+        photoURL = try? container.decodeIfPresent(String.self, forKey: .photoURL)
+        providerIds = (try? container.decodeIfPresent([String].self, forKey: .providerIds)) ?? []
+        emailVerified = (try? container.decodeIfPresent(Bool.self, forKey: .emailVerified)) ?? false
+    }
+
     /// Maps the Firebase SDK user into the shared model (direct route).
     @MainActor
     init(firebaseUser user: User) {

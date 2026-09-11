@@ -68,8 +68,8 @@ export function authenticatedUser(request: Request): AuthenticatedUser {
 
 export interface AccountUserPayload {
   uid: string;
-  email: string | null;
-  displayName: string | null;
+  email: string;
+  displayName: string;
   photoURL: string | null;
   emailVerified: boolean;
   providerIds: string[];
@@ -80,11 +80,15 @@ export interface AccountUserPayload {
 export function accountUserPayload(record: UserRecord): AccountUserPayload {
   return {
     uid: record.uid,
-    email: record.email ?? null,
-    displayName: record.displayName ?? null,
+    // Optional Firebase fields are normalized to empty strings: the Swift
+    // AccountUser model treats uid/email/displayName as non-optional, and a
+    // brand-new email account has displayName = null. Nulls here broke live
+    // sign-in decoding before this.
+    email: record.email ?? "",
+    displayName: record.displayName ?? "",
     photoURL: record.photoURL ?? null,
-    emailVerified: record.emailVerified,
+    emailVerified: record.emailVerified === true,
     providerIds: record.providerData.map((provider) => provider.providerId),
-    disabled: record.disabled,
+    disabled: record.disabled === true,
   };
 }

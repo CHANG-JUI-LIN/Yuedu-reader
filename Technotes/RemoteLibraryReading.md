@@ -68,6 +68,22 @@ EPUB 先檢查 HEAD 與有界 Range，再把共用 HTTP client 交給 Readium。
 
 另外，首次啟動測試揭露 `FirestoreSyncManager` 註冊設定變更通知後才初始化 `FirebaseAuthManager.shared`，導致帳號初始化寫回設定時重入同一個 `dispatch_once` 而崩潰。現將必要依賴的初始化移到訂閱之前；後續測試 host 啟動驗證此路徑。`GatewayAccountBackend` 補上直接使用 StoreKit 符號所需的 import。
 
+## 2026-09-12 堅果雲遠端 PDF 分流修正
+
+唯讀連線確認堅果雲 WebDAV 的資料夾列表回應 HTTP 207，兩份 PDF 的 GET 均回應 HTTP 200，檔案分別為 1,449,913 與 2,276,414 bytes。PDFKit 可解析為 26 與 28 頁，均未鎖定。HEAD 回應 HTTP 200、`Content-Length: 0` 且沒有 MIME type；既有 PDF 自動暫存流程能處理這種回應，不需要新增網路相容分支。
+
+根因是 `RemoteLibraryService.record` 將遠端 PDF 標成 `source: "local"`，而固定頁面閱讀器只有在 `source == "local_pdf"` 時才進入 PDFKit。修正前的模擬器回歸實際重現：有效的 3 頁 PDF 進入漫畫壓縮檔流程，回報 `Unsupported manga format`、閱讀器頁數為 0。
+
+遠端紀錄現在統一沿用本機匯入的格式標記：EPUB 為 `local_epub`、PDF 為 `local_pdf`、TXT／Markdown 為 `local`。建立、重新選取紀錄及準備資源完成時都會套用；舊參照從書架、暫存或離線副本重新開啟時可就地修正，保留原 ID、閱讀進度與書籤。沒有新增重試、延遲或替代解析器。
+
+`RemotePDFReaderTests` 直接啟動 `FixedPageReaderViewController` 並檢查頁數、錯誤、首屏圖像及舊紀錄續讀。`testDownloadedPDFsUseDocumentReader` 可透過 `YUEDU_PDF_READER_FIXTURES` 提供本機檔案路徑 JSON 陣列；一般執行沒有檔案時會跳過，驗收必須確認此測試實際執行。帳密與使用者 PDF 不納入版本控制。
+
+本次在 `iPhone 17 Pro Max / iOS 27` 模擬器逐類執行，停用平行測試，共 **38 項通過**：`RemotePDFReaderTests` 4 項（沒有跳過，包含上述兩份原始 PDF）、`RemoteLibraryServiceTests` 21 項、`LocalPDFArchiveTests` 13 項。兩份 PDF 在實際閱讀器回報 26 與 28 頁，輸出的首屏圖像亦已目視確認。網路認證／取檔由先前的唯讀連線驗證；模擬器閱讀器測試使用取回的原始檔案及模擬的 HEAD／GET 回應，沒有把帳密寫入測試設定。
+
+最後的模擬器 `xcodebuild build` 完整結束並回報 `BUILD SUCCEEDED`；三語本地化檢查通過（3 個檔案、2,497 個 key），`git diff --check` 通過。此次未使用真機。
+
+驗證產物位於 `~/Library/Logs/YueduRemoteLibrary/nutstore-pdf/`：`reproduction-confirmed.xcresult` 保存修正前的實際失敗，`pdf-reader-accepted.xcresult`、`service-regression.xcresult`、`local-pdf-regression.xcresult` 保存修正後的成功結果。
+
 ## 既有驗證範圍
 
 `RemoteEPUBPublicationTests` 使用 loopback HTTP 伺服器、實際 URLSession、Range 磁碟快取、Readium 與 CoreTextPaginator。2026-09-10 原有紀錄為 25,172,076 bytes EPUB 首屏前傳輸 18,940,002 bytes。2026-09-11 真機重跑相同測試時，ZIP entry 排列不同，實際傳輸達 25,231,458 bytes（6 次 Range，845 ms），超過整本書；這推翻了僅憑原先單次通過認定 Range 傳輸量合格的結論，也定位出 Readium 6 MB 預讀問題。回歸現已額外要求這個只讀取小型資源的 24 MB padding 樣本首屏傳輸小於 1 MB。
