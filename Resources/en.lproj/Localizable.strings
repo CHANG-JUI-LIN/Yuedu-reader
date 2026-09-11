@@ -2469,3 +2469,149 @@
 "上下滾屏" = "Scroll";
 "快" = "Fast";
 "翻頁方式" = "Page Turn Style";
+
+// TTS pre-synthesis
+"預合成並行數" = "Pre-synthesis concurrency";
+"語音預合成" = "Speech pre-synthesis";
+"同時合成語音的請求數。適用於網路語音，下次開始朗讀時生效。" = "Number of simultaneous speech synthesis requests. Applies to online voices the next time narration starts.";
+
+// Reader bar appearance colors
+"跟隨正文顏色" = "Follow Text Color";
+"頁眉與頁腳共用樣式。自訂顏色可分別設定淺色與深色模式；未設定的顏色跟隨正文。" = "The header and footer share a style. Customize colors separately for light and dark modes; unset colors follow the body text.";
+
+// Individual reader bar component colors
+"%@顏色" = "%@ Color";
+"沿用共用顏色" = "Use Shared Color";
+"此處設定共用樣式。各組件可在「欄位」中分別調整顏色，並設定淺色與深色模式。" = "Set the shared style here. In Fields, adjust each component’s color separately for light and dark modes.";
+
+"距離從畫面邊緣計算，可設為 0，不受安全區限制。未調整前保留目前位置。" = "Distance is measured from the screen edge and can be set to 0, without a safe-area limit. Your current position is kept until you adjust it.";
+
+// Remote library browsing and reading
+"OPDS 書庫" = "OPDS Library";
+"WebDAV 書庫" = "WebDAV Library";
+"Calibre 書庫" = "Calibre Library";
+"尚未加入書庫" = "No Libraries Yet";
+"加入伺服器即可瀏覽書籍並開始閱讀。" = "Add a server to browse books and start reading.";
+"新增伺服器" = "Add Server";
+"編輯伺服器" = "Edit Server";
+"伺服器名稱（選填）" = "Server Name (Optional)";
+"伺服器網址" = "Server URL";
+"輸入 Calibre 或 Calibre-Web 伺服器網址；完整 OPDS 網址也可使用。" = "Enter your Calibre or Calibre-Web server address, or a complete OPDS URL.";
+"書庫連線獨立儲存，修改此處不會變更 WebDAV 同步設定。" = "Library connections are saved separately. Changes here do not affect WebDAV sync settings.";
+"正在載入書庫" = "Loading Library";
+"此格式暫不支援閱讀" = "Reading is not supported for this format";
+"書庫連線已移除，請重新加入伺服器。" = "This library connection was removed. Add the server again.";
+"此資料夾沒有內容" = "This Folder Is Empty";
+"搜尋目前資料夾" = "Search This Folder";
+"檔案大小" = "File Size";
+"下載供離線閱讀" = "Download for Offline Reading";
+"閱讀不會自動加入書架；加入書架不會下載整本書。" = "Reading does not add the book to your shelf. Adding it to your shelf does not download the whole book.";
+"不支援" = "Unsupported";
+"正在取消" = "Cancelling";
+"正在開啟書籍" = "Opening Book";
+"正在下載書籍" = "Downloading Book";
+"目錄資料格式無效" = "The catalog data is invalid";
+"伺服器返回登入網頁，請確認目錄網址與帳密" = "The server returned a sign-in page. Check the catalog URL and credentials.";
+"伺服器不支援分段讀取" = "The server does not support range requests";
+"WebDAV 資料格式無效" = "The WebDAV response is invalid";
+"找不到書庫連線，請重新設定伺服器" = "Library connection not found. Configure the server again.";
+"找不到閱讀紀錄" = "Reading Record Not Found";
+"遠端書籍已更新，請返回書籍詳情重新開啟" = "The remote book has changed. Return to its details and open it again.";
+"伺服器傳回的書籍資料無效" = "The server returned invalid book data";
+"目前沒有可用的離線內容，請連線後再試" = "No offline content is available. Connect to the server and try again.";
+
+"遠端書籍快取" = "Remote Book Cache";
+"清除遠端書籍快取" = "Clear Remote Book Cache";
+"線上閱讀暫存；清除時保留正在閱讀的內容、進度與離線副本。" = "Temporary online reading content. Clearing preserves active books, reading progress, and offline copies.";
+
+"無法開啟書籍" = "Unable to Open Book";
+
+"遠端內容載入失敗" = "Unable to Load Remote Content";
+"無法連線至書庫，請檢查網路與伺服器。" = "Unable to connect to the library. Check your network and server.";
+"無法建立安全連線" = "Unable to Establish a Secure Connection";
+"伺服器重新導向失敗" = "Server Redirection Failed";
+
+/* Remote library management and Calibre integration */
+"正在檢查書庫功能" = "Checking library capabilities";
+"上傳書籍到此書庫" = "Upload a book to this library";
+"選取的檔案會傳送到目前的遠端書庫；不會自動加入本機書架。" = "The selected file will be sent to this remote library. It will not be added to your local shelf.";
+"建立資料夾" = "Create folder";
+"正在更新遠端書庫" = "Updating remote library";
+"管理遠端書庫" = "Manage remote library";
+"遠端書庫已更新" = "Remote library updated";
+"操作已取消，請重新整理書庫確認伺服器狀態" = "Operation cancelled. Refresh the library to check the server's state.";
+"檔案名稱" = "File name";
+"儲存會修改遠端書庫，本機閱讀進度和書籤會保留。" = "Saving changes the remote library and preserves your local reading position and bookmarks.";
+"編輯遠端資料" = "Edit remote details";
+"Calibre 閱讀進度" = "Calibre reading position";
+"閱讀時會回傳可精確對應的位置" = "Reading positions will be sent when they can be matched precisely.";
+"正在回傳閱讀進度" = "Sending reading position";
+"閱讀進度已回傳" = "Reading position sent";
+"重新回傳進度" = "Retry sending position";
+"電腦傳書" = "Receive from computer";
+"回傳至 Calibre 網頁閱讀器" = "Send position to Calibre web reader";
+"使用 Calibre 內容伺服器帳號回傳 EPUB 位置，可在電腦的網頁閱讀器續讀。" = "Send your EPUB position using a Calibre Content Server account and continue in the web reader on your computer.";
+"書庫操作" = "Library actions";
+"Calibre 進度同步需要登入帳號" = "Sign in to sync your Calibre reading position.";
+"此伺服器不支援 Calibre 進度同步" = "This server does not support Calibre position sync.";
+"Calibre 正在準備閱讀資料，請稍後重試" = "Calibre is preparing the book. Try again shortly.";
+"無法精確對應 Calibre 閱讀位置，已保留本機進度" = "Cannot precisely match the Calibre position. Your local progress is saved.";
+"Calibre 閱讀資料無效" = "Invalid Calibre reading data.";
+"上次 Calibre 進度尚未回傳" = "Your previous Calibre reading position has not been sent.";
+
+"此伺服器未提供支援的書庫寫入介面" = "This server does not provide a supported library write API.";
+"此帳號沒有遠端書庫寫入權限" = "This account cannot write to the remote library.";
+"目的地已有同名檔案或資料夾" = "A file or folder with this name already exists.";
+"遠端書庫已有相同書籍，未重複加入" = "This book is already in the remote library. No duplicate was added.";
+"請輸入有效的名稱" = "Enter a valid name.";
+"目的地必須位於目前連線的書庫內" = "The destination must be within this library connection.";
+"寫入網址發生重新導向，請確認伺服器網址" = "The write URL was redirected. Check the server address.";
+"無法確認遠端操作結果，請重新整理書庫" = "Cannot confirm the remote operation. Refresh the library.";
+"遠端書庫操作失敗（HTTP %d）" = "Remote library operation failed (HTTP %d).";
+
+"中斷連線" = "Disconnect";
+"停止搜尋" = "Stop searching";
+"在電腦 Calibre 的「連線／分享」選單啟動無線裝置連線，再於此頁連接電腦。連線成功後，可在電腦選取書籍並按「傳送至裝置」。" = "Start the wireless device connection in Calibre’s Connect/share menu, then connect here. Select books on your computer and choose Send to device.";
+"尚未接收書籍" = "No books received";
+"尚未連線" = "Not connected";
+"已取消接收" = "Transfer cancelled";
+"已連線" = "Connected";
+"手動連線" = "Connect manually";
+"接收紀錄" = "Received books";
+"搜尋附近電腦" = "Find nearby computers";
+"支援 EPUB、PDF、TXT 與 Markdown。傳送期間請保持此頁開啟；接收並匯入成功後，書籍會加入書架供離線閱讀。離開此頁或切至背景會中斷連線。" = "Supports EPUB, PDF, TXT and Markdown. Keep this page open during transfers. Successfully imported books are added to your shelf for offline reading. Leaving this page or moving the app to the background disconnects it.";
+"正在匯入書架…" = "Importing to shelf…";
+"正在接收" = "Receiving";
+"正在搜尋附近的 Calibre…" = "Finding nearby Calibre servers…";
+"正在連接 Calibre…" = "Connecting to Calibre…";
+"無線裝置密碼（選填）" = "Wireless device password (optional)";
+"輸入 Calibre 無線裝置設定的密碼，僅供本次連線使用。" = "Enter the password from Calibre’s wireless device settings. It is used only for this connection.";
+"連接埠" = "Port";
+"連線" = "Connect";
+"連線狀態" = "Connection status";
+"開啟系統設定" = "Open Settings";
+"附近的 Calibre" = "Nearby Calibre servers";
+"電腦 IP 或主機名稱" = "Computer IP or hostname";
+"電腦與此裝置須連接同一區域網路，並允許悅讀存取本機網路。找不到電腦時，可在下方手動輸入位址。" = "Connect your computer and this device to the same local network and allow Yuedu local network access. If no computer appears, enter its address below.";
+"Calibre 傳來的書籍格式或大小無效" = "The book format or size sent by Calibre is invalid.";
+"Calibre 傳輸資料格式無效" = "Invalid Calibre transfer data.";
+"Calibre 已連接其他裝置，請先中斷該連線" = "Calibre is connected to another device. Disconnect it first.";
+"Calibre 無線裝置密碼不正確" = "Incorrect Calibre wireless device password.";
+"Calibre 連線已中斷，未完成的檔案不會加入書架" = "Calibre disconnected. Incomplete files will not be added to your shelf.";
+"可用空間不足，無法接收書籍" = "Not enough storage to receive this book.";
+"此 Calibre 書籍已有不同的本機副本，請先移除舊副本再傳送" = "A different local copy of this Calibre book already exists. Remove it before sending a replacement.";
+"此 Calibre 無線裝置協定版本尚未支援" = "This Calibre wireless protocol version is not supported.";
+"此 Calibre 裝置操作尚未支援" = "This Calibre device operation is not supported.";
+"請輸入有效的電腦位址與連接埠" = "Enter a valid computer address and port.";
+"書籍正在閱讀中，請關閉閱讀器後再從 Calibre 刪除" = "This book is in use. Close its reader before removing it from Calibre.";
+"Calibre 網頁進度回傳失敗：%@" = "Failed to send the Calibre web reading position: %@";
+"Calibre 桌面獨立閱讀器與 Calibre-Web 不支援此續讀方式。" = "The standalone Calibre desktop viewer and Calibre-Web do not support this continuation method.";
+"直連 Firebase" = "Direct to Firebase";
+"中轉服務" = "Relay service";
+"帳號連線方式" = "Account connection";
+"連線方式會在下次登入時生效。中轉服務透過自有伺服器連接原本的 Firebase 帳號。" = "The connection method takes effect on the next sign-in. The relay reaches the existing Firebase account through our own server.";
+"此版本未設定中轉服務" = "This build has no relay service configured.";
+"目前無法連線中轉服務，請檢查網路後再試" = "Can't reach the relay service right now. Check your connection and try again.";
+"中轉服務回應格式不正確" = "The relay service returned an unexpected response.";
+"登入失敗，請稍後再試" = "Sign-in failed. Try again later.";
+"為了保護帳號安全，請重新登入後再試" = "For your security, sign in again before continuing.";

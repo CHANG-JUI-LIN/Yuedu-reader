@@ -186,7 +186,10 @@ final class WebDAVManager: ObservableObject {
         try await backupFileIfExists(at: StorageLocations.bookSourcesFile, to: "/yuedu/book_sources.json")
 
         // 2. books.json — read from the file-based store (mirrors BookStore.booksMetaFileURL)
-        try await backupFileIfExists(at: StorageLocations.booksMetadataFile, to: "/yuedu/books.json")
+        if FileManager.default.fileExists(atPath: StorageLocations.booksMetadataFile.path) {
+            let data = try Data(contentsOf: StorageLocations.booksMetadataFile)
+            try await put(data: Self.bookshelfBackupData(from: data), path: "/yuedu/books.json")
+        }
 
         // 3. replace_rules.json
         let replaceURL = libDir.appendingPathComponent("replace_rules.json")
@@ -208,6 +211,13 @@ final class WebDAVManager: ObservableObject {
             self.lastSyncDate = Date()
             self.statusMessage = "備份成功"
         }
+    }
+
+    /// Only explicit shelf records and durable metadata leave this device. The
+    /// reading-only registry and automatic cache pointers are never backup data.
+    static func bookshelfBackupData(from data: Data) throws -> Data {
+        let books = try JSONDecoder().decode([ReadingBook].self, from: data)
+        return try JSONEncoder().encode(books.filter(\.isInBookshelf).map { $0.strippedForSync() })
     }
 
     /// If the file at `localURL` exists, read and upload it; skip if the file does not exist.

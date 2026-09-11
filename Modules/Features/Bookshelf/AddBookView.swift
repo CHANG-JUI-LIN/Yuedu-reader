@@ -184,17 +184,17 @@ struct FileImportTab: View {
                                         Self.removeStagedFile(at: mangaURL)
                                     } else if let pdfURL = pdfURLForImport {
                                         try Task.checkCancellation()
-                                        _ = try await store.importLocalPDF(url: pdfURL, title: t, author: a)
+                                        _ = try await LocalBookImportService.importBook(at: pdfURL, title: t, author: a, store: store)
                                         try Task.checkCancellation()
                                         Self.removeStagedFile(at: pdfURL)
                                     } else if let epubURL = epubURLForImport {
                                         try Task.checkCancellation()
-                                        _ = try await store.importEpub(url: epubURL, title: t, author: a)
+                                        _ = try await LocalBookImportService.importBook(at: epubURL, title: t, author: a, store: store)
                                         try Task.checkCancellation()
                                         Self.removeStagedFile(at: epubURL)
                                     } else if let markdownURL = markdownURLForImport {
                                         try Task.checkCancellation()
-                                        _ = try store.importMarkdown(url: markdownURL, title: t, author: a)
+                                        _ = try await LocalBookImportService.importBook(at: markdownURL, title: t, author: a, store: store)
                                     } else {
                                         try Task.checkCancellation()
                                         _ = try store.importWeb(
@@ -370,7 +370,7 @@ struct FileImportTab: View {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
             do {
-                _ = try await store.importTxt(url: url)
+                _ = try await LocalBookImportService.importBook(at: url, store: store)
                 try Task.checkCancellation()
                 guard AddBookImportGuard.shouldApplyResult(
                     activeSessionID: activeSessionID,

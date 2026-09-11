@@ -1,0 +1,52 @@
+# Production-shaped local/deployment topology.
+#
+# - `gateway` is NOT published to the host: it is only reachable on the
+#   internal Docker network by the `caddy` service. There is no way to hit the
+#   Node port from the internet, so it cannot be addressed directly with a
+#   spoofed X-Forwarded-For.
+# - `caddy` publishes 80/443 and terminates TLS. Caddy replaces the forwarded
+#   client address with the real peer address before proxying.
+# - `TRUST_PROXY_HOPS=1` matches exactly that one hop.
+#
+# Secrets come from ./gateway.env (never committed) and the mounted service
+# account file. See README.md "Configuration checklist".
+
+services:
+  gateway:
+    build: .
+    image: yuedu-gateway:local
+    restart: unless-stopped
+    env_file:
+      - ./gateway.env
+    environment:
+      PORT: "8080"
+      TRUST_PROXY_HOPS: "1"
+    volumes:
+      - /etc/yuedu/firebase-service-account.json:/run/secrets/firebase-service-account.json:ro
+    expose:
+      - "8080"
+    networks:
+      - relay
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - relay
+
+networks:
+  relay:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

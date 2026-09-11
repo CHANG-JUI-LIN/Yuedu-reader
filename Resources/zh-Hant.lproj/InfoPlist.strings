@@ -4,3 +4,5 @@
 
 /* UTTypeDescription for exported diagnostic and book-source debug log files. */
 "Yuedu Log File" = "悅讀日誌檔案";
+
+"NSLocalNetworkUsageDescription" = "用於連接區域網路書庫、接收 Calibre 傳送的書籍，以及使用本機語音服務。";

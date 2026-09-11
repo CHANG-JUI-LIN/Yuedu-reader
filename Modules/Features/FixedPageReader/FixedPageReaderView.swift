@@ -64,7 +64,7 @@ struct FixedPageReaderView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let book = store.books.first(where: { $0.id == bookId }) {
+            if let book = store.readingBook(id: bookId) {
                 FixedPageReaderRepresentable(
                     book: book,
                     store: store,
@@ -179,7 +179,7 @@ struct FixedPageReaderView: View {
     }
 
     private var currentBook: ReadingBook? {
-        store.books.first(where: { $0.id == bookId })
+        store.readingBook(id: bookId)
     }
 
     private func beginReadingStatsSession() {

@@ -50,19 +50,28 @@ final class ReaderBarRenderModelBuilder {
         userInterfaceStyle: UIUserInterfaceStyle,
         displayScale: CGFloat
     ) -> ReaderBarRenderModel {
-        let style = ReaderBarStyleResolver.resolve(layout.style, readerTextColor: readerTextColor)
-        let colorHex = ReaderOverlayPresentationResolver.rgbaHex(
-            style.color,
+        let style = ReaderBarStyleResolver.resolve(
+            layout.style,
+            readerTextColor: readerTextColor,
             userInterfaceStyle: userInterfaceStyle
-        ) ?? "#000000FF"
-
+        )
         let barSlots = ReaderBarSlot.slots(in: bar)
         let slots = barSlots.map { slot in
             layout.fields(in: slot).compactMap { field in
-                self.field(
+                var fieldStyle = layout.style
+                fieldStyle.color = field.color ?? layout.style.color
+                let resolved = ReaderBarStyleResolver.resolve(
+                    fieldStyle,
+                    readerTextColor: readerTextColor,
+                    userInterfaceStyle: userInterfaceStyle
+                )
+                let colorHex = ReaderOverlayPresentationResolver.rgbaHex(
+                    resolved.color, userInterfaceStyle: userInterfaceStyle
+                ) ?? "#000000FF"
+                return self.field(
                     field,
                     content: content,
-                    style: style,
+                    style: resolved,
                     colorHex: colorHex,
                     svgAssetStore: svgAssetStore,
                     displayScale: displayScale
@@ -141,15 +150,15 @@ final class ReaderBarRenderModelBuilder {
 
         switch presentation.content {
         case .text(let value):
-            return value.isEmpty ? nil : .text(value)
+            return value.isEmpty ? nil : .text(value, color: style.color)
         case .progress(let value):
-            return .progress(value)
+            return .progress(value, color: style.color)
         case .systemBattery(let iconName, let percentage):
             guard let image = symbol(named: iconName, style: style, colorHex: colorHex) else { return nil }
-            return .image(image, percentage: percentage)
+            return .image(image, percentage: percentage, color: style.color)
         case .importedBattery(_, let percentage):
             guard let importedKey, let image = importedBatteries[importedKey] else { return nil }
-            return .image(image, percentage: percentage)
+            return .image(image, percentage: percentage, color: style.color)
         }
     }
 

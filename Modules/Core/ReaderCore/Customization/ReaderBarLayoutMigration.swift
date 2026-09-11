@@ -92,13 +92,16 @@ enum ReaderBarLayoutMigration {
             return lhs.position.x < rhs.position.x
         }
 
+        let style = sharedStyle(from: sorted)
         for component in sorted where !seen.contains(component.kind) {
             seen.insert(component.kind)
             fields.append(
                 ReaderBarField(
                     kind: component.kind,
                     slot: slot(for: component.position),
-                    configuration: component.configuration
+                    configuration: component.configuration,
+                    color: component.style.color == style.color
+                        ? nil : component.style.color
                 )
             )
         }
@@ -111,7 +114,8 @@ enum ReaderBarLayoutMigration {
             version: ReaderBarLayout.currentVersion,
             fields: fields,
             hidesHeaderOnChapterOpening: hidesHeaderOnChapterOpening(body: body, opening: opening),
-            style: sharedStyle(from: sorted)
+            style: style,
+            edgeDistances: layout.barEdgeDistances ?? ReaderBarEdgeDistances()
         ).normalized(preservingVersion: false)
     }
 
@@ -139,9 +143,8 @@ enum ReaderBarLayoutMigration {
         return bodyHasHeader && !openingHasHeader
     }
 
-    /// Per-component style is gone; the bars share one. The first component in
-    /// reading order wins, because that is the one the reader's eye lands on and
-    /// therefore the one whose size and colour they actually tuned.
+    /// The first component supplies shared typography and the default color.
+    /// Other components retain any different color as an individual override.
     private static func sharedStyle(from sorted: [ReaderOverlayComponent]) -> ReaderBarStyle {
         guard let first = sorted.first else { return ReaderBarStyle() }
         return ReaderBarStyle(
@@ -190,7 +193,7 @@ enum ReaderBarLayoutMigration {
                 style: ReaderOverlayComponentStyle(
                     fontSize: layout.style.fontSize,
                     fontWeight: layout.style.weight,
-                    color: layout.style.color,
+                    color: field.color ?? layout.style.color,
                     opacity: layout.style.opacity
                 ),
                 configuration: field.configuration
@@ -202,7 +205,8 @@ enum ReaderBarLayoutMigration {
         return ReaderOverlayLayout(
             components: components,
             chapterOpeningComponents: opening,
-            contentReservations: ReaderOverlayContentReservations(top: 90, bottom: 32)
+            contentReservations: ReaderOverlayContentReservations(top: 90, bottom: 32),
+            barEdgeDistances: layout.edgeDistances
         )
     }
 

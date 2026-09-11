@@ -20,6 +20,7 @@ struct BookCoverImage: View {
     var author: String?
     var sourceBaseURL: String?
     var sourceHeaders: [String: String]
+    var session: URLSession?
     /// Stable key identifying the book, when this slot may fall back to the
     /// user's 預設封面 library. `nil` goes straight to `GeneratedBookCover` — only
     /// the surfaces 預設封面 covers (書架, and 探索 when enabled) pass a seed.
@@ -34,7 +35,8 @@ struct BookCoverImage: View {
         author: String? = nil,
         sourceBaseURL: String? = nil,
         sourceHeaders: [String: String] = [:],
-        defaultCoverSeed: String? = nil
+        defaultCoverSeed: String? = nil,
+        session: URLSession? = nil
     ) {
         self.coverURL = coverURL
         self.title = title
@@ -42,9 +44,10 @@ struct BookCoverImage: View {
         self.sourceBaseURL = sourceBaseURL
         self.sourceHeaders = sourceHeaders
         self.defaultCoverSeed = defaultCoverSeed
+        self.session = session
         // Cache hits paint on the first layout pass — no placeholder flash and
         // no extra state publish per cell while a list scrolls.
-        _image = State(initialValue: BookCoverLoader.cachedImage(for: coverURL))
+        _image = State(initialValue: BookCoverLoader.cachedImage(for: coverURL, session: session))
     }
 
     var body: some View {
@@ -63,7 +66,7 @@ struct BookCoverImage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .task(id: coverURL) { await load() }
+        .task(id: BookCoverLoader.cacheKey(for: coverURL, session: session)) { await load() }
     }
 
     /// 強制使用預設封面: the book's own artwork is ignored everywhere it is drawn,
@@ -87,18 +90,28 @@ struct BookCoverImage: View {
         // library now lands on `GeneratedBookCover` rather than on the book's own
         // artwork, so downloading it would be wasted either way.
         if forcesDefaultCover { return }
-        if let cached = BookCoverLoader.cachedImage(for: coverURL) {
+        if let cached = BookCoverLoader.cachedImage(for: coverURL, session: session) {
             if image !== cached { image = cached }
             return
         }
         if image != nil { image = nil }  // avoid showing a reused cell's old cover
         let headers = BookCoverLoader.headers(sourceBaseURL: sourceBaseURL, sourceHeaders: sourceHeaders)
-        let loaded = await BookCoverLoader.loadImage(urlString: coverURL, headers: headers)
+        let loaded = await BookCoverLoader.loadImage(urlString: coverURL, headers: headers, session: session)
         if !Task.isCancelled { image = loaded }
     }
 }
 
 extension BookCoverImage {
+    /// Saved remote books use the same authenticated catalog transport as browsing.
+    /// Local/custom cover selection stays with the caller's existing artwork route.
+    @MainActor
+    init(readingBook book: ReadingBook, defaultCoverSeed: String? = nil) {
+        let source = book.bookSourceId.flatMap { id in BookSourceStore.shared.sources.first { $0.id == id } }
+        self.init(coverURL: book.coverUrl ?? "", title: book.title, author: book.author,
+                  sourceBaseURL: source?.bookSourceUrl, sourceHeaders: source?.parsedHeaders ?? [:],
+                  defaultCoverSeed: defaultCoverSeed, session: BookCoverLoader.remoteSession(for: book))
+    }
+
     /// Convenience for online/discover books — resolves the source's base URL and
     /// header rule from `BookSourceStore` so covers carry the right Referer/UA.
     @MainActor

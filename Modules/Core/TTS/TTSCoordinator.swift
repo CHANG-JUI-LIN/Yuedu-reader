@@ -424,6 +424,7 @@ final class TTSCoordinator: ObservableObject {
         onWillResume?()
         guard activateAudioSession() else { return }
         currentEngine.configureAudioSessionOwnership(true)
+        errorMessage = nil
         currentEngine.resume()
         isPlaying = currentEngine.isPlaying
         playbackState = isPlaying ? .playing : .paused
@@ -689,6 +690,11 @@ final class TTSCoordinator: ObservableObject {
         engine.onError = { [weak self] error in
             let presentError = {
                 guard let self else { return }
+                if case .chunkUnavailable = error as? TTSPlaybackError {
+                    // The engine retains the failed segment for resume. Keep the panel
+                    // and lock-screen controls in sync with that paused session.
+                    self.pause()
+                }
                 self.errorMessage = String(format: localized("朗讀失敗：%@"), error.localizedDescription)
             }
             if Thread.isMainThread {

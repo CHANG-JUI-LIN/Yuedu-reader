@@ -639,6 +639,14 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(accountPhotoURL, forKey: "yd_account_photo_url") }
     }
 
+    /// Which route account traffic takes. `.automatic` remembers the last
+    /// successful route and otherwise uses a region hint; it never depends on
+    /// Remote Config, which itself needs Firebase.
+    @Published var authRouteMode: AuthRouteMode {
+        didSet { UserDefaults.standard.set(authRouteMode.rawValue, forKey: Self.authRouteModeKey) }
+    }
+    static let authRouteModeKey = "yd_auth_route_mode"
+
     /// Subtitle shown under the account name. Prefers a real email, otherwise falls
     /// back to a provider description so we never display an opaque identifier.
     var accountSubtitle: String {
@@ -1452,6 +1460,21 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - TTS Settings
 
+    static let ttsPreSynthesisConcurrencyRange = 1...8
+    private static let ttsPreSynthesisConcurrencyKey = "yd_tts_pre_synthesis_concurrency"
+    @Published var ttsPreSynthesisConcurrency: Int {
+        didSet {
+            let range = Self.ttsPreSynthesisConcurrencyRange
+            let bounded = min(range.upperBound, max(range.lowerBound, ttsPreSynthesisConcurrency))
+            // Assigning an unchanged @Published value re-enters this observer too.
+            if ttsPreSynthesisConcurrency != bounded {
+                ttsPreSynthesisConcurrency = bounded
+            } else {
+                UserDefaults.standard.set(bounded, forKey: Self.ttsPreSynthesisConcurrencyKey)
+            }
+        }
+    }
+
     @Published var edgeTtsVoiceID: String {
         didSet { UserDefaults.standard.set(edgeTtsVoiceID, forKey: "yd_edge_tts_voice_id") }
     }
@@ -1528,6 +1551,8 @@ class GlobalSettings: ObservableObject {
         accountProvider = UserDefaults.standard.string(forKey: "yd_account_provider") ?? ""
         accountUserIdentifier = UserDefaults.standard.string(forKey: "yd_account_user_identifier") ?? ""
         accountPhotoURL = UserDefaults.standard.string(forKey: "yd_account_photo_url") ?? ""
+        authRouteMode = UserDefaults.standard.string(forKey: Self.authRouteModeKey)
+            .flatMap(AuthRouteMode.init(rawValue:)) ?? .automatic
         accountAvatarData = UserDefaults.standard.data(forKey: "yd_account_avatar_data")
         let rawConv = UserDefaults.standard.string(forKey: "yd_text_conv") ?? ""
         textConversion = TextConversion(rawValue: rawConv) ?? .original
@@ -1964,6 +1989,9 @@ class GlobalSettings: ObservableObject {
         httpTtsHeaders = Self.loadTTSHeaders()
         importedTTSSources = Self.loadImportedTTSSources()
         ttsUseSystemVoice = UserDefaults.standard.bool(forKey: "yd_tts_use_system_voice")
+        ttsPreSynthesisConcurrency = min(8, max(1,
+            (UserDefaults.standard.object(forKey: Self.ttsPreSynthesisConcurrencyKey) as? Int) ?? 2
+        ))
         ttsKeepsScreenAwake = UserDefaults.standard.bool(forKey: Self.ttsKeepsScreenAwakeKey)
         ttsSystemVoiceIdentifiers =
             (UserDefaults.standard.dictionary(forKey: Self.ttsSystemVoiceIdentifiersKey)
@@ -3169,14 +3197,26 @@ class GlobalSettings: ObservableObject {
             clearAccountState()
             return
         }
+        applyAccountUser(AccountUser(firebaseUser: user), providerOverride: providerOverride)
+    }
 
-        let email = user.email ?? ""
-        let displayName = user.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        accountDisplayName = displayName?.isEmpty == false ? displayName! : (email.isEmpty ? localized("已登入") : email)
+    /// Single entry point for both auth routes. Keeping the mapping here means
+    /// the Gateway path and the SDK path cannot drift in what the UI shows.
+    @MainActor
+    func applyAccountUser(_ user: AccountUser?, providerOverride: String? = nil) {
+        guard let user else {
+            clearAccountState()
+            return
+        }
+        let email = user.email
+        let displayName = user.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        accountDisplayName = !displayName.isEmpty ? displayName : (email.isEmpty ? localized("已登入") : email)
         accountEmail = email
-        accountProvider = providerOverride ?? Self.providerDisplayName(from: user)
+        accountProvider = providerOverride ?? user.providerDisplayName
         accountUserIdentifier = user.uid
-        accountPhotoURL = user.photoURL?.absoluteString ?? accountPhotoURL
+        if !(user.photoURL ?? "").isEmpty {
+            accountPhotoURL = user.photoURL ?? accountPhotoURL
+        }
         isLoggedIn = true
     }
 
@@ -3239,19 +3279,6 @@ class GlobalSettings: ObservableObject {
         accountUserIdentifier = ""
         accountPhotoURL = ""
         accountAvatarData = nil
-    }
-
-    private static func providerDisplayName(from user: User) -> String {
-        switch user.providerData.first?.providerID {
-        case "google.com":
-            return "Google"
-        case "apple.com":
-            return "Apple"
-        case "password":
-            return "Email"
-        default:
-            return user.providerData.first?.providerID ?? "Firebase"
-        }
     }
 }
 

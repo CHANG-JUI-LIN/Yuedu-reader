@@ -35,9 +35,19 @@ struct OPDSParserTests {
     </feed>
     """
 
+    @Test func genericMediaTypeUsesAdvertisedFilename() {
+        let file = OPDSAcquisition(url: URL(string: "https://example.com/book.EPUB")!,
+            type: "application/octet-stream", rel: "http://opds-spec.org/acquisition")
+        #expect(file.importExtension == "epub")
+        #expect(file.isSupported)
+        let unsupported = OPDSAcquisition(url: URL(string: "https://example.com/book.mobi")!,
+            type: "application/octet-stream", rel: "http://opds-spec.org/acquisition")
+        #expect(!unsupported.isSupported)
+    }
+
     @Test("parses feed title, pagination and search links")
     func feedLevelLinks() throws {
-        let feed = OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)
+        let feed = try OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)
         #expect(feed.title == "Sample Catalog")
         #expect(feed.nextPageURL?.absoluteString == "https://example.com/opds?page=2")
         #expect(feed.searchDescriptionURL?.absoluteString == "https://example.com/opds/search.xml")
@@ -46,7 +56,7 @@ struct OPDSParserTests {
 
     @Test("classifies a navigation entry and resolves relative href")
     func navigationEntry() throws {
-        let feed = OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)
+        let feed = try OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)
         let nav = try #require(feed.entries.first { $0.title == "Fiction" })
         #expect(nav.isNavigation)
         #expect(!nav.isBook)
@@ -55,7 +65,7 @@ struct OPDSParserTests {
 
     @Test("classifies a book entry with author, covers and EPUB acquisition")
     func bookEntry() throws {
-        let feed = OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)
+        let feed = try OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)
         let book = try #require(feed.entries.first { $0.title == "The Great Book" })
         #expect(book.isBook)
         #expect(book.author == "Jane Doe")
@@ -65,11 +75,62 @@ struct OPDSParserTests {
         #expect(book.bestAcquisition?.importExtension == "epub")
     }
 
-    @Test("an unsupported acquisition (PDF) is a book but not importable")
+    @Test("PDF acquisition is readable")
     func unsupportedAcquisition() throws {
-        let feed = OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)
+        let feed = try OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)
         let pdf = try #require(feed.entries.first { $0.title == "PDF Only" })
         #expect(pdf.isBook)
-        #expect(pdf.bestAcquisition == nil)
+        #expect(pdf.bestAcquisition?.importExtension == "pdf")
     }
+    @Test("empty Atom feed is valid; broken XML and HTML login are errors")
+    func distinguishesEmptyAndInvalid() throws {
+        #expect(try OPDSClient.parseFeed(data: Data("<feed xmlns=\"http://www.w3.org/2005/Atom\"/>".utf8), feedURL: feedURL).entries.isEmpty)
+        #expect(throws: OPDSError.self) { try OPDSClient.parseFeed(data: Data("<feed><entry>".utf8), feedURL: feedURL) }
+        do {
+            _ = try OPDSClient.parseFeed(data: Data("<html><body>Login</body></html>".utf8), feedURL: feedURL)
+            Issue.record("HTML must not become an empty catalog")
+        } catch OPDSError.loginPage {} catch { Issue.record("Unexpected error: \(error)") }
+    }
+
+    @Test("XHTML descriptions preserve nested text, multiple authors and acquisition sizes")
+    func nestedMetadata() throws {
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom" xml:base="https://example.com/proxy/opds/">
+          <entry><id>b</id><title>A &amp; B</title><author><name>One</name></author><author><name>Two</name></author>
+          <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>First <b>bold</b>.</p><p>Second.</p></div></content>
+          <link rel="http://opds-spec.org/acquisition" href="get/1.epub?library=main" type="application/epub+zip" length="2345"/></entry>
+        </feed>
+        """
+        let entry = try #require(OPDSClient.parseFeed(data: Data(xml.utf8), feedURL: feedURL).entries.first)
+        #expect(entry.author == "One, Two")
+        #expect(entry.summary == "First bold. Second.")
+        #expect(entry.title == "A & B")
+        #expect(entry.bestAcquisition?.size == 2345)
+        #expect(entry.bestAcquisition?.url.absoluteString == "https://example.com/proxy/opds/get/1.epub?library=main")
+    }
+
+    @Test("search templates retain braces and encode punctuation in path or query")
+    func rawSearchTemplate() async throws {
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><link rel="search" type="application/atom+xml" href="search/{searchTerms}?library=main&amp;count={count?}"/></feed>
+        """
+        let base = URL(string: "https://example.com/proxy/opds/")!
+        let feed = try OPDSClient.parseFeed(data: Data(xml.utf8), feedURL: base)
+        let search = try #require(feed.search)
+        let url = try #require(try await OPDSClient().searchFeedURL(search: search, query: "中文 &/+?#"))
+        #expect(url.absoluteString == "https://example.com/proxy/opds/search/%E4%B8%AD%E6%96%87%20%26%2F%2B%3F%23?library=main&count=50")
+        let queryURL = try #require(OPDSClient.resolveSearchTemplate("?q={searchTerms}&library=x", baseURL: base, query: "a&b=c+d"))
+        #expect(URLComponents(url: queryURL, resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "a&b=c+d")
+    }
+
+    @Test("Calibre no-books compatibility only applies to explicit search 404")
+    func calibreNoResults() {
+        let data = Data("No books found".utf8)
+        #expect(OPDSClient.isCalibreEmptySearch(data: data, status: 404, kind: .calibre, isSearch: true))
+        #expect(!OPDSClient.isCalibreEmptySearch(data: data, status: 404, kind: .calibre, isSearch: false))
+        #expect(!OPDSClient.isCalibreEmptySearch(data: data, status: 404, kind: .opds, isSearch: true))
+        #expect(!OPDSClient.isCalibreEmptySearch(data: Data("Not found".utf8), status: 404, kind: .calibre, isSearch: true))
+        #expect(!OPDSClient.isCalibreEmptySearch(data: data, status: 401, kind: .calibre, isSearch: true))
+    }
+
 }

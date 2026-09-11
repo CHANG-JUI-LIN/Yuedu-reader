@@ -65,7 +65,7 @@ struct ReaderDownloadOptionsView: View {
         _chapterCountText = State(initialValue: "\(defaultCount)")
     }
 
-    private var book: ReadingBook? { store.books.first(where: { $0.id == bookId }) }
+    private var book: ReadingBook? { store.readingBook(id: bookId) }
     private var downloadState: BookOfflineDownloadState { book?.offlineDownloadState ?? .none }
 
     private enum Mode { case range, progress, completed }

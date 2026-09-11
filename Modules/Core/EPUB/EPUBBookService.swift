@@ -9,7 +9,15 @@ final class EPUBBookService {
         store.localEPUBURL(for: book)
     }
 
-    func openSession(for book: ReadingBook, using store: BookStore) async throws -> PublicationSession {
+    @MainActor
+    func openSession(for book: ReadingBook, using store: BookStore, remoteLibrary: any RemoteLibraryServing = RemoteLibraryService.shared) async throws -> PublicationSession {
+        if book.remoteSource != nil {
+            _ = try await remoteLibrary.prepare(bookID: book.id, store: store)
+            guard let session = remoteLibrary.publication(bookID: book.id) else {
+                throw RemoteLibraryError.missingBook
+            }
+            return session
+        }
         let url = localURL(for: book, using: store)
         return try await PublicationSession.open(sourceURL: url)
     }

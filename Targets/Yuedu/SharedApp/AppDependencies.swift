@@ -356,6 +356,10 @@ struct AppDependencies {
     var onlineBookCoordinator: OnlineBookCoordinating
     var offlineDownloadManager: any OfflineDownloadManaging
     var offlineChapterStore: any OfflineChapterStoring
+    var remoteLibrary: any RemoteLibraryServing = MainActor.assumeIsolated { RemoteLibraryService.shared }
+    var remoteLibraryWriting: any RemoteLibraryWriting = MainActor.assumeIsolated { RemoteLibraryWritingService() }
+    var calibreProgress = MainActor.assumeIsolated { CalibreProgressService() }
+    var calibreWireless = MainActor.assumeIsolated { CalibreWirelessService() }
     var readingPositionStore: ReadingPositionStore
 
     static let live: AppDependencies = {
@@ -374,6 +378,10 @@ struct AppDependencies {
             chapterFetchManager: cfm,
             webViewFetcher: webViewFetcher
         )
+        let remoteLibrary = MainActor.assumeIsolated { RemoteLibraryService.shared }
+        let writing = MainActor.assumeIsolated {
+            RemoteLibraryWritingService(invalidateReadingResources: { remoteLibrary.invalidate(bookID: $0) })
+        }
         return AppDependencies(
             webContentFetcher: LiveWebContentFetcher(webFetcher: webFetcher),
             bookSourceFetcher: LiveBookSourceFetcher(bookSourceFetcher: bsf),
@@ -381,6 +389,8 @@ struct AppDependencies {
             onlineBookCoordinator: coordinator,
             offlineDownloadManager: offlineDownloadManager,
             offlineChapterStore: offlineChapterStore,
+            remoteLibrary: remoteLibrary,
+            remoteLibraryWriting: writing,
             readingPositionStore: JSONFileReadingPositionStore()
         )
     }()

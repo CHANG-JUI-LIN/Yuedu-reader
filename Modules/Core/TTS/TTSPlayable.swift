@@ -73,7 +73,8 @@ protocol TTSPlayable: AnyObject {
     /// True between a `.waiting` outcome and the matching `supplyPendingUnit(_:)`.
     var isWaitingForNextUnit: Bool { get }
     var onStop: (() -> Void)? { get set }
-    /// Playback ended because of this error. Presented as a blocking alert.
+    /// Playback cannot proceed because of this error. The engine may pause at the
+    /// current segment for resume, or end the session through `onStop`.
     var onError: ((Error) -> Void)? { get set }
     /// One segment was given up on, but narration continues with the next one. Reported so a
     /// provider problem is never invisible, without tearing down a listening session that is

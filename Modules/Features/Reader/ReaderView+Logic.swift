@@ -442,10 +442,37 @@ extension ReaderView {
         isRestoringPosition = false
         autoSaveProgress(force: true)
         isRestoringPosition = wasRestoring
+        saveCalibreProgress()
         if let navigator = readerSessionCoordinator?.navigator {
             Task {
                 await navigator.flush()
             }
+        }
+    }
+
+    private func saveCalibreProgress() {
+        guard !isRestoringPosition,
+              let book = store.readingBook(id: bookId), book.remoteSource != nil,
+              let session = activePublicationSession else { return }
+        let position: CoreTextReadingPosition?
+        let text: String?
+        if effectiveScrollMode {
+            position = readerSessionCoordinator?.state.location.coreTextPosition
+            text = position.flatMap { location in
+                epubRenderer.scrollEngine?.chunks.first { $0.chapterIndex == location.spineIndex }?.attributedString.string
+            }
+        } else if let engine = epubRenderer.engine {
+            position = coreTextPositionIfLayoutReady(engine: engine,
+                page: currentPage == 0 && engine.currentPage > 0 ? engine.currentPage : currentPage)
+                .map { CoreTextReadingPosition(spineIndex: $0.spineIndex, charOffset: $0.charOffset) }
+            text = position.flatMap { engine.chapterText(forSpine: $0.spineIndex) }
+        } else { return }
+        guard let position, let text, session.chapters.indices.contains(position.spineIndex) else { return }
+        let href = session.chapters[position.spineIndex].href
+        let isVertical = effectiveWritingMode.isVertical
+        let service = dependencies.calibreProgress
+        Task {
+            await service.save(book: book, chapterHref: href, position: position, renderedText: text, isVertical: isVertical)
         }
     }
 

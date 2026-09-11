@@ -2,8 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to local book libraries, receive books from Calibre, and use local speech services.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_calibresmartdeviceapp._tcp</string>
+	</array>
 	<key>GitCommitSHA</key>
 	<string>$(GIT_COMMIT_SHA)</string>
+	<!-- Firebase Gateway entry point. Injected per build configuration; empty
+	     means the relay is unavailable and the app stays on the direct route.
+	     Must be a controlled HTTPS host that is NOT a Google endpoint. -->
+	<key>GatewayBaseURL</key>
+	<string>$(GATEWAY_BASE_URL)</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>zh-Hant</string>

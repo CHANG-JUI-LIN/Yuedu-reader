@@ -12,7 +12,8 @@ import UIKit
 enum ReaderBarStyleResolver {
     static func resolve(
         _ style: ReaderBarStyle,
-        readerTextColor: UIColor
+        readerTextColor: UIColor,
+        userInterfaceStyle: UIUserInterfaceStyle
     ) -> ReaderOverlayResolvedStyle {
         let normalized = style.normalized
         let size = CGFloat(normalized.fontSize)
@@ -23,12 +24,16 @@ enum ReaderBarStyleResolver {
         case .readerText:
             color = readerTextColor
         case .custom:
-            color = normalized.color.hexRGBA.map(Self.color(hexRGBA:)) ?? readerTextColor
+            let hex = userInterfaceStyle == .dark
+                ? normalized.color.darkHexRGBA : normalized.color.hexRGBA
+            color = hex.map(Self.color(hexRGBA:)) ?? readerTextColor
         }
 
         return ReaderOverlayResolvedStyle(
             font: font,
-            color: color,
+            // Resolve before Core Graphics drawing and battery rasterization;
+            // their ambient UIKit appearance can differ from the reader theme.
+            color: color.resolvedColor(with: UITraitCollection(userInterfaceStyle: userInterfaceStyle)),
             opacity: normalized.opacity
         )
     }
@@ -96,6 +101,10 @@ private struct ReaderBarCanvas: UIViewRepresentable {
         let view = ReaderBarUIView()
         view.backgroundColor = .clear
         view.isOpaque = false
+        // SwiftUI can finalize the canvas size after its first draw, especially
+        // in a resizing List preview. Repaint for the new bounds instead of
+        // stretching the old text bitmap while the model remains unchanged.
+        view.contentMode = .redraw
         view.model = model
         return view
     }

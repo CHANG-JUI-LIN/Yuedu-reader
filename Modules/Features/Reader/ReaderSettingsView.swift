@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 struct ReaderSettingsView: View {
     @Binding var fontSize: CGFloat
     @Binding var theme: ReaderTheme
+    var readerSafeTop: CGFloat = 0
+    var readerSafeBottom: CGFloat = 0
     var capabilities: ReaderCapabilities = .reflowableText
     var allowsUserSelectedReaderFont = false
     var usesPublicationFontDefault = false
@@ -226,7 +228,11 @@ struct ReaderSettingsView: View {
     private var headerFooterSection: some View {
         Section {
             NavigationLink {
-                ReaderBarLayoutEditorView(theme: theme)
+                ReaderBarLayoutEditorView(
+                    theme: theme,
+                    readerSafeTop: readerSafeTop,
+                    readerSafeBottom: readerSafeBottom
+                )
             } label: {
                 Label(localized("頁首頁尾編輯"), systemImage: "rectangle.split.3x1")
             }

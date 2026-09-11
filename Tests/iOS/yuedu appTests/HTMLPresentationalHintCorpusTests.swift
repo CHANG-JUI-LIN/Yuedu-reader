@@ -1,5 +1,4 @@
 import Foundation
-import ReadiumZIPFoundation
 import SwiftSoup
 import Testing
 @testable import yuedu_app
@@ -171,7 +170,6 @@ struct HTMLPresentationalHintCorpusTests {
         var accumulators: [Key: Accumulator] = [:]
         var books: [BookSummary] = []
         var failures: [String] = []
-        var ingestionFallbacks: [String] = []
 
         for input in inputs {
             do {
@@ -181,21 +179,7 @@ struct HTMLPresentationalHintCorpusTests {
                 for chapterIndex in session.chapters.indices {
                     let chapterID = "\(input.id)#\(chapterIndex)"
                     do {
-                        let html: String
-                        do {
-                            html = try await adapter.chapterHTML(at: chapterIndex)
-                        } catch {
-                            let encodedHref = session.chapters[chapterIndex].href
-                            let decodedHref = encodedHref.removingPercentEncoding ?? encodedHref
-                            guard decodedHref != encodedHref else { throw error }
-                            html = try await rawArchiveText(
-                                sourceURL: input.url,
-                                entryPath: decodedHref
-                            )
-                            ingestionFallbacks.append(
-                                "\(chapterID): read percent-decoded ZIP entry"
-                            )
-                        }
+                        let html = try await adapter.chapterHTML(at: chapterIndex)
                         let document = try SwiftSoup.parse(html)
                         try scanDocument(
                             document,
@@ -255,7 +239,7 @@ struct HTMLPresentationalHintCorpusTests {
             scannedChapterCount: books.reduce(0) { $0 + $1.scannedChapterCount },
             books: books.sorted { $0.id < $1.id },
             attributes: attributes,
-            ingestionFallbacks: ingestionFallbacks.sorted(),
+            ingestionFallbacks: [],
             failures: failures.sorted()
         )
     }
@@ -331,24 +315,5 @@ struct HTMLPresentationalHintCorpusTests {
         )
         .filter { $0.pathExtension.lowercased() == "epub" }
         .sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
-
-    private func rawArchiveText(sourceURL: URL, entryPath: String) async throws -> String {
-        let archive = try await Archive(url: sourceURL, accessMode: .read)
-        guard let entry = try await archive.get(entryPath) else {
-            throw CocoaError(.fileReadNoSuchFile)
-        }
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: temporaryURL) }
-        _ = try await archive.extract(entry, to: temporaryURL, skipCRC32: true)
-        let data = try Data(contentsOf: temporaryURL)
-        for encoding in [
-            String.Encoding.utf8, .unicode, .utf16, .utf16LittleEndian,
-            .utf16BigEndian, .isoLatin1,
-        ] {
-            if let text = String(data: data, encoding: encoding) { return text }
-        }
-        throw CocoaError(.fileReadInapplicableStringEncoding)
     }
 }

@@ -138,6 +138,26 @@ struct UserDetailView: View {
             }
             .interfaceSectionSurface()
 
+            Section {
+                Picker(localized("帳號連線方式"), selection: $gs.authRouteMode) {
+                    ForEach(AuthRouteMode.allCases) { mode in
+                        Text(localized(mode.titleKey)).tag(mode)
+                    }
+                }
+            } header: {
+                Text(localized("帳號連線方式"))
+            } footer: {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    Text(localized("連線方式會在下次登入時生效。中轉服務透過自有伺服器連接原本的 Firebase 帳號。"))
+                        .dsSectionFooter()
+                    if !GatewayConfiguration.isConfigured {
+                        Text(localized("此版本未設定中轉服務"))
+                            .dsSectionFooter(color: DSColor.warning)
+                    }
+                }
+            }
+            .interfaceSectionSurface()
+
             Section(header: Text(localized("閱讀工具"))) {
                 Button {
                     showReadingStats = true
@@ -559,40 +579,16 @@ struct UserDetailView: View {
 
 struct AccountAvatarView: View {
     @ObservedObject private var gs = GlobalSettings.shared
+    @ObservedObject private var auth = FirebaseAuthManager.shared
     let size: CGFloat
 
     var body: some View {
-        Group {
-            if let data = gs.accountAvatarData, let image = UIImage(data: data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else if let url = URL(string: gs.accountPhotoURL), !gs.accountPhotoURL.isEmpty {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .foregroundColor(DSColor.accent)
-                            .padding(size * 0.08)
-                    }
-                }
-            } else {
-                Image(systemName: gs.isLoggedIn ? "person.crop.circle.fill" : "person.crop.circle")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(gs.isLoggedIn ? DSColor.accent : .secondary)
-                    .padding(size * 0.08)
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
-        .overlay(
-            Circle()
-                .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+        AccountAvatarImageView(
+            size: size,
+            avatarData: gs.accountAvatarData,
+            photoURLString: gs.accountPhotoURL,
+            isLoggedIn: gs.isLoggedIn,
+            gatewayRouteActive: auth.activeRoute == .gateway
         )
     }
 }

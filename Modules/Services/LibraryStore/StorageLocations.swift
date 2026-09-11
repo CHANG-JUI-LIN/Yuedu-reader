@@ -34,7 +34,16 @@ enum StorageLocations {
 
     /// A book's content file, resolved from the filename stored on `ReadingBook`.
     static func bookFile(_ filename: String) -> URL {
-        documents.appendingPathComponent(filename)
+        if filename.hasPrefix("__remote_cache__/") {
+            return remoteLibraryCache.appendingPathComponent(String(filename.dropFirst("__remote_cache__/".count)))
+        }
+        return documents.appendingPathComponent(filename)
+    }
+
+    /// Regenerable remote resources, excluded from backup by the Caches location.
+    static var remoteLibraryCache: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RemoteLibrary", isDirectory: true)
     }
 
     // MARK: - App-internal (Application Support)

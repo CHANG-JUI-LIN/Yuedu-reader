@@ -474,7 +474,7 @@ struct ReaderView: View {
     }
 
     // ── Derived Properties ──
-    var book: ReadingBook? { store.books.first(where: { $0.id == bookId }) }
+    var book: ReadingBook? { store.readingBook(id: bookId) }
 
     var onlineBookDetail: OnlineBook? {
         guard let book, book.isOnline, let sourceId = book.bookSourceId else { return nil }
@@ -630,7 +630,7 @@ struct ReaderView: View {
     private var localEPUBBookIdentifier: String? {
         guard let currentBook = book, usesCoreTextEPUB else { return nil }
         if currentBook.resolvedPipelineKind == .epub {
-            return store.localEPUBURL(for: currentBook).standardizedFileURL.path
+            return currentBook.remoteEPUBRenderIdentifier ?? store.localEPUBURL(for: currentBook).standardizedFileURL.path
         }
         if currentBook.resolvedPipelineKind == .txt {
             return currentBook.id.uuidString
@@ -2147,6 +2147,8 @@ struct ReaderView: View {
                         get: { readerTheme },
                         set: { readerTheme = $0 }
                     ),
+                    readerSafeTop: effectiveReaderSafeTop,
+                    readerSafeBottom: effectiveReaderSafeBottom,
                     capabilities: readerCapabilities,
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     usesPublicationFontDefault: book?.resolvedPipelineKind == .epub,

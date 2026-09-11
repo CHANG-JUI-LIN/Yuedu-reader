@@ -27,8 +27,11 @@ enum BookshelfCoverStyle {
         // library is empty — that case falls through to the generated cover,
         // which is what Legado's built-in default cover does.
         if GlobalSettings.shared.useDefaultCoverForAllBooks { return defaultCover }
+        let cachedRemoteCover = book.remoteSource == nil ? nil : book.coverUrl.flatMap {
+            BookCoverLoader.cachedImage(for: $0, session: BookCoverLoader.remoteSession(for: book))
+        }
         return book.coverImagePath.flatMap { BookshelfCoverLoader.load(filename: $0) }
-            ?? defaultCover
+            ?? cachedRemoteCover ?? defaultCover
     }
 
     /// What a card actually shows. Always something: the book's own cover, the
@@ -38,9 +41,14 @@ enum BookshelfCoverStyle {
     /// reader's card all go through here — each used to inline its own grey
     /// title card, which is how a local TXT with no artwork kept getting the old
     /// placeholder after the generated covers landed.
+    @MainActor
     @ViewBuilder
     static func artwork(for book: ReadingBook, colorScheme: ColorScheme) -> some View {
-        if let uiImage = image(for: book, colorScheme: colorScheme) {
+        if book.remoteSource != nil, !GlobalSettings.shared.useDefaultCoverForAllBooks,
+           book.coverImagePath.flatMap({ BookshelfCoverLoader.load(filename: $0) }) == nil,
+           book.coverUrl?.isEmpty == false {
+            BookCoverImage(readingBook: book, defaultCoverSeed: book.id.uuidString)
+        } else if let uiImage = image(for: book, colorScheme: colorScheme) {
             Image(uiImage: uiImage)
                 .resizable()
                 .scaledToFill()
@@ -105,6 +113,7 @@ private enum BookshelfImportPresentationRoute: Hashable {
     case local
     case webDAV
     case opds
+    case calibre
 }
 
 private extension View {
@@ -132,6 +141,7 @@ struct HomeView: View {
     @State private var showAddSheet = false
     @State private var showWebDAVImport = false
     @State private var showOPDSImport = false
+    @State private var showCalibreLibrary = false
     @State private var addSheetSessionID = UUID()
     @State private var showLegacyImportChooser = false
     @State private var legacyImportSequence =
@@ -463,13 +473,18 @@ struct HomeView: View {
                             ),
                             DismissalSequencedAction(
                                 route: .webDAV,
-                                title: localized("從 WebDAV 匯入"),
+                                title: localized("WebDAV 書庫"),
                                 systemImage: "externaldrive.connected.to.line.below"
                             ),
                             DismissalSequencedAction(
                                 route: .opds,
-                                title: localized("從 OPDS 匯入"),
+                                title: localized("OPDS 書庫"),
                                 systemImage: "books.vertical"
+                            ),
+                            DismissalSequencedAction(
+                                route: .calibre,
+                                title: localized("Calibre 書庫"),
+                                systemImage: "server.rack"
                             ),
                         ],
                         onSelect: { legacyImportSequence.select($0) }
@@ -496,6 +511,11 @@ struct HomeView: View {
             .sheet(isPresented: $showOPDSImport) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                     OPDSImportView().environmentObject(store)
+                }
+            }
+            .sheet(isPresented: $showCalibreLibrary) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                    OPDSImportView(kind: .calibre).environmentObject(store)
                 }
             }
             .navigationDestination(item: $selectedOnlineBookDetail) { book in
@@ -614,6 +634,8 @@ struct HomeView: View {
             showWebDAVImport = true
         case .opds:
             showOPDSImport = true
+        case .calibre:
+            showCalibreLibrary = true
         }
     }
 
@@ -627,6 +649,8 @@ struct HomeView: View {
                 Image(systemName: "plus")
                     .font(DSFont.toolbarIcon)
             }
+            .accessibilityLabel(localized("添加書籍"))
+            .accessibilityIdentifier("home_add_book")
         } else {
             Menu {
                 Button {
@@ -638,18 +662,25 @@ struct HomeView: View {
                 Button {
                     showWebDAVImport = true
                 } label: {
-                    Label(localized("從 WebDAV 匯入"),
+                    Label(localized("WebDAV 書庫"),
                           systemImage: "externaldrive.connected.to.line.below")
                 }
                 Button {
                     showOPDSImport = true
                 } label: {
-                    Label(localized("從 OPDS 匯入"), systemImage: "books.vertical")
+                    Label(localized("OPDS 書庫"), systemImage: "books.vertical")
+                }
+                Button {
+                    showCalibreLibrary = true
+                } label: {
+                    Label(localized("Calibre 書庫"), systemImage: "server.rack")
                 }
             } label: {
                 Image(systemName: "plus")
                     .font(DSFont.toolbarIcon)
             }
+            .accessibilityLabel(localized("添加書籍"))
+            .accessibilityIdentifier("home_add_book")
             .id("\(Locale.autoupdatingCurrent.identifier)_add_menu")
         }
     }
@@ -1110,16 +1141,7 @@ struct EditBookSheet: View {
                 .resizable()
                 .scaledToFill()
         } else {
-            let source = liveBook.bookSourceId.flatMap { id in
-                BookSourceStore.shared.sources.first { $0.id == id }
-            }
-            BookCoverImage(
-                coverURL: liveBook.coverUrl ?? "",
-                title: liveBook.title,
-                author: liveBook.author,
-                sourceBaseURL: source?.bookSourceUrl,
-                sourceHeaders: source?.parsedHeaders ?? [:]
-            )
+            BookCoverImage(readingBook: liveBook)
         }
     }
 

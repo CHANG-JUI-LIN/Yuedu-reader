@@ -8,6 +8,19 @@ import os
 enum AuthErrorReporter {
 
     static func describe(_ error: Error) -> String {
+        // Gateway errors carry their own structured code; map them first so a
+        // route decision or session state is never mistaken for a bad password.
+        if let gatewayError = error as? GatewayAPIError {
+            AppLogger.network(
+                "sign-in failed (gateway): code=\(gatewayError.serverCode ?? "transport")",
+                level: .error
+            )
+            if gatewayError.isConnectivityFailure {
+                return localized("目前無法連線中轉服務，請檢查網路後再試")
+            }
+            return gatewayError.errorDescription ?? localized("登入失敗，請稍後再試")
+        }
+
         let ns = error as NSError
         AppLogger.network("sign-in failed: domain=\(ns.domain) code=\(ns.code) userInfo=\(ns.userInfo)", level: .error)
 

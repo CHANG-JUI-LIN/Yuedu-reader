@@ -292,7 +292,7 @@ extension ReaderView {
                 await dependencies.chapterFetcher.resetFailureBudget(for: bookId)
                 store.clearAutomaticQuarantine(bookId: bookId)
 
-                let newRefs = store.books.first(where: { $0.id == bookId })?.onlineChapters ?? []
+                let newRefs = store.readingBook(id: bookId)?.onlineChapters ?? []
                 var mappedPosition: CoreTextReadingPosition?
                 if !oldRefs.isEmpty, !newRefs.isEmpty {
                     let mapped = SourcePerfTrace.span("changeSource.align") {

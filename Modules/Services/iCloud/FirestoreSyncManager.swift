@@ -2,7 +2,6 @@ import Combine
 import CryptoKit
 import FirebaseAuth
 import FirebaseFirestore
-import FirebaseStorage
 import Foundation
 import os
 
@@ -21,7 +20,6 @@ final class FirestoreSyncManager: ObservableObject {
     @Published private(set) var state: SyncState = .idle
 
     private let db = Firestore.firestore()
-    private let storage = Storage.storage()
     private var cancellables = Set<AnyCancellable>()
     private var pushWorkItems: [String: Task<Void, Never>] = [:]
     private var pendingPositions: [String: CoreTextReadingPosition] = [:]
@@ -43,6 +41,10 @@ final class FirestoreSyncManager: ObservableObject {
     static let dataSyncEnabled = false
 
     private init() {
+        // The auth facade publishes its restored account to GlobalSettings in
+        // init. Finish that construction before observing settings; otherwise
+        // schedulePush re-enters FirebaseAuthManager.shared's dispatch_once.
+        _ = FirebaseAuthManager.shared
         observeSharedStores()
     }
 
@@ -68,7 +70,7 @@ final class FirestoreSyncManager: ObservableObject {
         guard self.bookStore !== bookStore else { return }
         self.bookStore = bookStore
 
-        bookStore.$books
+        bookStore.shelfPublisher
             .dropFirst()
             .sink { [weak self] _ in
                 self?.schedulePush("books") { try await self?.pushBooks() }
@@ -134,10 +136,10 @@ final class FirestoreSyncManager: ObservableObject {
     // MARK: - Profile
 
     func upsertCurrentProfile(provider: String? = nil) async throws {
-        guard let user = FirebaseAuthManager.shared.currentUser else { return }
-        let uid = user.uid
+        guard let account = FirebaseAuthManager.shared.accountUser else { return }
+        let uid = account.uid
         let settings = GlobalSettings.shared
-        let photoURL = settings.accountPhotoURL.isEmpty ? (user.photoURL?.absoluteString ?? "") : settings.accountPhotoURL
+        let photoURL = settings.accountPhotoURL.isEmpty ? (account.photoURL ?? "") : settings.accountPhotoURL
         let preferences = ReaderPreferences.current(settings: settings)
         let resolvedProvider = provider ?? settings.accountProvider
 
@@ -164,7 +166,7 @@ final class FirestoreSyncManager: ObservableObject {
             updatedAt: Date(),
             preferences: preferences
         )
-        try userDocument(uid).setData(from: profile, merge: true)
+        try await AccountBackendRouter.shared.current.upsertProfile(profile)
         UserDefaults.standard.set(fingerprint, forKey: "yd_firestore_profile_hash")
     }
 
@@ -172,25 +174,17 @@ final class FirestoreSyncManager: ObservableObject {
         if let cached = UserDefaults.standard.object(forKey: "yd_firestore_profile_created_at") as? Date {
             return cached
         }
-        let existing = try? await userDocument(uid).getDocument().data(as: UserProfile.self)
+        let existing = try await AccountBackendRouter.shared.current.fetchProfile(uid: uid)
         let createdAt = existing?.createdAt ?? Date()
         UserDefaults.standard.set(createdAt, forKey: "yd_firestore_profile_created_at")
         return createdAt
     }
 
     func uploadAvatar(data: Data) async throws -> URL {
-        guard let uid = FirebaseAuthManager.shared.uid else {
+        guard FirebaseAuthManager.shared.uid != nil else {
             throw AuthFlowError.missingFirebaseUser
         }
-        let ref = storage.reference(withPath: "avatars/\(uid).jpg")
-        let metadata = StorageMetadata()
-        metadata.contentType = "image/jpeg"
-        _ = try await ref.putDataAsync(data, metadata: metadata)
-        let url = try await ref.downloadURL()
-        try await userDocument(uid).setData([
-            "photoURL": url.absoluteString,
-            "updatedAt": Timestamp(date: Date())
-        ], merge: true)
+        let url = try await AccountBackendRouter.shared.current.uploadAvatar(data: data)
         GlobalSettings.shared.accountPhotoURL = url.absoluteString
         // Force the profile fingerprint to refresh on the next upsert.
         UserDefaults.standard.removeObject(forKey: "yd_firestore_profile_hash")
@@ -217,12 +211,9 @@ final class FirestoreSyncManager: ObservableObject {
     // MARK: - Account deletion
 
     func deleteRemoteData(uid: String) async throws {
-        let userRef = userDocument(uid)
-        for collection in Self.shadowCollections + ["readingPositions"] {
-            try await deleteCollection(userRef.collection(collection))
-        }
-        try? await storage.reference(withPath: "avatars/\(uid).jpg").delete()
-        try await userRef.delete()
+        // Direct route only. Gateway account deletion is orchestrated by
+        // `FirebaseAuthManager.deleteAccount` through POST /v1/account/delete.
+        try await AccountBackendRouter.shared.firebase.deleteRemoteData(uid: uid)
     }
 
     // MARK: - Store observation
@@ -289,7 +280,7 @@ final class FirestoreSyncManager: ObservableObject {
 
         let userRef = userDocument(uid)
 
-        if let profile = try? await userRef.getDocument().data(as: UserProfile.self) {
+        if let profile = try? await AccountBackendRouter.shared.current.fetchProfile(uid: uid) {
             GlobalSettings.shared.applyFirebaseProfile(profile)
             UserDefaults.standard.set(profile.createdAt, forKey: "yd_firestore_profile_created_at")
         }
@@ -547,14 +538,6 @@ final class FirestoreSyncManager: ObservableObject {
             }
         }
         return result
-    }
-
-    private func deleteCollection(_ collection: CollectionReference) async throws {
-        let snapshot = try await collection.getDocuments()
-        guard !snapshot.documents.isEmpty else { return }
-        let batch = db.batch()
-        snapshot.documents.forEach { batch.deleteDocument($0.reference) }
-        try await batch.commit()
     }
 
     private func userDocument(_ uid: String) -> DocumentReference {

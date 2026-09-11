@@ -79,10 +79,14 @@ enum ReaderOverlayColorSource: String, Codable, Equatable, Hashable, Sendable {
 struct ReaderOverlayColorReference: Codable, Equatable, Sendable {
     var source: ReaderOverlayColorSource
     var hexRGBA: UInt32?
+    /// An absent dark override follows the night reader text, including legacy
+    /// imports that only supplied a light color. Keep it optional for old JSON.
+    var darkHexRGBA: UInt32?
 
-    init(source: ReaderOverlayColorSource, hexRGBA: UInt32? = nil) {
+    init(source: ReaderOverlayColorSource, hexRGBA: UInt32? = nil, darkHexRGBA: UInt32? = nil) {
         self.source = source
         self.hexRGBA = hexRGBA
+        self.darkHexRGBA = darkHexRGBA
     }
 
     var normalized: ReaderOverlayColorReference {
@@ -91,7 +95,8 @@ struct ReaderOverlayColorReference: Codable, Equatable, Sendable {
         }
         return ReaderOverlayColorReference(
             source: source,
-            hexRGBA: hexRGBA
+            hexRGBA: hexRGBA,
+            darkHexRGBA: darkHexRGBA
         )
     }
 }
@@ -345,6 +350,8 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
     var components: [ReaderOverlayComponent]
     var chapterOpeningComponents: [ReaderOverlayComponent]
     var contentReservations: ReaderOverlayContentReservations
+    /// Carries absolute bar placement through the existing preset export format.
+    var barEdgeDistances: ReaderBarEdgeDistances?
 
     static var `default`: ReaderOverlayLayout {
         ReaderOverlayLayoutMigration.defaultLayout
@@ -354,12 +361,14 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
         version: Int = ReaderOverlayLayout.currentVersion,
         components: [ReaderOverlayComponent],
         chapterOpeningComponents: [ReaderOverlayComponent]? = nil,
-        contentReservations: ReaderOverlayContentReservations
+        contentReservations: ReaderOverlayContentReservations,
+        barEdgeDistances: ReaderBarEdgeDistances? = nil
     ) {
         self.version = version
         self.components = components
         self.chapterOpeningComponents = chapterOpeningComponents ?? components
         self.contentReservations = contentReservations
+        self.barEdgeDistances = barEdgeDistances
     }
 
     func components(for scope: ReaderOverlayPageScope) -> [ReaderOverlayComponent] {
@@ -388,7 +397,8 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
             version: preservingVersion ? version : Self.currentVersion,
             components: components.map(\.normalized),
             chapterOpeningComponents: chapterOpeningComponents.map(\.normalized),
-            contentReservations: contentReservations.normalized
+            contentReservations: contentReservations.normalized,
+            barEdgeDistances: barEdgeDistances?.normalized
         )
     }
 
@@ -397,6 +407,7 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
         case components
         case chapterOpeningComponents
         case contentReservations
+        case barEdgeDistances
     }
 
     init(from decoder: Decoder) throws {
@@ -415,6 +426,7 @@ struct ReaderOverlayLayout: Codable, Equatable, Sendable {
             ReaderOverlayContentReservations.self,
             forKey: .contentReservations
         ) ?? ReaderOverlayContentReservations(top: 0, bottom: 0)
+        barEdgeDistances = try container.decodeIfPresent(ReaderBarEdgeDistances.self, forKey: .barEdgeDistances)
     }
 }
 

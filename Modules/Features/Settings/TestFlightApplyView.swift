@@ -217,6 +217,9 @@ struct TestFlightApplyView: View {
     }
 
     private func functionsErrorCode(from error: Error) -> Int? {
+        if let gatewayError = error as? GatewayAPIError {
+            return gatewayError.grpcCode
+        }
         let nsError = error as NSError
         guard nsError.domain == FunctionsErrorDomain else { return nil }
         return nsError.code
@@ -277,20 +280,11 @@ struct TestFlightAccessResult {
 }
 
 /// Single entry point for submitting a TestFlight access request. Goes through
-/// the Firebase callable so email validation and idempotency stay server-side.
+/// the active account backend, so the callable protocol and its idempotency
+/// stay server-side on both routes.
 enum TestFlightAccessService {
-    private static let functionsRegion = "asia-east1"
-
     static func requestAccess(email: String) async throws -> TestFlightAccessResult {
-        let result = try await Functions.functions(region: functionsRegion)
-            .httpsCallable("requestTestFlightAccess")
-            .call(["email": email])
-        guard let payload = result.data as? [String: Any],
-              let alreadySubmitted = payload["alreadySubmitted"] as? Bool,
-              let status = payload["status"] as? String else {
-            throw TestFlightAccessServiceError.invalidResponse
-        }
-        return TestFlightAccessResult(alreadySubmitted: alreadySubmitted, status: status)
+        try await AccountBackendRouter.shared.current.requestTestFlightAccess(email: email)
     }
 }
 

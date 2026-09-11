@@ -25,7 +25,7 @@ struct PaywallView: View {
     /// across product types, so the old subscription keeps billing until they do.
     @State private var upgradedFromMonthly = false
 
-    private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
+    private let privacyPolicyURL = URL(string: "https://yuedureader.com/privacy")
     /// Apple's standard EULA. The custom paid-terms.html page is retired.
     private let paidTermsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")
 

@@ -1851,6 +1851,62 @@ struct EPUBRenderingTests {
         #expect(session.epubWritingMode == .verticalRL)
     }
 
+    /// A spine filename with non-ASCII characters (the official kusamakura
+    /// sample names each chapter `表紙.xhtml`, `一.xhtml`, …) comes back from
+    /// Readium percent-encoded. Feeding that encoded string to
+    /// `AnyURL(legacyHREF:)` re-encodes the `%` (`%E8` → `%25E8`), so every
+    /// resource lookup missed and `chapterHTML` threw `resourceReadFailed` for
+    /// every chapter — the reader was left on its loading page.
+    @Test func publicationSessionResolvesPercentEncodedUnicodeSpineHrefs() async throws {
+        let epubURL = try await makeEPUBArchive(entries: [
+            "mimetype": Data("application/epub+zip".utf8),
+            "META-INF/container.xml": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <rootfiles>
+                <rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/>
+              </rootfiles>
+            </container>
+            """.utf8),
+            "OPS/package.opf": Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package version="3.0"
+                     unique-identifier="bookid"
+                     xmlns="http://www.idpf.org/2007/opf">
+              <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:identifier id="bookid">urn:uuid:jp-unicode-href</dc:identifier>
+                <dc:title>草枕</dc:title>
+                <dc:language>ja</dc:language>
+              </metadata>
+              <manifest>
+                <item id="cover" href="xhtml/表紙.xhtml" media-type="application/xhtml+xml"/>
+              </manifest>
+              <spine page-progression-direction="rtl">
+                <itemref idref="cover"/>
+              </spine>
+            </package>
+            """.utf8),
+            "OPS/xhtml/表紙.xhtml": Data(epubXHTML(title: "表紙", body: """
+            <p>山路を登りながら、こう考えた。</p>
+            """).utf8)
+        ])
+
+        let session = try await PublicationSession.open(sourceURL: epubURL)
+        #expect(session.chapters.count == 1)
+        #expect(session.chapters[0].href.contains("%E8%A1%A8%E7%B4%99"))
+
+        let html = try await session.chapterHTML(at: 0)
+        #expect(html.contains("山路を登りながら"))
+
+        let response = try await session.response(
+            for: session.resourceURL(for: session.chapters[0].href)
+        )
+        #expect(String(data: response.data, encoding: .utf8)?.contains("山路を登りながら") == true)
+
+        // No TOC entry → the fallback title must percent-decode the filename.
+        #expect(session.chapters[0].title == "表紙")
+    }
+
     @Test func publicationSessionServesFixedLayoutRelativeResources() async throws {
         let epubURL = try await makeEPUBArchive(entries: [
             "mimetype": Data("application/epub+zip".utf8),

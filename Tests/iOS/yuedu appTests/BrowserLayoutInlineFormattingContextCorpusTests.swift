@@ -1,6 +1,5 @@
 import CryptoKit
 import Foundation
-import ReadiumZIPFoundation
 import SwiftSoup
 import Testing
 import UIKit
@@ -554,29 +553,10 @@ struct BrowserLayoutInlineFormattingContextCorpusTests {
                 if let shard, !shard.includes(spineIndex: spineIndex) {
                     continue
                 }
-                let chapter: (html: String, css: [String], usedArchiveFallback: Bool)
-                do {
-                    let html = try await adapter.chapterHTML(at: spineIndex)
-                    chapter = (
-                        html,
-                        await adapter.processedCSS(forChapter: spineIndex),
-                        false
-                    )
-                } catch {
-                    let html = try await rawArchiveChapterHTML(
-                        sourceURL: input.url,
-                        encodedHref: session.chapters[spineIndex].href
-                    )
-                    chapter = (
-                        html,
-                        try await rawArchiveStylesheets(
-                            sourceURL: input.url,
-                            encodedChapterHref: session.chapters[spineIndex].href,
-                            html: html
-                        ),
-                        true
-                    )
-                }
+                let chapter = (
+                    html: try await adapter.chapterHTML(at: spineIndex),
+                    css: await adapter.processedCSS(forChapter: spineIndex)
+                )
 
                 let scan = BrowserLayoutCapabilityScanner.scan(
                     html: chapter.html,
@@ -652,13 +632,6 @@ struct BrowserLayoutInlineFormattingContextCorpusTests {
                     continue
                 }
 
-                guard !chapter.usedArchiveFallback else {
-                    throw CocoaError(
-                        .fileReadUnknown,
-                        userInfo: [NSLocalizedDescriptionKey:
-                            "A scanner-supported chapter required the raw ZIP fallback"]
-                    )
-                }
                 let images = await adapter.prefetchImages(
                     forChapter: spineIndex,
                     html: chapter.html,
@@ -2185,63 +2158,4 @@ struct BrowserLayoutInlineFormattingContextCorpusTests {
         .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    private func rawArchiveChapterHTML(
-        sourceURL: URL,
-        encodedHref: String
-    ) async throws -> String {
-        let decodedHref = encodedHref.removingPercentEncoding ?? encodedHref
-        guard decodedHref != encodedHref else { throw CocoaError(.fileReadNoSuchFile) }
-        return try await rawArchiveText(sourceURL: sourceURL, entryPath: decodedHref)
-    }
-
-    private func rawArchiveStylesheets(
-        sourceURL: URL,
-        encodedChapterHref: String,
-        html: String
-    ) async throws -> [String] {
-        let decodedChapterHref = encodedChapterHref.removingPercentEncoding ?? encodedChapterHref
-        let document = try SwiftSoup.parse(html)
-        guard let head = document.head() else { return [] }
-        var stylesheets: [String] = []
-
-        for style in try head.select("style").array() {
-            let css = try style.html()
-            if !css.isEmpty { stylesheets.append(css) }
-        }
-        for link in try head.select("link[rel=stylesheet][href]").array() {
-            let href = try link.attr("href")
-            guard !href.isEmpty, URL(string: href)?.scheme == nil else { continue }
-            let pathWithoutFragment = String(href.split(separator: "#", maxSplits: 1)[0])
-            let pathWithoutQuery = String(pathWithoutFragment.split(separator: "?", maxSplits: 1)[0])
-            let chapterDirectory = (decodedChapterHref as NSString).deletingLastPathComponent
-            let relativePath = (chapterDirectory as NSString).appendingPathComponent(pathWithoutQuery)
-            let normalizedPath = URL(fileURLWithPath: "/\(relativePath)")
-                .standardizedFileURL.path.drop(while: { $0 == "/" })
-            stylesheets.append(try await rawArchiveText(
-                sourceURL: sourceURL,
-                entryPath: String(normalizedPath)
-            ))
-        }
-        var seen = Set<String>()
-        return stylesheets.filter { !$0.isEmpty && seen.insert($0).inserted }
-    }
-
-    private func rawArchiveText(sourceURL: URL, entryPath: String) async throws -> String {
-        let archive = try await Archive(url: sourceURL, accessMode: .read)
-        guard let entry = try await archive.get(entryPath) else {
-            throw CocoaError(.fileReadNoSuchFile)
-        }
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: temporaryURL) }
-        _ = try await archive.extract(entry, to: temporaryURL, skipCRC32: true)
-        let data = try Data(contentsOf: temporaryURL)
-        for encoding in [
-            String.Encoding.utf8, .unicode, .utf16, .utf16LittleEndian,
-            .utf16BigEndian, .isoLatin1,
-        ] {
-            if let value = String(data: data, encoding: encoding) { return value }
-        }
-        throw CocoaError(.fileReadInapplicableStringEncoding)
-    }
 }

@@ -193,6 +193,67 @@ struct ReaderBarLayoutTests {
 
     // MARK: - Persistence
 
+    @Test("Individual component colors survive persistence, moving and preset export")
+    func componentColorsRoundTrip() throws {
+        var layout = ReaderBarLayout.default
+        let titleColor = ReaderOverlayColorReference(source: .custom, hexRGBA: 0xFF0000FF, darkHexRGBA: 0xFF8888FF)
+        let timeColor = ReaderOverlayColorReference(source: .custom, hexRGBA: 0x008800FF, darkHexRGBA: 0x88FF88FF)
+        layout.setColor(titleColor, for: .chapterTitle)
+        layout.setColor(timeColor, for: .currentTime)
+        layout.setSlot(.footerLeft, for: .chapterTitle)
+        let stored = try JSONEncoder().encode(layout.normalized())
+        let restored = ReaderBarLayoutMigration.resolve(storedData: stored, legacyLayout: nil).layout
+        #expect(restored.fields.first { $0.kind == .chapterTitle }?.color == titleColor)
+        #expect(restored.fields.first { $0.kind == .currentTime }?.color == timeColor)
+        #expect(restored.fields.first { $0.kind == .battery }?.color == nil)
+        let imported = ReaderBarLayoutMigration.snap(ReaderBarLayoutMigration.freePositionLayout(from: restored))
+        for kind in [ReaderOverlayComponentKind.chapterTitle, .currentTime, .battery] {
+            let before = restored.fields.first { $0.kind == kind }?.color ?? restored.style.color
+            let after = imported.fields.first { $0.kind == kind }?.color ?? imported.style.color
+            #expect(before == after)
+        }
+        layout.setColor(nil, for: .chapterTitle)
+        #expect(layout.fields.first { $0.kind == .chapterTitle }?.color == nil)
+        #expect(layout.fields.first { $0.kind == .currentTime }?.color == timeColor)
+    }
+
+    @Test("Existing fields without a color inherit the shared style")
+    func oldFieldInheritsColor() throws {
+        let field = try JSONDecoder().decode(ReaderBarField.self, from: Data(
+            #"{"kind":"chapterTitle","slot":"headerLeft"}"#.utf8
+        ))
+        #expect(field.color == nil)
+    }
+
+    @Test("Light and dark bar colors survive saving and legacy preset export")
+    func appearanceColorsRoundTrip() throws {
+        var original = ReaderBarLayout.default
+        original.style.color = ReaderOverlayColorReference(
+            source: .custom, hexRGBA: 0x123456FF, darkHexRGBA: 0xABCDEF80
+        )
+        var stored = Data()
+        let result = ReaderBarLayoutPersistence.save(current: .default, proposed: original) {
+            stored = $0
+            return true
+        }
+        #expect(result.didPersist)
+        let restored = ReaderBarLayoutMigration.resolve(storedData: stored, legacyLayout: nil).layout
+        #expect(restored.style.color == original.style.color)
+        let exported = ReaderBarLayoutMigration.freePositionLayout(from: restored)
+        let reimported = try JSONDecoder().decode(
+            ReaderOverlayLayout.self, from: JSONEncoder().encode(exported)
+        )
+        #expect(ReaderBarLayoutMigration.snap(reimported).style.color == original.style.color)
+    }
+
+    @Test("Old single-color settings remain readable without a dark override")
+    func oldColorDecodes() throws {
+        let data = Data(#"{"source":"custom","hexRGBA":305420031}"#.utf8)
+        let color = try JSONDecoder().decode(ReaderOverlayColorReference.self, from: data)
+        #expect(color.hexRGBA == 0x123456FF)
+        #expect(color.darkHexRGBA == nil)
+    }
+
     @Test("A stored layout round-trips through JSON")
     func codableRoundTrip() throws {
         var original = ReaderBarLayout.default

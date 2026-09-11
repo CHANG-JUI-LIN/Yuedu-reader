@@ -83,6 +83,8 @@ struct ReaderBarField: Codable, Equatable, Sendable, Identifiable {
     var kind: ReaderOverlayComponentKind
     var slot: ReaderBarSlot
     var configuration: ReaderOverlayComponentConfiguration
+    /// Nil inherits the shared bar color; an explicit reference overrides it.
+    var color: ReaderOverlayColorReference?
 
     /// One entry per kind, so the kind is the identity.
     var id: String { kind.rawValue }
@@ -90,18 +92,21 @@ struct ReaderBarField: Codable, Equatable, Sendable, Identifiable {
     init(
         kind: ReaderOverlayComponentKind,
         slot: ReaderBarSlot,
-        configuration: ReaderOverlayComponentConfiguration = ReaderOverlayComponentConfiguration()
+        configuration: ReaderOverlayComponentConfiguration = ReaderOverlayComponentConfiguration(),
+        color: ReaderOverlayColorReference? = nil
     ) {
         self.kind = kind
         self.slot = slot
         self.configuration = configuration
+        self.color = color
     }
 
     var normalized: ReaderBarField {
         ReaderBarField(
             kind: kind,
             slot: slot,
-            configuration: configuration.normalized
+            configuration: configuration.normalized,
+            color: color?.normalized
         )
     }
 
@@ -109,6 +114,7 @@ struct ReaderBarField: Codable, Equatable, Sendable, Identifiable {
         case kind
         case slot
         case configuration
+        case color
     }
 
     init(from decoder: Decoder) throws {
@@ -119,18 +125,13 @@ struct ReaderBarField: Codable, Equatable, Sendable, Identifiable {
             ReaderOverlayComponentConfiguration.self,
             forKey: .configuration
         ) ?? ReaderOverlayComponentConfiguration()
+        color = try container.decodeIfPresent(ReaderOverlayColorReference.self, forKey: .color)
     }
 }
 
 // MARK: - Shared style
 
-/// One style for every field in both bars.
-///
-/// The free-position layout gave each component its own font, size, weight,
-/// colour and opacity. Inside a shared bar that produces ransom-note rows, and
-/// legado does not offer it either (`ReadTipConfig` has a single `tipColor` and a
-/// fixed 12sp). Per-field style is therefore gone; anyone who had set one keeps
-/// the *first* component's style as the shared one (see `ReaderBarLayoutMigration`).
+/// Shared typography, opacity and default color. Each field can override color.
 struct ReaderBarStyle: Codable, Equatable, Sendable {
     static let defaultFontSize: Double = 11
     static let fontSizeRange: ClosedRange<Double> = 8...16
@@ -191,12 +192,38 @@ struct ReaderBarStyle: Codable, Equatable, Sendable {
 
 // MARK: - Layout
 
+/// Absolute distances from the reading surface edges. Nil preserves the
+/// existing safe-area-relative placement until the user edits that bar.
+struct ReaderBarEdgeDistances: Codable, Equatable, Sendable {
+    static let adjustmentRange: ClosedRange<Double> = 0...200
+    var header: Double?
+    var footer: Double?
+
+    init(header: Double? = nil, footer: Double? = nil) {
+        self.header = header
+        self.footer = footer
+    }
+
+    subscript(bar: ReaderBar) -> Double? {
+        get { bar == .header ? header : footer }
+        set {
+            if bar == .header { header = newValue } else { footer = newValue }
+        }
+    }
+
+    var normalized: Self {
+        func normalize(_ value: Double?) -> Double? {
+            guard let value, value.isFinite else { return nil }
+            return min(max(value, Self.adjustmentRange.lowerBound), Self.adjustmentRange.upperBound)
+        }
+        return Self(header: normalize(header), footer: normalize(footer))
+    }
+}
+
 /// Which fields exist, which slot each one sits in, and how the two bars are drawn.
 ///
-/// Bar *visibility* and *padding* are deliberately not here: `GlobalSettings`
-/// already owns `readerHeaderVisible` / `readerFooterVisible` and the four padding
-/// values, and the paginator reads them directly when computing insets. Duplicating
-/// them into the layout would create a second source of truth for the same numbers.
+/// Visibility and legacy padding remain in GlobalSettings. Explicit edge
+/// distances take precedence and travel with the layout through save and export.
 struct ReaderBarLayout: Codable, Equatable, Sendable {
     static let currentVersion = 1
 
@@ -211,6 +238,7 @@ struct ReaderBarLayout: Codable, Equatable, Sendable {
     /// two independent free-position layouts the editor used to keep per page scope.
     var hidesHeaderOnChapterOpening: Bool
     var style: ReaderBarStyle
+    var edgeDistances: ReaderBarEdgeDistances
 
     init(
         version: Int = ReaderBarLayout.currentVersion,
@@ -218,7 +246,8 @@ struct ReaderBarLayout: Codable, Equatable, Sendable {
         showsHeaderDivider: Bool = false,
         showsFooterDivider: Bool = false,
         hidesHeaderOnChapterOpening: Bool = true,
-        style: ReaderBarStyle = ReaderBarStyle()
+        style: ReaderBarStyle = ReaderBarStyle(),
+        edgeDistances: ReaderBarEdgeDistances = ReaderBarEdgeDistances()
     ) {
         self.version = version
         self.fields = fields
@@ -226,6 +255,7 @@ struct ReaderBarLayout: Codable, Equatable, Sendable {
         self.showsFooterDivider = showsFooterDivider
         self.hidesHeaderOnChapterOpening = hidesHeaderOnChapterOpening
         self.style = style
+        self.edgeDistances = edgeDistances
     }
 
     static var `default`: ReaderBarLayout {
@@ -270,6 +300,14 @@ struct ReaderBarLayout: Codable, Equatable, Sendable {
         }
     }
 
+    mutating func setColor(_ color: ReaderOverlayColorReference?, for kind: ReaderOverlayComponentKind) {
+        if let index = fields.firstIndex(where: { $0.kind == kind }) {
+            fields[index].color = color
+        } else {
+            fields.append(ReaderBarField(kind: kind, slot: .hidden, color: color))
+        }
+    }
+
     /// Collapses duplicates and guarantees one entry per kind, so the editor can
     /// address every field by kind without first checking whether it exists.
     func normalized(preservingVersion: Bool = true) -> ReaderBarLayout {
@@ -288,7 +326,8 @@ struct ReaderBarLayout: Codable, Equatable, Sendable {
             showsHeaderDivider: showsHeaderDivider,
             showsFooterDivider: showsFooterDivider,
             hidesHeaderOnChapterOpening: hidesHeaderOnChapterOpening,
-            style: style.normalized
+            style: style.normalized,
+            edgeDistances: edgeDistances.normalized
         )
     }
 
@@ -299,6 +338,7 @@ struct ReaderBarLayout: Codable, Equatable, Sendable {
         case showsFooterDivider
         case hidesHeaderOnChapterOpening
         case style
+        case edgeDistances
     }
 
     init(from decoder: Decoder) throws {
@@ -310,6 +350,8 @@ struct ReaderBarLayout: Codable, Equatable, Sendable {
         hidesHeaderOnChapterOpening = try container
             .decodeIfPresent(Bool.self, forKey: .hidesHeaderOnChapterOpening) ?? true
         style = try container.decodeIfPresent(ReaderBarStyle.self, forKey: .style) ?? ReaderBarStyle()
+        edgeDistances = try container.decodeIfPresent(ReaderBarEdgeDistances.self, forKey: .edgeDistances)
+            ?? ReaderBarEdgeDistances()
     }
 }
 

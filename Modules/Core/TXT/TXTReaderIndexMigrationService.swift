@@ -42,7 +42,7 @@ enum TXTReaderIndexMigrationService {
             }
             return try await commit(journal, preparation: preparation, store: store, positions: positions, url: journalURL)
         }
-        guard let book = store.books.first(where: { $0.id == preparation.bookId }) else {
+        guard let book = store.readingBook(id: preparation.bookId) else {
             throw TXTLocationMigration.Failure.missingSourceIdentity
         }
         let originalPosition = positions.loadSync(for: preparation.bookId.uuidString)
@@ -111,7 +111,7 @@ enum TXTReaderIndexMigrationService {
                               originalPosition: originalPosition, position: position,
                               originalBookmarks: book.bookmarks, bookmarks: bookmarks)
         guard positions.loadSync(for: preparation.bookId.uuidString) == originalPosition,
-              store.books.first(where: { $0.id == preparation.bookId })?.bookmarks == book.bookmarks else {
+              store.readingBook(id: preparation.bookId)?.bookmarks == book.bookmarks else {
             throw TXTLocationMigration.Failure.missingSourceIdentity
         }
         try JSONEncoder().encode(journal).write(to: journalURL, options: .atomic)

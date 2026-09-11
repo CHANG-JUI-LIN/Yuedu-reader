@@ -53,7 +53,7 @@ struct AudiobookReaderView: View {
         // dark gradient background, so nothing else is needed.
         .environment(\.colorScheme, .dark)
         .onAppear {
-            if let book = store.books.first(where: { $0.id == bookId }) {
+            if let book = store.readingBook(id: bookId) {
                 player.start(book: book, store: store)
             } else if !player.isActive(bookId: bookId) {
                 dismiss()

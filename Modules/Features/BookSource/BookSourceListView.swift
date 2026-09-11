@@ -58,7 +58,9 @@ struct BookSourceListView: View {
     /// Set by 置頂／置底 so the list follows the row to its new position.
     @State private var scrollTargetId: UUID? = nil
     /// Non-empty book-source groups the user has expanded. Seeded with every group on
-    /// appear so nothing starts hidden; searching flattens the layout regardless.
+    /// appear so nothing starts hidden; afterwards only groups that newly appear (imports,
+    /// 移動到新分組) are added, so merges and deletes can't re-expand what the user
+    /// collapsed. Searching flattens the layout regardless.
     @State private var expandedGroups: Set<String> = []
     /// Pending 重命名分組 / 移動到新分組 text entry, plus its draft name.
     @State private var groupNaming: PendingGroupNaming? = nil
@@ -182,8 +184,9 @@ struct BookSourceListView: View {
     }
 
     /// Every group id (named groups, the built-in default group, and the pin groups when
-    /// pinned sources exist), re-checked so newly imported or edited groups are seeded
-    /// expanded instead of hidden behind a collapsed header.
+    /// pinned sources exist). `onChange` diffs it against the previous snapshot so only
+    /// groups that newly appear are seeded expanded instead of hidden behind a collapsed
+    /// header — an id disappearing (merge/delete emptied its group) must not expand the rest.
     private var allGroupIDs: Set<String> {
         var ids = Set(store.sources.map {
             $0.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -554,8 +557,11 @@ struct BookSourceListView: View {
             .onChange(of: store.sources.map(\.id)) { _, sourceIds in
                 selectedIds.formIntersection(Set(sourceIds))
             }
-            .onChange(of: allGroupIDs) { _, ids in
-                expandedGroups.formUnion(ids)
+            .onChange(of: allGroupIDs) { oldIDs, newIDs in
+                // Only ids that weren't there before. Unioning every id here meant a
+                // merge/delete that makes one id vanish re-expanded all the groups the user
+                // had collapsed.
+                expandedGroups.formUnion(newIDs.subtracting(oldIDs))
             }
     }
 

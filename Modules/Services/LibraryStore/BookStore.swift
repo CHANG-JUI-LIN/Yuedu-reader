@@ -46,7 +46,51 @@ private struct PersistedPositionSnapshot: Equatable {
 }
 
 class BookStore: ObservableObject, BookProvider {
-    @Published var books: [ReadingBook] = []
+    @Published private var records: [ReadingBook] = []
+
+    /// Only explicit shelf members are exposed to shelf, widget and sync clients.
+    var books: [ReadingBook] {
+        get { records.filter(\.isInBookshelf) }
+        set {
+            let ids = Set(newValue.map(\.id))
+            records = newValue.map { book in
+                var book = book
+                book.isInBookshelf = true
+                return book
+            } + records.filter { !$0.isInBookshelf && !ids.contains($0.id) }
+        }
+    }
+
+    var shelfPublisher: AnyPublisher<[ReadingBook], Never> {
+        $records.map { $0.filter(\.isInBookshelf) }.eraseToAnyPublisher()
+    }
+
+    var readingBooks: [ReadingBook] { records }
+
+    func readingBook(id: UUID) -> ReadingBook? { records.first { $0.id == id } }
+
+    func saveReadingBook(_ book: ReadingBook) {
+        if let index = records.firstIndex(where: { $0.id == book.id }) {
+            records[index] = book
+        } else {
+            records.append(book)
+        }
+        saveMetaImmediately()
+    }
+
+    @discardableResult
+    func addReadingBookToShelf(id: UUID) -> ReadingBook? {
+        guard let index = records.firstIndex(where: { $0.id == id }) else { return nil }
+        records[index].isInBookshelf = true
+        saveMetaImmediately()
+        return records[index]
+    }
+
+    private var readingMetadataFileURL: URL {
+        metadataFileURL.deletingPathExtension().appendingPathExtension("reading.json")
+    }
+    private var lastPersistedReadingData: Data?
+
 
     // Legacy UserDefaults key kept only for one-time migration.
     private let legacyMetaKey = "yd_books_meta"
@@ -76,6 +120,7 @@ class BookStore: ObservableObject, BookProvider {
     init(metadataFileURL: URL = BookStore.booksMetaFileURL) {
         self.metadataFileURL = metadataFileURL
         loadMeta()
+        loadReadingRecords()
     }
 
     // MARK: Read Book Content
@@ -224,7 +269,7 @@ class BookStore: ObservableObject, BookProvider {
 
         do {
             try Task.checkCancellation()
-            books.insert(importedBook, at: 0)
+            records.insert(importedBook, at: 0)
             saveMeta()
         } catch {
             if FileManager.default.fileExists(atPath: destination.path) {
@@ -324,7 +369,7 @@ class BookStore: ObservableObject, BookProvider {
 
             let importedBook = imported
             await MainActor.run {
-                self.books.insert(importedBook, at: 0)
+                self.records.insert(importedBook, at: 0)
                 self.saveMeta()
             }
             return importedBook
@@ -345,6 +390,7 @@ class BookStore: ObservableObject, BookProvider {
         title: String? = nil,
         author: String? = nil
     ) async throws -> ReadingBook {
+        try Task.checkCancellation()
         let info = try LocalPDFArchive.inspect(url: url)
         let uuid = UUID().uuidString
         let filename = "\(uuid).pdf"
@@ -394,8 +440,9 @@ class BookStore: ObservableObject, BookProvider {
             imported.coverImagePath = coverFilename
 
             let importedBook = imported
-            await MainActor.run {
-                self.books.insert(importedBook, at: 0)
+            try await MainActor.run {
+                try Task.checkCancellation()
+                self.records.insert(importedBook, at: 0)
                 self.saveMeta()
             }
             return importedBook
@@ -482,7 +529,7 @@ class BookStore: ObservableObject, BookProvider {
 
             let importedBook = imported
             await MainActor.run {
-                self.books.insert(importedBook, at: 0)
+                self.records.insert(importedBook, at: 0)
                 self.saveMeta()
             }
             return importedBook
@@ -504,7 +551,7 @@ class BookStore: ObservableObject, BookProvider {
 
         var book = ReadingBook(title: title, author: author, source: "local", contentFilename: filename)
         book.contentPipelineKind = .txt
-        books.insert(book, at: 0)
+        records.insert(book, at: 0)
         saveMeta()
         return book
     }
@@ -521,7 +568,7 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Import EPUB File
 
     @discardableResult
-    func importEpub(url: URL, title: String? = nil, author: String? = nil) async throws -> ReadingBook {
+    func importEpub(url: URL, title: String? = nil, author: String? = nil, requireValidPublication: Bool = false) async throws -> ReadingBook {
         let importStartUptime = ProcessInfo.processInfo.systemUptime
         func importTrace(_ message: String) {
             let line = "[ImportTrace][BookStore.importEpub] \(message)"
@@ -574,7 +621,14 @@ class BookStore: ObservableObject, BookProvider {
 
             // 2. Extract cover and metadata (merged to avoid redundant EPUB ZIP/XML parsing)
             let metadataStart = ProcessInfo.processInfo.systemUptime
-            let session = try? await PublicationSession.open(sourceURL: destURL)
+            let session: PublicationSession?
+            if requireValidPublication {
+                // A received file must be readable before the transfer is
+                // committed. Reuse this metadata open instead of parsing twice.
+                session = try await PublicationSession.open(sourceURL: destURL)
+            } else {
+                session = try? await PublicationSession.open(sourceURL: destURL)
+            }
             importTrace(
                 "stage=metadataOpen done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - metadataStart) * 1000)) chapters=\(session?.chapters.count ?? 0)"
             )
@@ -625,8 +679,9 @@ class BookStore: ObservableObject, BookProvider {
 
             try Task.checkCancellation()
             let persistStart = ProcessInfo.processInfo.systemUptime
-            await MainActor.run {
-                self.books.insert(finalBook, at: 0)
+            try await MainActor.run {
+                try Task.checkCancellation()
+                self.records.insert(finalBook, at: 0)
                 self.saveMeta()
             }
             importTrace(
@@ -637,6 +692,9 @@ class BookStore: ObservableObject, BookProvider {
             importTrace("cancelled totalElapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - importStartUptime) * 1000))")
             cleanupImportedFiles()
             throw CancellationError()
+        } catch {
+            cleanupImportedFiles()
+            throw error
         }
     }
 
@@ -662,9 +720,9 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Update Reading Progress
 
     func updatePosition(bookId: UUID, position: Double, forceSave: Bool = false) {
-        if let idx = books.firstIndex(where: { $0.id == bookId }) {
-            books[idx].currentPosition = position
-            persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: books[idx], force: forceSave)
+        if let idx = records.firstIndex(where: { $0.id == bookId }) {
+            records[idx].currentPosition = position
+            persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: records[idx], force: forceSave)
         }
     }
 
@@ -682,14 +740,14 @@ class BookStore: ObservableObject, BookProvider {
         pageProgress: Double? = nil,
         forceSave: Bool = false
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].mangaChapterIndex = chapter
-        books[idx].mangaPage = page
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].mangaChapterIndex = chapter
+        records[idx].mangaPage = page
         if totalChapters > 0 {
             let progress = (Double(chapter) + (pageProgress ?? 0)) / Double(totalChapters)
-            books[idx].currentPosition = min(1.0, max(0, progress))
+            records[idx].currentPosition = min(1.0, max(0, progress))
         }
-        persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: books[idx], force: forceSave)
+        persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: records[idx], force: forceSave)
     }
 
     /// Persist audiobook playback position (chapter index + elapsed seconds) plus
@@ -701,26 +759,26 @@ class BookStore: ObservableObject, BookProvider {
         totalChapters: Int,
         forceSave: Bool = false
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].audioChapterIndex = chapter
-        books[idx].audioTimeSeconds = max(0, time)
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].audioChapterIndex = chapter
+        records[idx].audioTimeSeconds = max(0, time)
         if totalChapters > 0 {
-            books[idx].currentPosition = min(1.0, Double(chapter) / Double(totalChapters))
+            records[idx].currentPosition = min(1.0, Double(chapter) / Double(totalChapters))
         }
-        persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: books[idx], force: forceSave)
+        persistPositionUpdateIfNeeded(bookId: bookId, updatedBook: records[idx], force: forceSave)
     }
 
     func updateLastOpened(bookId: UUID) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].lastOpenedDate = Date()
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].lastOpenedDate = Date()
         // Opening the book counts as acknowledging any new chapters.
-        books[idx].hasNewChapterUpdate = false
+        records[idx].hasNewChapterUpdate = false
         saveMeta()
     }
 
     func setRendererPreference(bookId: UUID, preference: BookRendererPreference) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].rendererPreference = preference
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].rendererPreference = preference
         saveMeta()
     }
 
@@ -731,16 +789,16 @@ class BookStore: ObservableObject, BookProvider {
     /// download cancels many chapters at once) downgraded the book's renderer for good.
     /// Only the automatic value is cleared: `.forcedLegacy` / `.forcedWeb` are the user's.
     func clearAutomaticQuarantine(bookId: UUID) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }),
-              books[idx].compatibilityState == .quarantined
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
+              records[idx].compatibilityState == .quarantined
         else { return }
-        books[idx].compatibilityState = .defaultWeb
+        records[idx].compatibilityState = .defaultWeb
         saveMeta()
     }
 
     func setCompatibilityState(bookId: UUID, state: BookCompatibilityState) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].compatibilityState = state
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].compatibilityState = state
         saveMeta()
     }
 
@@ -750,13 +808,13 @@ class BookStore: ObservableObject, BookProvider {
         downloadedChapterCount: Int? = nil,
         offlineDownloadTask: BookOfflineDownloadTask? = nil
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].offlineDownloadState = state
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].offlineDownloadState = state
         if let downloadedChapterCount {
-            books[idx].downloadedChapterCount = downloadedChapterCount
+            records[idx].downloadedChapterCount = downloadedChapterCount
         }
         if let offlineDownloadTask {
-            books[idx].offlineDownloadTask = offlineDownloadTask
+            records[idx].offlineDownloadTask = offlineDownloadTask
         }
         // Download terminal states must survive an immediate app suspension or
         // termination. Progress updates remain debounced to avoid rewriting the
@@ -774,12 +832,12 @@ class BookStore: ObservableObject, BookProvider {
         task: BookOfflineDownloadTask,
         isRunning: Bool
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        let previousRequestedIndices = books[idx].offlineDownloadTask?.requestedIndices
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        let previousRequestedIndices = records[idx].offlineDownloadTask?.requestedIndices
         let state = task.derivedState(isRunning: isRunning)
-        books[idx].offlineDownloadTask = task
-        books[idx].offlineDownloadState = state
-        books[idx].downloadedChapterCount = task.completedChapterCount
+        records[idx].offlineDownloadTask = task
+        records[idx].offlineDownloadState = state
+        records[idx].downloadedChapterCount = task.completedChapterCount
         let targetsChanged = previousRequestedIndices != task.requestedIndices
         switch state {
         case .available, .partial, .paused, .failed:
@@ -788,26 +846,26 @@ class BookStore: ObservableObject, BookProvider {
             targetsChanged ? saveMetaImmediately() : saveMeta()
         }
         // The single write funnel for download progress, and therefore the only place the
-        // Live Activity needs to hear from. Observing `$books` instead would fire for every
+        // Live Activity needs to hear from. Observing `$records` instead would fire for every
         // unrelated shelf edit.
         DownloadLiveActivityController.refresh(books: books)
     }
 
     func clearOfflineDownloadTask(bookId: UUID) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].offlineDownloadTask = nil
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].offlineDownloadTask = nil
         saveMeta()
     }
 
     @discardableResult
     func ensureOnlineBookForDownload(_ book: ReadingBook) -> ReadingBook {
         guard book.isOnline else { return book }
-        if let idx = books.firstIndex(where: { $0.id == book.id }) {
-            return books[idx]
+        if let idx = records.firstIndex(where: { $0.id == book.id }) {
+            return records[idx]
         }
         var libraryBook = book
         libraryBook.addedDate = Date()
-        books.insert(libraryBook, at: 0)
+        records.insert(libraryBook, at: 0)
         saveMeta()
         return libraryBook
     }
@@ -821,7 +879,7 @@ class BookStore: ObservableObject, BookProvider {
     func onlineBook(sourceId: UUID?, bookInfoURL: String?) -> ReadingBook? {
         let urlKey = Self.onlineBookURLKey(bookInfoURL)
         guard !urlKey.isEmpty else { return nil }
-        return books.first { book in
+        return records.first { book in
             guard book.isOnline, book.bookSourceId == sourceId else { return false }
             return Self.onlineBookURLKey(book.bookInfoURL ?? book.source) == urlKey
         }
@@ -830,18 +888,18 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Bookmark Management
 
     func addBookmark(bookId: UUID, bookmark: Bookmark) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
         // Prevent duplicate bookmarks at the same stable position.
         // Top-bar bookmarks write chapter-start positions, so they share one per chapter.
-        if books[idx].bookmarks.contains(where: { $0.hasSameStableLocation(as: bookmark) }) { return }
-        books[idx].bookmarks.append(bookmark)
-        books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
+        if records[idx].bookmarks.contains(where: { $0.hasSameStableLocation(as: bookmark) }) { return }
+        records[idx].bookmarks.append(bookmark)
+        records[idx].bookmarks = records[idx].bookmarks.sortedByStablePosition()
         saveMeta()
     }
 
     func removeBookmark(bookId: UUID, bookmarkId: UUID) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].bookmarks.removeAll { $0.id == bookmarkId }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].bookmarks.removeAll { $0.id == bookmarkId }
         saveMeta()
     }
 
@@ -849,15 +907,15 @@ class BookStore: ObservableObject, BookProvider {
         bookId: UUID, chapterIndex: Int, chapterTitle: String,
         position: CoreTextReadingPosition, excerpt: String
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        if let bmIdx = books[idx].bookmarks.firstIndex(where: { $0.position == position }) {
-            books[idx].bookmarks.remove(at: bmIdx)
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        if let bmIdx = records[idx].bookmarks.firstIndex(where: { $0.position == position }) {
+            records[idx].bookmarks.remove(at: bmIdx)
         } else {
             let bm = Bookmark(
                 chapterIndex: chapterIndex, chapterTitle: chapterTitle,
                 position: position, excerpt: excerpt)
-            books[idx].bookmarks.append(bm)
-            books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
+            records[idx].bookmarks.append(bm)
+            records[idx].bookmarks = records[idx].bookmarks.sortedByStablePosition()
         }
         saveMeta()
     }
@@ -873,10 +931,10 @@ class BookStore: ObservableObject, BookProvider {
         color: AnnotationColor = .yellow,
         note: String? = nil
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
         let safeLength = max(1, length)
         let targetRange = NSRange(location: position.charOffset, length: safeLength)
-        let existingAnnotations = books[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
+        let existingAnnotations = records[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
         // 改顏色／樣式時範圍不變，舊標註會被下面的 removeExact 拿掉；它身上的筆記要接續到
         // 新標註，否則「換個顏色」會順手把使用者寫的筆記丟掉。
         let inheritedNote = existingAnnotations.first {
@@ -900,13 +958,13 @@ class BookStore: ObservableObject, BookProvider {
 
         // Remove all old annotation bookmarks, then re-insert merged results.
         // Keep non-annotation bookmarks (kind == .bookmark) untouched.
-        books[idx].bookmarks.removeAll { bm in
+        records[idx].bookmarks.removeAll { bm in
             bm.kind == .underline || bm.kind == .highlight
         }
         for ann in merged {
             let annChapterTitle = ann.spineIndex == chapterIndex
                 ? chapterTitle
-                : chapters(for: books[idx]).first(where: { $0.index == ann.spineIndex })?.title ?? ""
+                : chapters(for: records[idx]).first(where: { $0.index == ann.spineIndex })?.title ?? ""
             let bm = Bookmark(
                 chapterIndex: ann.spineIndex,
                 chapterTitle: annChapterTitle,
@@ -918,9 +976,9 @@ class BookStore: ObservableObject, BookProvider {
                 annotationStyle: ann.style,
                 annotationColor: ann.color
             )
-            books[idx].bookmarks.append(bm)
+            records[idx].bookmarks.append(bm)
         }
-        books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
+        records[idx].bookmarks = records[idx].bookmarks.sortedByStablePosition()
         saveMeta()
     }
 
@@ -931,12 +989,12 @@ class BookStore: ObservableObject, BookProvider {
         style: AnnotationStyle = .underline,
         color: AnnotationColor = .yellow
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
         let spineIndex = position.spineIndex
         let safeLength = max(1, length)
 
         // Remove the exact annotation from the target spine using AnnotationStore
-        let existingAnnotations = books[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
+        let existingAnnotations = records[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
         let (remaining, _) = AnnotationStore.removeExact(
             spineIndex: spineIndex,
             range: NSRange(location: position.charOffset, length: safeLength),
@@ -944,21 +1002,21 @@ class BookStore: ObservableObject, BookProvider {
         )
 
         // Only remove annotation bookmarks from the target spine; keep other spines untouched
-        let otherSpineAnnotations = books[idx].bookmarks.filter { bm in
+        let otherSpineAnnotations = records[idx].bookmarks.filter { bm in
             (bm.kind == .underline || bm.kind == .highlight) && bm.position.spineIndex != spineIndex
         }
-        books[idx].bookmarks.removeAll { bm in
+        records[idx].bookmarks.removeAll { bm in
             bm.kind == .underline || bm.kind == .highlight
         }
 
         // Re-add annotations from other spines (untouched)
         for bm in otherSpineAnnotations {
-            books[idx].bookmarks.append(bm)
+            records[idx].bookmarks.append(bm)
         }
 
         // Re-add remaining annotations from the target spine (after removal)
         for ann in remaining where ann.spineIndex == spineIndex {
-            let chapterTitle = chapters(for: books[idx]).first(where: { $0.index == ann.spineIndex })?.title ?? ""
+            let chapterTitle = chapters(for: records[idx]).first(where: { $0.index == ann.spineIndex })?.title ?? ""
             let bm = Bookmark(
                 chapterIndex: ann.spineIndex,
                 chapterTitle: chapterTitle,
@@ -970,9 +1028,9 @@ class BookStore: ObservableObject, BookProvider {
                 annotationStyle: ann.style,
                 annotationColor: ann.color
             )
-            books[idx].bookmarks.append(bm)
+            records[idx].bookmarks.append(bm)
         }
-        books[idx].bookmarks = books[idx].bookmarks.sortedByStablePosition()
+        records[idx].bookmarks = records[idx].bookmarks.sortedByStablePosition()
         saveMeta()
     }
 
@@ -981,7 +1039,7 @@ class BookStore: ObservableObject, BookProvider {
     /// 新增標註後範圍可能被 `AnnotationStore.merge` 併大，呼叫端不能拿自己送出去的
     /// range 當結果用——筆記要掛在合併後那一條上，否則下次開啟會對不到。
     func textAnnotationBookmark(bookId: UUID, spineIndex: Int, range: NSRange) -> Bookmark? {
-        guard let book = books.first(where: { $0.id == bookId }) else { return nil }
+        guard let book = records.first(where: { $0.id == bookId }) else { return nil }
         let start = range.location
         let end = range.location + range.length
         return book.bookmarks.first { bm in
@@ -994,15 +1052,15 @@ class BookStore: ObservableObject, BookProvider {
 
     /// 寫入／清空一條標註的筆記。傳空字串等於「只刪筆記、保留標註」。
     func setTextAnnotationNote(bookId: UUID, bookmarkId: UUID, note: String) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }),
-              let bmIdx = books[idx].bookmarks.firstIndex(where: { $0.id == bookmarkId })
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
+              let bmIdx = records[idx].bookmarks.firstIndex(where: { $0.id == bookmarkId })
         else { return }
-        books[idx].bookmarks[bmIdx].note = note
+        records[idx].bookmarks[bmIdx].note = note
         saveMeta()
     }
 
     func isBookmark(bookId: UUID, position: CoreTextReadingPosition) -> Bool {
-        books.first(where: { $0.id == bookId })?.bookmarks.contains(where: {
+        records.first(where: { $0.id == bookId })?.bookmarks.contains(where: {
             $0.position == position
         }) ?? false
     }
@@ -1014,8 +1072,8 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Incremental Content Update (download interruption protection)
 
     func updateBookContent(bookId: UUID, rawText: String) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        let filename = books[idx].contentFilename
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        let filename = records[idx].contentFilename
         let fileURL = documentsURL(for: filename)
         do {
             try rawText.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -1027,9 +1085,9 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Edit Book Info
 
     func updateBook(bookId: UUID, title: String, author: String) {
-        if let idx = books.firstIndex(where: { $0.id == bookId }) {
-            books[idx].title = title.isEmpty ? books[idx].title : title
-            books[idx].author = author.isEmpty ? books[idx].author : author
+        if let idx = records.firstIndex(where: { $0.id == bookId }) {
+            records[idx].title = title.isEmpty ? records[idx].title : title
+            records[idx].author = author.isEmpty ? records[idx].author : author
             saveMeta()
         }
     }
@@ -1042,33 +1100,41 @@ class BookStore: ObservableObject, BookProvider {
     }
 
     func setGroup(_ group: String, for bookId: UUID) {
-        if let idx = books.firstIndex(where: { $0.id == bookId }) {
-            books[idx].group = group
+        if let idx = records.firstIndex(where: { $0.id == bookId }) {
+            records[idx].group = group
             saveMeta()
         }
     }
 
     // MARK: Delete Book
 
-    /// Moves the books with the given `ids` before `targetId`.
+    /// Moves the records with the given `ids` before `targetId`.
     /// If `targetId` is nil, moves them to the end. Preserves relative order.
     func moveBooks(ids: [UUID], before targetId: UUID?) {
         guard !ids.isEmpty else { return }
         let idSet = Set(ids)
-        let moving = books.filter { idSet.contains($0.id) }
-        var rest = books.filter { !idSet.contains($0.id) }
+        let moving = records.filter { idSet.contains($0.id) }
+        var rest = records.filter { !idSet.contains($0.id) }
         if let targetId, let idx = rest.firstIndex(where: { $0.id == targetId }) {
             rest.insert(contentsOf: moving, at: idx)
         } else {
             rest.append(contentsOf: moving)
         }
-        books = rest
+        records = rest
         saveMeta()
     }
 
     func delete(bookId: UUID) {
-        if let idx = books.firstIndex(where: { $0.id == bookId }) {
-            let book = books[idx]
+        if let idx = records.firstIndex(where: { $0.id == bookId }) {
+            let book = records[idx]
+            if book.remoteSource != nil {
+                // Removing a remote shelf reference keeps the same reading record
+                // and explicit offline copy available from its library detail.
+                records[idx].isInBookshelf = false
+                persistReadingRecords()
+                saveMetaImmediately()
+                return
+            }
             if book.isOnline {
                 // Delete cache directory
                 let cacheDir = StorageLocations.onlineCache.appendingPathComponent(bookId.uuidString)
@@ -1104,7 +1170,7 @@ class BookStore: ObservableObject, BookProvider {
                     }
                 }
             }
-            books.remove(at: idx)
+            records.remove(at: idx)
             saveMeta()
         }
     }
@@ -1141,7 +1207,7 @@ class BookStore: ObservableObject, BookProvider {
             sanitized.title = ReaderHTMLUtilities.displayText(fromHTMLFragment: chapter.title)
             return sanitized
         }
-        books.insert(book, at: 0)
+        records.insert(book, at: 0)
         saveMeta()
         downloadCoverIfNeeded(bookId: book.id, coverUrl: coverUrl, sourceId: sourceId)
         return book
@@ -1149,11 +1215,11 @@ class BookStore: ObservableObject, BookProvider {
 
     @discardableResult
     func updateOnlineBookContentKind(bookId: UUID, kind: OnlineBookContentKind) -> Bool {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return false }
-        guard books[idx].isOnline else { return false }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
+        guard records[idx].isOnline else { return false }
         let pipelineKind = kind.pipelineKind
-        guard books[idx].contentPipelineKind != pipelineKind else { return false }
-        books[idx].contentPipelineKind = pipelineKind
+        guard records[idx].contentPipelineKind != pipelineKind else { return false }
+        records[idx].contentPipelineKind = pipelineKind
         saveMeta()
         return true
     }
@@ -1165,10 +1231,10 @@ class BookStore: ObservableObject, BookProvider {
     /// reader and the change persists for future opens. Idempotent and cheap.
     @discardableResult
     func upgradeToMangaIfDetected(bookId: UUID, content: String, imageStyle: String? = nil) -> Bool {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return false }
-        guard books[idx].isOnline, books[idx].contentPipelineKind != .manga else { return false }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
+        guard records[idx].isOnline, records[idx].contentPipelineKind != .manga else { return false }
         guard MangaChapterParser.looksLikeMangaContent(content, imageStyle: imageStyle) else { return false }
-        books[idx].contentPipelineKind = .manga
+        records[idx].contentPipelineKind = .manga
         saveMeta()
         ReaderTelemetry.shared.log(
             "manga_autodetect",
@@ -1184,12 +1250,12 @@ class BookStore: ObservableObject, BookProvider {
     /// to the audio player and the change persists for future opens. Idempotent.
     @discardableResult
     func upgradeToAudioIfDetected(bookId: UUID, content: String) -> Bool {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return false }
-        guard books[idx].isOnline,
-              books[idx].contentPipelineKind != .manga,
-              books[idx].contentPipelineKind != .audio else { return false }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
+        guard records[idx].isOnline,
+              records[idx].contentPipelineKind != .manga,
+              records[idx].contentPipelineKind != .audio else { return false }
         guard DirectChapterAudioResolver.looksLikeAudioContent(content) else { return false }
-        books[idx].contentPipelineKind = .audio
+        records[idx].contentPipelineKind = .audio
         saveMeta()
         ReaderTelemetry.shared.log(
             "audio_autodetect",
@@ -1203,7 +1269,7 @@ class BookStore: ObservableObject, BookProvider {
     func downloadCoverIfNeeded(bookId: UUID, coverUrl: String, sourceId: UUID?) {
         let trimmed = coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
-              let book = books.first(where: { $0.id == bookId }),
+              let book = records.first(where: { $0.id == bookId }),
               book.coverImagePath == nil else { return }
 
         let source = sourceId.flatMap { id in BookSourceStore.shared.sources.first { $0.id == id } }
@@ -1224,8 +1290,8 @@ class BookStore: ObservableObject, BookProvider {
 
     /// Assign a downloaded cover filename to a book and persist.
     func setCoverImagePath(bookId: UUID, filename: String) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].coverImagePath = filename
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].coverImagePath = filename
         saveMeta()
     }
 
@@ -1243,7 +1309,7 @@ class BookStore: ObservableObject, BookProvider {
     @MainActor
     func applyCustomCover(bookId: UUID, coverUrl: String, sourceId: UUID?) async -> Bool {
         let trimmed = coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, books.contains(where: { $0.id == bookId }) else { return false }
+        guard !trimmed.isEmpty, records.contains(where: { $0.id == bookId }) else { return false }
 
         let source = sourceId.flatMap { id in BookSourceStore.shared.sources.first { $0.id == id } }
         let headers = BookCoverLoader.headers(
@@ -1284,7 +1350,7 @@ class BookStore: ObservableObject, BookProvider {
     /// previous image until the app restarts.
     @MainActor
     private func storeCustomCover(bookId: UUID, image: UIImage, customCoverUrl: String) -> Bool {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }),
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
               let jpeg = image.jpegData(compressionQuality: 0.85) else { return false }
 
         // The marker routes the file to `StorageLocations.customCovers`, which
@@ -1299,16 +1365,16 @@ class BookStore: ObservableObject, BookProvider {
             return false
         }
 
-        let previousPath = books[idx].coverImagePath
+        let previousPath = records[idx].coverImagePath
         // First customization only: keep whatever the source or the EPUB gave us
         // so 重設封面 has something to restore. Later changes replace each other.
-        if books[idx].originalCoverImagePath == nil {
-            books[idx].originalCoverImagePath = previousPath
-        } else if let previousPath, previousPath != books[idx].originalCoverImagePath {
+        if records[idx].originalCoverImagePath == nil {
+            records[idx].originalCoverImagePath = previousPath
+        } else if let previousPath, previousPath != records[idx].originalCoverImagePath {
             removeCoverFile(previousPath)
         }
-        books[idx].coverImagePath = filename
-        books[idx].customCoverUrl = customCoverUrl
+        records[idx].coverImagePath = filename
+        records[idx].customCoverUrl = customCoverUrl
         // Picking a cover is a user-confirmed metadata transaction, like a source
         // switch: it must survive leaving 書籍資訊 and an immediate suspension. The
         // 2-second debounce is for high-frequency progress/TOC writes.
@@ -1323,16 +1389,16 @@ class BookStore: ObservableObject, BookProvider {
     /// `coverUrl` instead of leaving the book with no cover at all.
     @MainActor
     func resetCover(bookId: UUID) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        let customPath = books[idx].coverImagePath
-        let originalPath = books[idx].originalCoverImagePath
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        let customPath = records[idx].coverImagePath
+        let originalPath = records[idx].originalCoverImagePath
 
-        books[idx].customCoverUrl = nil
-        books[idx].originalCoverImagePath = nil
+        records[idx].customCoverUrl = nil
+        records[idx].originalCoverImagePath = nil
 
         if let originalPath,
            FileManager.default.fileExists(atPath: StorageLocations.coverFile(originalPath).path) {
-            books[idx].coverImagePath = originalPath
+            records[idx].coverImagePath = originalPath
             if let customPath, customPath != originalPath { removeCoverFile(customPath) }
             // Immediate for the same reason as `storeCustomCover`, and because the
             // custom file is already deleted — a lost write would leave the book
@@ -1341,13 +1407,13 @@ class BookStore: ObservableObject, BookProvider {
             return
         }
 
-        books[idx].coverImagePath = nil
+        records[idx].coverImagePath = nil
         if let customPath { removeCoverFile(customPath) }
         saveMetaImmediately()
         downloadCoverIfNeeded(
             bookId: bookId,
-            coverUrl: books[idx].coverUrl ?? "",
-            sourceId: books[idx].bookSourceId
+            coverUrl: records[idx].coverUrl ?? "",
+            sourceId: records[idx].bookSourceId
         )
     }
 
@@ -1373,7 +1439,7 @@ class BookStore: ObservableObject, BookProvider {
             sanitized.title = ReaderHTMLUtilities.displayText(fromHTMLFragment: chapter.title)
             return sanitized
         }
-        books.insert(book, at: 0)
+        records.insert(book, at: 0)
         saveMeta()
         return book
     }
@@ -1381,23 +1447,23 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Update Cached Chapters
 
     func updateCachedChapter(bookId: UUID, chapterIndex: Int, filename: String) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }),
-            var chapters = books[idx].onlineChapters
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
+            var chapters = records[idx].onlineChapters
         else { return }
         if let ci = chapters.firstIndex(where: { $0.index == chapterIndex }) {
             chapters[ci].cachedFilename = filename
-            books[idx].onlineChapters = chapters
+            records[idx].onlineChapters = chapters
             saveMeta()
         }
     }
 
     func clearCachedChapter(bookId: UUID, chapterIndex: Int) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }),
-            var chapters = books[idx].onlineChapters
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
+            var chapters = records[idx].onlineChapters
         else { return }
         if let ci = chapters.firstIndex(where: { $0.index == chapterIndex }) {
             chapters[ci].cachedFilename = nil
-            books[idx].onlineChapters = chapters
+            records[idx].onlineChapters = chapters
             saveMeta()
         }
     }
@@ -1405,8 +1471,8 @@ class BookStore: ObservableObject, BookProvider {
     /// Clears all cachedFilename markers for a book without affecting offlineDownloadState.
     /// Used alongside `clearAllChapterCache` during refresh to reset the book's cache state.
     func clearAllCachedChapterFilenames(bookId: UUID) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }),
-            var chapters = books[idx].onlineChapters
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
+            var chapters = records[idx].onlineChapters
         else { return }
         var changed = false
         for i in chapters.indices where chapters[i].cachedFilename != nil {
@@ -1414,7 +1480,7 @@ class BookStore: ObservableObject, BookProvider {
             changed = true
         }
         guard changed else { return }
-        books[idx].onlineChapters = chapters
+        records[idx].onlineChapters = chapters
         saveMeta()
     }
 
@@ -1422,7 +1488,7 @@ class BookStore: ObservableObject, BookProvider {
         bookId: UUID,
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore()
     ) async throws {
-        guard let removing = books.first(where: { $0.id == bookId }) else { return }
+        guard let removing = records.first(where: { $0.id == bookId }) else { return }
         // Every chapter is about to go back to the network for the first time since the
         // download was made. Doing that against a table of contents the cache has been
         // replaying unchanged — it is keyed by `(sourceId, url)` and outlives the book — is
@@ -1436,20 +1502,20 @@ class BookStore: ObservableObject, BookProvider {
             )
         }
         try await offlineChapterStore.removeBook(bookId: bookId)
-        // `books` can be mutated while the artifact removal is in flight (imports
+        // `records` can be mutated while the artifact removal is in flight (imports
         // insert at 0, deletions remove rows), so the row has to be located again:
         // an index resolved before the await could now address a different book,
         // or be past the end of the array.
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        if var chapters = books[idx].onlineChapters {
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        if var chapters = records[idx].onlineChapters {
             for chapterIndex in chapters.indices {
                 chapters[chapterIndex].cachedFilename = nil
             }
-            books[idx].onlineChapters = chapters
+            records[idx].onlineChapters = chapters
         }
-        books[idx].offlineDownloadState = .none
-        books[idx].downloadedChapterCount = 0
-        books[idx].offlineDownloadTask = nil
+        records[idx].offlineDownloadState = .none
+        records[idx].downloadedChapterCount = 0
+        records[idx].offlineDownloadTask = nil
         DownloadLiveActivityController.refresh(books: books)
         // The cache was already removed from disk; persist the matching state
         // now so a quick relaunch cannot resurrect a stale completed download.
@@ -1472,10 +1538,10 @@ class BookStore: ObservableObject, BookProvider {
         chapters: [OnlineChapterRef],
         runtimeVariables: [String: String]? = nil
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-        books[idx].onlineChapters = chapters
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].onlineChapters = chapters
         if let runtimeVariables, !runtimeVariables.isEmpty {
-            books[idx].runtimeVariables = runtimeVariables
+            records[idx].runtimeVariables = runtimeVariables
         }
         saveMeta()
     }
@@ -1487,9 +1553,9 @@ class BookStore: ObservableObject, BookProvider {
     /// 設置書籍變量 editor: replaces the book's runtime-variable map (the values
     /// a source's JS reads back as book variables on subsequent fetches).
     func updateBookRuntimeVariables(bookId: UUID, variables: [String: String]?) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
         let normalized = (variables?.isEmpty ?? true) ? nil : variables
-        books[idx].runtimeVariables = normalized
+        records[idx].runtimeVariables = normalized
         saveMeta()
     }
 
@@ -1527,7 +1593,7 @@ class BookStore: ObservableObject, BookProvider {
                 userInfo: [NSLocalizedDescriptionKey: localized("此書源取不到目錄")])
         }
         let oldRefs = await MainActor.run {
-            books.first(where: { $0.id == bookId })?.onlineChapters ?? []
+            records.first(where: { $0.id == bookId })?.onlineChapters ?? []
         }
         try await SourcePerfTrace.spanAsync(
             "changeSource.reconcileOffline", "\(max(oldRefs.count, tocPackage.chapters.count))ch"
@@ -1542,12 +1608,12 @@ class BookStore: ObservableObject, BookProvider {
             )
         }
         await MainActor.run {
-            guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
-            books[idx].bookSourceId = origin.sourceId
-            books[idx].bookInfoURL = origin.bookUrl
-            books[idx].tocURL = origin.tocUrl
-            books[idx].runtimeVariables = origin.runtimeVariables
-            books[idx].onlineChapters = tocPackage.chapters
+            guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+            records[idx].bookSourceId = origin.sourceId
+            records[idx].bookInfoURL = origin.bookUrl
+            records[idx].tocURL = origin.tocUrl
+            records[idx].runtimeVariables = origin.runtimeVariables
+            records[idx].onlineChapters = tocPackage.chapters
             // A source switch is a user-confirmed metadata transaction. It must
             // survive leaving the reader or immediate app suspension; the normal
             // debounce is reserved for high-frequency progress/TOC updates.
@@ -1571,7 +1637,7 @@ class BookStore: ObservableObject, BookProvider {
         onFirstChaptersReady: (@MainActor (ReadingBook) -> Void)? = nil
     ) async throws -> ReadingBook {
         guard let snapshot = await MainActor.run(body: {
-            books.first(where: { $0.id == bookId && $0.isOnline })
+            records.first(where: { $0.id == bookId && $0.isOnline })
         }) else {
             throw NSError(
                 domain: "BookStore", code: -2, userInfo: [NSLocalizedDescriptionKey: "找不到線上書籍"])
@@ -1653,7 +1719,7 @@ class BookStore: ObservableObject, BookProvider {
             onFirstPageReady: { [weak self] firstChapters in
                 guard let self else { return }
                 Task { @MainActor in
-                    guard let idx = self.books.firstIndex(where: { $0.id == bookId }) else { return }
+                    guard let idx = self.records.firstIndex(where: { $0.id == bookId }) else { return }
                     guard OnlineTOCCommitPolicy.decide(
                         refreshedCount: firstChapters.count
                     ) == .commit else {
@@ -1663,41 +1729,41 @@ class BookStore: ObservableObject, BookProvider {
                         return
                     }
 
-                    let previousTitle = self.books[idx].title
-                    let previousAuthor = self.books[idx].author
-                    let existingChapters = self.books[idx].onlineChapters ?? []
+                    let previousTitle = self.records[idx].title
+                    let previousAuthor = self.records[idx].author
+                    let existingChapters = self.records[idx].onlineChapters ?? []
                     let mergedChapters = self.mergeOnlineChapters(
                         existing: existingChapters,
                         refreshed: firstChapters,
                         preservingExistingTail: true
                     )
                     let chaptersChanged = self.chapterListChanged(existing: existingChapters, refreshed: firstChapters)
-                    let tocChanged = self.normalizedOnlineValue(self.books[idx].tocURL) != progressiveTOCURL
-                    let runtimeChanged = (self.books[idx].runtimeVariables ?? [:]) != (progressiveRuntimeVariables ?? [:])
+                    let tocChanged = self.normalizedOnlineValue(self.records[idx].tocURL) != progressiveTOCURL
+                    let runtimeChanged = (self.records[idx].runtimeVariables ?? [:]) != (progressiveRuntimeVariables ?? [:])
 
-                    self.books[idx].bookSourceId = source.id
-                    self.books[idx].bookInfoURL = bookURL
-                    self.books[idx].tocURL = progressiveTOCURL
-                    self.books[idx].runtimeVariables = progressiveRuntimeVariables
-                    self.books[idx].onlineChapters = mergedChapters
+                    self.records[idx].bookSourceId = source.id
+                    self.records[idx].bookInfoURL = bookURL
+                    self.records[idx].tocURL = progressiveTOCURL
+                    self.records[idx].runtimeVariables = progressiveRuntimeVariables
+                    self.records[idx].onlineChapters = mergedChapters
 
                     if let progressiveInfoPackage {
                         let resolvedName = self.normalizedOnlineValue(progressiveInfoPackage.name)
                         let resolvedAuthor = self.normalizedOnlineValue(progressiveInfoPackage.author)
                         if !resolvedName.isEmpty {
-                            self.books[idx].title = resolvedName
+                            self.records[idx].title = resolvedName
                         }
                         if !resolvedAuthor.isEmpty {
-                            self.books[idx].author = resolvedAuthor
+                            self.records[idx].author = resolvedAuthor
                         }
                     }
 
-                    let titleChanged = previousTitle != self.books[idx].title
-                    let authorChanged = previousAuthor != self.books[idx].author
+                    let titleChanged = previousTitle != self.records[idx].title
+                    let authorChanged = previousAuthor != self.records[idx].author
                     if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged {
                         self.saveMeta()
                     }
-                    onFirstChaptersReady?(self.books[idx])
+                    onFirstChaptersReady?(self.records[idx])
                 }
             },
             // Always hit the network here: this is the "check for new chapters"
@@ -1714,7 +1780,7 @@ class BookStore: ObservableObject, BookProvider {
         let finalInfoPackage = infoPackage
 
         let updateResult = await MainActor.run { () -> (ReadingBook, [OnlineChapterRef], [OnlineChapterRef])? in
-            guard let idx = books.firstIndex(where: { $0.id == bookId }) else {
+            guard let idx = records.firstIndex(where: { $0.id == bookId }) else {
                 return nil
             }
             // Returning nil here leaves `onlineChapters` — and therefore the reconcile that
@@ -1724,38 +1790,38 @@ class BookStore: ObservableObject, BookProvider {
             ) == .commit else {
                 AppLogger.network("⟐ TOC refresh came back empty, keeping existing chapters", context: [
                     "bookId": bookId.uuidString,
-                    "existing": books[idx].onlineChapters?.count ?? 0,
+                    "existing": records[idx].onlineChapters?.count ?? 0,
                 ])
                 return nil
             }
 
-            let existingChapters = books[idx].onlineChapters ?? []
+            let existingChapters = records[idx].onlineChapters ?? []
             let mergedChapters = mergeOnlineChapters(existing: existingChapters, refreshed: tocPackage.chapters)
             let chaptersChanged = chapterListChanged(existing: existingChapters, refreshed: tocPackage.chapters)
-            let tocChanged = normalizedOnlineValue(books[idx].tocURL) != finalTOCURL
-            let runtimeChanged = (books[idx].runtimeVariables ?? [:]) != (finalRuntimeVariables ?? [:])
-            let previousTitle = books[idx].title
-            let previousAuthor = books[idx].author
+            let tocChanged = normalizedOnlineValue(records[idx].tocURL) != finalTOCURL
+            let runtimeChanged = (records[idx].runtimeVariables ?? [:]) != (finalRuntimeVariables ?? [:])
+            let previousTitle = records[idx].title
+            let previousAuthor = records[idx].author
 
-            books[idx].bookSourceId = source.id
-            books[idx].bookInfoURL = bookURL
-            books[idx].tocURL = finalTOCURL
-            books[idx].runtimeVariables = finalRuntimeVariables
-            books[idx].onlineChapters = mergedChapters
+            records[idx].bookSourceId = source.id
+            records[idx].bookInfoURL = bookURL
+            records[idx].tocURL = finalTOCURL
+            records[idx].runtimeVariables = finalRuntimeVariables
+            records[idx].onlineChapters = mergedChapters
 
             if let finalInfoPackage {
                 let resolvedName = normalizedOnlineValue(finalInfoPackage.name)
                 let resolvedAuthor = normalizedOnlineValue(finalInfoPackage.author)
                 if !resolvedName.isEmpty {
-                    books[idx].title = resolvedName
+                    records[idx].title = resolvedName
                 }
                 if !resolvedAuthor.isEmpty {
-                    books[idx].author = resolvedAuthor
+                    records[idx].author = resolvedAuthor
                 }
             }
 
-            let titleChanged = previousTitle != books[idx].title
-            let authorChanged = previousAuthor != books[idx].author
+            let titleChanged = previousTitle != records[idx].title
+            let authorChanged = previousAuthor != records[idx].author
 
             // Surface newly-arrived chapters on the bookshelf. Only flag when the
             // book already had chapters (avoids marking a first-time population)
@@ -1764,13 +1830,13 @@ class BookStore: ObservableObject, BookProvider {
                 && (mergedChapters.count > originalChapterCount
                     || normalizeChapterTitle(mergedChapters.last?.title ?? "") != originalLatestTitle)
             if gainedChapters {
-                books[idx].hasNewChapterUpdate = true
+                records[idx].hasNewChapterUpdate = true
             }
 
             if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged || gainedChapters {
                 saveMeta()
             }
-            return (books[idx], existingChapters, mergedChapters)
+            return (records[idx], existingChapters, mergedChapters)
         }
 
         guard let (updated, oldRefs, newRefs) = updateResult else {
@@ -1812,9 +1878,9 @@ class BookStore: ObservableObject, BookProvider {
         oldRefs: [OnlineChapterRef],
         newRefs: [OnlineChapterRef]
     ) {
-        guard let idx = books.firstIndex(where: { $0.id == bookId }) else { return }
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
         var invalidatedIndices: Set<Int> = []
-        if var chapters = books[idx].onlineChapters {
+        if var chapters = records[idx].onlineChapters {
             for index in chapters.indices {
                 guard oldRefs.indices.contains(index), newRefs.indices.contains(index) else {
                     chapters[index].cachedFilename = nil
@@ -1832,17 +1898,17 @@ class BookStore: ObservableObject, BookProvider {
                     invalidatedIndices.insert(index)
                 }
             }
-            books[idx].onlineChapters = chapters
+            records[idx].onlineChapters = chapters
         }
-        if var task = books[idx].offlineDownloadTask?.clamped(to: newRefs.count) {
+        if var task = records[idx].offlineDownloadTask?.clamped(to: newRefs.count) {
             for index in invalidatedIndices where task.requestedIndices.contains(index) {
                 task.markPending(index)
             }
             replaceOfflineDownloadTask(bookId: bookId, task: task, isRunning: false)
-        } else if books[idx].offlineDownloadTask != nil {
-            books[idx].offlineDownloadTask = nil
-            books[idx].offlineDownloadState = .none
-            books[idx].downloadedChapterCount = 0
+        } else if records[idx].offlineDownloadTask != nil {
+            records[idx].offlineDownloadTask = nil
+            records[idx].offlineDownloadState = .none
+            records[idx].downloadedChapterCount = 0
             saveMetaImmediately()
         } else {
             saveMeta()
@@ -1864,7 +1930,7 @@ class BookStore: ObservableObject, BookProvider {
         var book = ReadingBook(
             title: title, author: author, source: source, contentFilename: filename)
         book.contentPipelineKind = (format == .html) ? .html : .txt
-        books.insert(book, at: 0)
+        records.insert(book, at: 0)
         saveMeta()
         return book
     }
@@ -1886,7 +1952,7 @@ class BookStore: ObservableObject, BookProvider {
     /// (no local file) and missing files.
     func shareableFileURL(for book: ReadingBook) -> URL? {
         guard !book.isOnline, !book.contentFilename.isEmpty else { return nil }
-        // EPUB-derived books may store an `_epub.json` sidecar; share the real `.epub`.
+        // EPUB-derived records may store an `_epub.json` sidecar; share the real `.epub`.
         if book.contentFilename.hasSuffix(".epub") || book.contentFilename.hasSuffix("_epub.json") {
             let epubURL = localEPUBURL(for: book)
             if FileManager.default.fileExists(atPath: epubURL.path) {
@@ -1933,7 +1999,7 @@ class BookStore: ObservableObject, BookProvider {
         // The synced copy omits `onlineChapters` (kept local & re-fetchable from the
         // source) to stay under Firestore's 1 MB document limit. Preserve whatever the
         // device already has so we don't drop a fetched table of contents.
-        let localChapters = Dictionary(books.map { ($0.id, $0.onlineChapters) }, uniquingKeysWith: { first, _ in first })
+        let localChapters = Dictionary(records.map { ($0.id, $0.onlineChapters) }, uniquingKeysWith: { first, _ in first })
         books = syncedBooks.map { book in
             guard (book.onlineChapters?.isEmpty ?? true), let preserved = localChapters[book.id] ?? nil else {
                 return book
@@ -1960,19 +2026,21 @@ class BookStore: ObservableObject, BookProvider {
     /// made while the migration was measuring source/rendered correspondence.
     @MainActor
     func commitTXTBookmarks(bookId: UUID, original: [Bookmark], migrated: [Bookmark]) throws {
-        guard let index = books.firstIndex(where: { $0.id == bookId }),
-              books[index].bookmarks == original || books[index].bookmarks == migrated else {
+        guard let index = records.firstIndex(where: { $0.id == bookId }),
+              records[index].bookmarks == original || records[index].bookmarks == migrated else {
             throw TXTLocationMigration.Failure.missingSourceIdentity
         }
-        var updated = books
-        updated[index].bookmarks = migrated
+        var updated = records[index]
+        updated.bookmarks = migrated
+        let output = records.map { $0.id == bookId ? updated : $0 }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(updated)
-        try data.write(to: metadataFileURL, options: .atomic)
-        books = updated
-        markMetadataPersisted(data)
-        syncWidgetData()
+        let data = try encoder.encode(output.filter { $0.isInBookshelf == updated.isInBookshelf })
+        try data.write(to: updated.isInBookshelf ? metadataFileURL : readingMetadataFileURL, options: .atomic)
+        records[index] = updated
+        if updated.isInBookshelf { markMetadataPersisted(data); syncWidgetData() }
+        else { lastPersistedReadingData = data }
+
     }
 
     private func persistPositionUpdateIfNeeded(
@@ -2023,12 +2091,15 @@ class BookStore: ObservableObject, BookProvider {
 
     private func persistMetadataIfChanged() {
         guard let data = encodeBooksMetadata() else { return }
-        guard data != lastPersistedMetadataData else { return }
-
         do {
-            try data.write(to: metadataFileURL, options: .atomic)
-            markMetadataPersisted(data)
-            syncWidgetData()
+            // Write the shelf first: a crash while promoting a reading record must
+            // leave at least one durable copy. Loading gives shelf IDs precedence.
+            if data != lastPersistedMetadataData {
+                try data.write(to: metadataFileURL, options: .atomic)
+                markMetadataPersisted(data)
+                syncWidgetData()
+            }
+            persistReadingRecords()
         } catch {
             AppLogger.cache("Failed to write metadata: \(error)")
         }
@@ -2044,10 +2115,10 @@ class BookStore: ObservableObject, BookProvider {
         lastPersistedMetadataData = data
         let now = ProcessInfo.processInfo.systemUptime
         lastPersistedPositionSnapshots = Dictionary(
-            uniqueKeysWithValues: books.map { ($0.id, PersistedPositionSnapshot(book: $0)) }
+            uniqueKeysWithValues: records.map { ($0.id, PersistedPositionSnapshot(book: $0)) }
         )
         lastPersistedPositionSaveUptimeByBook = Dictionary(
-            uniqueKeysWithValues: books.map { ($0.id, now) }
+            uniqueKeysWithValues: records.map { ($0.id, now) }
         )
     }
 
@@ -2084,6 +2155,7 @@ class BookStore: ObservableObject, BookProvider {
     /// overwrites the file so the bookshelf reflects it without a relaunch.
     func reloadFromDisk() {
         loadMeta()
+        loadReadingRecords()
     }
 
     private func loadMeta() {
@@ -2091,7 +2163,7 @@ class BookStore: ObservableObject, BookProvider {
         if let data = try? Data(contentsOf: metadataFileURL),
            let decoded = try? JSONDecoder().decode([ReadingBook].self, from: data)
         {
-            books = decoded
+            records = decoded
             markMetadataPersisted(data)
             sanitizePersistedChapterURLs()
             return
@@ -2102,7 +2174,7 @@ class BookStore: ObservableObject, BookProvider {
         if let data = UserDefaults.standard.data(forKey: legacyMetaKey),
            let decoded = try? JSONDecoder().decode([ReadingBook].self, from: data)
         {
-            books = decoded
+            records = decoded
             sanitizePersistedChapterURLs()
             if let migrated = encodeBooksMetadata() {
                 try? migrated.write(to: metadataFileURL, options: .atomic)
@@ -2112,12 +2184,34 @@ class BookStore: ObservableObject, BookProvider {
         }
     }
 
+    private func loadReadingRecords() {
+        guard FileManager.default.fileExists(atPath: readingMetadataFileURL.path) else { return }
+        do {
+            let data = try Data(contentsOf: readingMetadataFileURL)
+            let decoded = try JSONDecoder().decode([ReadingBook].self, from: data)
+            let shelfIDs = Set(records.map(\.id))
+            records.append(contentsOf: decoded.filter { !$0.isInBookshelf && !shelfIDs.contains($0.id) })
+            lastPersistedReadingData = data
+        } catch { AppLogger.error("Remote reading records could not be loaded", error: error) }
+    }
+
+    private func persistReadingRecords() {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(records.filter { !$0.isInBookshelf })
+            guard data != lastPersistedReadingData else { return }
+            try data.write(to: readingMetadataFileURL, options: .atomic)
+            lastPersistedReadingData = data
+        } catch { AppLogger.error("Remote reading records could not be saved", error: error) }
+    }
+
     /// Cleans persisted online book chapter URLs: replaces URLs containing HTML
     /// markup with sanitized href values.
     private func sanitizePersistedChapterURLs() {
         var needsSave = false
-        for i in books.indices {
-            guard books[i].isOnline, var chapters = books[i].onlineChapters else { continue }
+        for i in records.indices {
+            guard records[i].isOnline, var chapters = records[i].onlineChapters else { continue }
             var bookChanged = false
             for j in chapters.indices {
                 let original = chapters[j].url
@@ -2128,7 +2222,7 @@ class BookStore: ObservableObject, BookProvider {
                 }
             }
             if bookChanged {
-                books[i].onlineChapters = chapters
+                records[i].onlineChapters = chapters
                 needsSave = true
             }
         }

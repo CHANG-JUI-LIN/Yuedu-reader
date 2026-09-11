@@ -437,13 +437,18 @@ final class SubscriptionStore: ObservableObject {
 
     /// Call only after Firebase has been configured (app active/auth callbacks).
     func refreshAllEntitlements() async {
+        let expectedUID = FirebaseAuthManager.shared.uid
         await resolveRunningEnvironment()
         seedAccountEntitlementFromCache()
         await refreshEntitlements()
         await refreshICloudEntitlement()
         if let accountEntitlement = await accountService.refreshEntitlement() {
+            // A response ordered after an account switch must not publish the
+            // previous account's entitlement.
+            guard FirebaseAuthManager.shared.uid == expectedUID else { return }
             accountIsProActive = accountEntitlement
         }
+        guard FirebaseAuthManager.shared.uid == expectedUID else { return }
         // Read after the refresh above, which is what writes the cache.
         accountProductIDs = accountService.cachedEntitlementProductIDs()
         recomputeEntitlement()
@@ -533,17 +538,22 @@ final class SubscriptionStore: ObservableObject {
             recomputeEntitlement()
             return
         }
+        let expectedUID = FirebaseAuthManager.shared.uid
         // Fires from the auth listener, which can beat `init`'s resolve. Both the
         // keychain seed below and the Firestore read pick their storage slot and
         // field names from the environment.
         await resolveRunningEnvironment()
+        // A stale sign-in callback must not seed or bind for the wrong account.
+        guard FirebaseAuthManager.shared.uid == expectedUID else { return }
         // Verified state first, network second: sign-in restore on a launch behind
         // an unreachable Firebase must not present a paid account as unsubscribed.
         seedAccountEntitlementFromCache()
         if let accountEntitlement = await accountService.refreshEntitlement() {
+            guard FirebaseAuthManager.shared.uid == expectedUID else { return }
             accountIsProActive = accountEntitlement
             recomputeEntitlement()
         }
+        guard FirebaseAuthManager.shared.uid == expectedUID else { return }
         // Backfill: purchases made while signed out (or on another device) were
         // never bound — bind runs only during purchase/restore — so the server
         // document stays missing and refreshEntitlement above keeps returning
@@ -560,13 +570,19 @@ final class SubscriptionStore: ObservableObject {
     }
 
     private func bindCurrentStoreKitEntitlementsToAccount() async {
+        let expectedUID = FirebaseAuthManager.shared.uid
         var didFailBinding = false
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result),
                   ProProduct(rawValue: transaction.productID) != nil,
                   acceptsTransaction(transaction.environment) else { continue }
             do {
-                accountIsProActive = try await accountService.bind(transaction: result)
+                let bound = try await accountService.bind(transaction: result)
+                // A bind result ordered after an account switch belongs to the
+                // previous purchase; publishing it would grant the new account
+                // the old one's entitlement.
+                guard FirebaseAuthManager.shared.uid == expectedUID else { return }
+                accountIsProActive = bound
                 accountProductIDs = accountService.cachedEntitlementProductIDs()
                 permanentBindFailureProductIDs.remove(transaction.productID)
             } catch {
@@ -654,7 +670,7 @@ final class SubscriptionStore: ObservableObject {
             "iCloud": iCloud,
             "ownedProducts": purchasedProductIDs.sorted().joined(separator: ","),
             "revokedCount": lastRevokedCount,
-            "uid": Auth.auth().currentUser?.uid ?? "",
+            "uid": FirebaseAuthManager.shared.uid ?? "",
             "appVersion": info?["CFBundleShortVersionString"] as? String ?? "",
             "build": info?["CFBundleVersion"] as? String ?? "",
             "createdAt": FieldValue.serverTimestamp()

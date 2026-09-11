@@ -6,6 +6,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
     case mangaImages
     case covers
     case diagnostics
+    case remoteBooks
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .mangaImages: return "漫畫圖片快取"
         case .covers: return "封面圖片快取"
         case .diagnostics: return "診斷紀錄"
+        case .remoteBooks: return "遠端書籍快取"
         }
     }
 
@@ -26,6 +28,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .mangaImages: return "清除漫畫快取"
         case .covers: return "清除封面快取"
         case .diagnostics: return "清除診斷紀錄"
+        case .remoteBooks: return "清除遠端書籍快取"
         }
     }
 
@@ -36,6 +39,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .mangaImages: return "漫畫頁面圖片的離線快取"
         case .covers: return "書籍封面圖片的快取"
         case .diagnostics: return "設定 → 診斷與回報 顯示的日誌與崩潰記錄"
+        case .remoteBooks: return "線上閱讀暫存；清除時保留正在閱讀的內容、進度與離線副本"
         }
     }
 
@@ -46,6 +50,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .mangaImages: return "photo.on.rectangle.angled"
         case .covers: return "photo"
         case .diagnostics: return "stethoscope"
+        case .remoteBooks: return "books.vertical"
         }
     }
 }
@@ -56,6 +61,16 @@ struct CacheStorageRoots: Equatable, Sendable {
     var mangaImages: URL
     var covers: URL
     var diagnostics: URL
+    var remoteBooks: URL
+
+    init(chapters: URL, ttsAudio: URL, mangaImages: URL, covers: URL, diagnostics: URL, remoteBooks: URL? = nil) {
+        self.chapters = chapters
+        self.ttsAudio = ttsAudio
+        self.mangaImages = mangaImages
+        self.covers = covers
+        self.diagnostics = diagnostics
+        self.remoteBooks = remoteBooks ?? chapters.deletingLastPathComponent().appendingPathComponent("RemoteLibrary", isDirectory: true)
+    }
 
     static var live: CacheStorageRoots {
         CacheStorageRoots(
@@ -63,7 +78,8 @@ struct CacheStorageRoots: Equatable, Sendable {
             ttsAudio: StorageLocations.ttsAudioCache,
             mangaImages: StorageLocations.mangaCache,
             covers: StorageLocations.covers,
-            diagnostics: StorageLocations.diagnostics
+            diagnostics: StorageLocations.diagnostics,
+            remoteBooks: StorageLocations.remoteLibraryCache
         )
     }
 
@@ -74,6 +90,7 @@ struct CacheStorageRoots: Equatable, Sendable {
         case .mangaImages: return mangaImages
         case .covers: return covers
         case .diagnostics: return diagnostics
+        case .remoteBooks: return remoteBooks
         }
     }
 }
@@ -84,6 +101,7 @@ struct CacheStorageSnapshot: Equatable, Sendable {
     var mangaImages: Int64 = 0
     var covers: Int64 = 0
     var diagnostics: Int64 = 0
+    var remoteBooks: Int64 = 0
 
     subscript(category: CacheCategory) -> Int64 {
         switch category {
@@ -92,11 +110,12 @@ struct CacheStorageSnapshot: Equatable, Sendable {
         case .mangaImages: return mangaImages
         case .covers: return covers
         case .diagnostics: return diagnostics
+        case .remoteBooks: return remoteBooks
         }
     }
 
     var total: Int64 {
-        chapters + ttsAudio + mangaImages + covers + diagnostics
+        chapters + ttsAudio + mangaImages + covers + diagnostics + remoteBooks
     }
 }
 
@@ -123,15 +142,19 @@ final class CacheManagementService: @unchecked Sendable {
     /// pass `nil` so clearing stays inside their own fixture instead of reaching
     /// through the singleton to the real device log.
     private let diagnosticLog: DiagnosticLog?
+    private let remoteLibraryCache: RemoteLibraryCache
 
     init(
         fileManager: FileManager = .default,
         roots: CacheStorageRoots = .live,
-        diagnosticLog: DiagnosticLog? = .shared
+        diagnosticLog: DiagnosticLog? = .shared,
+        remoteLibraryCache: RemoteLibraryCache? = nil
     ) {
         self.fileManager = fileManager
         self.roots = roots
         self.diagnosticLog = diagnosticLog
+        self.remoteLibraryCache = remoteLibraryCache
+            ?? (roots.remoteBooks == StorageLocations.remoteLibraryCache ? .shared : RemoteLibraryCache(root: roots.remoteBooks))
     }
 
     func snapshot() -> CacheStorageSnapshot {
@@ -140,7 +163,8 @@ final class CacheManagementService: @unchecked Sendable {
             ttsAudio: byteCount(in: roots.ttsAudio),
             mangaImages: byteCount(in: roots.mangaImages),
             covers: byteCount(in: roots.covers),
-            diagnostics: byteCount(in: roots.diagnostics)
+            diagnostics: byteCount(in: roots.diagnostics),
+            remoteBooks: byteCount(in: roots.remoteBooks)
         )
     }
 
@@ -153,6 +177,10 @@ final class CacheManagementService: @unchecked Sendable {
             return
         }
         do {
+            if category == .remoteBooks {
+                try remoteLibraryCache.clearInactive()
+                return
+            }
             try clearDirectory(roots[category])
             if category == .covers {
                 BookCoverLoader.clearMemoryCache()

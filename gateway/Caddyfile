@@ -1,0 +1,28 @@
+# Replace gateway.example.com with the real entry hostname before deploying.
+# Caddy issues and renews the certificate automatically.
+#
+# `header_up X-Forwarded-For {remote_host}` REPLACES any client-supplied header
+# with the actual peer address, so a request cannot inject a fake client IP.
+# `header_up X-Forwarded-Proto {scheme}` keeps the scheme honest. The gateway
+# trusts exactly one hop (TRUST_PROXY_HOPS=1), matching this proxy.
+gateway.example.com {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	reverse_proxy gateway:8080 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-IP {remote_host}
+	}
+	log {
+		output file /data/access.log {
+			roll_size 50mb
+			roll_keep 5
+		}
+		format json
+	}
+}

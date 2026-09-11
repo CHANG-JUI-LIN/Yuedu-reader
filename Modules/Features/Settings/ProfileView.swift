@@ -22,9 +22,9 @@ struct SettingsView: View {
     private let feedbackEmail = "r3212239269@gmail.com"
     private let officialQQGroupID = "1107613783"
     private let telegramGroupURL = URL(string: "https://t.me/+ZWmmgMwwJ3JiN2Rl")
-    private let privacyPolicyURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/privacy.html")
-    private let userAgreementURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/terms.html")
-    private let paidTermsURL = URL(string: "https://chang-jui-lin.github.io/Yuedu-reader/paid-terms.html")
+    private let privacyPolicyURL = URL(string: "https://yuedureader.com/privacy")
+    private let userAgreementURL = URL(string: "https://yuedureader.com/terms")
+    private let paidTermsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")
     private let sourceCodeURL = URL(string: "https://github.com/CHANG-JUI-LIN/Yuedu-reader/releases")
 
     private var feedbackMailURL: URL? {

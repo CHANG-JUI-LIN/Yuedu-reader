@@ -884,7 +884,11 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     static func syncableContentFilename(for book: ReadingBook) -> String? {
-        (book.isOnline || book.resolvedPipelineKind == .audio) ? nil : book.contentFilename
+        guard book.isInBookshelf else { return nil }
+        // Automatic remote caches belong to this device and must never become
+        // uploaded book files. Only the explicitly saved offline copy is durable.
+        if let remote = book.remoteSource { return remote.offlineFilename }
+        return (book.isOnline || book.resolvedPipelineKind == .audio) ? nil : book.contentFilename
     }
 
     private func uploadBookFiles() async throws -> Int {

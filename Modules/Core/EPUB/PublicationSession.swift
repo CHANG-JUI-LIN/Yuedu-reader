@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import CryptoKit
-import ReadiumZIPFoundation
 import ReadiumShared
 import ReadiumStreamer
 
@@ -340,14 +339,19 @@ enum PublicationSessionError: LocalizedError {
 final class PublicationSessionRegistry {
     static let shared = PublicationSessionRegistry()
 
+    private final class WeakSession {
+        weak var value: PublicationSession?
+        init(_ value: PublicationSession) { self.value = value }
+    }
+
     private let lock = NSLock()
-    private var sessions: [String: PublicationSession] = [:]
+    private var sessions: [String: WeakSession] = [:]
 
     private init() {}
 
     func register(_ session: PublicationSession) {
         lock.lock()
-        sessions[session.id] = session
+        sessions[session.id] = WeakSession(session)
         lock.unlock()
     }
 
@@ -360,7 +364,7 @@ final class PublicationSessionRegistry {
     func session(for id: String) -> PublicationSession? {
         lock.lock()
         defer { lock.unlock() }
-        return sessions[id]
+        return sessions[id]?.value
     }
 }
 
@@ -450,6 +454,7 @@ final class PublicationSession {
     private let resourceLock = NSLock()
     private var transformedResourceCache: [String: Data] = [:]
     private let cacheURL: URL
+    private let packageResources: EPUBPackageResources
 
     private init(
         id: String,
@@ -474,7 +479,8 @@ final class PublicationSession {
         cachedChapterByteSizes: [Int]?,
         obfuscationIdentifier: String?,
         encryptionAlgorithmsByHref: [String: String],
-        cacheURL: URL
+        cacheURL: URL,
+        packageResources: EPUBPackageResources
     ) {
         self.id = id
         self.sourceURL = sourceURL
@@ -502,6 +508,7 @@ final class PublicationSession {
         self.obfuscationIdentifier = obfuscationIdentifier
         self.encryptionAlgorithmsByHref = encryptionAlgorithmsByHref
         self.cacheURL = cacheURL
+        self.packageResources = packageResources
     }
 
     /// Update the on-disk SpinesCache with scanned chapter byte sizes.
@@ -522,17 +529,23 @@ final class PublicationSession {
     /// constructing a full Readium publication merely to choose the opening
     /// animation direction at tap time.
     static func inspectOpeningFlow(sourceURL: URL) async -> EPUBOpeningFlow {
-        let metadata = await parseOPFMetadata(from: sourceURL)
-        let cssDeclaresVertical = metadata.writingMode != .verticalRL
-            ? await packageDeclaresVerticalWritingMode(
-                sourceURL: sourceURL,
-                metadata: metadata
+        do {
+            let package = try await retrievePackage(sourceURL: sourceURL, httpClient: DefaultHTTPClient())
+            let metadata = parseOPFMetadataXML(package.resources.opfXML, opfPath: package.resources.opfPath)
+            let cssDeclaresVertical = metadata.writingMode != .verticalRL
+                ? try await packageDeclaresVerticalWritingMode(resources: package.resources, metadata: metadata)
+                : false
+            return EPUBOpeningFlow(
+                isVertical: metadata.writingMode == .verticalRL || cssDeclaresVertical,
+                pageProgressionIsRTL: metadata.pageProgressionDirection == .rtl
             )
-            : false
-        return EPUBOpeningFlow(
-            isVertical: metadata.writingMode == .verticalRL || cssDeclaresVertical,
-            pageProgressionIsRTL: metadata.pageProgressionDirection == .rtl
-        )
+        } catch {
+            AppLogger.render("EPUB opening-flow inspection failed", error: error)
+            // This preflight only chooses an animation. If the file cannot be
+            // inspected, keep the default animation; the real open still throws
+            // the read/parse error. Remove when animation no longer needs preflight.
+            return EPUBOpeningFlow(isVertical: false, pageProgressionIsRTL: false)
+        }
     }
 
     /// Detects the CSS-only vertical EPUBs that do not declare their writing
@@ -540,12 +553,9 @@ final class PublicationSession {
     /// reader; a few leading spine documents cover inline body declarations
     /// without expanding every chapter at tap time.
     private static func packageDeclaresVerticalWritingMode(
-        sourceURL: URL,
+        resources: EPUBPackageResources,
         metadata: OPFMetadataResult
-    ) async -> Bool {
-        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else {
-            return false
-        }
+    ) async throws -> Bool {
 
         let stylesheetHrefs = metadata.manifestItemsByID.values
             .filter { $0.mediaType?.lowercased() == "text/css" }
@@ -559,7 +569,7 @@ final class PublicationSession {
         var inspected = Set<String>()
         for href in stylesheetHrefs + leadingSpineHrefs {
             guard inspected.insert(href).inserted else { continue }
-            if let source = await readArchiveEntry(href, archive: archive),
+            if let source = try await resources.optionalText(href),
                EPUBOpeningFlow.containsVerticalWritingModeDeclaration(in: source) {
                 return true
             }
@@ -567,20 +577,57 @@ final class PublicationSession {
         return false
     }
 
-    static func open(sourceURL: URL) async throws -> PublicationSession {
+    static func open(sourceURL: URL, cacheDirectory: URL? = nil) async throws -> PublicationSession {
         guard FileManager.default.fileExists(atPath: sourceURL.path) else {
             throw PublicationSessionError.fileNotFound
         }
+        let opened = try await openPackage(sourceURL: sourceURL, httpClient: DefaultHTTPClient())
+        if let cacheDirectory {
+            try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        }
+        return try await makeSession(
+            sourceURL: sourceURL,
+            opened: opened,
+            cacheURL: cacheDirectory?.appendingPathComponent("spine.json") ?? getCacheURL(for: sourceURL)
+        )
+    }
 
-        let publication = try await openPublication(sourceURL: sourceURL)
-        let opfMetadata = await parseOPFMetadata(from: sourceURL)
+    /// The caller owns authentication, response-version validation and HTTP
+    /// caching. No complete EPUB file is required when the server supports Range.
+    static func open(
+        remoteURL: URL,
+        bookID: UUID,
+        httpClient: any HTTPClient,
+        version: String? = nil,
+        cacheDirectory: URL? = nil
+    ) async throws -> PublicationSession {
+        guard HTTPURL(url: remoteURL) != nil else {
+            throw PublicationSessionError.parsingFailed("Invalid remote EPUB URL")
+        }
+        // Unknown remote versions cannot safely reuse a previous spine index.
+        // The HTTP layer can supply ETag / Last-Modified for persistent reuse.
+        let versionKey = version ?? UUID().uuidString
+        let directory = try cacheDirectory ?? RemoteLibraryCache.shared.directory(bookID: bookID, version: versionKey)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let opened = try await openPackage(sourceURL: remoteURL, httpClient: httpClient)
+        let cacheURL = directory.appendingPathComponent("spine.json")
+        return try await makeSession(sourceURL: remoteURL, opened: opened, cacheURL: cacheURL)
+    }
+
+    private static func makeSession(
+        sourceURL: URL,
+        opened: (publication: Publication, resources: EPUBPackageResources),
+        cacheURL: URL
+    ) async throws -> PublicationSession {
+        let publication = opened.publication
+        let packageResources = opened.resources
+        let opfMetadata = parseOPFMetadataXML(packageResources.opfXML, opfPath: packageResources.opfPath)
         let epubWritingMode = opfMetadata.writingMode
         let rtlBidiVerify = "[RTLVerify] file=\(sourceURL.lastPathComponent) lang=\(opfMetadata.language ?? "nil") pageProgression=\(opfMetadata.pageProgressionDirection.rawValue) writingMode=\(epubWritingMode.rawValue) → \(epubWritingMode == .verticalRL ? "VERTICAL" : "HORIZONTAL")"
         print(rtlBidiVerify)
         NSLog("%@", rtlBidiVerify)
         let tocEntries = flattenTableOfContents(publication.manifest.tableOfContents)
 
-        let cacheURL = getCacheURL(for: sourceURL)
         let chapters: [PublicationChapterDescriptor]
         let cachedTitle: String?
         let cachedAuthor: String?
@@ -694,12 +741,12 @@ final class PublicationSession {
                 return (chapter.index, viewport)
             }
         )
-        let mediaOverlaysByChapter = await parseMediaOverlays(
-            from: sourceURL,
+        let mediaOverlaysByChapter = try await parseMediaOverlays(
+            from: packageResources,
             chapters: chapters
         )
-        let pronunciationLexicons = await parsePronunciationLexicons(
-            from: sourceURL,
+        let pronunciationLexicons = try await parsePronunciationLexicons(
+            from: packageResources,
             manifestItemsByID: opfMetadata.manifestItemsByID
         )
 
@@ -710,7 +757,7 @@ final class PublicationSession {
             obfuscationIdentifier = cachedEncryptionIdentifier
             encryptionAlgorithmsByHref = cachedEncryptionAlgorithms ?? [:]
         } else {
-            let (parsedIdentifier, parsedAlgorithms) = await epubEncryptionMetadata(from: sourceURL)
+            let (parsedIdentifier, parsedAlgorithms) = try await epubEncryptionMetadata(from: packageResources)
             obfuscationIdentifier = parsedIdentifier
             encryptionAlgorithmsByHref = parsedAlgorithms
             // Persist encryption metadata into SpinesCache
@@ -750,7 +797,8 @@ final class PublicationSession {
             cachedChapterByteSizes: cachedByteSizes,
             obfuscationIdentifier: obfuscationIdentifier,
             encryptionAlgorithmsByHref: encryptionAlgorithmsByHref,
-            cacheURL: cacheURL
+            cacheURL: cacheURL,
+            packageResources: packageResources
         )
         PublicationSessionRegistry.shared.register(session)
         return session
@@ -882,7 +930,7 @@ final class PublicationSession {
         case .success(let value):
             let rawData: Data
             if Self.requiresRawArchiveData(encryptionAlgorithm: encryptionAlgorithm) {
-                rawData = await rawArchiveData(for: href) ?? value
+                rawData = try await packageResources.read(href)
             } else {
                 rawData = value
             }
@@ -992,7 +1040,14 @@ final class PublicationSession {
     private func readiumURLs(for href: String) -> [AnyURL] {
         let trimmed = href.trimmingCharacters(in: .whitespacesAndNewlines)
         let basePath = trimmed.hasPrefix("/") ? String(trimmed.dropFirst()) : trimmed
-        let candidates = [trimmed, basePath, "/\(basePath)"]
+        // A Readium `Link.href` is a percent-ENCODED URL string (kusamakura's
+        // `OPS/xhtml/%E8%A1%A8%E7%B4%99.xhtml`), while callers that already came
+        // through `resolvedHREF` pass a decoded path. `AnyURL(legacyHREF:)`
+        // expects a decoded path, so an encoded href gets its `%` re-encoded
+        // (`%E8` -> `%25E8`) and every lookup misses. Try both forms; `seen`
+        // dedupes the ASCII case where they are identical.
+        let decodedPath = basePath.removingPercentEncoding ?? basePath
+        let candidates = [trimmed, basePath, "/\(basePath)", decodedPath, "/\(decodedPath)"]
         var seen = Set<String>()
         return candidates.compactMap { candidate in
             guard let url = AnyURL(legacyHREF: candidate) else {
@@ -1122,20 +1177,9 @@ final class PublicationSession {
         }
     }
 
-    private static func epubEncryptionMetadata(from sourceURL: URL) async -> (String?, [String: String]) {
-        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else {
-            return (nil, [:])
-        }
-        guard
-            let containerXML = await readArchiveEntry("META-INF/container.xml", archive: archive),
-            let opfPath = firstMatch(
-                in: containerXML,
-                pattern: #"full-path\s*=\s*"([^"]+)""#
-            ),
-            let opfXML = await readArchiveEntry(opfPath, archive: archive)
-        else {
-            return (nil, [:])
-        }
+    private static func epubEncryptionMetadata(from resources: EPUBPackageResources) async throws -> (String?, [String: String]) {
+        let opfPath = resources.opfPath
+        let opfXML = resources.opfXML
 
         let uniqueID = firstMatch(in: opfXML, pattern: #"unique-identifier\s*=\s*"([^"]+)""#)
         var identifier: String?
@@ -1159,7 +1203,7 @@ final class PublicationSession {
 
         let basePath = (opfPath as NSString).deletingLastPathComponent
         var algorithmsByHref: [String: String] = [:]
-        if let encryptionXML = await readArchiveEntry("META-INF/encryption.xml", archive: archive),
+        if let encryptionXML = try await resources.optionalText("META-INF/encryption.xml"),
            let regex = try? NSRegularExpression(
                 pattern: #"<enc:EncryptionMethod[^>]*Algorithm="([^"]+)"[\s\S]*?<enc:CipherReference[^>]*URI="([^"]+)""#,
                 options: [.caseInsensitive]
@@ -1211,30 +1255,6 @@ final class PublicationSession {
         // Form 2: text content >value</meta>
         let textPattern = #"<meta[^>]*property\s*=\s*""# + escapedProperty + #""[^>]*>\s*([^<]+)\s*</meta>"#
         return firstMatch(in: xml, pattern: textPattern)
-    }
-
-    private static func parseOPFMetadata(from sourceURL: URL) async -> OPFMetadataResult {
-        let fallback = OPFMetadataResult(
-            language: nil,
-            writingMode: .unspecified,
-            pageProgressionDirection: .default,
-            layoutMode: .reflowable,
-            flowMode: .auto,
-            fixedLayoutSpread: .auto,
-            fixedLayoutOrientation: .auto,
-            defaultViewport: nil,
-            spineMetadataByHref: [:],
-            manifestItemsByID: [:],
-            spineReferences: []
-        )
-        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else { return fallback }
-        guard
-            let containerXML = await readArchiveEntry("META-INF/container.xml", archive: archive),
-            let opfPath = firstMatch(in: containerXML, pattern: #"full-path\s*=\s*"([^"]+)""#),
-            let opfXML = await readArchiveEntry(opfPath, archive: archive)
-        else { return fallback }
-
-        return parseOPFMetadataXML(opfXML, opfPath: opfPath)
     }
 
     private static func parseOPFMetadataXML(_ opfXML: String, opfPath: String) -> OPFMetadataResult {
@@ -1411,14 +1431,13 @@ final class PublicationSession {
     }
 
     private static func parsePronunciationLexicons(
-        from sourceURL: URL,
+        from resources: EPUBPackageResources,
         manifestItemsByID: [String: EPUBManifestReference]
-    ) async -> [PLSLexicon] {
-        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else { return [] }
+    ) async throws -> [PLSLexicon] {
         var lexicons: [PLSLexicon] = []
         for item in manifestItemsByID.values
         where item.mediaType?.lowercased() == "application/pls+xml" {
-            guard let xml = await readArchiveEntry(item.href, archive: archive),
+            guard let xml = try await resources.optionalText(item.href),
                   let lexicon = PLSLexicon.parse(data: Data(xml.utf8), href: item.href)
             else { continue }
             lexicons.append(lexicon)
@@ -1427,15 +1446,11 @@ final class PublicationSession {
     }
 
     private static func parseMediaOverlays(
-        from sourceURL: URL,
+        from resources: EPUBPackageResources,
         chapters: [PublicationChapterDescriptor]
-    ) async -> [Int: EPUBMediaOverlay] {
-        guard let archive = try? await Archive(url: sourceURL, accessMode: .read),
-              let containerXML = await readArchiveEntry("META-INF/container.xml", archive: archive),
-              let opfPath = firstMatch(in: containerXML, pattern: #"full-path\s*=\s*"([^"]+)""#),
-              let opfXML = await readArchiveEntry(opfPath, archive: archive)
-        else { return [:] }
-
+    ) async throws -> [Int: EPUBMediaOverlay] {
+        let opfPath = resources.opfPath
+        let opfXML = resources.opfXML
         let basePath = (opfPath as NSString).deletingLastPathComponent
         let manifestItems = manifestItemsByID(in: opfXML, relativeTo: basePath)
         let manifestItemsByHref = Dictionary(
@@ -1452,7 +1467,7 @@ final class PublicationSession {
                   let smilItem = manifestItems[smilID]
             else { continue }
             let smilHref = normalizedResourcePath(smilItem.href, relativeTo: basePath)
-            guard let smilXML = await readArchiveEntry(smilHref, archive: archive) else { continue }
+            guard let smilXML = try await resources.optionalText(smilHref) else { continue }
             let parsed = SMILMediaOverlayParser.parse(
                 xml: smilXML,
                 smilHref: smilHref,
@@ -1640,16 +1655,6 @@ final class PublicationSession {
         return CGSize(width: w, height: h)
     }
 
-    private static func readArchiveEntry(_ path: String, archive: Archive) async -> String? {
-        guard let entry = try? await archive.get(path) else { return nil }
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        _ = try? await archive.extract(entry, to: tempURL, skipCRC32: true)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-        guard let data = try? Data(contentsOf: tempURL) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
     private static func firstMatch(
         in string: String,
         pattern: String,
@@ -1705,48 +1710,42 @@ final class PublicationSession {
         return nil
     }
 
-    private func rawArchiveData(for href: String) async -> Data? {
-        guard let archive = try? await Archive(url: sourceURL, accessMode: .read) else {
-            return nil
-        }
-
-        let normalized = Self.normalizedHREF(href)
-        let basename = (normalized as NSString).lastPathComponent
-
-        let entry: Entry?
-        if let exact = try? await archive.get(normalized) {
-            entry = exact
-        } else if let base = try? await archive.get(basename) {
-            entry = base
-        } else if let entries = try? await archive.entries() {
-            entry = entries.first(where: { $0.path == normalized || $0.path.hasSuffix("/" + basename) || normalized.hasSuffix($0.path) || $0.path.hasSuffix(normalized) })
-        } else {
-            entry = nil
-        }
-
-        guard let entry else { return nil }
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        _ = try? await archive.extract(entry, to: tempURL, skipCRC32: true)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-        return try? Data(contentsOf: tempURL)
+    private static func openPublication(sourceURL: URL) async throws -> Publication {
+        try await openPackage(sourceURL: sourceURL, httpClient: DefaultHTTPClient()).publication
     }
 
-    private static func openPublication(sourceURL: URL) async throws -> Publication {
-        guard let fileURL = FileURL(url: sourceURL) else {
-            throw PublicationSessionError.parsingFailed("Invalid file URL")
+    private static func retrievePackage(
+        sourceURL: URL,
+        httpClient: any HTTPClient
+    ) async throws -> (asset: Asset, resources: EPUBPackageResources, retriever: AssetRetriever) {
+        let url: any AbsoluteURL
+        if let fileURL = FileURL(url: sourceURL) {
+            url = fileURL
+        } else if let httpURL = HTTPURL(url: sourceURL) {
+            url = httpURL
+        } else {
+            throw PublicationSessionError.parsingFailed("Invalid EPUB URL")
         }
-
-        let httpClient = DefaultHTTPClient()
-        let assetRetriever = AssetRetriever(httpClient: httpClient)
-        let asset: Asset
-        switch await assetRetriever.retrieve(url: fileURL, hints: FormatHints(mediaType: .epub)) {
-        case .success(let value):
-            asset = value
-        case .failure(let error):
-            throw PublicationSessionError.parsingFailed(error.localizedDescription)
+        let assetRetriever = AssetRetriever(
+            formatSniffer: DefaultFormatSniffer(),
+            resourceFactory: DefaultResourceFactory(httpClient: httpClient),
+            archiveOpener: sourceURL.isFileURL ? DefaultArchiveOpener() : RemoteEPUBArchiveOpener())
+        let asset = try await assetRetriever.retrieve(url: url, hints: FormatHints(mediaType: .epub)).get()
+        guard case .container(let containerAsset) = asset else {
+            throw PublicationSessionError.parsingFailed("EPUB is not a container")
         }
+        let resources = try await EPUBPackageResources(container: containerAsset.container)
+        return (asset, resources, assetRetriever)
+    }
 
+    private static func openPackage(
+        sourceURL: URL,
+        httpClient: any HTTPClient
+    ) async throws -> (publication: Publication, resources: EPUBPackageResources) {
+        let package = try await retrievePackage(sourceURL: sourceURL, httpClient: httpClient)
+        let assetRetriever = package.retriever
+        let asset = package.asset
+        let resources = package.resources
         let opener = PublicationOpener(
             parser: DefaultPublicationParser(
                 httpClient: httpClient,
@@ -1754,12 +1753,8 @@ final class PublicationSession {
                 pdfFactory: DefaultPDFDocumentFactory()
             )
         )
-        switch await opener.open(asset: asset, allowUserInteraction: false) {
-        case .success(let publication):
-            return publication
-        case .failure(let error):
-            throw PublicationSessionError.parsingFailed(error.localizedDescription)
-        }
+        let publication = try await opener.open(asset: asset, allowUserInteraction: false).get()
+        return (publication, resources)
     }
 
     private static func chapterLinks(from publication: Publication) -> [Link] {
@@ -1882,8 +1877,10 @@ final class PublicationSession {
     private static func fallbackTitle(for href: String, chapterIndex: Int?) -> String {
         let normalized = normalizedHREF(href)
         let filename = URL(fileURLWithPath: normalized).deletingPathExtension().lastPathComponent
+        // `href` is a percent-encoded URL string; a chapter with no TOC entry
+        // (kusamakura's 表紙) otherwise shows `%E8%A1%A8%E7%B4%99` as its title.
         if !filename.isEmpty {
-            return filename
+            return filename.removingPercentEncoding ?? filename
         }
         if let chapterIndex {
             return "Chapter \(chapterIndex + 1)"

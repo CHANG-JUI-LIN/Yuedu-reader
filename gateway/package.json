@@ -1,0 +1,30 @@
+{
+  "name": "yuedu-firebase-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Finite-purpose HTTPS relay in front of the existing Firebase project so the Yuedu iOS app can sign in and reach account/subscription data from networks where Google endpoints are unreachable.",
+  "type": "module",
+  "engines": {
+    "node": "22"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node lib/index.js",
+    "dev": "tsx src/index.ts",
+    "smoke": "npm run build && bash scripts/smoke-local.sh",
+    "integration:auth": "node scripts/integration-auth.mjs",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "firebase-admin": "^14.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}

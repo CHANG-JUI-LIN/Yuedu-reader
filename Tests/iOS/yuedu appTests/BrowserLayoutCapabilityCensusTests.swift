@@ -616,7 +616,6 @@ private enum BrowserLayoutCapabilityCensus {
         let collector = CensusCollector()
         var books: [CensusBookSummary] = []
         var failures: [String] = []
-        var ingestionFallbacks: [String] = []
 
         for input in inputs.sorted(by: { $0.id < $1.id }) {
             do {
@@ -627,40 +626,12 @@ private enum BrowserLayoutCapabilityCensus {
                 for chapterIndex in session.chapters.indices {
                     let chapterID = "\(input.id)#\(chapterIndex)"
                     do {
-                        let html: String
-                        let usedRawArchiveFallback: Bool
-                        do {
-                            html = try await adapter.chapterHTML(at: chapterIndex)
-                            usedRawArchiveFallback = false
-                        } catch {
-                            // Official Kusamakura ships Unicode ZIP entry names. PublicationSession
-                            // percent-encodes the spine href, but the Readium resource lookup expects
-                            // the original decoded entry path, so every chapter currently fails before
-                            // CSSFrontend is reached. The census must still inspect that official book;
-                            // keep this test-only fallback restricted to percent-decoded archive entries.
-                            // Delete it when PublicationSession can read the same href directly.
-                            html = try await rawArchiveChapterHTML(
-                                sourceURL: input.url,
-                                encodedHref: session.chapters[chapterIndex].href
-                            )
-                            usedRawArchiveFallback = true
-                            ingestionFallbacks.append(
-                                "\(chapterID): PublicationSession resource lookup failed; read decoded ZIP entry and active CSS"
-                            )
-                        }
-                        let cssTexts: [String]
-                        if usedRawArchiveFallback {
-                            // processedCSS cannot discover chapter-linked stylesheets when the same
-                            // chapter resource is unreadable. Read only rel=stylesheet links from the
-                            // fallback DOM; rel="alternate stylesheet" must not affect this census.
-                            cssTexts = try await rawArchiveStylesheets(
-                                sourceURL: input.url,
-                                encodedChapterHref: session.chapters[chapterIndex].href,
-                                html: html
-                            )
-                        } else {
-                            cssTexts = await adapter.processedCSS(forChapter: chapterIndex)
-                        }
+                        // Unicode ZIP entry names (kusamakura's 表紙.xhtml) resolve
+                        // through PublicationSession directly now that its
+                        // `readiumURLs` tries the percent-decoded href; the raw
+                        // ZIP fallback this loop used to need is gone.
+                        let html = try await adapter.chapterHTML(at: chapterIndex)
+                        let cssTexts = await adapter.processedCSS(forChapter: chapterIndex)
                         let scanner = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: cssTexts)
                         if !scanner.supported { fallback += 1 }
                         for reason in scanner.unsupportedFeatures {
@@ -717,7 +688,7 @@ private enum BrowserLayoutCapabilityCensus {
             books: books.sorted { $0.id < $1.id },
             features: collector.featureSummaries(),
             scannerFallbacks: collector.scannerReasonSummaries(),
-            ingestionFallbacks: ingestionFallbacks.sorted(),
+            ingestionFallbacks: [],
             failures: failures.sorted()
         )
     }

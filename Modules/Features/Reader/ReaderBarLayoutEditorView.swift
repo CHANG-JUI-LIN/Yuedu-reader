@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// 頁首頁尾 editor: which info field sits in which of the six bar slots, how the
-/// two bars are drawn, and one style shared by both.
+/// two bars are drawn, and shared style with individual field colors.
 ///
 /// A pushed settings page rather than the in-place drag canvas it replaces. Two
 /// things fall out of that: it works in scroll mode (the canvas was paged-only,
@@ -18,8 +18,11 @@ struct ReaderBarLayoutEditorView: View {
     @State private var barBuilder = ReaderBarRenderModelBuilder()
 
     @Environment(\.displayScale) private var displayScale
+    @ScaledMetric(relativeTo: .callout) private var previewHeight = 132.0
 
     let theme: ReaderTheme
+    var readerSafeTop: CGFloat = 0
+    var readerSafeBottom: CGFloat = 0
     var svgAssetStore: ReaderOverlaySVGAssetStore?
 
     @State private var saveFailed = false
@@ -30,9 +33,9 @@ struct ReaderBarLayoutEditorView: View {
         List {
             previewSection
             fieldsSection
+            styleSection
             barSection(.header)
             barSection(.footer)
-            styleSection
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -70,7 +73,7 @@ struct ReaderBarLayoutEditorView: View {
                 }
                 .padding(.vertical, DSSpacing.sm)
             }
-            .frame(height: 132)
+            .frame(height: previewHeight)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
             .listRowInsets(EdgeInsets())
             .accessibilityElement(children: .contain)
@@ -136,6 +139,40 @@ struct ReaderBarLayoutEditorView: View {
         if slot != .hidden {
             fieldOptions(kind)
         }
+        fieldColorOptions(kind)
+    }
+
+    private func fieldColorOptions(_ kind: ReaderOverlayComponentKind) -> some View {
+        let title = String(format: localized("%@顏色"), localized(ReaderBarFieldNaming.titleKey(for: kind)))
+        return DisclosureGroup {
+            Picker(localized("顏色"), selection: Binding<ReaderOverlayColorSource?>(
+                get: { layout.fields.first { $0.kind == kind }?.color?.source },
+                set: { source in
+                    update { layout in
+                        var color = layout.fields.first { $0.kind == kind }?.color
+                            ?? ReaderOverlayColorReference(source: .custom)
+                        if let source { color.source = source }
+                        layout.setColor(source == nil ? nil : color, for: kind)
+                    }
+                }
+            )) {
+                Text(localized("沿用共用顏色")).tag(Optional<ReaderOverlayColorSource>.none)
+                Text(localized("跟隨正文顏色")).tag(Optional(ReaderOverlayColorSource.readerText))
+                Text(localized("自訂顏色")).tag(Optional(ReaderOverlayColorSource.custom))
+            }
+            .pickerStyle(.menu)
+            .accessibilityLabel(title)
+
+            if layout.fields.first(where: { $0.kind == kind })?.color?.source == .custom {
+                ColorPicker(localized("亮色模式"), selection: colorBinding(dark: false, field: kind))
+                    .accessibilityLabel("\(title)，\(localized("亮色模式"))")
+                ColorPicker(localized("深色模式"), selection: colorBinding(dark: true, field: kind))
+                    .accessibilityLabel("\(title)，\(localized("深色模式"))")
+            }
+        } label: {
+            Text(title)
+        }
+        .font(DSFont.body)
     }
 
     @ViewBuilder
@@ -244,10 +281,8 @@ struct ReaderBarLayoutEditorView: View {
 
             BarSliderRow(
                 title: localized(which == .header ? "距離頂端" : "距離底部"),
-                value: which == .header
-                    ? $readerConfig.readerHeaderTopPadding
-                    : $readerConfig.footerBottomPadding,
-                range: 0...40
+                value: edgeDistanceBinding(for: which),
+                range: 0...max(CGFloat(ReaderBarEdgeDistances.adjustmentRange.upperBound), edgeDistance(for: which))
             )
 
             BarSliderRow(
@@ -260,6 +295,8 @@ struct ReaderBarLayoutEditorView: View {
         } header: {
             Text(localized(which.titleKey))
         } footer: {
+            Text(localized("距離從畫面邊緣計算，可設為 0，不受安全區限制。未調整前保留目前位置。"))
+                .dsSectionFooter()
             if which == .header {
                 Text(localized("章節首頁的頁眉只是不畫出來，保留的空間不變——否則該頁會比其他頁多容納一行。"))
                     .dsSectionFooter()
@@ -272,6 +309,23 @@ struct ReaderBarLayoutEditorView: View {
 
     private var styleSection: some View {
         Section {
+            Picker(localized("顏色"), selection: Binding(
+                get: { layout.style.color.source },
+                set: { source in update { $0.style.color.source = source } }
+            )) {
+                Text(localized("跟隨正文顏色")).tag(ReaderOverlayColorSource.readerText)
+                Text(localized("自訂顏色")).tag(ReaderOverlayColorSource.custom)
+            }
+            .font(DSFont.body)
+            .pickerStyle(.menu)
+
+            if layout.style.color.source == .custom {
+                ColorPicker(localized("亮色模式"), selection: colorBinding(dark: false))
+                    .font(DSFont.body)
+                ColorPicker(localized("深色模式"), selection: colorBinding(dark: true))
+                    .font(DSFont.body)
+            }
+
             BarSliderRow(
                 title: localized("字級"),
                 value: Binding(
@@ -312,13 +366,74 @@ struct ReaderBarLayoutEditorView: View {
         } header: {
             Text(localized("樣式"))
         } footer: {
-            Text(localized("兩條共用同一種樣式。顏色跟隨正文顏色。"))
+            Text(localized("此處設定共用樣式。各組件可在「欄位」中分別調整顏色，並設定淺色與深色模式。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
 
     // MARK: - State
+
+    private func edgeDistance(for bar: ReaderBar) -> CGFloat {
+        if bar == .header {
+            return ReaderLayoutMetrics.headerBarTopOffset(
+                safeTop: readerSafeTop,
+                headerTopPadding: readerConfig.readerHeaderTopPadding,
+                edgeDistance: layout.edgeDistances.header
+            )
+        }
+        return ReaderLayoutMetrics.footerBarBottomOffset(
+            safeBottom: readerSafeBottom,
+            footerBottomPadding: readerConfig.footerBottomPadding,
+            edgeDistance: layout.edgeDistances.footer
+        )
+    }
+
+    private func edgeDistanceBinding(for bar: ReaderBar) -> Binding<CGFloat> {
+        Binding(
+            get: { edgeDistance(for: bar) },
+            set: { distance in update { $0.edgeDistances[bar] = Double(distance) } }
+        )
+    }
+
+    private func colorBinding(dark: Bool, field: ReaderOverlayComponentKind? = nil) -> Binding<Color> {
+        let appearance: UIUserInterfaceStyle = dark ? .dark : .light
+        let previewTheme: ReaderTheme = dark ? .night : (theme == .night ? .white : theme)
+        return Binding(
+            get: {
+                var style = layout.style
+                if let field {
+                    style.color = layout.fields.first { $0.kind == field }?.color ?? style.color
+                }
+                return Color(uiColor: ReaderBarStyleResolver.resolve(
+                    style,
+                    readerTextColor: previewTheme.uiTextColor,
+                    userInterfaceStyle: appearance
+                ).color)
+            },
+            set: { color in
+                guard let hex = ReaderOverlayPresentationResolver.rgbaHex(
+                    UIColor(color), userInterfaceStyle: appearance
+                ), let value = UInt32(hex.dropFirst(), radix: 16) else { return }
+                update { layout in
+                    var reference = field.flatMap { kind in
+                        layout.fields.first { $0.kind == kind }?.color
+                    } ?? layout.style.color
+                    reference.source = .custom
+                    if dark {
+                        reference.darkHexRGBA = value
+                    } else {
+                        reference.hexRGBA = value
+                    }
+                    if let field {
+                        layout.setColor(reference, for: field)
+                    } else {
+                        layout.style.color = reference
+                    }
+                }
+            }
+        )
+    }
 
     /// `ClosedRange` needs both bounds on one line — a `...` at the head of a
     /// continuation line parses as a prefix operator, not a range.
@@ -471,4 +586,11 @@ enum ReaderBarFieldNaming {
     NavigationStack {
         ReaderBarLayoutEditorView(theme: .sepia)
     }
+}
+
+#Preview("頁首頁尾編輯 · 夜間") {
+    NavigationStack {
+        ReaderBarLayoutEditorView(theme: .night)
+    }
+    .preferredColorScheme(.dark)
 }

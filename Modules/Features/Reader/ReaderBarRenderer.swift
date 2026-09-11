@@ -17,11 +17,11 @@ struct ReaderBarRenderModel: Equatable {
     static let slotCount = 3
 
     enum Field: Equatable {
-        case text(String)
-        case progress(Double)
+        case text(String, color: UIColor? = nil)
+        case progress(Double, color: UIColor? = nil)
         /// Battery, either the system symbol or an imported template, already
         /// rendered to an image and tinted.
-        case image(UIImage, percentage: String?)
+        case image(UIImage, percentage: String?, color: UIColor? = nil)
     }
 
     var bar: ReaderBar
@@ -150,6 +150,7 @@ enum ReaderBarRenderer {
         }
         var content: Content
         var width: CGFloat
+        var color: UIColor? = nil
     }
 
     private struct Group {
@@ -167,15 +168,15 @@ enum ReaderBarRenderer {
                 elements.append(dot)
             }
             switch field {
-            case .text(let value):
-                guard !value.isEmpty, let line = makeLine(value, font: model.font) else { continue }
+            case .text(let value, let color):
+                guard !value.isEmpty, let line = makeLine(value, font: model.font, color: color) else { continue }
                 elements.append(line)
-            case .progress(let value):
-                elements.append(Element(content: .progress(value), width: progressWidth(font: model.font)))
-            case .image(let image, let percentage):
+            case .progress(let value, let color):
+                elements.append(Element(content: .progress(value), width: progressWidth(font: model.font), color: color))
+            case .image(let image, let percentage, let color):
                 let size = imageSize(font: model.font)
                 elements.append(Element(content: .image(image), width: size.width))
-                if let percentage, !percentage.isEmpty, let line = makeLine(percentage, font: model.font) {
+                if let percentage, !percentage.isEmpty, let line = makeLine(percentage, font: model.font, color: color) {
                     elements.append(line)
                 }
             }
@@ -185,15 +186,20 @@ enum ReaderBarRenderer {
         return Group(elements: elements, width: elements.reduce(0) { $0 + $1.width } + spacing)
     }
 
-    private nonisolated static func makeLine(_ text: String, font: UIFont) -> Element? {
+    private nonisolated static func makeLine(_ text: String, font: UIFont, color: UIColor? = nil) -> Element? {
         guard !text.isEmpty else { return nil }
         let attributed = NSAttributedString(
             string: text,
-            attributes: [.font: font, .foregroundColor: UIColor.black]
+            // drawLine supplies the resolved reader color and opacity. A fixed
+            // foreground attribute overrides that context color in CTLineDraw.
+            attributes: [
+                .font: font,
+                NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true
+            ]
         )
         let line = CTLineCreateWithAttributedString(attributed)
         let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-        return Element(content: .line(line), width: ceil(width))
+        return Element(content: .line(line), width: ceil(width), color: color)
     }
 
     /// Leading pinned left, trailing pinned right, centre centred — and when they
@@ -231,13 +237,16 @@ enum ReaderBarRenderer {
     ) {
         var x = originX
         for element in group.elements {
+            let elementColor = element.color.map {
+                $0.withAlphaComponent($0.cgColor.alpha * imageAlpha)
+            } ?? color
             switch element.content {
             case .line(let line):
-                drawLine(line, x: x, midY: midY, color: color, font: font,
+                drawLine(line, x: x, midY: midY, color: elementColor, font: font,
                          canvasHeight: canvasHeight, context: ctx)
             case .progress(let value):
                 drawProgress(value, x: x, midY: midY, width: element.width,
-                             color: color, font: font, context: ctx)
+                             color: elementColor, font: font, context: ctx)
             case .image(let image):
                 // Aspect-fit inside the slot the way `.resizable().scaledToFit()`
                 // did in the SwiftUI bar — the SF battery symbol and an imported

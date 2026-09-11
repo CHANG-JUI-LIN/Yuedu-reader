@@ -190,6 +190,22 @@ struct TTSSettingsView: View {
     private var sourceList: some View {
         List {
             Section {
+                Picker(localized("預合成並行數"), selection: $gs.ttsPreSynthesisConcurrency) {
+                    ForEach(GlobalSettings.ttsPreSynthesisConcurrencyRange, id: \.self) { count in
+                        Text(count, format: .number).tag(count)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("tts_pre_synthesis_concurrency")
+            } header: {
+                Text(localized("語音預合成"))
+            } footer: {
+                Text(localized("同時合成語音的請求數。適用於網路語音，下次開始朗讀時生效。"))
+                    .dsSectionFooter()
+            }
+            .interfaceSectionSurface()
+
+            Section {
                 systemVoiceSourceRow
                 systemVoicePickerRow
                     .frame(minHeight: DSLayout.minimumTapTarget)

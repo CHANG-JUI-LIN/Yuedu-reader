@@ -50,6 +50,27 @@ struct LocalPDFArchiveTests {
         try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
     }
 
+    @Test("cancelled PDF reception does not create a shelf record or durable file")
+    @MainActor
+    func cancelledPDFImportDoesNotPublish() async throws {
+        let url = try Self.makePDF(pageCount: 2)
+        defer { Self.cleanup(url) }
+        let metadata = url.deletingLastPathComponent().appendingPathComponent("books.json")
+        let store = BookStore(metadataFileURL: metadata)
+        let operation = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await store.importLocalPDF(url: url)
+        }
+        do {
+            _ = try await operation.value
+            Issue.record("Expected cancelled PDF import to fail")
+        } catch {
+            #expect(error is CancellationError)
+        }
+        #expect(store.readingBooks.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: metadata.path))
+    }
+
     // MARK: Inspection
 
     @Test("Inspect reports the real page count")
@@ -197,9 +218,8 @@ struct LocalPDFArchiveTests {
         #expect(ref.pdfPageCount == 7)
     }
 
-    /// `pdfPageCount` had to be optional: the synthesized decoder only tolerates a
-    /// missing key for optional properties, and every book saved before PDF support
-    /// lacks it.
+    /// Chapter flags and media fields were added after the original records;
+    /// decoding those records must apply their documented default values.
     @Test("Chapter refs saved before PDF support still decode")
     func decodesLegacyChapterRef() throws {
         let json = """
@@ -209,6 +229,49 @@ struct LocalPDFArchiveTests {
 
         #expect(ref.index == 4)
         #expect(ref.pdfPageCount == nil)
+        #expect(!ref.isVolume)
+        #expect(!ref.isVip)
+        #expect(!ref.isPay)
+        #expect(ref.cachedFilename == nil)
+        #expect(ref.runtimeVariables == nil)
+        #expect(ref.audioStartSeconds == nil)
+        #expect(ref.audioDurationSeconds == nil)
+    }
+
+    @Test("Chapter flags and media metadata survive a complete Codable round-trip")
+    func roundTripsChapterMetadata() throws {
+        let original = OnlineChapterRef(
+            index: 3, title: "Chapter", url: "book.pdf", isVolume: true, isVip: true, isPay: true,
+            cachedFilename: "chapter.json", runtimeVariables: ["token": "fixture"],
+            audioStartSeconds: 4.5, audioDurationSeconds: 12.5, pdfPageCount: 7
+        )
+        let decoded = try JSONDecoder().decode(OnlineChapterRef.self, from: JSONEncoder().encode(original))
+        #expect(decoded.id == original.id)
+        #expect(decoded.index == 3)
+        #expect(decoded.title == "Chapter")
+        #expect(decoded.url == "book.pdf")
+        #expect(decoded.isVolume)
+        #expect(decoded.isVip)
+        #expect(decoded.isPay)
+        #expect(decoded.cachedFilename == "chapter.json")
+        #expect(decoded.runtimeVariables == ["token": "fixture"])
+        #expect(decoded.audioStartSeconds == 4.5)
+        #expect(decoded.audioDurationSeconds == 12.5)
+        #expect(decoded.pdfPageCount == 7)
+    }
+
+    @Test("Missing identity and null optional fields use defaults without accepting malformed flags")
+    func chapterDefaultAndMalformedFields() throws {
+        let json = #"{"index":0,"title":"Legacy","url":"book.pdf","isVolume":null,"isVip":null,"isPay":null}"#
+        let ref = try JSONDecoder().decode(OnlineChapterRef.self, from: Data(json.utf8))
+        #expect(!ref.isVolume && !ref.isVip && !ref.isPay)
+        #expect(ref.pdfPageCount == nil)
+        let encoded = try JSONEncoder().encode(ref)
+        #expect(try JSONDecoder().decode(OnlineChapterRef.self, from: encoded).id == ref.id)
+        let malformed = #"{"index":0,"title":"Broken","url":"book.pdf","isVolume":"invalid"}"#
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(OnlineChapterRef.self, from: Data(malformed.utf8))
+        }
     }
 
     // MARK: Rasterizing

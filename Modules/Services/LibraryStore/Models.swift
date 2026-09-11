@@ -159,6 +159,10 @@ extension ReadingBook {
     func strippedForSync() -> ReadingBook {
         var copy = self
         copy.onlineChapters = nil
+        if let reference = copy.remoteSource {
+            copy.remoteSource?.cachedFilename = nil
+            copy.contentFilename = reference.offlineFilename ?? ""
+        }
         return copy
     }
 }
@@ -175,6 +179,10 @@ struct ReadingBook: Identifiable, Codable {
     var currentPosition: Double  // 0.0 ~ 1.0
     var addedDate: Date
     var lastOpenedDate: Date?
+
+    /// Shelf membership is independent from opening or caching a remote file.
+    var isInBookshelf: Bool = true
+    var remoteSource: RemoteBookReference? = nil
 
     // Online book-source fields
     var isOnline: Bool
@@ -282,6 +290,8 @@ struct ReadingBook: Identifiable, Codable {
         currentPosition = try c.decode(Double.self, forKey: .currentPosition)
         addedDate = try c.decode(Date.self, forKey: .addedDate)
         lastOpenedDate = try? c.decode(Date.self, forKey: .lastOpenedDate)
+        isInBookshelf = try c.decodeIfPresent(Bool.self, forKey: .isInBookshelf) ?? true
+        remoteSource = try c.decodeIfPresent(RemoteBookReference.self, forKey: .remoteSource)
         isOnline = (try? c.decode(Bool.self, forKey: .isOnline)) ?? false
         bookSourceId = try? c.decode(UUID.self, forKey: .bookSourceId)
         bookInfoURL = try? c.decode(String.self, forKey: .bookInfoURL)
@@ -318,6 +328,7 @@ struct ReadingBook: Identifiable, Codable {
         case coverImagePath, customCoverUrl, originalCoverImagePath
         case rendererPreference, compatibilityState
         case offlineDownloadState, downloadedChapterCount, offlineDownloadTask, group, lastOpenedDate
+        case isInBookshelf, remoteSource
         case mangaChapterIndex, mangaPage
         case audioChapterIndex, audioTimeSeconds
     }
@@ -352,6 +363,11 @@ struct ReadingBook: Identifiable, Codable {
 }
 
 extension ReadingBook {
+    var remoteEPUBRenderIdentifier: String? {
+        guard let remoteSource else { return nil }
+        return "remote-" + id.uuidString + "-" + (remoteSource.version ?? "offline")
+    }
+
     var resolvedPipelineKind: BookPipelineKind {
         if contentPipelineKind == .manga || contentPipelineKind == .fixedPage
             || contentPipelineKind == .audio {
@@ -854,15 +870,16 @@ enum ReaderLayoutMetrics {
         headerTopPadding: CGFloat = defaultHeaderTopPadding,
         footerBottomPadding: CGFloat = defaultFooterBottomPadding,
         headerExtent: CGFloat = headerHeight,
-        footerExtent: CGFloat = footerHeight
+        footerExtent: CGFloat = footerHeight,
+        edgeDistances: ReaderBarEdgeDistances = ReaderBarEdgeDistances()
     ) -> (top: CGFloat, bottom: CGFloat) {
         let margin = max(0, verticalMargin)
         let top = showsHeader
-            ? headerBarTopOffset(safeTop: safeTop, headerTopPadding: headerTopPadding)
+            ? headerBarTopOffset(safeTop: safeTop, headerTopPadding: headerTopPadding, edgeDistance: edgeDistances.header)
                 + headerExtent + margin
             : max(minimumVerticalPadding, safeTop + margin)
         let bottom = showsFooter
-            ? footerBarBottomOffset(safeBottom: safeBottom, footerBottomPadding: footerBottomPadding)
+            ? footerBarBottomOffset(safeBottom: safeBottom, footerBottomPadding: footerBottomPadding, edgeDistance: edgeDistances.footer)
                 + footerExtent + margin
             : max(minimumVerticalPadding, safeBottom + margin)
         return (top: top, bottom: bottom)
@@ -873,18 +890,22 @@ enum ReaderLayoutMetrics {
     /// the matching band, so the two cannot drift apart.
     static func headerBarTopOffset(
         safeTop: CGFloat,
-        headerTopPadding: CGFloat = defaultHeaderTopPadding
+        headerTopPadding: CGFloat = defaultHeaderTopPadding,
+        edgeDistance: Double? = nil
     ) -> CGFloat {
-        safeTop + headerTopPadding
+        // Legacy settings keep their exact placement. An edited absolute
+        // distance is independent of safe area, including a deliberate zero.
+        edgeDistance.map { CGFloat($0) } ?? (safeTop + headerTopPadding)
     }
 
     /// Distance from the bottom of the reading surface to the footer bar's own
     /// bottom edge.
     static func footerBarBottomOffset(
         safeBottom: CGFloat,
-        footerBottomPadding: CGFloat = defaultFooterBottomPadding
+        footerBottomPadding: CGFloat = defaultFooterBottomPadding,
+        edgeDistance: Double? = nil
     ) -> CGFloat {
-        safeBottom + footerBottomPadding
+        edgeDistance.map { CGFloat($0) } ?? (safeBottom + footerBottomPadding)
     }
 
     static func bottomInset(

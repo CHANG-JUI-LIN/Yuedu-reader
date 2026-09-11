@@ -5,6 +5,22 @@ extension ReaderView {
 
     // MARK: - Header / Footer Bars
 
+    var readerHeaderBarOffset: CGFloat {
+        ReaderLayoutMetrics.headerBarTopOffset(
+            safeTop: effectiveReaderSafeTop,
+            headerTopPadding: readerConfig.readerHeaderTopPadding,
+            edgeDistance: settings.readerBarLayout.edgeDistances.header
+        )
+    }
+
+    var readerFooterBarOffset: CGFloat {
+        ReaderLayoutMetrics.footerBarBottomOffset(
+            safeBottom: effectiveReaderSafeBottom,
+            footerBottomPadding: readerConfig.footerBottomPadding,
+            edgeDistance: settings.readerBarLayout.edgeDistances.footer
+        )
+    }
+
     /// The band each bar occupies, taken out of the text area in *both* reading
     /// modes.
     ///
@@ -30,7 +46,8 @@ extension ReaderView {
             headerTopPadding: readerConfig.readerHeaderTopPadding,
             footerBottomPadding: readerConfig.footerBottomPadding,
             headerExtent: readerBarExtents.header,
-            footerExtent: readerBarExtents.footer
+            footerExtent: readerBarExtents.footer,
+            edgeDistances: settings.readerBarLayout.edgeDistances
         )
     }
 
@@ -72,16 +89,10 @@ extension ReaderView {
         let total = readerBarContentInsets
 
         let topBand = visibility.showsHeader
-            ? ReaderLayoutMetrics.headerBarTopOffset(
-                safeTop: effectiveReaderSafeTop,
-                headerTopPadding: readerConfig.readerHeaderTopPadding
-              ) + extents.header
+            ? readerHeaderBarOffset + extents.header
             : 0
         let bottomBand = visibility.showsFooter
-            ? ReaderLayoutMetrics.footerBarBottomOffset(
-                safeBottom: effectiveReaderSafeBottom,
-                footerBottomPadding: readerConfig.footerBottomPadding
-              ) + extents.footer
+            ? readerFooterBarOffset + extents.footer
             : 0
 
         return ReaderScrollBarInsets(
@@ -102,24 +113,12 @@ extension ReaderView {
         VStack(spacing: 0) {
             if visibility.showsHeader {
                 ReaderBarView(model: readerBarModel(for: .header, content: content))
-                    .padding(
-                        .top,
-                        ReaderLayoutMetrics.headerBarTopOffset(
-                            safeTop: effectiveReaderSafeTop,
-                            headerTopPadding: readerConfig.readerHeaderTopPadding
-                        )
-                    )
+                    .padding(.top, readerHeaderBarOffset)
             }
             Spacer(minLength: 0)
             if visibility.showsFooter {
                 ReaderBarView(model: readerBarModel(for: .footer, content: content))
-                    .padding(
-                        .bottom,
-                        ReaderLayoutMetrics.footerBarBottomOffset(
-                            safeBottom: effectiveReaderSafeBottom,
-                            footerBottomPadding: readerConfig.footerBottomPadding
-                        )
-                    )
+                    .padding(.bottom, readerFooterBarOffset)
             }
         }
         .ignoresSafeArea()

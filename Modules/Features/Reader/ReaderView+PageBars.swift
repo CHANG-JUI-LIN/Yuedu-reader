@@ -26,14 +26,8 @@ extension ReaderView {
             readerTextColor: readerTheme.uiTextColor,
             headerHorizontalPadding: readerConfig.readerHeaderHorizontalPadding,
             footerHorizontalPadding: readerConfig.readerFooterHorizontalPadding,
-            headerTopOffset: ReaderLayoutMetrics.headerBarTopOffset(
-                safeTop: effectiveReaderSafeTop,
-                headerTopPadding: readerConfig.readerHeaderTopPadding
-            ),
-            footerBottomOffset: ReaderLayoutMetrics.footerBarBottomOffset(
-                safeBottom: effectiveReaderSafeBottom,
-                footerBottomPadding: readerConfig.footerBottomPadding
-            ),
+            headerTopOffset: readerHeaderBarOffset,
+            footerBottomOffset: readerFooterBarOffset,
             bookTitle: book?.title ?? snapshotBook?.title ?? "",
             now: readerOverlayClock.now,
             batteryLevel: readerOverlayClock.batteryLevel,

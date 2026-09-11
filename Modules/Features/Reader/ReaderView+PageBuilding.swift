@@ -144,7 +144,7 @@ extension ReaderView {
 
         epubRenderer.load(
             publicationSession: session,
-            bookIdentifier: session.sourceURL.standardizedFileURL.path,
+            bookIdentifier: book.remoteEPUBRenderIdentifier ?? session.sourceURL.standardizedFileURL.path,
             renderSize: session.layoutMode == .prePaginated ? readerViewportSize : currentReaderRenderSize,
             settings: settings
         )
@@ -158,7 +158,7 @@ extension ReaderView {
     func loadLocalEPUB(_ book: ReadingBook) {
         Task {
             do {
-                let session = try await EPUBBookService.shared.openSession(for: book, using: store)
+                let session = try await EPUBBookService.shared.openSession(for: book, using: store, remoteLibrary: dependencies.remoteLibrary)
                 await MainActor.run {
                     guard self.book?.id == book.id else { return }
                     if session.epubWritingMode == .verticalRL {

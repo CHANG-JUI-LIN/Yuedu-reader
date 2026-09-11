@@ -723,13 +723,37 @@ struct OnlineChapterRef: Identifiable, Codable {
     var runtimeVariables: [String: String]? = nil
     var audioStartSeconds: Double? = nil
     var audioDurationSeconds: Double? = nil
-    /// Local PDF books: how many document pages this chapter covers. Optional so
-    /// books saved before PDF support still decode (the synthesized decoder only
-    /// tolerates missing keys for optional properties).
+    /// Local PDF books: how many document pages this chapter covers. Books saved
+    /// before PDF support leave this unset.
     var pdfPageCount: Int? = nil
 }
 
 extension OnlineChapterRef {
+    private enum CodingKeys: String, CodingKey {
+        case id, index, title, url, isVolume, isVip, isPay, cachedFilename
+        case runtimeVariables, audioStartSeconds, audioDurationSeconds, pdfPageCount
+    }
+
+    /// Stored property defaults do not apply to synthesized Decodable. Older
+    /// chapter records predate the volume/payment flags and media metadata, so
+    /// decode those missing fields using the same defaults as newly created refs.
+    /// Defining this in an extension preserves the existing memberwise initializer.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        index = try values.decode(Int.self, forKey: .index)
+        title = try values.decode(String.self, forKey: .title)
+        url = try values.decode(String.self, forKey: .url)
+        isVolume = try values.decodeIfPresent(Bool.self, forKey: .isVolume) ?? false
+        isVip = try values.decodeIfPresent(Bool.self, forKey: .isVip) ?? false
+        isPay = try values.decodeIfPresent(Bool.self, forKey: .isPay) ?? false
+        cachedFilename = try values.decodeIfPresent(String.self, forKey: .cachedFilename)
+        runtimeVariables = try values.decodeIfPresent([String: String].self, forKey: .runtimeVariables)
+        audioStartSeconds = try values.decodeIfPresent(Double.self, forKey: .audioStartSeconds)
+        audioDurationSeconds = try values.decodeIfPresent(Double.self, forKey: .audioDurationSeconds)
+        pdfPageCount = try values.decodeIfPresent(Int.self, forKey: .pdfPageCount)
+    }
+
     var sanitizedContentURL: String {
         RuleEngine.sanitizeExtractedURL(url)
             .trimmingCharacters(in: .whitespacesAndNewlines)

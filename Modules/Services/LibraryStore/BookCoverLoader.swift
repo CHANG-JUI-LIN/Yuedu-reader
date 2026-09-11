@@ -49,8 +49,19 @@ enum BookCoverLoader {
         return result
     }
 
-    static func cachedImage(for urlString: String) -> UIImage? {
-        cache.object(forKey: urlString as NSString)
+    static func remoteSession(for book: ReadingBook, connections: OPDSCatalogStore = .shared) -> URLSession? {
+        guard let reference = book.remoteSource,
+              let connection = connections.connection(id: reference.connectionID) else { return nil }
+        return connections.httpClient(for: connection).session
+    }
+
+    static func cacheKey(for urlString: String, session: URLSession? = nil) -> String {
+        guard let session else { return urlString }
+        return "\(session.sessionDescription ?? String(describing: ObjectIdentifier(session)))|\(urlString)"
+    }
+
+    static func cachedImage(for urlString: String, session: URLSession? = nil) -> UIImage? {
+        cache.object(forKey: cacheKey(for: urlString, session: session) as NSString)
     }
 
     /// Drops decoded cover bitmaps without touching the persisted cover files.
@@ -61,21 +72,28 @@ enum BookCoverLoader {
     }
 
     /// Fetch a cover image, honoring the in-memory cache and the supplied headers.
-    static func loadImage(urlString: String, headers: [String: String]) async -> UIImage? {
+    static func loadImage(urlString: String, headers: [String: String], session: URLSession? = nil) async -> UIImage? {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, URL(string: trimmed) != nil else { return nil }
-        if let cached = cache.object(forKey: trimmed as NSString) { return cached }
-        return await inflight.value(for: trimmed) {
-            await fetchAndCache(urlString: trimmed, headers: headers)
+        let key = cacheKey(for: trimmed, session: session)
+        if let cached = cache.object(forKey: key as NSString) { return cached }
+        return await inflight.value(for: key) {
+            await fetchAndCache(urlString: trimmed, headers: headers, session: session, cacheKey: key)
         }
     }
 
-    private static func fetchAndCache(urlString: String, headers: [String: String]) async -> UIImage? {
+    private static func fetchAndCache(urlString: String, headers: [String: String], session: URLSession?, cacheKey: String) async -> UIImage? {
         guard let url = URL(string: urlString) else { return nil }
         var request = URLRequest(url: url)
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
 
-        guard let (data, response) = try? await URLSession.shared.data(for: request) else { return nil }
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await (session ?? .shared).data(for: request) }
+        catch {
+            AppLogger.error("Unable to load book cover: \(error)")
+            return nil
+        }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { return nil }
         // Sources with `coverDecodeJs` serve encrypted cover bytes; decode falls
         // back to the raw data so a broken rule degrades, not disappears.
@@ -84,7 +102,7 @@ enum BookCoverLoader {
         ) ?? data
         guard let image = decodedCover(from: effectiveData) else { return nil }
 
-        cache.setObject(image, forKey: urlString as NSString, cost: bitmapCost(of: image))
+        cache.setObject(image, forKey: cacheKey as NSString, cost: bitmapCost(of: image))
         return image
     }
 
@@ -135,9 +153,10 @@ enum BookCoverLoader {
     static func downloadAndSave(
         urlString: String,
         headers: [String: String],
-        filename: String
+        filename: String,
+        session: URLSession? = nil
     ) async -> String? {
-        guard let image = await loadImage(urlString: urlString, headers: headers),
+        guard let image = await loadImage(urlString: urlString, headers: headers, session: session),
               let jpeg = image.jpegData(compressionQuality: 0.85) else { return nil }
         let fileURL = StorageLocations.coverFile(filename)
         do {
