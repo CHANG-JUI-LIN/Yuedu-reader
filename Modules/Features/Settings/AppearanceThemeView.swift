@@ -413,6 +413,22 @@ struct AppearanceThemeView: View {
                 } label: {
                     Label(localized("編輯"), systemImage: "slider.horizontal.3")
                 }
+                // Only for an imported pack that the write-back has since edited;
+                // a theme built here has no author's version to return to.
+                if settings.canResetCustomAppearanceTheme(id: preset.id) {
+                    Menu {
+                        Button(role: .destructive) {
+                            settings.resetCustomAppearanceTheme(id: preset.id)
+                        } label: {
+                            Label(
+                                localized("還原主題包原始設定"),
+                                systemImage: "arrow.uturn.backward"
+                            )
+                        }
+                    } label: {
+                        Label(localized("重置此主題"), systemImage: "arrow.uturn.backward")
+                    }
+                }
                 // The confirmation is a nested menu rather than an alert: a modal
                 // raised from a context-menu action is launched while the menu's
                 // UIKit controller is dismissing, which iOS 17 can drop

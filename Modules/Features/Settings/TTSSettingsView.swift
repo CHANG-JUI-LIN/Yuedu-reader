@@ -851,6 +851,7 @@ struct TTSSourceLoginView: View {
     @State private var fieldValues: [String: String] = [:]
     @State private var saved = false
     @State private var engine: JSCoreEngine?
+    @State private var fieldLabels: [String: String] = [:]
 
     private let fields: [LoginField]
 
@@ -864,11 +865,9 @@ struct TTSSourceLoginView: View {
         self.onOpenWebLogin = onOpenWebLogin
         let loginInfo = LoginManager.shared.getLoginInfo(sourceUrl: source.id) ?? [:]
         _fieldValues = State(initialValue: loginInfo)
-        if let ui = source.loginUi {
-            fields = LoginManager.shared.parseLoginUi(ui)
-        } else {
-            fields = []
-        }
+        let parsed = source.loginUi.map { LoginManager.shared.parseLoginUi($0) } ?? []
+        fields = parsed
+        _fieldLabels = State(initialValue: parsed.literalViewNames)
     }
 
     private func ensureEngine() -> JSCoreEngine {
@@ -972,8 +971,24 @@ struct TTSSourceLoginView: View {
                     Text(localized("無可設定的欄位"))
                         .foregroundColor(.secondary)
                 }
-                ForEach(fields) { field in
-                    fieldView(field)
+                if !fields.isEmpty {
+                    // The same grid the book-source login uses: rows pack by their
+                    // `style` (text/password full width, buttons/selects/toggles half
+                    // by default), inside a themed card so 分組卡片 / 卡片美術圖 apply.
+                    Section {
+                        LoginFormGrid(
+                            fields: fields,
+                            values: $fieldValues,
+                            labels: fieldLabels,
+                            onAction: handleButtonAction
+                        )
+                        .padding(DSSpacing.md)
+                        .interfaceCardSurface(
+                            in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous)
+                        )
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                    }
                 }
             }
             .navigationTitle(source.name)
@@ -993,70 +1008,66 @@ struct TTSSourceLoginView: View {
                     onDismiss()
                 }
             }
+            .onAppear { resolveDynamicLabels() }
         }
     }
 
-    @ViewBuilder
-    private func fieldView(_ field: LoginField) -> some View {
-        let value = Binding<String>(
-            get: { fieldValues[field.name] ?? field.defaultValue ?? "" },
-            set: { fieldValues[field.name] = $0 }
-        )
-        switch field.type {
-        case .text:
-            LabeledContent(field.name) {
-                TextField(field.options.first ?? "", text: value)
-                    .multilineTextAlignment(.trailing)
-                    .autocorrectionDisabled()
-            }
-        case .password:
-            LabeledContent(field.name) {
-                SecureField(field.options.first ?? "", text: value)
-                    .multilineTextAlignment(.trailing)
-            }
-        case .select:
-            Picker(field.name, selection: value) {
-                ForEach(field.options, id: \.self) { option in
-                    Text(option).tag(option)
-                }
-            }
-        case .toggle:
-            if let chars = LoginToggleChars(options: field.options) {
-                Toggle(field.name, isOn: Binding<Bool>(
-                    get: { chars.isOn(stored: fieldValues[field.name], default: field.defaultValue) },
-                    set: {
-                        fieldValues[field.name] = chars.value(isOn: $0)
-                        // Runs the row's `action` when it has one, like a button row.
-                        handleButtonAction(field)
-                    }
-                ))
+    /// Evaluate the source's dynamic `viewName` labels in the engine that already holds
+    /// its loginUrl JS (the same context button actions run in). Fields show their
+    /// `name` until this resolves — Legado's async `evalUiJs(viewName)` semantics.
+    private func resolveDynamicLabels() {
+        guard fields.hasDynamicViewNames else { return }
+        let e = ensureEngine()
+        var labels: [String: String] = [:]
+        for field in fields where field.hasDynamicViewName {
+            guard let expression = field.viewName, !expression.isEmpty else { continue }
+            let value = e.evaluate(
+                expression,
+                result: fieldValues,
+                bindings: ["baseUrl": source.urlTemplate]
+            )
+            if let value, !value.isEmpty, value != "undefined", value != "null" {
+                labels[field.name] = value
             } else {
-                // `chars` that isn't a two-state pair can't be a switch — show the
-                // choices rather than guessing which one means on.
-                Picker(field.name, selection: value) {
-                    ForEach(field.options, id: \.self) { option in
-                        Text(option).tag(option)
-                    }
-                }
+                labels[field.name] = field.name
             }
-        case .button:
-            Section {
-                Button(field.name) {
-                    handleButtonAction(field)
-                }
-            }
-            .interfaceSectionSurface()
         }
+        fieldLabels.merge(labels) { _, new in new }
     }
 
     private func saveLoginInfo() {
-        LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: fieldValues)
+        LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: resolvedFormValues)
         saved = true
+    }
+
+    /// What the form effectively holds: the user's edit, else the value the grid
+    /// displays (the source-declared default / first option). Toggles stay out of it —
+    /// their default is display-only.
+    private var resolvedFormValues: [String: String] {
+        var result = fieldValues
+        for field in fields {
+            guard result[field.name]?.isEmpty != false else { continue }
+            switch field.type {
+            case .text, .password:
+                if let defaultValue = field.defaultValue, !defaultValue.isEmpty {
+                    result[field.name] = defaultValue
+                }
+            case .select:
+                if let defaultValue = field.defaultValue, !defaultValue.isEmpty {
+                    result[field.name] = defaultValue
+                } else if let first = field.options.first, !first.isEmpty {
+                    result[field.name] = first
+                }
+            case .toggle, .button:
+                break
+            }
+        }
+        return result
     }
 
     private func handleButtonAction(_ field: LoginField) {
         guard let action = field.action else { return }
-        LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: fieldValues)
+        LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: resolvedFormValues)
         let e = ensureEngine()
         // Execute button action in the JS context that has loginUrl functions loaded
         if action.hasPrefix("@js:") || action.hasPrefix("<js>") {
@@ -1076,11 +1087,10 @@ struct TTSSourceLoginView: View {
         if let updated = LoginManager.shared.getLoginInfo(sourceUrl: source.id) {
             fieldValues = updated
         }
+        // The action may have changed what its own viewName reports (`upUiData` in
+        // Legado); refresh the dynamic labels on the engine that ran it.
+        resolveDynamicLabels()
     }
-}
-
-extension LoginField: Identifiable {
-    var id: String { name }
 }
 
 #Preview {

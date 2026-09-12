@@ -27,10 +27,23 @@ struct TTSPronunciationHint: Equatable {
 struct TTSNarrationUnit {
     let text: String
     let pronunciationHints: [TTSPronunciationHint]
+    /// Maps offsets in `text` back to the chapter string the reader lays out, so the
+    /// playback highlight can be positioned rather than searched for.
+    ///
+    /// `nil` when the narration did not come from the laid-out chapter — the joined
+    /// page text and the raw chapter content are fallbacks for paths the CoreText
+    /// reader is not driving, and an offset derived from them would point somewhere
+    /// arbitrary. Highlighting falls back to searching for the spoken text there.
+    let sourceOffsets: TTSNarrationOffsetMap?
 
-    init(text: String, pronunciationHints: [TTSPronunciationHint] = []) {
+    init(
+        text: String,
+        pronunciationHints: [TTSPronunciationHint] = [],
+        sourceOffsets: TTSNarrationOffsetMap? = nil
+    ) {
         self.text = text
         self.pronunciationHints = pronunciationHints
+        self.sourceOffsets = sourceOffsets
     }
 }
 
@@ -39,7 +52,81 @@ struct TTSChunkRange: Equatable {
     let sourceRange: NSRange
 }
 
+/// One unit of speech, with everything the engines need about it in one value.
+///
+/// Both engines used to hold the text in `chunks: [String]` and everything else
+/// in a second array indexed in parallel (`chunkPronunciationHints`,
+/// `speechChunks`). Nothing enforced that the two stayed the same length, and a
+/// per-speaker voice would have added a third. One array of segments removes the
+/// whole class of index-desync bug instead of extending it.
+struct TTSSpeakableSegment: Equatable {
+    let text: String
+    /// Where this segment came from in the narration unit, in UTF-16. Carried all
+    /// the way to playback so the reader can highlight this exact span rather than
+    /// searching for `text` — a short or repeated line (`「嗯。」`) matches the wrong
+    /// occurrence when searched.
+    let sourceRange: NSRange
+    /// Who speaks it. `nil` for narration, and for quoted speech whose attribution
+    /// the detector would not commit to.
+    let speaker: String?
+    /// Hints already rebased into this segment's own coordinates, so callers never
+    /// re-project against the narration unit.
+    let pronunciationHints: [TTSPronunciationHint]
+
+    init(
+        text: String,
+        sourceRange: NSRange,
+        speaker: String? = nil,
+        pronunciationHints: [TTSPronunciationHint] = []
+    ) {
+        self.text = text
+        self.sourceRange = sourceRange
+        self.speaker = speaker
+        self.pronunciationHints = pronunciationHints
+    }
+}
+
 enum TTSPronunciationProjector {
+    /// The single place a narration unit becomes the segments an engine plays.
+    ///
+    /// Chunking, hint projection and (later) speaker attribution all land here so
+    /// that the two engines share one definition of "a segment" instead of each
+    /// assembling its own parallel arrays.
+    /// - Parameter multiRole: when set, quoted speech is attributed and chunks are
+    ///   cut at every quote boundary so one chunk carries one voice. Off by default:
+    ///   single-voice playback must keep the coarser paragraph chunks, which are
+    ///   fewer, cheaper on the network engine, and gap-free on the system one.
+    /// - Parameter aliases: alias → canonical character name, so the same person
+    ///   under several names gets one voice.
+    static func segments(
+        _ text: String,
+        targetLength: Int,
+        hints: [TTSPronunciationHint],
+        multiRole: Bool = false,
+        aliases: [String: String] = [:]
+    ) -> [TTSSpeakableSegment] {
+        let attributions = multiRole
+            ? TTSSpeakerAnnotator.attributions(in: text, aliases: aliases)
+            : []
+        var chunkRanges = chunks(text, targetLength: targetLength, hints: hints)
+        if !attributions.isEmpty {
+            chunkRanges = TTSSpeakerAnnotator.splitting(
+                chunkRanges,
+                at: attributions,
+                protecting: hints.filter { $0.reading != nil }.map(\.range),
+                in: text
+            )
+        }
+        return chunkRanges.map { chunk in
+            TTSSpeakableSegment(
+                text: chunk.text,
+                sourceRange: chunk.sourceRange,
+                speaker: TTSSpeakerAnnotator.speaker(for: chunk.sourceRange, in: attributions),
+                pronunciationHints: project(hints, into: chunk.sourceRange)
+            )
+        }
+    }
+
     /// Keep an orthographic ruby base in one chunk, even when the ordinary
     /// length/punctuation boundary lands inside it.
     static func chunks(_ text: String, targetLength: Int, hints: [TTSPronunciationHint]) -> [TTSChunkRange] {

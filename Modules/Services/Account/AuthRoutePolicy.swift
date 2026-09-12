@@ -1,3 +1,4 @@
+import FirebaseAuth
 import Foundation
 
 /// Where account traffic goes. Persisted in UserDefaults and exposed in
@@ -77,17 +78,45 @@ enum AuthRoutePolicy {
 }
 
 enum AuthRouteFallbackPolicy {
-    /// Only idempotent sign-in may silently retry on the other route after a
-    /// connectivity failure. Sign-up, linking, deletion and purchase binding
-    /// have side effects; switching routes after an ambiguous failure could
-    /// double-create an account or a binding, so they never auto-retry.
-    static func allowsAutomaticRouteSwitch(operation: AccountOperation) -> Bool {
+    /// Operations whose initial route may resolve to the Gateway in a Release
+    /// build. Email is the verified path. Apple and Google stay on the direct
+    /// path because their interactive authorization + Gateway exchange have not
+    /// been validated end to end; the release must keep the behavior already
+    /// proven in production for them.
+    static func isGatewayEligible(operation: AccountOperation) -> Bool {
         switch operation {
-        case .signInWithEmail, .signInWithApple, .signInWithGoogle:
+        case .signInWithEmail, .signUpWithEmail:
             return true
-        case .signUpWithEmail, .link, .unlink, .deleteAccount, .bindPurchase, .sendPasswordReset:
+        case .signInWithApple, .signInWithGoogle, .link, .unlink, .deleteAccount, .bindPurchase,
+             .sendPasswordReset:
             return false
         }
+    }
+
+    /// Only an idempotent email sign-in may silently retry on the other route
+    /// after a connectivity failure. Sign-up, linking, deletion and purchase
+    /// binding have side effects; switching routes after an ambiguous failure
+    /// could double-create an account or a binding, so they never auto-retry.
+    /// Apple/Google are excluded because only the direct path is verified.
+    static func allowsAutomaticRouteSwitch(operation: AccountOperation) -> Bool {
+        operation == .signInWithEmail
+    }
+}
+
+/// Classifies an error for route decisions. Only transport-level failures may
+/// trigger a switch; credential, permission and conflict answers from a
+/// reachable backend never do — a route switch would just re-submit them.
+enum AuthRouteErrorClassifier {
+    static func isRouteFailure(_ error: Error) -> Bool {
+        if let gatewayError = error as? GatewayAPIError {
+            return gatewayError.isConnectivityFailure
+        }
+        let nsError = error as NSError
+        if nsError.domain == AuthErrorDomain {
+            return nsError.code == AuthErrorCode.networkError.rawValue
+                || nsError.code == AuthErrorCode.webNetworkRequestFailed.rawValue
+        }
+        return nsError.domain == NSURLErrorDomain
     }
 }
 

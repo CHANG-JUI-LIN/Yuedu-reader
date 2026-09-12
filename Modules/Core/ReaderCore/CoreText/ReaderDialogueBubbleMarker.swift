@@ -16,11 +16,6 @@ import UIKit
 enum ReaderDialogueBubbleMarker {
     static let attributeKey = NSAttributedString.Key("YDDialogueBubble")
 
-    /// Characters allowed to sit between two quoted spans and still leave them
-    /// one bubble (`「甲」，「乙」`).
-    private static let connectors = CharacterSet(charactersIn: "，。！？、；：…—－-·　 \t\u{3000}")
-        .union(.whitespacesAndNewlines)
-
     static func apply(
         style: ReaderDialogueBubbleStyle,
         columnWidth: CGFloat,
@@ -102,7 +97,7 @@ enum ReaderDialogueBubbleMarker {
             guard paragraphRange.length > 0 else { return }
             guard !carriesBlockContent(attr, in: paragraphRange) else { return }
 
-            let segments = segments(
+            let segments = ReaderDialogueSegmentation.segments(
                 of: paragraphRange,
                 dialogueRanges: dialogueRanges,
                 in: ns,
@@ -116,23 +111,8 @@ enum ReaderDialogueBubbleMarker {
                     planned.append(PlannedSegment(range: segment.range, side: nil))
                     continue
                 }
-                let sharedBeat = isSharedBeat(before: offset, in: segments, ns: ns)
                 let speaker = style.showsSpeakerName || style.sidesFollowSpeaker
-                    ? ReaderDialogueSpeakerDetector.speaker(
-                        before: narration(
-                            before: offset,
-                            in: segments,
-                            ns: ns,
-                            includingSharedBeat: sharedBeat
-                        ),
-                        after: narration(after: offset, in: segments, ns: ns),
-                        beforeIsSharedBeat: sharedBeat,
-                        afterIsSharedBeat: isSharedBeat(
-                            before: offset + 2,
-                            in: segments,
-                            ns: ns
-                        )
-                    )
+                    ? ReaderDialogueSegmentation.speaker(forSegmentAt: offset, in: segments, ns: ns)
                     : nil
 
                 let resolvedSide: ReaderDialogueBubbleSide
@@ -162,139 +142,6 @@ enum ReaderDialogueBubbleMarker {
             result.append(PlannedParagraph(segments: planned))
         }
         return result
-    }
-
-    private struct Segment {
-        let range: NSRange
-        let isDialogue: Bool
-    }
-
-    /// Splits one paragraph into alternating narration / speech runs.
-    ///
-    /// Narration that is only whitespace is dropped rather than becoming an
-    /// empty paragraph, and two quotes separated by nothing but punctuation
-    /// merge into a single bubble when 合併同段相鄰對話 is on.
-    private static func segments(
-        of paragraphRange: NSRange,
-        dialogueRanges: [NSRange],
-        in ns: NSString,
-        mergesAdjacent: Bool
-    ) -> [Segment] {
-        let spans = dialogueRanges
-            .filter {
-                $0.location >= paragraphRange.location
-                    && NSMaxRange($0) <= NSMaxRange(paragraphRange)
-            }
-            .sorted { $0.location < $1.location }
-        guard !spans.isEmpty else { return [] }
-
-        var merged: [NSRange] = []
-        for span in spans {
-            if mergesAdjacent, let last = merged.last {
-                let gap = NSRange(
-                    location: NSMaxRange(last),
-                    length: span.location - NSMaxRange(last)
-                )
-                if gap.length >= 0, isConnective(ns.substring(with: gap)) {
-                    merged[merged.count - 1] = NSUnionRange(last, span)
-                    continue
-                }
-            }
-            merged.append(span)
-        }
-
-        var result: [Segment] = []
-        var cursor = paragraphRange.location
-        for span in merged {
-            if span.location > cursor {
-                let narration = NSRange(
-                    location: cursor,
-                    length: span.location - cursor
-                )
-                if !isBlank(narration, in: ns) {
-                    result.append(Segment(range: narration, isDialogue: false))
-                }
-            }
-            result.append(Segment(range: span, isDialogue: true))
-            cursor = NSMaxRange(span)
-        }
-        if cursor < NSMaxRange(paragraphRange) {
-            let tail = NSRange(
-                location: cursor,
-                length: NSMaxRange(paragraphRange) - cursor
-            )
-            if !isBlank(tail, in: ns) {
-                result.append(Segment(range: tail, isDialogue: false))
-            }
-        }
-        return result
-    }
-
-    /// The narration run immediately before / after a dialogue segment, which is
-    /// where Chinese fiction puts the attribution.
-    /// True when the narration before this segment sits between two quotes of
-    /// the same paragraph *and* does not end a sentence — one speech interrupted
-    /// by its own attribution (`「甲，」齊源老道面露無奈，「乙。」`). Both halves
-    /// belong to that speaker.
-    ///
-    /// The trailing punctuation is what separates that from two people taking
-    /// turns (`「甲。」張三道。「乙。」李四道。`), where the beat closes with a full
-    /// stop and belongs only to the quote before it.
-    private static func isSharedBeat(
-        before offset: Int,
-        in segments: [Segment],
-        ns: NSString
-    ) -> Bool {
-        // Called for the segment *after* the beat as well, so the index can run
-        // past the end — both bounds have to be checked, not just the lower one.
-        guard offset >= 2, offset - 1 < segments.count,
-              !segments[offset - 1].isDialogue,
-              segments[offset - 2].isDialogue else {
-            return false
-        }
-        let beat = ns.substring(with: segments[offset - 1].range)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let last = beat.last else { return false }
-        return continuations.contains(last)
-    }
-
-    /// Punctuation that leaves a sentence open.
-    private static let continuations: Set<Character> = ["，", ",", "、", "；", ";", "：", ":"]
-
-    private static func narration(
-        before offset: Int,
-        in segments: [Segment],
-        ns: NSString,
-        includingSharedBeat: Bool
-    ) -> String {
-        guard offset > 0, !segments[offset - 1].isDialogue else { return "" }
-        // A beat between two quotes attributes both of them, but only as a beat:
-        // read as a plain lead-in it would hand the previous speaker's *verb* to
-        // this line (`「甲。」張三道。「乙。」李四道。` must not make 張三 say 乙).
-        if offset >= 2, segments[offset - 2].isDialogue, !includingSharedBeat {
-            return ""
-        }
-        return ns.substring(with: segments[offset - 1].range)
-    }
-
-    private static func narration(
-        after offset: Int,
-        in segments: [Segment],
-        ns: NSString
-    ) -> String {
-        let next = offset + 1
-        guard next < segments.count, !segments[next].isDialogue else { return "" }
-        return ns.substring(with: segments[next].range)
-    }
-
-    private static func isBlank(_ range: NSRange, in ns: NSString) -> Bool {
-        ns.substring(with: range)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty
-    }
-
-    private static func isConnective(_ text: String) -> Bool {
-        text.unicodeScalars.allSatisfy(connectors.contains)
     }
 
     /// Paragraphs that already carry a drawn block — an image attachment, an HR,
@@ -578,7 +425,7 @@ enum ReaderDialogueBubbleMarker {
         let ns = attr.string as NSString
         for index in range.location..<NSMaxRange(range) {
             let scalar = Unicode.Scalar(ns.character(at: index))
-            guard let scalar, connectors.contains(scalar), scalar != "\n" else { return }
+            guard let scalar, ReaderDialogueSegmentation.connectors.contains(scalar), scalar != "\n" else { return }
             collapse(NSRange(location: index, length: 1), in: attr)
         }
     }

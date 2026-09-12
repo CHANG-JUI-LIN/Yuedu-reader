@@ -119,6 +119,12 @@ struct AppearanceCardBackground: Codable, Hashable, Sendable {
 
     var isEmpty: Bool { !isEnabled || (light.isEmpty && dark.isEmpty) }
 
+    /// Every stored file this artwork points at. Feeds the reference check that
+    /// decides whether deleting a theme may reclaim the picture.
+    var imageFileNames: [String] {
+        [light.imageFileName, dark.imageFileName].compactMap { $0 }
+    }
+
     private enum CodingKeys: String, CodingKey {
         case isEnabled, light, dark
     }
@@ -148,6 +154,11 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
     var tabIcons: [String: String]?
     var tabIconSize: Double?
     var hidesTabLabels: Bool?
+    /// `RootTabItem` raw values the bottom bar shows. Stored order is not meaningful —
+    /// `GlobalSettings.sanitizedRootTabVisibleIDs` re-sorts to the canonical order and
+    /// enforces the two floors (設定 always present, at least one content tab), so a
+    /// theme cannot leave the bar in a state the user has no way out of.
+    var visibleTabIDs: [String]?
 
     var launchImageEnabled: Bool?
     var launchImageLightFileName: String?
@@ -171,6 +182,33 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
 
     var cardBackground: AppearanceCardBackground?
 
+    /// Per-scope page backgrounds, keyed by `AppearancePageBackgroundScope` raw value.
+    ///
+    /// These used to live in their own field on `AppearanceCustomTheme`, outside the
+    /// baseline and the write-back — so leaving a theme did not hand the user's own
+    /// backgrounds back, and editing one under a theme was lost on the next switch.
+    /// The image *file names* are shared with the live settings rather than copied:
+    /// recording an edit has to be a plain value write, not a file duplication on
+    /// every opacity tick. `GlobalSettings` reclaims a file once nothing names it.
+    var pageBackgrounds: [String: AppearancePageBackgroundConfig]?
+
+    /// Whether Form/List sections wear the same glass as floating elements. Sits
+    /// with the other three 界面效果 values because it is the fourth control on
+    /// that screen and rides the same material; leaving it out meant a pack could
+    /// switch the glass on everywhere *except* the content cards.
+    var glassCards: Bool?
+
+    /// The reading chrome's colour slots, keyed `"<interface>.<slot>"` — the same
+    /// `ReaderChromeInterface`/`ReaderChromeSlot` pair `GlobalSettings` stores, so a
+    /// theme carries 經典 and 現代 separately rather than one merged palette.
+    var readerChromeColors: [String: UInt32]?
+    /// `ReaderChromeItem` ids the theme hides.
+    var readerChromeHiddenIDs: [String]?
+    /// Keyed `itemID` to a stored icon file name — same shape as `tabIcons`, and
+    /// for the same reason: the asset's `originalFileName`/`addedAt` describe the
+    /// user's import, not the theme, so they are rebuilt on apply.
+    var readerChromeIcons: [String: String]?
+
     init() {}
 
     /// True when the theme speaks for nothing — the common case for the built-in
@@ -179,6 +217,7 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
     var isEmpty: Bool {
         tabIcons?.isEmpty != false
             && tabIconSize == nil && hidesTabLabels == nil
+            && visibleTabIDs?.isEmpty != false
             && launchImageEnabled == nil
             && launchImageLightFileName == nil && launchImageDarkFileName == nil
             && defaultCoverLightFileNames?.isEmpty != false
@@ -189,6 +228,11 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
             && bookshelfGridColumnCount == nil && bookshelfCoverCornerRadius == nil
             && readerInterface == nil
             && (cardBackground?.isEmpty ?? true)
+            && pageBackgrounds?.isEmpty != false
+            && glassCards == nil
+            && readerChromeColors?.isEmpty != false
+            && readerChromeHiddenIDs?.isEmpty != false
+            && readerChromeIcons?.isEmpty != false
     }
 }
 

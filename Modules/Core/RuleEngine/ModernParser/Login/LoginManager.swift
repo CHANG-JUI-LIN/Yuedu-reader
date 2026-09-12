@@ -40,13 +40,20 @@ enum LoginState: Equatable {
 // MARK: - Login Field (Legado RowUi)
 
 /// A single field in a login form, parsed from the source's `loginUi` JSON.
-/// Mirrors Legado's `RowUi` data class.
-struct LoginField {
+/// Mirrors Legado's `RowUi` data class. The one model behind both the book-source
+/// and TTS login sheets.
+struct LoginField: Identifiable, Equatable {
     let name: String
     let type: LoginFieldType
     let action: String?
     let options: [String]
     let defaultValue: String?
+    /// Grid/layout hints from the row's `style` object, `nil` when absent.
+    let style: LoginFieldStyle?
+    /// Legado's `viewName`: a quoted literal label, or a JS expression to evaluate.
+    let viewName: String?
+
+    var id: String { name }
 
     enum LoginFieldType: String {
         case text     = "text"
@@ -54,6 +61,39 @@ struct LoginField {
         case select   = "select"
         case button   = "button"
         case toggle   = "toggle"
+    }
+
+    /// The label Legado authors literally: a short `viewName` wrapped in single quotes
+    /// (length 3...19, matching the Android app's check) is shown as-is.
+    var literalViewName: String? {
+        guard let viewName else { return nil }
+        let length = viewName.utf16.count
+        guard length >= 3, length <= 19,
+              viewName.hasPrefix("'"), viewName.hasSuffix("'")
+        else { return nil }
+        return String(viewName.dropFirst().dropLast())
+    }
+
+    /// A `viewName` that is neither absent nor a quoted literal has to be evaluated as
+    /// JS in the source's login context before it can be displayed.
+    var hasDynamicViewName: Bool {
+        viewName != nil && literalViewName == nil
+    }
+}
+
+extension Array where Element == LoginField {
+    /// Labels available without running JS, keyed by field name.
+    var literalViewNames: [String: String] {
+        Dictionary(
+            compactMap { field in
+                field.literalViewName.map { (field.name, $0) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    var hasDynamicViewNames: Bool {
+        contains { $0.hasDynamicViewName }
     }
 }
 
@@ -409,7 +449,14 @@ final class LoginManager {
     ///
     /// Legado format. Example: `[{"name":"用户名(username)","type":"text"},{"name":"密码(password)","type":"password"}]`
     func parseLoginUi(_ loginUiJson: String) -> [LoginField] {
-        guard let array = LoginManager.lenientJSONArray(loginUiJson) else { return [] }
+        parseLoginUiResult(loginUiJson) ?? []
+    }
+
+    /// The result-preserving variant: `nil` means the JSON itself was unusable, while
+    /// a valid `[]` is an intentionally empty menu. Callers that must distinguish a
+    /// parse failure from an empty form (the login sheets, and the tests) use this.
+    func parseLoginUiResult(_ loginUiJson: String) -> [LoginField]? {
+        guard let array = LoginManager.lenientJSONArray(loginUiJson) else { return nil }
 
         return array.compactMap { dict in
             guard let name = dict["name"] as? String, !name.isEmpty else { return nil }
@@ -421,7 +468,9 @@ final class LoginManager {
                 type: type,
                 action: action,
                 options: Self.stringArray(dict["chars"]),
-                defaultValue: Self.stringValue(dict["default"])
+                defaultValue: Self.stringValue(dict["default"]),
+                style: LoginFieldStyle.parse(dict["style"]),
+                viewName: dict["viewName"] as? String
             )
         }
     }

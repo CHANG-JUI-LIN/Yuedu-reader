@@ -5,7 +5,7 @@ import Testing
 // MARK: - BookSourceLoginTests
 // 光遇聚合書源登入相關測試：
 //   1. 書源 JSON 解碼（loginUrl、loginUi 等欄位）
-//   2. LoginUIField.parse() 正確解析 text/password/button
+//   2. LoginManager.parseLoginUi 正確解析 text/password/button
 //   3. LoginManager.extractLoginJs() 從 JS loginUrl 提取
 //   4. 按鈕動作對應（login(true) 觸發實際 API 登入）
 
@@ -78,9 +78,9 @@ struct BookSourceLoginTests {
         #expect(extracted == nil)
     }
 
-    // MARK: - LoginUIField.parse() 按鈕解析
+    // MARK: - LoginManager.parseLoginUi 按鈕解析
 
-    @Test("LoginUIField.parse() 正確解析 text / password / button 欄位")
+    @Test("LoginManager.parseLoginUi 正確解析 text / password / button 欄位")
     func parseLoginUiFields() {
         let json = """
         [
@@ -90,7 +90,7 @@ struct BookSourceLoginTests {
             {"name":"注册账号","type":"button","action":"register()"}
         ]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
 
         #expect(fields.count == 4)
 
@@ -117,7 +117,7 @@ struct BookSourceLoginTests {
 
     @Test("空白登入欄位不會被當成登入成功")
     func blankLoginFieldIsRequired() {
-        let fields = LoginUIField.parse(from: """
+        let fields = LoginManager.shared.parseLoginUi("""
         [{"name":"Token","type":"password"}]
         """)
 
@@ -176,7 +176,7 @@ struct BookSourceLoginTests {
         #expect(value == "discover-ok")
     }
 
-    @Test("LoginUIField.parse() 正確解析 select 欄位與選項")
+    @Test("LoginManager.parseLoginUi 正確解析 select 欄位與選項")
     func parseSelectLoginUiField() throws {
         let json = """
         [
@@ -184,7 +184,7 @@ struct BookSourceLoginTests {
             {"name":"气泡选择","type":"select","chars":["默认","圆角"],"default":"圆角"}
         ]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
 
         #expect(fields.count == 2)
         #expect(fields[0].type == .select)
@@ -201,7 +201,7 @@ struct BookSourceLoginTests {
         #expect(size.defaultValue == "中")
     }
 
-    @Test("LoginUIField.parse() 正確解析 toggle 欄位（同人小说网 评论开关）")
+    @Test("LoginManager.parseLoginUi 正確解析 toggle 欄位（同人小说网 评论开关）")
     func parseToggleLoginUiField() throws {
         // 同人小说网最终版.json 的評論開關。過去 toggle 不在型別枚舉裡，
         // `FieldType(rawValue:) ?? .text` 讓整排開關退化成文字輸入框。
@@ -213,7 +213,7 @@ struct BookSourceLoginTests {
              "chars":["🔳","✅"],"default":"🔳"}
         ]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
 
         #expect(fields.count == 2)
         #expect(fields[0].type == .toggle)
@@ -248,9 +248,9 @@ struct BookSourceLoginTests {
         #expect(LoginToggleChars(options: []) == nil)
     }
 
-    @Test("LoginUIField.parse() 空 JSON 回傳空陣列")
+    @Test("LoginManager.parseLoginUi 空 JSON 回傳空陣列")
     func parseEmptyLoginUi() {
-        let fields = LoginUIField.parse(from: "")
+        let fields = LoginManager.shared.parseLoginUi("")
         #expect(fields.isEmpty)
     }
 
@@ -275,7 +275,7 @@ struct BookSourceLoginTests {
         defer { LoginManager.shared.clearLogin(sourceUrl: sourceURL) }
 
         let evaluation = BookSourceFormLoginView.evaluateJsLoginUiResult(source: source)
-        let fields = try #require(LoginUIField.parseResult(from: evaluation.json))
+        let fields = try #require(LoginManager.shared.parseLoginUiResult(evaluation.json))
 
         #expect(evaluation.error == nil)
         #expect(fields.map(\.name) == ["访问令牌", "🔑登录书源"])
@@ -297,13 +297,67 @@ struct BookSourceLoginTests {
         """
 
         let output = BookSourceFormLoginView.evaluateJsLoginUi(source: source)
-        let fields = try #require(LoginUIField.parseResult(from: output))
+        let fields = try #require(LoginManager.shared.parseLoginUiResult(output))
 
         #expect(fields.count == 1)
         #expect(fields[0].name == "from-login-url")
     }
 
-    @Test("LoginUIField.parse() 容忍單引號 JS 物件字面量（大灰狼聚合源）")
+    @Test("動態 loginUi 的 viewName 在 loginUrl 上下文求值，失敗回退 name")
+    func dynamicViewNameResolvesInLoginUrlContext() throws {
+        var source = BookSource(
+            bookSourceUrl: "login-ui-viewname-\(UUID().uuidString)",
+            bookSourceName: "Login UI viewName"
+        )
+        source.loginUrl = """
+        function dynamicLabel() {
+            return "動態標籤";
+        }
+        """
+        source.loginUi = """
+        @js:
+        var rows = [
+            {name: 'literal', type: 'button', viewName: "'固定標籤'"},
+            {name: 'dynamic', type: 'button', viewName: 'dynamicLabel()'},
+            {name: 'broken', type: 'button', viewName: 'missingFunction()'}
+        ];
+        JSON.stringify(rows);
+        """
+
+        let evaluation = BookSourceFormLoginView.evaluateJsLoginUiResult(source: source)
+        #expect(evaluation.error == nil)
+        #expect(evaluation.labels["literal"] == "固定標籤")
+        #expect(evaluation.labels["dynamic"] == "動態標籤")
+        // A JS expression that cannot be evaluated falls back to the field name
+        // instead of rendering Legado's literal "err".
+        #expect(evaluation.labels["broken"] == "broken")
+    }
+
+    @Test("純 JSON loginUi 的動態 viewName 走獨立的 loginUrl 引擎")
+    func staticLoginUiDynamicViewName() throws {
+        var source = BookSource(
+            bookSourceUrl: "login-ui-static-viewname-\(UUID().uuidString)",
+            bookSourceName: "Static viewName"
+        )
+        source.loginUrl = "function dynamicLabel() { return '靜態源動態標籤'; }"
+        source.loginUi = """
+        [
+            {"name": "a", "type": "button", "viewName": "'字面值'"},
+            {"name": "b", "type": "button", "viewName": "dynamicLabel()"}
+        ]
+        """
+        let fields = LoginManager.shared.parseLoginUi(source.loginUi)
+
+        let labels = BookSourceFormLoginView.resolveDynamicLoginLabels(
+            fields: fields, source: source, credentials: [:]
+        )
+
+        #expect(labels["b"] == "靜態源動態標籤")
+        // Literal labels are resolved without JS and are not part of this pass.
+        #expect(labels["a"] == nil)
+    }
+
+    @Test("LoginManager.parseLoginUi 容忍單引號 JS 物件字面量（大灰狼聚合源）")
     func parseSingleQuotedLoginUi() {
         // 大灰狼/光遇等聚合源的 loginUi 後半段以 JS 物件字面量撰寫（單引號 key/value），
         // 嚴格 JSONSerialization 會整個解析失敗導致表單空白。寬鬆解析須能還原全部欄位。
@@ -324,7 +378,7 @@ struct BookSourceLoginTests {
             'type': 'button',
         }]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
         #expect(fields.count == 4)
         #expect(fields[0].name == "邮箱")
         #expect(fields[1].type == .password)
@@ -333,7 +387,7 @@ struct BookSourceLoginTests {
         #expect(fields.contains { $0.type == .button })
     }
 
-    @Test("LoginUIField.parse() 容忍尾逗號")
+    @Test("LoginManager.parseLoginUi 容忍尾逗號")
     func parseTrailingCommaLoginUi() {
         let json = """
         [
@@ -341,16 +395,16 @@ struct BookSourceLoginTests {
             {"name":"登录","type":"button","action":"login(true)"},
         ]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
         #expect(fields.count == 2)
     }
 
-    @Test("LoginUIField.parse() 只有 text 欄位、無按鈕")
+    @Test("LoginManager.parseLoginUi 只有 text 欄位、無按鈕")
     func parseTextOnly() {
         let json = """
         [{"name":"用户名","type":"text"},{"name":"密码","type":"password"}]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
         #expect(fields.count == 2)
         #expect(!fields.contains(where: { $0.type == .button }))
     }
@@ -366,7 +420,7 @@ struct BookSourceLoginTests {
             {"name":"登录账号","type":"button","action":"login(true)"}
         ]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
         let buttons = fields.filter { $0.type == .button }
         #expect(buttons.count == 1)
 
@@ -387,7 +441,7 @@ struct BookSourceLoginTests {
             {"name":"登录账号","type":"button","action":"login(true)"}
         ]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
         let hasButtons = fields.contains(where: { $0.type == .button })
         #expect(hasButtons == true)
     }
@@ -397,7 +451,7 @@ struct BookSourceLoginTests {
         let json = """
         [{"name":"用户名","type":"text"},{"name":"密码","type":"password"}]
         """
-        let fields = LoginUIField.parse(from: json)
+        let fields = LoginManager.shared.parseLoginUi(json)
         let hasButtons = fields.contains(where: { $0.type == .button })
         #expect(hasButtons == false)
     }

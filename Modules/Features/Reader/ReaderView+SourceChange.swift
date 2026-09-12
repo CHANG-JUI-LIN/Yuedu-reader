@@ -680,6 +680,10 @@ extension ReaderView {
             step("ensure")
             prepareNextTTSChapter(after: chapterIndex)
             step("prepare")
+            // Resolved here, not in the engine: only the reader knows which book is open,
+            // and the cast is per book. Empty when 多角色朗讀 is off, which is also what
+            // tells the engines not to split the chapter at quote boundaries at all.
+            ttsCoordinator.roleVoices = activeTTSRoleVoices()
             ttsCoordinator.speak(
                 text: text,
                 title: chapters[chapterIndex].title,
@@ -949,6 +953,40 @@ extension ReaderView {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Characters heard in the chapter currently being read, in the order they first
+    /// speak, for the 多角色朗讀 cast screen.
+    ///
+    /// Read from the same narration text playback uses, through the same annotator, so the
+    /// names offered are exactly the ones the engine will attribute — a name that shows up
+    /// here is one that can actually be cast, and one that does not never will be.
+    func detectedTTSSpeakers() -> [String] {
+        let chapterIndex = ttsChapterIndex ?? currentChapterIndex
+        guard chapters.indices.contains(chapterIndex) else { return [] }
+        let text = narrationForTTSChapter(chapterIndex).text
+        guard !text.isEmpty else { return [] }
+        var seen: Set<String> = []
+        var ordered: [String] = []
+        for attribution in TTSSpeakerAnnotator.attributions(in: text) {
+            guard let speaker = attribution.speaker, seen.insert(speaker).inserted else { continue }
+            ordered.append(speaker)
+        }
+        return ordered
+    }
+
+    /// The 多角色朗讀 cast for the book being read, or empty when the feature is off.
+    ///
+    /// Empty is not merely "no voices": the engines read it as "single voice", and skip
+    /// splitting the chapter at every quote. That split is what makes multi-role cost
+    /// more utterances — and, on a network voice, more requests — so it must not happen
+    /// for a listener who never turned the feature on.
+    func activeTTSRoleVoices() -> [String: String] {
+        guard GlobalSettings.shared.ttsMultiRoleEnabled else { return [:] }
+        return TTSRoleVoiceCast.cast(
+            forBook: bookId,
+            in: GlobalSettings.shared.ttsRoleVoices
+        )
+    }
+
     func narrationForTTSChapter(_ chapterIndex: Int) -> TTSNarrationUnit {
         guard chapters.indices.contains(chapterIndex) else {
             return TTSNarrationUnit(text: "")
@@ -967,9 +1005,14 @@ extension ReaderView {
                 lexicons: activePublicationSession?.pronunciationLexicons ?? [],
                 bookLanguage: activePublicationSession?.language
             )
+            let source = layout.attributedString.string
+            let narration = Self.narratableText(from: source)
             return TTSNarrationUnit(
-                text: Self.narratableText(from: layout.attributedString.string),
-                pronunciationHints: hints
+                text: narration,
+                pronunciationHints: hints,
+                // This is the text the reader actually laid out, so the cleanup the
+                // narration went through is exactly what the highlight has to undo.
+                sourceOffsets: TTSNarrationOffsetMap(narration: narration, source: source)
             )
         }
         // Browser semantics carry their own source ranges. Keep this text in
@@ -985,7 +1028,11 @@ extension ReaderView {
                     authoredHints: engine.chapterPronunciationHints(forSpine: chapterIndex),
                     lexicons: activePublicationSession?.pronunciationLexicons ?? [],
                     bookLanguage: activePublicationSession?.language
-                )
+                ),
+                // Already in chapter UTF-16 coordinates (no narratable cleanup runs on
+                // this branch), so the map is the identity — built the same way rather
+                // than special-cased, so callers never branch on which path produced it.
+                sourceOffsets: TTSNarrationOffsetMap(narration: chapterText, source: chapterText)
             )
         }
         let pageText = allPages

@@ -544,7 +544,12 @@ final class FirebaseAuthManager: ObservableObject {
             return user
         }
         #endif
-        let route = resolveRoute()
+        // Release: only email may use the Gateway. Apple/Google keep the
+        // verified direct behavior even when the automatic policy would pick
+        // the Gateway by region or memory.
+        let route: AuthRoute = AuthRouteFallbackPolicy.isGatewayEligible(operation: operation)
+            ? resolveRoute()
+            : .direct
         AppLogger.network("auth route selected: \(route.rawValue)")
         do {
             let user = try await body(route)
@@ -553,7 +558,8 @@ final class FirebaseAuthManager: ObservableObject {
         } catch {
             guard
                 AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: operation),
-                isConnectivityError(error)
+                AuthRouteFallbackPolicy.isGatewayEligible(operation: operation),
+                AuthRouteErrorClassifier.isRouteFailure(error)
             else {
                 throw error
             }
@@ -625,18 +631,6 @@ final class FirebaseAuthManager: ObservableObject {
         uid = user?.uid
         isAuthenticated = user != nil
         GlobalSettings.shared.applyAccountUser(user)
-    }
-
-    private func isConnectivityError(_ error: Error) -> Bool {
-        if let gatewayError = error as? GatewayAPIError {
-            return gatewayError.isConnectivityFailure
-        }
-        let nsError = error as NSError
-        if nsError.domain == AuthErrorDomain {
-            return nsError.code == AuthErrorCode.networkError.rawValue
-                || nsError.code == AuthErrorCode.webNetworkRequestFailed.rawValue
-        }
-        return nsError.domain == NSURLErrorDomain
     }
 
     private func mapGatewayLinkingError(_ error: Error) throws -> Never {

@@ -201,6 +201,11 @@ enum DSLayout {
     /// it when a control's own content is shorter than a finger — a bare menu
     /// label, an icon button — rather than relying on the row's padding.
     static let minimumTapTarget: CGFloat = 44
+    /// Source-login controls: visible outlines and tactile feedback over themed artwork.
+    static let loginControlBorder: CGFloat = 0.5
+    static let loginControlContrastBorder: CGFloat = 2
+    static let loginControlPressedScale: CGFloat = 0.96
+    static let loginControlDisabledOpacity: Double = 0.5
     /// Search-result cover width shared by native list renderers.
     static let searchResultCoverWidth: CGFloat = 72
     /// Search-result cover height shared by native list renderers.
@@ -360,6 +365,10 @@ enum DSAnimation {
     static let standard = Animation.easeOut(duration: 0.28)
     /// Slow expansion
     static let slow = Animation.easeInOut(duration: 0.4)
+    /// Press feedback for pill buttons: Legado's `button_scale_animator` lands on
+    /// scale 0.92 in 120ms with an overshoot interpolator — this spring is the
+    /// SwiftUI equivalent. Callers must skip it under Reduce Motion.
+    static let press = Animation.spring(response: 0.18, dampingFraction: 0.5)
     /// Deliberate physical open/close duration for the reader book-card transition.
     static let readerBookTransitionDuration: TimeInterval = 0.62
     /// Minimum visible settle time when a short interactive close reverses.

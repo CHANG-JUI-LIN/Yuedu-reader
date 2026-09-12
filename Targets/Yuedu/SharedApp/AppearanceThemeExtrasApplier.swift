@@ -1,23 +1,30 @@
 import Foundation
 
-/// Applies the non-colour half of an appearance theme, and puts the user's own
-/// settings back when they leave it.
+/// Applies the non-colour half of an appearance theme, keeps it up to date while
+/// that theme is selected, and puts the user's own settings back when they leave it.
 ///
 /// Before this existed, importing an appearance pack scattered its contents across
 /// a dozen independent `GlobalSettings` keys, so selecting 默認 again reverted the
 /// five theme colours and nothing else: the pack's tab icons, font, covers, glass
 /// and bookshelf layout stayed put with no way to undo them.
 ///
-/// The mechanism is a baseline rather than a per-setting override, so no read site
-/// has to learn about themes: the first time a theme with extras is applied, the
-/// user's current values are captured; selecting a theme that carries no extras
-/// writes that capture back and discards it. Switching straight from one pack to
-/// another keeps the original baseline, so the way out is always the way in.
+/// Two mechanisms, both funnelled through `AppearanceThemeExtras`:
+///
+/// 1. **A baseline, not a per-setting override**, so no read site has to learn about
+///    themes: the first time a custom theme is selected the user's own values are
+///    captured, and selecting a theme that speaks for nothing writes that capture
+///    back. Switching straight from one theme to another keeps the original
+///    baseline, so the way out is always the way in.
+/// 2. **Write-back while a theme is selected.** Editing a covered setting records it
+///    on the selected theme (`updateActiveThemeExtras`), which is what makes each
+///    theme keep its own covers, font and icons instead of leaving the change on
+///    whichever theme happens to be selected next. The write is per field, so a
+///    pack keeps saying nothing about the settings the user never touched.
 extension GlobalSettings {
     private static let extrasBaselineKey = "yd_appearance_extras_baseline"
 
-    /// The user's own values from before the first pack was applied, or nil when no
-    /// pack is active.
+    /// The user's own values from before the first theme was applied, or nil when no
+    /// custom theme is selected.
     var appearanceExtrasBaseline: AppearanceThemeExtras? {
         get {
             guard let data = UserDefaults.standard.data(forKey: Self.extrasBaselineKey) else {
@@ -34,71 +41,124 @@ extension GlobalSettings {
         }
     }
 
-    /// The extras in force: the light slot's theme wins, and the dark slot is
-    /// consulted only when the light one carries none — a pack selected in either
-    /// slot takes effect, and a plain colour theme in one does not cancel the other.
-    var activeAppearanceThemeExtras: AppearanceThemeExtras? {
-        func extras(for id: String?) -> AppearanceThemeExtras? {
-            guard let id, let theme = customAppearanceThemes.first(where: { $0.id == id }) else {
-                return nil
-            }
-            guard let extras = theme.extras, !extras.isEmpty else { return nil }
-            return extras
+    /// The custom theme the current selection belongs to, if any. The light slot's
+    /// theme wins and the dark slot is consulted only when the light one is a
+    /// built-in preset — a custom theme selected in either slot owns the extras, and
+    /// a built-in in one slot does not cancel the other.
+    ///
+    /// Deliberately *not* gated on the theme already carrying extras: a colour-only
+    /// theme has to be able to acquire its first one when the user edits something.
+    var activeExtrasOwnerThemeID: String? {
+        func customID(_ id: String?) -> String? {
+            guard let id, customAppearanceThemes.contains(where: { $0.id == id }) else { return nil }
+            return id
         }
-        return extras(for: appearanceThemeID) ?? extras(for: appearanceDarkThemeID)
+        return customID(appearanceThemeID) ?? customID(appearanceDarkThemeID)
     }
 
-    /// Called whenever the selected theme changes. Cheap and idempotent.
+    /// The extras in force, or nil when the selected theme speaks for nothing.
+    var activeAppearanceThemeExtras: AppearanceThemeExtras? {
+        guard let id = activeExtrasOwnerThemeID,
+              let extras = customAppearanceThemes.first(where: { $0.id == id })?.extras,
+              !extras.isEmpty else {
+            return nil
+        }
+        return extras
+    }
+
+    /// Called whenever the selected theme changes, and once at launch so the
+    /// invariant "a custom theme is selected ⟹ a baseline exists" holds even for
+    /// themes saved before write-back existed. Cheap and idempotent.
     func synchronizeAppearanceThemeExtras() {
-        if let extras = activeAppearanceThemeExtras {
+        // Every write below lands in a `didSet` that would otherwise write straight
+        // back into the theme being applied — restoring the baseline would overwrite
+        // the very extras this call is installing.
+        let wasApplying = isApplyingAppearanceExtras
+        isApplyingAppearanceExtras = true
+        defer { isApplyingAppearanceExtras = wasApplying }
+
+        if activeExtrasOwnerThemeID != nil {
             if appearanceExtrasBaseline == nil {
-                appearanceExtrasBaseline = captureAppearanceExtrasBaseline()
+                appearanceExtrasBaseline = currentAppearanceExtrasSnapshot()
             }
-            // A pack is a sparse override of the user's original settings, not
-            // of the preceding pack. Restore first so omitted fields cannot
-            // carry another theme's font, icons or effects into this one.
+            // A theme is a sparse override of the user's original settings, not of
+            // the preceding theme. Restore first so omitted fields cannot carry
+            // another theme's font, icons or effects into this one.
             if let baseline = appearanceExtrasBaseline {
                 writeAppearanceExtras(baseline)
             }
-            writeAppearanceExtras(extras)
+            if let extras = activeAppearanceThemeExtras {
+                writeAppearanceExtras(extras)
+            }
         } else if let baseline = appearanceExtrasBaseline {
             writeAppearanceExtras(baseline)
             appearanceExtrasBaseline = nil
         }
     }
 
-    /// Every field filled in, so restoring it sets all of them back.
-    private func captureAppearanceExtrasBaseline() -> AppearanceThemeExtras {
-        var baseline = AppearanceThemeExtras()
-        baseline.tabIcons = Dictionary(
+    /// Records one edited setting on the selected theme. Every covered `didSet`
+    /// calls this; it is a no-op while a theme is being applied, and while a
+    /// built-in preset is selected (there is nothing user-owned to write to).
+    ///
+    /// Per field rather than a whole snapshot on purpose: an imported pack that says
+    /// nothing about, say, covers must keep saying nothing about them after the user
+    /// changes the font, or one edit would silently pin every other setting to
+    /// whatever the baseline happened to be.
+    func updateActiveThemeExtras(_ mutate: (inout AppearanceThemeExtras) -> Void) {
+        guard !isApplyingAppearanceExtras,
+              let id = activeExtrasOwnerThemeID,
+              let index = customAppearanceThemes.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        var extras = customAppearanceThemes[index].extras ?? AppearanceThemeExtras()
+        mutate(&extras)
+        guard customAppearanceThemes[index].extras != extras else { return }
+        customAppearanceThemes[index].extras = extras
+    }
+
+    /// Every field filled in. Used for the baseline (so restoring it sets all of
+    /// them back) and by 保存為新主題, where the user is explicitly saying "this whole
+    /// look is the theme".
+    func currentAppearanceExtrasSnapshot() -> AppearanceThemeExtras {
+        var snapshot = AppearanceThemeExtras()
+        snapshot.tabIcons = Dictionary(
             uniqueKeysWithValues: rootTabIconAssets.map {
                 ("\($0.tabID).\($0.slotRawValue)", $0.fileName)
             }
         )
-        baseline.tabIconSize = rootTabIconSize
-        baseline.hidesTabLabels = rootTabHidesLabels
-        baseline.launchImageEnabled = launchImageEnabled
-        baseline.launchImageLightFileName = launchImageLightFileName ?? ""
-        baseline.launchImageDarkFileName = launchImageDarkFileName ?? ""
-        baseline.defaultCoverLightFileNames = defaultCoverLightFileNames
-        baseline.defaultCoverDarkFileNames = defaultCoverDarkFileNames
-        baseline.forceDefaultCover = useDefaultCoverForAllBooks
-        baseline.globalFontPostScript = selectedGlobalFontPostScript ?? ""
-        baseline.frostedGlass = interfaceFrostedGlass
-        baseline.glassTransparency = interfaceGlassTransparency
-        baseline.glowIntensity = interfaceGlowIntensity
-        baseline.bookshelfGridColumnCount = bookshelfGridColumnCount
-        baseline.bookshelfCoverCornerRadius = bookshelfCoverCornerRadius
-        baseline.readerInterface = appearanceReaderInterface.rawValue
-        baseline.cardBackground = appearanceCardBackground
-        return baseline
+        snapshot.tabIconSize = rootTabIconSize
+        snapshot.hidesTabLabels = rootTabHidesLabels
+        snapshot.visibleTabIDs = rootTabVisibleIDs
+        snapshot.launchImageEnabled = launchImageEnabled
+        snapshot.launchImageLightFileName = launchImageLightFileName ?? ""
+        snapshot.launchImageDarkFileName = launchImageDarkFileName ?? ""
+        snapshot.defaultCoverLightFileNames = defaultCoverLightFileNames
+        snapshot.defaultCoverDarkFileNames = defaultCoverDarkFileNames
+        snapshot.forceDefaultCover = useDefaultCoverForAllBooks
+        snapshot.globalFontPostScript = selectedGlobalFontPostScript ?? ""
+        snapshot.frostedGlass = interfaceFrostedGlass
+        snapshot.glassTransparency = interfaceGlassTransparency
+        snapshot.glowIntensity = interfaceGlowIntensity
+        snapshot.glassCards = interfaceGlassCards
+        snapshot.bookshelfGridColumnCount = bookshelfGridColumnCount
+        snapshot.bookshelfCoverCornerRadius = bookshelfCoverCornerRadius
+        snapshot.readerInterface = appearanceReaderInterface.rawValue
+        snapshot.cardBackground = appearanceCardBackground
+        snapshot.pageBackgrounds = appearancePageBackgrounds
+        snapshot.readerChromeColors = readerChromeColors
+        snapshot.readerChromeHiddenIDs = readerChromeHiddenIDs
+        snapshot.readerChromeIcons = Dictionary(
+            readerChromeIcons.map { ($0.itemID, $0.fileName) },
+            uniquingKeysWith: { _, last in last }
+        )
+        return snapshot
     }
 
     private func writeAppearanceExtras(_ extras: AppearanceThemeExtras) {
         if let icons = extras.tabIcons {
             // Assigned directly rather than through `importRootTabIcon`, which deletes the
             // icon it replaces — that would destroy the user's own artwork the first time a
-            // pack was applied and leave the baseline pointing at files that no longer exist.
+            // theme was applied and leave the baseline pointing at files that no longer exist.
             rootTabIconAssets = icons.compactMap { key, fileName in
                 let parts = key.split(separator: ".", maxSplits: 1)
                 guard parts.count == 2 else { return nil }
@@ -114,6 +174,9 @@ extension GlobalSettings {
         }
         if let size = extras.tabIconSize { rootTabIconSize = size }
         if let hidden = extras.hidesTabLabels { rootTabHidesLabels = hidden }
+        // Assigned raw: the property's own `didSet` sanitizes, so a theme that names a
+        // tab this build does not have — or names none — still lands on a usable bar.
+        if let visible = extras.visibleTabIDs, !visible.isEmpty { rootTabVisibleIDs = visible }
         if let enabled = extras.launchImageEnabled { launchImageEnabled = enabled }
         if let name = extras.launchImageLightFileName {
             launchImageLightFileName = name.isEmpty ? nil : name
@@ -130,11 +193,29 @@ extension GlobalSettings {
         if let frosted = extras.frostedGlass { interfaceFrostedGlass = frosted }
         if let transparency = extras.glassTransparency { interfaceGlassTransparency = transparency }
         if let glow = extras.glowIntensity { interfaceGlowIntensity = glow }
+        if let cards = extras.glassCards { interfaceGlassCards = cards }
         if let columns = extras.bookshelfGridColumnCount { bookshelfGridColumnCount = columns }
         if let radius = extras.bookshelfCoverCornerRadius { bookshelfCoverCornerRadius = radius }
         if let raw = extras.readerInterface, let interface = AppearanceReaderInterface(rawValue: raw) {
             appearanceReaderInterface = interface
         }
         appearanceCardBackground = extras.cardBackground
+        if let backgrounds = extras.pageBackgrounds { appearancePageBackgrounds = backgrounds }
+        if let colors = extras.readerChromeColors { readerChromeColors = colors }
+        if let hidden = extras.readerChromeHiddenIDs { readerChromeHiddenIDs = hidden }
+        if let icons = extras.readerChromeIcons {
+            // Same reconstruction as `tabIcons`: the theme carries the artwork, the
+            // import metadata describes a user action this is not one of.
+            readerChromeIcons = icons
+                .map {
+                    ReaderChromeIconAsset(
+                        itemID: $0.key,
+                        fileName: $0.value,
+                        originalFileName: $0.value,
+                        addedAt: Date()
+                    )
+                }
+                .sorted { $0.itemID < $1.itemID }
+        }
     }
 }

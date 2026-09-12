@@ -551,6 +551,8 @@ class GlobalSettings: ObservableObject {
     private static let ttsHighlightBoxStyleKey = "yd_tts_highlight_box_style"
     private static let ttsKeepsScreenAwakeKey = "yd_tts_keeps_screen_awake"
     private static let ttsSystemVoiceIdentifiersKey = "yd_tts_system_voice_ids"
+    private static let ttsMultiRoleEnabledKey = "yd_tts_multi_role_enabled"
+    private static let ttsRoleVoicesKey = "yd_tts_role_voices"
     private static let readerTextColorOverridesKey = "yd_reader_text_color_overrides"
     private static let readerCustomBackgroundModeKey = "yd_reader_custom_background_mode"
     private static let readerCustomBackgroundColorHexKey = "yd_reader_custom_background_color_hex"
@@ -1043,6 +1045,12 @@ class GlobalSettings: ObservableObject {
         }
     }
 
+    /// True while `synchronizeAppearanceThemeExtras` is installing a theme's values.
+    /// Every covered setting writes back into the selected theme from its `didSet`, so
+    /// without this the restore-baseline-then-apply sequence would immediately
+    /// overwrite the extras it is in the middle of applying.
+    var isApplyingAppearanceExtras = false
+
     @Published var appearanceThemeID: String {
         didSet {
             UserDefaults.standard.set(appearanceThemeID, forKey: Self.appearanceThemeIDKey)
@@ -1061,6 +1069,7 @@ class GlobalSettings: ObservableObject {
     /// theme. Read by `interfaceCardSurface` / `interfaceSectionSurface`.
     @Published var appearanceCardBackground: AppearanceCardBackground? {
         didSet {
+            updateActiveThemeExtras { $0.cardBackground = appearanceCardBackground }
             guard let appearanceCardBackground,
                   let data = try? JSONEncoder().encode(appearanceCardBackground) else {
                 UserDefaults.standard.removeObject(forKey: Self.appearanceCardBackgroundKey)
@@ -1108,7 +1117,10 @@ class GlobalSettings: ObservableObject {
     /// Master switch for the custom launch splash. Defaults off; gated on Pro at
     /// the UI entry point and again when the overlay decides whether to present.
     @Published var launchImageEnabled: Bool {
-        didSet { UserDefaults.standard.set(launchImageEnabled, forKey: Self.launchImageEnabledKey) }
+        didSet {
+            UserDefaults.standard.set(launchImageEnabled, forKey: Self.launchImageEnabledKey)
+            updateActiveThemeExtras { $0.launchImageEnabled = launchImageEnabled }
+        }
     }
     @Published var launchImageLightFileName: String? {
         didSet {
@@ -1117,6 +1129,7 @@ class GlobalSettings: ObservableObject {
             } else {
                 UserDefaults.standard.removeObject(forKey: Self.launchImageLightFileNameKey)
             }
+            updateActiveThemeExtras { $0.launchImageLightFileName = launchImageLightFileName ?? "" }
         }
     }
     @Published var launchImageDarkFileName: String? {
@@ -1126,10 +1139,14 @@ class GlobalSettings: ObservableObject {
             } else {
                 UserDefaults.standard.removeObject(forKey: Self.launchImageDarkFileNameKey)
             }
+            updateActiveThemeExtras { $0.launchImageDarkFileName = launchImageDarkFileName ?? "" }
         }
     }
     @Published var appearanceReaderInterface: AppearanceReaderInterface {
-        didSet { UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey) }
+        didSet {
+            UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey)
+            updateActiveThemeExtras { $0.readerInterface = appearanceReaderInterface.rawValue }
+        }
     }
 
     // MARK: - 閱讀介面自定義（經典／現代）
@@ -1138,18 +1155,32 @@ class GlobalSettings: ObservableObject {
     /// `ReaderChromePalette`. An absent key means "follow the reading theme",
     /// which is why clearing a slot must remove it rather than store a sentinel.
     @Published var readerChromeColors: [String: UInt32] {
-        didSet { Self.saveReaderChromeColors(readerChromeColors) }
+        didSet {
+            Self.saveReaderChromeColors(readerChromeColors)
+            updateActiveThemeExtras { $0.readerChromeColors = readerChromeColors }
+        }
     }
 
     /// `storageID`s of buttons the reader switched off. Absent = visible, so a new
     /// button added in a later version shows up by default.
     @Published var readerChromeHiddenIDs: [String] {
-        didSet { UserDefaults.standard.set(readerChromeHiddenIDs, forKey: Self.readerChromeHiddenIDsKey) }
+        didSet {
+            UserDefaults.standard.set(readerChromeHiddenIDs, forKey: Self.readerChromeHiddenIDsKey)
+            updateActiveThemeExtras { $0.readerChromeHiddenIDs = readerChromeHiddenIDs }
+        }
     }
 
     /// User-imported replacements for those buttons' symbols.
     @Published var readerChromeIcons: [ReaderChromeIconAsset] {
-        didSet { Self.saveReaderChromeIcons(readerChromeIcons) }
+        didSet {
+            Self.saveReaderChromeIcons(readerChromeIcons)
+            updateActiveThemeExtras {
+                $0.readerChromeIcons = Dictionary(
+                    readerChromeIcons.map { ($0.itemID, $0.fileName) },
+                    uniquingKeysWith: { _, last in last }
+                )
+            }
+        }
     }
 
     // MARK: - 界面效果 (Interface Effects)
@@ -1162,12 +1193,16 @@ class GlobalSettings: ObservableObject {
                 interfaceGlowIntensity = sanitized
             } else {
                 UserDefaults.standard.set(interfaceGlowIntensity, forKey: Self.interfaceGlowIntensityKey)
+                updateActiveThemeExtras { $0.glowIntensity = interfaceGlowIntensity }
             }
         }
     }
     /// Whether floating elements blur what is behind them. Off = the solid fill.
     @Published var interfaceFrostedGlass: Bool {
-        didSet { UserDefaults.standard.set(interfaceFrostedGlass, forKey: Self.interfaceFrostedGlassKey) }
+        didSet {
+            UserDefaults.standard.set(interfaceFrostedGlass, forKey: Self.interfaceFrostedGlassKey)
+            updateActiveThemeExtras { $0.frostedGlass = interfaceFrostedGlass }
+        }
     }
     /// How much of the blur shows through, 0...1. 1 = untouched material.
     @Published var interfaceGlassTransparency: Double {
@@ -1177,6 +1212,7 @@ class GlobalSettings: ObservableObject {
                 interfaceGlassTransparency = sanitized
             } else {
                 UserDefaults.standard.set(interfaceGlassTransparency, forKey: Self.interfaceGlassTransparencyKey)
+                updateActiveThemeExtras { $0.glassTransparency = interfaceGlassTransparency }
             }
         }
     }
@@ -1184,7 +1220,10 @@ class GlobalSettings: ObservableObject {
     /// 外觀主題, 統計, 書籍詳情 — wear the same glass as floating elements. Rides
     /// `interfaceFrostedGlass` and 透明度 rather than owning its own material.
     @Published var interfaceGlassCards: Bool {
-        didSet { UserDefaults.standard.set(interfaceGlassCards, forKey: Self.interfaceGlassCardsKey) }
+        didSet {
+            UserDefaults.standard.set(interfaceGlassCards, forKey: Self.interfaceGlassCardsKey)
+            updateActiveThemeExtras { $0.glassCards = interfaceGlassCards }
+        }
     }
     @Published var customAppearanceThemes: [AppearanceCustomTheme] {
         didSet { Self.saveCustomAppearanceThemes(customAppearanceThemes) }
@@ -1193,7 +1232,14 @@ class GlobalSettings: ObservableObject {
     /// raw value). This is what tabs render; saved themes only feed it through
     /// 保存為新主題 / theme selection / 導入主題.
     @Published var appearancePageBackgrounds: [String: AppearancePageBackgroundConfig] {
-        didSet { Self.savePageBackgrounds(appearancePageBackgrounds) }
+        didSet {
+            Self.savePageBackgrounds(appearancePageBackgrounds)
+            updateActiveThemeExtras { $0.pageBackgrounds = appearancePageBackgrounds }
+            // After the write-back, so artwork the selected theme still names is not
+            // counted as dropped. This is the *only* place page-background files are
+            // reclaimed — every removal path simply stops naming the file.
+            reclaimDroppedPageBackgroundFiles(from: oldValue)
+        }
     }
 
     // MARK: - Root Tab Customization
@@ -1205,11 +1251,15 @@ class GlobalSettings: ObservableObject {
                 rootTabVisibleIDs = sanitized
             } else {
                 UserDefaults.standard.set(rootTabVisibleIDs, forKey: Self.rootTabVisibleIDsKey)
+                updateActiveThemeExtras { $0.visibleTabIDs = rootTabVisibleIDs }
             }
         }
     }
     @Published var rootTabHidesLabels: Bool {
-        didSet { UserDefaults.standard.set(rootTabHidesLabels, forKey: Self.rootTabHidesLabelsKey) }
+        didSet {
+            UserDefaults.standard.set(rootTabHidesLabels, forKey: Self.rootTabHidesLabelsKey)
+            updateActiveThemeExtras { $0.hidesTabLabels = rootTabHidesLabels }
+        }
     }
     @Published var rootTabIconSize: Double {
         didSet {
@@ -1218,11 +1268,20 @@ class GlobalSettings: ObservableObject {
                 rootTabIconSize = sanitized
             } else {
                 UserDefaults.standard.set(rootTabIconSize, forKey: Self.rootTabIconSizeKey)
+                updateActiveThemeExtras { $0.tabIconSize = rootTabIconSize }
             }
         }
     }
     @Published var rootTabIconAssets: [RootTabIconAsset] {
-        didSet { Self.saveRootTabIconAssets(rootTabIconAssets) }
+        didSet {
+            Self.saveRootTabIconAssets(rootTabIconAssets)
+            updateActiveThemeExtras {
+                $0.tabIcons = Dictionary(
+                    rootTabIconAssets.map { ("\($0.tabID).\($0.slotRawValue)", $0.fileName) },
+                    uniquingKeysWith: { _, last in last }
+                )
+            }
+        }
     }
 
     @Published var selectedGlobalFontPostScript: String? {
@@ -1235,6 +1294,7 @@ class GlobalSettings: ObservableObject {
             } else {
                 UserDefaults.standard.removeObject(forKey: Self.globalFontPostScriptKey)
             }
+            updateActiveThemeExtras { $0.globalFontPostScript = selectedGlobalFontPostScript ?? "" }
         }
     }
     @Published var selectedReaderFontPostScript: String? {
@@ -1318,6 +1378,7 @@ class GlobalSettings: ObservableObject {
                 bookshelfGridColumnCount = sanitized
             } else {
                 UserDefaults.standard.set(sanitized, forKey: Self.bookshelfGridColumnCountKey)
+                updateActiveThemeExtras { $0.bookshelfGridColumnCount = sanitized }
             }
         }
     }
@@ -1337,6 +1398,7 @@ class GlobalSettings: ObservableObject {
     @Published var useDefaultCoverForAllBooks: Bool {
         didSet {
             UserDefaults.standard.set(useDefaultCoverForAllBooks, forKey: Self.useDefaultCoverForAllBooksKey)
+            updateActiveThemeExtras { $0.forceDefaultCover = useDefaultCoverForAllBooks }
         }
     }
 
@@ -1349,6 +1411,7 @@ class GlobalSettings: ObservableObject {
                 bookshelfCoverCornerRadius = clamped
             } else {
                 UserDefaults.standard.set(clamped, forKey: Self.bookshelfCoverCornerRadiusKey)
+                updateActiveThemeExtras { $0.bookshelfCoverCornerRadius = clamped }
             }
         }
     }
@@ -1364,6 +1427,7 @@ class GlobalSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(defaultCoverLightFileNames, forKey: Self.defaultCoverLightFileNamesKey)
             DefaultCoverLibrary.invalidateCache()
+            updateActiveThemeExtras { $0.defaultCoverLightFileNames = defaultCoverLightFileNames }
         }
     }
 
@@ -1371,6 +1435,7 @@ class GlobalSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(defaultCoverDarkFileNames, forKey: Self.defaultCoverDarkFileNamesKey)
             DefaultCoverLibrary.invalidateCache()
+            updateActiveThemeExtras { $0.defaultCoverDarkFileNames = defaultCoverDarkFileNames }
         }
     }
 
@@ -1430,6 +1495,10 @@ class GlobalSettings: ObservableObject {
         case .light: defaultCoverLightFileNames.removeAll { $0 == fileName }
         case .dark: defaultCoverDarkFileNames.removeAll { $0 == fileName }
         }
+        // Checked *after* the removal: that assignment's write-back has already taken
+        // the name off the selected theme, so the theme's own reference cannot block
+        // its own delete and leak the file forever.
+        guard !isDefaultCoverFileReferenced(fileName) else { return }
         DefaultCoverStorageManager.shared.delete(fileName: fileName)
     }
 
@@ -1520,6 +1589,23 @@ class GlobalSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(ttsSystemVoiceIdentifiers, forKey: Self.ttsSystemVoiceIdentifiersKey)
         }
+    }
+
+    /// 多角色朗讀: give each character its own voice instead of reading the whole
+    /// chapter in one. Off by default — it splits the chapter at every quote, which
+    /// means more, shorter utterances, and on a network voice that is more requests.
+    @Published var ttsMultiRoleEnabled: Bool {
+        didSet { UserDefaults.standard.set(ttsMultiRoleEnabled, forKey: Self.ttsMultiRoleEnabledKey) }
+    }
+
+    /// Which voice reads which character, keyed `"<bookID>\u{1F}<speaker>"` → voice id.
+    ///
+    /// Per book because a name means a different person in a different book, and flat
+    /// rather than nested so it stores as a plain UserDefaults dictionary — the same
+    /// shape `ttsSystemVoiceIdentifiers` already uses. A speaker with no entry reads in
+    /// the narrator's voice, which is what an unattributed line gets too.
+    @Published var ttsRoleVoices: [String: String] {
+        didSet { UserDefaults.standard.set(ttsRoleVoices, forKey: Self.ttsRoleVoicesKey) }
     }
     @Published var sourceDisclaimerAccepted: Bool {
         didSet { UserDefaults.standard.set(sourceDisclaimerAccepted, forKey: "yd_source_disclaimer_accepted") }
@@ -1996,6 +2082,10 @@ class GlobalSettings: ObservableObject {
         ttsSystemVoiceIdentifiers =
             (UserDefaults.standard.dictionary(forKey: Self.ttsSystemVoiceIdentifiersKey)
                 as? [String: String]) ?? [:]
+        ttsMultiRoleEnabled = UserDefaults.standard.bool(forKey: Self.ttsMultiRoleEnabledKey)
+        ttsRoleVoices =
+            (UserDefaults.standard.dictionary(forKey: Self.ttsRoleVoicesKey)
+                as? [String: String]) ?? [:]
         sourceDisclaimerAccepted = UserDefaults.standard.bool(forKey: "yd_source_disclaimer_accepted")
         bookSourceListGrouped =
             (UserDefaults.standard.object(forKey: "yd_booksource_list_grouped") as? Bool) ?? true
@@ -2019,6 +2109,12 @@ class GlobalSettings: ObservableObject {
             guard let self else { return }
             self.readerStyleAssetRevision = max(self.readerStyleAssetRevision, revision)
         }
+
+        // Establishes "a custom theme is selected ⟹ a baseline exists". The selection
+        // `didSet` cannot do it, because it never fires for a theme restored from
+        // disk — so a theme saved before write-back existed would take the user's
+        // first edit with no captured original to hand back on the way out.
+        synchronizeAppearanceThemeExtras()
     }
 
     func selectCommentBubbleBuiltinStyle() {
@@ -2448,7 +2544,6 @@ class GlobalSettings: ObservableObject {
         activeAppearance: ColorScheme
     ) {
         selectAppearanceTheme(id: preset.id, for: slot)
-        applyPageBackgroundsFromCustomTheme(id: preset.id)
         guard slot == activeAppearance else { return }
         // Sync the DSColor-facing global in the same turn as the selection.
         // `activeAppThemes` is otherwise refreshed only in ContentView.body, which
@@ -2514,9 +2609,7 @@ class GlobalSettings: ObservableObject {
     /// Deletes a custom theme. Any selection (light or dark slot) pointing at
     /// the deleted theme falls back to the classic default.
     func deleteCustomAppearanceTheme(id: String) {
-        if let payload = customAppearanceThemes.first(where: { $0.id == id })?.pageBackgrounds {
-            deletePageBackgroundFiles(in: payload)
-        }
+        let removed = customAppearanceThemes.first(where: { $0.id == id })
         customAppearanceThemes.removeAll { $0.id == id }
         if appearanceThemeID == id {
             appearanceThemeID = Self.defaultAppearanceThemeID
@@ -2524,6 +2617,105 @@ class GlobalSettings: ObservableObject {
         if appearanceDarkThemeID == id {
             appearanceDarkThemeID = Self.defaultAppearanceThemeID
         }
+        // Swept after the removal, so the reference check below sees the world without
+        // this theme in it and reclaims the artwork only it was holding.
+        guard let removed else { return }
+        for extras in [removed.extras, removed.originalExtras].compactMap({ $0 }) {
+            let covers = (extras.defaultCoverLightFileNames ?? [])
+                + (extras.defaultCoverDarkFileNames ?? [])
+            for name in covers where !isDefaultCoverFileReferenced(name) {
+                DefaultCoverStorageManager.shared.delete(fileName: name)
+            }
+            removeLaunchImageFile(extras.launchImageLightFileName)
+            removeLaunchImageFile(extras.launchImageDarkFileName)
+            let backgrounds = extras.pageBackgrounds?.values.flatMap(\.imageFileNames) ?? []
+            for name in backgrounds where !isPageBackgroundFileReferenced(name) {
+                AppearancePageBackgroundImageStore.shared.delete(fileName: name)
+            }
+            // Card artwork was never reclaimed at all: nothing in the app deleted from
+            // this store, so every imported pack left its picture behind for good.
+            for name in extras.cardBackground?.imageFileNames ?? []
+            where !isCardBackgroundFileReferenced(name) {
+                AppearanceCardBackgroundImageStore.shared.delete(fileName: name)
+            }
+        }
+    }
+
+    /// Puts an imported theme's extras back to what the pack shipped with, undoing
+    /// every edit the write-back has recorded on it since. Nil `originalExtras` — a
+    /// theme built here — has no author's version to return to.
+    func canResetCustomAppearanceTheme(id: String) -> Bool {
+        guard let theme = customAppearanceThemes.first(where: { $0.id == id }),
+              let original = theme.originalExtras else {
+            return false
+        }
+        return theme.extras != original
+    }
+
+    func resetCustomAppearanceTheme(id: String) {
+        guard let index = customAppearanceThemes.firstIndex(where: { $0.id == id }),
+              let original = customAppearanceThemes[index].originalExtras else {
+            return
+        }
+        customAppearanceThemes[index].extras = original
+        // Re-apply only when this theme is the one on screen; the selection `didSet`
+        // will do it for the others when they are next picked.
+        guard activeExtrasOwnerThemeID == id else { return }
+        synchronizeAppearanceThemeExtras()
+    }
+
+    /// Every extras snapshot that could still be pointing at a stored file: the saved
+    /// themes, the pack originals kept for 重置此主題, and the baseline handed back when
+    /// the user leaves a theme.
+    ///
+    /// Deleting a cover or splash file used to be unconditional, which was survivable
+    /// while only the live settings ever named one. Now that each theme keeps its own
+    /// set, two themes can name the same file — and removing it from one would have
+    /// pulled the picture out from under the other. Delete only what nothing claims.
+    private var appearanceExtrasFileReferences: [AppearanceThemeExtras] {
+        customAppearanceThemes.compactMap(\.extras)
+            + customAppearanceThemes.compactMap(\.originalExtras)
+            + [appearanceExtrasBaseline].compactMap { $0 }
+    }
+
+    private func isDefaultCoverFileReferenced(_ fileName: String) -> Bool {
+        defaultCoverLightFileNames.contains(fileName)
+            || defaultCoverDarkFileNames.contains(fileName)
+            || appearanceExtrasFileReferences.contains {
+                ($0.defaultCoverLightFileNames?.contains(fileName) ?? false)
+                    || ($0.defaultCoverDarkFileNames?.contains(fileName) ?? false)
+            }
+    }
+
+    private func isPageBackgroundFileReferenced(_ fileName: String) -> Bool {
+        appearancePageBackgrounds.values.contains { $0.imageFileNames.contains(fileName) }
+            || appearanceExtrasFileReferences.contains { extras in
+                extras.pageBackgrounds?.values
+                    .contains { $0.imageFileNames.contains(fileName) } ?? false
+            }
+    }
+
+    private func isCardBackgroundFileReferenced(_ fileName: String) -> Bool {
+        if appearanceCardBackground?.imageFileNames.contains(fileName) == true { return true }
+        return appearanceExtrasFileReferences.contains {
+            $0.cardBackground?.imageFileNames.contains(fileName) ?? false
+        }
+    }
+
+    /// Lives here rather than in `RootTabCustomization` because the reference list it
+    /// consults is private to this file.
+    func isRootTabIconFileReferenced(_ fileName: String) -> Bool {
+        rootTabIconAssets.contains { $0.fileName == fileName }
+            || appearanceExtrasFileReferences.contains {
+                $0.tabIcons?.values.contains(fileName) ?? false
+            }
+    }
+
+    private func isLaunchImageFileReferenced(_ fileName: String) -> Bool {
+        launchImageLightFileName == fileName || launchImageDarkFileName == fileName
+            || appearanceExtrasFileReferences.contains {
+                $0.launchImageLightFileName == fileName || $0.launchImageDarkFileName == fileName
+            }
     }
 
     private static func loadCustomAppearanceThemes() -> [AppearanceCustomTheme] {
@@ -2531,7 +2723,27 @@ class GlobalSettings: ObservableObject {
               let decoded = try? JSONDecoder().decode([AppearanceCustomTheme].self, from: data) else {
             return []
         }
-        return decoded
+        return decoded.map(migratedPageBackgrounds)
+    }
+
+    /// Page backgrounds used to be their own field on the theme, outside the baseline
+    /// and the write-back — so leaving a theme never handed the user's own backgrounds
+    /// back, and an edit made under a theme was dropped on the next switch. Folding
+    /// them into `extras` on load is what puts them on the one mechanism.
+    ///
+    /// The old copies stay exactly where they are on disk: the live settings still name
+    /// them, so the reference check keeps them alive and nothing is reclaimed here.
+    static func migratedPageBackgrounds(
+        _ theme: AppearanceCustomTheme
+    ) -> AppearanceCustomTheme {
+        guard let legacy = theme.pageBackgrounds else { return theme }
+        var migrated = theme
+        migrated.pageBackgrounds = nil
+        guard migrated.extras?.pageBackgrounds == nil, !legacy.isEmpty else { return migrated }
+        var extras = migrated.extras ?? AppearanceThemeExtras()
+        extras.pageBackgrounds = legacy
+        migrated.extras = extras
+        return migrated
     }
 
     private static func saveCustomAppearanceThemes(_ themes: [AppearanceCustomTheme]) {
@@ -2632,47 +2844,32 @@ class GlobalSettings: ObservableObject {
         colorScheme: ColorScheme
     ) {
         var config = pageBackgroundConfig(for: scope)
-        if let old = config.imageFileName(for: colorScheme) {
-            AppearancePageBackgroundImageStore.shared.delete(fileName: old)
-        }
         config.setImageFileName(fileName, for: colorScheme)
         updatePageBackgroundConfig(config, for: scope)
     }
 
-    /// Clears every scope's page background and deletes the imported images.
+    /// Clears every scope's page background. The image files go with it only if no
+    /// saved theme still shows them — see `reclaimDroppedPageBackgroundFiles`.
     func resetAllPageBackgrounds() {
-        deletePageBackgroundFiles(in: appearancePageBackgrounds)
         appearancePageBackgrounds = [:]
     }
 
-    private func deletePageBackgroundFiles(in configs: [String: AppearancePageBackgroundConfig]) {
-        for config in configs.values {
-            for name in config.imageFileNames {
-                AppearancePageBackgroundImageStore.shared.delete(fileName: name)
-            }
+    /// Deletes the page-background artwork `oldValue` named that nothing points at any
+    /// more: not the live settings, not a saved theme, not the baseline waiting to be
+    /// handed back.
+    ///
+    /// Themes used to own private *copies* of every image, which made a saved theme
+    /// safe but made recording an edit onto one mean duplicating files on every
+    /// opacity tick. Sharing the files and reclaiming them by reference is what lets
+    /// the edit be a plain value write.
+    private func reclaimDroppedPageBackgroundFiles(
+        from oldValue: [String: AppearancePageBackgroundConfig]
+    ) {
+        let dropped = Set(oldValue.values.flatMap(\.imageFileNames))
+            .subtracting(appearancePageBackgrounds.values.flatMap(\.imageFileNames))
+        for name in dropped where !isPageBackgroundFileReferenced(name) {
+            AppearancePageBackgroundImageStore.shared.delete(fileName: name)
         }
-    }
-
-    /// Deep-copies a page-background dict, duplicating the image files, so the
-    /// copy's owner can be deleted independently of the source.
-    private func duplicatedPageBackgrounds(
-        _ source: [String: AppearancePageBackgroundConfig]
-    ) -> [String: AppearancePageBackgroundConfig]? {
-        guard !source.isEmpty else { return nil }
-        var result: [String: AppearancePageBackgroundConfig] = [:]
-        for (key, config) in source {
-            var copy = config
-            copy.lightImageFileName = config.lightImageFileName.flatMap {
-                AppearancePageBackgroundImageStore.shared.duplicate(fileName: $0)
-            }
-            copy.darkImageFileName = config.darkImageFileName.flatMap {
-                AppearancePageBackgroundImageStore.shared.duplicate(fileName: $0)
-            }
-            if !copy.isEmpty {
-                result[key] = copy
-            }
-        }
-        return result.isEmpty ? nil : result
     }
 
     /// Snapshots the current theme colors plus the live page backgrounds into a
@@ -2688,22 +2885,13 @@ class GlobalSettings: ObservableObject {
         var custom = preset.customCopy(
             name: uniqueCustomThemeName(base: trimmed.isEmpty ? localized("自訂主題") : trimmed)
         )
-        custom.pageBackgrounds = duplicatedPageBackgrounds(appearancePageBackgrounds)
+        // A full snapshot, unlike the per-field write-back: pressing 保存為新主題 is the
+        // user saying "this whole look is the theme", covers, page backgrounds, font,
+        // icons and all.
+        custom.extras = currentAppearanceExtrasSnapshot()
         customAppearanceThemes.append(custom)
         selectAppearanceTheme(id: custom.id, for: slot)
         return custom
-    }
-
-    /// Selecting a saved theme that carries a page-background snapshot replaces
-    /// the live page backgrounds with it (the snapshot itself stays untouched).
-    private func applyPageBackgroundsFromCustomTheme(id: String) {
-        guard let theme = customAppearanceThemes.first(where: { $0.id == id }),
-              let payload = theme.pageBackgrounds,
-              !payload.isEmpty else {
-            return
-        }
-        deletePageBackgroundFiles(in: appearancePageBackgrounds)
-        appearancePageBackgrounds = duplicatedPageBackgrounds(payload) ?? [:]
     }
 
     private func uniqueCustomThemeName(base: String) -> String {
@@ -2731,7 +2919,9 @@ class GlobalSettings: ObservableObject {
             return saved
         }
         var snapshot = preset.customCopy(name: preset.localizedName)
-        snapshot.pageBackgrounds = appearancePageBackgrounds.isEmpty ? nil : appearancePageBackgrounds
+        var extras = AppearanceThemeExtras()
+        extras.pageBackgrounds = appearancePageBackgrounds.isEmpty ? nil : appearancePageBackgrounds
+        snapshot.extras = extras.isEmpty ? nil : extras
         return snapshot
     }
 
@@ -2808,7 +2998,6 @@ class GlobalSettings: ObservableObject {
         }
         if let last = imported.last {
             appearanceThemeID = last.id
-            applyPageBackgroundsFromCustomTheme(id: last.id)
         }
         return imported.count
     }
@@ -2817,18 +3006,44 @@ class GlobalSettings: ObservableObject {
         _ bundle: AppearanceCustomizationBundle
     ) -> AppearanceImportSummary {
         var summary = AppearanceImportSummary()
+        restoreBundleOwnLook(bundle, into: &summary)
         summary.themes = importThemeFiles(bundle.themes)
         if let configuration = bundle.regexHighlightConfiguration {
             regexHighlightConfiguration = configuration.sanitized()
         }
+        return summary
+    }
 
-        // Applied after the themes: selecting an imported theme replaces the
-        // live page backgrounds with that theme's snapshot, so the bundle's own
-        // live backgrounds have to land last or they'd be overwritten.
+    /// The half of a bundle that is the user's *own* look — page backgrounds, tab
+    /// icons, splash, the reading background — rather than any one theme's.
+    ///
+    /// Runs before `importThemeFiles` so those values are already in place when
+    /// selecting the bundle's theme captures the baseline: they become the layer the
+    /// theme falls back to, which is what they were on the device that exported them.
+    /// Write-back is suppressed for the same reason — restoring a look must not be
+    /// recorded as an edit to whatever theme happens to be selected right now.
+    ///
+    /// The page backgrounds used to be applied *after* the themes, because selecting an
+    /// imported theme replaced the live ones with that theme's snapshot. Now that they
+    /// ride the same baseline as everything else, landing them first is what makes the
+    /// theme's own show on top and the bundle's show again on the way out — so the
+    /// ordering constraint is gone rather than inverted.
+    ///
+    /// One case this does not cover: importing a bundle while already wearing a custom
+    /// theme leaves these values live but outside that theme's baseline, so the next
+    /// theme switch drops them. Deselecting first would fix it but would also throw
+    /// away a 單獨設定深色主題 pairing the bundle may not restore.
+    private func restoreBundleOwnLook(
+        _ bundle: AppearanceCustomizationBundle,
+        into summary: inout AppearanceImportSummary
+    ) {
+        let wasApplying = isApplyingAppearanceExtras
+        isApplyingAppearanceExtras = true
+        defer { isApplyingAppearanceExtras = wasApplying }
+
         if let payloads = bundle.pageBackgrounds {
             let restored = pageBackgroundConfigs(from: payloads)
             if !restored.isEmpty {
-                deletePageBackgroundFiles(in: appearancePageBackgrounds)
                 appearancePageBackgrounds = restored
                 summary.restoredPageBackgrounds = true
             }
@@ -2875,8 +3090,6 @@ class GlobalSettings: ObservableObject {
                 summary.restoredReaderBackground = true
             }
         }
-
-        return summary
     }
 
     /// Writes a bundle's background images back out to the image store and
@@ -2907,7 +3120,16 @@ class GlobalSettings: ObservableObject {
     /// Materializes one exported theme: its colors, and its background images
     /// written back out to the image store so the new theme owns real files.
     private func customTheme(from file: AppearanceThemeExportFile) -> AppearanceCustomTheme {
+        // The payload's images are written back out under fresh local names, and those
+        // names go into `extras` — the file's own `extras` deliberately ships without
+        // page backgrounds, since its copy would name the exporter's files.
         let payloadConfigs = pageBackgroundConfigs(from: file.pageBackgrounds ?? [:])
+        var extras = file.extras
+        if !payloadConfigs.isEmpty {
+            var merged = extras ?? AppearanceThemeExtras()
+            merged.pageBackgrounds = payloadConfigs
+            extras = merged
+        }
         return AppearanceCustomTheme(
             name: uniqueCustomThemeName(
                 base: file.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -2919,7 +3141,6 @@ class GlobalSettings: ObservableObject {
             barHex: file.barHex,
             accentHex: file.accentHex,
             dialogueHex: file.dialogueHex,
-            pageBackgrounds: payloadConfigs.isEmpty ? nil : payloadConfigs,
             dark: file.darkColors,
             textPrimaryHex: file.textPrimaryHex,
             textSecondaryHex: file.textSecondaryHex,
@@ -2927,7 +3148,10 @@ class GlobalSettings: ObservableObject {
             darkTextPrimaryHex: file.darkTextPrimaryHex,
             darkTextSecondaryHex: file.darkTextSecondaryHex,
             darkTextTertiaryHex: file.darkTextTertiaryHex,
-            extras: file.extras
+            extras: extras,
+            // The author's version, kept untouched so 重置此主題 can undo whatever the
+            // write-back has since recorded on this theme.
+            originalExtras: extras
         )
     }
 
@@ -3063,26 +3287,28 @@ class GlobalSettings: ObservableObject {
     }
 
     private func adoptLaunchImage(fileName: String, for scheme: LaunchImageScheme) -> String {
-        switch scheme {
-        case .light:
-            removeLaunchImageFile(launchImageLightFileName)
-            launchImageLightFileName = fileName
-        case .dark:
-            removeLaunchImageFile(launchImageDarkFileName)
-            launchImageDarkFileName = fileName
-        }
+        // Assign before deleting: the assignment's write-back takes the old name off
+        // the selected theme, which is what lets the delete tell "nobody wants this any
+        // more" from "another theme still shows it".
+        replaceLaunchImageFileName(with: fileName, for: scheme)
         return fileName
     }
 
     func clearLaunchImage(for scheme: LaunchImageScheme) {
+        replaceLaunchImageFileName(with: nil, for: scheme)
+    }
+
+    private func replaceLaunchImageFileName(with fileName: String?, for scheme: LaunchImageScheme) {
+        let previous: String?
         switch scheme {
         case .light:
-            removeLaunchImageFile(launchImageLightFileName)
-            launchImageLightFileName = nil
+            previous = launchImageLightFileName
+            launchImageLightFileName = fileName
         case .dark:
-            removeLaunchImageFile(launchImageDarkFileName)
-            launchImageDarkFileName = nil
+            previous = launchImageDarkFileName
+            launchImageDarkFileName = fileName
         }
+        removeLaunchImageFile(previous)
     }
 
     func launchImageFileName(for scheme: LaunchImageScheme) -> String? {
@@ -3107,7 +3333,7 @@ class GlobalSettings: ObservableObject {
     }
 
     private func removeLaunchImageFile(_ fileName: String?) {
-        guard let fileName, !fileName.isEmpty else { return }
+        guard let fileName, !fileName.isEmpty, !isLaunchImageFileReferenced(fileName) else { return }
         LaunchImageStorageManager.shared.delete(fileName: fileName)
     }
 

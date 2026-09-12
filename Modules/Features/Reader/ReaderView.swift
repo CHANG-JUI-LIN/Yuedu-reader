@@ -2355,7 +2355,9 @@ struct ReaderView: View {
                     onPlayPause: { handleTTSPlayPause() },
                     onPreviousChapter: { startAdjacentTTSChapter(delta: -1) },
                     onNextChapter: { startAdjacentTTSChapter(delta: 1) },
-                    onSelectChapter: { startTTSChapter($0, syncReader: true) }
+                    onSelectChapter: { startTTSChapter($0, syncReader: true) },
+                    bookID: bookId,
+                    detectedSpeakers: detectedTTSSpeakers()
                 )
             }
         }

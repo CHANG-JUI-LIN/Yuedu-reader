@@ -10,7 +10,9 @@ import SwiftUI
         onPlayPause: {},
         onPreviousChapter: { false },
         onNextChapter: { false },
-        onSelectChapter: { _ in }
+        onSelectChapter: { _ in },
+        bookID: UUID(),
+        detectedSpeakers: ["張若塵", "池瑤"]
     )
 }
 
@@ -26,6 +28,10 @@ struct TTSPanelView: View {
     let onPreviousChapter: () -> Bool
     let onNextChapter: () -> Bool
     let onSelectChapter: (Int) -> Void
+    let bookID: UUID
+    /// Characters detected in the chapter being read, for 多角色朗讀. Computed by the
+    /// reader, which is the only thing holding the chapter's narration text.
+    let detectedSpeakers: [String]
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var isScrubbing = false
@@ -105,6 +111,22 @@ struct TTSPanelView: View {
                                 .accessibilityHidden(true)
                             Text(localized("語音源設定"))
                             Spacer()
+                        }
+                    }
+                    NavigationLink(
+                        destination: TTSRoleCastView(bookID: bookID, detectedSpeakers: detectedSpeakers)
+                    ) {
+                        HStack {
+                            Image(systemName: "person.2.wave.2")
+                                .foregroundColor(DSColor.accent)
+                                .accessibilityHidden(true)
+                            Text(localized("多角色朗讀"))
+                            Spacer()
+                            if gs.ttsMultiRoleEnabled {
+                                Text(localized("開啟"))
+                                    .font(DSFont.subheadline)
+                                    .foregroundColor(DSColor.textSecondary)
+                            }
                         }
                     }
                     if usesSystemVoice {

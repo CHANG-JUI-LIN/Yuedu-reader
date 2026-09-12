@@ -127,8 +127,12 @@ See `gateway/DEPLOYMENT_RUNBOOK.md` for the operational checklist and
    the iOS client key.
 5. App Check enforcement state confirmed from the Console; if enabled for any
    used API, deployment is blocked until a supported server approach exists.
-6. Build setting `GATEWAY_BASE_URL` for a **dedicated test build only**; release
-   builds keep it empty (this is what keeps them on the direct route).
+6. Build setting `GATEWAY_BASE_URL`: now set for Debug **and** Release
+   (`https://gateway.yuedureader.com`). Release does not force the Gateway; the
+   automatic policy decides per sign-in (direct by default/remembered success,
+   region hint only as a first-run hint), only email is Gateway-eligible, and
+   Apple/Google stay direct until interactively verified. Rollback is setting
+   the value back to empty; no code change needed.
 7. Privacy disclosure / host-location confirmation for App Store review.
 
 ## 7. Rollback

@@ -6,6 +6,8 @@ import JavaScriptCore
 // Handles book sources whose `loginUi` JSON defines form fields (text/password/select/button).
 // After the user fills in credentials and taps "Confirm", the loginUrl JS is executed
 // with those credentials stored via LoginManager — mirroring Legado's SourceLoginDialog.
+// Fields are laid out as a wrapping 12-column grid (LoginFormGrid) so each row's `style`
+// decides its width, like Legado's login dialog.
 
 struct BookSourceFormLoginView: View {
     let source: BookSource
@@ -14,7 +16,8 @@ struct BookSourceFormLoginView: View {
     @MainActor private static weak var currentToastAlert: UIAlertController?
 
     private let gs = GlobalSettings.shared
-    @State private var fields: [LoginUIField] = []
+    @State private var fields: [LoginField] = []
+    @State private var fieldLabels: [String: String] = [:]
     @State private var values: [String: String] = [:]
     // Dynamic loginUi is evaluated asynchronously. Start in the same loading state
     // as Legado so the first render never presents an empty form as if it were ready.
@@ -37,55 +40,41 @@ struct BookSourceFormLoginView: View {
 
     var body: some View {
         NavigationStack {
-            // Form with the original SwiftUI row components (TextField/SecureField
-            // trailing rows, Picker, Toggle, Button), laid out stacked full-width —
-            // Legado's login dialog starts the fields directly, without a section header.
-            Form {
-                Section {
-                    ForEach(fields) { field in
-                        switch field.type {
-                        case .text:
-                            HStack {
-                                Text(field.name).foregroundColor(DSColor.textSecondary)
-                                Spacer()
-                                TextField(field.name, text: binding(for: field.name))
-                                    .multilineTextAlignment(.trailing)
-                                    .autocorrectionDisabled()
-                                    .textInputAutocapitalization(.never)
-                            }
-                        case .password:
-                            HStack {
-                                Text(field.name).foregroundColor(DSColor.textSecondary)
-                                Spacer()
-                                SecureField(field.name, text: binding(for: field.name))
-                                    .multilineTextAlignment(.trailing)
-                            }
-                        case .select:
-                            selectRow(field: field)
-                        case .toggle:
-                            toggleRow(field: field)
-                        case .button:
-                            Button(field.name) {
-                                handleButton(field: field)
-                            }
-                            .foregroundColor(DSColor.accent)
-                        }
+            // Source-authored controls own their surfaces, so the page artwork stays
+            // continuous between full-, half- and third-width actions.
+            ScrollView {
+                VStack(spacing: DSSpacing.md) {
+                    if isLoading {
+                        ProgressView()
                     }
-                }
-                .interfaceSectionSurface()
+                    LoginFormGrid(
+                        fields: fields,
+                        values: $values,
+                        labels: fieldLabels,
+                        onValueChange: { field, _ in
+                            if field.type == .select {
+                                persistCurrentFormValues()
+                            }
+                        },
+                        onAction: handleButton
+                    )
 
-                if Self.supportsFanqieLogin(source: source) {
-                    Section {
+                    if Self.supportsFanqieLogin(source: source) {
                         Button {
                             showFanqieLogin = true
                         } label: {
                             Label(localized("番茄登入"), systemImage: "network")
+                                .frame(maxWidth: .infinity)
                         }
-                        .foregroundColor(DSColor.accent)
+                        .buttonStyle(LoginPressButtonStyle())
                     }
-                    .interfaceSectionSurface()
                 }
+                .frame(maxWidth: DSLayout.readableFormWidth)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.md)
             }
+            .scrollDismissesKeyboard(.interactively)
             .disabled(isLoading)
             .navigationTitle(loginTitle)
             .toolbarTitleDisplayMode(.inline)
@@ -189,45 +178,6 @@ struct BookSourceFormLoginView: View {
         return String(format: localized("登入：%@"), name)
     }
 
-    // MARK: - Rows
-
-    @ViewBuilder
-    private func selectRow(field: LoginUIField) -> some View {
-        HStack {
-            Text(field.name).foregroundColor(DSColor.textSecondary)
-            Spacer()
-            if field.options.isEmpty {
-                TextField(field.name, text: binding(for: field.name))
-                    .multilineTextAlignment(.trailing)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-            } else {
-                Picker(field.name, selection: selectionBinding(for: field)) {
-                    ForEach(options(for: field), id: \.self) { option in
-                        Text(option).tag(option)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .tint(DSColor.accent)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func toggleRow(field: LoginUIField) -> some View {
-        if let chars = LoginToggleChars(options: field.options) {
-            Toggle(isOn: toggleBinding(for: field, chars: chars)) {
-                Text(field.name).foregroundColor(DSColor.textSecondary)
-            }
-            .tint(DSColor.accent)
-        } else {
-            // `chars` that isn't a two-state pair can't be a switch —
-            // show the choices instead of guessing which one means on.
-            selectRow(field: field)
-        }
-    }
-
     // MARK: - 更多 menu (Legado menu_show_login_header / menu_del_login_header / menu_log)
 
     private func showLoginHeader() {
@@ -258,14 +208,14 @@ struct BookSourceFormLoginView: View {
         // builds the form by calling a jsLib helper like `Menu()`. Evaluate it first,
         // then parse the JSON it returns. Plain JSON-array loginUi takes the fast path.
         if rawUi.hasPrefix("@js:") || rawUi.hasPrefix("<js>") {
-            isLoading = true
             let src = source
             Task.detached(priority: .userInitiated) {
                 let evaluation = Self.evaluateJsLoginUiResult(source: src)
-                let parsed = LoginUIField.parseResult(from: evaluation.json)
+                let parsed = LoginManager.shared.parseLoginUiResult(evaluation.json)
                 let stored = LoginManager.shared.getLoginInfo(sourceUrl: src.bookSourceUrl)
                 await MainActor.run {
                     self.fields = parsed ?? []
+                    self.fieldLabels = evaluation.labels
                     self.values = Self.initialValues(for: parsed ?? [], stored: stored)
                     self.isLoading = false
                     guard parsed == nil else { return }
@@ -279,17 +229,36 @@ struct BookSourceFormLoginView: View {
             return
         }
 
-        fields = LoginUIField.parse(from: source.loginUi)
+        fields = LoginManager.shared.parseLoginUi(source.loginUi)
+        fieldLabels = fields.literalViewNames
         values = Self.initialValues(
             for: fields,
             stored: LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl)
         )
         isLoading = false
+        refreshDynamicLabels(for: fields)
+    }
+
+    /// Resolve dynamic `viewName` expressions off the main thread. Fields show their
+    /// `name` until the JS answers, mirroring Legado's async `evalUiJs(viewName)`.
+    private func refreshDynamicLabels(for fields: [LoginField]) {
+        guard fields.hasDynamicViewNames else { return }
+        let src = source
+        let credentials = currentFormValues()
+        Task.detached(priority: .utility) {
+            let labels = Self.resolveDynamicLoginLabels(
+                fields: fields, source: src, credentials: credentials
+            )
+            guard !labels.isEmpty else { return }
+            await MainActor.run { self.fieldLabels.merge(labels) { _, new in new } }
+        }
     }
 
     struct LoginUIEvaluationResult: Sendable {
         let json: String
         let error: String?
+        /// Resolved `viewName` labels keyed by field name, when the menu carries any.
+        var labels: [String: String] = [:]
     }
 
     /// Evaluate a JS-based `loginUi` (with jsLib + source runtime wired) and return
@@ -304,12 +273,7 @@ struct BookSourceFormLoginView: View {
     nonisolated static func evaluateJsLoginUiResult(
         source: BookSource
     ) -> LoginUIEvaluationResult {
-        let engine = JSCoreEngine()
-        engine.bookSource = source
-        configureLegadoRuntime(engine, source: source)
-        engine.toastHandler = { msg in
-            Task { @MainActor in BookSourceFormLoginView.presentToastAlert(message: msg) }
-        }
+        let engine = makeLoginEngine(source: source)
 
         let raw = source.loginUi.trimmingCharacters(in: .whitespacesAndNewlines)
         let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -329,55 +293,102 @@ struct BookSourceFormLoginView: View {
         let out = engine.evaluate(
             wrapped,
             result: storedLoginInfo,
-            bindings: [
-                "baseUrl": source.bookSourceUrl,
-                "book": NSNull(),
-                "chapter": NSNull(),
-            ]
+            bindings: sourceLoginBindings(source)
         ) ?? ""
         let error = engine.lastError
+
+        // Dynamic viewNames are evaluated in the same engine — loginUrl and the menu JS
+        // have already run here, so expressions can call their helpers with the menu's
+        // own state still in scope. Legado does this per row through `evalUiJs`.
+        let parsed = LoginManager.shared.parseLoginUiResult(out)
+        var labels = parsed?.literalViewNames ?? [:]
+        if let parsed {
+            labels.merge(
+                evaluateDynamicLabels(
+                    parsed.filter(\.hasDynamicViewName),
+                    engine: engine,
+                    credentials: storedLoginInfo,
+                    source: source
+                )
+            ) { _, new in new }
+        }
+
         AppLogger.parse("⟐ menuEval", context: [
             "resultLen": out.count,
             "head": String(out.prefix(120)),
             "hasLoginJs": !loginJS.isEmpty,
             "jsError": error ?? "none",
         ])
-        return LoginUIEvaluationResult(json: out, error: error)
+        return LoginUIEvaluationResult(json: out, error: error, labels: labels)
     }
 
-    private func binding(for name: String) -> Binding<String> {
-        Binding(
-            get: { values[name] ?? "" },
-            set: { values[name] = $0 }
+    /// The one login engine: a `JSCoreEngine` wired to the source's runtime (jsLib,
+    /// java.* handlers, localStorage-equivalent store) with toasts presented as alerts.
+    nonisolated static func makeLoginEngine(source: BookSource) -> JSCoreEngine {
+        let engine = JSCoreEngine()
+        engine.bookSource = source
+        configureLegadoRuntime(engine, source: source)
+        engine.toastHandler = { msg in
+            Task { @MainActor in BookSourceFormLoginView.presentToastAlert(message: msg) }
+        }
+        return engine
+    }
+
+    nonisolated static func sourceLoginBindings(_ source: BookSource) -> [String: Any] {
+        [
+            "baseUrl": source.bookSourceUrl,
+            "book": NSNull(),
+            "chapter": NSNull(),
+        ]
+    }
+
+    /// Evaluate `viewName` expressions for a static (non-`@js:`) `loginUi` by loading
+    /// the source's loginUrl JS into a fresh engine, matching Legado's `evalUiJs`.
+    nonisolated static func resolveDynamicLoginLabels(
+        fields: [LoginField],
+        source: BookSource,
+        credentials: [String: String]
+    ) -> [String: String] {
+        let dynamicFields = fields.filter(\.hasDynamicViewName)
+        guard !dynamicFields.isEmpty else { return [:] }
+        let engine = makeLoginEngine(source: source)
+        let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let loginJS = LoginManager.shared.extractLoginJs(rawLogin),
+           !loginJS.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            _ = engine.evaluate(
+                loginJS, result: credentials, bindings: sourceLoginBindings(source)
+            )
+        }
+        return evaluateDynamicLabels(
+            dynamicFields, engine: engine, credentials: credentials, source: source
         )
     }
 
-    private func selectionBinding(for field: LoginUIField) -> Binding<String> {
-        Binding(
-            get: { selectedValue(for: field) },
-            set: { newValue in
-                values[field.name] = newValue
-                persistCurrentFormValues()
+    /// A failed or empty `viewName` result falls back to the field name. (Legado prints
+    /// literal "err"/"null" there; those are neither localizable nor actionable, and the
+    /// JS error is already visible through `AppLogger` and the source log.)
+    nonisolated static func evaluateDynamicLabels(
+        _ fields: [LoginField],
+        engine: JSCoreEngine,
+        credentials: [String: String],
+        source: BookSource
+    ) -> [String: String] {
+        var labels: [String: String] = [:]
+        for field in fields {
+            guard let expression = field.viewName, !expression.isEmpty else { continue }
+            let value = engine.evaluate(
+                expression, result: credentials, bindings: sourceLoginBindings(source)
+            )
+            if let value, !value.isEmpty, value != "undefined", value != "null" {
+                labels[field.name] = value
+            } else {
+                labels[field.name] = field.name
             }
-        )
+        }
+        return labels
     }
 
-    private func toggleBinding(for field: LoginUIField, chars: LoginToggleChars) -> Binding<Bool> {
-        Binding(
-            get: { chars.isOn(stored: values[field.name], default: field.defaultValue) },
-            set: { newValue in
-                values[field.name] = chars.value(isOn: newValue)
-                persistCurrentFormValues()
-                // A toggle carries the same `action` as a button row and the source
-                // expects it to run on every flip: 同人小说网 hangs `commentRefreshTip()`
-                // on all 评论 switches to say the change needs a manual refresh.
-                // No-ops when the row declares no action.
-                handleButton(field: field)
-            }
-        )
-    }
-
-    private func selectedValue(for field: LoginUIField) -> String {
+    private func selectedValue(for field: LoginField) -> String {
         if let value = values[field.name], !value.isEmpty {
             return value
         }
@@ -387,16 +398,8 @@ struct BookSourceFormLoginView: View {
         return field.options.first ?? ""
     }
 
-    private func options(for field: LoginUIField) -> [String] {
-        let selected = selectedValue(for: field)
-        guard !selected.isEmpty, !field.options.contains(selected) else {
-            return field.options
-        }
-        return [selected] + field.options
-    }
-
     private static func initialValues(
-        for fields: [LoginUIField],
+        for fields: [LoginField],
         stored: [String: String]?
     ) -> [String: String] {
         var result = stored ?? [:]
@@ -429,7 +432,7 @@ struct BookSourceFormLoginView: View {
     /// Selects with declared options already have a usable selection; toggles
     /// and action buttons are not credentials and therefore are optional.
     static func missingRequiredFieldNames(
-        fields: [LoginUIField],
+        fields: [LoginField],
         values: [String: String]
     ) -> [String] {
         fields.compactMap { field in
@@ -443,9 +446,25 @@ struct BookSourceFormLoginView: View {
                 requiresValue = false
             }
             guard requiresValue,
-                  values[field.name]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+                  Self.resolvedValue(for: field, values: values)
+                    .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
             else { return nil }
             return field.name
+        }
+    }
+
+    /// What the form is effectively holding for a field: the user's edit, else the
+    /// source-declared default the grid displays. Toggles stay out of this — their
+    /// default is display-only so a save never flips them (see `initialValues`).
+    static func resolvedValue(for field: LoginField, values: [String: String]) -> String {
+        if let current = values[field.name], !current.isEmpty {
+            return current
+        }
+        switch field.type {
+        case .text, .password, .select:
+            return field.defaultValue ?? ""
+        case .toggle, .button:
+            return ""
         }
     }
 
@@ -481,7 +500,7 @@ struct BookSourceFormLoginView: View {
         runLoginJS(credentials: credentials)
     }
 
-    private func handleButton(field: LoginUIField) {
+    private func handleButton(field: LoginField) {
         AppLogger.parse("⟐ menuButton", context: ["name": field.name, "action": field.action ?? "nil"])
         guard let action = field.action, !action.isEmpty else { return }
         // If it's a URL, open in browser; if JS, run it
@@ -509,7 +528,11 @@ struct BookSourceFormLoginView: View {
                 switch field.type {
                 case .select:
                     dict[field.name] = selectedValue(for: field)
-                case .text, .password, .toggle:
+                case .text, .password:
+                    // The grid displays the declared default until the user edits the
+                    // field, so that displayed value is what login must send.
+                    dict[field.name] = Self.resolvedValue(for: field, values: values)
+                case .toggle:
                     // A toggle reports only what the user actually flipped — resolving
                     // its default here would write it back on the next save.
                     dict[field.name] = values[field.name] ?? ""
@@ -627,11 +650,12 @@ struct BookSourceFormLoginView: View {
         let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let loginJS = LoginManager.shared.extractLoginJs(rawLogin) ?? ""
         let combined = "\(loginJS)\n\(action)"
+        // Captured before leaving the main actor so a label refresh after the action can
+        // run on the same engine; the source decides the display text, we only resolve it.
+        let dynamicLabelFields = fields.filter(\.hasDynamicViewName)
 
         Task.detached(priority: .userInitiated) {
-            let engine = JSCoreEngine()
-            engine.bookSource = source
-            Self.configureLegadoRuntime(engine, source: source)
+            let engine = Self.makeLoginEngine(source: source)
             let spoke = MenuActionSpokeFlag()
 
             engine.browserPresentHandler = { url, title, completion in
@@ -677,7 +701,7 @@ struct BookSourceFormLoginView: View {
                 let evaluation = Self.evaluateJsLoginUiResult(source: source)
                 // Keep the current menu if a source's refresh script fails; replacing it
                 // with an empty array would hide the only actionable controls.
-                guard let parsed = LoginUIField.parseResult(from: evaluation.json) else {
+                guard let parsed = LoginManager.shared.parseLoginUiResult(evaluation.json) else {
                     AppLogger.parse("⟐ reLoginView failed", context: [
                         "error": evaluation.error ?? "invalid loginUi JSON"
                     ])
@@ -689,6 +713,7 @@ struct BookSourceFormLoginView: View {
                 ])
                 Task { @MainActor in
                     self.fields = parsed
+                    self.fieldLabels = evaluation.labels
                     self.values = Self.initialValues(
                         for: parsed,
                         stored: LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl) ?? self.values
@@ -720,6 +745,23 @@ struct BookSourceFormLoginView: View {
                     after.isEmpty ? "<empty>" : after,
                     actionError ?? "none"
                 )
+            }
+
+            // Legado refreshes the menu's labels after an action (`upUiData`); a source's
+            // dynamic viewNames (e.g. 起点's 段评 state) can change because of it. Resolve
+            // them in the engine that just ran the action, so its state is still in scope.
+            if !dynamicLabelFields.isEmpty {
+                let labels = Self.evaluateDynamicLabels(
+                    dynamicLabelFields,
+                    engine: engine,
+                    credentials: credentials,
+                    source: source
+                )
+                if !labels.isEmpty {
+                    await MainActor.run {
+                        self.fieldLabels.merge(labels) { _, new in new }
+                    }
+                }
             }
 
             // A menu action that finishes without saying anything is the failure mode
@@ -954,61 +996,48 @@ struct BookSourceFormLoginView: View {
     }
 }
 
-// MARK: - LoginUIField model
+// MARK: - Preview
 
-struct LoginUIField: Identifiable {
-    let id = UUID()
-    let name: String
-    let type: FieldType
-    let action: String?
-    let options: [String]
-    let defaultValue: String?
-    enum FieldType: String { case text, password, select, button, toggle }
-
-    static func parse(from json: String) -> [LoginUIField] {
-        parseResult(from: json) ?? []
-    }
-
-    /// Returns nil when the JS result is not an array. A valid `[]` remains an empty
-    /// menu, allowing the caller to distinguish an intentional empty form from failure.
-    static func parseResult(from json: String) -> [LoginUIField]? {
-        // Legado's loginUi is frequently authored as a JS object literal
-        // (single-quoted keys, trailing commas) that strict JSON rejects;
-        // LoginManager.lenientJSONArray normalizes those before decoding.
-        guard let array = LoginManager.lenientJSONArray(json) else { return nil }
-
-        return array.compactMap { dict in
-            guard let name = dict["name"] as? String, !name.isEmpty else { return nil }
-            let typeStr = dict["type"] as? String ?? "text"
-            let type = FieldType(rawValue: typeStr) ?? .text
-            let action = dict["action"] as? String
-            return LoginUIField(
-                name: name,
-                type: type,
-                action: action,
-                options: stringArray(dict["chars"]),
-                defaultValue: stringValue(dict["default"])
-            )
-        }
-    }
-
-    private static func stringArray(_ value: Any?) -> [String] {
-        guard let array = value as? [Any] else { return [] }
-        return array.compactMap(stringValue)
-    }
-
-    private static func stringValue(_ value: Any?) -> String? {
-        switch value {
-        case let string as String:
-            return string
-        case let number as NSNumber:
-            return number.stringValue
-        case let value?:
-            return String(describing: value)
-        case nil:
-            return nil
-        }
-    }
+#Preview("登入表單") {
+    var source = BookSource()
+    source.bookSourceName = "範例書源"
+    source.bookSourceUrl = "https://example.com"
+    source.loginUrl = "function login() { return true; }"
+    // 輸入框整行、按鈕預設半行；cols 1/2/4 展示混合欄寬（登入＋註冊半行、
+    // 遊客體驗整行、條款/隱私/客服/版本四欄）。
+    source.loginUi = """
+    [
+        {"name": "帳號", "type": "text", "chars": ["手機號或 Email"]},
+        {"name": "密碼", "type": "password"},
+        {"name": "登入", "type": "button", "action": "login()"},
+        {"name": "註冊帳號", "type": "button", "action": "register()"},
+        {"name": "遊客體驗", "type": "button", "action": "guest()", "style": {"cols": 1}},
+        {"name": "條款", "type": "button", "action": "terms()", "style": {"cols": 4}},
+        {"name": "隱私", "type": "button", "action": "privacy()", "style": {"cols": 4}},
+        {"name": "客服", "type": "button", "action": "support()", "style": {"cols": 4}},
+        {"name": "版本", "type": "button", "action": "about()", "style": {"cols": 4}}
+    ]
+    """
+    return BookSourceFormLoginView(source: source, onDismiss: {})
 }
 
-// MARK: - Preview
+#Preview("書源選單") {
+    var source = BookSource()
+    source.bookSourceName = "範例書源・設定選單"
+    source.bookSourceUrl = "https://example.com"
+    source.loginUrl = "function noop() {}"
+    // 書源動態選單常見的組合：開關、下拉與動作按鈕；viewName 是引號字面值時
+    // 直接顯示、不求值。layout_wrapBefore 讓「登出」強制換行。
+    source.loginUi = """
+    [
+        {"name": "段評開關", "viewName": "'段評開關'", "type": "toggle",
+         "action": "noop()", "chars": ["🔳", "✅"], "default": "🔳"},
+        {"name": "字體", "viewName": "'字體'", "type": "select",
+         "chars": ["預設", "圓角", "襯線"], "default": "預設"},
+        {"name": "重新整理", "viewName": "'重新整理'", "type": "button", "action": "noop()"},
+        {"name": "登出", "viewName": "'登出'", "type": "button", "action": "noop()",
+         "style": {"layout_wrapBefore": true}}
+    ]
+    """
+    return BookSourceFormLoginView(source: source, onDismiss: {})
+}

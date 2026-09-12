@@ -27,7 +27,9 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// never fires here; it exists to satisfy `TTSPlayable`.
     var onSegmentSkipped: ((Error) -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
-    var onSegmentChanged: ((Int, Int, String) -> Void)?
+    var onSegmentChanged: ((TTSActiveSegment) -> Void)?
+    /// Speaker → voice, scoped to the open book by the reader. Empty = single voice.
+    var roleVoices: [String: String] = [:]
 
     /// Set while the host prepares the next chapter. `AVSpeechSynthesizer` emits nothing
     /// between utterances, so the keep-alive silence carries the audio session through the
@@ -39,8 +41,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private var pendingUnit: TTSNarrationUnit?
 
     private let synthesizer = AVSpeechSynthesizer()
-    private var chunks: [String] = []
-    private var chunkPronunciationHints: [[TTSPronunciationHint]] = []
+    private var segments: [TTSSpeakableSegment] = []
     private var currentIndex = 0
     private var isPaused = false
     private var lastRate: Float = 0.5
@@ -88,12 +89,13 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     ) {
         ttsLog("[TTS][SystemEngine] speak requested textCount=\(text.count) title=\(title) rate=\(rate)")
         resetPlaybackState()
-        let chunkRanges = TTSPronunciationProjector.chunks(text, targetLength: targetChunkLength, hints: pronunciationHints)
-        chunks = chunkRanges.map(\.text)
-        chunkPronunciationHints = chunkRanges.map {
-            TTSPronunciationProjector.project(pronunciationHints, into: $0.sourceRange)
-        }
-        guard !chunks.isEmpty else {
+        segments = TTSPronunciationProjector.segments(
+            text,
+            targetLength: targetChunkLength,
+            hints: pronunciationHints,
+            multiRole: TTSRoleVoiceCast.containsSpeakableVoice(in: roleVoices, system: true)
+        )
+        guard !segments.isEmpty else {
             ttsLog("[TTS][SystemEngine] speak aborted no chunks")
             AppLogger.error(
                 "[TTS] 系統語音沒有可朗讀的文字",
@@ -110,7 +112,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         isPlaying = true
         beginBackgroundTask()
 
-        ttsLog("[TTS][SystemEngine] chunked count=\(chunks.count) firstCount=\(chunks.first?.count ?? 0)")
+        ttsLog("[TTS][SystemEngine] chunked count=\(segments.count) firstCount=\(segments.first?.text.count ?? 0)")
         speakChunk(at: 0, token: playbackToken)
     }
 
@@ -206,10 +208,10 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     func skipForward() {
-        ttsLog("[TTS][SystemEngine] skipForward requested index=\(currentIndex) count=\(chunks.count)")
-        guard !chunks.isEmpty else { return }
+        ttsLog("[TTS][SystemEngine] skipForward requested index=\(currentIndex) count=\(segments.count)")
+        guard !segments.isEmpty else { return }
         let nextIndex = currentIndex + 1
-        guard nextIndex < chunks.count else {
+        guard nextIndex < segments.count else {
             handlePageChunksFinished(token: playbackToken)
             return
         }
@@ -217,14 +219,14 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     func skipBackward() {
-        ttsLog("[TTS][SystemEngine] skipBackward requested index=\(currentIndex) count=\(chunks.count)")
-        guard !chunks.isEmpty else { return }
+        ttsLog("[TTS][SystemEngine] skipBackward requested index=\(currentIndex) count=\(segments.count)")
+        guard !segments.isEmpty else { return }
         jumpToChunk(at: max(currentIndex - 1, 0))
     }
 
     func seekToSegment(_ index: Int) {
-        guard !chunks.isEmpty else { return }
-        let targetIndex = max(0, min(index, chunks.count - 1))
+        guard !segments.isEmpty else { return }
+        let targetIndex = max(0, min(index, segments.count - 1))
         ttsLog("[TTS][SystemEngine] seekToSegment requested index=\(targetIndex) current=\(currentIndex) isPlaying=\(isPlaying) isPaused=\(isPaused)")
 
         if isPlaying {
@@ -251,7 +253,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             ttsLog("[TTS][SystemEngine] speakChunk paused index=\(index)")
             return
         }
-        guard index < chunks.count else {
+        guard index < segments.count else {
             handlePageChunksFinished(token: token)
             return
         }
@@ -262,14 +264,18 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         spokenUTF16Offset = 0
         utteranceBaseOffset = 0
 
-        let hints = chunkPronunciationHints.indices.contains(index) ? chunkPronunciationHints[index] : []
-        utteranceSpeechText = TTSPronunciationSpeechText(text: chunks[index], hints: hints)
+        let hints = segments[index].pronunciationHints
+        utteranceSpeechText = TTSPronunciationSpeechText(text: segments[index].text, hints: hints)
         let utterance = Self.makeUtterance(
-            text: chunks[index],
+            text: segments[index].text,
             rate: lastRate,
             pronunciationHints: hints
         )
-        guard let voice = Self.preferredVoice(for: chunks[index]) else {
+        guard let voice = Self.preferredVoice(
+            for: segments[index].text,
+            speaker: segments[index].speaker,
+            roleVoices: roleVoices
+        ) else {
             failPlayback(TTSPlaybackError.systemVoiceUnavailable)
             return
         }
@@ -277,7 +283,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         activeUtterance = utterance
         isPlaying = true
 
-        onPlaybackStarted?(estimatedDuration(for: chunks[index]))
+        onPlaybackStarted?(estimatedDuration(for: segments[index].text))
         let voiceIdentifier = utterance.voice?.identifier ?? "system-default"
         ttsLog("[TTS][SystemEngine] speak chunk index=\(index) rate=\(utterance.rate) voice=\(voiceIdentifier)")
         synthesizer.speak(utterance)
@@ -288,11 +294,11 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// chunk, from `spokenUTF16Offset`, avoiding the ~5s replay of the whole sentence.
     private func resumeCurrentChunkFromSpokenOffset(token: UUID) {
         guard token == playbackToken else { return }
-        guard chunks.indices.contains(currentIndex) else {
+        guard segments.indices.contains(currentIndex) else {
             handlePageChunksFinished(token: token)
             return
         }
-        let full = chunks[currentIndex] as NSString
+        let full = segments[currentIndex].text as NSString
         let offset = min(max(spokenUTF16Offset, 0), full.length)
         // Nothing spoken yet, or the whole chunk already spoken: fall back to the normal path.
         guard offset > 0, offset < full.length else {
@@ -306,7 +312,13 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         let hints = remainingHints(forChunk: currentIndex, fromUTF16Offset: offset)
         utteranceSpeechText = TTSPronunciationSpeechText(text: remaining, hints: hints)
         let utterance = Self.makeUtterance(text: remaining, rate: lastRate, pronunciationHints: hints)
-        guard let voice = Self.preferredVoice(for: remaining) else {
+        // Same speaker as the chunk being resumed — otherwise pausing mid-line and
+        // continuing would hand the rest of it back to the narrator.
+        guard let voice = Self.preferredVoice(
+            for: remaining,
+            speaker: segments[currentIndex].speaker,
+            roleVoices: roleVoices
+        ) else {
             failPlayback(TTSPlaybackError.systemVoiceUnavailable)
             return
         }
@@ -323,14 +335,14 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// Pronunciation hints for the tail of a chunk starting at `offset`, with each hint's range
     /// clipped to the tail and rebased so it lines up with the re-spoken substring.
     private func remainingHints(forChunk index: Int, fromUTF16Offset offset: Int) -> [TTSPronunciationHint] {
-        guard chunkPronunciationHints.indices.contains(index) else { return [] }
-        let full = chunks[index] as NSString
+        guard segments.indices.contains(index) else { return [] }
+        let full = segments[index].text as NSString
         let tail = NSRange(location: offset, length: max(0, full.length - offset))
-        return TTSPronunciationProjector.project(chunkPronunciationHints[index], into: tail)
+        return TTSPronunciationProjector.project(segments[index].pronunciationHints, into: tail)
     }
 
     private func jumpToChunk(at index: Int) {
-        guard chunks.indices.contains(index) else { return }
+        guard segments.indices.contains(index) else { return }
         stopSynthesizer()
         currentIndex = index
         isPaused = false
@@ -379,7 +391,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             localized("聽書因系統語音中斷而停止"),
             category: .tts,
             detail: """
-            index=\(currentIndex)/\(chunks.count)
+            index=\(currentIndex)/\(segments.count)
             spokenOffset=\(spokenUTF16Offset)
             error=\(String(describing: error))
             """
@@ -392,7 +404,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     private func handlePageChunksFinished(token: UUID) {
         guard token == playbackToken else { return }
-        ttsLog("[TTS][SystemEngine] page chunks finished count=\(chunks.count)")
+        ttsLog("[TTS][SystemEngine] page chunks finished count=\(segments.count)")
 
         switch onPageFinished?() ?? .finished {
         case let .ready(next) where !next.text.isEmpty:
@@ -411,12 +423,12 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             AppLogger.anomaly(
                 localized("聽書停止：下一段沒有可朗讀的內容"),
                 category: .tts,
-                detail: "finishedChunks=\(chunks.count)"
+                detail: "finishedChunks=\(segments.count)"
             )
             resetPlaybackState()
             onStop?()
         case .finished:
-            AppLogger.info("[TTS] 朗讀到結尾", context: ["chunks": chunks.count], level: .notice)
+            AppLogger.info("[TTS] 朗讀到結尾", context: ["chunks": segments.count], level: .notice)
             resetPlaybackState()
             onStop?()
         }
@@ -438,7 +450,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         // "the engine died".
         AppLogger.info(
             "[TTS] 等待下一段內容",
-            context: ["finishedChunks": chunks.count],
+            context: ["finishedChunks": segments.count],
             level: .notice
         )
     }
@@ -455,7 +467,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             AppLogger.anomaly(
                 localized("聽書停止：下一段沒有可朗讀的內容"),
                 category: .tts,
-                detail: "waitingSince=\(currentIndex)/\(chunks.count)"
+                detail: "waitingSince=\(currentIndex)/\(segments.count)"
             )
             isWaitingForNextUnit = false
             resetPlaybackState()
@@ -476,8 +488,13 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     private func publishSegmentChanged(index: Int) {
-        guard chunks.indices.contains(index) else { return }
-        onSegmentChanged?(index, chunks.count, chunks[index])
+        guard segments.indices.contains(index) else { return }
+        onSegmentChanged?(TTSActiveSegment(
+            index: index,
+            total: segments.count,
+            text: segments[index].text,
+            narrationRange: segments[index].sourceRange
+        ))
     }
 
     private func stopSynthesizer() {
@@ -493,8 +510,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         silence.stop()
         isWaitingForNextUnit = false
         pendingUnit = nil
-        chunks.removeAll()
-        chunkPronunciationHints.removeAll()
+        segments.removeAll()
         currentIndex = 0
         isPaused = false
         isPlaying = false
@@ -515,6 +531,26 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             return selected
         }
         return AVSpeechSynthesisVoice(language: language)
+    }
+
+    /// The voice for one segment: the character's own if 多角色朗讀 has cast them,
+    /// otherwise the narrator's.
+    ///
+    /// A cast voice that no longer resolves — the user deleted that downloaded voice
+    /// since assigning it — falls back to the narrator rather than to silence, because
+    /// `speakChunk` treats a missing voice as a playback failure and ends the session.
+    static func preferredVoice(
+        for text: String,
+        speaker: String?,
+        roleVoices: [String: String]
+    ) -> AVSpeechSynthesisVoice? {
+        if let speaker,
+           let stored = roleVoices[speaker],
+           let identifier = TTSRoleVoice(storageValue: stored)?.systemIdentifier,
+           let voice = AVSpeechSynthesisVoice(identifier: identifier) {
+            return voice
+        }
+        return preferredVoice(for: text)
     }
 
     static func preferredLanguage(for text: String) -> String {

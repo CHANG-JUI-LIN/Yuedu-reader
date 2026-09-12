@@ -32,6 +32,23 @@ enum TTSNextUnitOutcome {
     case finished
 }
 
+/// What the engine just started speaking.
+///
+/// This used to be three loose arguments `(index, total, text)`, and the reader found
+/// the words on screen by searching the page for `text`. That picks the first match,
+/// which is the wrong one as soon as a chapter says `「嗯。」` twice — and splitting
+/// segments per speaker makes short repeated lines ordinary rather than rare. Carrying
+/// `narrationRange` lets the reader derive the position instead of guessing it.
+struct TTSActiveSegment: Equatable {
+    let index: Int
+    let total: Int
+    let text: String
+    /// Where the segment sits in the narration unit the engine was handed — not in the
+    /// chapter. Only the reader knows how that unit was sliced out of the chapter, so
+    /// only the reader can finish the conversion.
+    let narrationRange: NSRange
+}
+
 enum TTSPlaybackError: LocalizedError {
     case chunkUnavailable(index: Int, underlying: Error)
     case chunkSkipped(index: Int, underlying: Error)
@@ -81,7 +98,16 @@ protocol TTSPlayable: AnyObject {
     /// still producing audio.
     var onSegmentSkipped: ((Error) -> Void)? { get set }
     var onPlaybackStarted: ((TimeInterval) -> Void)? { get set }
-    var onSegmentChanged: ((Int, Int, String) -> Void)? { get set }
+    var onSegmentChanged: ((TTSActiveSegment) -> Void)? { get set }
+
+    /// 多角色朗讀: speaker name → voice identifier, already scoped to the book by the
+    /// reader (engines have no idea which book is open).
+    ///
+    /// Empty means single-voice playback, and it means it all the way down: the chapter
+    /// is not split at quote boundaries at all. Splitting with nobody cast would produce
+    /// identical audio out of many more utterances — and on the network engine, many
+    /// more requests — for no audible difference.
+    var roleVoices: [String: String] { get set }
 
     /// Start reading the given text. Rate uses the UI scale 0.10–1.0 where 0.5 is 100%.
     func speak(text: String, title: String, rate: Float, pronunciationHints: [TTSPronunciationHint])

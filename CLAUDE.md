@@ -24,19 +24,34 @@ SIM="$(bash scripts/sim.sh dest)"
 # Build for simulator
 xcodebuild -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" build
 
-# Run all unit tests
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM"
+# Run all unit tests. `-parallel-testing-enabled NO` is MANDATORY — see below.
+xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -parallel-testing-enabled NO
 
-# Run a single test class (no parallel — many tests depend on shared state)
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -only-testing:'yuedu appTests/CoreTextWritingModeTests'
+# Run a single test class (many tests depend on shared state)
+xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -parallel-testing-enabled NO -only-testing:'yuedu appTests/CoreTextWritingModeTests'
 
 # Run a single test method
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -only-testing:'yuedu appTests/CoreTextWritingModeTests/testVerticalRTLPagination'
+xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -parallel-testing-enabled NO -only-testing:'yuedu appTests/CoreTextWritingModeTests/testVerticalRTLPagination'
 ```
 
 Use `-quiet` to suppress build output, but pair it with `-resultBundlePath` — `-quiet` swallows the failure messages. Tests are in `Tests/iOS/yuedu appTests/`. UI tests in `Tests/iOS-UI/`.
 
 ### Simulator gotchas
+
+- **Always pass `-parallel-testing-enabled NO` to `xcodebuild test`.** Without it Xcode
+  clones the destination simulator into `~/Library/Developer/XCTestDevices` for every run,
+  and **`xcodebuild` can hang forever tearing those clones down after the tests have already
+  passed**. Measured twice: `✔ Test run with 84 tests in 9 suites passed after 1.340 seconds`
+  in the log, then the process sitting at 0% CPU with no `swift-frontend` alive and no output
+  for 5–10 minutes, never exiting. It reads exactly like a stuck compile, and it is not one —
+  always check whether the log already contains a test verdict before concluding the build
+  hung. The flag is also simply correct here: these tests share state and must not run in
+  parallel.
+  Killed or interrupted runs leave their clones behind and nothing ever reclaims them;
+  `xcrun simctl --set ~/Library/Developer/XCTestDevices delete all` clears them. Note that
+  `du` and disk-analyzer tools wildly overstate their size (28 clones reported as 903 GB on a
+  460 GB disk) — they are APFS copy-on-write clones sharing blocks with the original, so
+  deleting them frees almost nothing. Clean them up for CoreSimulator's health, not for space.
 
 All of these were learned the hard way. The first three recur every time the simulator lineup or the installed Xcodes change — `sim.sh doctor` checks for all three at once.
 

@@ -62,9 +62,10 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
     var barHex: UInt32
     var accentHex: UInt32
     var dialogueHex: UInt32
-    /// Page-background snapshot captured by 保存為新主題, keyed by
-    /// `AppearancePageBackgroundScope` raw value. Optional so themes saved
-    /// before this field existed keep decoding.
+    /// Legacy decode slot. Page backgrounds now live in `extras` so one mechanism
+    /// covers them; `GlobalSettings.loadCustomAppearanceThemes` folds anything found
+    /// here into `extras` and clears this. Kept decodable so a theme written by an
+    /// earlier build still carries its artwork over — do not read it anywhere else.
     var pageBackgrounds: [String: AppearancePageBackgroundConfig]?
     /// Optional hand-authored dark palette. nil = derive it (see
     /// `AppearanceThemePreset.palette(for:)`); themes saved before this field
@@ -82,7 +83,15 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
     var darkTextTertiaryHex: UInt32?
     /// Everything this theme owns beyond colours — tab icons, font, covers,
     /// effects, card artwork. nil for a plain colour theme.
+    ///
+    /// Editing any of those settings while this theme is selected rewrites this
+    /// snapshot, which is what makes a theme keep its own set rather than leaving
+    /// the change on whichever theme is selected next.
     var extras: AppearanceThemeExtras?
+    /// What `extras` held the moment this theme was imported, so 重置此主題 can put
+    /// the pack author's look back after the write-back above has edited it. nil
+    /// for a theme the user built here — there is no author's version to return to.
+    var originalExtras: AppearanceThemeExtras?
 
     /// The light-appearance trio, or nil unless all three were authored — a
     /// partial set would leave one level system-coloured against two custom ones,
@@ -124,7 +133,8 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
         darkTextPrimaryHex: UInt32? = nil,
         darkTextSecondaryHex: UInt32? = nil,
         darkTextTertiaryHex: UInt32? = nil,
-        extras: AppearanceThemeExtras? = nil
+        extras: AppearanceThemeExtras? = nil,
+        originalExtras: AppearanceThemeExtras? = nil
     ) {
         self.id = id
         self.name = name
@@ -142,6 +152,7 @@ struct AppearanceCustomTheme: Identifiable, Codable, Hashable {
         self.darkTextSecondaryHex = darkTextSecondaryHex
         self.darkTextTertiaryHex = darkTextTertiaryHex
         self.extras = extras
+        self.originalExtras = originalExtras
     }
 }
 

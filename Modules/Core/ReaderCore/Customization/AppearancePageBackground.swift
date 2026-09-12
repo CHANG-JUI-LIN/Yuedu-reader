@@ -238,24 +238,6 @@ final class AppearancePageBackgroundImageStore {
         try? fileManager.removeItem(at: url)
     }
 
-    /// Copies an existing stored image under a new name, so a saved theme owns
-    /// its snapshot independently of the live settings (either side can be
-    /// deleted without dangling the other).
-    func duplicate(fileName: String) -> String? {
-        guard let source = try? fileURL(fileName: fileName),
-              fileManager.fileExists(atPath: source.path) else {
-            return nil
-        }
-        let copyName = "pagebg-\(UUID().uuidString).\((fileName as NSString).pathExtension)"
-        guard let destination = try? fileURL(fileName: copyName) else { return nil }
-        do {
-            try fileManager.copyItem(at: source, to: destination)
-            return copyName
-        } catch {
-            return nil
-        }
-    }
-
     func fileData(fileName: String) -> Data? {
         guard let url = try? fileURL(fileName: fileName) else { return nil }
         return try? Data(contentsOf: url)
@@ -406,7 +388,7 @@ extension AppearanceThemeExportFile {
     /// a menu row lays out.
     init(customTheme theme: AppearanceCustomTheme) {
         var payloads: [String: PageBackgroundPayload] = [:]
-        for (key, config) in theme.pageBackgrounds ?? [:] {
+        for (key, config) in theme.extras?.pageBackgrounds ?? [:] {
             payloads[key] = PageBackgroundPayload(
                 lightPrimaryHex: config.lightPrimaryHex,
                 lightSecondaryHex: config.lightSecondaryHex,
@@ -442,8 +424,17 @@ extension AppearanceThemeExportFile {
             darkTextPrimaryHex: theme.darkTextPrimaryHex,
             darkTextSecondaryHex: theme.darkTextSecondaryHex,
             darkTextTertiaryHex: theme.darkTextTertiaryHex,
-            extras: theme.extras
+            // Page backgrounds travel in `pageBackgrounds` above, with their bytes.
+            // The copy in `extras` is a list of file names on *this* device's disk, so
+            // shipping it would hand the importer references that resolve to nothing.
+            extras: Self.exportedExtras(theme.extras)
         )
+    }
+
+    private static func exportedExtras(_ extras: AppearanceThemeExtras?) -> AppearanceThemeExtras? {
+        guard var extras, extras.pageBackgrounds != nil else { return extras }
+        extras.pageBackgrounds = nil
+        return extras.isEmpty ? nil : extras
     }
 
     private static func imagePayload(_ fileName: String?) -> ImagePayload? {

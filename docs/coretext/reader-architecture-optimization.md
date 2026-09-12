@@ -326,7 +326,7 @@ func updateUIViewController(_ pvc: UIPageViewController, context: Context) {
 | `ReaderPageProvider.swift` | 204 | 協議唯一使用者是死的 adapter |
 | `CoreTextScrollProgressThrottle.swift` | ~40 | 僅測試引用 |
 | `BookshelfSearchFilter.swift` | ~40 | 僅測試引用 |
-| `LoginUiBuilder.swift` | ~60 | 生產登入已改走 LoginUIField.parse |
+| `LoginUiBuilder.swift` | ~60 | 生產登入已改走 LoginManager.parseLoginUi（LoginField） |
 | `CoreTextChapterEndPlaceholderTests.swift` | 126 | 只測死掉的 LegacyCoreTextPageProvider |
 | `BookshelfSearchTests.swift` | ~30 | 只測死掉的 BookshelfSearchFilter |
 

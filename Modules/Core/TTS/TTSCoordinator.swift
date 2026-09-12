@@ -248,6 +248,10 @@ final class TTSCoordinator: ObservableObject {
     @Published private(set) var currentSegmentIndex = 0
     @Published private(set) var totalSegments = 0
     @Published private(set) var currentSegmentText = ""
+    /// Where the spoken segment sits in the narration unit the engine was handed.
+    /// The reader turns this into a chapter position; nothing here knows how the unit
+    /// was sliced out of the chapter.
+    @Published private(set) var currentSegmentNarrationRange: NSRange?
     /// A queued segment is published before its audio arrives. Preview loading UI must
     /// follow the player's real start callback, not the text/highlight callback.
     @Published private(set) var hasAudiblePlaybackStarted = false
@@ -278,6 +282,17 @@ final class TTSCoordinator: ObservableObject {
     /// system-voice setting never redirects pause/stop to the wrong engine mid-session.
     private lazy var activeEngine: TTSPlayable = httpEngine
     private var currentEngine: TTSPlayable { activeEngine }
+
+    /// 多角色朗讀 cast for the open book, set by the reader (which is the only thing
+    /// that knows which book it is). Pushed onto both engines rather than the active
+    /// one, so a mid-session engine switch cannot leave the cast behind.
+    var roleVoices: [String: String] = [:] {
+        didSet {
+            guard roleVoices != oldValue else { return }
+            httpEngine.roleVoices = roleVoices
+            systemEngine.roleVoices = roleVoices
+        }
+    }
     private static weak var activeSystemMediaCoordinator: TTSCoordinator?
 
     /// Use the HTTP audio player for direct chapter audio and configured HTTP TTS sources.
@@ -378,6 +393,7 @@ final class TTSCoordinator: ObservableObject {
         currentSegmentIndex = 0
         totalSegments = 0
         currentSegmentText = ""
+        currentSegmentNarrationRange = nil
         hasAudiblePlaybackStarted = false
         currentEngine.speak(
             text: text,
@@ -539,6 +555,7 @@ final class TTSCoordinator: ObservableObject {
         // screen doesn't run past the (now meaningless) duration of the finished chapter.
         freezeNowPlayingElapsed()
         currentSegmentText = ""
+        currentSegmentNarrationRange = nil
         updateNowPlaying()
         publishFloatingPlayerState()
     }
@@ -555,6 +572,7 @@ final class TTSCoordinator: ObservableObject {
         currentSegmentIndex = 0
         totalSegments = 0
         currentSegmentText = ""
+        currentSegmentNarrationRange = nil
         currentEngine.supplyPendingUnit(unit)
         isPlaying = currentEngine.isPlaying
         playbackState = isPlaying ? .playing : .paused
@@ -588,6 +606,7 @@ final class TTSCoordinator: ObservableObject {
             currentSegmentIndex = 0
             totalSegments = 0
             currentSegmentText = ""
+            currentSegmentNarrationRange = nil
         }
         updateNowPlaying()
         publishFloatingPlayerState()
@@ -619,6 +638,7 @@ final class TTSCoordinator: ObservableObject {
         currentSegmentIndex = 0
         totalSegments = 0
         currentSegmentText = ""
+        currentSegmentNarrationRange = nil
         Task { @MainActor [weak self] in
             guard let self else { return }
             NowPlayingHub.shared.detach(self)
@@ -721,12 +741,13 @@ final class TTSCoordinator: ObservableObject {
                 self?.handleEnginePlaybackStarted(duration: duration)
             }
         }
-        engine.onSegmentChanged = { [weak self] index, total, text in
+        engine.onSegmentChanged = { [weak self] segment in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.currentSegmentIndex = index
-                self.totalSegments = total
-                self.currentSegmentText = text
+                self.currentSegmentIndex = segment.index
+                self.totalSegments = segment.total
+                self.currentSegmentText = segment.text
+                self.currentSegmentNarrationRange = segment.narrationRange
                 self.syncNowPlayingElapsedToCurrentSegment(restartClock: self.isPlaying)
                 self.updateNowPlaying()
                 self.publishFloatingPlayerState()

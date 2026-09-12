@@ -13,15 +13,23 @@ struct AppearanceThemeExportTests {
         pageBackgrounds: [String: AppearancePageBackgroundConfig]? = nil,
         dark: AppearanceCustomThemeDarkColors? = nil
     ) -> AppearanceCustomTheme {
-        AppearanceCustomTheme(
+        // Page backgrounds live in `extras` — the theme's own field is a legacy decode
+        // slot that `GlobalSettings` empties on load.
+        var extras: AppearanceThemeExtras?
+        if let pageBackgrounds {
+            var built = AppearanceThemeExtras()
+            built.pageBackgrounds = pageBackgrounds
+            extras = built
+        }
+        return AppearanceCustomTheme(
             name: name,
             backgroundHex: backgroundHex,
             textHex: 0x263443,
             barHex: 0xDCE9F8,
             accentHex: 0x3478F6,
             dialogueHex: 0xD4E4F7,
-            pageBackgrounds: pageBackgrounds,
-            dark: dark
+            dark: dark,
+            extras: extras
         )
     }
 
@@ -190,7 +198,7 @@ struct AppearanceThemeExportTests {
             for: AppearanceThemePreset.preset(from: theme)
         )
         let key = AppearancePageBackgroundScope.global.rawValue
-        #expect(exported.pageBackgrounds?[key]?.lightPrimaryHex == 0xAABBCC)
+        #expect(exported.extras?.pageBackgrounds?[key]?.lightPrimaryHex == 0xAABBCC)
     }
 
     @Test("exporting a built-in carries the page backgrounds in effect now")
@@ -208,7 +216,12 @@ struct AppearanceThemeExportTests {
             for: AppearanceThemePreset.freeSolidPresets[0]
         )
         let key = AppearancePageBackgroundScope.global.rawValue
-        #expect(exported.pageBackgrounds?[key]?.lightPrimaryHex == 0x112233)
+        #expect(exported.extras?.pageBackgrounds?[key]?.lightPrimaryHex == 0x112233)
+        // What actually ships: the wire file still carries them in its own field, with
+        // the bytes, and must not also ship the exporter's local file names in extras.
+        let file = AppearanceThemeExportFile(customTheme: exported)
+        #expect(file.pageBackgrounds?[key]?.lightPrimaryHex == 0x112233)
+        #expect(file.extras?.pageBackgrounds == nil)
     }
 
     // MARK: - Filenames

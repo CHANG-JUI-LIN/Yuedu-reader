@@ -24,7 +24,7 @@ final class HTTPTTSQueueTests: XCTestCase {
         var segments: [Int] = []
         var skipped = false
         var stopped = false
-        engine.onSegmentChanged = { index, _, _ in segments.append(index) }
+        engine.onSegmentChanged = { segments.append($0.index) }
         engine.onSegmentSkipped = { _ in skipped = true }
         engine.onStop = { stopped = true }
         let failed = expectation(description: "Current segment failed")

@@ -348,21 +348,30 @@ extension GlobalSettings {
         tab: RootTabItem,
         slot: RootTabIconSlot
     ) -> RootTabIconAsset {
-        if let oldAsset = rootTabIconAsset(for: tab, slot: slot) {
-            RootTabIconStorageManager.shared.delete(oldAsset)
-        }
+        let replaced = rootTabIconAsset(for: tab, slot: slot)
         rootTabIconAssets.removeAll { $0.tabID == tab.rawValue && $0.slotRawValue == slot.rawValue }
         rootTabIconAssets.append(asset)
         rootTabIconAssets.sort {
             ($0.tabID, $0.slotRawValue) < ($1.tabID, $1.slotRawValue)
         }
+        discardRootTabIconFile(replaced)
         return asset
     }
 
     func deleteRootTabIcon(tab: RootTabItem, slot: RootTabIconSlot) {
         guard let asset = rootTabIconAsset(for: tab, slot: slot) else { return }
-        RootTabIconStorageManager.shared.delete(asset)
         rootTabIconAssets.removeAll { $0.id == asset.id }
+        discardRootTabIconFile(asset)
+    }
+
+    /// Both callers above mutate `rootTabIconAssets` *before* getting here on purpose:
+    /// that assignment's write-back takes the old artwork off the selected theme, so
+    /// the reference check below can tell "nobody wants this any more" from "another
+    /// theme still draws it". Deleting first — which is what both used to do — would
+    /// pull a shared icon out from under every other theme naming it.
+    private func discardRootTabIconFile(_ asset: RootTabIconAsset?) {
+        guard let asset, !isRootTabIconFileReferenced(asset.fileName) else { return }
+        RootTabIconStorageManager.shared.delete(asset)
     }
 }
 

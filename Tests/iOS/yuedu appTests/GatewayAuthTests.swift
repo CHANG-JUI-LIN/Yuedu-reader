@@ -1,3 +1,4 @@
+import FirebaseAuth
 import Foundation
 import Testing
 @testable import yuedu_app
@@ -73,15 +74,63 @@ struct AuthRoutePolicyTests {
         ).route == .direct)
     }
 
-    @Test("sign-in may switch routes after connectivity failure, side effects may not")
+    @Test("only an idempotent email sign-in may switch routes automatically")
     func fallbackPolicy() {
         #expect(AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .signInWithEmail))
-        #expect(AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .signInWithApple))
-        #expect(AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .signInWithGoogle))
+        #expect(!AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .signInWithApple))
+        #expect(!AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .signInWithGoogle))
         #expect(!AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .signUpWithEmail))
         #expect(!AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .link))
         #expect(!AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .deleteAccount))
         #expect(!AuthRouteFallbackPolicy.allowsAutomaticRouteSwitch(operation: .bindPurchase))
+    }
+
+    @Test("only email may resolve to the Gateway in a Release build")
+    func gatewayEligibility() {
+        #expect(AuthRouteFallbackPolicy.isGatewayEligible(operation: .signInWithEmail))
+        #expect(AuthRouteFallbackPolicy.isGatewayEligible(operation: .signUpWithEmail))
+        #expect(!AuthRouteFallbackPolicy.isGatewayEligible(operation: .signInWithApple))
+        #expect(!AuthRouteFallbackPolicy.isGatewayEligible(operation: .signInWithGoogle))
+        #expect(!AuthRouteFallbackPolicy.isGatewayEligible(operation: .link))
+        #expect(!AuthRouteFallbackPolicy.isGatewayEligible(operation: .unlink))
+        #expect(!AuthRouteFallbackPolicy.isGatewayEligible(operation: .deleteAccount))
+        #expect(!AuthRouteFallbackPolicy.isGatewayEligible(operation: .bindPurchase))
+    }
+}
+
+@Suite("Auth route error classifier")
+struct AuthRouteErrorClassifierTests {
+    @Test("transport and network failures may switch routes")
+    func connectivityFailuresSwitch() {
+        #expect(AuthRouteErrorClassifier.isRouteFailure(
+            GatewayAPIError.transport(URLError(.timedOut))
+        ))
+        #expect(AuthRouteErrorClassifier.isRouteFailure(
+            GatewayAPIError.server(code: "upstream-unavailable", message: "down", status: 503, details: [:])
+        ))
+        #expect(AuthRouteErrorClassifier.isRouteFailure(
+            NSError(domain: AuthErrorDomain, code: AuthErrorCode.networkError.rawValue)
+        ))
+        #expect(AuthRouteErrorClassifier.isRouteFailure(URLError(.cannotFindHost)))
+    }
+
+    @Test("credential, disabled and conflict answers never switch routes")
+    func businessFailuresNeverSwitch() {
+        #expect(!AuthRouteErrorClassifier.isRouteFailure(
+            GatewayAPIError.server(code: "invalid-credentials", message: "wrong", status: 401, details: [:])
+        ))
+        #expect(!AuthRouteErrorClassifier.isRouteFailure(
+            GatewayAPIError.server(code: "user-disabled", message: "disabled", status: 403, details: [:])
+        ))
+        #expect(!AuthRouteErrorClassifier.isRouteFailure(
+            GatewayAPIError.server(code: "conflict", message: "duplicate", status: 409, details: [:])
+        ))
+        #expect(!AuthRouteErrorClassifier.isRouteFailure(
+            NSError(domain: AuthErrorDomain, code: AuthErrorCode.wrongPassword.rawValue)
+        ))
+        #expect(!AuthRouteErrorClassifier.isRouteFailure(
+            NSError(domain: AuthErrorDomain, code: AuthErrorCode.userDisabled.rawValue)
+        ))
     }
 }
 

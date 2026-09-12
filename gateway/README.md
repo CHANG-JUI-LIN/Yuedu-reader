@@ -284,11 +284,16 @@ Google Cloud / Firebase console:
    project-level QPS is shared, per-IP abuse detection is the new risk, and the
    real numbers must be read from the Console.
 
-iOS release configuration:
+iOS release configuration (current state):
 
-8. Set `GATEWAY_BASE_URL` only after a working HTTPS entry exists and has been
-   verified. With the value empty (release default), `GatewayBaseURL` is empty,
-   the app stays on the direct route, and a remembered Gateway route is ignored.
+8. `GATEWAY_BASE_URL = https://gateway.yuedureader.com` is set for **both Debug
+   and Release**; `GatewayBaseURL` is injected at build time. Routing stays on
+   the existing automatic policy: direct is preferred by default and by
+   remembered success; the region hint selects the Gateway only when there is no
+   memory yet. Release never forces the Gateway, and the forced-route launch
+   argument is DEBUG-only. Apple/Google sign-in remain on the direct path until
+   their Gateway exchange is interactively verified; only email may resolve to
+   the Gateway.
 9. Before shipping, re-run the account regression tests and, from a real China
    network, record carrier/city/time/operation/success-rate/latency.
 
@@ -344,7 +349,8 @@ Without those variables it prints `NOT EXECUTED` and exits 2 — record that as
 ## What the owner must provide
 
 - The VPS, domain, DNS record and TLS certificate described above.
-- The service-account JSON and the dedicated server API key.
-- `GATEWAY_BASE_URL` for the intended build configuration (left empty until the
-  HTTPS entry is verified).
+- The service-account JSON and a dedicated server API key (the deployment
+  currently uses the project's public client key; replace before a wide
+  rollout).
+- `GATEWAY_BASE_URL` (currently set for Debug and Release).
 - Privacy disclosure and host-location confirmation for the App Store listing.

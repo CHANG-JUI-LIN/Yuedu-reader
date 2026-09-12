@@ -23,7 +23,9 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     var onError: ((Error) -> Void)?
     var onSegmentSkipped: ((Error) -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
-    var onSegmentChanged: ((Int, Int, String) -> Void)?
+    var onSegmentChanged: ((TTSActiveSegment) -> Void)?
+    /// Speaker → voice, scoped to the open book by the reader. Empty = single voice.
+    var roleVoices: [String: String] = [:]
 
     /// Set while the host prepares the next chapter; the same keep-alive silence that covers
     /// chunk-download gaps carries the session through this longer wait.
@@ -46,7 +48,9 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// A failed speculative request is retried only when playback actually needs it.
     private var failedPreloads: Set<Int> = []
     private var audioCache: [Int: Data] = [:]
-    private var chunks: [String] = []
+    private var segments: [TTSSpeakableSegment] = []
+    /// Ruby-substituted text actually sent to the provider, derived from `segments`
+    /// in one `map` so the two can never fall out of step.
     private var speechChunks: [String] = []
     private var currentIndex = 0
     private var playbackToken = UUID()
@@ -121,17 +125,24 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             onError?(error)
             return
         }
-        let ranges = isDirectChapterAudio
-            ? [TTSChunkRange(text: text, sourceRange: NSRange(location: 0, length: (text as NSString).length))]
-            : TTSPronunciationProjector.chunks(text, targetLength: targetChunkLength, hints: pronunciationHints)
-        chunks = ranges.map(\.text)
-        speechChunks = ranges.map { chunk in
-            TTSPronunciationSpeechText(
-                text: chunk.text,
-                hints: TTSPronunciationProjector.project(pronunciationHints, into: chunk.sourceRange)
-            ).text
+        segments = isDirectChapterAudio
+            ? [TTSSpeakableSegment(
+                text: text,
+                sourceRange: NSRange(location: 0, length: (text as NSString).length)
+              )]
+            : TTSPronunciationProjector.segments(
+                text,
+                targetLength: targetChunkLength,
+                hints: pronunciationHints,
+                // Only 微軟線上語音 can change voice between segments; a book-source
+                // template bakes its voice into the URL, so splitting buys nothing.
+                multiRole: audioProvider is EdgeTTSAudioProvider
+                    && TTSRoleVoiceCast.containsSpeakableVoice(in: roleVoices, system: false)
+            )
+        speechChunks = segments.map {
+            TTSPronunciationSpeechText(text: $0.text, hints: $0.pronunciationHints).text
         }
-        guard !chunks.isEmpty else {
+        guard !segments.isEmpty else {
             ttsLog("[TTS][HTTPEngine] speak aborted no chunks")
             return
         }
@@ -147,7 +158,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         isPlaying = true
         beginBackgroundTask()
 
-        ttsLog("[TTS][HTTPEngine] chunked count=\(chunks.count) firstCount=\(chunks.first?.count ?? 0)")
+        ttsLog("[TTS][HTTPEngine] chunked count=\(segments.count) firstCount=\(segments.first?.text.count ?? 0)")
         playChunk(at: 0, token: playbackToken)
     }
 
@@ -233,7 +244,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     func updateRate(_ rate: Float) {
         guard lastRate != rate else { return }
         lastRate = rate
-        guard !chunks.isEmpty else { return }
+        guard !segments.isEmpty else { return }
         ttsLog("[TTS][HTTPEngine] updateRate live rate=\(rate) serverControlsSpeed=\(serverControlsSpeed) index=\(currentIndex)")
 
         if !serverControlsSpeed {
@@ -258,10 +269,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     func skipForward() {
-        ttsLog("[TTS][HTTPEngine] skipForward requested index=\(currentIndex) count=\(chunks.count)")
-        guard !chunks.isEmpty else { return }
+        ttsLog("[TTS][HTTPEngine] skipForward requested index=\(currentIndex) count=\(segments.count)")
+        guard !segments.isEmpty else { return }
         let nextIndex = currentIndex + 1
-        guard nextIndex < chunks.count else {
+        guard nextIndex < segments.count else {
             handlePageChunksFinished(token: playbackToken)
             return
         }
@@ -269,14 +280,14 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     func skipBackward() {
-        ttsLog("[TTS][HTTPEngine] skipBackward requested index=\(currentIndex) count=\(chunks.count)")
-        guard !chunks.isEmpty else { return }
+        ttsLog("[TTS][HTTPEngine] skipBackward requested index=\(currentIndex) count=\(segments.count)")
+        guard !segments.isEmpty else { return }
         jumpToChunk(at: max(currentIndex - 1, 0))
     }
 
     func seekToSegment(_ index: Int) {
-        guard !chunks.isEmpty else { return }
-        let targetIndex = max(0, min(index, chunks.count - 1))
+        guard !segments.isEmpty else { return }
+        let targetIndex = max(0, min(index, segments.count - 1))
         ttsLog("[TTS][HTTPEngine] seekToSegment requested index=\(targetIndex) current=\(currentIndex) isPlaying=\(isPlaying) isPaused=\(isPaused)")
 
         if isPlaying {
@@ -310,7 +321,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             ttsLog("[TTS][HTTPEngine] playChunk paused index=\(index)")
             return
         }
-        guard index < chunks.count else {
+        guard index < segments.count else {
             handlePageChunksFinished(token: token)
             return
         }
@@ -342,11 +353,11 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     private func startPreloading(token: UUID) {
-        guard token == playbackToken, !chunks.isEmpty, !isPaused else { return }
+        guard token == playbackToken, !segments.isEmpty, !isPaused else { return }
         // Download completion does not move the playback cursor. Basing this window on
         // the completed download recursively synthesized the rest of the chapter.
         let index = currentIndex + 1
-        let end = min(chunks.count, index + preloadWindow)
+        let end = min(segments.count, index + preloadWindow)
         guard index < end else { return }
 
         for preloadIndex in index..<end {
@@ -362,8 +373,33 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         case preload
     }
 
+    /// Which provider synthesizes one segment.
+    ///
+    /// 多角色朗讀 swaps the voice per segment, which on this engine means a different
+    /// provider instance per request — an Edge request carries its voice in the SSML it
+    /// sends, so the voice is fixed the moment the request is built and cannot be changed
+    /// for a request already in flight. Building a fresh provider per segment is therefore
+    /// the only way to switch, and it is cheap: `EdgeTTSAudioProvider` is a value holding a
+    /// voice and a stateless transport.
+    ///
+    /// Everything else — a book-source template, direct chapter audio — keeps the provider
+    /// captured for this narration unit. Those bake the voice into a URL the user imported,
+    /// so there is no second voice to switch to.
+    private func provider(forSegmentAt index: Int) -> any TTSAudioProvider {
+        guard injectedAudioProvider == nil,
+              audioProvider is EdgeTTSAudioProvider,
+              segments.indices.contains(index),
+              let speaker = segments[index].speaker,
+              let stored = roleVoices[speaker],
+              let voice = TTSRoleVoice(storageValue: stored)?.edgeVoice
+        else {
+            return audioProvider
+        }
+        return EdgeTTSAudioProvider(voice: voice)
+    }
+
     private func downloadChunk(at index: Int, token: UUID, priority: DownloadPriority) {
-        guard token == playbackToken, index < chunks.count else { return }
+        guard token == playbackToken, index < segments.count else { return }
         if audioCache[index] != nil { return }
         if activeTasks[index] != nil {
             if priority == .current {
@@ -386,6 +422,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         let chunkText = speechChunks[index]
         let title = lastTitle
         let rate = lastRate
+        let audioProvider = provider(forSegmentAt: index)
         ttsLog("[TTS][HTTPEngine] provider request start index=\(index) provider=\(audioProvider.displayName) priority=\(priority) textCount=\(chunkText.count)")
         let task = Task { [weak self, audioProvider] in
             guard let self else { return }
@@ -623,7 +660,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     private func jumpToChunk(at index: Int) {
-        guard index >= 0, index < chunks.count else { return }
+        guard index >= 0, index < segments.count else { return }
         invalidateDownloads()
         audioPlayer?.stop()
         loadedPlayerIndex = nil
@@ -639,8 +676,13 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 
     private func publishSegmentChanged(index: Int) {
-        guard chunks.indices.contains(index) else { return }
-        onSegmentChanged?(index, chunks.count, chunks[index])
+        guard segments.indices.contains(index) else { return }
+        onSegmentChanged?(TTSActiveSegment(
+            index: index,
+            total: segments.count,
+            text: segments[index].text,
+            narrationRange: segments[index].sourceRange
+        ))
     }
 
     private func handlePlaybackEnded(successfully flag: Bool) {
@@ -657,7 +699,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     private func handlePageChunksFinished(token: UUID) {
         guard token == playbackToken else { return }
-        ttsLog("[TTS][HTTPEngine] page chunks finished count=\(chunks.count)")
+        ttsLog("[TTS][HTTPEngine] page chunks finished count=\(segments.count)")
 
         switch onPageFinished?() ?? .finished {
         case let .ready(next) where !next.text.isEmpty:
@@ -724,7 +766,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         pendingUnit = nil
         failedPreloads.removeAll()
         audioCache.removeAll()
-        chunks.removeAll()
+        segments.removeAll()
         speechChunks.removeAll()
         currentIndex = 0
         isPaused = false

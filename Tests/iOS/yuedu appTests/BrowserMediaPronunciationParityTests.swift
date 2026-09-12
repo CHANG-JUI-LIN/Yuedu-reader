@@ -122,7 +122,7 @@ struct BrowserMediaPronunciationParityTests {
         let engine = HTTPTTSEngine(audioProvider: provider)
         defer { engine.stop() }
         var publishedText: String?
-        engine.onSegmentChanged = { _, _, text in publishedText = text }
+        engine.onSegmentChanged = { publishedText = $0.text }
         engine.speak(text: "漢字 test", title: "", rate: 0.5, pronunciationHints: [
             TTSPronunciationHint(range: NSRange(location: 0, length: 2), reading: "かんじ")
         ])
