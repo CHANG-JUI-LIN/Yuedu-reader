@@ -1,3 +1,4 @@
+@testable import YueduCoreText
 import Testing
 import UIKit
 @testable import yuedu_app

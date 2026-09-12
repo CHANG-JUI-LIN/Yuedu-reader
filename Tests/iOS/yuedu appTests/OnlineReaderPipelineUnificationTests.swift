@@ -1,3 +1,4 @@
+@testable import YueduCoreText
 import CoreText
 import Foundation
 import SwiftSoup

@@ -1,3 +1,4 @@
+import YueduCoreText
 import UIKit
 
 /// Builds the in-content chapter-title run(s) from a `ChapterTitleStyle` and

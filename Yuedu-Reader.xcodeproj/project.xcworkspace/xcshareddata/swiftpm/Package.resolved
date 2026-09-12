@@ -1,5 +1,5 @@
 {
-  "originHash" : "75cd37b0a0cc2b4a1c56ea74df6354e564b963fa1509710f728d815fade77266",
+  "originHash" : "ef7bc61c5e0d1a6837aeab881aae1a086efb00dcd4a03fd8ed8d69a861146267",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -231,8 +231,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/CHANG-JUI-LIN/YueduCoreText",
       "state" : {
-        "revision" : "18253ed6e142cb416af0826f5a62d1737c5e833b",
-        "version" : "0.2.1"
+        "revision" : "e8b87225cd8b2cc7b1b558de9b382fab2ce6be1d",
+        "version" : "0.3.0"
       }
     },
     {

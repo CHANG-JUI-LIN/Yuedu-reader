@@ -1,3 +1,4 @@
+@testable import YueduCoreText
 import CoreText
 import Testing
 import UIKit
@@ -68,7 +69,7 @@ struct BrowserReaderTypographyTests {
             text: ReaderStyleTextStyle(colorHex: 0xFF0000, fontSize: 30, letterSpacing: 3, lineHeight: 60, underline: true),
             decoration: ReaderStyleDecorationStyle(backgroundColorHex: 0x00FF00)
         )
-        let config = BrowserLayoutConfig(regexHighlightConfiguration: configuration(pattern: "測試", style: style))
+        let config = BrowserLayoutConfig(textTransform: BrowserReaderAttributes.transform(configuration: configuration(pattern: "測試", style: style), appearance: .light, assetRevision: 0))
         let document = BrowserLayoutDocument(html: "<p>前測<span>試</span>後</p>", cssTexts: [css], config: config)
         let result = try document.makeLayout(containerSize: size)
         #expect(lines(result.rootBox)[0].height == 60)
@@ -102,8 +103,8 @@ struct BrowserReaderTypographyTests {
         let local = configuration(pattern: "甲\\s*乙", style: style, options: [.doesNotCrossParagraph])
         let crossing = configuration(pattern: "甲\\s*乙", style: style)
         let html = "<p>甲</p><p>乙</p>"
-        let first = try layout(html, config: BrowserLayoutConfig(regexHighlightConfiguration: local))
-        let second = try layout(html, config: BrowserLayoutConfig(regexHighlightConfiguration: crossing))
+        let first = try layout(html, config: BrowserLayoutConfig(textTransform: BrowserReaderAttributes.transform(configuration: local, appearance: .light, assetRevision: 0)))
+        let second = try layout(html, config: BrowserLayoutConfig(textTransform: BrowserReaderAttributes.transform(configuration: crossing, appearance: .light, assetRevision: 0)))
         #expect(first.sourceText == second.sourceText)
         #expect(!hasRedGlyph(in: first.rootBox))
         #expect(hasRedGlyph(in: second.rootBox))
@@ -112,7 +113,7 @@ struct BrowserReaderTypographyTests {
     @Test func regexStylesRubyBaseUsingChapterSourceOffsets() throws {
         let style = ReaderStyleRuleStyle(text: ReaderStyleTextStyle(colorHex: 0xFF0000, fontSize: 26, lineHeight: 70))
         let result = try layout("<p>前<ruby>漢<rt>kan</rt></ruby>後</p>", config: BrowserLayoutConfig(
-            regexHighlightConfiguration: configuration(pattern: "漢", style: style)
+            textTransform: BrowserReaderAttributes.transform(configuration: configuration(pattern: "漢", style: style), appearance: .light, assetRevision: 0)
         ))
         #expect(lines(result.rootBox).first?.height == 70)
         let ruby = try #require(lines(result.rootBox).flatMap(\.runs).compactMap(\.ruby).first)

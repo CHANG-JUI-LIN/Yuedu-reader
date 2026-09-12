@@ -1,3 +1,4 @@
+import YueduCoreText
 import CoreText
 import UIKit
 
@@ -51,16 +52,7 @@ enum UserReaderFontResolver {
     /// `UIFontDescriptor`, which is why the old "synthetic" bold was invisible.
     /// This compatibility path can be removed once CoreText exposes a real
     /// emboldening transform for static fonts.
-    static func syntheticBoldAttributes(
-        for font: UIFont,
-        isBoldRequested: Bool
-    ) -> [NSAttributedString.Key: Any] {
-        guard isBoldRequested,
-              !font.fontDescriptor.symbolicTraits.contains(.traitBold),
-              !supportsVariableWeight(font)
-        else { return [:] }
-        return [.strokeWidth: syntheticBoldStrokeWidth]
-    }
+    static func syntheticBoldAttributes(for font: UIFont, isBoldRequested: Bool) -> [NSAttributedString.Key: Any] { FontTraits.syntheticBoldAttributes(for: font, isBoldRequested: isBoldRequested) }
 
     /// Font for the in-content chapter title.
     /// - Parameters:
@@ -98,22 +90,7 @@ enum UserReaderFontResolver {
         return preservingFamily(font, resolved: UIFont(descriptor: descriptor, size: size))
     }
 
-    static func boldVersion(of font: UIFont, size: CGFloat) -> UIFont {
-        if font.fontDescriptor.symbolicTraits.contains(.traitBold) {
-            return font
-        }
-        if let descriptor = font.fontDescriptor.withSymbolicTraits(.traitBold) {
-            return preservingFamily(font, resolved: UIFont(descriptor: descriptor, size: size))
-        }
-        // Synthetic bold for fonts without native bold face
-        let attrs: [UIFontDescriptor.AttributeName: Any] = [
-            .traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.bold]
-        ]
-        return preservingFamily(
-            font,
-            resolved: UIFont(descriptor: font.fontDescriptor.addingAttributes(attrs), size: size)
-        )
-    }
+    static func boldVersion(of font: UIFont, size: CGFloat) -> UIFont { FontTraits.boldVersion(of: font, size: size) }
 
     /// Descriptor matching is allowed to leave the requested family: asking a
     /// Regular-only imported font for a Bold/weighted face returns a *system*

@@ -167,122 +167,20 @@ struct BrowserChapterLayout {
     }
 
     static func buildPageRanges(_ pages: [PageFragments], sourceText: String) -> [NSRange] {
-        let ns = sourceText as NSString
-        return pages.map { page in
-            var minLocation = ns.length
-            var maxEnd = 0
-            func walk(_ fragments: [Fragment]) {
-                for fragment in fragments {
-                    switch fragment {
-                    case .text(let t):
-                        if t.sourceRange.length > 0 {
-                            minLocation = min(minLocation, t.sourceRange.location)
-                            maxEnd = max(maxEnd, t.sourceRange.location + t.sourceRange.length)
-                        }
-                    case .group(let children): walk(children)
-                    default: break
-                    }
-                }
-            }
-            walk(page.fragments)
-            guard maxEnd > minLocation else { return NSRange(location: minLocation, length: 0) }
-            return NSRange(location: minLocation, length: maxEnd - minLocation)
-        }
+        BrowserPageGeometry.buildPageRanges(pages, sourceText: sourceText)
     }
 
     /// Page index containing `charOffset` (binary search, clamped to the page
     /// whose range is nearest — offsets from another engine's collapse space
     /// are approximate; the spec restores to *nearby* content).
     func pageIndex(forCharOffset charOffset: Int) -> Int {
-        guard !pages.isEmpty else { return 0 }
-        let ranges = pageSourceRanges
-        let nsLength = (sourceText as NSString).length
-        let target = min(max(charOffset, 0), nsLength)
-        var low = 0
-        var high = ranges.count - 1
-        var best = 0
-        while low <= high {
-            let mid = (low + high) / 2
-            let range = ranges[mid]
-            if range.location > target {
-                high = mid - 1
-            } else if range.location + range.length <= target {
-                // Source ranges are half-open: the next page's first offset
-                // must never resolve back to the preceding page on a tap turn.
-                best = mid
-                low = mid + 1
-            } else {
-                return mid
-            }
-        }
-        return best
+        BrowserPageGeometry.pageIndex(forCharOffset: charOffset, ranges: pageSourceRanges, sourceText: sourceText)
     }
 
     func displayList(forPage localPage: Int, themeTextColor: UIColor, oldThemeColor: UIColor) -> DisplayList {
         guard pages.indices.contains(localPage) else { return .empty }
-        let page = pages[localPage]
-        var items: [DisplayItem] = []
-        func collect(_ fragments: [Fragment]) {
-            for fragment in fragments {
-                switch fragment {
-                case .text(let t):
-                    let color: UIColor
-                    if t.color == oldThemeColor { color = themeTextColor } else { color = t.color }
-                    let visible = t.renderedTextOverride ?? slice(sourceText, t.sourceRange)
-                    items.append(.text(DisplayTextItem(
-                        sourceRange: t.sourceRange, nodeID: t.nodeID, linkTarget: t.linkTarget,
-                        writingMode: t.writingMode, rect: t.rect, baselineY: t.baselineY,
-                        font: t.font, color: color, text: visible, ctLine: t.ctLine,
-                        sourceMapping: t.sourceMapping,
-                        renderedTextOverride: t.renderedTextOverride
-                    )))
-                case .fill(let f):
-                    items.append(.fill(DisplayFillItem(
-                        rect: f.rect, color: f.color, cornerRadius: f.cornerRadius,
-                        borderTop: f.borderTop, borderBottom: f.borderBottom,
-                        borderLeft: f.borderLeft, borderRight: f.borderRight,
-                        nodeID: f.nodeID, writingMode: f.writingMode,
-                        fragmentPosition: f.fragmentPosition,
-                        isBackgroundPaint: f.isBackgroundPaint
-                    )))
-                case .image(let i):
-                    items.append(.image(DisplayImageItem(
-                        source: i.source, image: i.image, sourceRange: i.sourceRange,
-                        nodeID: i.nodeID, linkTarget: i.linkTarget,
-                        writingMode: i.writingMode, rect: i.rect, alt: i.alt,
-                        isBackgroundPaint: i.isBackgroundPaint
-                    )))
-                case .group(let children): collect(children)
-                }
-            }
-        }
-        collect(page.fragments)
-        #if DEBUG
-        // DEBUG-only: k1 fill/border commands as emitted (page-local).
-        var k1Fill: PageLocalRect? = nil
-        var k2Border: PageLocalRect? = nil
-        for item in items {
-            if case .fill(let f) = item {
-                if f.rect.width > 200, f.rect.width < 320, f.rect.height > 20 { k1Fill = f.rect }
-                if f.rect.width > 200, f.rect.width < 320, f.rect.height <= 2 { k2Border = f.rect }
-            }
-        }
-        let k1Msg = k1Fill.map { BrowserLayoutDeviceDiagnostic.rect($0.rawValue, space: "coordinate=pageLocal") } ?? "none"
-        let k2Msg = k2Border.map { BrowserLayoutDeviceDiagnostic.rect($0.rawValue, space: "coordinate=pageLocal") } ?? "none"
-        BrowserLayoutDeviceDiagnostic.log(
-            .k1DisplayList(spine: spineIndex, generation: diagnosticGeneration),
-            spine: spineIndex, generation: diagnosticGeneration, page: localPage,
-            message: "stage=displayList node=k1 fillRect=\(k1Msg) borderRect=\(k2Msg)"
-        )
-        #endif
-        return DisplayList(items: items)
-    }
-
-    private func slice(_ sourceText: String, _ range: NSRange) -> String {
-        guard !sourceText.isEmpty, range.length > 0 else { return "" }
-        let ns = sourceText as NSString
-        guard range.location >= 0, range.location + range.length <= ns.length else { return "" }
-        return ns.substring(with: range)
+        return DisplayListBuilder.build(for: pages[localPage], sourceText: sourceText,
+            themeTextColor: themeTextColor, oldThemeColor: oldThemeColor)
     }
 
     // MARK: - Lifecycle accounting
@@ -632,7 +530,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return .legacyEngineFailure(.resourceFailure("chapterHTML"))
         }
         let input = await resource.cssFrontendInput(forChapter: spineIndex, html: html)
-        let css = CurrentCSSFrontendSupport.stylesheetsForCurrentCompatibility(input.stylesheets)
+        let css = input.productionStylesheetTexts
         let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: css)
         let decision: ChapterEngineChoice
         if scan.supported {
@@ -691,10 +589,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
             let fontPolicy = Self.fontScalePolicy(for: html)
             let config = makeBrowserConfig(fontScalePolicy: fontPolicy)
-            if config.regexHighlightConfiguration.isEnabled {
+            if settings.regexHighlightConfiguration.isEnabled {
                 await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
-                    configuration: config.regexHighlightConfiguration,
-                    appearance: config.readerStyleAppearance
+                    configuration: settings.regexHighlightConfiguration,
+                    appearance: settings.readerStyleAppearance
                 )
                 guard generation == layoutGeneration else { return }
             }
@@ -845,9 +743,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             letterSpacing: settings.letterSpacing,
             isBold: settings.isBold,
             defaultTextAlignment: .justified,
-            regexHighlightConfiguration: settings.regexHighlightConfiguration,
-            readerStyleAppearance: settings.readerStyleAppearance,
-            readerStyleAssetRevision: settings.readerStyleAssetRevision,
+            textTransform: BrowserReaderAttributes.transform(settings: settings),
             fontResolver: { families, weight, italic, size in
                 UserReaderFontResolver.epubOverride(postScriptName: selectedFont,
                     size: size, weight: weight, italic: italic)
@@ -1570,99 +1466,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // mechanisms (out of scope for Phase 2B's browser contract).
             return []
         }
-        let ns = layout.sourceText as NSString
-        guard range.location >= 0, range.location + range.length <= ns.length else { return [] }
-        let rangeEnd = range.location + range.length
-
-        var result: [(page: Int, rects: [CGRect])] = []
-        for (pageIndex, page) in layout.pages.enumerated() {
-            var pageRects: [CGRect] = []
-            func walk(_ fragments: [Fragment]) {
-                for fragment in fragments {
-                    switch fragment {
-                    case .text(let t):
-                        guard t.sourceRange.length > 0 else { continue }
-                        let start = max(t.sourceRange.location, range.location)
-                        let end = min(t.sourceRange.location + t.sourceRange.length, rangeEnd)
-                        guard end > start else { continue }
-                        if case .wholeRange = t.sourceMapping {
-                            pageRects.append(t.rect.rawValue)
-                            continue
-                        }
-                        if let line = t.ctLine,
-                           let rect = preciseRect(
-                               fragment: t, line: line,
-                               selection: NSRange(location: start, length: end - start)
-                           ) {
-                            pageRects.append(rect)
-                            continue
-                        }
-                        // Proportional fallback (no line artifact, or the
-                        // fragment's range was trimmed off the line's range).
-                        let fraction = Double(end - start) / Double(t.sourceRange.length)
-                        let selectedWidth = CGFloat(fraction) * t.rect.width
-                        let xOffset = CGFloat(Double(start - t.sourceRange.location) / Double(t.sourceRange.length)) * t.rect.width
-                        pageRects.append(CGRect(
-                            x: t.rect.minX + xOffset,
-                            y: t.rect.minY,
-                            width: selectedWidth,
-                            height: t.rect.height
-                        ))
-                    case .group(let children): walk(children)
-                    default: break
-                    }
-                }
-            }
-            walk(page.fragments)
-            if !pageRects.isEmpty {
-                result.append((page: pageIndex, rects: pageRects))
-            }
-        }
-        return result
-    }
-
-    /// Precise selection rect for a sub-range of one text fragment, using the
-    /// fragment's shaped line: `CTLineGetOffsetForStringIndex` yields exact
-    /// typographic offsets (kerning, ligatures, RTL, emoji ZWJ clusters,
-    /// combining marks) instead of proportional width estimation.
-    ///
-    /// The fragment's `sourceRange` is a slice of the chapter source; the line's
-    /// own string range (in attributed space) is `CTLineGetStringRange(line)`.
-    /// They align for normal runs; when leading whitespace was trimmed the run's
-    /// range shifts, and this helper returns nil so callers fall back to
-    /// proportional rects (whitespace-only discrepancy).
-    private func preciseRect(
-        fragment t: TextFragment,
-        line: CTLine,
-        selection: NSRange
-    ) -> CGRect? {
-        guard case .linear(let shapedRange) = t.sourceMapping else { return nil }
-        let selStart = selection.location
-        let selEnd = selection.location + selection.length
-        let sourceDeltaStart = selStart - t.sourceRange.location
-        let sourceDeltaEnd = selEnd - t.sourceRange.location
-        guard sourceDeltaStart >= 0,
-              sourceDeltaEnd > sourceDeltaStart,
-              sourceDeltaEnd <= shapedRange.length else {
-            return nil
-        }
-        let shapedStart = shapedRange.location + sourceDeltaStart
-        let shapedEnd = shapedRange.location + sourceDeltaEnd
-        let lineRange = CTLineGetStringRange(line)
-        guard shapedStart >= lineRange.location,
-              shapedEnd <= lineRange.location + lineRange.length else {
-            return nil
-        }
-        let pieceOrigin = CTLineGetOffsetForStringIndex(line, shapedRange.location, nil)
-        let offsetStart = CTLineGetOffsetForStringIndex(line, shapedStart, nil) - pieceOrigin
-        let offsetEnd = CTLineGetOffsetForStringIndex(line, shapedEnd, nil) - pieceOrigin
-
-        // Horizontal only for now: the fragment rect already encodes the run's
-        // baseline-aligned horizontal placement. Vertical mapping arrives with
-        // the vertical-rl writing mode (Phase 3B).
-        let x = t.rect.minX + offsetStart
-        let width = max(1, offsetEnd - offsetStart)
-        return CGRect(x: x, y: t.rect.minY, width: width, height: t.rect.height)
+        return BrowserPageGeometry.rects(pages: layout.pages, sourceText: layout.sourceText, range: range)
     }
 
     // MARK: - Internal helpers
@@ -1896,46 +1700,24 @@ extension BrowserLayoutPageEngine {
                                        scrollSettings: settings, scrollSize: contentSize)
         // The scroll host owns the reader's outer margins and fixed bars.
         config.contentInsets = .zero
-        if config.regexHighlightConfiguration.isEnabled {
+        if settings.regexHighlightConfiguration.isEnabled {
             await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
-                configuration: config.regexHighlightConfiguration, appearance: config.readerStyleAppearance)
+                configuration: settings.regexHighlightConfiguration, appearance: settings.readerStyleAppearance)
         }
         try Task.checkCancellation()
-        let pipeline = try BrowserLayoutDocument(input: input, config: config,
-            imageLoader: { [store] in store.image(for: $0) }).makeLayout(containerSize: contentSize)
-        let background = BrowserLayoutDocument.bodyBackground(rootBox: pipeline.rootBox)
-        if let source = background.image?.source, store.image(for: source) == nil {
+        let prepared = try HTMLLayoutDocument(input: input, configuration: config,
+            imageLoader: { [store] in store.image(for: $0) }).prepareContinuous(validateCapabilities: false)
+        if let source = prepared.backgroundImageSource, store.image(for: source) == nil {
             store.set(await resource.loadImage(forChapter: spine, source: source,
                                               renderWidth: contentSize.width), for: source)
         }
-        FootnoteStore.index(notes: pipeline.footnotes, spineIndex: spine)
-        let flow = BrowserScrollDocument.make(pipeline: pipeline, contentWidth: contentSize.width,
-                                             contentInsets: .zero)
-        let hasBackdrop = background.color != nil || background.image != nil
-        let height = hasBackdrop ? max(contentSize.height, flow.contentHeight) : flow.contentHeight
-        let canvas = CGRect(x: 0, y: 0, width: contentSize.width, height: height)
-        var items: [DisplayItem] = []
-        if let color = background.color {
-            items.append(.fill(DisplayFillItem(rect: PageLocalRect(rawValue: canvas), color: color,
-                cornerRadius: 0, borderTop: .zero, borderBottom: .zero, borderLeft: .zero,
-                borderRight: .zero, nodeID: -1, writingMode: .horizontal, isBackgroundPaint: true)))
-        }
-        if let backgroundImage = background.image, let image = store.image(for: backgroundImage.source) {
-            items.append(.image(DisplayImageItem(source: backgroundImage.source, image: image,
-                sourceRange: NSRange(location: 0, length: 0), nodeID: -1, linkTarget: nil,
-                writingMode: .horizontal, rect: PageLocalRect(rawValue: BrowserLayoutDocument.coverRect(
-                    for: image.size, container: canvas.size, positionX: backgroundImage.positionX,
-                    positionY: backgroundImage.positionY)), alt: nil, isBackgroundPaint: true)))
-        }
-        items.append(contentsOf: flow.displayList.items)
-        let document = BrowserScrollDocument(displayList: DisplayList(items: items),
-            contentHeight: height, sourceText: flow.sourceText,
-            anchorOffsets: flow.anchorOffsets, linkAnchors: flow.linkAnchors)
+        FootnoteStore.index(notes: prepared.footnotes, spineIndex: spine)
+        let document = prepared.makeDocument()
         return BrowserScrollChapter(spineIndex: spine, document: document,
             backgroundColor: settings.backgroundColor,
             usesReaderBackground: settings.readerBackgroundImageURL != nil,
-            paragraphRanges: BrowserLayoutSemanticContent.paragraphRanges(in: pipeline.rootBox),
-            mediaAttachments: pipeline.mediaAttachments.mapValues {
+            paragraphRanges: prepared.paragraphRanges,
+            mediaAttachments: prepared.mediaAttachments.mapValues {
                 resource.resolveMediaAttachment(forChapter: spine, media: $0)
             })
     }

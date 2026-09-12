@@ -1,3 +1,4 @@
+import YueduCoreText
 import Combine
 import Foundation
 import OSLog
@@ -764,15 +765,6 @@ struct ReaderRenderSettings: Equatable {
     /// that switching it on re-runs layout: the bubble's side, width and padding
     /// are baked into paragraph indents while the string is built.
     var dialogueBubbleStyle: ReaderDialogueBubbleStyle = .default
-}
-
-enum ReaderWritingMode: String, CaseIterable, Codable {
-    case horizontal
-    case verticalRTL
-
-    var isVertical: Bool {
-        self == .verticalRTL
-    }
 }
 
 enum TOCLayoutMode {

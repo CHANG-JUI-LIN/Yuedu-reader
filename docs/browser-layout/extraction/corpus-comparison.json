@@ -1,0 +1,32 @@
+[
+  {
+    "path": "reported-gallery-normal-scroll/paged.png",
+    "identicalBytes": true,
+    "beforeSHA256": "0c76132bf3098de26adf33aea7fa350a068d3a4999df2794f2eac864944b27cc",
+    "afterSHA256": "0c76132bf3098de26adf33aea7fa350a068d3a4999df2794f2eac864944b27cc"
+  },
+  {
+    "path": "reported-gallery-normal-scroll/scroll-cell.png",
+    "identicalBytes": true,
+    "beforeSHA256": "f49335f9c09b1b8d4cef7e99d12932aa229912fb2ae69037822a5531b290e4ab",
+    "afterSHA256": "f49335f9c09b1b8d4cef7e99d12932aa229912fb2ae69037822a5531b290e4ab"
+  },
+  {
+    "path": "reported-title-page-routing/browser-auto.png",
+    "identicalBytes": true,
+    "beforeSHA256": "562f55c77ea349c687b963ecab1684e4d64075ecdeb14d53e7e4e26df070ccfd",
+    "afterSHA256": "562f55c77ea349c687b963ecab1684e4d64075ecdeb14d53e7e4e26df070ccfd"
+  },
+  {
+    "path": "reported-title-page-routing/legacy.png",
+    "identicalBytes": false,
+    "beforeSHA256": "7851b2766678d3b62ee42de65041bdd927a6dc57a46fe41d931ae5180ae30b9a",
+    "afterSHA256": "8385213c223b5b0cc232957e94068e6749ca37c30235032f3db6f7c04bd9aae0"
+  },
+  {
+    "path": "reported-title-page-routing/routing.json",
+    "identicalBytes": true,
+    "beforeSHA256": "d6f12d186f523e3210cf60116a7858d68ce828a3eb23ac23bc390503b5a16a3b",
+    "afterSHA256": "d6f12d186f523e3210cf60116a7858d68ce828a3eb23ac23bc390503b5a16a3b"
+  }
+]

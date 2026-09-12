@@ -1,3 +1,4 @@
+import YueduCoreText
 import AVKit
 import Combine
 import SwiftUI

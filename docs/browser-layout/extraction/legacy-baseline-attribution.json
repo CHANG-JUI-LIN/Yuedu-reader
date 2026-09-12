@@ -1,0 +1,14 @@
+{
+  "fixture": "reported-title-page-routing/legacy.png",
+  "baselineInitialSHA256": "7851b2766678d3b62ee42de65041bdd927a6dc57a46fe41d931ae5180ae30b9a",
+  "baselineRepeatedSHA256": "8385213c223b5b0cc232957e94068e6749ca37c30235032f3db6f7c04bd9aae0",
+  "migratedSHA256": "8385213c223b5b0cc232957e94068e6749ca37c30235032f3db6f7c04bd9aae0",
+  "baselineRepeatEqualsMigrated": true,
+  "initialVsRepeatDifferencePixelBounds": [
+    182,
+    51,
+    988,
+    505
+  ],
+  "note": "Unmodified baseline executable reproduces the same legacy title output as migrated build; initial legacy snapshot varies across baseline runs. No legacy layout correction made."
+}

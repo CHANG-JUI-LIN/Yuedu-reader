@@ -1,3 +1,4 @@
+import YueduCoreText
 import Foundation
 
 /// Chapter font-scale policy — how the user's reader font-size setting applies

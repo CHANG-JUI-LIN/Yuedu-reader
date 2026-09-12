@@ -1,3 +1,4 @@
+import YueduCoreText
 import Foundation
 
 /// Carries a Legado per-image `headers` option from the chapter HTML to the image download.

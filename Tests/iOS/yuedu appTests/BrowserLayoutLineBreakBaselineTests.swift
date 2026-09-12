@@ -1,3 +1,4 @@
+@testable import YueduCoreText
 import CryptoKit
 import Testing
 import UIKit

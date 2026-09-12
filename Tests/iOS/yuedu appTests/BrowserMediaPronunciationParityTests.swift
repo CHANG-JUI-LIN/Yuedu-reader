@@ -1,3 +1,4 @@
+@testable import YueduCoreText
 import AVKit
 import Testing
 import UIKit

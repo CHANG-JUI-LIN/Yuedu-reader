@@ -1,3 +1,4 @@
+@testable import YueduCoreText
 import Foundation
 
 /// Lexbor owns syntax, selector matching and cascade. Only copied Swift values

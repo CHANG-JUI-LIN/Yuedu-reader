@@ -1,0 +1,37 @@
+{
+  "appProductionTestableImports": [],
+  "packageForbiddenImports": [],
+  "coreDefinitionLocations": {
+    "BrowserLayoutDocument": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/BrowserLayoutDocument.swift"
+    ],
+    "BrowserLayoutSession": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/BrowserLayoutSession.swift"
+    ],
+    "BoxTreeBuilder": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/BoxTreeBuilder.swift"
+    ],
+    "BlockLayout": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/BlockLayout.swift"
+    ],
+    "InlineLayout": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/InlineLayout.swift"
+    ],
+    "CoreTextLineBreaker": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/CoreTextLineBreaker.swift"
+    ],
+    "PageWalker": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/PageFragmentation.swift"
+    ],
+    "BrowserScrollDocument": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/BrowserScrollDocument.swift"
+    ],
+    "DisplayListBuilder": [
+      "YueduCoreText/Sources/YueduCoreText/Engine/DisplayList.swift"
+    ],
+    "DisplayListDrawer": [
+      "YueduCoreText/Sources/YueduCoreText/Rendering/DisplayListDrawer.swift"
+    ]
+  },
+  "workspace": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Workspace version=\"1.0\">\n  <FileRef location=\"group:Yuedu-Reader.xcodeproj\" />\n  <FileRef location=\"group:../YueduCoreText\" />\n</Workspace>"
+}

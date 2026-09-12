@@ -1,3 +1,4 @@
+@testable import YueduCoreText
 import CLexbor
 
 final class LexborDocumentOwner {

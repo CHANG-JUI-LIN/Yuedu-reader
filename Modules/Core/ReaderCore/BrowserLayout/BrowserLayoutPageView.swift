@@ -1,3 +1,4 @@
+import YueduCoreText
 import Accessibility
 import UIKit
 
@@ -253,7 +254,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
             // a page turn crosses between the two engines.
             CoreTextPageView.drawPageBackground(readerBackgroundImage, in: bounds)
         }
-        DisplayListDrawer.draw(
+        ReaderDisplayListDrawer.draw(
             displayList,
             in: context,
             // A reader-chosen background REPLACES the book's own page surface,

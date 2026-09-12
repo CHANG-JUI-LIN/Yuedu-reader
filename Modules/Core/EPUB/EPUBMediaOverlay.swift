@@ -1,32 +1,5 @@
 import Foundation
 
-public enum EPUBMediaKind: String, Codable, Equatable, Sendable {
-    case audio
-    case video
-}
-
-public struct EPUBMediaAttachment: Codable, Equatable, Sendable {
-    let kind: EPUBMediaKind
-    let sourceHref: String
-    let mediaType: String?
-    let title: String?
-    let posterHref: String?
-
-    init(
-        kind: EPUBMediaKind,
-        sourceHref: String,
-        mediaType: String? = nil,
-        title: String? = nil,
-        posterHref: String? = nil
-    ) {
-        self.kind = kind
-        self.sourceHref = sourceHref
-        self.mediaType = mediaType
-        self.title = title
-        self.posterHref = posterHref
-    }
-}
-
 struct EPUBMediaOverlayFragment: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let textHref: String?

@@ -1,3 +1,4 @@
+import YueduCoreText
 import Foundation
 
 /// Per-chapter index of duokan-style popup footnotes.

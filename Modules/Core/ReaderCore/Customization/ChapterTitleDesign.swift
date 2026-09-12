@@ -1,3 +1,4 @@
+import YueduCoreText
 import Foundation
 
 struct ChapterTitleDesign: Codable, Equatable, Sendable {

@@ -1,3 +1,4 @@
+import YueduCoreText
 import UIKit
 
 struct PaginationRequest {

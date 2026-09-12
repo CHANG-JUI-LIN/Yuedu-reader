@@ -1,0 +1,182 @@
+[
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BlockLayout.swift",
+    "to": "Sources/YueduCoreText/Engine/BlockLayout.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BoxTreeBuilder.swift",
+    "to": "Sources/YueduCoreText/Engine/BoxTreeBuilder.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutCapabilityScanner.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserLayoutCapabilityScanner.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutDeviceDiagnostic.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserLayoutDeviceDiagnostic.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutDocument.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserLayoutDocument.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutGeometry.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserLayoutGeometry.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutSemanticContent.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserLayoutSemanticContent.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserLayoutSession.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserLayoutSession.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserReaderTextStyling.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserReaderTextStyling.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserScrollDocument.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserScrollDocument.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/BrowserTextGeometry.swift",
+    "to": "Sources/YueduCoreText/Engine/BrowserTextGeometry.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/CSSFrontend.swift",
+    "to": "Sources/YueduCoreText/Engine/CSSFrontend.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/CSSFrontendModels.swift",
+    "to": "Sources/YueduCoreText/Engine/CSSFrontendModels.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/CSSLength.swift",
+    "to": "Sources/YueduCoreText/HTMLCSS/CSSLength.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/CSSTextIndent.swift",
+    "to": "Sources/YueduCoreText/HTMLCSS/CSSTextIndent.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/ComputedStyle.swift",
+    "to": "Sources/YueduCoreText/Engine/ComputedStyle.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/ComputedStyleTreeBuilder.swift",
+    "to": "Sources/YueduCoreText/Engine/ComputedStyleTreeBuilder.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/CoreTextLineBreaker.swift",
+    "to": "Sources/YueduCoreText/Engine/CoreTextLineBreaker.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/CurrentCSSFrontend.swift",
+    "to": "Sources/YueduCoreText/Engine/CurrentCSSFrontend.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/DisplayList.swift",
+    "to": "Sources/YueduCoreText/Engine/DisplayList.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/FloatContext.swift",
+    "to": "Sources/YueduCoreText/Engine/FloatContext.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/HorizontalRubySupport.swift",
+    "to": "Sources/YueduCoreText/Engine/HorizontalRubySupport.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/HorizontalTextIndentSupport.swift",
+    "to": "Sources/YueduCoreText/Engine/HorizontalTextIndentSupport.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/InlineFormattingContext.swift",
+    "to": "Sources/YueduCoreText/Engine/InlineFormattingContext.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/InlineLayout.swift",
+    "to": "Sources/YueduCoreText/Engine/InlineLayout.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/LayoutBoxTree.swift",
+    "to": "Sources/YueduCoreText/Engine/LayoutBoxTree.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/LexborCSSFrontend.swift",
+    "to": "Tests/iOS/yuedu appTests/ExperimentalFrontend/LexborCSSFrontend.swift",
+    "class": "D"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/LexborComputedStyleAdapter.swift",
+    "to": "Tests/iOS/yuedu appTests/ExperimentalFrontend/LexborComputedStyleAdapter.swift",
+    "class": "D"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/LexborDocumentOwner.swift",
+    "to": "Tests/iOS/yuedu appTests/ExperimentalFrontend/LexborDocumentOwner.swift",
+    "class": "D"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/LexborHTMLSemanticAdapter.swift",
+    "to": "Tests/iOS/yuedu appTests/ExperimentalFrontend/LexborHTMLSemanticAdapter.swift",
+    "class": "D"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/LogicalGeometry.swift",
+    "to": "Sources/YueduCoreText/Engine/LogicalGeometry.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/PageFragmentation.swift",
+    "to": "Sources/YueduCoreText/Engine/PageFragmentation.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/BrowserLayout/RubyInlineLayout.swift",
+    "to": "Sources/YueduCoreText/Engine/RubyInlineLayout.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/CoreText/ReaderFontCascade.swift",
+    "to": "Sources/YueduCoreText/Layout/ReaderFontCascade.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/HTML/HTMLPresentationalHintExtractor.swift",
+    "to": "Sources/YueduCoreText/HTMLCSS/HTMLPresentationalHintExtractor.swift",
+    "class": "A/B"
+  },
+  {
+    "from": "Modules/Core/ReaderCore/HTML/SwiftSoupHTMLSemanticAdapter.swift",
+    "to": "Sources/YueduCoreText/HTMLCSS/SwiftSoupHTMLSemanticAdapter.swift",
+    "class": "A/B"
+  }
+]

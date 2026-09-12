@@ -1,3 +1,4 @@
+import YueduCoreText
 import UIKit
 
 /// Paints one window onto a `BrowserScrollDocument`.
@@ -59,7 +60,7 @@ final class BrowserScrollTileView: UIView {
             context.fill(bounds)
         }
         // The window's contents, already translated into tile-local space.
-        DisplayListDrawer.draw(document.items(in: documentRect), in: context)
+        ReaderDisplayListDrawer.draw(document.items(in: documentRect), in: context)
     }
 
     /// The link under a tile-local point, resolved against the chapter's

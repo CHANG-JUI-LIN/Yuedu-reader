@@ -1,28 +1,5 @@
+import YueduCoreText
 import Foundation
-
-struct TTSPronunciationHint: Equatable {
-    let range: NSRange
-    let ipa: String
-    /// Orthographic ruby reading (kana, bopomofo, etc.), never mislabeled as IPA.
-    let reading: String?
-
-    init(range: NSRange, ipa: String) {
-        self.range = range
-        self.ipa = ipa
-        self.reading = nil
-    }
-
-    init(range: NSRange, reading: String) {
-        self.range = range
-        self.ipa = ""
-        self.reading = reading
-    }
-
-    func rebased(to range: NSRange) -> Self {
-        if let reading { return Self(range: range, reading: reading) }
-        return Self(range: range, ipa: ipa)
-    }
-}
 
 struct TTSNarrationUnit {
     let text: String
@@ -187,18 +164,8 @@ enum TTSPronunciationAnnotator {
         lexicons: [PLSLexicon],
         bookLanguage: String?
     ) -> [TTSPronunciationHint] {
-        let fullRange = NSRange(location: 0, length: attributedString.length)
-        var hints: [TTSPronunciationHint] = []
-        var occupiedRanges: [NSRange] = []
-
-        attributedString.enumerateAttribute(
-            HTMLAttributedStringBuilder.ipaPronunciationAttribute,
-            in: fullRange
-        ) { value, range, _ in
-            guard let ipa = value as? String, !ipa.isEmpty else { return }
-            hints.append(TTSPronunciationHint(range: range, ipa: ipa))
-            occupiedRanges.append(range)
-        }
+        var hints = AuthoredPronunciation.hints(in: attributedString)
+        var occupiedRanges = hints.map(\.range)
 
         let language = bookLanguage?.lowercased()
         let text = attributedString.string as NSString

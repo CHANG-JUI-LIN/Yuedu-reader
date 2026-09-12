@@ -1,3 +1,4 @@
+@testable import YueduCoreText
 import Testing
 import Foundation
 import CoreGraphics

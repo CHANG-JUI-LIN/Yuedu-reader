@@ -1,0 +1,92 @@
+{
+  "baseline-repeated": {
+    "samples": [
+      {
+        "legacySeconds": 0.028484791662776843,
+        "browserSeconds": 0.015656374976970255
+      },
+      {
+        "legacySeconds": 0.0148969583096914,
+        "browserSeconds": 0.016045083379140124
+      },
+      {
+        "legacySeconds": 0.014419875020394102,
+        "browserSeconds": 0.015457791654625908
+      },
+      {
+        "legacySeconds": 0.026227250025840476,
+        "browserSeconds": 0.01982570832478814
+      },
+      {
+        "legacySeconds": 0.015991291671525687,
+        "browserSeconds": 0.01647133336518891
+      },
+      {
+        "legacySeconds": 0.01943291668430902,
+        "browserSeconds": 0.02069949990254827
+      },
+      {
+        "legacySeconds": 0.022573124995687976,
+        "browserSeconds": 0.01589041663100943
+      },
+      {
+        "legacySeconds": 0.014856416644761339,
+        "browserSeconds": 0.015616083343047649
+      },
+      {
+        "legacySeconds": 0.014717000012751669,
+        "browserSeconds": 0.016154666693182662
+      }
+    ],
+    "count": 9,
+    "browserMedianSeconds": 0.016045083379140124,
+    "browserMinSeconds": 0.015457791654625908,
+    "browserMaxSeconds": 0.02069949990254827
+  },
+  "app-repeated-after": {
+    "samples": [
+      {
+        "legacySeconds": 0.03945233332342468,
+        "browserSeconds": 0.03530691668856889
+      },
+      {
+        "legacySeconds": 0.02198741666506976,
+        "browserSeconds": 0.019080333353485912
+      },
+      {
+        "legacySeconds": 0.01889641667366959,
+        "browserSeconds": 0.020999291649786755
+      },
+      {
+        "legacySeconds": 0.022342083335388452,
+        "browserSeconds": 0.015189166704658419
+      },
+      {
+        "legacySeconds": 0.014469625020865351,
+        "browserSeconds": 0.015298083366360515
+      },
+      {
+        "legacySeconds": 0.01424066667095758,
+        "browserSeconds": 0.015310958318877965
+      },
+      {
+        "legacySeconds": 0.022075749991927296,
+        "browserSeconds": 0.015425083314767107
+      },
+      {
+        "legacySeconds": 0.014189124980475754,
+        "browserSeconds": 0.015141166659304872
+      },
+      {
+        "legacySeconds": 0.014225166669348255,
+        "browserSeconds": 0.01476141664898023
+      }
+    ],
+    "count": 9,
+    "browserMedianSeconds": 0.015310958318877965,
+    "browserMinSeconds": 0.01476141664898023,
+    "browserMaxSeconds": 0.03530691668856889
+  },
+  "medianChangePercent": -4.575389500415927,
+  "interpretation": "Same existing 40-paragraph fixture, SDK, simulator and Debug configuration; nine instrumented observations each via three repeated test runs. Small-sample observation, not a real-device/Release/energy claim."
+}

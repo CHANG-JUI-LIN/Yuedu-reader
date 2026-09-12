@@ -1,0 +1,34 @@
+{
+  "packageVersion": "0.3.0",
+  "packageRevision": "e8b87225cd8b2cc7b1b558de9b382fab2ce6be1d",
+  "destination": "platform=iOS Simulator,id=9022EC10-D454-4270-AA9B-36D15CAD67C6",
+  "results": [
+    {
+      "name": "package-final",
+      "result": "Passed",
+      "totalTestCount": 128,
+      "passedTests": 128,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "artifact": "/tmp/yuedu-engine-release/package-final.xcresult"
+    },
+    {
+      "name": "app-remote",
+      "result": "Passed",
+      "totalTestCount": 58,
+      "passedTests": 58,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "artifact": "/tmp/yuedu-engine-release/app-remote.xcresult"
+    },
+    {
+      "name": "consumer-remote",
+      "result": "Passed",
+      "totalTestCount": 5,
+      "passedTests": 5,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "artifact": "/tmp/yuedu-engine-release/consumer-remote.xcresult"
+    }
+  ]
+}

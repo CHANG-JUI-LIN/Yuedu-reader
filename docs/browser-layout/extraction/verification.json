@@ -1,0 +1,155 @@
+[
+  {
+    "name": "baseline-core-rerun",
+    "result": "Passed",
+    "total": 45,
+    "passed": 45,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/baseline-core-rerun.xcresult"
+  },
+  {
+    "name": "baseline-extended",
+    "result": "Passed",
+    "total": 57,
+    "passed": 57,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/baseline-extended.xcresult"
+  },
+  {
+    "name": "baseline-package-core",
+    "result": "Passed",
+    "total": 58,
+    "passed": 58,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/baseline-package-core.xcresult"
+  },
+  {
+    "name": "baseline-corpus",
+    "result": "Passed",
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/baseline-corpus.xcresult"
+  },
+  {
+    "name": "baseline-geometry",
+    "result": "Passed",
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/baseline-geometry.xcresult"
+  },
+  {
+    "name": "stage-b1-tests",
+    "result": "Passed",
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/stage-b1-tests.xcresult"
+  },
+  {
+    "name": "stage-b2-core5",
+    "result": "Passed",
+    "total": 58,
+    "passed": 58,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/stage-b2-core5.xcresult"
+  },
+  {
+    "name": "package-final",
+    "result": "Failed",
+    "total": 128,
+    "passed": 126,
+    "failed": 2,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/package-final.xcresult"
+  },
+  {
+    "name": "package-metadata-rerun",
+    "result": "Passed",
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/package-metadata-rerun.xcresult"
+  },
+  {
+    "name": "package-verified",
+    "result": "Passed",
+    "total": 128,
+    "passed": 128,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/package-verified.xcresult"
+  },
+  {
+    "name": "consumer-clean",
+    "result": "Passed",
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/consumer-clean.xcresult"
+  },
+  {
+    "name": "app-core-after",
+    "result": "Passed",
+    "total": 110,
+    "passed": 110,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/app-core-after.xcresult"
+  },
+  {
+    "name": "app-integration-tests",
+    "result": "Passed",
+    "total": 137,
+    "passed": 137,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/app-integration-tests.xcresult"
+  },
+  {
+    "name": "app-corpus-after",
+    "result": "Passed",
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/app-corpus-after.xcresult"
+  },
+  {
+    "name": "consumer-clean-render",
+    "result": "Passed",
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/consumer-clean-render.xcresult"
+  },
+  {
+    "name": "baseline-repeated",
+    "result": "Passed",
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/baseline-repeated.xcresult"
+  },
+  {
+    "name": "app-repeated-after",
+    "result": "Passed",
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "artifact": "/tmp/yuedu-engine-extraction/app-repeated-after.xcresult"
+  }
+]

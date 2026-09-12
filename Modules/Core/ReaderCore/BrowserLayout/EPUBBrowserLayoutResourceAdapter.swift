@@ -1,3 +1,4 @@
+import YueduCoreText
 import Foundation
 import SwiftSoup
 import UIKit
@@ -64,12 +65,12 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
     func processedCSS(forChapter index: Int) async -> [String] {
         // Compatibility projection for pre-migration corpus diagnostics.
         if let cached = cssInputCache[index] {
-            return CurrentCSSFrontendSupport.stylesheetsForCurrentCompatibility(cached.stylesheets)
+            return cached.productionStylesheetTexts
         }
         do {
             let html = try await chapterHTML(at: index)
             let input = await cssFrontendInput(forChapter: index, html: html)
-            return CurrentCSSFrontendSupport.stylesheetsForCurrentCompatibility(input.stylesheets)
+            return input.productionStylesheetTexts
         } catch {
             AppLogger.parse("[EPUBStylesheetIngestion] chapter load failed: \(error)")
             return []
@@ -93,21 +94,8 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
 
     func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] {
         guard session.chapters.indices.contains(index) else { return [:] }
-        guard let doc = try? SwiftSoup.parse(html) else { return [:] }
-
+        guard let sources = try? HTMLResourceReferences.imageSources(in: html) else { return [:] }
         var images: [String: UIImage?] = [:]
-        var sources = Set<String>()
-        for img in (try? doc.select("img").array()) ?? [] {
-            let src = (try? img.attr("src")) ?? ""
-            if !src.isEmpty { sources.insert(src) }
-        }
-        // The EPUB cover idiom `<svg><image xlink:href="cover.jpg"/></svg>`
-        // carries no <img>, so without this the box tree asks for a source that
-        // was never fetched and the cover renders as an empty chapter.
-        for svg in (try? doc.select("svg").array()) ?? [] {
-            let snapshot = SwiftSoupHTMLSemanticAdapter.snapshot(svg)
-            if let href = BoxTreeBuilder.svgWrappedImageSource(snapshot) { sources.insert(href) }
-        }
         // NOTE: the root background-image is deliberately NOT collected here.
         // It is paint-only (never affects layout), and scanning the stylesheets
         // for it meant a SECOND parser deciding what the source string is —

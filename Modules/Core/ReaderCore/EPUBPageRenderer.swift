@@ -1,8 +1,9 @@
 import Combine
 import UIKit
 
-/// CoreText-only EPUB renderer adapter.
-/// WebView rendering path has been removed; all functionality routes to CoreTextPageEngine.
+/// Native EPUB reader adapter. Reflowable BrowserAuto chapters use the YueduCoreText
+/// package through BrowserLayoutPageEngine for pagination and continuous scrolling.
+/// CoreTextPageEngine remains the legacy delegate; fixed-layout EPUB has its own route.
 @MainActor
 final class EPUBPageRenderer: ObservableObject {
 
@@ -366,7 +367,7 @@ final class EPUBPageRenderer: ObservableObject {
 
     // MARK: - Load
 
-    /// CoreText path — creates a CoreTextPageEngine and kicks off async loading.
+    /// EPUB path — creates the legacy delegate and a BrowserAuto adapter backed by YueduCoreText.
     /// If renderSize is zero (view not yet laid out), start is deferred until
     /// notifyViewportSize() is called with a valid size.
     func load(

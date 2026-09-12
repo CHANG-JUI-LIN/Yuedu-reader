@@ -1,3 +1,4 @@
+import YueduCoreText
 import Foundation
 
 /// The narration half of the TTS log.

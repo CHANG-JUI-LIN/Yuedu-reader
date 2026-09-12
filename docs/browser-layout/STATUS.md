@@ -1,6 +1,6 @@
 ---
 title: BrowserLayout 目前狀態與下一步
-updated: 2026-09-09
+updated: 2026-09-12
 phase: 5A
 status: 進行中，未結案
 tags: [yuedu, browser-layout, status]
@@ -11,6 +11,8 @@ tags: [yuedu, browser-layout, status]
 [文件首頁](../README.md) · [歷史台帳](PHASES.md) · [5A 設計](../superpowers/specs/2026-09-04-lexbor-css-frontend-production-migration-design.md) · [5A 計畫](../superpowers/plans/2026-09-04-lexbor-css-frontend-production-migration.md)
 
 ## 現在的位置
+
+2026-09-12：BrowserLayout 已抽取至 `YueduCoreText` 並發布 **0.3.0**；Reader 正常 project 已通過 GitHub 遠端套件接線驗證；翻頁與橫排捲動使用同一套件核心，App 保留 BrowserAuto 政策、legacy 與閱讀宿主。[抽取範圍](extraction/STATUS.md) · [0.3.0 發布驗證與 CI 已知問題](extraction/release-0.3.0.md)。以下 Phase 5A 記錄保留原有驗收範圍，本次沒有切換 Lexbor。
 
 **Phase 5A 仍未結案。Task 5／6 已補齊本輪發現的差距；Task 7 長屬性映射已實作，完整驗收仍有阻擋。**
 
@@ -30,7 +32,7 @@ tags: [yuedu, browser-layout, status]
 | Task 7：ComputedStyle mapping | `LexborComputedStyleAdapter` 與 coverage tests 已實作；長屬性子集通過，shorthand／上游 parser／模型缺口會阻擋 layout | `LexborCSSFrontend` 已實作 `CSSFrontend`；本輪報告 |
 | Task 8–13：共享 evaluation、切換、差異與 cutover | 未結案；完整 scanner 接線與正式切換尚未啟動 | `BrowserLayoutPageEngine.swift`；原 5A 計畫 |
 
-上述程式檔位於 repo 的 `Modules/Core/ReaderCore/BrowserLayout/`；`EPUBPageRenderer.swift` 在上一層，測試在 `Tests/iOS/yuedu appTests/`，C bridge 在 `Packages/CLexbor/`。它們在 vault 外，因此保留可搜尋的檔名與 commit，不建立 vault 內的空白筆記。
+目前通用引擎位於相鄰 `YueduCoreText/Sources/YueduCoreText/`，Reader adapters 仍位於 `Modules/Core/ReaderCore/BrowserLayout/`；Lexbor 實驗實作位於測試 target 的 `ExperimentalFrontend/`。`EPUBPageRenderer.swift` 在上一層，測試在 `Tests/iOS/yuedu appTests/`，C bridge 在 `Packages/CLexbor/`。它們在 vault 外，因此保留可搜尋的檔名與 commit，不建立 vault 內的空白筆記。
 
 ## 本輪驗證與下一個工作單位
 

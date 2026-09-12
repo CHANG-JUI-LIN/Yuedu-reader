@@ -102,15 +102,15 @@ final class DetailReaderStackTests: XCTestCase {
         let nav = try XCTUnwrap(navigationControllers(in: host).first)
         XCTAssertEqual(nav.viewControllers.count, 3)
         let readerController = nav.topViewController
-        XCTAssertTrue(nav.interactivePopGestureRecognizer?.isEnabled == true)
-        XCTAssertTrue(nav.interactivePopGestureRecognizer?.delegate is NavigationBackSwipeReservationController)
+        XCTAssertTrue(NavigationBackSwipeReservationController.backGesture(in: nav)?.isEnabled == true)
+        XCTAssertTrue(NavigationBackSwipeReservationController.backGesture(in: nav)?.delegate is NavigationBackSwipeReservationController)
         await awaitScreen("readerDetail") { state.showsDetail = true }
         XCTAssertEqual(nav.viewControllers.count, 4)
-        XCTAssertFalse(nav.interactivePopGestureRecognizer?.delegate is NavigationBackSwipeReservationController)
+        XCTAssertFalse(NavigationBackSwipeReservationController.backGesture(in: nav)?.delegate is NavigationBackSwipeReservationController)
         await awaitScreen("reader") { state.showsDetail = false }
         XCTAssertEqual(identities.last, originalIdentity)
         XCTAssertTrue(nav.topViewController === readerController)
-        XCTAssertTrue(nav.interactivePopGestureRecognizer?.delegate is NavigationBackSwipeReservationController)
+        XCTAssertTrue(NavigationBackSwipeReservationController.backGesture(in: nav)?.delegate is NavigationBackSwipeReservationController)
         await awaitScreen("bookDetail") { state.reader = nil }
         XCTAssertEqual(state.path.count, 1)
         await awaitScreen("reader") { state.reader = DetailReaderRoute(id: bookID) }
