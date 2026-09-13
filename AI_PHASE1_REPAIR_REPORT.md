@@ -1,5 +1,7 @@
 # Yuedu AI Phase 1 修復報告
 
+> 後續整合狀態：下文記錄的 `scan(input:)` 遠端依賴阻擋已由 YueduCoreText 0.5.0 發布與 App 升級解除，正常 `.xcodeproj` 建置通過。原始失敗紀錄仍保留；詳見 [0.5.0 發布驗證](docs/browser-layout/english-typography-release-0.5.0.md)。
+
 基準：`main` / `f7e472a558ba59dd7a4dd45823bc223b451f76f2`。在原工作區實作，保留原有未追蹤的 `AI_ARCHITECTURE_AUDIT.md`，未切分支、commit、stash 或 reset。本階段未實作對話歷史理解、全書 LLM 人物抽取或下一階段檢索策略。
 
 ## 修復與資料契約
