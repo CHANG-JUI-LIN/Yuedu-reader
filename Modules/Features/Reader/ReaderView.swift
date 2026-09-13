@@ -184,7 +184,11 @@ struct ReaderView: View {
     @State var showAIAssistantPanel = false
     /// Whole-book text for the AI features, gathered from the source rather than the layout
     /// cache. Filled by `gatherAIBookText()` when an AI surface opens. See `aiBookAdapter()`.
-    @State var aiChapterTexts: [Int: String] = [:]
+    @State var aiSourceContext: String?
+    @State var aiSourceAdapter: AIBookContentAdapter?
+    @State var aiGatherGeneration = UUID()
+    @State var aiGatherTask: Task<Void, Never>?
+    @State var aiCitationError: String?
     @State var showDownloadOptions = false
     @State var showOnlineBookDetail = false
     @State var onlineBookDetailSnapshot: OnlineBook?
@@ -2104,12 +2108,19 @@ struct ReaderView: View {
                 scope: sourceURL ?? "global"
             )
         }
+        .onReceive(ReplaceRuleStore.shared.$rules) { _ in refreshAIContentIfVisible() }
+        .onChange(of: aiCurrentSourceContext) { _, _ in
+            aiSourceAdapter = nil
+            refreshAIContentIfVisible()
+        }
         .onReceive(readerViewModel.$chapterStates) { states in
             handleChapterStateChanges(states)
+            refreshAIContentIfVisible()
         }
         .onReceive(NotificationCenter.default.publisher(for: .onlineChapterCacheDidClear)) { notification in
             guard notification.userInfo?["bookId"] as? UUID == bookId else { return }
             handleOnlineChapterCacheCleared()
+            refreshAIContentIfVisible()
         }
         )
         let positionObservationLayers = AnyView(
@@ -2384,14 +2395,12 @@ struct ReaderView: View {
                     bookTitle: book?.title ?? currentChapterTitle,
                     adapter: aiBookAdapter(),
                     progress: aiReadingProgress(),
-                    onOpenCitation: { citation in
-                        showAIAssistantPanel = false
-                        // `(spineIndex, charOffset)` all the way from the chunk, so a
-                        // citation lands on the sentence rather than the chapter's top.
-                        jumpToChapter(citation.spineIndex, charOffset: citation.charOffset)
-                    }
+                    onOpenCitation: { citation in openAICitation(citation) }
                 )
                 .task { await gatherAIBookText() }
+                .alert(localized("引用定位未驗證"), isPresented: Binding(get: { aiCitationError != nil }, set: { if !$0 { aiCitationError = nil } })) {
+                    Button(localized("確定"), role: .cancel) { aiCitationError = nil }
+                } message: { Text(aiCitationError ?? "") }
             }
         }
         .sheet(isPresented: $showTTSPanel) {

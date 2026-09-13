@@ -28,10 +28,7 @@ enum AIJSONFencing {
 /// attribution heuristic cannot know that 張若塵, 若塵 and 塵哥 are one person, so without
 /// this it casts three voices for one character. Everything else here is for the reader.
 ///
-/// Spoiler handling is deliberately weaker than everywhere else in the assistant: a character
-/// card searches the **whole book**, and the only control is a prompt rule not to reveal the
-/// character's fate. That is a real trade, and the card screen says so — it is opt-in, not
-/// something a recap or an answer can reach.
+/// Source scope is persisted; only verified cards within the reading boundary supply safe aliases.
 struct AICharacterProfile: Sendable, Equatable, Codable {
     let name: String
     /// First appearance, as the model summarised it from passages; `nil` when unsupported.
@@ -50,7 +47,18 @@ struct AICharacterProfile: Sendable, Equatable, Codable {
     /// old cards apart instead of silently mixing them.
     let promptVersion: String
 
-    static let currentPromptVersion = "yuedu.character.v1"
+    var sourceBoundary: AIReadingBoundary? = nil
+    var maximumEvidencePosition: AIChunkLocation? = nil
+    var retrievedEvidenceIDs: [String]? = nil
+
+    func isSafe(at boundary: AIReadingBoundary) -> Bool {
+        guard let sourceBoundary, let maximumEvidencePosition,
+              !sourceBoundary.wholeBook, boundary.contains(sourceBoundary),
+              retrievedEvidenceIDs?.isEmpty == false else { return false }
+        return boundary.allows(maximumEvidencePosition)
+    }
+
+    static let currentPromptVersion = "yuedu.character.v2"
 
     /// The task, with the character's name kept **out** of it.
     ///
@@ -69,54 +77,41 @@ struct AICharacterProfile: Sendable, Equatable, Codable {
     private struct Fields: Decodable {
         let firstAppearance: String?
         let role: String?
-        let relationships: [String]?
-        let aliasCandidates: [String]?
-        let summary: String?
+        let relationships: [String]
+        let aliasCandidates: [String]
+        let summary: String
     }
 
-    /// Parses the model's JSON answer, falling back to keeping the raw text as the summary.
-    ///
-    /// The fallback is deliberate and narrow: a card whose JSON did not parse still carries
-    /// prose the reader can use, and the structured fields stay empty so 「重新整理」 is
-    /// obviously the next step. It never invents aliases — a wrong alias would merge two
-    /// characters onto one voice.
+    /// Invalid schemas fail before persistence; previous valid cards remain available.
     static func parse(
         fromAnswer answer: String,
         name: String,
         gatheredChunkIDs: [String],
         provider: String,
-        model: String
-    ) -> AICharacterProfile {
+        model: String,
+        citedChunkIDs: [String] = []
+    ) throws -> AICharacterProfile {
+        let started = Date()
+        defer { AIDiagnostics.current?.event("characterParseDuration", ["elapsedMs": "\(Date().timeIntervalSince(started) * 1000)"]) }
         let cleaned = AIJSONFencing.stripFences(answer)
         if let data = cleaned.data(using: .utf8),
-           let fields = try? JSONDecoder().decode(Fields.self, from: data) {
+           let fields = try? JSONDecoder().decode(Fields.self, from: data),
+           !fields.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return AICharacterProfile(
                 name: name,
                 firstAppearance: fields.firstAppearance?.nilIfBlank,
                 role: fields.role?.nilIfBlank,
-                relationships: (fields.relationships ?? []).compactMap(\.nilIfBlank),
-                aliasCandidates: Self.normalizedAliases(fields.aliasCandidates ?? [], excluding: name),
-                summary: fields.summary ?? "",
-                citationChunkIDs: gatheredChunkIDs,
+                relationships: fields.relationships.compactMap(\.nilIfBlank),
+                aliasCandidates: Self.normalizedAliases(fields.aliasCandidates, excluding: name),
+                summary: fields.summary,
+                citationChunkIDs: Array(Set(citedChunkIDs).intersection(gatheredChunkIDs)).sorted(),
                 provider: provider,
                 model: model,
                 promptVersion: currentPromptVersion
             )
         }
-        return AICharacterProfile(
-            name: name,
-            firstAppearance: nil,
-            role: nil,
-            relationships: [],
-            aliasCandidates: [],
-            summary: cleaned.isEmpty
-                ? String(format: localized("未能整理「%@」的檔案，可以點「重新整理」再試一次。"), name)
-                : cleaned,
-            citationChunkIDs: gatheredChunkIDs,
-            provider: provider,
-            model: model,
-            promptVersion: currentPromptVersion
-        )
+        AIDiagnostics.current?.event("characterParsing", ["result": "invalidSchema"])
+        throw LLMError.invalidSchema
     }
 
     /// Trims, de-duplicates, and drops the character's own name — models return it often, and

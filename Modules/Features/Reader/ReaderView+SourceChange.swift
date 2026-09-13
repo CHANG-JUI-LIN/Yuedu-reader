@@ -979,8 +979,9 @@ extension ReaderView {
         // adverb the heuristic mistook for a name) from a person, and it also folds a
         // character's nicknames onto one name. Character cards add whatever aliases they
         // found on top.
-        return AISpeakerRosterStore.shared.roster(forBook: bookId)
-            .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId)) { _, card in card }
+        let boundary = aiBookAdapter().boundary()
+        return AISpeakerRosterStore.shared.safeRoster(forBook: bookId, boundary: boundary)
+            .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId, boundary: boundary)) { _, card in card }
     }
 
     func detectedTTSSpeakers() -> [String] {
@@ -992,8 +993,8 @@ extension ReaderView {
         var ordered: [String] = []
         // Folded through the same alias table playback uses, so the cast screen lists the
         // characters that will actually be spoken rather than every name in the prose.
-        let aliases = AISpeakerRosterStore.shared.roster(forBook: bookId)
-            .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId)) { _, card in card }
+        let aliases = AISpeakerRosterStore.shared.safeRoster(forBook: bookId, boundary: aiBookAdapter().boundary())
+            .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId, boundary: aiBookAdapter().boundary())) { _, card in card }
         for attribution in TTSSpeakerAnnotator.attributions(in: text, aliases: aliases) {
             guard let speaker = attribution.speaker, seen.insert(speaker).inserted else { continue }
             // Once a roster exists, anything it left out was judged not to be a person.
@@ -1083,50 +1084,67 @@ extension ReaderView {
 
     // MARK: - AI assistant
 
-    /// The open book, as the AI layer wants it.
-    ///
-    /// Laid-out text first — it is in the same offset space as the reading position, so a
-    /// citation lands on the sentence — and `aiChapterTexts` for everything else.
-    ///
-    /// `chapters[i].content` is **not** a fallback here: every reader path builds its
-    /// chapter list with `content: ""` (the text lives in the epub, the mapped txt file or
-    /// the online cache), so reading it was reading nothing. That left the AI seeing only
-    /// what `LayoutCache` held — five chapters of a whole novel.
-    func aiBookAdapter() -> AIBookContentAdapter {
-        AIBookContentAdapter(bookID: bookId, chapters: chapters) { index in
-            if usesCoreTextEPUB, let laidOut = epubRenderer.engine?.chapterText(forSpine: index) {
-                return laidOut
-            }
-            return aiChapterTexts[index]
-        }
+    /// Stable source context and one gathered snapshot, independent of layout-cache eviction.
+    var aiCurrentSourceContext: String {
+        "\(bookId):\(book?.bookSourceId?.uuidString ?? "local"):\(book?.source ?? "")"
+            + chapters.map { "\($0.index):\($0.href):\($0.title)" }.joined(separator: "\n")
     }
 
-    /// Reads every chapter the device already has, so the AI features see the book instead of
-    /// the five chapters that happen to be laid out.
-    ///
-    /// Runs when an AI surface opens rather than at book open: it is only worth anything to a
-    /// reader who uses these features, and a long web novel is thousands of file reads.
-    /// Chapters already gathered are skipped, so re-opening the panel costs nothing.
+    func aiBookAdapter() -> AIBookContentAdapter {
+        let position = currentPagedReadingPositionForModeSwitch()
+        let spine = position?.spineIndex ?? currentChapterIndex
+        let snapshot = aiSourceAdapter.flatMap { $0.chunkBookID == bookId && aiSourceContext == aiCurrentSourceContext ? $0 : nil }
+            ?? AIBookContentAdapter(bookID: bookId, chapters: chapters, textForChapter: { _ in nil })
+        return snapshot.atReadingPosition(spine: spine, renderedOffset: position?.charOffset ?? 0,
+            renderedText: epubRenderer.engine?.chapterText(forSpine: spine))
+    }
+
+    /// Refreshes local source text only. One publish per snapshot; an obsolete gather cannot win.
     func gatherAIBookText() async {
-        let count = chapters.count
-        guard count > 0 else { return }
-        var gathered = aiChapterTexts
-        var changed = false
-        for index in 0..<count {
-            if Task.isCancelled { return }
-            guard gathered[index] == nil else { continue }
-            // Gathered even for a chapter that is laid out right now: `LayoutCache` evicts,
-            // and skipping it here would leave a hole in the index the moment it does.
-            guard let text = await epubRenderer.chapterSourceText(at: index),
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else { continue }
-            gathered[index] = text
-            changed = true
+        let acquisitionStarted = Date()
+        let generation = UUID()
+        aiGatherGeneration = generation
+        let capturedBook = bookId
+        let capturedContext = aiCurrentSourceContext
+        let chapterIDs = chapters.map { "\($0.index):\($0.href):\($0.title)" }
+        var gathered: [Int: String] = [:]
+        var statuses: [Int: AISourceManifest.Availability] = [:]
+        for index in chapters.indices {
+            guard !Task.isCancelled, aiGatherGeneration == generation else { return }
+            let result = await epubRenderer.localChapterText(at: index)
+            gathered[index] = result.text
+            statuses[index] = result.status
         }
-        // Published once, at the end. Every write re-evaluates the reader's body and changes
-        // the index fingerprint, so publishing progress would rebuild the index repeatedly
-        // and answer questions from a book that is still half-loaded.
-        if changed { aiChapterTexts = gathered }
+        guard !Task.isCancelled, aiGatherGeneration == generation, bookId == capturedBook, aiCurrentSourceContext == capturedContext,
+              chapters.map({ "\($0.index):\($0.href):\($0.title)" }) == chapterIDs else { return }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let rulesDigest = (try? encoder.encode(ReplaceRuleStore.shared.rules)).map(AISourceManifest.digest) ?? "unavailable"
+        aiSourceContext = capturedContext
+        aiSourceAdapter = AIBookContentAdapter(bookID: bookId, chapters: chapters,
+            transformationVersion: "chapterPlainText.v1@rules:" + rulesDigest, missingStatus: statuses,
+            acquisitionMilliseconds: Date().timeIntervalSince(acquisitionStarted) * 1000) { gathered[$0] }
+        AIAssistantService.shared.activate(aiBookAdapter())
+    }
+
+    func refreshAIContentIfVisible() {
+        aiSourceAdapter = nil
+        guard showAIAssistantPanel || showTTSPanel else { return }
+        aiGatherTask?.cancel()
+        aiGatherTask = Task { await gatherAIBookText() }
+    }
+
+    func openAICitation(_ citation: LLMCitation) {
+        let adapter = aiBookAdapter()
+        guard adapter.chunkSections.indices.contains(citation.spineIndex),
+              let rendered = epubRenderer.engine?.chapterText(forSpine: citation.spineIndex),
+              let offset = AITextCoordinates.citationOffset(citation, sourceVersion: adapter.contentFingerprint,
+                  sourceText: adapter.chunkSections[citation.spineIndex].text, renderedText: rendered)
+        else {
+            aiCitationError = localized("來源已變更或尚無可驗證的排版定位，請先開啟該章並重新整理引用。")
+            return
+        }
+        showAIAssistantPanel = false
+        jumpToChapter(citation.spineIndex, charOffset: offset)
     }
 
     /// How far the reader has got, on the same scale the chunks carry.

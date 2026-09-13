@@ -97,6 +97,15 @@ enum AISpeakerRoster {
     ) async throws -> [String: String] {
         guard !candidates.isEmpty else { return [:] }
         let raw = try await provider.generate(request(candidates: candidates))
+        try raw.validateCompletion()
+        let cleaned = AIJSONFencing.stripFences(raw.content)
+        guard let data = cleaned.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(Answer.self, from: data),
+              let names = decoded.names, candidates.allSatisfy({ names[$0.name] != nil }) else {
+            AIDiagnostics.current?.event("rosterParsing", ["result": "invalidSchema"])
+            throw LLMError.invalidSchema
+        }
+        AIDiagnostics.current?.event("rosterParsing", ["result": "valid", "candidates": "\(candidates.count)"])
         return parse(raw.content, candidates: candidates.map(\.name))
     }
 }

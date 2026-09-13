@@ -262,17 +262,25 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     /// `OnlineBookContentProvider` asks with `.cacheOnly`, so this reads downloaded chapters
     /// and returns nil for the rest — a whole-book gather must never pull a novel over the
     /// network behind the reader's back.
-    func chapterPlainText(at index: Int) async -> String? {
-        guard let payload = try? await provider.contentForChapter(index: index) else { return nil }
-        let text: String
-        switch payload.body {
-        case let .plainText(plain):
-            text = plain
-        case let .html(html):
-            // Off the main actor: see the same note in `EPUBAttributedStringBuilder`.
-            text = await Task.detached(priority: .utility) { ChapterPlainText.fromHTML(html) }.value
+    func chapterPlainText(at index: Int) async -> String? { await localChapterText(at: index).text }
+
+    func localChapterText(at index: Int) async -> AILocalChapterText {
+        do {
+            // OnlineBookContentProvider uses cacheOnly. No AI-specific network loader.
+            let payload = try await provider.contentForChapter(index: index)
+            switch payload.body {
+            case let .plainText(text): return .extracted(text)
+            case let .html(html):
+                return .extracted(await Task.detached(priority: .utility) { ChapterPlainText.fromHTML(html) }.value)
+            }
+        } catch BookContentProviderError.contentNotCached {
+            return .init(text: nil, status: .notDownloaded)
+        } catch BookContentProviderError.unsupportedChapterContent {
+            return .init(text: nil, status: .unsupported)
+        } catch {
+            AppLogger.error("AI local chapter extraction failed", context: ["chapter": "\(index)"])
+            return .init(text: nil, status: .extractionFailed)
         }
-        return text.isEmpty ? nil : text
     }
 
     func chapterTitle(at index: Int) -> String {

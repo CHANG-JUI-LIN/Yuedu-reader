@@ -44,6 +44,10 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         return chapters[index].plainText.lengthOfBytes(using: .utf8)
     }
 
+    func localChapterText(at index: Int) async -> AILocalChapterText {
+        .extracted(await chapterPlainText(at: index))
+    }
+
     func chapterPlainText(at index: Int) async -> String? {
         guard chapters.indices.contains(index) else { return nil }
         let text = chapters[index].plainText

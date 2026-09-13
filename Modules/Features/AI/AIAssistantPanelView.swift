@@ -25,6 +25,7 @@ struct AIAssistantPanelView: View {
     @State private var isConfigured = false
     @State private var showSettings = false
     @State private var showHistory = false
+    @State private var showStatus = false
     @GestureState(resetTransaction: Transaction(animation: DSAnimation.standard))
     private var drag = DrawerDrag()
     @State private var task: Task<Void, Never>?
@@ -115,6 +116,11 @@ struct AIAssistantPanelView: View {
             .navigationTitle(localized("AI 助手"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
+            .sheet(isPresented: $showStatus) { NavigationStack { AIStatusView(adapter: adapter) } }
+            .onChange(of: adapter.contentFingerprint) { _, _ in
+                cancel()
+                AIAssistantService.shared.activate(adapter)
+            }
             .onAppear(perform: start)
             .onDisappear {
                 task?.cancel()
@@ -150,6 +156,11 @@ struct AIAssistantPanelView: View {
                     .accessibilityHidden(true)
             }
             .accessibilityLabel(localized("關閉"))
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { showStatus = true } label: {
+                Image(systemName: "info.circle").accessibilityHidden(true)
+            }.accessibilityLabel(localized("AI 狀態與診斷"))
         }
         if isConfigured {
             ToolbarItem(placement: .topBarTrailing) {
@@ -313,6 +324,10 @@ struct AIAssistantPanelView: View {
                             .font(DSFont.caption)
                             .foregroundStyle(DSColor.textSecondary)
                     }
+                    if citation.sourceVersion != adapter.contentFingerprint {
+                        Text(localized("來源已變更，需重新整理引用"))
+                            .font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
+                    }
                     Text(Self.quoteText(citation))
                         .font(DSFont.footnote)
                         .foregroundStyle(DSColor.textSecondary)
@@ -326,10 +341,12 @@ struct AIAssistantPanelView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
-            citation.sectionTitle.map { String(format: localized("跳到 %@"), $0) }
-                ?? localized("跳到原文")
+            citation.sourceVersion != adapter.contentFingerprint ? localized("來源已變更，需重新整理引用") :
+                (citation.sectionTitle.map { String(format: localized("跳到 %@"), $0) } ?? localized("跳到原文"))
         )
         .accessibilityHint(citation.quote)
+        .disabled(citation.sourceVersion != adapter.contentFingerprint)
+
     }
 
     /// The excerpt, minus a leading copy of the chapter title — a chunk that starts a
@@ -515,7 +532,8 @@ struct AIAssistantPanelView: View {
                     question: question,
                     bookID: bookID,
                     adapter: adapter,
-                    progress: effectiveProgress
+                    progress: effectiveProgress,
+                    boundary: adapter.boundary(wholeBook: !gs.aiSpoilerSafe)
                 )
                 guard !Task.isCancelled else { return }
                 resolve(
@@ -537,7 +555,7 @@ struct AIAssistantPanelView: View {
     /// passages, so it reads forwards instead of answering a query.
     private func askRecap() {
         guard !isBusy else { return }
-        append(AIChatMessage(role: .user, text: localized("前情提要")))
+        append(AIChatMessage(role: .user, text: localized("最近已讀片段提要")))
         let pending = AIChatMessage(role: .assistant, text: "", isPending: true)
         append(pending)
 
@@ -550,7 +568,8 @@ struct AIAssistantPanelView: View {
                     bookTitle: bookTitle,
                     adapter: adapter,
                     progress: effectiveProgress,
-                    stored: stored
+                    stored: stored,
+                    boundary: adapter.boundary(wholeBook: !gs.aiSpoilerSafe)
                 )
                 guard !Task.isCancelled else { return }
                 guard let recap else {

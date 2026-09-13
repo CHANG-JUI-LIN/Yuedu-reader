@@ -23,8 +23,7 @@ struct LLMMessage: Codable, Hashable, Sendable {
     }
 }
 
-/// A generation request. Retrieved context is already folded into the system message by the
-/// caller, so there is no separate chunk list here — the provider stays a transport.
+/// A generation request. The caller places retrieved text in data messages; the provider stays a transport.
 struct LLMGenerationRequest: Sendable {
     let messages: [LLMMessage]
     let maxTokens: Int?
@@ -50,10 +49,34 @@ struct LLMRawResponse: Sendable {
     let provider: String
     let model: String
 
-    init(content: String, provider: String, model: String) {
+    let finishReason: String?
+    let usage: LLMUsage?
+    let httpStatus: Int?
+
+    init(content: String, provider: String, model: String, finishReason: String? = nil, usage: LLMUsage? = nil, httpStatus: Int? = nil) {
+        self.finishReason = finishReason
+        self.usage = usage
+        self.httpStatus = httpStatus
         self.content = content
         self.provider = provider
         self.model = model
+    }
+}
+
+struct LLMUsage: Codable, Sendable {
+    let promptTokens: Int?
+    let completionTokens: Int?
+    let totalTokens: Int?
+    enum CodingKeys: String, CodingKey {
+        case promptTokens = "prompt_tokens", completionTokens = "completion_tokens", totalTokens = "total_tokens"
+    }
+}
+
+extension LLMRawResponse {
+    func validateCompletion() throws {
+        if finishReason == "length" { throw LLMError.incompleteOutput }
+        if finishReason == "content_filter" { throw LLMError.filteredOutput }
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LLMError.emptyOutput }
     }
 }
 
@@ -64,6 +87,8 @@ struct LLMRawResponse: Sendable {
 /// pages shift when chapters load, so a page number would not survive the trip.
 struct LLMCitation: Codable, Hashable, Sendable {
     let chunkID: String
+    var sourceVersion: String? = nil
+    var coordinateUnit: String? = nil
     let quote: String
     let spineIndex: Int
     let charOffset: Int
@@ -90,6 +115,7 @@ struct LLMGenerationResult: Sendable {
     let model: String
     let promptVersion: String
     let hasEvidence: Bool
+    var selfAssessment: AISelfAssessment? = nil
 
     init(
         content: String,
@@ -111,6 +137,10 @@ struct LLMGenerationResult: Sendable {
 /// Classified so the UI can say what the user should do about it, rather than surfacing a
 /// raw `URLError` number.
 enum LLMError: Error, Sendable, Equatable, LocalizedError {
+    case incompleteOutput
+    case filteredOutput
+    case emptyOutput
+    case invalidSchema
     case unauthorized
     case rateLimited
     case networkError(String)
@@ -118,6 +148,10 @@ enum LLMError: Error, Sendable, Equatable, LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .incompleteOutput: return localized("AI 回覆被截斷，未儲存本次結果")
+        case .filteredOutput: return localized("AI 服務未提供完整回覆")
+        case .emptyOutput: return localized("AI 回覆為空，未儲存本次結果")
+        case .invalidSchema: return localized("AI 回覆格式錯誤，未儲存本次結果")
         case .unauthorized:
             return localized("API Key 無效或已過期")
         case .rateLimited:

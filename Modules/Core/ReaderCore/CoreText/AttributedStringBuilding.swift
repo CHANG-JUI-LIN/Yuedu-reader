@@ -83,12 +83,14 @@ protocol AttributedStringBuilding {
     /// indexing five chapters of it and finding two speakers. Returning nil means this
     /// chapter's text is not on the device; the caller skips it rather than fetching.
     func chapterPlainText(at index: Int) async -> String?
+    func localChapterText(at index: Int) async -> AILocalChapterText
 }
 
 extension AttributedStringBuilding {
     /// Default for builders with no source text of their own. The caller then sees only the
     /// laid-out chapters, which is the old behaviour — not silently wrong, just narrow.
     func chapterPlainText(at index: Int) async -> String? { nil }
+    func localChapterText(at index: Int) async -> AILocalChapterText { .init(text: nil, status: .unsupported) }
 }
 
 /// Markup to plain text for whole-book work.

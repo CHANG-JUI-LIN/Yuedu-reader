@@ -189,6 +189,10 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         )
     }
 
+    func localChapterText(at index: Int) async -> AILocalChapterText {
+        .extracted(await chapterPlainText(at: index))
+    }
+
     func chapterPlainText(at index: Int) async -> String? {
         guard let text = chapterText(at: index), !text.isEmpty else { return nil }
         return text

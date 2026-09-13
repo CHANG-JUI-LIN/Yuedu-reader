@@ -84,6 +84,7 @@ enum AIAgenticAssistant {
         provider: any LLMProviding,
         embedding: (any AIEmbeddingProviding)? = nil,
         scope: Double,
+        boundary: AIReadingBoundary? = nil,
         seed: [AIContentChunk] = [],
         maxSteps: Int = defaultMaxSteps,
         maxQueries: Int = defaultMaxQueries,
@@ -92,7 +93,7 @@ enum AIAgenticAssistant {
     ) async throws -> AIAgenticResult {
         var gathered: [AIContentChunk] = []
         var seenIDs: Set<String> = []
-        for chunk in seed where seenIDs.insert(chunk.id).inserted {
+        for chunk in seed where (boundary.map { $0.contains(chunk) } ?? (chunk.progressEnd <= scope)) && seenIDs.insert(chunk.id).inserted {
             gathered.append(chunk)
         }
         var trace: [AIAgenticStep] = []
@@ -126,28 +127,18 @@ enum AIAgenticAssistant {
                 topP: topP
             )
             let raw = try await provider.generate(request)
+            try raw.validateCompletion()
             lastProvider = raw.provider
             lastModel = raw.model
 
             guard let parsed = parse(raw.content) else {
-                // An unparseable planner reply is not shown to the reader — it is control
-                // JSON or a protocol preamble, not prose. One synthesis pass turns whatever
-                // was gathered into an answer instead of ending with nothing.
-                return try await synthesize(
-                    task: task,
-                    userInput: userInput,
-                    gathered: gathered,
-                    provider: provider,
-                    trace: trace + [AIAgenticStep(
-                        sequence: trace.count,
-                        action: .stopped,
-                        queries: [],
-                        newChunkIDs: [],
-                        reason: "unparseable planner response"
-                    )]
-                )
+                AIDiagnostics.current?.event("plannerParsing", ["result": "invalidSchema", "step": "\(step)"])
+                throw LLMError.invalidSchema
             }
 
+            guard ["finish", "retrieve", "rewriteAndRetrieve"].contains(parsed.action ?? "") else { throw LLMError.invalidSchema }
+            if parsed.action == "finish", parsed.answer?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false { throw LLMError.invalidSchema }
+            AIDiagnostics.current?.event("plannerParsing", ["step": "\(step)", "action": parsed.action ?? "unknown"])
             if parsed.action == "finish" || isFinal, let answer = parsed.answer, !answer.isEmpty {
                 let visible = AISelfAssessment.userVisibleText(answer)
                 let gatheredIDs = Set(gathered.map(\.id))
@@ -205,7 +196,8 @@ enum AIAgenticAssistant {
                     query: query,
                     maximumProgress: scope,
                     limit: retrieveLimit,
-                    embedding: embedding
+                    embedding: embedding,
+                    boundary: boundary
                 )
                 for hit in hits where seenIDs.insert(hit.chunk.id).inserted {
                     gathered.append(hit.chunk)
@@ -278,20 +270,13 @@ enum AIAgenticAssistant {
             topP: topP
         )
         let raw = try await provider.generate(request)
+        try raw.validateCompletion()
         let gatheredIDs = Set(gathered.map(\.id))
-        guard let parsed = parse(raw.content) else {
-            // Still unparseable. An empty answer is the honest outcome — the raw control JSON
-            // must never be presented as prose.
-            return AIAgenticResult(
-                answer: "",
-                citationChunkIDs: [],
-                retrievedChunks: gathered,
-                trace: trace,
-                provider: raw.provider,
-                model: raw.model,
-                promptVersion: promptVersion
-            )
+        guard let parsed = parse(raw.content), parsed.action == "finish",
+              let answer = parsed.answer, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw LLMError.invalidSchema
         }
+
         return AIAgenticResult(
             answer: AISelfAssessment.userVisibleText(parsed.answer ?? ""),
             citationChunkIDs: (parsed.citations ?? []).filter { gatheredIDs.contains($0) },
@@ -339,7 +324,6 @@ enum AIAgenticAssistant {
         規則：只依據已提供的片段，不要編造；引用片段用它的 [id]。
         每一步輸出**純 JSON**（不要程式碼區塊標記、不要解釋）：
         {"action":"retrieve|rewriteAndRetrieve|finish","query":string,"missing":string,"queries":[string],"reason":string,"answer":string,"citations":[string]}
-        已執行過的檢索詞：\(attempted)
         連續沒有新證據的次數：\(noProgressCount)；剩餘檢索次數：\(remainingQueries)。不要重複已執行過的檢索詞。
         \(stepHint)
         """
@@ -350,7 +334,7 @@ enum AIAgenticAssistant {
                 content: userMessage(
                     userInput: userInput,
                     evidenceLabel: "已累積的片段",
-                    body: body(of: gathered)
+                    body: "已執行檢索詞（資料）：\(attempted)\n" + body(of: gathered)
                 )
             ),
         ]
@@ -377,6 +361,8 @@ enum AIAgenticAssistant {
 
     /// Tolerant on purpose: models wrap JSON in fences, or add a sentence before the object.
     static func parse(_ content: String) -> StepResponse? {
+        let started = Date()
+        defer { AIDiagnostics.current?.event("plannerParseDuration", ["elapsedMs": "\(Date().timeIntervalSince(started) * 1000)"]) }
         let cleaned = AIJSONFencing.stripFences(content)
         if let data = cleaned.data(using: .utf8),
            let decoded = try? JSONDecoder().decode(StepResponse.self, from: data) {

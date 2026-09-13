@@ -30,17 +30,23 @@ struct AICharacterListView: View {
     @State private var isConfigured = false
     @State private var showSettings = false
     /// Everyone who speaks anywhere in the book, most talkative first.
-    @State private var scanned: [AIBookSpeakerScan.Speaker] = []
-    @State private var isScanning = false
+    @StateObject private var scanner = AISpeakerScanCoordinator()
+    private var scanned: [AIBookSpeakerScan.Speaker] { scanner.speakers }
+    private var isScanning: Bool { scanner.isScanning }
+    @State private var confirmWholeBook = false
     @State private var scope: Scope = .read
     @ObservedObject private var rosters = AISpeakerRosterStore.shared
     @State private var isVerifying = false
 
     private var profiles: [AICharacterProfile] {
-        store.profiles(forBook: bookID)
+        store.profiles(forBook: bookID).filter { scope == .wholeBook || $0.isSafe(at: activeBoundary) }
     }
 
-    private var roster: [String: String] { rosters.roster(forBook: bookID) }
+    private var activeBoundary: AIReadingBoundary { adapter.boundary(wholeBook: scope == .wholeBook) }
+    private var scanKey: String { "\(adapter.contentFingerprint)@\(activeBoundary)" }
+    private var roster: [String: String] {
+        scope == .wholeBook ? rosters.roster(forBook: bookID) : rosters.safeRoster(forBook: bookID, boundary: activeBoundary)
+    }
 
     /// Scanned speakers that have no card yet, with the roster's verdict applied.
     ///
@@ -70,6 +76,16 @@ struct AICharacterListView: View {
         List {
             if isScanning { scanningSection }
             scopeSection
+            Section {
+                NavigationLink(localized("AI 狀態與診斷")) { AIStatusView(adapter: adapter) }
+            } footer: {
+                Text(localized("候選來自啟發式掃描，尚未進行全書人物抽取。"))
+                    .dsSectionFooter()
+                if scope == .read, store.profiles(forBook: bookID).count > profiles.count {
+                    Text(localized("部分卡片來源或範圍未驗證，已在安全模式隱藏；自訂設定仍保留。"))
+                        .dsSectionFooter()
+                }
+            }
             if !scanned.isEmpty { verifySection }
             if !uncarded.isEmpty { detectedSection }
             if let errorMessage { errorSection(errorMessage) }
@@ -90,9 +106,20 @@ struct AICharacterListView: View {
             store.loadIfNeeded(forBook: bookID)
             rosters.loadIfNeeded(forBook: bookID)
             isConfigured = AIAssistantService.shared.isConfigured
-            scanBook()
+
+        }
+        .task(id: scanKey) {
+            task?.cancel()
+            buildingName = nil
+            isVerifying = false
+            AIAssistantService.shared.activate(adapter)
+            await scanner.scan(adapter: adapter, boundary: activeBoundary, aliases: store.aliasMap(forBook: bookID, boundary: activeBoundary))
         }
         .onDisappear { task?.cancel() }
+        .confirmationDialog(localized("全書模式可能揭露身分、關係與結局"), isPresented: $confirmWholeBook, titleVisibility: .visible) {
+            Button(localized("使用全書模式")) { scope = .wholeBook }
+            Button(localized("取消"), role: .cancel) {}
+        }
         .sheet(isPresented: $showSettings, onDismiss: {
             isConfigured = AIAssistantService.shared.isConfigured
         }) {
@@ -106,7 +133,7 @@ struct AICharacterListView: View {
         Section {
             HStack(spacing: DSSpacing.sm) {
                 ProgressView()
-                Text(localized("正在掃描全書的角色…"))
+                Text(localized("正在掃描說話人候選…"))
                     .foregroundStyle(DSColor.textSecondary)
             }
         }
@@ -152,7 +179,7 @@ struct AICharacterListView: View {
                 .accessibilityLabel(String(format: localized("整理 %@ 的人物卡"), speaker.name))
             }
         } header: {
-            Text(localized("書中的角色"))
+            Text(localized("說話人候選"))
         } footer: {
             // Says the one thing the rows cannot: that the un-verified list contains
             // things that are not people.
@@ -198,7 +225,8 @@ struct AICharacterListView: View {
                 _ = try await AIAssistantService.shared.buildSpeakerRoster(
                     bookID: bookID,
                     adapter: adapter,
-                    candidates: candidates
+                    candidates: candidates,
+                    boundary: activeBoundary
                 )
             } catch is CancellationError {
                 // The reader left.
@@ -209,48 +237,12 @@ struct AICharacterListView: View {
         }
     }
 
-    /// Chapters the reader has actually reached.
-    ///
-    /// Derived from the adapter's own progress, which is cumulative characters rather than
-    /// chapter index — a 200-character preface followed by a 40,000-character chapter would
-    /// otherwise look like half the book.
-    private var sectionsInScope: [AIChunkableSection] {
-        let all = adapter.chunkSections
-        guard scope == .read else { return all }
-        let readable = all.indices.filter { index in
-            (adapter.chunkLocation(sectionIndex: index, characterOffset: 0)?.progress ?? 0) <= progress
-        }
-        // Always at least the chapter being read, so a reader at 0% still sees someone.
-        guard let last = readable.last else { return Array(all.prefix(1)) }
-        return Array(all[0...last])
-    }
-
-    /// Off the main thread: a long web novel is megabytes of text, and the heuristic walks
-    /// all of it.
-    private func scanBook(force: Bool = false) {
-        guard force || (scanned.isEmpty && !isScanning) else { return }
-        let sections = sectionsInScope
-        guard !sections.isEmpty else { return }
-        let aliases = store.aliasMap(forBook: bookID)
-        isScanning = true
-        Task {
-            let found = await Task.detached(priority: .userInitiated) {
-                AIBookSpeakerScan.scan(sections: sections, aliases: aliases)
-            }.value
-            await MainActor.run {
-                scanned = found
-                isScanning = false
-            }
-        }
-    }
-
     /// Widens the scan to the whole book.
     private var scopeSection: some View {
         Section {
             if scope == .read {
                 Button {
-                    scope = .wholeBook
-                    scanBook(force: true)
+                    confirmWholeBook = true
                 } label: {
                     Label(localized("掃描整本書"), systemImage: "books.vertical")
                 }
@@ -258,7 +250,6 @@ struct AICharacterListView: View {
             } else {
                 Button {
                     scope = .read
-                    scanBook(force: true)
                 } label: {
                     Label(localized("只看讀過的部分"), systemImage: "bookmark")
                 }
@@ -301,7 +292,7 @@ struct AICharacterListView: View {
             // The one place in the assistant that reads past the reader's progress. It is
             // opt-in, and the only thing holding spoilers back is a prompt rule — so the
             // reader is told, rather than finding out from a card.
-            Text(localized("人物卡會搜尋整本書（不只你讀到的地方），並要求不要透露結局。想完全避免劇透就先別整理主角。"))
+            Text(localized("人物卡依目前範圍整理；全書及舊版未驗證卡片不會用於安全模式的別名或朗讀。"))
                 .dsSectionFooter()
         }
         .listRowBackground(Color.clear)
@@ -353,6 +344,13 @@ struct AICharacterListView: View {
             }
         } header: {
             Text(profile.name)
+        } footer: {
+            Text(profile.citationChunkIDs.isEmpty ? localized("未提供可核對引用") : String(format: localized("引用 %d 筆原文"), profile.citationChunkIDs.count))
+                .dsSectionFooter()
+            if !profile.isSafe(at: adapter.boundary()) {
+                Text(localized("全書或未驗證範圍，可能含劇透"))
+                    .dsSectionFooter()
+            }
         }
         .listRowBackground(Color.clear)
         .swipeActions(edge: .trailing) {
@@ -381,6 +379,7 @@ struct AICharacterListView: View {
                     name: name,
                     bookID: bookID,
                     adapter: adapter,
+                    boundary: activeBoundary,
                     onStep: { step, total in
                         Task { @MainActor in
                             stepText = String(

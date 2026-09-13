@@ -59,7 +59,7 @@ struct AIBM25Index: Sendable {
     }
 
     /// Scores `query`, returning hits with a positive score, best first.
-    func search(query: String, limit: Int) -> [AIRetrievalHit] {
+    func search(query: String, limit: Int, eligibleIDs: Set<String>? = nil) -> [AIRetrievalHit] {
         let terms = Set(Self.tokenize(query))
         guard !terms.isEmpty, documentCount > 0, limit > 0 else { return [] }
         var scoresByDocument: [Int: Double] = [:]
@@ -70,6 +70,7 @@ struct AIBM25Index: Sendable {
                 1 + (Double(documentCount) - documentFrequency + 0.5) / (documentFrequency + 0.5)
             )
             for posting in postings {
+                if let eligibleIDs, !eligibleIDs.contains(chunks[posting.documentIndex].id) { continue }
                 let length = Double(documentLengths[posting.documentIndex])
                 let frequency = Double(posting.frequency)
                 let denominator = frequency

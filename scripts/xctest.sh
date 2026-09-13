@@ -60,13 +60,11 @@ while kill -0 "$BUILD_PID" 2>/dev/null; do
     # Give the tail of the output a moment to land, then stop waiting.
     sleep 5
     kill "$BUILD_PID" 2>/dev/null
-    pkill -f "xcodebuild test" 2>/dev/null
     break
   fi
   if (( elapsed >= TIMEOUT )); then
     echo "!! no verdict after ${TIMEOUT}s; killing" >&2
     kill "$BUILD_PID" 2>/dev/null
-    pkill -f "xcodebuild test" 2>/dev/null
     break
   fi
   sleep 3
@@ -79,7 +77,9 @@ grep -nE "^/Users.*error:" "$LOG" | sed "s|$ROOT/||" | head -25
 echo "--- verdict ---"
 grep -E "Test run with [0-9]+ tests|Test Suite 'All tests' (passed|failed)|✘ Suite|\*\* TEST (SUCCEEDED|FAILED) \*\*|\*\* BUILD FAILED \*\*" "$LOG" | head -20
 
-if grep -qE "✘|failed|FAILED" "$LOG"; then
-  grep -qE "Test run with [0-9]+ tests passed" "$LOG" && ! grep -qE "✘ Suite|BUILD FAILED" "$LOG" && exit 0
-  exit 1
+# Framework/background logs can contain "failed" on a successful run. Only the test
+# runner's final verdict is authoritative; absence of a verdict is never success.
+if grep -qE "\*\* TEST SUCCEEDED \*\*" "$LOG" && ! grep -qE "✘|\*\* TEST FAILED \*\*|\*\* BUILD FAILED \*\*" "$LOG"; then
+  exit 0
 fi
+exit 1

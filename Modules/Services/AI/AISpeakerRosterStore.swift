@@ -21,6 +21,13 @@ final class AISpeakerRosterStore: ObservableObject {
         self.key = key
     }
 
+    func safeRoster(forBook bookID: UUID, boundary: AIReadingBoundary) -> [String: String] {
+        guard let data = defaults.data(forKey: storageKey(bookID) + ".boundary"),
+              let stored = try? JSONDecoder().decode(AIReadingBoundary.self, from: data),
+              !stored.wholeBook, boundary.contains(stored) else { return [:] }
+        return roster(forBook: bookID)
+    }
+
     func roster(forBook bookID: UUID) -> [String: String] {
         if let cached = rostersByBook[bookID] { return cached }
         return load(bookID: bookID)
@@ -32,7 +39,8 @@ final class AISpeakerRosterStore: ObservableObject {
         rostersByBook[bookID] = load(bookID: bookID)
     }
 
-    func save(_ roster: [String: String], forBook bookID: UUID) {
+    func save(_ roster: [String: String], forBook bookID: UUID, boundary: AIReadingBoundary? = nil) {
+        defaults.set(boundary.flatMap { try? JSONEncoder().encode($0) }, forKey: storageKey(bookID) + ".boundary")
         rostersByBook[bookID] = roster
         defaults.set(roster, forKey: storageKey(bookID))
     }

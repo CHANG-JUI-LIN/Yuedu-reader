@@ -348,6 +348,8 @@ struct BrowserAutoSupportedSubsetCorrectnessGateTests {
             switch component.combinator {
             case .child: combinator = " > "
             case .descendant: combinator = " "
+            case .adjacentSibling: combinator = " + "
+            case .generalSibling: combinator = " ~ "
             }
             return combinator + text
         }.joined()

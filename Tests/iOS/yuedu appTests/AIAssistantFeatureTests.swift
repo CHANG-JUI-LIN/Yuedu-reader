@@ -78,18 +78,16 @@ struct AIAssistantFeatureTests {
         #expect(result.promptVersion == AIRAGPipeline.promptVersion)
     }
 
-    /// Book text belongs in the system message as labelled passages; the user's question is
-    /// the only thing in the user role. Reversing that lets a novel's contents read as
-    /// instructions.
-    @Test("passages go in the system message and the question in the user message")
+    /// Novel text is untrusted data and must not receive system authority.
+    @Test("passages and the question go in the data message")
     func promptKeepsBookTextOutOfTheUserTurn() {
         let chunk = makeChunk(ordinal: 0, text: "池瑤走出房門。")
         let request = AIRAGPipeline.request(query: "她去哪了？", chunks: [chunk], nonce: "ABC123")
         #expect(request.messages.map(\.role) == [.system, .user])
-        #expect(request.messages[0].content.contains("池瑤走出房門。"))
-        #expect(request.messages[0].content.contains(chunk.id))
-        #expect(request.messages[1].content == "她去哪了？")
-        #expect(!request.messages[1].content.contains("池瑤走出房門。"))
+        #expect(!request.messages[0].content.contains("池瑤走出房門。"))
+        #expect(request.messages[1].content.contains(chunk.id))
+        #expect(request.messages[1].content.contains("她去哪了？"))
+        #expect(request.messages[1].content.contains("池瑤走出房門。"))
     }
 
     // MARK: - Recap reuse
@@ -97,7 +95,7 @@ struct AIAssistantFeatureTests {
     @Test("a recap is reused until the reader has actually moved on")
     func recapReusePolicy() {
         let now = Date()
-        let stored = AIRecap(
+        var stored = AIRecap(
             text: "前情提要內容。",
             progress: 0.40,
             generatedAt: now,
@@ -105,7 +103,10 @@ struct AIAssistantFeatureTests {
             model: "m",
             promptVersion: AIRecap.currentPromptVersion
         )
-        #expect(AIRecap.canReuse(stored, atProgress: 0.42, now: now))
+        let boundary = AIReadingBoundary(sourceVersion: "fixture", sectionID: "0", spineIndex: 0, utf16Offset: 100)
+        stored.sourceBoundary = boundary
+        stored.evidenceChunkIDs = ["fixture-chunk"]
+        #expect(AIRecap.canReuse(stored, atProgress: 0.42, now: now, boundary: boundary))
         #expect(!AIRecap.canReuse(stored, atProgress: 0.50, now: now))
         #expect(!AIRecap.canReuse(stored, atProgress: 0.42, now: now.addingTimeInterval(25 * 3600)))
         #expect(!AIRecap.canReuse(nil, atProgress: 0.42, now: now))
@@ -140,19 +141,20 @@ struct AIAssistantFeatureTests {
     // MARK: - Character cards → voices
 
     @Test("a character card parses, fenced or not")
-    func parsesCharacterCard() {
+    func parsesCharacterCard() throws {
         let json = """
         ```json
         {"firstAppearance":"第一章","role":"主角","relationships":["池瑤：同門"],
          "aliasCandidates":["若塵","塵哥","張若塵"],"summary":"神石傳人。"}
         ```
         """
-        let profile = AICharacterProfile.parse(
+        let profile = try AICharacterProfile.parse(
             fromAnswer: json,
             name: "張若塵",
             gatheredChunkIDs: ["a", "b"],
             provider: "p",
-            model: "m"
+            model: "m",
+            citedChunkIDs: ["a", "b"]
         )
         #expect(profile.role == "主角")
         #expect(profile.firstAppearance == "第一章")
@@ -162,18 +164,12 @@ struct AIAssistantFeatureTests {
         #expect(profile.promptVersion == AICharacterProfile.currentPromptVersion)
     }
 
-    @Test("an unparseable card keeps its prose instead of inventing fields")
+    @Test("an unparseable card fails explicitly instead of inventing a successful summary")
     func characterCardFallbackInventsNothing() {
-        let profile = AICharacterProfile.parse(
-            fromAnswer: "他是主角，來自青雲門。",
-            name: "張若塵",
-            gatheredChunkIDs: [],
-            provider: "p",
-            model: "m"
-        )
-        #expect(profile.summary == "他是主角，來自青雲門。")
-        #expect(profile.aliasCandidates.isEmpty)
-        #expect(profile.role == nil)
+        #expect(throws: LLMError.invalidSchema) {
+            try AICharacterProfile.parse(fromAnswer: "他是主角，來自青雲門。", name: "張若塵",
+                gatheredChunkIDs: [], provider: "p", model: "m")
+        }
     }
 
     /// The whole reason the AI work touches the TTS work: without this table the dialogue
@@ -324,8 +320,8 @@ struct AIAssistantFeatureTests {
         let provider = CountingProvider(reply: "")
         let limited = AIRAGPipeline.noEvidenceResult(provider: provider, spoilerLimited: true)
         let unlimited = AIRAGPipeline.noEvidenceResult(provider: provider, spoilerLimited: false)
-        #expect(limited.content == localized("書中（防劇透範圍內）沒有與這個問題相關的內容。"))
-        #expect(unlimited.content == localized("書中沒有與這個問題相關的內容。"))
+        #expect(limited.content == localized("目前可用、已讀範圍內的檢索結果不足以確認。"))
+        #expect(unlimited.content == localized("目前可用正文的檢索結果不足以確認。"))
         #expect(limited.content != unlimited.content)
         #expect(!limited.hasEvidence)
         #expect(!unlimited.hasEvidence)

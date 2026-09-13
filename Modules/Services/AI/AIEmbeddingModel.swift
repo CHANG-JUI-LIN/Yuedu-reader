@@ -24,13 +24,8 @@ struct AIEmbeddingModelDescriptor: Codable, Equatable, Sendable {
 
     var identifier: String { "\(name)@\(revision)" }
 
-    /// The model ChatBook converted and verified, and whose licence permits redistribution
-    /// (Apache-2.0, redistribution and commercial use both reviewed and approved) — which is
-    /// what lets it be self-hosted instead of pulled from HuggingFace, unreachable from China.
-    ///
-    /// fp32 as converted. The conversion script's `compute_precision=FLOAT16` did not take
-    /// effect on this model, and quantising afterwards changes retrieval quality, so it is
-    /// left as it is rather than shrunk by guesswork.
+    /// Requested descriptor only. Artifact identity, feature contract and semantic quality
+    /// are independent; the name does not establish the contents of an installed model.
     static let `default` = AIEmbeddingModelDescriptor(
         name: "distiluse-base-multilingual-cased-v2",
         revision: "1",
@@ -50,6 +45,7 @@ final class AIEmbeddingModelStore: ObservableObject {
         case absent
         case downloading(fractionCompleted: Double)
         case verifying
+        case installed
         case ready
         case failed(String)
     }
@@ -92,7 +88,7 @@ final class AIEmbeddingModelStore: ObservableObject {
             self.directory = base.appendingPathComponent("AIEmbedding", isDirectory: true)
         }
         self.sourceURLString = UserDefaults.standard.string(forKey: Self.sourceKey) ?? ""
-        self.state = FileManager.default.fileExists(atPath: modelURL.path) ? .ready : .absent
+        self.state = FileManager.default.fileExists(atPath: modelURL.path) ? .installed : .absent
     }
 
     private var modelURL: URL {
@@ -101,6 +97,7 @@ final class AIEmbeddingModelStore: ObservableObject {
 
     var isInstalled: Bool {
         if case .ready = state { return true }
+        if case .installed = state { return true }
         return false
     }
 
@@ -108,17 +105,18 @@ final class AIEmbeddingModelStore: ObservableObject {
     ///
     /// `nil` selects the keyword tier. It is not an error path.
     func readyProvider() -> (any AIEmbeddingProviding)? {
-        guard case .ready = state else { return nil }
+        guard isInstalled else { return nil }
         if let provider { return provider }
         do {
             let built = try CoreMLEmbeddingProvider(modelURL: modelURL, descriptor: descriptor)
             provider = built
+            state = .ready
             return built
         } catch {
             // A model that will not load is not a model. Saying so beats answering
             // keyword-only while the UI claims vectors are on.
             AppLogger.error("AI embedding model failed to load", error: error)
-            state = .failed(DownloadError.notAModel.localizedDescription)
+            state = .failed((error as? AIEmbeddingContract.Failure)?.localizedDescription ?? DownloadError.notAModel.localizedDescription)
             return nil
         }
     }
@@ -165,7 +163,8 @@ final class AIEmbeddingModelStore: ObservableObject {
             try FileManager.default.copyItem(at: compiled, to: modelURL)
 
             provider = nil
-            state = .ready
+            state = .installed
+            _ = readyProvider()
             await AIBookIndexStore.shared.discardAll()
         } catch {
             AppLogger.error("AI embedding model download failed", error: error)
@@ -204,20 +203,39 @@ final class CoreMLEmbeddingProvider: AIEmbeddingProviding, @unchecked Sendable {
 
     private let model: MLModel
     private let inputName: String
+    private let outputName: String
 
     init(modelURL: URL, descriptor: AIEmbeddingModelDescriptor) throws {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .all
         let model = try MLModel(contentsOf: modelURL, configuration: configuration)
-        // Read from the model's own description rather than hard-coded: the converted package
-        // declares its input, and duplicating that name here is how the two drift apart.
-        guard let input = model.modelDescription.inputDescriptionsByName.keys.sorted().first else {
-            throw AIEmbeddingModelStore.DownloadError.notAModel
-        }
+        let inputs = model.modelDescription.inputDescriptionsByName
+        let outputs = model.modelDescription.outputDescriptionsByName
+        guard inputs.count == 1, let input = inputs.first, input.value.type == .string,
+              outputs.count == 1, let output = outputs.first, output.value.type == .multiArray,
+              let shape = output.value.multiArrayConstraint?.shape,
+              shape.reduce(1, { $0 * $1.intValue }) == descriptor.dimensions
+        else { throw AIEmbeddingContract.Failure.declaredDimensionMismatch }
         self.model = model
-        self.inputName = input
-        self.identifier = descriptor.identifier
+        self.inputName = input.key
+        self.outputName = output.key
+        self.identifier = "\(descriptor.identifier)@\(try Self.artifactDigest(modelURL))@string-input.v1@\(descriptor.dimensions)"
         self.dimensions = descriptor.dimensions
+        // A load is not a contract check. Exercise the installed artifact locally as well.
+        try AIEmbeddingContract.validate([encode("local contract probe")], count: 1, dimensions: dimensions)
+    }
+
+    private static func artifactDigest(_ directory: URL) throws -> String {
+        let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey])
+        let files = (enumerator?.allObjects as? [URL] ?? []).sorted { $0.path < $1.path }
+        var hash = SHA256()
+        for file in files where try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+            hash.update(data: Data(file.path.dropFirst(directory.path.count).utf8))
+            let handle = try FileHandle(forReadingFrom: file)
+            defer { try? handle.close() }
+            while let data = try handle.read(upToCount: 1 << 20), !data.isEmpty { hash.update(data: data) }
+        }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     func embed(_ texts: [String]) async throws -> [[Float]] {
@@ -227,13 +245,13 @@ final class CoreMLEmbeddingProvider: AIEmbeddingProviding, @unchecked Sendable {
     private func encode(_ text: String) throws -> [Float] {
         let input = try MLDictionaryFeatureProvider(dictionary: [inputName: text as NSString])
         let output = try model.prediction(from: input)
-        guard let name = output.featureNames.sorted().first,
-              let array = output.featureValue(for: name)?.multiArrayValue
+        guard let array = output.featureValue(for: outputName)?.multiArrayValue
         else { throw AIEmbeddingModelStore.DownloadError.notAModel }
         var vector = [Float](repeating: 0, count: array.count)
         for index in 0..<array.count {
             vector[index] = array[index].floatValue
         }
+        try AIEmbeddingContract.validate([vector], count: 1, dimensions: dimensions)
         return vector
     }
 }

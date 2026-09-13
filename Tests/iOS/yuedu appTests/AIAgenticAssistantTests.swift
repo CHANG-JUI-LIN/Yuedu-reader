@@ -134,15 +134,9 @@ struct AIAgenticAssistantTests {
     @Test("an unparseable reply never reaches the reader as an answer")
     func unparseableReplyIsNotShown() async throws {
         let provider = ScriptedProvider(replies: ["完全不是 JSON", "還是不是 JSON"])
-        let result = try await AIAgenticAssistant.run(
-            task: "測試",
-            index: makeIndex(),
-            provider: provider,
-            scope: 1.0,
-            maxSteps: 2
-        )
-        #expect(result.answer.isEmpty)
-        #expect(!result.answer.contains("JSON"))
+        await #expect(throws: LLMError.invalidSchema) {
+            try await AIAgenticAssistant.run(task: "測試", index: makeIndex(), provider: provider, scope: 1.0, maxSteps: 2)
+        }
     }
 
     /// Book text and reader input can contain something shaped like an instruction; they go

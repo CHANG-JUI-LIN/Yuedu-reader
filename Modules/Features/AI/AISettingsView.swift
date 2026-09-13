@@ -250,6 +250,8 @@ struct AISettingsView: View {
                     ProgressView()
                     Text(localized("驗證中…"))
                 }
+            case .installed:
+                Button(localized("驗證已安裝模型契約")) { _ = embedding.readyProvider() }
             case .ready:
                 Button(role: .destructive) {
                     Task { await embedding.remove() }

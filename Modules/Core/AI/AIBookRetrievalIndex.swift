@@ -17,7 +17,9 @@ protocol AIEmbeddingProviding: Sendable {
 
 extension AIEmbeddingProviding {
     func embedQuery(_ text: String) async throws -> [Float] {
-        try await embed([text])[0]
+        let vectors = try await embed([text])
+        guard vectors.count == 1 else { throw AIEmbeddingContract.Failure.countMismatch }
+        return vectors[0]
     }
 }
 
@@ -47,6 +49,9 @@ struct AIBookRetrievalIndex: Sendable {
     /// Everything needed to decide whether a stored index is still the right one. A change to
     /// any component forces a rebuild rather than a silent mismatch.
     let identifier: String
+    let contentFingerprint: String
+    let manifest: AISourceManifest?
+    let chunkerConfiguration: String
     let chunks: [AIContentChunk]
     let sectionTitleByID: [String: String]
     /// Which embedding model produced `vectors`, or `nil` in the keyword tier. Persisted so a
@@ -65,8 +70,13 @@ struct AIBookRetrievalIndex: Sendable {
         tier: AIRetrievalTier = .keyword,
         embeddingIdentifier: String? = nil,
         vectors: [String: [Float]] = [:],
-        contentFingerprint: String = ""
+        contentFingerprint: String = "",
+        manifest: AISourceManifest? = nil,
+        chunkerConfiguration: String = "800/120/200"
     ) {
+        self.contentFingerprint = contentFingerprint
+        self.manifest = manifest
+        self.chunkerConfiguration = chunkerConfiguration
         self.bookID = bookID
         self.chunks = chunks
         self.sectionTitleByID = sectionTitleByID
@@ -75,7 +85,8 @@ struct AIBookRetrievalIndex: Sendable {
         self.identifier = Self.identifier(
             tier: tier,
             embeddingIdentifier: embeddingIdentifier,
-            contentFingerprint: contentFingerprint
+            contentFingerprint: contentFingerprint,
+            chunkerConfiguration: chunkerConfiguration
         )
         self.keyword = AIBM25Index(chunks: chunks)
         self.vectors = vectors
@@ -90,9 +101,10 @@ struct AIBookRetrievalIndex: Sendable {
     static func identifier(
         tier: AIRetrievalTier,
         embeddingIdentifier: String?,
-        contentFingerprint: String = ""
+        contentFingerprint: String = "",
+        chunkerConfiguration: String = "800/120/200"
     ) -> String {
-        "\(tier.rawValue)@\(embeddingIdentifier ?? "none")@\(AIPublicationChunker.version)@\(contentFingerprint)"
+        "\(tier.rawValue)@\(embeddingIdentifier ?? "none")@\(AIPublicationChunker.version)@\(chunkerConfiguration)@\(contentFingerprint)"
     }
 
     /// Retrieval, with the spoiler boundary applied **before** the results are trimmed to
@@ -106,54 +118,91 @@ struct AIBookRetrievalIndex: Sendable {
         maximumProgress: Double,
         limit: Int = 8,
         restrictToSectionIDs: Set<String>? = nil,
-        embedding: (any AIEmbeddingProviding)? = nil
+        embedding: (any AIEmbeddingProviding)? = nil,
+        boundary: AIReadingBoundary? = nil
     ) async throws -> [AIRetrievalHit] {
         guard limit > 0 else { return [] }
-        // Over-fetch, because the filter below removes candidates.
+        let started = Date()
+        AIDiagnostics.current?.event("query", ["characters": "\(query.count)"])
+        let eligible = chunks.filter { chunk in
+            let within = boundary.map { $0.contains(chunk) } ?? (chunk.progressEnd <= maximumProgress)
+            return within && (restrictToSectionIDs?.contains(chunk.sectionID) ?? true)
+        }
+        let eligibleIDs = Set(eligible.map(\.id))
         let candidateLimit = max(limit * 4, 32)
-        var rankings: [[AIRetrievalHit]] = [keyword.search(query: query, limit: candidateLimit)]
-        var weights: [Double] = [Self.keywordWeight]
-
-        if tier == .hybrid, let embedding, !vectors.isEmpty {
-            let queryVector = try await embedding.embedQuery(query)
-            rankings.append(vectorHits(for: queryVector, limit: candidateLimit))
-            weights.append(Self.vectorWeight)
+        var rankings = [keyword.search(query: query, limit: candidateLimit, eligibleIDs: eligibleIDs)]
+        var weights = [Self.keywordWeight]
+        var degradation: String?
+        if tier == .hybrid {
+            do {
+                guard let embedding, embedding.identifier == embeddingIdentifier else {
+                    throw AIEmbeddingContract.Failure.artifactMismatch
+                }
+                guard !vectors.isEmpty else { throw AIEmbeddingContract.Failure.missingVectors }
+                // Validate the whole space, including unavailable candidates, before comparing.
+                try AIEmbeddingContract.validate(chunks.compactMap { vectors[$0.id] }, count: chunks.count, dimensions: embedding.dimensions)
+                let queryVector = try await embedding.embedQuery(query)
+                if let document = vectors.values.first, queryVector.count != document.count {
+                    throw AIEmbeddingContract.Failure.queryDocumentMismatch
+                }
+                try AIEmbeddingContract.validate([queryVector], count: 1, dimensions: embedding.dimensions)
+                rankings.append(vectorHits(for: queryVector, eligible: eligible, limit: candidateLimit))
+                weights.append(Self.vectorWeight)
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+                // A missing/incompatible external artifact cannot supply a shared vector space.
+                // Keyword remains supported; remove this downgrade if hybrid becomes mandatory.
+                degradation = (error as? AIEmbeddingContract.Failure)?.rawValue ?? "embeddingUnavailable"
+            }
         }
-
-        var merged = rankings.count == 1
-            ? rankings[0]
-            : AIReciprocalRankFusion.merge(rankings: rankings, weights: weights)
-        if let restrictToSectionIDs {
-            merged = merged.filter { restrictToSectionIDs.contains($0.chunk.sectionID) }
-        }
-        return Array(
-            AISpoilerSafeFilter.apply(to: merged, maximumProgress: maximumProgress).prefix(limit)
-        )
+        let merged = rankings.count == 1 ? rankings[0] : AIReciprocalRankFusion.merge(rankings: rankings, weights: weights)
+        let result = Array(merged.prefix(limit))
+        AIDiagnostics.current?.retrieval(total: chunks.count, eligible: eligible.count,
+            candidates: rankings.map(\.count), hits: result, scoreType: rankings.count == 1 ? "BM25" : "RRF(BM25,cosine)",
+            degradation: degradation, elapsed: Date().timeIntervalSince(started))
+        return result
     }
 
-    private func vectorHits(for query: [Float], limit: Int) -> [AIRetrievalHit] {
+    private func vectorHits(for query: [Float], eligible: [AIContentChunk], limit: Int) -> [AIRetrievalHit] {
         let queryNorm = Self.norm(query)
-        guard queryNorm > 0 else { return [] }
         var best: [AIRetrievalHit] = []
-        for chunk in chunks {
-            guard let vector = vectors[chunk.id], vector.count == query.count else { continue }
+        for chunk in eligible {
+            guard let vector = vectors[chunk.id] else { continue } // validated above
             let norm = Self.norm(vector)
-            guard norm > 0 else { continue }
-            var dot: Float = 0
-            for index in 0..<vector.count { dot += vector[index] * query[index] }
-            let score = Double(dot) / (Double(norm) * Double(queryNorm))
-            AIRetrievalRanking.consider(
-                AIRetrievalHit(chunk: chunk, score: score),
-                in: &best,
-                limit: limit
-            )
+            var dot: Double = 0
+            for index in vector.indices { dot += Double(vector[index]) * Double(query[index]) }
+            AIRetrievalRanking.consider(AIRetrievalHit(chunk: chunk, score: dot / (norm * queryNorm)), in: &best, limit: limit)
         }
         return best
     }
 
-    private static func norm(_ vector: [Float]) -> Float {
-        var total: Float = 0
-        for value in vector { total += value * value }
+    private static func norm(_ vector: [Float]) -> Double {
+        var total: Double = 0
+        for value in vector { total += Double(value) * Double(value) }
         return total.squareRoot()
+    }
+}
+
+/// Contract validity and query/document comparability are distinct checks.
+enum AIEmbeddingContract {
+    enum Failure: String, Error, LocalizedError {
+        case artifactMismatch, missingVectors, countMismatch, declaredDimensionMismatch, queryDocumentMismatch, nonFiniteOrZero
+        var errorDescription: String? {
+            switch self {
+            case .artifactMismatch: return localized("語意模型版本與索引不相容")
+            case .missingVectors: return localized("索引缺少語意向量")
+            case .countMismatch: return localized("語意模型回傳的向量數量錯誤")
+            case .declaredDimensionMismatch: return localized("語意向量不符合模型宣告的維度")
+            case .queryDocumentMismatch: return localized("查詢與正文向量維度不相容")
+            case .nonFiniteOrZero: return localized("語意模型回傳無效向量")
+            }
+        }
+    }
+    static func validate(_ vectors: [[Float]], count: Int, dimensions: Int) throws {
+        guard vectors.count == count else { throw Failure.countMismatch }
+        for vector in vectors {
+            guard dimensions > 0, vector.count == dimensions else { throw Failure.declaredDimensionMismatch }
+            guard vector.allSatisfy(\.isFinite), vector.contains(where: { $0 != 0 }) else { throw Failure.nonFiniteOrZero }
+        }
     }
 }

@@ -142,8 +142,9 @@ struct TTSRoleCastView: View {
     /// set up, which is the common case and must not look like a malfunction.
     @ViewBuilder
     private var aliasSection: some View {
-        let aliasCount = cards.aliasMap(forBook: bookID).count
-        let cardCount = cards.profiles(forBook: bookID).count
+        let safeProfiles = cards.profiles(forBook: bookID).filter { $0.isSafe(at: adapter.boundary()) }
+        let aliasCount = AICharacterAliasTable.aliasMap(for: safeProfiles).count
+        let cardCount = safeProfiles.count
         Section {
             if !aiConfigured {
                 Button {

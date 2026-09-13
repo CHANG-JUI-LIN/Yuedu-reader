@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// Finds every character who speaks in a book, ranked by how much they speak.
 ///
@@ -41,6 +42,7 @@ enum AIBookSpeakerScan {
         var counts: [String: Int] = [:]
         var samples: [String: String] = [:]
         for section in sections where !section.text.isEmpty {
+            guard !Task.isCancelled else { return [] }
             let text = section.text as NSString
             for attribution in TTSSpeakerAnnotator.attributions(in: section.text, aliases: aliases) {
                 guard let speaker = attribution.speaker else { continue }
@@ -69,5 +71,38 @@ enum AIBookSpeakerScan {
         return text.substring(with: NSRange(location: start, length: end - start))
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Latest-snapshot ownership for the heuristic scan; SwiftUI only schedules this use case.
+@MainActor
+final class AISpeakerScanCoordinator: ObservableObject {
+    @Published private(set) var speakers: [AIBookSpeakerScan.Speaker] = []
+    @Published private(set) var isScanning = false
+    private var generation = 0
+    private var completedKey: String?
+    private let operation: @Sendable ([AIChunkableSection], [String: String]) async -> [AIBookSpeakerScan.Speaker]
+    init(operation: @escaping @Sendable ([AIChunkableSection], [String: String]) async -> [AIBookSpeakerScan.Speaker] = {
+        AIBookSpeakerScan.scan(sections: $0, aliases: $1)
+    }) { self.operation = operation }
+
+    func scan(adapter: AIBookContentAdapter, boundary: AIReadingBoundary, aliases: [String: String]) async {
+        let key = adapter.contentFingerprint + "@\(boundary)@" + aliases.sorted { $0.key < $1.key }.description
+        guard completedKey != key || isScanning else { return }
+        generation += 1
+        let current = generation
+        isScanning = true
+        speakers = []
+        let sections = adapter.sections(in: boundary)
+        let operation = self.operation
+        let worker = Task.detached(priority: .userInitiated) {
+            await operation(sections, aliases)
+        }
+        let found = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+        guard current == generation else { return }
+        isScanning = false
+        guard !Task.isCancelled else { return }
+        speakers = found
+        completedKey = key
     }
 }

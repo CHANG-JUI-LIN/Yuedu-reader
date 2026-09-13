@@ -2841,3 +2841,119 @@
 
 "問一個問題" = "Ask a question";
 "回到對話" = "Back to the conversation";
+
+"AI 回覆格式錯誤，未儲存本次結果" = "Invalid AI response format. This result was not saved.";
+
+"AI 回覆為空，未儲存本次結果" = "Empty AI response. This result was not saved.";
+
+"AI 回覆被截斷，未儲存本次結果" = "AI response was truncated. This result was not saved.";
+
+"AI 服務未提供完整回覆" = "The AI service did not provide a complete response.";
+
+"AI 狀態與診斷" = "AI Status and Diagnostics";
+
+"下一次請求保留敏感診斷內容" = "Retain sensitive diagnostics for the next request";
+
+"人物卡依目前範圍整理；全書及舊版未驗證卡片不會用於安全模式的別名或朗讀。" = "Cards use the selected scope. Whole-book and unverified cards are excluded from spoiler-safe aliases and narration.";
+
+"位置使用來源 UTF-16；正文與排版不同且無法驗證時，排除當章未確認範圍並停止引用跳轉。" = "Positions use source UTF-16. When source and layout differ without a verified match, unconfirmed text is excluded and citation navigation is unavailable.";
+
+"使用全書模式" = "Use Whole-Book Mode";
+
+"來源已變更或尚無可驗證的排版定位，請先開啟該章並重新整理引用。" = "The source changed or its layout position cannot be verified. Open the chapter and refresh the citation.";
+
+"來源已變更，需重新整理引用" = "Source changed. Refresh this citation.";
+
+"候選來自啟發式掃描，尚未進行全書人物抽取。" = "Candidates come from heuristic scanning. Full-book character extraction has not been performed.";
+
+"全書人物抽取" = "Full-book character extraction";
+
+"全書或未驗證範圍，可能含劇透" = "Whole-book or unverified scope; may contain spoilers";
+
+"全書模式可能揭露身分、關係與結局" = "Whole-book mode may reveal identities, relationships, and endings";
+
+"匯出 messages 與讀者輸入" = "Export messages and reader input";
+
+"匯出本機診斷" = "Export Local Diagnostics";
+
+"匯出模型回覆與自評" = "Export model responses and self-assessments";
+
+"匯出檢索原文" = "Export retrieved passages";
+
+"契約驗證與語意品質不同；尚未評測語意品質。模型不可用時仍可使用關鍵字檢索。" = "Contract validation does not establish semantic quality, which has not been evaluated. Keyword search remains available without a model.";
+
+"尚未下載" = "Not downloaded";
+
+"尚未實作" = "Not implemented";
+
+"尚未建立" = "Not built";
+
+"已索引 %d 個片段" = "%d chunks indexed";
+
+"已索引章節" = "Chapters indexed";
+
+"建立中 %1$d / %2$d 片段" = "Building: %1$d / %2$d chunks";
+
+"引用 %d 筆原文" = "%d cited passages";
+
+"引用定位未驗證" = "Citation position unverified";
+
+"最近已讀片段提要" = "Recent Read Passages Recap";
+
+"未下載或抽取失敗的章節不在搜尋範圍；不會自動下載正文。提要僅涵蓋最近最多 12 個已讀片段。" = "Missing or unextractable chapters are excluded; no text is downloaded automatically. Recaps cover at most 12 recent read chunks.";
+
+"未提供可核對引用" = "No verifiable citations provided";
+
+"本機可用正文" = "Locally available text";
+
+"格式不支援正文抽取" = "Text extraction unsupported";
+
+"模型已安裝，尚未驗證契約" = "Model installed; contract not yet validated";
+
+"模型載入及契約驗證通過" = "Model loaded; contract validated";
+
+"檢索索引" = "Retrieval index";
+
+"正在掃描說話人候選…" = "Scanning speaker candidates…";
+
+"正文已取得" = "Text available";
+
+"正文抽取失敗" = "Text extraction failed";
+
+"混合檢索" = "Hybrid retrieval";
+
+"目前可用、已讀範圍內的檢索結果不足以確認。" = "Retrieval from the currently available, read text is insufficient to confirm this.";
+
+"目前可用正文的檢索結果不足以確認。" = "Retrieval from the currently available text is insufficient to confirm this.";
+
+"診斷匯出失敗" = "Diagnostic export failed";
+
+"說話人候選" = "Speaker candidates";
+
+"部分卡片來源或範圍未驗證，已在安全模式隱藏；自訂設定仍保留。" = "Cards with unverified sources or scope are hidden in safe mode. Custom settings are preserved.";
+
+"關鍵字" = "Keywords";
+
+"關鍵字模式，未安裝語意模型" = "Keyword mode; no semantic model installed";
+
+"預設僅保存 metadata。開啟保留後，下一次請求的輸入、messages、檢索原文與回覆暫存記憶體；匯出只包含勾選內容，會遮蔽憑證、帳號與網址，不會自動上傳。" = "Only metadata is saved by default. Opting in retains the next request’s input, messages, passages, and responses in memory. Exports include only selected content, redact credentials, accounts, and URLs, and are never uploaded automatically.";
+
+"本次已降級關鍵字檢索" = "This request used keyword search";
+
+"語意模型目前不可用" = "Semantic model currently unavailable";
+
+"語意模型版本與索引不相容" = "Semantic model version is incompatible with the index";
+
+"索引缺少語意向量" = "The index is missing semantic vectors";
+
+"語意模型回傳的向量數量錯誤" = "The model returned the wrong number of vectors";
+
+"語意向量不符合模型宣告的維度" = "Vectors do not match the model’s declared dimensions";
+
+"查詢與正文向量維度不相容" = "Query and document vector dimensions are incompatible";
+
+"語意模型回傳無效向量" = "The model returned invalid vectors";
+
+"驗證已安裝模型契約" = "Validate Installed Model Contract";
+
+"診斷請求" = "Diagnostic request";

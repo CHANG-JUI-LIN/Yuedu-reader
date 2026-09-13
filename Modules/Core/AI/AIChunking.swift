@@ -8,8 +8,7 @@ import Foundation
 /// Where a chunk sits in the book, in the only coordinates Yuedu treats as stable.
 ///
 /// `(spineIndex, charOffset)`, never a global page index — CLAUDE.md's first critical
-/// convention, because pages shift as chapters load. `progress` is the fraction of the whole
-/// book at this point, and it is what the spoiler boundary is measured in.
+/// convention, because pages shift as chapters load. Offsets are source UTF-16; progress is UI-only.
 struct AIChunkLocation: Codable, Hashable, Sendable {
     let spineIndex: Int
     let charOffset: Int
@@ -25,6 +24,7 @@ struct AIChunkLocation: Codable, Hashable, Sendable {
 /// One retrievable slice of a book.
 struct AIContentChunk: Identifiable, Codable, Hashable, Sendable {
     let id: String
+    var sourceVersion: String? = nil
     var bookID: UUID
     var sectionID: String
     var ordinal: Int
@@ -75,12 +75,17 @@ struct AIChunkableSection: Sendable, Hashable {
 protocol AIChunkableContent: Sendable {
     /// Stable book id — chunk ids are built from it and the index is stored per book.
     var chunkBookID: UUID { get }
+    var sourceVersion: String? { get }
     /// Ordered chapters. Empty ones are skipped.
     var chunkSections: [AIChunkableSection] { get }
     /// A reading position for an offset inside a chapter. Returning `nil` declares that this
     /// position cannot be navigated back to, and the chunk is dropped rather than cited with
     /// a location that goes nowhere.
     func chunkLocation(sectionIndex: Int, characterOffset: Int) -> AIChunkLocation?
+}
+
+extension AIChunkableContent {
+    var sourceVersion: String? { nil }
 }
 
 /// Splits a book into overlapping chunks along natural boundaries.
@@ -97,7 +102,7 @@ struct AIPublicationChunker: Sendable {
 
     /// Encoded into the index identifier: change this and every stored index is rebuilt
     /// instead of being queried with chunks that were cut a different way.
-    static let version = "recursive.v2"
+    static let version = "recursive.utf16.v3"
 
     init(maximumCharacters: Int = 800, overlapCharacters: Int = 120, minimumCharacters: Int = 0) {
         precondition(maximumCharacters > 0)
@@ -151,7 +156,6 @@ struct AIPublicationChunker: Sendable {
         let characters = Array(section.text)
         for span in spans {
             let chunkText = String(characters[span.start..<span.end])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !chunkText.isEmpty,
                   let start = content.chunkLocation(sectionIndex: sectionIndex, characterOffset: span.start),
                   let end = content.chunkLocation(sectionIndex: sectionIndex, characterOffset: span.end)
@@ -167,6 +171,7 @@ struct AIPublicationChunker: Sendable {
                     end: end
                 )
             )
+            result[result.count - 1].sourceVersion = content.sourceVersion
             ordinal += 1
         }
         return (result, ordinal)

@@ -16,6 +16,9 @@ struct BrowserLayoutTextIndentTests {
     }
 
     @Test func parserAcceptsSupportedSingleTokenSubset() {
+        #expect(CSSTextIndent.parse("-1px") == .length(.px(-1)))
+        #expect(CSSTextIndent.parse("-0.1em") == .length(.em(-0.1)))
+        #expect(CSSTextIndent.parse("12pt") == .length(.pt(12)))
         #expect(CSSTextIndent.parse("0") == .length(.px(0)))
         #expect(CSSTextIndent.parse("0px") == .length(.px(0)))
         #expect(CSSTextIndent.parse("0em") == .length(.em(0)))
@@ -28,10 +31,10 @@ struct BrowserLayoutTextIndentTests {
 
     @Test func parserRejectsOutsideSubset() {
         for value in [
-            "-1px", "-0.1em", "hanging", "each-line",
+            "hanging", "each-line",
             "2em hanging", "calc(100% - 1em)", "min(2em, 10%)",
             "max(1em, 12px)", "clamp(1em, 2em, 3em)",
-            "2", "12pt", "auto", "inherit", "bogus",
+            "2", "auto", "inherit", "bogus",
         ] {
             #expect(CSSTextIndent.parse(value) == .unsupported, "value=\(value)")
         }
@@ -46,8 +49,8 @@ struct BrowserLayoutTextIndentTests {
             """,
             css: [".parent { text-indent:2em } .zero { text-indent:0 }"]
         )
-        #expect(node(class: "parent", in: tree)?.style.textIndent == .length(.em(2)))
-        #expect(node(class: "inherit", in: tree)?.style.textIndent == .length(.em(2)))
+        #expect(node(class: "parent", in: tree)?.style.textIndent == .length(.px(BrowserLayoutConfig().rootFontSize * 2)))
+        #expect(node(class: "inherit", in: tree)?.style.textIndent == .length(.px(BrowserLayoutConfig().rootFontSize * 2)))
         #expect(node(class: "zero", in: tree)?.style.textIndent == .length(.px(0)))
     }
 
@@ -348,16 +351,17 @@ struct BrowserLayoutTextIndentTests {
         }
     }
 
-    @Test func negativeIsRejectedByDocumentAdmission() {
-        #expect(throws: BrowserLayoutDocument.BrowserLayoutError.self) {
-            _ = try fixture(
-                body: "<p class='target'>unsupported</p>",
-                css: ".target { text-indent:-1px }"
-            )
-        }
+    @Test func negativeIndentPreservesTheFirstLineOrigin() throws {
+        let value = try fixture(
+            body: "<p class='target'>A negative first-line indent remains supported.</p>",
+            css: ".target { text-indent:-1px; margin:0 }"
+        )
+        let line = try #require(box(class: "target", in: value.pipeline.rootBox)?.lines.first)
+        #expect(abs(line.contentX + 1) < 0.01)
+        #expect(BrowserLayoutTestSupport.rangesAreOrdered(value.pages))
     }
 
-    @Test func nonZeroIndentIsRejectedOutsideHorizontalWritingMode() {
+    @Test func nonZeroIndentUsesTheVerticalInlineAxis() throws {
         let contentWidth = Self.viewport.width - Self.insets.left - Self.insets.right
         let contentHeight = Self.viewport.height - Self.insets.top - Self.insets.bottom
         var config = BrowserLayoutConfig(
@@ -371,13 +375,13 @@ struct BrowserLayoutTextIndentTests {
         )
         config.writingMode = .verticalRTL
         let document = BrowserLayoutDocument(
-            html: "<html><body><p>vertical is outside Phase 4E1</p></body></html>",
+            html: "<html><body><p>直排首行縮排沿用邏輯行內座標</p></body></html>",
             cssTexts: ["p { text-indent:20px }"],
             config: config
         )
-        #expect(throws: BrowserLayoutDocument.BrowserLayoutError.self) {
-            _ = try document.makeLayout(containerSize: Self.viewport)
-        }
+        let result = try document.makeLayout(containerSize: Self.viewport)
+        let paragraph = try #require(allBoxes(result.rootBox).first { !$0.lines.isEmpty })
+        #expect(abs(try #require(paragraph.lines.first).contentX - 20) < 0.01)
     }
 
     @Test func repeatedIndentFloatRubyLayoutIsDeterministic() throws {

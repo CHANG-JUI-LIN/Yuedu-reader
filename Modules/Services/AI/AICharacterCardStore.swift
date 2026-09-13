@@ -64,9 +64,10 @@ final class AICharacterCardStore: ObservableObject {
     /// This is the single crossing point between the AI work and the read-aloud work: the
     /// dialogue heuristic can tell that someone spoke, but only the cards know that 張若塵,
     /// 若塵 and 塵哥 are one person who should get one voice.
-    func aliasMap(forBook bookID: UUID) -> [String: String] {
+    func aliasMap(forBook bookID: UUID, boundary: AIReadingBoundary? = nil) -> [String: String] {
         loadIfNeeded(forBook: bookID)
-        return AICharacterAliasTable.aliasMap(for: profiles(forBook: bookID))
+        guard let boundary else { return [:] }
+        return AICharacterAliasTable.aliasMap(for: profiles(forBook: bookID).filter { $0.isSafe(at: boundary) })
     }
 
     // MARK: - Persistence

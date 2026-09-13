@@ -86,8 +86,11 @@ final class OpenAICompatibleProvider: LLMProviding, @unchecked Sendable {
         struct Choice: Decodable {
             struct Message: Decodable { let content: String? }
             let message: Message?
+            let finish_reason: String?
         }
         let choices: [Choice]?
+        let model: String?
+        let usage: LLMUsage?
     }
 
     private struct ProviderErrorBody: Decodable {
@@ -139,6 +142,7 @@ final class OpenAICompatibleProvider: LLMProviding, @unchecked Sendable {
         guard let http = response as? HTTPURLResponse else {
             throw LLMError.networkError(localized("非 HTTP 回應"))
         }
+        AIDiagnostics.current?.event("http", ["status": "\(http.statusCode)"])
         switch http.statusCode {
         case 200...299:
             guard let body = try? JSONDecoder().decode(ChatResponseBody.self, from: data),
@@ -146,7 +150,8 @@ final class OpenAICompatibleProvider: LLMProviding, @unchecked Sendable {
             else {
                 throw LLMError.providerError(localized("回應解析失敗"))
             }
-            return LLMRawResponse(content: content, provider: identifier, model: useModel)
+            return LLMRawResponse(content: content, provider: identifier, model: body.model ?? useModel,
+                finishReason: body.choices?.first?.finish_reason, usage: body.usage, httpStatus: http.statusCode)
         case 401:
             throw LLMError.unauthorized
         case 429:

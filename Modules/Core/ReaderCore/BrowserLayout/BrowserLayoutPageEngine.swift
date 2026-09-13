@@ -546,8 +546,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         guard isCurrentWork(generation) else { return nil }
         let input = await resource.cssFrontendInput(forChapter: spineIndex, html: html)
         guard isCurrentWork(generation) else { return nil }
-        let css = input.productionStylesheetTexts
-        let scan = BrowserLayoutCapabilityScanner.scan(html: html, cssTexts: css, writingMode: settings.writingMode)
+        let scan = BrowserLayoutCapabilityScanner.scan(input: input, writingMode: settings.writingMode)
         let decision: ChapterEngineChoice
         if scan.supported {
             decision = .browser

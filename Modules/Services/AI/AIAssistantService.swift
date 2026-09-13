@@ -34,12 +34,28 @@ final class AIAssistantService: ObservableObject {
         case failed(String)
     }
 
+    @Published private(set) var indexedChapterCounts: [UUID: Int] = [:]
     @Published private(set) var indexState: [UUID: IndexState] = [:]
 
     private let store: AIBookIndexStore
+    private let injectedProvider: (any LLMProviding)?
+    private let cards: AICharacterCardStore
+    private let diagnosticOrigin: AIDiagnostics.Origin
+    private var latestSnapshots: [UUID: String] = [:]
 
-    init(store: AIBookIndexStore = .shared) {
+    func activate(_ adapter: AIBookContentAdapter) {
+        if latestSnapshots[adapter.chunkBookID] != adapter.contentFingerprint {
+            indexedChapterCounts[adapter.chunkBookID] = 0
+            indexState[adapter.chunkBookID] = .idle
+        }
+        latestSnapshots[adapter.chunkBookID] = adapter.contentFingerprint
+    }
+
+    init(store: AIBookIndexStore = .shared, provider: (any LLMProviding)? = nil, cards: AICharacterCardStore? = nil, diagnosticOrigin: AIDiagnostics.Origin = .observed) {
         self.store = store
+        self.injectedProvider = provider
+        self.cards = cards ?? .shared
+        self.diagnosticOrigin = diagnosticOrigin
     }
 
     // MARK: - Index
@@ -62,6 +78,10 @@ final class AIAssistantService: ObservableObject {
         forBook bookID: UUID,
         adapter: AIBookContentAdapter
     ) async throws -> AIBookRetrievalIndex {
+        try Task.checkCancellation()
+        let indexStarted = Date()
+        if AIDiagnostics.current == nil { activate(adapter) }
+        guard latestSnapshots[bookID] == adapter.contentFingerprint else { throw CancellationError() }
         let expected = expectedIdentifier(for: adapter)
         let embedding = AIEmbeddingModelStore.shared.readyProvider()
         indexState[bookID] = .building(completed: 0, total: 0)
@@ -84,12 +104,14 @@ final class AIAssistantService: ObservableObject {
                         try Task.checkCancellation()
                         let slice = Array(chunks[start..<min(start + batchSize, chunks.count)])
                         let encoded = try await embedding.embed(slice.map(\.text))
+                        try AIEmbeddingContract.validate(encoded, count: slice.count, dimensions: embedding.dimensions)
                         for (chunk, vector) in zip(slice, encoded) {
                             vectors[chunk.id] = vector
                         }
                         completed += slice.count
                         let progressCount = completed
                         await MainActor.run {
+                            guard self.latestSnapshots[bookID] == adapter.contentFingerprint else { return }
                             self.indexState[bookID] = .building(
                                 completed: progressCount,
                                 total: chunks.count
@@ -104,13 +126,22 @@ final class AIAssistantService: ObservableObject {
                     tier: embedding == nil ? .keyword : .hybrid,
                     embeddingIdentifier: embedding?.identifier,
                     vectors: vectors,
-                    contentFingerprint: adapter.contentFingerprint
+                    contentFingerprint: adapter.contentFingerprint,
+                    manifest: adapter.manifest
                 )
             }
-            indexState[bookID] = .ready(chunkCount: index.chunks.count, tier: index.tier)
+            if latestSnapshots[bookID] == adapter.contentFingerprint {
+                indexedChapterCounts[bookID] = Set(index.chunks.map { $0.start.spineIndex }).count
+                indexState[bookID] = .ready(chunkCount: index.chunks.count, tier: index.tier)
+            }
+            AIDiagnostics.current?.event("indexReady", ["indexedChapters": "\(Set(index.chunks.map { $0.start.spineIndex }).count)",
+                "elapsedMs": "\(Date().timeIntervalSince(indexStarted) * 1000)",
+                "tier": index.tier.rawValue, "embedding": index.embeddingIdentifier ?? "none",
+                "embeddingDimensions": embedding.map { String($0.dimensions) } ?? "none",
+                "contract": embedding == nil ? "notApplicable" : "passed", "semanticQuality": "notEvaluated"])
             return index
         } catch {
-            indexState[bookID] = .failed(error.localizedDescription)
+            if latestSnapshots[bookID] == adapter.contentFingerprint { indexState[bookID] = .failed(error.localizedDescription) }
             throw error
         }
     }
@@ -122,77 +153,105 @@ final class AIAssistantService: ObservableObject {
         question: String,
         bookID: UUID,
         adapter: AIBookContentAdapter,
-        progress: Double
+        progress: Double,
+        boundary: AIReadingBoundary? = nil
     ) async throws -> LLMGenerationResult {
-        let provider = try resolveProvider()
-        let index = try await index(forBook: bookID, adapter: adapter)
-        let hits = try await index.retrieve(
-            query: question,
-            maximumProgress: progress,
-            limit: 8,
-            embedding: AIEmbeddingModelStore.shared.readyProvider()
-        )
-        return try await AIRAGPipeline.answer(
-            query: question,
-            hits: hits,
-            provider: provider,
-            sectionTitleByID: index.sectionTitleByID,
-            spoilerLimited: progress < 1
-        )
+        let boundary = boundary ?? adapter.boundary()
+        return try await traced("answer", adapter: adapter, boundary: boundary) {
+            let provider = try resolveProvider()
+            let index = try await index(forBook: bookID, adapter: adapter)
+            let hits = try await index.retrieve(
+                query: question,
+                maximumProgress: progress,
+                limit: 8,
+                embedding: AIEmbeddingModelStore.shared.readyProvider(),
+                boundary: boundary
+            )
+            return try await AIRAGPipeline.answer(
+                query: question,
+                hits: hits,
+                provider: provider,
+                sectionTitleByID: index.sectionTitleByID,
+                spoilerLimited: !boundary.wholeBook
+            )
+        }
     }
 
-    /// 前情提要 for everything up to the reader's position.
+    /// Recap of at most twelve recent eligible chunks.
     func recap(
         bookID: UUID,
         bookTitle: String,
         adapter: AIBookContentAdapter,
         progress: Double,
-        stored: AIRecap?
+        stored: AIRecap?,
+        boundary: AIReadingBoundary? = nil
     ) async throws -> AIRecap? {
-        if AIRecap.canReuse(stored, atProgress: progress) { return stored }
-        let provider = try resolveProvider()
-        let index = try await index(forBook: bookID, adapter: adapter)
-        // The most recent already-read passages, oldest first, so the recap reads forwards.
-        let readable = AISpoilerSafeFilter.chunks(index.chunks, maximumProgress: progress)
-        let seed = Array(readable.suffix(12))
-        guard !seed.isEmpty else { return nil }
-        return try await AIRecap.generate(
-            chunks: seed,
-            bookTitle: bookTitle,
-            progress: progress,
-            provider: provider
-        )
+        let boundary = boundary ?? adapter.boundary()
+        return try await traced("recap", adapter: adapter, boundary: boundary) {
+            if AIRecap.canReuse(stored, atProgress: progress, boundary: boundary) {
+                AIDiagnostics.current?.event("recapCache", ["result": "safeHit"])
+                return stored
+            }
+            let provider = try resolveProvider()
+            let index = try await index(forBook: bookID, adapter: adapter)
+            // The most recent already-read passages, oldest first, so the recap reads forwards.
+            let selectionStarted = Date()
+            let readable = index.chunks.filter { boundary.contains($0) }
+            let seed = Array(readable.suffix(12))
+            AIDiagnostics.current?.retrieval(total: index.chunks.count, eligible: readable.count, candidates: [seed.count],
+                hits: seed.map { .init(chunk: $0, score: 0) }, scoreType: "recentReadingOrder", degradation: nil, elapsed: Date().timeIntervalSince(selectionStarted))
+            guard !seed.isEmpty else { return nil }
+            return try await AIRecap.generate(
+                chunks: seed,
+                bookTitle: bookTitle,
+                progress: progress,
+                provider: provider,
+                boundary: boundary
+            )
+        }
     }
 
-    /// A character card. Searches the **whole book**, which is this feature's documented
-    /// exception to the spoiler boundary — the card screen tells the reader that.
+    /// A character card with an explicit, versioned scope selected by the reader.
     func characterCard(
         name: String,
         bookID: UUID,
         adapter: AIBookContentAdapter,
+        boundary: AIReadingBoundary,
         onStep: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> AICharacterProfile {
-        let provider = try resolveProvider()
-        let index = try await index(forBook: bookID, adapter: adapter)
-        let result = try await AIAgenticAssistant.run(
-            task: AICharacterProfile.task,
-            userInput: name,
-            index: index,
-            provider: provider,
-            embedding: AIEmbeddingModelStore.shared.readyProvider(),
-            scope: 1.0,
-            maxSteps: 3,
-            onStep: onStep
-        )
-        let profile = AICharacterProfile.parse(
-            fromAnswer: result.answer,
-            name: name,
-            gatheredChunkIDs: result.retrievedChunks.map(\.id),
-            provider: result.provider,
-            model: result.model
-        )
-        AICharacterCardStore.shared.upsert(profile, forBook: bookID)
-        return profile
+        return try await traced("characterCard", adapter: adapter, boundary: boundary) {
+            let provider = try resolveProvider()
+            let index = try await index(forBook: bookID, adapter: adapter)
+            let result = try await AIAgenticAssistant.run(
+                task: AICharacterProfile.task,
+                userInput: name,
+                index: index,
+                provider: provider,
+                embedding: AIEmbeddingModelStore.shared.readyProvider(),
+                scope: boundary.wholeBook ? 1 : adapter.progress(forSpine: boundary.spineIndex, charOffset: boundary.utf16Offset),
+                boundary: boundary,
+                maxSteps: 3,
+                onStep: onStep
+            )
+            var profile = try AICharacterProfile.parse(
+                fromAnswer: result.answer,
+                name: name,
+                gatheredChunkIDs: result.retrievedChunks.map(\.id),
+                provider: result.provider,
+                model: result.model,
+                citedChunkIDs: result.citationChunkIDs
+            )
+            profile.sourceBoundary = boundary
+            profile.retrievedEvidenceIDs = result.retrievedChunks.map(\.id)
+            profile.maximumEvidencePosition = result.retrievedChunks.map(\.end).max {
+                $0.spineIndex == $1.spineIndex ? $0.charOffset < $1.charOffset : $0.spineIndex < $1.spineIndex
+            }
+            try Task.checkCancellation()
+            guard latestSnapshots[bookID] == adapter.contentFingerprint else { throw CancellationError() }
+            AIDiagnostics.current?.event("characterParsing", ["result": "valid", "retrieved": "\(result.retrievedChunks.count)", "cited": "\(profile.citationChunkIDs.count)"])
+            cards.upsert(profile, forBook: bookID)
+            return profile
+        }
     }
 
     /// Asks the model which of the heuristic's candidates are actually people.
@@ -203,13 +262,18 @@ final class AIAssistantService: ObservableObject {
     func buildSpeakerRoster(
         bookID: UUID,
         adapter: AIBookContentAdapter,
-        candidates: [AISpeakerRoster.Candidate]
+        candidates: [AISpeakerRoster.Candidate],
+        boundary: AIReadingBoundary
     ) async throws -> [String: String] {
-        let provider = try resolveProvider()
-        guard !candidates.isEmpty else { return [:] }
-        let roster = try await AISpeakerRoster.build(candidates: candidates, provider: provider)
-        AISpeakerRosterStore.shared.save(roster, forBook: bookID)
-        return roster
+        return try await traced("speakerRoster", adapter: adapter, boundary: boundary) {
+            let provider = try resolveProvider()
+            guard !candidates.isEmpty else { return [:] }
+            let roster = try await AISpeakerRoster.build(candidates: candidates, provider: provider)
+            try Task.checkCancellation()
+            guard latestSnapshots[bookID] == adapter.contentFingerprint else { throw CancellationError() }
+            AISpeakerRosterStore.shared.save(roster, forBook: bookID, boundary: boundary)
+            return roster
+        }
     }
 
     // MARK: - Availability
@@ -219,9 +283,30 @@ final class AIAssistantService: ObservableObject {
         return false
     }
 
+    private func traced<T>(_ feature: String, adapter: AIBookContentAdapter, boundary: AIReadingBoundary, operation: () async throws -> T) async throws -> T {
+        try Task.checkCancellation()
+        activate(adapter)
+        let trace = AIDiagnosticStore.shared.begin(feature: feature, bookID: adapter.chunkBookID, adapter: adapter, boundary: boundary, origin: diagnosticOrigin)
+        defer { AIDiagnosticStore.shared.finish(trace) }
+        return try await AIDiagnostics.$current.withValue(trace) {
+            do {
+                guard boundary.sourceVersion == adapter.contentFingerprint else { throw CancellationError() }
+                let result = try await operation()
+                try Task.checkCancellation()
+                guard latestSnapshots[adapter.chunkBookID] == adapter.contentFingerprint else { throw CancellationError() }
+                trace.event("complete", ["result": "success"])
+                return result
+            } catch {
+                trace.event("complete", ["result": error is CancellationError ? "cancelled" : "failed", "kind": String(describing: type(of: error))])
+                throw error
+            }
+        }
+    }
+
     private func resolveProvider() throws -> any LLMProviding {
+        if let injectedProvider { return AITracedProvider(base: injectedProvider) }
         switch AIProviderAssembly.makeProvider() {
-        case let .success(provider): return provider
+        case let .success(provider): return AITracedProvider(base: provider)
         case let .failure(reason): throw Failure.unavailable(reason)
         }
     }

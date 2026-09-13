@@ -94,12 +94,19 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         return (try? await session.chapterDataSize(at: index)) ?? 0
     }
 
-    func chapterPlainText(at index: Int) async -> String? {
-        guard let html = try? await session.chapterHTML(at: index) else { return nil }
-        // Regexes over a whole chapter, once per chapter across the whole book. This builder
-        // is main-actor, and a 500-chapter gather doing that on the main thread is a freeze.
-        let text = await Task.detached(priority: .utility) { ChapterPlainText.fromHTML(html) }.value
-        return text.isEmpty ? nil : text
+    func chapterPlainText(at index: Int) async -> String? { await localChapterText(at: index).text }
+
+    func localChapterText(at index: Int) async -> AILocalChapterText {
+        // Remote publication reads can issue HTTP requests; local AI coverage must never trigger them.
+        guard session.sourceURL.isFileURL else { return .init(text: nil, status: .notDownloaded) }
+        do {
+            let html = try await session.chapterHTML(at: index)
+            let text = await Task.detached(priority: .utility) { ChapterPlainText.fromHTML(html) }.value
+            return .extracted(text)
+        } catch {
+            AppLogger.error("AI local EPUB extraction failed", context: ["chapter": "\(index)"])
+            return .init(text: nil, status: .extractionFailed)
+        }
     }
 
     func cssResourceHrefs() -> [String] {

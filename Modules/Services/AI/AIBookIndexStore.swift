@@ -13,6 +13,9 @@ actor AIBookIndexStore {
 
     private var inMemory: [UUID: AIBookRetrievalIndex] = [:]
     private let directory: URL
+    private var pending: [String: Task<AIBookRetrievalIndex, Error>] = [:]
+    private var latest: [UUID: String] = [:]
+    private var loadFailure: [UUID: String] = [:]
 
     init(directory: URL? = nil) {
         if let directory {
@@ -27,6 +30,10 @@ actor AIBookIndexStore {
     /// What is persisted. The identifier is stored alongside the chunks so a load can tell
     /// whether this index was built the way the app builds them now.
     private struct Stored: Codable {
+        let schema: Int
+        let contentFingerprint: String
+        let manifest: AISourceManifest?
+        let chunkerConfiguration: String
         let identifier: String
         let tier: AIRetrievalTier
         let embeddingIdentifier: String?
@@ -45,18 +52,42 @@ actor AIBookIndexStore {
     func index(
         for bookID: UUID,
         expectedIdentifier: String,
-        build: @Sendable () async throws -> AIBookRetrievalIndex
+        onCacheDecision: (@Sendable (String) -> Void)? = nil,
+        build: @escaping @Sendable () async throws -> AIBookRetrievalIndex
     ) async throws -> AIBookRetrievalIndex {
+        latest[bookID] = expectedIdentifier
+        let key = "\(bookID):\(expectedIdentifier)"
         if let cached = inMemory[bookID], cached.identifier == expectedIdentifier {
+            onCacheDecision?("memoryHit")
+            AIDiagnostics.current?.event("index", ["cache": "memoryHit"])
             return cached
         }
-        if let loaded = load(bookID: bookID), loaded.identifier == expectedIdentifier {
+        let loaded = load(bookID: bookID)
+        if let loaded, loaded.identifier == expectedIdentifier {
             inMemory[bookID] = loaded
+            onCacheDecision?("diskHit")
+            AIDiagnostics.current?.event("index", ["cache": "diskHit"])
             return loaded
         }
-        let built = try await build()
-        inMemory[bookID] = built
-        save(built)
+        if let task = pending[key] {
+            onCacheDecision?("sharedBuild")
+            AIDiagnostics.current?.event("index", ["cache": "sharedBuild"])
+            return try await task.value
+        }
+        let reason = loaded.map { expectedIdentifier.hasSuffix("@" + $0.contentFingerprint) ? "configurationChanged" : "sourceChanged" }
+            ?? loadFailure[bookID] ?? "unknown"
+        AIDiagnostics.current?.event("index", ["cache": "rebuild", "reason": reason])
+        let task = Task { try await build() }
+        pending[key] = task
+        defer { pending.removeValue(forKey: key) }
+        let built = try await task.value
+        guard built.bookID == bookID, built.identifier == expectedIdentifier else {
+            throw AIEmbeddingContract.Failure.artifactMismatch
+        }
+        if latest[bookID] == expectedIdentifier {
+            inMemory[bookID] = built
+            save(built)
+        }
         return built
     }
 
@@ -65,6 +96,7 @@ actor AIBookIndexStore {
     }
 
     func discard(bookID: UUID) {
+        latest.removeValue(forKey: bookID)
         inMemory.removeValue(forKey: bookID)
         try? FileManager.default.removeItem(at: fileURL(for: bookID))
     }
@@ -72,6 +104,7 @@ actor AIBookIndexStore {
     /// Every book's index. Used when the embedding model is downloaded or removed, so the
     /// change takes effect everywhere rather than one book at a time.
     func discardAll() {
+        latest.removeAll()
         inMemory.removeAll()
         try? FileManager.default.removeItem(at: directory)
     }
@@ -84,7 +117,9 @@ actor AIBookIndexStore {
 
     private func load(bookID: UUID) -> AIBookRetrievalIndex? {
         let url = fileURL(for: bookID)
+        loadFailure[bookID] = "missingFile"
         guard let data = try? Data(contentsOf: url) else { return nil }
+        loadFailure[bookID] = "unreadableSchema"
         guard let stored = try? JSONDecoder().decode(Stored.self, from: data) else {
             // A file we cannot read is a file we cannot trust to be the right index; drop it
             // rather than leaving it to fail the same way on every launch.
@@ -92,18 +127,30 @@ actor AIBookIndexStore {
             try? FileManager.default.removeItem(at: url)
             return nil
         }
-        return AIBookRetrievalIndex(
+        loadFailure[bookID] = "schemaOrManifestMismatch"
+        guard stored.schema == 2, stored.manifest.map({ $0.identifier == stored.contentFingerprint }) ?? true else { return nil }
+        let loaded = AIBookRetrievalIndex(
             bookID: bookID,
             chunks: stored.chunks,
             sectionTitleByID: stored.sectionTitleByID,
             tier: stored.tier,
             embeddingIdentifier: stored.embeddingIdentifier,
-            vectors: stored.vectors
+            vectors: stored.vectors,
+            contentFingerprint: stored.contentFingerprint,
+            manifest: stored.manifest,
+            chunkerConfiguration: stored.chunkerConfiguration
         )
+        loadFailure[bookID] = "identifierDoesNotMatchConfiguration"
+        guard loaded.identifier == stored.identifier else { return nil }
+        return loaded
     }
 
     private func save(_ index: AIBookRetrievalIndex) {
         let stored = Stored(
+            schema: 2,
+            contentFingerprint: index.contentFingerprint,
+            manifest: index.manifest,
+            chunkerConfiguration: index.chunkerConfiguration,
             identifier: index.identifier,
             tier: index.tier,
             embeddingIdentifier: index.embeddingIdentifier,

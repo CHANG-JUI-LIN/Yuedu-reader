@@ -590,6 +590,10 @@ final class EPUBPageRenderer: ObservableObject {
     ///
     /// See `AttributedStringBuilding.chapterPlainText(at:)` for why this cannot go through
     /// `engine.chapterText(forSpine:)`.
+    func localChapterText(at index: Int) async -> AILocalChapterText {
+        await contentBuilder?.localChapterText(at: index) ?? .init(text: nil, status: .unsupported)
+    }
+
     func chapterSourceText(at index: Int) async -> String? {
         await contentBuilder?.chapterPlainText(at: index)
     }
