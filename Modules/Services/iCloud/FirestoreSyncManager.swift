@@ -292,6 +292,7 @@ final class FirestoreSyncManager: ObservableObject {
         }
 
         if let store = bookStore {
+            let bookMutationRevision = store.mutationRevision
             let merged = try await pullCollection(
                 ReadingBook.self,
                 key: "books",
@@ -301,7 +302,7 @@ final class FirestoreSyncManager: ObservableObject {
                 hash: { [weak self] in self?.stableHash($0.strippedForSync()) ?? "" },
                 fallbackUpdatedAt: { $0.lastOpenedDate ?? $0.addedDate }
             )
-            store.replaceBooksFromSync(merged)
+            store.replaceBooksFromSync(merged, expectedMutationRevision: bookMutationRevision)
         }
 
         if let positions = try await fetchEnvelopes(CoreTextReadingPosition.self, at: userRef.collection("readingPositions")) {

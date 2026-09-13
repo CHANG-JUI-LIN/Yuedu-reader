@@ -9,11 +9,11 @@ Apply these guardrails to every user-facing SwiftUI change. Read the repo-root `
 
 ## Required Context
 
-From the repository root, consult:
+Consult only the context needed for the change:
 
-- `docs/design.md` for the complete design specification.
-- `Modules/SharedUI/DesignSystem/DesignTokens.swift` for `DSColor`, `DSFont`, `DSSpacing`, `DSLayout`, `DSRadius`, and `DSAnimation`.
-- `Resources/zh-Hant.lproj/Localizable.strings`, `Resources/zh-Hans.lproj/Localizable.strings`, and `Resources/en.lproj/Localizable.strings` for user-visible text.
+- `docs/design.md`: the matching section for substantial design work or an unresolved convention.
+- `Modules/SharedUI/DesignSystem/DesignTokens.swift`: the relevant token definitions when changing styling.
+- `Resources/{zh-Hant,zh-Hans,en}.lproj/Localizable.strings`: search the affected keys when changing user-visible text. Do not read all three files in full.
 
 ## Decision Order
 
@@ -34,6 +34,7 @@ Resolve conflicts in this order: **Apple platform behavior and accessibility > e
 11. Preserve background continuity in themed `List`/`Form` screens. `.scrollContentBackground(.hidden)` hides only the scroll container background, not row backgrounds. When a page background should remain continuous, give every row/section `.listRowBackground(Color.clear)`; when rows intentionally need contrast, use an explicit `DSColor.surface*` token. Never leave accidental system-white rows against a themed page background. Check content, empty, loading, and error rows. Every surface must visibly differ from its background.
 12. Ask permissions in context at the moment of need, never at launch, with an explanation screen first and a designed denied path. Use `alert`/`confirmationDialog` only for critical decisions (2 buttons preferred, max 3). Every custom gesture needs a visible button/menu alternative; never intercept system gestures (edge-swipe back, notifications/Control Center pull-downs).
 13. Section footers: all section-level explanatory notes, hints, and limits must use native `Section { ... } footer: { Text(...) }` with `.dsSectionFooter()` (Apple HIG standard 13pt Footnote + `DSColor.textSecondary`). Never hand-roll explanatory notes as standard rows inside a Section, subtitle text inside a `Toggle`'s `VStack`, or standalone empty-content Sections.
+14. **A footer earns its place or it does not exist.** Write one only for what the reader cannot work out from the control itself: a cost, a risk, a side effect, a non-obvious precondition, or where the data came from. If the label already says it, there is no footer — 「重新整理名單」 needs no paragraph explaining that it rebuilds the list. Aim for one sentence; two is the ceiling. Do not restate the button, narrate the implementation, or explain a feature's rationale. Before adding one, ask what the reader would get wrong without it; if the answer is "nothing", delete it.
 
 ## Sheet Rules
 
@@ -65,7 +66,7 @@ grep -rn -E "toolbarTitleDisplayMode\(\.(automatic|large|inlineLarge)\)|toolbarT
 
 The grep flags every `.automatic` / `.large` / bare `.inlineLarge` / old-helper use, and every root-helper use; only the whitelisted main roots (`HomeView`, `ExploreHomeView`, `RSSListView`, `SettingsView`) may use `toolbarTitleDisplayModeInlineLargeOrInline()`.
 
-For code changes, also run the smallest reliable build or test for the touched area.
+For code changes, run the directly relevant regression required by AGENTS.md. Reuse results for unchanged code and environment; the static checks above do not replace that regression.
 
 ## Maintenance
 

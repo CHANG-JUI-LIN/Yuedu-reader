@@ -2631,3 +2631,213 @@
 "目前的語音來源不支援" = "Not available for the current voice source";
 "選擇這個角色的聲音" = "Choose this character's voice";
 "與沒有指派聲音的角色、以及旁白文字使用同一個聲音。" = "The same voice used for narration and for any character without an assignment.";
+
+"選取多本書籍" = "Select Books";
+
+"可在檔案中一次選取多本，選完直接加入書架。支援 TXT、Markdown、JSON、EPUB、PDF、漫畫及音訊。" = "Select multiple books in Files to add them directly to your bookshelf. Supports TXT, Markdown, JSON, EPUB, PDF, comics, and audio.";
+
+/* AI assistant */
+"AI 助手" = "AI Assistant";
+"AI 服務" = "AI Service";
+"AI 服務返回錯誤：%@" = "AI service error: %@";
+"AI 設定已損毀，請重新填寫" = "AI settings are corrupted; please re-enter them";
+"API Key 無效或已過期" = "The API key is invalid or expired";
+"API 位址" = "API URL";
+"API 位址無效" = "The API URL is not valid";
+"串流回應在完成標記前中斷" = "The stream ended before its completion marker";
+"任何相容 OpenAI /v1/chat/completions 的服務都可以，包含自架與代理。" = "Any service that speaks OpenAI's /v1/chat/completions works, including self-hosted ones and proxies.";
+"先前的設定無法讀取，請重新填寫。" = "The previous settings could not be read. Please enter them again.";
+"回應解析失敗" = "The response could not be parsed";
+"尚未填入 API Key" = "No API key yet";
+"尚未填入模型名稱" = "No model name yet";
+"尚未設定 AI 服務" = "The AI service is not set up yet";
+"已儲存，輸入可覆蓋" = "Saved — type to replace";
+"書中（防劇透範圍內）沒有與這個問題相關的內容。" = "Nothing in the book, within your reading progress, relates to this question.";
+"未能整理「%@」的檔案，可以點「重新整理」再試一次。" = "Could not build a card for %@. Tap Rebuild to try again.";
+"模型" = "Model";
+"測試會送出一次極短的請求，同時包含 system 與 user 兩段訊息——只送 user 的服務會在這裡通過、實際使用時才失敗。" = "The test sends one tiny request carrying both a system and a user message. Testing with only a user message would pass here and fail on your first real question.";
+"移除 API Key" = "Remove API Key";
+"移除 API Key？" = "Remove the API key?";
+"移除後 AI 功能會停用，閱讀與聽書不受影響。" = "AI features turn off. Reading and read-aloud are unaffected.";
+"網路錯誤：%@" = "Network error: %@";
+"請求序列化失敗" = "The request could not be encoded";
+"請求過於頻繁，請稍後再試" = "Too many requests. Please try again shortly";
+"請為《%@》寫前情提要。" = "Write a recap for %@.";
+"貼上 API Key" = "Paste your API key";
+"連線成功：%@" = "Connected: %@";
+"金鑰只存在這台裝置的鑰匙圈裡，不會同步到 iCloud，也不會寫進日誌或備份。費用由你的服務商向你收取。" = "The key stays in this device's keychain. It never syncs to iCloud and never reaches logs or backups. Your provider bills you directly.";
+"非 HTTP 回應" = "Not an HTTP response";
+
+/* AI assistant panel */
+"API Key" = "API Key";
+"下載中…" = "Downloading…";
+"下載位址無效" = "The download URL is not valid";
+"下載的檔案不是可用的 Core ML 模型" = "The downloaded file is not a usable Core ML model";
+"下載的檔案與預期的校驗碼不符，已捨棄" = "The download did not match its expected checksum and was discarded";
+"下載語意檢索模型" = "Download the semantic search model";
+"下載語意檢索模型（約 258 MB）" = "Download the semantic search model (~258 MB)";
+"不下載也能用：預設的關鍵詞檢索對人名、地名、術語這類精確查詢本來就更準。下載後會語意＋關鍵詞一起用，並重建所有書的索引。" = "It works without this. Keyword search is the default and is more accurate for names, places and terms. Downloading adds semantic search alongside it and rebuilds every book's index.";
+"人物卡" = "Characters";
+"人物卡會搜尋整本書（不只你讀到的地方），並要求不要透露結局。想完全避免劇透就先別整理主角。" = "Character cards search the whole book, not just what you have read, and ask the model not to reveal endings. To avoid spoilers entirely, hold off on the main characters.";
+"人物名稱" = "Character name";
+"依據你讀到 %1$d%% 為止的內容，%2$@ 產生。" = "From what you had read at %1$d%%, generated %2$@.";
+"出處" = "Sources";
+"別稱" = "Also called";
+"到「設定 › AI 助手」填入你自己的 API 位址與金鑰後就能使用。" = "Add your own API URL and key under Settings › AI Assistant to use this.";
+"前情提要" = "Recap";
+"只會讀你已經讀到的部分（目前 %d%%），不會劇透後面的內容。" = "Only reads what you have already read (%d%% so far). It will not spoil what comes next.";
+"問書" = "Ask";
+"回答" = "Answer";
+"已讀範圍還太少，無法產生提要。" = "There is not enough read yet to write a recap.";
+"思考中…" = "Thinking…";
+"想問這本書什麼？" = "What do you want to ask about this book?";
+"整理中…" = "Working…";
+"整理中…（第 %1$d/%2$d 步）" = "Working… (step %1$d of %2$d)";
+"整理之後，多角色朗讀也會用這裡的別名，把同一個人的不同稱呼歸成同一個聲音。" = "Once built, multi-voice read-aloud uses these aliases so one character's different names share one voice.";
+"整理人物卡" = "Build character card";
+"模型下載位址" = "Model URL";
+"模式" = "Mode";
+"檢索方式" = "Search method";
+"正在整理前情提要…" = "Writing the recap…";
+"產生前情提要" = "Write a recap";
+"發問" = "Ask";
+"移除語意檢索模型" = "Remove the semantic search model";
+"語意檢索" = "Semantic search";
+"讀到一半回來忘了劇情？產生一段只涵蓋你已讀範圍的提要。" = "Back after a break and lost the thread? Write a recap covering only what you have read.";
+"貼上模型網址" = "Paste the model URL";
+"跳到 %@" = "Go to %@";
+"跳到原文" = "Go to the passage";
+"身分" = "Role";
+"這個回答沒有引用到書裡的片段，請當成參考而不是書中內容。" = "This answer cites nothing from the book. Treat it as a suggestion, not as something the book says.";
+"這本書沒有可以分析的內容" = "There is nothing in this book to analyse";
+"這本書還沒建立索引" = "This book has not been indexed yet";
+"還沒有人物卡" = "No character cards yet";
+"還沒有前情提要" = "No recap yet";
+"重新產生" = "Regenerate";
+"重試下載" = "Retry download";
+"關鍵詞" = "Keyword";
+"關鍵詞 + 語意" = "Keyword + semantic";
+"首次登場" = "First appears";
+"（尚無片段）" = "(no passages yet)";
+
+/* AI provider presets */
+"Base URL" = "Base URL";
+"供應商" = "Provider";
+"模型名稱" = "Model name";
+"選擇模型" = "Choose a model";
+"重新取得模型清單" = "Reload the model list";
+"填入 API Key 後才能取得模型清單" = "Add an API key to load the model list";
+"這個服務沒有回報任何模型" = "This service reported no models";
+"任何相容 OpenAI /v1/chat/completions 的服務都可以，包含自架與代理。貼上完整的 /chat/completions 網址也可以，會自動改成 Base URL。" = "Any service that speaks OpenAI's /v1/chat/completions works, including self-hosted ones and proxies. Pasting a full /chat/completions URL is fine — it is turned into the base URL for you.";
+"角色識別" = "Character identity";
+"人物別名" = "Character aliases";
+"設定 AI 助手" = "Set up the AI assistant";
+"%1$d 張人物卡、%2$d 個別名" = "%1$d cards, %2$d aliases";
+"整理人物卡之後，同一個人的不同稱呼（張若塵／若塵／塵哥）會歸成同一個聲音。到閱讀畫面的「AI 助手 › 人物卡」整理。" = "Once you build character cards, one person's different names all read in the same voice. Build them under AI Assistant › Characters in the reader.";
+"沒有 AI 也能用多角色朗讀，只是同一個人的不同稱呼會被當成不同角色、各拿一個聲音。設定 AI 後整理人物卡就能合併。" = "Multi-voice read-aloud works without AI — one person's different names just end up as separate characters with separate voices. Set up AI and build character cards to merge them.";
+"DeepSeek" = "DeepSeek";
+"Kimi 月之暗面" = "Kimi (Moonshot)";
+"智譜 GLM" = "Zhipu GLM";
+"阿里雲百鍊" = "Alibaba Model Studio";
+"火山方舟 豆包" = "Volcengine Ark (Doubao)";
+"矽基流動" = "SiliconFlow";
+"OpenAI" = "OpenAI";
+"Anthropic" = "Anthropic";
+"Google Gemini" = "Google Gemini";
+"xAI Grok" = "xAI Grok";
+"OpenRouter" = "OpenRouter";
+
+/* Multi-role with imported voice sources */
+"匯入的語音源" = "Imported voice sources";
+"每個匯入的語音源就是一個聲音。想要更多音色，就到語音朗讀設定匯入更多來源。" = "Each imported voice source is one voice. Import more of them under Read-Aloud Settings for more voices.";
+"為每個角色指派不同的匯入語音源。角色越多，每章需要的請求也越多。" = "Give each character a different imported voice source. More characters means more requests per chapter.";
+"匯入的語音源一個就是一個聲音，目前只匯入了一個。到語音朗讀設定再匯入幾個（語音包通常一個音色一筆），就能指派給不同角色。" = "An imported source is one voice, and only one is imported. Import a few more under Read-Aloud Settings — voice packs usually ship one entry per voice — and you can give each character their own.";
+
+"AI 助手設定" = "AI Assistant Settings";
+
+"填入你自己的 API 位址與金鑰後，就能問書、產生前情提要、整理人物卡。" = "Add your own API URL and key to ask about the book, write recaps, and build character cards.";
+"…等都支援。" = " and others are supported.";
+"前往設定" = "Open Settings";
+
+/* AI chat */
+"他們是什麼關係" = "How are they related?";
+"剛剛發生了什麼" = "What just happened?";
+"其他人物" = "Someone else";
+"問一問這本書…" = "Ask about this book…";
+"整理 %@ 的人物卡" = "Build a card for %@";
+"整理人物卡之後，同一個人的不同稱呼（張若塵／若塵／塵哥）會歸成同一個聲音。" = "Once cards are built, one person's different names all read in the same voice.";
+"整理人物卡需要 AI。設定之後，同一個人的不同稱呼就能合併成同一個聲音。" = "Character cards need AI. Once it is set up, one person's different names can share a voice.";
+"清除對話" = "Clear conversation";
+"送出" = "Send";
+"這一章出現的角色" = "Characters in this chapter";
+"關於《%@》" = "About %@";
+"點一下就整理，不用自己打名字。整理完的別名會用來合併同一個人的不同稱呼。" = "One tap each — no typing. The aliases they produce merge one person's different names.";
+
+"正在掃描全書的角色…" = "Scanning the book for characters…";
+"書中的角色" = "Characters in this book";
+"整本書掃出來的，按說話次數排序——說得越多越可能是主要角色。點一下就整理。" = "Found across the whole book and ranked by how much they speak — the more lines, the more likely a main character. One tap to build.";
+"%d 句" = "%d lines";
+"掃不到的人物" = "Someone the scan missed";
+
+"用 AI 整理名單" = "Clean up the list with AI";
+"重新整理名單" = "Rebuild the list";
+"送一次請求，讓 AI 判斷哪些候選詞是真的人名、哪些只是「試探道」「一邊道」剝下來的碎片，並把同一個人的不同稱呼合併。" = "One request. The model decides which candidates are real names and which are leftovers from phrases like 試探道, and merges one person's different names.";
+"這份名單是用「說道／笑道」這類句式自動抓的，會抓到「試探」「一邊」這種不是人的詞。點上面的「用 AI 整理名單」讓 AI 把它們挑掉。" = "This list is scraped from phrases like 說道 / 笑道, so it catches non-people such as 試探 and 一邊. Tap Clean up the list with AI to have them removed.";
+"已經用 AI 核對過，按說話次數排序。點一下整理那個人的人物卡。" = "Checked by AI and ranked by how much they speak. Tap one to build their card.";
+
+"重設這本書的角色設定？" = "Reset this book's characters?";
+"會清掉這本書的配音、AI 整理的角色名單，以及所有人物卡。書本身和聽書設定不受影響。" = "Clears this book's voice casting, its AI-checked character list, and every character card. The book itself and your read-aloud settings are untouched.";
+"掃描整本書" = "Scan the whole book";
+"只看讀過的部分" = "Only what I've read";
+"目前只列出你讀到 %d%% 為止出現過的角色。掃整本書會列出還沒登場的人——那本身就是劇透。" = "Only characters who have appeared by %d%%. Scanning the whole book lists people you have not met yet — which is a spoiler in itself.";
+"正在列出整本書的角色，包含你還沒讀到的。" = "Listing every character in the book, including ones you have not reached.";
+
+"自動抓的，會混進「試探」這種不是人的詞。" = "Auto-detected, so non-people like 試探 slip in.";
+"只列出你讀到 %d%% 為止出現過的角色。" = "Only characters who have appeared by %d%%.";
+"包含你還沒讀到的角色。" = "Includes characters you have not reached.";
+
+"相容 OpenAI /v1/chat/completions 的服務都可以。貼完整網址也行。" = "Any OpenAI-compatible service works. A full URL is fine too.";
+"會同時送 system 與 user 兩段訊息，和實際使用一致。" = "Sends both a system and a user message, like real requests do.";
+"不下載也能用。關鍵詞檢索對人名、術語本來就更準。" = "It works without this. Keyword search is more accurate for names and terms.";
+"只留在本機鑰匙圈，不同步 iCloud。費用由服務商向你收取。" = "Stays in this device's keychain, never synced. Your provider bills you.";
+"沒有 AI 也能用，只是同一個人的不同稱呼會各拿一個聲音。" = "Works without AI — one person's different names just get different voices.";
+
+"讀到 %d%%" = "Read %d%%";
+"全書" = "Whole book";
+"防劇透" = "Spoiler guard";
+"開" = "On";
+"關" = "Off";
+"關掉就會搜尋整本書" = "Turn it off to search the whole book";
+"只讀你讀到 %d%% 為止的內容。搜不到東西時，把「防劇透」關掉。" = "Only reads up to %d%%. If nothing is found, turn the spoiler guard off.";
+"會搜尋整本書，可能劇透。" = "Searches the whole book. May spoil.";
+
+"對話列表" = "Conversations";
+"新對話" = "New chat";
+"還沒有紀錄" = "No conversations yet";
+"關閉對話列表" = "Close the conversation list";
+
+"傳送期間請保持此頁開啟，離開或切背景會中斷。支援 EPUB、PDF、TXT、Markdown。" = "Keep this page open during transfer — leaving or backgrounding disconnects. EPUB, PDF, TXT, Markdown.";
+"先在電腦 Calibre 的「連線／分享」啟動無線裝置連線。" = "Start Wireless Device Connection in Calibre's Connect/Share menu first.";
+"需要同一區域網路，並允許本 App 存取本機網路。" = "Needs the same local network, and permission to access it.";
+"iOS 會列出尚未下載的語音，選了不會有聲音。標示「此裝置未安裝」的到系統設定下載。" = "iOS lists voices that are not downloaded; they stay silent. Download the ones marked not installed.";
+"授權後，你錄製的個人語音會出現在下方。" = "Once allowed, your recorded Personal Voice appears below.";
+"啟動與切背景時自動同步書庫、書源、替換規則與書檔。多台裝置會合併，不會互相覆蓋。" = "Syncs your library, sources, rules and files on launch and backgrounding. Devices merge rather than overwrite.";
+"包含排版、章節標題樣式與正則高亮。匯入也接受 legado 的 readConfig.json。" = "Covers layout, chapter title styles and regex highlights. Also imports legado's readConfig.json.";
+"上下邊距同時是頁眉頁腳的容身空間，改動不會移動組件本身。" = "Top and bottom margins also house the header and footer; changing them does not move those.";
+"系統設計建議玻璃只用於浮動控制項，所以預設關閉。" = "Apple's guidance reserves glass for floating controls, so this is off by default.";
+"包含這次啟動的完整紀錄，不受下方篩選影響。" = "The full log for this launch, regardless of the filter below.";
+"App 在使用中結束，不是被系統回收。詳細內容下次啟動後才會送達。" = "The app ended while in use, not reclaimed by the system. Details arrive after the next launch.";
+"記下每一次翻頁與解析步驟。關閉時仍會記錄錯誤。" = "Records every page turn and parse step. Errors are logged either way.";
+"只影響自動生成的封面，你匯入的封面圖不受影響。" = "Only affects generated covers; your own cover images are untouched.";
+"無法復原。本機的內容檔不會被刪除。" = "Cannot be undone. Files stored on this device are kept.";
+"下次登入時生效。" = "Takes effect at your next sign-in.";
+"記下每一次請求與回應。規則比對量太大，預設不收。" = "Records every request and response. Rule matches are too numerous and are skipped.";
+"自定義規則排在內置規則之後，可以覆蓋它們。" = "Custom rules run after the built-in ones and can override them.";
+"只取用顏色、邊距與皮膚圖，文字仍照閱讀字級排版。" = "Takes only colours, insets and skin images; text still uses your reading size.";
+
+"書中沒有與這個問題相關的內容。" = "Nothing in the book relates to this question.";
+
+"這次沒有回應，再試一次。" = "No response this time. Try again.";
+
+"問一個問題" = "Ask a question";
+"回到對話" = "Back to the conversation";

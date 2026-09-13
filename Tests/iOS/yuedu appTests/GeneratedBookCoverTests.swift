@@ -300,6 +300,46 @@ struct GeneratedBookCoverTests {
                 "the open-book transition would lift an empty card")
     }
 
+    @MainActor
+    @Test("Opening preserves the shelf cover layout while increasing pixel density")
+    func openingSnapshotPreservesShelfLayout() throws {
+        let settings = GlobalSettings.shared
+        let originalName = settings.defaultCoverDrawsBookName
+        let originalAuthor = settings.defaultCoverDrawsBookAuthor
+        settings.defaultCoverDrawsBookName = true
+        settings.defaultCoverDrawsBookAuthor = true
+        defer {
+            settings.defaultCoverDrawsBookName = originalName
+            settings.defaultCoverDrawsBookAuthor = originalAuthor
+        }
+
+        for title in ["Kusamakura", "苟在武道世界成圣"] {
+            let book = ReadingBook(title: title, author: "Natsume, Sōseki", contentFilename: "x.txt")
+            for scheme in [ColorScheme.light, .dark] {
+                #expect(BookshelfCoverStyle.image(for: book, colorScheme: scheme) == nil)
+                for size in [
+                    CGSize(width: 45, height: 65),
+                    CGSize(width: 60, height: 90),
+                    CGSize(width: 104, height: 156),
+                ] {
+                    let snapshot = try #require(BookshelfCoverStyle.snapshot(
+                        for: book, colorScheme: scheme, sourceSize: size
+                    ))
+                    #expect(abs(snapshot.size.width - size.width) < 0.1)
+                    #expect(abs(snapshot.size.height - size.height) < 0.1)
+                    #expect(try #require(snapshot.cgImage).height >= 800)
+                    let expected = try #require(GeneratedBookCoverRenderer.image(
+                        title: title, author: book.author, size: size,
+                        colorScheme: scheme, drawsName: true, drawsAuthor: true,
+                        scale: snapshot.scale
+                    ))
+                    #expect(snapshot.pngData() == expected.pngData(),
+                            "Opening must preserve the shelf's line breaks, font sizes and author visibility")
+                }
+            }
+        }
+    }
+
     /// True when every pixel is the same colour, which is what a cover that
     /// never got a size looks like.
     @MainActor

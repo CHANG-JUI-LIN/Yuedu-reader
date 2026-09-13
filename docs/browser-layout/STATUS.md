@@ -14,6 +14,8 @@ tags: [yuedu, browser-layout, status]
 
 2026-09-12：BrowserLayout 已抽取至 `YueduCoreText` 並發布 **0.3.0**；Reader 正常 project 已通過 GitHub 遠端套件接線驗證；翻頁與橫排捲動使用同一套件核心，App 保留 BrowserAuto 政策、legacy 與閱讀宿主。[抽取範圍](extraction/STATUS.md) · [0.3.0 發布驗證與 CI 已知問題](extraction/release-0.3.0.md)。以下 Phase 5A 記錄保留原有驗收範圍，本次沒有切換 Lexbor。
 
+2026-09-12 後續（套件已發布 0.4.0）：Reader 已將 `writingMode` 接入套件能力掃描與排版設定；基礎 `vertical-rl` 的翻頁與捲動共用 BrowserAuto 決策，直排連續文件由右至左分成繪製視窗，交給既有 RTL collection 宿主。直排圖片、float 等套件仍不支援的內容保留按章 legacy fallback。正常 `Yuedu-Reader.xcodeproj` 最低依賴版本已更新為 0.4.0（限制於 0.4.x）；0.3.0 缺少 `documentPoint(forCharOffset:)`，不能用於此入口。[0.4.0 發布與正常 project 驗證](extraction/release-0.4.0.md)。下方歷史驗收範圍不回寫。
+
 **Phase 5A 仍未結案。Task 5／6 已補齊本輪發現的差距；Task 7 長屬性映射已實作，完整驗收仍有阻擋。**
 
 2026-09-08 實作與測試起點為 `b06801ded952625cb33c57274765327603476abb`，已帶回主工作目錄（整合起點 `3016d1d36f03062761b1eca96eacec5f95f74e87`）。本輪未 commit。使用者已選擇先完成可驗證的長屬性，shorthand 明確保留為切換阻擋。

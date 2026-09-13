@@ -203,7 +203,7 @@ struct RegexHighlightSettingsView: View {
         } header: {
             Text(localized("自定義規則"))
         } footer: {
-            Text(localized("自定義規則排在內置規則之後，適合做更具體的覆蓋高亮。左滑可刪除，點右上角「編輯」可排序。"))
+            Text(localized("自定義規則排在內置規則之後，可以覆蓋它們。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()

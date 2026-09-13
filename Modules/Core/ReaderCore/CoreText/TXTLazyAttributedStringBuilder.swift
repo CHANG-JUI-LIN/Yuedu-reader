@@ -189,6 +189,11 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         )
     }
 
+    func chapterPlainText(at index: Int) async -> String? {
+        guard let text = chapterText(at: index), !text.isEmpty else { return nil }
+        return text
+    }
+
     private func chapterText(at index: Int) -> String? {
         let rawText: String?
         if mappedChapterIndexes.indices.contains(index), let mappedTextFile {

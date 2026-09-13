@@ -46,6 +46,7 @@
 | H9 | 不得做成網頁式 UI（dashboard 卡片牆、側欄、Landing） | 見 §13 | Tailwind 風格 |
 | H10 | accessibility modifier 只能加在**該元素本身**，不能加在容器上（會往下傳給每個子元素） | 每顆 `Button` 各自 `.accessibilityLabel` | 在包住三顆按鈕的 `HStack` 上加一個 label |
 | H11 | 區塊底部說明一律收攏為原生 `Section { ... } footer: { Text(...) }` 並套用 `.dsSectionFooter()`（Apple HIG 13pt Footnote + `DSColor.textSecondary`） | `Section { ... } footer: { Text(localized("...")).dsSectionFooter() }` | 在 Section 內用普通 Row 當說明、用 `VStack` 塞副標題、或單獨開說明 Section |
+| H11b | footer 只寫控制項看不出來的事（代價／風險／副作用／資料來源），一句話，最多兩句 | 「刪除帳號無法復原。」 | 複述按鈕標籤（「重新整理名單」配上一段解釋它會重新整理名單）、描述實作、解釋功能存在的理由 |
 
 ---
 
@@ -217,6 +218,8 @@ Review 時同時檢視 surface 層級是否「從背景中看得出」：容器�
 - **統一原生 footer**：所有針對 Section 或整組設定的提示、說明、限制條件，一律使用原生 `Section { ... } footer: { Text(...) }`。
 - **嚴禁自刻說明列**：嚴禁在 Section 內部使用普通 Row 放說明文字（會變成卡片 row 外觀與過大行高）、嚴禁在 Toggle 的 label `VStack` 內手動塞說明文字充當區塊附註、嚴禁單獨開一個沒有內容的 Section 專門放說明 Text。
 - **統一字級與顏色**：Apple HIG 規範 Section footer 為 **13pt Footnote** 與 **次要顏色（`DSColor.textSecondary`）**。因為最外層環境可能注入全域字體，為避免字級被放大成 17pt 正文，所有 footer 內的 `Text` 一律呼叫 `.dsSectionFooter()`（錯誤/警示訊息傳入 `.dsSectionFooter(color: DSColor.destructive)`）。
+- **寫得出理由才寫 footer**：footer 只寫控制項本身看不出來的事——代價、風險、副作用、不明顯的前提，或這份資料從哪來。**標籤已經講完的就不要再寫一次**：「重新整理名單」不需要一段說明它會重新整理名單。
+- **長度上限一句，最多兩句**：不要複述按鈕、不要描述實作、不要解釋這個功能為什麼存在。動手前先問「不寫這句，使用者會誤會什麼？」——答案是「不會」就刪掉。
 
 ```swift
 Section {

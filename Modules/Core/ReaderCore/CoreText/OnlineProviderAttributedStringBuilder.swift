@@ -259,6 +259,22 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
 
     var prefersLazyByteScan: Bool { true }
 
+    /// `OnlineBookContentProvider` asks with `.cacheOnly`, so this reads downloaded chapters
+    /// and returns nil for the rest — a whole-book gather must never pull a novel over the
+    /// network behind the reader's back.
+    func chapterPlainText(at index: Int) async -> String? {
+        guard let payload = try? await provider.contentForChapter(index: index) else { return nil }
+        let text: String
+        switch payload.body {
+        case let .plainText(plain):
+            text = plain
+        case let .html(html):
+            // Off the main actor: see the same note in `EPUBAttributedStringBuilder`.
+            text = await Task.detached(priority: .utility) { ChapterPlainText.fromHTML(html) }.value
+        }
+        return text.isEmpty ? nil : text
+    }
+
     func chapterTitle(at index: Int) -> String {
         provider.chapterTitle(at: index)
     }

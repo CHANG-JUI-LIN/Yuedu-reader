@@ -31,6 +31,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     var onSegmentChanged: ((TTSActiveSegment) -> Void)?
     /// Speaker → voice, scoped to the open book by the reader. Empty = single voice.
     var roleVoices: [String: String] = [:]
+    var roleAliases: [String: String] = [:]
 
     /// Set while the host prepares the next chapter. `AVSpeechSynthesizer` emits nothing
     /// between utterances, so the keep-alive silence carries the audio session through the
@@ -94,7 +95,8 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
             text,
             targetLength: targetChunkLength,
             hints: pronunciationHints,
-            multiRole: TTSRoleVoiceCast.containsSpeakableVoice(in: roleVoices, system: true)
+            multiRole: TTSRoleVoiceCast.containsSpeakableVoice(in: roleVoices, family: .system),
+            aliases: roleAliases
         )
         guard !segments.isEmpty else {
             ttsLog("[TTS][SystemEngine] speak aborted no chunks")

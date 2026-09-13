@@ -57,6 +57,7 @@ struct JsBridgeBrowserView: View {
     let onDismiss: (_ body: String?) -> Void
     let hidesToolbar: Bool
     let initialHTML: String?
+    let initialRequest: URLRequest?
     let injectedJavaScript: String
     let sourceRunHandler: ((String) async throws -> String)?
     let sourceConfigurationUpdateHandler: ((String) -> Void)?
@@ -66,6 +67,7 @@ struct JsBridgeBrowserView: View {
         title: String = "",
         hidesToolbar: Bool = false,
         initialHTML: String? = nil,
+        initialRequest: URLRequest? = nil,
         injectedJavaScript: String = "",
         sourceRunHandler: ((String) async throws -> String)? = nil,
         sourceConfigurationUpdateHandler: ((String) -> Void)? = nil,
@@ -75,6 +77,7 @@ struct JsBridgeBrowserView: View {
         self.title = title
         self.hidesToolbar = hidesToolbar
         self.initialHTML = initialHTML
+        self.initialRequest = initialRequest
         self.injectedJavaScript = injectedJavaScript
         self.sourceRunHandler = sourceRunHandler
         self.sourceConfigurationUpdateHandler = sourceConfigurationUpdateHandler
@@ -153,7 +156,8 @@ struct JsBridgeBrowserView: View {
                 injectedJavaScript: injectedJavaScript,
                 sourceRunHandler: sourceRunHandler,
                 sourceConfigurationUpdateHandler: sourceConfigurationUpdateHandler,
-                bridge: bridge
+                bridge: bridge,
+                initialRequest: initialRequest
             )
                 .edgesIgnoringSafeArea(hidesToolbar ? .all : .bottom)
 
@@ -261,6 +265,7 @@ struct LegadoReviewBrowserView: View {
                     urlString: target.url,
                     title: target.title,
                     hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar,
+                    initialRequest: target.browserRequest,
                     onDismiss: onDismiss
                 )
             }
@@ -304,6 +309,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
     let sourceRunHandler: ((String) async throws -> String)?
     let sourceConfigurationUpdateHandler: ((String) -> Void)?
     let bridge: JsBridgeBrowserBridge
+    var initialRequest: URLRequest? = nil
 
     static let sourceJavaPromptName = SourceWebUIDelegate.sourceBridgePromptName
 
@@ -513,11 +519,12 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             coordinator.loadInitial(
                 urlString: urlString,
                 html: initialHTML,
+                request: initialRequest,
                 in: wv
             )
         }
 
-        context.coordinator.loadInitial(urlString: urlString, html: initialHTML, in: wv)
+        context.coordinator.loadInitial(urlString: urlString, html: initialHTML, request: initialRequest, in: wv)
         return wv
     }
 
@@ -600,8 +607,14 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             decisionHandler(.cancel)
         }
 
-        func load(url: URL, in webView: WKWebView) {
-            let request = URLRequest(url: url)
+        func load(url: URL, request initialRequest: URLRequest? = nil, in webView: WKWebView) {
+            // Attach source credentials only to the exact destination prepared by its runtime.
+            let request: URLRequest
+            if let initialRequest, initialRequest.url == url {
+                request = initialRequest
+            } else {
+                request = URLRequest(url: url)
+            }
             let cookies = Self.cookiesForInitialLoad(url: url)
             guard !cookies.isEmpty else {
                 webView.load(request)
@@ -621,11 +634,11 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             }
         }
 
-        func loadInitial(urlString: String, html: String?, in webView: WKWebView) {
+        func loadInitial(urlString: String, html: String?, request: URLRequest? = nil, in webView: WKWebView) {
             if let html {
                 webView.loadHTMLString(html, baseURL: URL(string: urlString))
             } else if let url = URL(string: urlString) {
-                load(url: url, in: webView)
+                load(url: url, request: request, in: webView)
             }
         }
 

@@ -27,6 +27,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     var onSegmentChanged: ((TTSActiveSegment) -> Void)?
     /// Speaker → voice, scoped to the open book by the reader. Empty = single voice.
     var roleVoices: [String: String] = [:]
+    var roleAliases: [String: String] = [:]
 
     /// Set while the host prepares the next chapter; the same keep-alive silence that covers
     /// chunk-download gaps carries the session through this longer wait.
@@ -135,10 +136,14 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
                 text,
                 targetLength: targetChunkLength,
                 hints: pronunciationHints,
-                // Only 微軟線上語音 can change voice between segments; a book-source
-                // template bakes its voice into the URL, so splitting buys nothing.
-                multiRole: audioProvider is EdgeTTSAudioProvider
-                    && TTSRoleVoiceCast.containsSpeakableVoice(in: roleVoices, system: false)
+                // Both network paths can change voice between segments now: 微軟線上語音
+                // by rebuilding the SSML, an imported source by using a different imported
+                // source. Direct chapter audio still cannot — there is no text to re-speak.
+                multiRole: TTSRoleVoiceCast.containsSpeakableVoice(
+                    in: roleVoices,
+                    family: audioProvider is EdgeTTSAudioProvider ? .edge : .bookSource
+                ),
+                aliases: roleAliases
             )
         speechChunks = segments.map {
             TTSPronunciationSpeechText(text: $0.text, hints: $0.pronunciationHints).text
@@ -383,20 +388,31 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// the only way to switch, and it is cheap: `EdgeTTSAudioProvider` is a value holding a
     /// voice and a stateless transport.
     ///
-    /// Everything else — a book-source template, direct chapter audio — keeps the provider
-    /// captured for this narration unit. Those bake the voice into a URL the user imported,
-    /// so there is no second voice to switch to.
+    /// An imported source switches the same way, by building a provider bound to a different
+    /// imported source — one source is one voice, and a voice pack is a list of them.
+    ///
+    /// Direct chapter audio keeps the captured provider: it is a recording, not speech, and
+    /// there is no text to re-speak in another voice.
     private func provider(forSegmentAt index: Int) -> any TTSAudioProvider {
         guard injectedAudioProvider == nil,
-              audioProvider is EdgeTTSAudioProvider,
               segments.indices.contains(index),
               let speaker = segments[index].speaker,
               let stored = roleVoices[speaker],
-              let voice = TTSRoleVoice(storageValue: stored)?.edgeVoice
+              let voice = TTSRoleVoice(storageValue: stored)
         else {
             return audioProvider
         }
-        return EdgeTTSAudioProvider(voice: voice)
+        // Cast with a voice this engine cannot speak — an on-device voice while the network
+        // engine is running, or a source that was deleted — reads in the narrator's voice
+        // rather than failing the segment.
+        if audioProvider is EdgeTTSAudioProvider {
+            guard let edge = voice.edgeVoice else { return audioProvider }
+            return EdgeTTSAudioProvider(voice: edge)
+        }
+        guard audioProvider is CustomHTTPProvider, let source = voice.importedSource() else {
+            return audioProvider
+        }
+        return CustomHTTPProvider(source: source)
     }
 
     private func downloadChunk(at index: Int, token: UUID, priority: DownloadPriority) {

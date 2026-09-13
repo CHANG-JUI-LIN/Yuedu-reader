@@ -120,7 +120,7 @@ struct DiagnosticsView: View {
                 )
                 .accessibilityIdentifier("diagnostics_export_button")
             } footer: {
-                Text(localized("匯出的檔案包含這次啟動的完整紀錄，不受下方篩選影響。只想分享其中一段時，用右上角的「匯出目前篩選」。"))
+                Text(localized("包含這次啟動的完整紀錄，不受下方篩選影響。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()
@@ -133,7 +133,7 @@ struct DiagnosticsView: View {
                 } header: {
                     Text(localized("上次未正常結束"))
                 } footer: {
-                    Text(localized("App 在使用中結束，而不是被系統回收。詳細的崩潰內容會在下次啟動後由系統送達，出現在下方紀錄裡。"))
+                    Text(localized("App 在使用中結束，不是被系統回收。詳細內容下次啟動後才會送達。"))
                         .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
@@ -155,7 +155,7 @@ struct DiagnosticsView: View {
             } header: {
                 Text(localized("篩選"))
             } footer: {
-                Text(localized("詳細追蹤會記下每一次翻頁與解析步驟，適合在重現問題前打開。關閉時仍會記錄錯誤與異常。"))
+                Text(localized("記下每一次翻頁與解析步驟。關閉時仍會記錄錯誤。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()

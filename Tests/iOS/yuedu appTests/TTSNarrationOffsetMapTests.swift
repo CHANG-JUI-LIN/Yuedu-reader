@@ -134,4 +134,30 @@ struct TTSNarrationOffsetMapTests {
         #expect(offsets.sourceOffset(forNarrationOffset: -5) == 0)
         #expect(offsets.sourceOffset(forNarrationOffset: length + 99) == offsets.sourceOffset(forNarrationOffset: length))
     }
+
+    /// Resuming mid-chapter hands the engine `narration[startCharOffset...]`, so every
+    /// range it reports is short by that much.
+    @Test("a map slid past a resume offset still lands on the right chapter position")
+    func droppingNarrationPrefixRebasesOffsets() {
+        let source = "第一段\u{FFFC}文字。\n\n第二段文字。"
+        let narration = ReaderView.narratableText(from: source)
+        let full = TTSNarrationOffsetMap(narration: narration, source: source)
+        let drop = 3
+        let sliced = full.droppingNarrationPrefix(drop)
+        for offset in 0...(narration as NSString).length - drop {
+            #expect(
+                sliced.sourceOffset(forNarrationOffset: offset)
+                    == full.sourceOffset(forNarrationOffset: offset + drop)
+            )
+        }
+    }
+
+    @Test("dropping nothing, or more than there is, stays inside the chapter")
+    func droppingNarrationPrefixClamps() {
+        let source = "第一段文字。"
+        let map = TTSNarrationOffsetMap(narration: source, source: source)
+        #expect(map.droppingNarrationPrefix(0).sourceOffset(forNarrationOffset: 2) == 2)
+        let overrun = map.droppingNarrationPrefix(999)
+        #expect(overrun.sourceOffset(forNarrationOffset: 0) == (source as NSString).length)
+    }
 }

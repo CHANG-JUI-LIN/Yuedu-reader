@@ -273,6 +273,21 @@ struct ParagraphReviewMarkerTests {
         let href = try #require(firstHref(in: cleaned))
         let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
         #expect(marker.url == "https://sb.shazi.tk/comments?bookId=1")
+        #expect(marker.sourceJS.hasPrefix("java.startBrowser.apply"))
+        #expect(marker.sourceURL == "https://m.qidian.com#禁止外传")
+    }
+
+    @Test("authenticated absolute chapter-review markers retain their title sentinel")
+    func authenticatedAbsoluteTitleReview() throws {
+        let raw = #"<p><comment count="9" onPress="java.showReadingBrowser('https://example.com/comments?bookId=1&amp;paragraphId=-1','本章说')"></p>"#
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw, reviewContext: .init(sourceName: "Fixture", sourceURL: "https://source.example")
+        )
+        let href = try #require(firstHref(in: cleaned))
+        #expect(ReaderHTMLUtilities.isTitleReviewHref(href))
+        let target = try #require(ReaderHTMLUtilities.reviewTarget(fromHref: href))
+        #expect(target.requiresSourceJS)
+        #expect(target.url == "https://example.com/comments?bookId=1&paragraphId=-1")
     }
 
     @Test("normalizes Qidian dimensionless FULL god-review SVGs")

@@ -148,7 +148,7 @@ struct UserDetailView: View {
                 Text(localized("帳號連線方式"))
             } footer: {
                 VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                    Text(localized("連線方式會在下次登入時生效。中轉服務透過自有伺服器連接原本的 Firebase 帳號。"))
+                    Text(localized("下次登入時生效。"))
                         .dsSectionFooter()
                     if !GatewayConfiguration.isConfigured {
                         Text(localized("此版本未設定中轉服務"))
@@ -291,7 +291,7 @@ struct UserDetailView: View {
                     }
                 } footer: {
                     VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                        Text(localized("刪除帳號會移除您的登入資訊並清除已上傳的同步資料，且無法復原。儲存在本機的內容檔不會被刪除。"))
+                        Text(localized("無法復原。本機的內容檔不會被刪除。"))
                             .dsSectionFooter()
                         if let deleteAccountErrorMessage {
                             Text(deleteAccountErrorMessage)

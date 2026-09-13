@@ -38,6 +38,7 @@ struct ReaderBottomControlBar: View {
     let onOpenChangeSource: () -> Void
     let onDownloadAction: () -> Void
     let onOpenTTS: () -> Void
+    let onOpenAIAssistant: () -> Void
     let onOpenTOC: () -> Void
     let onOpenBookmarks: () -> Void
     let onOpenSettings: () -> Void
@@ -67,6 +68,12 @@ struct ReaderBottomControlBar: View {
                 }
                 if settings.isReaderChromeItemVisible(ReaderChromeActionItem.playback) {
                     circleBtn(item: .playback, label: localized("聽書")) { onOpenTTS() }
+                }
+                // This row is hand-written rather than built from `readerSecondaryActions`,
+                // which is why adding the action alone left 經典 with no way in at all — the
+                // button only ever appeared on 現代's book card.
+                if settings.isReaderChromeItemVisible(ReaderChromeActionItem.aiAssistant) {
+                    circleBtn(item: .aiAssistant, label: localized("AI 助手")) { onOpenAIAssistant() }
                 }
             }
             .padding(.trailing, 20)
@@ -363,6 +370,7 @@ struct ReaderBottomControlBar: View {
             onOpenChangeSource: {},
             onDownloadAction: {},
             onOpenTTS: {},
+            onOpenAIAssistant: {},
             onOpenTOC: {},
             onOpenBookmarks: {},
             onOpenSettings: {}

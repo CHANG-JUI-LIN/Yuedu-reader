@@ -94,12 +94,12 @@ struct BrowserScrollTileCellTests {
         #expect(overlays.first?.selectionRects.first?.minY == 10)
         // The spoken sentence begins in the previous tile. Its visible suffix
         // still has to be highlighted here using the chapter's range.
-        cell.applyPlaybackHighlight(text: "甲乙丙丁")
+        cell.applyPlaybackHighlight(ReaderPlaybackHighlight(text: "甲乙丙丁"))
         let bounds = try #require(cell.playbackHighlightBounds(in: cell))
         #expect(bounds.minY >= 10)
         #expect(bounds.maxY <= 100)
         #expect(bounds.minX >= 20)
-        cell.applyPlaybackHighlight(text: nil)
+        cell.applyPlaybackHighlight(nil)
         #expect(cell.playbackHighlightBounds(in: cell) == nil)
         cell.applyAnnotations([])
         #expect(!cell.interactiveView.subviews.compactMap { $0 as? InteractionOverlayView }.contains { !$0.showsHandles })

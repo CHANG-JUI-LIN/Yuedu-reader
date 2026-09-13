@@ -5,7 +5,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     let engine: any PageRenderingProvider
     let pageTurnStyle: PageTurnStyle
     let theme: ReaderTheme
-    let playbackHighlightText: String?
+    let playbackHighlight: ReaderPlaybackHighlight?
     let isRTL: Bool
     let isDoublePageSpread: Bool
     let spreadGutter: CGFloat
@@ -131,7 +131,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
         context.coordinator.currentEngine = engine
         context.coordinator.sessionCoordinator = sessionCoordinator
-        context.coordinator.currentPlaybackHighlightText = playbackHighlightText
+        context.coordinator.currentPlaybackHighlight = playbackHighlight
         let spreadModeChanged = context.coordinator.isDoublePageSpread != isDoublePageSpread
         context.coordinator.isDoublePageSpread = isDoublePageSpread
         uiViewController.isDoubleSided = PageViewControllerPagingAdapterDescriptor(
@@ -321,7 +321,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             engine: engine,
             pageTurnStyle: pageTurnStyle,
             theme: theme,
-            playbackHighlightText: playbackHighlightText,
+            playbackHighlight: playbackHighlight,
             isRTL: isRTL,
             isDoublePageSpread: isDoublePageSpread,
             spreadGutter: spreadGutter,
@@ -343,7 +343,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         var currentEngine: any PageRenderingProvider
         let pageTurnStyle: PageTurnStyle
         var currentTheme: ReaderTheme
-        var currentPlaybackHighlightText: String?
+        var currentPlaybackHighlight: ReaderPlaybackHighlight?
         var sessionCoordinator: ReaderSessionCoordinator?
         @Binding var currentPage: Int
         let onPageChanged: (Int, CoreTextReadingPosition?) -> Void
@@ -669,7 +669,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         init(engine: any PageRenderingProvider,
              pageTurnStyle: PageTurnStyle,
              theme: ReaderTheme,
-             playbackHighlightText: String?,
+             playbackHighlight: ReaderPlaybackHighlight?,
              isRTL: Bool,
              isDoublePageSpread: Bool,
              spreadGutter: CGFloat,
@@ -683,7 +683,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             self.currentEngine = engine
             self.pageTurnStyle = pageTurnStyle
             self.currentTheme = theme
-            self.currentPlaybackHighlightText = playbackHighlightText
+            self.currentPlaybackHighlight = playbackHighlight
             self.isRTL = isRTL
             self.isDoublePageSpread = isDoublePageSpread
             self.spreadGutter = spreadGutter
@@ -1398,15 +1398,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         func applyPlaybackHighlight(to viewController: UIViewController) {
             guard !(viewController is PageBackViewController) else { return }
             if let spread = viewController as? ReaderSpreadPageViewController {
-                spread.applyPlaybackHighlight(text: currentPlaybackHighlightText)
+                spread.applyPlaybackHighlight(currentPlaybackHighlight)
                 return
             }
-            (viewController as? CoreTextPageViewController)?.setPlaybackHighlight(
-                text: currentPlaybackHighlightText
-            )
-            (viewController as? BrowserLayoutPageViewController)?.setPlaybackHighlight(
-                text: currentPlaybackHighlightText
-            )
+            (viewController as? CoreTextPageViewController)?.setPlaybackHighlight(currentPlaybackHighlight)
+            (viewController as? BrowserLayoutPageViewController)?.setPlaybackHighlight(currentPlaybackHighlight)
         }
 
         @discardableResult

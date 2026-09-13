@@ -473,7 +473,20 @@ enum TTSAudioProviderError: LocalizedError, CustomStringConvertible {
 }
 
 final class CustomHTTPProvider: TTSAudioProvider {
-    var displayName: String { "網路語音" }
+    /// The source this instance speaks with, or `nil` to follow whichever source the user
+    /// selected in settings.
+    ///
+    /// 多角色朗讀 casts characters to *different imported sources*, and each one has its own
+    /// template and headers. Reading the global selection at request time — which is all this
+    /// class used to do — meant every segment came back in the same voice no matter what the
+    /// cast said.
+    private let overrideSource: ImportedTTSSource?
+
+    init(source: ImportedTTSSource? = nil) {
+        self.overrideSource = source
+    }
+
+    var displayName: String { overrideSource?.name ?? "網路語音" }
 
     static func buildURL(template: String, text: String, title: String, rate: Float) -> URL? {
         let provider = CustomHTTPProvider()
@@ -491,14 +504,13 @@ final class CustomHTTPProvider: TTSAudioProvider {
             return try await fetchAudioData(request: request, source: nil)
         }
 
-        let template = GlobalSettings.shared.httpTtsUrlTemplate
+        let activeSource = overrideSource ?? GlobalSettings.shared.activeTTSSource
+        let template = (overrideSource?.urlTemplate ?? GlobalSettings.shared.httpTtsUrlTemplate)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        ttsLog("[TTS][Provider] template empty=\(template.isEmpty) textCount=\(text.count) title=\(title) rate=\(rate)")
+        ttsLog("[TTS][Provider] template empty=\(template.isEmpty) source=\(activeSource?.name ?? "-") textCount=\(text.count) title=\(title) rate=\(rate)")
         guard !template.isEmpty else {
             throw TTSAudioProviderError.emptyTemplate
         }
-
-        let activeSource = GlobalSettings.shared.activeTTSSource
 
         var request: URLRequest
         if isJSTemplate(template) {
@@ -517,7 +529,9 @@ final class CustomHTTPProvider: TTSAudioProvider {
             request = r
         }
 
-        for (field, value) in GlobalSettings.shared.httpTtsHeaders {
+        // From the same source as the template. Falling back to the globally selected
+        // source's headers would send one voice's credentials to another voice's endpoint.
+        for (field, value) in overrideSource?.headers ?? GlobalSettings.shared.httpTtsHeaders {
             if request.value(forHTTPHeaderField: field) == nil {
                 request.setValue(value, forHTTPHeaderField: field)
             }

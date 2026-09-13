@@ -273,7 +273,7 @@ struct ReaderSettingsView: View {
         } header: {
             Text(localized("閱讀設定備份"))
         } footer: {
-            Text(localized("匯出的檔案包含排版參數、章節標題樣式與正則高亮，可在其他裝置匯入。匯入也接受 legado 的 readConfig.json。"))
+            Text(localized("包含排版、章節標題樣式與正則高亮。匯入也接受 legado 的 readConfig.json。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
@@ -344,7 +344,7 @@ struct ReaderSettingsView: View {
             Text(
                 settings.scrollMode
                     ? localized("正文與畫面邊緣的距離。")
-                    : localized("正文與畫面邊緣的距離；上下邊距同時是頁首頁尾組件的容身空間，改動只影響正文排版，不會移動組件本身。")
+                    : localized("上下邊距同時是頁眉頁腳的容身空間，改動不會移動組件本身。")
             )
             .dsSectionFooter()
         }

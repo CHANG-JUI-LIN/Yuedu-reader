@@ -59,20 +59,32 @@ enum BookshelfCoverStyle {
     }
 
     /// Bitmap form for the open-book transition, which lifts a picture rather
-    /// than a view and so cannot take `artwork(for:)`. Rendered larger than any
-    /// card because the lifted cover grows as it animates.
+    /// than a view and so cannot take `artwork(for:)`. Keep the shelf's logical
+    /// size so thumbnail typography and ornaments do not change at handoff;
+    /// increase only pixel density for the lifted cover's expansion.
     @MainActor
-    static func snapshot(for book: ReadingBook, colorScheme: ColorScheme) -> UIImage? {
+    static func snapshot(
+        for book: ReadingBook,
+        colorScheme: ColorScheme,
+        sourceSize: CGSize? = nil
+    ) -> UIImage? {
         if let uiImage = image(for: book, colorScheme: colorScheme) { return uiImage }
         let settings = GlobalSettings.shared
+        // Opens without a visible shelf source have no thumbnail to match.
+        // Keep their existing full-cover canvas; remove this default if every
+        // opening entry point eventually supplies source geometry.
+        let layoutSize = sourceSize ?? CGSize(width: 300, height: 400)
+        // Preserve at least the previous 800-pixel long edge. An integer scale
+        // keeps pixel rounding from changing the bitmap's logical dimensions.
+        let scale = max(2, ceil(800 / max(layoutSize.width, layoutSize.height, 1)))
         return GeneratedBookCoverRenderer.image(
             title: book.title,
             author: book.author,
-            size: CGSize(width: 300, height: 400),
+            size: layoutSize,
             colorScheme: colorScheme,
             drawsName: settings.defaultCoverDrawsBookName,
             drawsAuthor: settings.defaultCoverDrawsBookAuthor,
-            scale: 2
+            scale: scale
         )
     }
 }
@@ -223,7 +235,11 @@ struct HomeView: View {
             AppLogger.info("⟐ openBook staged token=\(requestToken) hasPendingToken=\(pendingReaderOpenToken != nil)")
             // Same resolver the cards use, so the lifted card carries the very
             // image the shelf was showing (including a 預設封面).
-            let snapshot = BookshelfCoverStyle.snapshot(for: book, colorScheme: colorScheme)
+            let snapshot = BookshelfCoverStyle.snapshot(
+                for: book,
+                colorScheme: colorScheme,
+                sourceSize: sourceGeometry?.frame.size ?? readerGeometryStore.frame(for: book.id)?.size
+            )
             AppLogger.info("⟐ openBook snapshot resolved hasSnapshot=\(snapshot != nil)")
             Task { @MainActor in
                 AppLogger.info("⟐ openBook begin resolveOpeningDirection bookID=\(book.id)")

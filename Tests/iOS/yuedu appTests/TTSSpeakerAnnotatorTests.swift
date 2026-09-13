@@ -155,4 +155,41 @@ struct TTSSpeakerAnnotatorTests {
             #expect(intersection.length == 0 || intersection.length == ruby.range.length)
         }
     }
+
+    // MARK: - Manner adverbs are not characters
+
+    /// Seen in the 多角色朗讀 cast list on a real chapter: 小聲 / 低聲 / 朗聲 sat there as
+    /// characters, because `小聲道：「…」` leaves 小聲 exactly where a name would be.
+    @Test("how someone spoke is not who spoke")
+    func mannerAdverbsAreNotSpeakers() {
+        let text = """
+        他小聲道：「別吵。」
+        她低聲說：「知道了。」
+        老道朗聲笑道：「好！」
+        """
+        let speakers = Set(TTSSpeakerAnnotator.attributions(in: text).compactMap(\.speaker))
+        #expect(!speakers.contains("小聲"))
+        #expect(!speakers.contains("低聲"))
+        #expect(!speakers.contains("朗聲"))
+    }
+
+    /// `的景象` came out of the same chapter — a fragment of description, not a person.
+    @Test("a phrase that starts with a particle is not a name")
+    func leadingParticlesAreStripped() {
+        let text = "眼前的景象讓他愣住，他道：「怎麼會。」"
+        let speakers = Set(TTSSpeakerAnnotator.attributions(in: text).compactMap(\.speaker))
+        #expect(!speakers.contains("的景象"))
+    }
+
+    /// The fix must not cost real attributions.
+    @Test("ordinary names still attribute")
+    func realNamesSurvive() {
+        let text = """
+        張若塵道：「我知道了。」
+        齊源老道笑道：「不急。」
+        """
+        let speakers = Set(TTSSpeakerAnnotator.attributions(in: text).compactMap(\.speaker))
+        #expect(speakers.contains("張若塵"))
+        #expect(speakers.contains("齊源老道"))
+    }
 }

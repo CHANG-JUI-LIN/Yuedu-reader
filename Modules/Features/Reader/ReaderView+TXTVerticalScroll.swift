@@ -29,7 +29,7 @@ extension ReaderView {
                 initialChapter: initialPos.chapter,
                 initialCharOffset: initialPos.charOffset,
                 navigationRequest: scrollNavigationRequest,
-                playbackHighlightText: activePlaybackHighlightText,
+                playbackHighlight: activePlaybackHighlight,
                 textAnnotations: coreTextTextAnnotations,
                 visibleRefreshCommit: epubRenderer.pendingVisibleRefreshCommit,
                 onVisibleRefreshFinished: { transactionID, outcome in

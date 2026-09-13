@@ -430,6 +430,8 @@ enum ReaderHTMLUtilities {
         let sourceURL: String
         let actionContext: LegadoSourceActionContext?
         let sourceBrowserPage: SourceBrowserPage?
+        /// Ephemeral: credentials are resolved on tap, never serialized into chapter markers.
+        let browserRequest: URLRequest?
 
         init(
             url: String,
@@ -437,7 +439,8 @@ enum ReaderHTMLUtilities {
             sourceJS: String = "",
             sourceURL: String = "",
             actionContext: LegadoSourceActionContext? = nil,
-            sourceBrowserPage: SourceBrowserPage? = nil
+            sourceBrowserPage: SourceBrowserPage? = nil,
+            browserRequest: URLRequest? = nil
         ) {
             self.url = url
             self.title = title
@@ -445,10 +448,11 @@ enum ReaderHTMLUtilities {
             self.sourceURL = sourceURL
             self.actionContext = actionContext
             self.sourceBrowserPage = sourceBrowserPage
+            self.browserRequest = browserRequest
         }
 
-        /// True when the review page can only be obtained by running the source's own JS.
-        var requiresSourceJS: Bool { url.isEmpty && !sourceJS.isEmpty }
+        /// True when the source runtime must prepare the page, including authentication for a known URL.
+        var requiresSourceJS: Bool { !sourceJS.isEmpty }
 
         var id: String {
             if let sourceBrowserPage {
@@ -779,7 +783,7 @@ enum ReaderHTMLUtilities {
     ///   `<a href="ydreview://r?d=<base64url(JSON{c,u,t})>" class="yd-review">12</a>`
     /// Anchors and their `href` are always preserved and `href` is in the builder allowlist.
     /// Idempotent: a string with no `<comment …>` markers is returned unchanged.
-    static func rewriteReviewComments(_ html: String) -> String {
+    static func rewriteReviewComments(_ html: String, reviewContext: LegadoReviewContext? = nil) -> String {
         guard html.range(of: "<comment", options: .caseInsensitive) != nil else { return html }
         guard let tagRegex = try? NSRegularExpression(
             pattern: #"<comment\b[^>]*>"#,
@@ -799,7 +803,7 @@ enum ReaderHTMLUtilities {
             let range = match.range
             result += ns.substring(with: NSRange(location: cursor, length: range.location - cursor))
             let tag = ns.substring(with: range)
-            if let anchor = anchorMarkup(forCommentTag: tag) {
+            if let anchor = anchorMarkup(forCommentTag: tag, context: reviewContext) {
                 converted += 1
                 result += anchor
             } else {
@@ -870,7 +874,7 @@ enum ReaderHTMLUtilities {
             )
         }
 
-        return result
+        return rewriteReviewComments(result, reviewContext: reviewContext)
     }
 
     /// Replaces long base64 `data:` URI payloads with short placeholder tokens so heavy
@@ -954,14 +958,36 @@ enum ReaderHTMLUtilities {
         }
     }
 
-    private static func anchorMarkup(forCommentTag tag: String) -> String? {
+    /// Keep the owning source even when a fork emits a ready-made browser URL.
+    /// Authentication must be read on tap, not embedded in persisted chapter HTML.
+    private static func sourceBrowserTarget(
+        url: String, title: String, context: LegadoReviewContext?
+    ) -> ReviewTarget {
+        guard let context, !context.sourceURL.isEmpty,
+              let arguments = try? JSONSerialization.data(withJSONObject: [url, title]),
+              let json = String(data: arguments, encoding: .utf8) else {
+            return ReviewTarget(url: url, title: title)
+        }
+        let script = "java.startBrowser.apply(java,\(json))"
+        return ReviewTarget(
+            url: url, title: title, sourceJS: script, sourceURL: context.sourceURL,
+            actionContext: context.actionContext(script: script, result: "")
+        )
+    }
+
+    private static func anchorMarkup(forCommentTag tag: String, context: LegadoReviewContext?) -> String? {
         guard let count = firstCapture(in: tag, pattern: #"count\s*=\s*"([^"]*)""#),
               let args = showReadingBrowserArgs(in: tag)
         else { return nil }
         let url = unescapeHTMLEntities(args.url)
         let title = unescapeHTMLEntities(args.title)
         guard !url.isEmpty else { return nil }
-        guard let href = reviewHref(count: count, url: url, title: title) else { return nil }
+        let target = sourceBrowserTarget(url: url, title: title, context: context)
+        guard let href = reviewHref(
+            count: count, url: target.url, title: target.title,
+            sourceJS: target.sourceJS, sourceURL: target.sourceURL,
+            actionContext: target.actionContext
+        ) else { return nil }
         return "<a href=\"\(href)\" class=\"yd-review\">\(escapeHTML(count))</a>"
     }
 
@@ -1496,7 +1522,7 @@ enum ReaderHTMLUtilities {
             // comment-page URL. Handle URL-shaped args before the numeric Qidian signature.
             if let url = absoluteReviewURL(from: args.first) {
                 let sources = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
-                return ReviewTarget(url: url, title: sources.isEmpty ? "段評" : "\(sources)段評")
+                return sourceBrowserTarget(url: url, title: sources.isEmpty ? "段評" : "\(sources)段評", context: context)
             }
             if args.count >= 2 {
                 let authoredTitle = cleanLegadoArgument(args[1])
@@ -1510,7 +1536,7 @@ enum ReaderHTMLUtilities {
             ?? legadoFunctionArgs(named: "androidshowChapterComments", in: trimmed) {
             if let url = absoluteReviewURL(from: args.first) {
                 let sources = args.count >= 2 ? cleanLegadoArgument(args[1]) : ""
-                return ReviewTarget(url: url, title: sources.isEmpty ? "本章討論" : "\(sources)本章討論")
+                return sourceBrowserTarget(url: url, title: sources.isEmpty ? "本章討論" : "\(sources)本章討論", context: context)
             }
             sourceActionTitle = "本章討論"
         }

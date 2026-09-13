@@ -10,14 +10,22 @@ import Foundation
 enum TTSRoleVoice: Equatable, Hashable {
     case system(identifier: String)
     case edge(voiceID: String)
+    /// One of the reader's imported voice sources, by `ImportedTTSSource.id`.
+    ///
+    /// A source bakes its voice into the URL it was imported with, so one source is one
+    /// voice — and a pack of them is a cast. Voice packs ship exactly that way: a 小米 MiMo
+    /// or 阿里 TTS JSON is usually a list with one entry per speaker.
+    case bookSource(sourceID: String)
 
     private static let systemPrefix = "system:"
     private static let edgePrefix = "edge:"
+    private static let sourcePrefix = "source:"
 
     var storageValue: String {
         switch self {
         case let .system(identifier): return Self.systemPrefix + identifier
         case let .edge(voiceID): return Self.edgePrefix + voiceID
+        case let .bookSource(sourceID): return Self.sourcePrefix + sourceID
         }
     }
 
@@ -30,6 +38,10 @@ enum TTSRoleVoice: Equatable, Hashable {
             let voiceID = String(storageValue.dropFirst(Self.edgePrefix.count))
             guard !voiceID.isEmpty else { return nil }
             self = .edge(voiceID: voiceID)
+        } else if storageValue.hasPrefix(Self.sourcePrefix) {
+            let sourceID = String(storageValue.dropFirst(Self.sourcePrefix.count))
+            guard !sourceID.isEmpty else { return nil }
+            self = .bookSource(sourceID: sourceID)
         } else {
             return nil
         }
@@ -48,6 +60,15 @@ enum TTSRoleVoice: Equatable, Hashable {
         guard case let .edge(voiceID) = self else { return nil }
         return EdgeTTSVoice.voice(id: voiceID)
     }
+
+    /// The imported voice source, or `nil` when this character is cast with something else —
+    /// or with a source that has since been deleted.
+    func importedSource(
+        in sources: [ImportedTTSSource] = GlobalSettings.shared.importedTTSSources
+    ) -> ImportedTTSSource? {
+        guard case let .bookSource(sourceID) = self else { return nil }
+        return sources.first { $0.id == sourceID }
+    }
 }
 
 /// Which catalogue the next playback will draw its voices from.
@@ -57,8 +78,8 @@ enum TTSRoleVoice: Equatable, Hashable {
 enum TTSVoiceFamily: Equatable {
     case system
     case edge
-    /// A book-source template. Its voice is baked into the URL the user imported, so there
-    /// is no second voice to switch to and 多角色朗讀 cannot apply at all.
+    /// An imported voice source. One source is one voice, because the voice is baked into
+    /// the URL — but a reader with a voice pack has several, and those are a cast.
     case bookSource
 
     static func active(
@@ -71,7 +92,23 @@ enum TTSVoiceFamily: Equatable {
         return EdgeTTSVoice.isEdgeSource(template) ? .edge : .bookSource
     }
 
-    var supportsMultiRole: Bool { self != .bookSource }
+    /// Whether a cast can be assigned at all.
+    ///
+    /// The on-device and 微軟線上 catalogues always have more than one voice. An imported
+    /// source has exactly one, so multi-role needs at least two of them imported — which is
+    /// what a voice pack gives you, since those ship one entry per speaker.
+    ///
+    /// This used to be a flat `self != .bookSource`, which locked the feature away from
+    /// every reader using an imported pack even when they had a dozen voices sitting in
+    /// the list.
+    func supportsMultiRole(
+        importedSourceCount: Int = GlobalSettings.shared.importedTTSSources.count
+    ) -> Bool {
+        switch self {
+        case .system, .edge: return true
+        case .bookSource: return importedSourceCount >= 2
+        }
+    }
 }
 
 /// Stores and reads the 多角色朗讀 cast — which voice reads which character.
@@ -127,10 +164,18 @@ enum TTSRoleVoiceCast {
     /// made entirely of 微軟線上語音 is worth nothing to the on-device engine: splitting for
     /// it would produce many more utterances that all sound identical. Asking per engine,
     /// rather than just "is the cast non-empty", keeps that cost tied to an audible result.
-    static func containsSpeakableVoice(in cast: [String: String], system: Bool) -> Bool {
+    static func containsSpeakableVoice(
+        in cast: [String: String],
+        family: TTSVoiceFamily,
+        sources: [ImportedTTSSource] = GlobalSettings.shared.importedTTSSources
+    ) -> Bool {
         cast.values.contains { stored in
             guard let voice = TTSRoleVoice(storageValue: stored) else { return false }
-            return system ? voice.systemIdentifier != nil : voice.edgeVoice != nil
+            switch family {
+            case .system: return voice.systemIdentifier != nil
+            case .edge: return voice.edgeVoice != nil
+            case .bookSource: return voice.importedSource(in: sources) != nil
+            }
         }
     }
 

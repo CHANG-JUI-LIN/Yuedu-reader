@@ -246,6 +246,7 @@ enum BrowserLayoutGeometryFingerprint {
                 switch text.sourceMapping {
                 case .linear(let shapedRange): mapping = "linear:\(range(shapedRange))"
                 case .wholeRange: mapping = "whole"
+                default: mapping = String(describing: text.sourceMapping)
                 }
                 let ctRange = text.ctLine.map {
                     let value = CTLineGetStringRange($0)
@@ -295,6 +296,7 @@ enum BrowserLayoutGeometryFingerprint {
                 switch text.sourceMapping {
                 case .linear(let shapedRange): mapping = "linear:\(range(shapedRange))"
                 case .wholeRange: mapping = "whole"
+                default: mapping = String(describing: text.sourceMapping)
                 }
                 rows.append([
                     "display.text", String(pageIndex), String(index),

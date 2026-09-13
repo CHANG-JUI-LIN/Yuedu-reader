@@ -74,6 +74,40 @@ protocol AttributedStringBuilding {
         themeTextColor: UIColor,
         themeBackgroundColor: UIColor
     ) async throws -> AttributedChapterBuildResult
+
+    /// The chapter's plain text, read from the source without laying it out and without
+    /// going to the network.
+    ///
+    /// Whole-book work — the AI index, 人物卡's book scan — cannot read the laid-out text:
+    /// `LayoutCache` holds five chapters, so a reader 94% of the way through a novel was
+    /// indexing five chapters of it and finding two speakers. Returning nil means this
+    /// chapter's text is not on the device; the caller skips it rather than fetching.
+    func chapterPlainText(at index: Int) async -> String?
+}
+
+extension AttributedStringBuilding {
+    /// Default for builders with no source text of their own. The caller then sees only the
+    /// laid-out chapters, which is the old behaviour — not silently wrong, just narrow.
+    func chapterPlainText(at index: Int) async -> String? { nil }
+}
+
+/// Markup to plain text for whole-book work.
+enum ChapterPlainText {
+    /// Keeps paragraph breaks. Dialogue attribution is read one paragraph at a time, so
+    /// collapsing them the way `displayText` does by default erases every speaker.
+    static func fromHTML(_ html: String) -> String {
+        // Tag stripping alone leaves the *contents* of script and style elements behind as
+        // prose, and EPUB chapters routinely carry an inline stylesheet.
+        let stripped = html.replacingOccurrences(
+            of: #"(?is)<(script|style)\b[^>]*>.*?</\1>"#,
+            with: "",
+            options: .regularExpression
+        )
+        return ReaderHTMLUtilities.displayText(
+            fromHTMLFragment: stripped,
+            preservingLineBreaks: true
+        )
+    }
 }
 
 @MainActor

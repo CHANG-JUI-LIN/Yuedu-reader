@@ -296,12 +296,12 @@ struct BrowserLayoutPageEngineTests {
         #expect(view.accessibilityScroll(.left))
         #expect(actions == [.toggleMenu, .nextPage])
 
-        view.setPlaybackHighlight(text: "quick brown fox")
+        view.setPlaybackHighlight(ReaderPlaybackHighlight(text: "quick brown fox"))
         #expect(view.layer.sublayers?.contains {
             guard let shape = $0 as? CAShapeLayer else { return false }
             return !shape.isHidden && shape.path?.isEmpty == false
         } == true)
-        view.setPlaybackHighlight(text: nil)
+        view.setPlaybackHighlight(nil)
         #expect(view.layer.sublayers?.allSatisfy {
             guard let shape = $0 as? CAShapeLayer else { return true }
             return shape.isHidden

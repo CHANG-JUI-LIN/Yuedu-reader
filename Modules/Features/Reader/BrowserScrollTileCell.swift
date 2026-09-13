@@ -90,6 +90,7 @@ final class BrowserScrollTileCell: UICollectionViewCell {
     var onImageTap: ((DisplayImageItem) -> Void)?
     private var horizontalInset: CGFloat = 0
     private var leadingSpacing: CGFloat = 0
+    private var verticalInset: CGFloat = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -105,12 +106,13 @@ final class BrowserScrollTileCell: UICollectionViewCell {
         super.layoutSubviews()
         guard let tile = currentTile else { interactiveView.frame = .zero; return }
         interactiveView.frame = CGRect(
-            x: horizontalInset, y: leadingSpacing,
+            x: tile.chapter.writingMode.isVertical ? 0 : horizontalInset,
+            y: tile.chapter.writingMode.isVertical ? verticalInset : leadingSpacing,
             width: tile.documentRect.width, height: tile.documentRect.height
         )
     }
 
-    func configure(tile: BrowserScrollTile, horizontalInset: CGFloat, leadingSpacing: CGFloat) {
+    func configure(tile: BrowserScrollTile, horizontalInset: CGFloat, leadingSpacing: CGFloat, verticalInset: CGFloat = 0) {
         let isSameBinding = currentTile.map {
             $0.chapter === tile.chapter && $0.documentRect == tile.documentRect
                 && $0.charRange.location == tile.charRange.location
@@ -120,6 +122,7 @@ final class BrowserScrollTileCell: UICollectionViewCell {
         currentTile = tile
         self.horizontalInset = horizontalInset
         self.leadingSpacing = leadingSpacing
+        self.verticalInset = verticalInset
         if !isSameBinding {
             let chapter = tile.chapter
             let source = chapter.document.sourceText as NSString
@@ -148,27 +151,44 @@ final class BrowserScrollTileCell: UICollectionViewCell {
         interactiveView.textInteraction?.annotations = annotations
     }
 
-    func applyPlaybackHighlight(text: String?) {
-        guard let tile = currentTile,
-              let needle = text?.trimmingCharacters(in: .whitespacesAndNewlines), !needle.isEmpty else {
+    func applyPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
+        guard let highlight, let tile = currentTile else {
             interactiveView.setPlaybackHighlight(sourceRange: nil)
             return
         }
         // Search chapter coordinates so a sentence crossing a tile seam still
-        // highlights both visible pieces. Restrict matches to this tile's range.
+        // highlights both visible pieces, and keep only matches this tile can draw.
+        // Among those, the reader's expected offset decides — a chapter that says
+        // 「嗯。」 twice otherwise always washed the first one.
         let source = tile.chapter.document.sourceText as NSString
         var searchRange = NSRange(location: 0, length: source.length)
+        var best: NSRange?
+        var bestDistance = Int.max
         while searchRange.length > 0 {
-            let found = source.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive], range: searchRange)
-            guard found.location != NSNotFound else { break }
+            let found = source.range(
+                of: highlight.text,
+                options: [.caseInsensitive, .diacriticInsensitive],
+                range: searchRange
+            )
+            guard found.location != NSNotFound, found.length > 0 else { break }
             if NSIntersectionRange(found, interactiveView.pageSourceRange).length > 0 {
-                interactiveView.setPlaybackHighlight(sourceRange: found)
-                return
+                guard let expected = highlight.expectedChapterOffset else {
+                    interactiveView.setPlaybackHighlight(sourceRange: found)
+                    return
+                }
+                let distance = abs(found.location - expected)
+                if distance < bestDistance {
+                    best = found
+                    bestDistance = distance
+                } else {
+                    // Matches arrive in order, so the distance only grows from here.
+                    break
+                }
             }
             let next = NSMaxRange(found)
             searchRange = NSRange(location: next, length: source.length - next)
         }
-        interactiveView.setPlaybackHighlight(sourceRange: nil)
+        interactiveView.setPlaybackHighlight(sourceRange: best)
     }
 
     func playbackHighlightBounds(in view: UIView) -> CGRect? {

@@ -28,7 +28,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
     let initialChapter: Int
     let initialCharOffset: Int
     let navigationRequest: ReaderScrollNavigationRequest?
-    let playbackHighlightText: String?
+    let playbackHighlight: ReaderPlaybackHighlight?
     let textAnnotations: [CoreTextTextAnnotation]
     var visibleRefreshCommit: ReaderVisibleRefreshCommit?
     var onVisibleRefreshFinished: (UInt64, ReaderVisibleRefreshOutcome) -> Void = { _, _ in }
@@ -51,7 +51,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         engine.onChapterContentRequired = onChapterContentRequired
         vc.setInitialPosition(chapter: initialChapter, charOffset: initialCharOffset)
         vc.setTextAnnotations(textAnnotations)
-        vc.setPlaybackHighlight(text: playbackHighlightText)
+        vc.setPlaybackHighlight(playbackHighlight)
         vc.bottomMargin = bottomMargin
         // Before the view loads, so `viewDidLoad` builds the collection view's
         // constraints already inset — no first-frame flash of full-bleed text
@@ -68,7 +68,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         collectionVC.onInternalLinkTap = onInternalLinkTap
         engine.onChapterContentRequired = onChapterContentRequired
         collectionVC.setTextAnnotations(textAnnotations)
-        collectionVC.setPlaybackHighlight(text: playbackHighlightText)
+        collectionVC.setPlaybackHighlight(playbackHighlight)
         collectionVC.update(
             axis: axis,
             horizontal: horizontalInset,

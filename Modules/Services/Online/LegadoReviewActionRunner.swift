@@ -46,6 +46,16 @@ actor LegadoReviewActionRunner {
             throw ResolveError.sourceUnavailable
         }
 
+        return try await resolve(target, source: source)
+    }
+
+    /// Source-explicit entry point also keeps isolated fixtures out of the user's source store.
+    func resolve(
+        _ target: ReaderHTMLUtilities.ReviewTarget,
+        source: BookSource
+    ) async throws -> ReaderHTMLUtilities.ReviewTarget {
+        guard target.requiresSourceJS else { return target }
+        guard target.sourceURL == source.bookSourceUrl else { throw ResolveError.sourceUnavailable }
         let js = target.sourceJS
         let captured = await Task.detached(priority: .userInitiated) { () -> BrowserRequestSink.Value? in
             let session = BookSourceSession.session(for: source)
@@ -72,12 +82,16 @@ actor LegadoReviewActionRunner {
             if let actionContext = target.actionContext {
                 _ = bridge.evaluateSourceAction(actionContext)
             } else {
-                // Compatibility for v1 normalized chapters. Render artifact v3
+                // Compatibility for v1 normalized chapters. Render artifact v4
                 // invalidates these on the normal reader path; keep this only for
                 // an already-open page during an in-place app update.
                 _ = bridge.evaluateSourceScript(js)
             }
-            return sink.first
+            guard var captured = sink.first else { return nil }
+            if captured.page == nil {
+                captured.request = bridge.sourceBrowserRequest(urlString: captured.url)
+            }
+            return captured
         }.value
 
         guard let captured else {
@@ -97,7 +111,9 @@ actor LegadoReviewActionRunner {
         return ReaderHTMLUtilities.ReviewTarget(
             url: captured.url,
             title: captured.title.isEmpty ? target.title : captured.title,
-            sourceBrowserPage: captured.page
+            sourceURL: source.bookSourceUrl,
+            sourceBrowserPage: captured.page,
+            browserRequest: captured.request
         )
     }
 
@@ -134,6 +150,7 @@ private final class BrowserRequestSink: @unchecked Sendable {
         let url: String
         let title: String
         let page: ReaderHTMLUtilities.ReviewTarget.SourceBrowserPage?
+        var request: URLRequest? = nil
     }
 
     private let lock = NSLock()

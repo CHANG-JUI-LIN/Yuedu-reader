@@ -181,6 +181,10 @@ struct ReaderView: View {
     @StateObject var epubRenderer = EPUBPageRenderer()
 
     @State var showTTSPanel = false
+    @State var showAIAssistantPanel = false
+    /// Whole-book text for the AI features, gathered from the source rather than the layout
+    /// cache. Filled by `gatherAIBookText()` when an AI surface opens. See `aiBookAdapter()`.
+    @State var aiChapterTexts: [Int: String] = [:]
     @State var showDownloadOptions = false
     @State var showOnlineBookDetail = false
     @State var onlineBookDetailSnapshot: OnlineBook?
@@ -199,6 +203,15 @@ struct ReaderView: View {
     /// footer pill in `ReaderView+Footer` is what opens them.
     @State var showAutoReadPanel = false
     @State var ttsChapterIndex: Int? = nil
+    /// Maps the narration handed to the engine back to `ttsChapterIndex`'s laid-out text,
+    /// so the playback wash can be positioned instead of searched for. Only the reader
+    /// knows how the unit was sliced out of the chapter, which is why the engine reports
+    /// narration offsets and this side finishes the conversion.
+    ///
+    /// `nil` when the narration did not come from a CoreText layout — the joined page text
+    /// and the raw chapter content have no shared coordinate space with what is on screen,
+    /// and highlighting falls back to searching there.
+    @State var ttsNarrationOffsets: TTSNarrationOffsetMap? = nil
     /// Chapter the narration is blocked on at a chapter boundary, while the engine holds the
     /// audio session open. Non-nil only between `beginWaitingForTTSChapter` and its resolution.
     @State var ttsPendingChapterIndex: Int? = nil
@@ -1327,11 +1340,30 @@ struct ReaderView: View {
         return allPages[min(currentPage, allPages.count - 1)].content
     }
 
-    var activePlaybackHighlightText: String? {
+    /// The words to wash, plus where the reader expects to find them.
+    ///
+    /// Media overlays carry no narration mapping — their text comes from the SMIL clip, not
+    /// from a narration unit — so they supply the words alone and the render paths search
+    /// for them exactly as they always have.
+    var activePlaybackHighlight: ReaderPlaybackHighlight? {
         if mediaOverlayCoordinator.playbackState != .stopped {
-            return currentMediaOverlayHighlightText()
+            return ReaderPlaybackHighlight(text: currentMediaOverlayHighlightText())
         }
-        return ttsCoordinator.playbackState == .stopped ? nil : ttsCoordinator.currentSegmentText
+        guard ttsCoordinator.playbackState != .stopped else { return nil }
+        return ReaderPlaybackHighlight(
+            text: ttsCoordinator.currentSegmentText,
+            expectedChapterOffset: expectedPlaybackChapterOffset(),
+            chapterIndex: ttsChapterIndex
+        )
+    }
+
+    /// Chapter offset of the segment now being spoken, or `nil` when the narration unit
+    /// carried no mapping back to the laid-out chapter.
+    private func expectedPlaybackChapterOffset() -> Int? {
+        guard let offsets = ttsNarrationOffsets,
+              let narrationRange = ttsCoordinator.currentSegmentNarrationRange
+        else { return nil }
+        return offsets.sourceOffset(forNarrationOffset: narrationRange.location)
     }
 
     var activeTTSChapterTitle: String {
@@ -1500,7 +1532,7 @@ struct ReaderView: View {
                     engine: flEngine,
                     pageTurnStyle: effectivePageTurnStyle,
                     theme: readerTheme,
-                    playbackHighlightText: nil,
+                    playbackHighlight: nil,
                     isRTL: epubRenderer.pageProgressionDirection == .rtl,
                     isDoublePageSpread: isDoublePageSpreadActive,
                     spreadGutter: DSLayout.readerSpreadGutter,
@@ -1547,7 +1579,7 @@ struct ReaderView: View {
                     engine: ctEngine,
                     pageTurnStyle: effectivePageTurnStyle,
                     theme: readerTheme,
-                    playbackHighlightText: activePlaybackHighlightText,
+                    playbackHighlight: activePlaybackHighlight,
                     // RTL page-turn flow applies to both vertical-rl CJK and
                     // horizontal RTL bidi scripts (Hebrew, Arabic, …).
                     isRTL: epubRenderer.pageProgressionDirection == .rtl || effectiveWritingMode.isVertical,
@@ -1882,6 +1914,7 @@ struct ReaderView: View {
             }
             ttsCoordinator.onStop = {
                 ttsChapterIndex = nil
+                ttsNarrationOffsets = nil
                 ttsPendingChapterIndex = nil
                 ttsPlaybackAnchor = nil
                 showTTSJumpPrompt = false
@@ -2344,6 +2377,23 @@ struct ReaderView: View {
         } message: { _ in
             Text(localized("標註可以保留下來，或是連同筆記一起刪除。"))
         }
+        .sheet(isPresented: $showAIAssistantPanel) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                AIAssistantPanelView(
+                    bookID: bookId,
+                    bookTitle: book?.title ?? currentChapterTitle,
+                    adapter: aiBookAdapter(),
+                    progress: aiReadingProgress(),
+                    onOpenCitation: { citation in
+                        showAIAssistantPanel = false
+                        // `(spineIndex, charOffset)` all the way from the chunk, so a
+                        // citation lands on the sentence rather than the chapter's top.
+                        jumpToChapter(citation.spineIndex, charOffset: citation.charOffset)
+                    }
+                )
+                .task { await gatherAIBookText() }
+            }
+        }
         .sheet(isPresented: $showTTSPanel) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 TTSPanelView(
@@ -2357,8 +2407,11 @@ struct ReaderView: View {
                     onNextChapter: { startAdjacentTTSChapter(delta: 1) },
                     onSelectChapter: { startTTSChapter($0, syncReader: true) },
                     bookID: bookId,
-                    detectedSpeakers: detectedTTSSpeakers()
+                    detectedSpeakers: detectedTTSSpeakers(),
+                    aiAdapter: aiBookAdapter(),
+                    aiProgress: aiReadingProgress()
                 )
+                .task { await gatherAIBookText() }
             }
         }
         )

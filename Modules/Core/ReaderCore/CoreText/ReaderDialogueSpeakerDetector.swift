@@ -23,6 +23,19 @@ enum ReaderDialogueSpeakerDetector {
         "低", "高", "笑", "怒", "哼", "一", "再", "接", "著", "着", "續", "续",
     ]
 
+    /// Particles that lead a manner phrase rather than a name — `的景象` is what the
+    /// scene looked like, not who spoke.
+    private static let leadingParticles: Set<Character> = ["的", "地", "得", "著", "着", "了"]
+
+    /// A candidate ending in one of these is *how* someone spoke, not *who*: 小聲道,
+    /// 低聲說, 朗聲笑 all left 小聲 / 低聲 / 朗聲 standing where a name should be, and the
+    /// 多角色朗讀 cast list filled up with them.
+    ///
+    /// A name genuinely ending in 聲 exists (雷聲 as a nickname) but is far rarer than the
+    /// adverb, and the cost is asymmetric: a missed attribution reads in the narrator's
+    /// voice, while a bogus one puts a manner adverb in the cast.
+    private static let mannerSuffixes: Set<Character> = ["聲", "声", "氣", "气", "音"]
+
     /// Words a name never contains; they mark the candidate as a clause.
     private static let functionWords: Set<Character> = [
         "沒", "没", "無", "无", "不", "這", "这", "那", "誰", "谁", "們", "们",
@@ -152,9 +165,15 @@ enum ReaderDialogueSpeakerDetector {
     /// A real attribution names someone in a few characters. Anything longer is
     /// a clause that happens to contain a speech verb — `屋裡沒有人回答`.
     private static func validated(_ name: String) -> String? {
-        guard !name.isEmpty, name.count <= maximumNameLength else { return nil }
-        guard !name.contains(where: { functionWords.contains($0) }) else { return nil }
-        return name
+        var characters = Array(name)
+        // Leading particles belong to the phrase, not the name.
+        while let first = characters.first, leadingParticles.contains(first) {
+            characters.removeFirst()
+        }
+        guard !characters.isEmpty, characters.count <= maximumNameLength else { return nil }
+        guard let last = characters.last, !mannerSuffixes.contains(last) else { return nil }
+        guard !characters.contains(where: { functionWords.contains($0) }) else { return nil }
+        return String(characters)
     }
 
     private static func isNameCharacter(_ character: Character) -> Bool {

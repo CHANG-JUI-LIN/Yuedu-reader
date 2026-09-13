@@ -1608,6 +1608,15 @@ class GlobalSettings: ObservableObject {
     @Published var ttsRoleVoices: [String: String] {
         didSet { UserDefaults.standard.set(ttsRoleVoices, forKey: Self.ttsRoleVoicesKey) }
     }
+
+    /// Whether the AI assistant is limited to what the reader has already read.
+    ///
+    /// On by default, off by choice. A reader who has just opened a book has almost no
+    /// progress, so the limit answers every question with "nothing in range" — correct and
+    /// useless. The toggle sits next to the question box because it is a per-question call.
+    @Published var aiSpoilerSafe: Bool {
+        didSet { UserDefaults.standard.set(aiSpoilerSafe, forKey: "yd_ai_spoiler_safe") }
+    }
     @Published var sourceDisclaimerAccepted: Bool {
         didSet { UserDefaults.standard.set(sourceDisclaimerAccepted, forKey: "yd_source_disclaimer_accepted") }
     }
@@ -2087,6 +2096,7 @@ class GlobalSettings: ObservableObject {
         ttsRoleVoices =
             (UserDefaults.standard.dictionary(forKey: Self.ttsRoleVoicesKey)
                 as? [String: String]) ?? [:]
+        aiSpoilerSafe = (UserDefaults.standard.object(forKey: "yd_ai_spoiler_safe") as? Bool) ?? true
         sourceDisclaimerAccepted = UserDefaults.standard.bool(forKey: "yd_source_disclaimer_accepted")
         bookSourceListGrouped =
             (UserDefaults.standard.object(forKey: "yd_booksource_list_grouped") as? Bool) ?? true

@@ -294,6 +294,16 @@ final class TTSCoordinator: ObservableObject {
             systemEngine.roleVoices = roleVoices
         }
     }
+
+    /// alias → canonical character name, from the book's AI character cards. Pushed to both
+    /// engines for the same reason as the cast above.
+    var roleAliases: [String: String] = [:] {
+        didSet {
+            guard roleAliases != oldValue else { return }
+            httpEngine.roleAliases = roleAliases
+            systemEngine.roleAliases = roleAliases
+        }
+    }
     private static weak var activeSystemMediaCoordinator: TTSCoordinator?
 
     /// Use the HTTP audio player for direct chapter audio and configured HTTP TTS sources.

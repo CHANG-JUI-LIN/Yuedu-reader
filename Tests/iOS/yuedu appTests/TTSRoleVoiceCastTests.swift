@@ -152,12 +152,62 @@ struct TTSRoleVoiceCastTests {
     func speakableGateIsPerEngine() {
         let systemOnly = ["張三": TTSRoleVoice.system(identifier: "com.apple.x").storageValue]
         let edgeOnly = ["張三": TTSRoleVoice.edge(voiceID: EdgeTTSVoice.defaultVoice.id).storageValue]
+        let sourceOnly = ["張三": TTSRoleVoice.bookSource(sourceID: "mimo-a").storageValue]
+        let sources = [Self.makeSource(id: "mimo-a"), Self.makeSource(id: "mimo-b")]
 
-        #expect(TTSRoleVoiceCast.containsSpeakableVoice(in: systemOnly, system: true))
-        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: systemOnly, system: false))
-        #expect(TTSRoleVoiceCast.containsSpeakableVoice(in: edgeOnly, system: false))
-        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: edgeOnly, system: true))
-        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: [:], system: true))
-        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: ["張三": "garbage"], system: true))
+        #expect(TTSRoleVoiceCast.containsSpeakableVoice(in: systemOnly, family: .system, sources: sources))
+        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: systemOnly, family: .edge, sources: sources))
+        #expect(TTSRoleVoiceCast.containsSpeakableVoice(in: edgeOnly, family: .edge, sources: sources))
+        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: edgeOnly, family: .system, sources: sources))
+        #expect(TTSRoleVoiceCast.containsSpeakableVoice(in: sourceOnly, family: .bookSource, sources: sources))
+        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: sourceOnly, family: .system, sources: sources))
+        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: [:], family: .system, sources: sources))
+        #expect(!TTSRoleVoiceCast.containsSpeakableVoice(in: ["張三": "garbage"], family: .system, sources: sources))
+    }
+
+    // MARK: - Imported voice sources
+
+    /// The bug this fixes: a reader listening through an imported 小米 MiMo pack had the
+    /// 多角色朗讀 toggle greyed out, because the whole family was written off as
+    /// "one voice baked into a URL". One *source* is one voice — a pack is a cast.
+    @Test("multi-role turns on once a second voice source is imported")
+    func importedSourcesEnableMultiRole() {
+        #expect(TTSVoiceFamily.bookSource.supportsMultiRole(importedSourceCount: 2))
+        #expect(TTSVoiceFamily.bookSource.supportsMultiRole(importedSourceCount: 9))
+        // One source really is one voice; there is nothing to switch between.
+        #expect(!TTSVoiceFamily.bookSource.supportsMultiRole(importedSourceCount: 1))
+        #expect(!TTSVoiceFamily.bookSource.supportsMultiRole(importedSourceCount: 0))
+        // The on-device and 微軟 catalogues always have more than one.
+        #expect(TTSVoiceFamily.system.supportsMultiRole(importedSourceCount: 0))
+        #expect(TTSVoiceFamily.edge.supportsMultiRole(importedSourceCount: 0))
+    }
+
+    @Test("a source voice survives a storage round trip and resolves to its source")
+    func sourceVoiceRoundTrips() {
+        let voice = TTSRoleVoice.bookSource(sourceID: "mimo-a")
+        #expect(TTSRoleVoice(storageValue: voice.storageValue) == voice)
+        #expect(TTSRoleVoice(storageValue: "source:") == nil)
+        let sources = [Self.makeSource(id: "mimo-a"), Self.makeSource(id: "mimo-b")]
+        #expect(voice.importedSource(in: sources)?.id == "mimo-a")
+        // Deleting a source must not resolve to a different one.
+        #expect(voice.importedSource(in: [Self.makeSource(id: "mimo-b")]) == nil)
+        #expect(voice.systemIdentifier == nil)
+        #expect(voice.edgeVoice == nil)
+    }
+
+    /// Each engine sees only what it can speak, now in three directions rather than two.
+    @Test("an imported-source cast means nothing to the other two engines")
+    func sourceVoiceIsEngineSpecific() {
+        let sources = [Self.makeSource(id: "mimo-a")]
+        #expect(TTSRoleVoice.system(identifier: "x").importedSource(in: sources) == nil)
+        #expect(TTSRoleVoice.edge(voiceID: EdgeTTSVoice.defaultVoice.id).importedSource(in: sources) == nil)
+    }
+
+    private static func makeSource(id: String) -> ImportedTTSSource {
+        ImportedTTSSource(
+            name: id,
+            urlTemplate: "https://example.com/tts?text={{speakText}}&voice=\(id)",
+            sourceID: id
+        )
     }
 }

@@ -374,7 +374,7 @@ final class ICloudSyncManager: ObservableObject {
             // 5. Bookshelf (bound store). Progress lives in each book's
             //    lastOpenedDate, so newest-wins handles reading-progress merges too.
             if let store = boundBookStore {
-                let localBooks = await MainActor.run { store.books }
+                let (localBooks, bookMutationRevision) = await MainActor.run { (store.books, store.mutationRevision) }
                 let bookMerge = try await mergeType(
                     recordName: "books_meta",
                     shadowKey: Self.shadowBooks,
@@ -387,7 +387,7 @@ final class ICloudSyncManager: ObservableObject {
                 if bookMerge.shouldApplyLocally {
                     await MainActor.run {
                         SourcePerfTrace.span("sync.apply.books", "count=\(bookMerge.values.count)") {
-                            store.replaceBooksFromSync(bookMerge.values)
+                            store.replaceBooksFromSync(bookMerge.values, expectedMutationRevision: bookMutationRevision)
                         }
                     }
                 }

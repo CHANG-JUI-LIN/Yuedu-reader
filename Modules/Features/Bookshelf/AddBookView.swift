@@ -53,781 +53,96 @@ struct FileImportTab: View {
     @EnvironmentObject var store: BookStore
     var onDismiss: () -> Void
     @State private var showFilePicker = false
-    @State private var titleInput = ""
-    @State private var authorInput = ""
-    @State private var pendingContent: String? = nil
-    @State private var errorMsg: String? = nil
+    @State private var importTask: Task<Void, Never>?
     @State private var isLoading = false
-    @State private var parseTask: Task<Void, Never>? = nil
-    @State private var importTask: Task<Void, Never>? = nil
-    @State private var activeSessionID = UUID()
-    @ObservedObject private var gs = GlobalSettings.shared
-
-    // Stores the EPUB temporary file URL for the "Add to Shelf" button
-    @State private var pendingEpubURL: URL? = nil
-    @State private var pendingMarkdownURL: URL? = nil
-    @State private var pendingMangaURL: URL? = nil
-    @State private var pendingMangaPageCount: Int = 0
-    @State private var pendingPDFURL: URL? = nil
-    @State private var pendingPDFPageCount: Int = 0
-    @State private var pendingAudiobookURL: URL? = nil
-    @State private var pendingAudiobookChapterCount: Int = 0
-    @State private var pendingAudiobookTotalDuration: Double? = nil
-
-    private func importTrace(_ message: String) {
-        let line = "[ImportTrace][AddBookView] \(message)"
-        print(line)
-        NSLog("%@", line)
-    }
+    @State private var currentFile = ""
+    @State private var completedCount = 0
+    @State private var totalCount = 0
+    @State private var errorMsg: String?
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: DSSpacing.xl) {
                 HintCard(
                     icon: "doc.text", title: localized("支援格式：TXT / Markdown / JSON / EPUB / PDF / CBZ / ZIP / 音訊"),
                     detail: localized("支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、PDF（.pdf）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。"))
 
-                if let content = pendingContent {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(localized("確認書籍資訊")).font(DSFont.headline)
-                        TextField(localized("書名"), text: $titleInput)
-                            .padding(12)
-                            .background(Color.secondary.opacity(0.15))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                        if !authorInput.isEmpty {
-                            TextField(localized("作者"), text: $authorInput)
-                                .padding(12)
-                                .background(Color.secondary.opacity(0.15))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-
-                        // Determine whether to show text-document or structured-format confirmation
-                        if pendingAudiobookURL != nil {
-                            Text(String(format: localized("已解析有聲書，共 %d 章"), pendingAudiobookChapterCount))
-                                .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-                            if let duration = pendingAudiobookTotalDuration {
-                                Text(localized("總時長") + " " + formatDuration(duration))
-                                    .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-                            }
-                        } else if pendingMangaURL != nil {
-                            Text(String(format: localized("已解析漫畫，共 %d 頁"), pendingMangaPageCount))
-                                .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-                        } else if pendingPDFURL != nil {
-                            Text(String(format: localized("已解析 PDF，共 %d 頁"), pendingPDFPageCount))
-                                .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-                        } else if pendingEpubURL != nil {
-                            Text(localized("已解析 EPUB 結構，點擊下方按鈕匯入"))
-                                .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-                        } else {
-                            Text(localized("已讀取") + " \(content.count) " + localized("字"))
-                                .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-
-                            let summaryBase = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !summaryBase.isEmpty {
-                                let preview = String(summaryBase.prefix(280))
-                                let suffix = summaryBase.count > 280 ? "…" : ""
-                                Text(preview + suffix)
-                                    .font(DSFont.caption)
-                                    .foregroundColor(DSColor.textSecondary)
-                                    .lineLimit(4)
-                            }
-                        }
-
-                        Button {
-                            let t = titleInput.trimmingCharacters(in: .whitespaces)
-                            let a =
-                                authorInput.trimmingCharacters(in: .whitespaces).isEmpty
-                                ? localized("未知作者") : authorInput
-
-                            isLoading = true
-                            errorMsg = nil
-                            cancelOngoingTasks()
-                            let sessionID = nextSessionID()
-                            let epubURLForImport = pendingEpubURL
-                            let markdownURLForImport = pendingMarkdownURL
-                            let mangaURLForImport = pendingMangaURL
-                            let pdfURLForImport = pendingPDFURL
-                            let audiobookURLForImport = pendingAudiobookURL
-                            let startUptime = ProcessInfo.processInfo.systemUptime
-
-                            // Determine whether to import as EPUB, Markdown, manga, audiobook, or TXT
-                            importTask = Task {
-                                do {
-                                    await MainActor.run {
-                                        let mode: String
-                                        if audiobookURLForImport != nil {
-                                            mode = "audiobook"
-                                        } else if mangaURLForImport != nil {
-                                            mode = "manga"
-                                        } else if pdfURLForImport != nil {
-                                            mode = "pdf"
-                                        } else if epubURLForImport != nil {
-                                            mode = "epub"
-                                        } else if markdownURLForImport != nil {
-                                            mode = "markdown"
-                                        } else {
-                                            mode = "text"
-                                        }
-                                        importTrace(
-                                            "confirmImport begin session=\(sessionID) mode=\(mode) title=\(t)"
-                                        )
-                                    }
-                                    if let audiobookURL = audiobookURLForImport {
-                                        try Task.checkCancellation()
-                                        _ = try await store.importLocalAudiobook(url: audiobookURL, title: t, author: a)
-                                        try Task.checkCancellation()
-                                        Self.removeStagedFile(at: audiobookURL)
-                                    } else if let mangaURL = mangaURLForImport {
-                                        try Task.checkCancellation()
-                                        _ = try await store.importLocalManga(url: mangaURL, title: t, author: a)
-                                        try Task.checkCancellation()
-                                        Self.removeStagedFile(at: mangaURL)
-                                    } else if let pdfURL = pdfURLForImport {
-                                        try Task.checkCancellation()
-                                        _ = try await LocalBookImportService.importBook(at: pdfURL, title: t, author: a, store: store)
-                                        try Task.checkCancellation()
-                                        Self.removeStagedFile(at: pdfURL)
-                                    } else if let epubURL = epubURLForImport {
-                                        try Task.checkCancellation()
-                                        _ = try await LocalBookImportService.importBook(at: epubURL, title: t, author: a, store: store)
-                                        try Task.checkCancellation()
-                                        Self.removeStagedFile(at: epubURL)
-                                    } else if let markdownURL = markdownURLForImport {
-                                        try Task.checkCancellation()
-                                        _ = try await LocalBookImportService.importBook(at: markdownURL, title: t, author: a, store: store)
-                                    } else {
-                                        try Task.checkCancellation()
-                                        _ = try store.importWeb(
-                                            content: content, title: t, author: a, sourceURL: "local"
-                                        )
-                                    }
-
-                                    await MainActor.run {
-                                        guard AddBookImportGuard.shouldApplyResult(
-                                            activeSessionID: activeSessionID,
-                                            resultSessionID: sessionID,
-                                            isCancelled: Task.isCancelled
-                                        ) else { return }
-                                        importTrace(
-                                            "confirmImport success session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000))"
-                                        )
-                                        isLoading = false
-                                        onDismiss()
-                                    }
-                                } catch is CancellationError {
-                                    await MainActor.run {
-                                        guard activeSessionID == sessionID else { return }
-                                        importTrace("confirmImport cancelled session=\(sessionID)")
-                                        isLoading = false
-                                    }
-                                } catch {
-                                    await MainActor.run {
-                                        guard AddBookImportGuard.shouldApplyResult(
-                                            activeSessionID: activeSessionID,
-                                            resultSessionID: sessionID,
-                                            isCancelled: Task.isCancelled
-                                        ) else { return }
-                                        importTrace(
-                                            "confirmImport failed session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) error=\(error.localizedDescription)"
-                                        )
-                                        isLoading = false
-                                        errorMsg = localized("匯入失敗：") + error.localizedDescription
-                                    }
-                                }
-                            }
-                        } label: {
-                            Label(localized("加入書架"), systemImage: "books.vertical")
-                                .frame(maxWidth: .infinity).padding()
-                                .background(DSColor.accent).foregroundColor(.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                        .disabled(titleInput.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
+                Button {
+                    showFilePicker = true
+                } label: {
+                    VStack(spacing: DSSpacing.md) {
+                        Image(systemName: "folder.badge.plus")
+                            .font(DSFont.fixed(size: 44)).foregroundColor(DSColor.accent)
+                            .accessibilityHidden(true)
+                        Text(localized("點擊選取 TXT / EPUB / PDF / 漫畫 / 音訊文件"))
+                            .font(DSFont.headline).foregroundColor(DSColor.accent)
+                        Text(localized("從文件 App、iCloud、本機儲存等選取"))
+                            .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                     }
-                    .padding()
-                    .interfaceCardSurface(fill: Color(UIColor.systemBackground))
+                    .frame(maxWidth: .infinity).padding(DSSpacing.xxl)
+                    .background(DSColor.accentLight)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
-                } else {
-                    Button {
-                        showFilePicker = true
-                    } label: {
-                        VStack(spacing: 12) {
-                            Image(systemName: "folder.badge.plus")
-                                .font(DSFont.fixed(size: 44)).foregroundColor(DSColor.accent)
-                            Text(localized("點擊選取 TXT / EPUB / PDF / 漫畫 / 音訊文件"))
-                                .font(DSFont.headline).foregroundColor(DSColor.accent)
-                            Text(localized("從文件 App、iCloud、本機儲存等選取"))
-                                .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity).padding(32)
-                        .background(DSColor.accentLight)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .strokeBorder(
-                                    DSColor.accent.opacity(0.4),
-                                    style: StrokeStyle(lineWidth: 1.5, dash: [6])))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isLoading)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .strokeBorder(
+                                DSColor.accent.opacity(0.4),
+                                style: StrokeStyle(lineWidth: 1.5, dash: [6])))
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint(localized("選取多本書籍"))
+                .disabled(isLoading)
 
                 if isLoading {
-                    VStack(spacing: 8) {
-                        ProgressView()
-                        Text(localized("讀取中...")).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
+                    ProgressView(value: Double(completedCount), total: Double(max(1, totalCount))) {
+                        Text(currentFile).font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                     }
+                    .accessibilityValue("\(completedCount) / \(totalCount)")
                 }
-                if let err = errorMsg {
-                    Text(err).font(DSFont.caption).foregroundColor(.red).padding()
+                if let errorMsg {
+                    Text(localized("匯入失敗：") + errorMsg)
+                        .font(DSFont.caption).foregroundColor(DSColor.destructive).padding()
                 }
             }
             .padding()
         }
-        .fileImporter(
-            isPresented: $showFilePicker,
-            allowedContentTypes: [
-                UTType.plainText,
-                UTType(filenameExtension: "md") ?? .plainText,
-                UTType(filenameExtension: "markdown") ?? .plainText,
-                .json,
-                UTType.epub,
-                UTType.pdf,
-                UTType(filenameExtension: "cbz") ?? .data,
-                UTType(filenameExtension: "zip") ?? .data,
-                UTType.audio,
-                UTType.mpeg4Audio,
-                UTType(filenameExtension: "mp3") ?? .audio,
-                UTType(filenameExtension: "m4b") ?? .audio,
-                UTType(filenameExtension: "aac") ?? .audio,
-                UTType(filenameExtension: "flac") ?? .audio,
-                UTType(filenameExtension: "wav") ?? .audio,
-            ]
-        ) { result in
+        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [
+            .plainText, UTType(filenameExtension: "md") ?? .plainText,
+            UTType(filenameExtension: "markdown") ?? .plainText, .json, .epub, .pdf,
+            UTType(filenameExtension: "cbz") ?? .data, .zip, .audio,
+            .mpeg4Audio, UTType(filenameExtension: "m4b") ?? .audio,
+            UTType(filenameExtension: "flac") ?? .audio
+        ], allowsMultipleSelection: true) { result in
             switch result {
-            case .success(let url):
-                cancelOngoingTasks()
-                cleanupPendingEpubTempFile()
-                cleanupPendingMarkdownTempFile()
-                cleanupPendingMangaTempFile()
-                cleanupPendingPDFTempFile()
-                cleanupPendingAudiobookTempFile()
-                let sessionID = nextSessionID()
+            case .success(let urls):
+                guard !urls.isEmpty else { return }
                 isLoading = true
                 errorMsg = nil
-                pendingEpubURL = nil
-                pendingMarkdownURL = nil
-                pendingMangaURL = nil
-                pendingMangaPageCount = 0
-                pendingPDFURL = nil
-                pendingPDFPageCount = 0
-                pendingAudiobookURL = nil
-                pendingAudiobookChapterCount = 0
-                pendingAudiobookTotalDuration = nil
-                let ext = url.pathExtension.lowercased()
-                let sizeBytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                importTrace(
-                    "picker success session=\(sessionID) ext=\(ext) sizeBytes=\(sizeBytes) path=\(url.lastPathComponent)"
-                )
-                if ext == "epub" {
-                    importEPUB(url: url, sessionID: sessionID)
-                } else if LocalPDFArchive.supports(url) {
-                    importPDF(url: url, sessionID: sessionID)
-                } else if ext == "txt" {
-                    importTXTImmediately(url: url, sessionID: sessionID)
-                } else if ext == "zip" {
-                    importZip(url: url, sessionID: sessionID)
-                } else if LocalAudiobookArchive.supports(url) {
-                    importAudiobook(url: url, sessionID: sessionID)
-                } else if LocalMangaArchive.supports(url) {
-                    importManga(url: url, sessionID: sessionID)
-                } else {
-                    prepareTextDocument(url: url, sessionID: sessionID)
-                }
-            case .failure(let err):
-                importTrace("picker failure error=\(err.localizedDescription)")
-                isLoading = false
-                errorMsg = localized("選取失敗：") + "\(err.localizedDescription)"
-            }
-        }
-        .onDisappear {
-            cancelOngoingTasks()
-            cleanupPendingEpubTempFile()
-            cleanupPendingMarkdownTempFile()
-            cleanupPendingMangaTempFile()
-            cleanupPendingPDFTempFile()
-            cleanupPendingAudiobookTempFile()
-            resetTransientState()
-            activeSessionID = UUID()
-        }
-    }
-
-    // MARK: - Immediate TXT Import
-    private func importTXTImmediately(url: URL, sessionID: UUID) {
-        parseTask = Task(priority: .userInitiated) {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            importTrace("importTXT begin session=\(sessionID) file=\(url.lastPathComponent)")
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-
-            do {
-                _ = try await LocalBookImportService.importBook(at: url, store: store)
-                try Task.checkCancellation()
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else { return }
-                importTrace(
-                    "importTXT success session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000))"
-                )
-                isLoading = false
-                onDismiss()
-            } catch is CancellationError {
-                guard activeSessionID == sessionID else { return }
-                importTrace("importTXT cancelled session=\(sessionID)")
-                isLoading = false
-            } catch {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else { return }
-                AppLogger.error("TXT import failed", error: error)
-                importTrace(
-                    "importTXT failed session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1_000)) error=\(error.localizedDescription)"
-                )
-                isLoading = false
-                errorMsg = localized("匯入失敗：") + error.localizedDescription
-            }
-        }
-    }
-
-    // MARK: - Markdown / JSON Preparation
-    private func prepareTextDocument(url: URL, sessionID: UUID) {
-        parseTask = Task(priority: .userInitiated) {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            await MainActor.run {
-                importTrace("prepareTextDocument begin session=\(sessionID) file=\(url.lastPathComponent)")
-            }
-            let ok = url.startAccessingSecurityScopedResource()
-            defer { if ok { url.stopAccessingSecurityScopedResource() } }
-            let ext = url.pathExtension.lowercased()
-            let isMarkdownFile = ext == "md" || ext == "markdown"
-            let parsed = try? await BookParserRegistry.parse(url: url)
-            let text = parsed?.storageText
-            let name = url.deletingPathExtension().lastPathComponent
-            let markdownTempURL: URL?
-            if isMarkdownFile, text != nil {
-                do {
-                    markdownTempURL = try Self.stagedCopy(of: url)
-                } catch {
-                    markdownTempURL = nil
-                    await MainActor.run {
-                        importTrace(
-                            "prepareTextDocument markdownCopyFailed session=\(sessionID) error=\(error.localizedDescription)"
-                        )
+                completedCount = 0
+                totalCount = urls.count
+                importTask = Task { @MainActor in
+                    defer { isLoading = false }
+                    do {
+                        let imported = try await LocalBookImportService.importBooks(at: urls, store: store) { index, filename in
+                            completedCount = index
+                            currentFile = filename
+                        }
+                        completedCount = urls.count
+                        if imported.failures.isEmpty { onDismiss() }
+                        else { errorMsg = imported.failures.joined(separator: "\n") }
+                    } catch is CancellationError {
+                        // Completed imports remain on the shelf; no staged files
+                        // or uncommitted confirmation state outlive this view.
+                    } catch {
+                        errorMsg = error.localizedDescription
                     }
                 }
-            } else {
-                markdownTempURL = nil
-            }
-            if Task.isCancelled { return }
-            await MainActor.run {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else { return }
-                isLoading = false
-                importTrace(
-                    "prepareTextDocument parsed session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) textChars=\(text?.count ?? 0)"
-                )
-                if let t = text {
-                    if isMarkdownFile, markdownTempURL == nil {
-                        pendingContent = nil
-                        errorMsg = localized("無法準備 Markdown 檔案，請重試")
-                        return
-                    }
-                    pendingContent = t
-                    pendingMarkdownURL = markdownTempURL
-                    let parsedTitle = parsed?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    titleInput = parsedTitle.isEmpty ? name : parsedTitle
-                    authorInput = parsed?.author == "未知作者" ? "" : (parsed?.author ?? "")
-                } else {
-                    errorMsg = localized("無法讀取文件，請確認格式為 TXT / Markdown / JSON")
-                }
+            case .failure(let error):
+                errorMsg = error.localizedDescription
             }
         }
+        .interactiveDismissDisabled(isLoading)
+        .onDisappear { importTask?.cancel() }
     }
-
-    // MARK: - EPUB Import
-    private func importEPUB(url: URL, sessionID: UUID) {
-        parseTask = Task(priority: .userInitiated) {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            await MainActor.run {
-                importTrace("importEPUB stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
-            }
-            let ok = url.startAccessingSecurityScopedResource()
-            let tempURL: URL
-            do {
-                tempURL = try Self.stagedCopy(of: url)
-            } catch {
-                if ok { url.stopAccessingSecurityScopedResource() }
-                await MainActor.run {
-                    importTrace(
-                        "importEPUB stage=copyFailed session=\(sessionID) error=\(error.localizedDescription)"
-                    )
-                    isLoading = false
-                    errorMsg = localized("無法複製 EPUB 檔案：") + error.localizedDescription
-                }
-                return
-            }
-            if ok { url.stopAccessingSecurityScopedResource() }
-
-            // Extract metadata if possible
-            var extractedTitle = url.deletingPathExtension().lastPathComponent
-            var extractedAuthor = "未知作者"
-            if let session = try? await PublicationSession.open(sourceURL: tempURL) {
-                if !session.bookTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    extractedTitle = session.bookTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                if !session.author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    extractedAuthor = session.author.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-            }
-
-            if Task.isCancelled {
-                Self.removeStagedFile(at: tempURL)
-                return
-            }
-
-            await MainActor.run {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else {
-                    importTrace("importEPUB stage=staleDiscarded session=\(sessionID)")
-                    Self.removeStagedFile(at: tempURL)
-                    return
-                }
-
-                isLoading = false
-                // Placeholder string to trigger the confirmation card UI
-                pendingContent = "EPUB_READY"
-                titleInput = extractedTitle
-                authorInput = extractedAuthor == "未知作者" ? "" : extractedAuthor
-                // Store the temp path; actual import happens when "Add to Shelf" is tapped
-                pendingEpubURL = tempURL
-                importTrace(
-                    "importEPUB stage=prepared session=\(sessionID) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) tempFile=\(tempURL.lastPathComponent)"
-                )
-            }
-        }
-    }
-
-    // MARK: - Local Manga Import
-    private func importManga(url: URL, sessionID: UUID) {
-        parseTask = Task(priority: .userInitiated) {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            await MainActor.run {
-                importTrace("importManga stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
-            }
-            let ok = url.startAccessingSecurityScopedResource()
-            let tempURL: URL
-            do {
-                tempURL = try Self.stagedCopy(of: url)
-            } catch {
-                if ok { url.stopAccessingSecurityScopedResource() }
-                await MainActor.run {
-                    importTrace(
-                        "importManga stage=copyFailed session=\(sessionID) error=\(error.localizedDescription)"
-                    )
-                    isLoading = false
-                    errorMsg = localized("無法複製漫畫檔案：") + error.localizedDescription
-                }
-                return
-            }
-            if ok { url.stopAccessingSecurityScopedResource() }
-
-            await prepareMangaTempFile(
-                tempURL,
-                sessionID: sessionID,
-                startUptime: startUptime,
-                tracePrefix: "importManga"
-            )
-        }
-    }
-
-    // MARK: - Local PDF Import
-    private func importPDF(url: URL, sessionID: UUID) {
-        parseTask = Task(priority: .userInitiated) {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            await MainActor.run {
-                importTrace("importPDF stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
-            }
-            let ok = url.startAccessingSecurityScopedResource()
-            let tempURL: URL
-            do {
-                tempURL = try Self.stagedCopy(of: url)
-            } catch {
-                if ok { url.stopAccessingSecurityScopedResource() }
-                await MainActor.run {
-                    importTrace(
-                        "importPDF stage=copyFailed session=\(sessionID) error=\(error.localizedDescription)"
-                    )
-                    isLoading = false
-                    errorMsg = localized("無法複製 PDF 檔案：") + error.localizedDescription
-                }
-                return
-            }
-            if ok { url.stopAccessingSecurityScopedResource() }
-
-            await preparePDFTempFile(
-                tempURL,
-                sessionID: sessionID,
-                startUptime: startUptime,
-                tracePrefix: "importPDF"
-            )
-        }
-    }
-
-    private func preparePDFTempFile(
-        _ tempURL: URL,
-        sessionID: UUID,
-        startUptime: TimeInterval,
-        tracePrefix: String
-    ) async {
-        do {
-            let info = try LocalPDFArchive.inspect(url: tempURL)
-            if Task.isCancelled {
-                Self.removeStagedFile(at: tempURL)
-                return
-            }
-
-            await MainActor.run {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else {
-                    importTrace("\(tracePrefix) stage=staleDiscarded session=\(sessionID)")
-                    Self.removeStagedFile(at: tempURL)
-                    return
-                }
-
-                isLoading = false
-                pendingContent = "PDF_READY"
-                pendingPDFURL = tempURL
-                pendingPDFPageCount = info.pageCount
-                titleInput = info.title
-                authorInput = info.author == localized("未知作者") ? "" : info.author
-                importTrace(
-                    "\(tracePrefix) stage=prepared session=\(sessionID) pages=\(info.pageCount) sections=\(info.sections.count) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) tempFile=\(tempURL.lastPathComponent)"
-                )
-            }
-        } catch {
-            Self.removeStagedFile(at: tempURL)
-            await MainActor.run {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else { return }
-                AppLogger.error("PDF import inspect failed", error: error)
-                importTrace(
-                    "\(tracePrefix) stage=parseFailed session=\(sessionID) error=\(error.localizedDescription)"
-                )
-                isLoading = false
-                errorMsg = localized("匯入失敗：") + error.localizedDescription
-            }
-        }
-    }
-
-    // MARK: - Local Audiobook Import
-    private func importAudiobook(url: URL, sessionID: UUID) {
-        parseTask = Task(priority: .userInitiated) {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            await MainActor.run {
-                importTrace("importAudiobook stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
-            }
-            let ok = url.startAccessingSecurityScopedResource()
-            let tempURL: URL
-            do {
-                tempURL = try Self.stagedCopy(of: url)
-            } catch {
-                if ok { url.stopAccessingSecurityScopedResource() }
-                await MainActor.run {
-                    importTrace(
-                        "importAudiobook stage=copyFailed session=\(sessionID) error=\(error.localizedDescription)"
-                    )
-                    isLoading = false
-                    errorMsg = localized("無法複製音訊檔案：") + error.localizedDescription
-                }
-                return
-            }
-            if ok { url.stopAccessingSecurityScopedResource() }
-
-            await prepareAudiobookTempFile(
-                tempURL,
-                sessionID: sessionID,
-                startUptime: startUptime,
-                tracePrefix: "importAudiobook"
-            )
-        }
-    }
-
-    private func importZip(url: URL, sessionID: UUID) {
-        parseTask = Task(priority: .userInitiated) {
-            let startUptime = ProcessInfo.processInfo.systemUptime
-            await MainActor.run {
-                importTrace("importZip stage=begin session=\(sessionID) file=\(url.lastPathComponent)")
-            }
-            let ok = url.startAccessingSecurityScopedResource()
-            let tempURL: URL
-            do {
-                tempURL = try Self.stagedCopy(of: url)
-            } catch {
-                if ok { url.stopAccessingSecurityScopedResource() }
-                await MainActor.run {
-                    importTrace(
-                        "importZip stage=copyFailed session=\(sessionID) error=\(error.localizedDescription)"
-                    )
-                    isLoading = false
-                    errorMsg = localized("無法複製壓縮檔案：") + error.localizedDescription
-                }
-                return
-            }
-            if ok { url.stopAccessingSecurityScopedResource() }
-
-            if await LocalAudiobookArchive.zipContainsAudio(tempURL) {
-                await prepareAudiobookTempFile(
-                    tempURL,
-                    sessionID: sessionID,
-                    startUptime: startUptime,
-                    tracePrefix: "importZipAudio"
-                )
-            } else {
-                await prepareMangaTempFile(
-                    tempURL,
-                    sessionID: sessionID,
-                    startUptime: startUptime,
-                    tracePrefix: "importZipManga"
-                )
-            }
-        }
-    }
-
-    private func prepareMangaTempFile(
-        _ tempURL: URL,
-        sessionID: UUID,
-        startUptime: TimeInterval,
-        tracePrefix: String
-    ) async {
-        do {
-            let info = try await LocalMangaArchive.inspect(url: tempURL)
-            if Task.isCancelled {
-                Self.removeStagedFile(at: tempURL)
-                return
-            }
-
-            await MainActor.run {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else {
-                    importTrace("\(tracePrefix) stage=staleDiscarded session=\(sessionID)")
-                    Self.removeStagedFile(at: tempURL)
-                    return
-                }
-
-                isLoading = false
-                pendingContent = "MANGA_READY"
-                pendingMangaURL = tempURL
-                pendingMangaPageCount = info.pageCount
-                titleInput = info.title
-                authorInput = info.author == localized("未知作者") ? "" : info.author
-                importTrace(
-                    "\(tracePrefix) stage=prepared session=\(sessionID) pages=\(info.pageCount) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) tempFile=\(tempURL.lastPathComponent)"
-                )
-            }
-        } catch {
-            Self.removeStagedFile(at: tempURL)
-            await MainActor.run {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else { return }
-                importTrace(
-                    "\(tracePrefix) stage=parseFailed session=\(sessionID) error=\(error.localizedDescription)"
-                )
-                isLoading = false
-                errorMsg = localized("匯入失敗：") + error.localizedDescription
-            }
-        }
-    }
-
-    private func prepareAudiobookTempFile(
-        _ tempURL: URL,
-        sessionID: UUID,
-        startUptime: TimeInterval,
-        tracePrefix: String
-    ) async {
-        do {
-            let info = try await LocalAudiobookArchive.inspect(url: tempURL)
-            if Task.isCancelled {
-                Self.removeStagedFile(at: tempURL)
-                return
-            }
-
-            await MainActor.run {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else {
-                    importTrace("\(tracePrefix) stage=staleDiscarded session=\(sessionID)")
-                    Self.removeStagedFile(at: tempURL)
-                    return
-                }
-
-                isLoading = false
-                pendingContent = "AUDIOBOOK_READY"
-                pendingAudiobookURL = tempURL
-                pendingAudiobookChapterCount = info.chapterCount
-                pendingAudiobookTotalDuration = info.totalDurationSeconds
-                titleInput = info.title
-                authorInput = info.author == localized("未知作者") ? "" : info.author
-                importTrace(
-                    "\(tracePrefix) stage=prepared session=\(sessionID) chapters=\(info.chapterCount) elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - startUptime) * 1000)) tempFile=\(tempURL.lastPathComponent)"
-                )
-            }
-        } catch {
-            Self.removeStagedFile(at: tempURL)
-            await MainActor.run {
-                guard AddBookImportGuard.shouldApplyResult(
-                    activeSessionID: activeSessionID,
-                    resultSessionID: sessionID,
-                    isCancelled: Task.isCancelled
-                ) else { return }
-                importTrace(
-                    "\(tracePrefix) stage=parseFailed session=\(sessionID) error=\(error.localizedDescription)"
-                )
-                isLoading = false
-                errorMsg = localized("匯入失敗：") + error.localizedDescription
-            }
-        }
-    }
-
-    // MARK: - Staging
-    //
-    // A picked file is copied out of its security-scoped location before it is
-    // inspected, and the inspectors fall back to the *file's name* when the document
-    // carries no title of its own. Staging as `<UUID>.pdf` therefore put a UUID on
-    // the shelf instead of the name the user gave the file, so each import gets its
-    // own temp directory and keeps the real filename inside it.
 
     static func stagedCopy(of url: URL) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
@@ -856,77 +171,6 @@ struct FileImportTab: View {
         try? FileManager.default.removeItem(at: isStagingDirectory ? directory : url)
     }
 
-    private func nextSessionID() -> UUID {
-        let id = UUID()
-        activeSessionID = id
-        return id
-    }
-
-    private func cancelOngoingTasks() {
-        parseTask?.cancel()
-        parseTask = nil
-        importTask?.cancel()
-        importTask = nil
-    }
-
-    private func cleanupPendingEpubTempFile() {
-        if let url = pendingEpubURL {
-            Self.removeStagedFile(at: url)
-        }
-    }
-
-    private func cleanupPendingMarkdownTempFile() {
-        if let url = pendingMarkdownURL {
-            Self.removeStagedFile(at: url)
-        }
-    }
-
-    private func cleanupPendingMangaTempFile() {
-        if let url = pendingMangaURL {
-            Self.removeStagedFile(at: url)
-        }
-    }
-
-    private func cleanupPendingPDFTempFile() {
-        if let url = pendingPDFURL {
-            Self.removeStagedFile(at: url)
-        }
-    }
-
-    private func cleanupPendingAudiobookTempFile() {
-        if let url = pendingAudiobookURL {
-            Self.removeStagedFile(at: url)
-        }
-    }
-
-    private func formatDuration(_ seconds: Double) -> String {
-        let total = max(0, Int(seconds.rounded()))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let remainingSeconds = total % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
-        }
-        return String(format: "%02d:%02d", minutes, remainingSeconds)
-    }
-
-    private func resetTransientState() {
-        showFilePicker = false
-        titleInput = ""
-        authorInput = ""
-        pendingContent = nil
-        errorMsg = nil
-        isLoading = false
-        pendingEpubURL = nil
-        pendingMarkdownURL = nil
-        pendingMangaURL = nil
-        pendingMangaPageCount = 0
-        pendingPDFURL = nil
-        pendingPDFPageCount = 0
-        pendingAudiobookURL = nil
-        pendingAudiobookChapterCount = 0
-        pendingAudiobookTotalDuration = nil
-    }
 }
 
 // MARK: - URL Import Tab

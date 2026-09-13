@@ -44,6 +44,12 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         return chapters[index].plainText.lengthOfBytes(using: .utf8)
     }
 
+    func chapterPlainText(at index: Int) async -> String? {
+        guard chapters.indices.contains(index) else { return nil }
+        let text = chapters[index].plainText
+        return text.isEmpty ? nil : text
+    }
+
     // MARK: - buildChapter
 
     func buildChapter(

@@ -5,10 +5,10 @@
 - cssParse: 0.0001
 - styleTree: 0.0002
 - boxTree: 0.0000
-- layout: 0.0002
+- layout: 0.0004
 - fragment: 0.0000
-- total: 0.0007
-- peak footprint delta: 0 bytes
+- total: 0.0009
+- peak footprint delta: 65536 bytes
 
 ## Source-range parity
 - ranges ordered (no loss/dup/reorder): true

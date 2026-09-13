@@ -80,7 +80,7 @@ struct DefaultCoverSettingsView: View {
             } header: {
                 Text(localized("自動生成的封面"))
             } footer: {
-                Text(localized("沒有封面的書會自動生成一張，這裡決定要不要把書名和作者直排寫上去。你自己匯入的封面圖不受影響。"))
+                Text(localized("只影響自動生成的封面，你匯入的封面圖不受影響。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()

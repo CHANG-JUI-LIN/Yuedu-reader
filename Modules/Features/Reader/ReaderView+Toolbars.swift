@@ -42,7 +42,9 @@ extension ReaderView {
                     .lineLimit(1)
             }
 
-            ToolbarItem(placement: .topBarTrailing) {
+
+
+            ToolbarItem(placement: .topBarLeading) {
                 Button {
                     appleBooksActivePanel = nil
                     closeReader()
@@ -62,18 +64,13 @@ extension ReaderView {
                 } label: {
                     Label(localized("選單"), systemImage: "list.bullet")
                         .labelStyle(.iconOnly)
-                        .frame(
-                            width: DSLayout.readerAppleBooksControlSize,
-                            height: DSLayout.readerAppleBooksControlSize
-                        )
-                        .floatingSurface(in: Circle(), fill: readerTheme.barColor)
                 }
-                .buttonStyle(.plain)
                 .accessibilityLabel(localized("選單"))
                 .accessibilityHint(localized("點兩下展開閱讀工具"))
             }
         }
     }
+
 
     // MARK: - Top Bar
     var topBar: some View {
@@ -133,6 +130,7 @@ extension ReaderView {
             onOpenChangeSource: { showChangeSourceSheet = true },
             onDownloadAction: { handleDownloadAction() },
             onOpenTTS: { openPlaybackPanel() },
+            onOpenAIAssistant: { showAIAssistantPanel = true },
             onOpenTOC: { showTOC = true },
             onOpenBookmarks: { showBookmarkList = true },
             onOpenSettings: { showQuickThemePanel = true }
@@ -430,6 +428,18 @@ extension ReaderView {
                 )
             )
         }
+
+        // Shown whatever the AI settings are: hiding it when unconfigured would leave a
+        // reader with no way to discover the feature exists. The panel itself explains what
+        // to fill in.
+        actions.append(
+            ReaderSecondaryAction(
+                id: .aiAssistant,
+                icon: "sparkles",
+                label: localized("AI 助手"),
+                action: { showAIAssistantPanel = true }
+            )
+        )
 
         if !(book?.onlineChapters?.isEmpty ?? true) {
             actions.append(

@@ -477,23 +477,22 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
 
     // MARK: - TTS playback highlight
 
-    private var playbackHighlightText: String?
+    private var playbackHighlight: ReaderPlaybackHighlight?
 
     /// Washes the sentence TTS is speaking, matching `CoreTextPageView`.
     ///
     /// Its own `CAShapeLayer` rather than `highlightRects`: the wash changes once
     /// per spoken sentence, and repainting every glyph of the page through
     /// `draw(_:)` that often is a cost the reader can feel.
-    func setPlaybackHighlight(text: String?) {
-        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed != playbackHighlightText else { return }
-        playbackHighlightText = trimmed
+    func setPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
+        guard highlight != playbackHighlight else { return }
+        playbackHighlight = highlight
         updatePlaybackHighlight()
     }
 
     private func updatePlaybackHighlight() {
-        guard let needle = playbackHighlightText, !needle.isEmpty,
-              let range = sourceRange(ofSpokenText: needle) else {
+        guard let playbackHighlight,
+              let range = sourceRange(ofSpoken: playbackHighlight) else {
             clearPlaybackHighlight()
             return
         }
@@ -503,7 +502,7 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
     /// A continuous document can supply a sentence spanning two paint tiles.
     /// Both tiles use its chapter range and paint only their own geometry.
     func setPlaybackHighlight(sourceRange: NSRange?) {
-        playbackHighlightText = nil
+        playbackHighlight = nil
         guard let sourceRange else { clearPlaybackHighlight(); return }
         paintPlaybackHighlight(sourceRange: sourceRange)
     }
@@ -542,14 +541,21 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
     /// The spoken sentence located in CHAPTER offset space. Searching this
     /// page's own text (not the whole chapter) is what keeps a sentence that
     /// repeats later in the chapter from washing the wrong paragraph here.
-    private func sourceRange(ofSpokenText needle: String) -> NSRange? {
+    private func sourceRange(ofSpoken highlight: ReaderPlaybackHighlight) -> NSRange? {
         let page = pageSourceText as NSString
         guard page.length > 0 else { return nil }
-        let found = page.range(
-            of: needle,
-            options: [.caseInsensitive, .diacriticInsensitive]
+        // `page` is page-local while the hint is in chapter coordinates, so the hint is
+        // rebased into this page's space for the comparison and the winner rebased back.
+        let local = ReaderPlaybackHighlight(
+            text: highlight.text,
+            expectedChapterOffset: highlight.expectedChapterOffset
+                .map { $0 - pageSourceRange.location },
+            chapterIndex: highlight.chapterIndex
         )
-        guard found.location != NSNotFound else { return nil }
+        guard let found = local?.occurrence(
+            in: page,
+            searchRange: NSRange(location: 0, length: page.length)
+        ) else { return nil }
         return NSRange(
             location: pageSourceRange.location + found.location,
             length: found.length
@@ -811,8 +817,8 @@ final class BrowserLayoutPageViewController: UIViewController,
         didSet { pageView.accessibilityUsesRTLPageOrder = accessibilityUsesRTLPageOrder }
     }
 
-    func setPlaybackHighlight(text: String?) {
-        pageView.setPlaybackHighlight(text: text)
+    func setPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
+        pageView.setPlaybackHighlight(highlight)
     }
 
     override func loadView() {

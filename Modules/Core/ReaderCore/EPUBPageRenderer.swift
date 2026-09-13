@@ -35,6 +35,11 @@ final class EPUBPageRenderer: ObservableObject {
     private var epubBuilder: EPUBAttributedStringBuilder?
     private var onlineBuilder: OnlineProviderAttributedStringBuilder?
     private var publicationSession: PublicationSession?
+    /// Whichever builder the current book loaded, kept only so whole-book text can be read
+    /// without the layout engine. The three typed properties above serve layout; this one
+    /// answers "what does chapter N say", which the layout cache cannot — it holds five
+    /// chapters, and the AI features need the book.
+    private var contentBuilder: (any AttributedStringBuilding)?
 
     /// Scroll-mode-specific engine (alongside the page engine). Created automatically when builder is available.
     @Published private(set) var scrollEngine: CoreTextScrollEngine? {
@@ -285,6 +290,8 @@ final class EPUBPageRenderer: ObservableObject {
                     newSize: newSize,
                     ensuringSpine: spineIndex
                 )
+            } else if let browser = engine as? BrowserLayoutPageEngine {
+                await browser.invalidateLayout(newSize: newSize, ensuringSpine: spineIndex)
             } else {
                 await engine.invalidateLayout(newSize: newSize)
             }
@@ -406,6 +413,7 @@ final class EPUBPageRenderer: ObservableObject {
         )
         let chapterDocumentStore = ChapterDocumentStore(builder: builder)
         self.epubBuilder = builder
+        self.contentBuilder = builder
         let newEngine = CoreTextPageEngine(
             attributedBuilder: builder,
             renderSettings: settings,
@@ -486,6 +494,7 @@ final class EPUBPageRenderer: ObservableObject {
         self.engine = newEngine
         self.epubBuilder = nil
         self.onlineBuilder = nil
+        self.contentBuilder = attributedBuilder
         self.scrollEngine = CoreTextScrollEngine(
             builder: attributedBuilder,
             renderSettings: settings,
@@ -550,6 +559,7 @@ final class EPUBPageRenderer: ObservableObject {
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         self.engine = newEngine
         self.onlineBuilder = onlineBuilder
+        self.contentBuilder = onlineBuilder
         self.scrollEngine = CoreTextScrollEngine(
             builder: onlineBuilder,
             renderSettings: settings,
@@ -573,6 +583,15 @@ final class EPUBPageRenderer: ObservableObject {
             pendingStartBookId = bookIdentifier
             logProgress("loadWithProvider deferred bookId=\(bookIdentifier) reason=invalidRenderSize size=\(renderSize)")
         }
+    }
+
+    /// One chapter's text straight from the source — the epub archive, the mapped txt file,
+    /// or the online chapter cache — with no layout and no network.
+    ///
+    /// See `AttributedStringBuilding.chapterPlainText(at:)` for why this cannot go through
+    /// `engine.chapterText(forSpine:)`.
+    func chapterSourceText(at index: Int) async -> String? {
+        await contentBuilder?.chapterPlainText(at: index)
     }
 
     /// Called by ReaderView whenever the viewport size changes.

@@ -21,7 +21,9 @@ enum ReaderScrollItem: ScrollFragmentMeasuring {
     var height: CGFloat { switch self { case .legacy(let c): c.height; case .browser(let t): t.documentRect.height } }
     var width: CGFloat { switch self { case .legacy(let c): c.width; case .browser(let t): t.documentRect.width } }
     var attributedString: NSAttributedString { switch self { case .legacy(let c): c.attributedString; case .browser(let t): t.chapter.attributedString } }
-    var writingMode: ReaderWritingMode { legacyChunk?.writingMode ?? .horizontal }
+    var writingMode: ReaderWritingMode {
+        switch self { case .legacy(let c): c.writingMode; case .browser(let t): t.chapter.writingMode }
+    }
     var isMaterialized: Bool { legacyChunk?.isMaterialized ?? true }
     var isImageOnly: Bool { legacyChunk?.isImageOnly ?? false }
     var frame: CTFrame? { legacyChunk?.frame }
@@ -36,14 +38,16 @@ enum ReaderScrollItem: ScrollFragmentMeasuring {
     func topOffset(forCharacterIndex offset: Int) -> CGFloat? {
         switch self {
         case .legacy(let c): return c.topOffset(forCharacterIndex: offset)
-        case .browser(let t): return offset <= 0 ? 0 : max(0, t.chapter.document.documentY(forCharOffset: offset) - t.documentRect.minY)
+        case .browser(let t):
+            guard !t.chapter.writingMode.isVertical else { return nil }
+            return offset <= 0 ? 0 : max(0, t.chapter.document.documentY(forCharOffset: offset) - t.documentRect.minY)
         }
     }
     func stringIndex(atLocalPoint point: CGPoint) -> Int? {
         switch self {
         case .legacy(let c): return c.stringIndex(atLocalPoint: point)
         case .browser(let t):
-            let documentPoint = CGPoint(x: point.x, y: point.y + t.documentRect.minY)
+            let documentPoint = CGPoint(x: point.x + t.documentRect.minX, y: point.y + t.documentRect.minY)
             if t.chapter.document.sourceText.isEmpty { return 0 }
             for item in t.chapter.document.displayList.items {
                 if case .image(let image) = item, !image.isBackgroundPaint,
@@ -58,16 +62,18 @@ enum ReaderScrollItem: ScrollFragmentMeasuring {
 final class BrowserScrollChapter {
     let spineIndex: Int
     let document: BrowserScrollDocument
+    let writingMode: ReaderWritingMode
     let attributedString: NSAttributedString
     let backgroundColor: UIColor
     let usesReaderBackground: Bool
     let paragraphRanges: [NSRange]
     let mediaAttachments: [Int: EPUBMediaAttachment]
-    init(spineIndex: Int, document: BrowserScrollDocument, backgroundColor: UIColor, usesReaderBackground: Bool, paragraphRanges: [NSRange] = [], mediaAttachments: [Int: EPUBMediaAttachment] = [:]) {
+    init(spineIndex: Int, document: BrowserScrollDocument, writingMode: ReaderWritingMode = .horizontal, backgroundColor: UIColor, usesReaderBackground: Bool, paragraphRanges: [NSRange] = [], mediaAttachments: [Int: EPUBMediaAttachment] = [:]) {
         self.paragraphRanges = paragraphRanges
         self.mediaAttachments = mediaAttachments
         self.spineIndex = spineIndex
         self.document = document
+        self.writingMode = writingMode
         self.backgroundColor = backgroundColor
         self.usesReaderBackground = usesReaderBackground
         attributedString = NSAttributedString(string: document.sourceText)
@@ -75,9 +81,16 @@ final class BrowserScrollChapter {
 
     func tiles(width: CGFloat, heightCap: CGFloat = 2000) -> [ReaderScrollItem] {
         var tiles: [ReaderScrollItem] = []
-        var y: CGFloat = 0
-        while y < document.contentHeight {
-            let rect = CGRect(x: 0, y: y, width: width, height: min(heightCap, document.contentHeight - y))
+        // Collection order is reading order: vertical-rl starts at the document's
+        // right edge. Tiles are paint windows, never separately laid-out pages.
+        let extent = writingMode.isVertical ? document.contentWidth : document.contentHeight
+        let cap = max(1, heightCap)
+        var advance: CGFloat = 0
+        while advance < extent {
+            let length = min(cap, extent - advance)
+            let rect = writingMode.isVertical
+                ? CGRect(x: extent - advance - length, y: 0, width: length, height: document.contentHeight)
+                : CGRect(x: 0, y: advance, width: width, height: length)
             let list = document.items(in: rect)
             let ranges: [NSRange] = list.items.compactMap {
                 switch $0 {
@@ -86,11 +99,11 @@ final class BrowserScrollChapter {
                 case .fill: return nil
                 }
             }.filter { $0.length > 0 }
-            let start = ranges.map(\.location).min() ?? document.charOffset(atDocumentY: y)
+            let start = ranges.map(\.location).min() ?? (writingMode.isVertical ? ((document.sourceText as NSString).length) : document.charOffset(atDocumentY: advance))
             let end = ranges.map { NSMaxRange($0) }.max() ?? start
             tiles.append(.browser(BrowserScrollTile(chapter: self, documentRect: rect,
                 charRange: CFRange(location: start, length: end - start))))
-            y = rect.maxY
+            advance += length
         }
         return tiles
     }

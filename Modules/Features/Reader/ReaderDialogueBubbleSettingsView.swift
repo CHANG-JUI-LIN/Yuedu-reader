@@ -382,7 +382,7 @@ struct ReaderDialogueBubbleSettingsView: View {
                 Label(localized("恢復預設氣泡"), systemImage: "arrow.counterclockwise")
             }
         } footer: {
-            Text(localized("可以匯入對話氣泡腳本檔，只會取用它的顏色、邊距與皮膚圖，文字仍然照閱讀字級排版。"))
+            Text(localized("只取用顏色、邊距與皮膚圖，文字仍照閱讀字級排版。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()

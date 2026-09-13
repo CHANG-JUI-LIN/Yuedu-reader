@@ -110,6 +110,14 @@ protocol TTSPlayable: AnyObject {
     /// more requests — for no audible difference.
     var roleVoices: [String: String] { get set }
 
+    /// 多角色朗讀: alias → canonical character name.
+    ///
+    /// The dialogue heuristic can see that someone spoke and read the name out of the prose,
+    /// but it has no way to know that 張若塵, 若塵 and 塵哥 are one person — so without this
+    /// it hands one character three voices. The table comes from the AI character cards, and
+    /// is empty until the reader builds them; narration works either way.
+    var roleAliases: [String: String] { get set }
+
     /// Start reading the given text. Rate uses the UI scale 0.10–1.0 where 0.5 is 100%.
     func speak(text: String, title: String, rate: Float, pronunciationHints: [TTSPronunciationHint])
     /// Apply a new rate to the playback session already in progress, so a slider change

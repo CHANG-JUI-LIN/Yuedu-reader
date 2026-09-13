@@ -67,7 +67,7 @@ struct ICloudSyncView: View {
                     if on, iCloudReady { Task { try? await manager.sync(reason: "toggle-on") } }
                 }
         } footer: {
-            Text(localized("開啟後，App 啟動與切到背景時會自動與 iCloud 合併同步（書庫、書源、替換規則與書檔）。多台裝置會智慧合併，不會互相覆蓋。"))
+            Text(localized("啟動與切背景時自動同步書庫、書源、替換規則與書檔。多台裝置會合併，不會互相覆蓋。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()

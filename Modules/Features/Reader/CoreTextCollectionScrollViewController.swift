@@ -132,7 +132,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     private var selectedText: String?
     private var latestEditMenuSourcePoint: CGPoint?
     private let interactor = TextSelectionInteractor()
-    private var playbackHighlightText: String?
+    private var playbackHighlight: ReaderPlaybackHighlight?
     /// True while a TTS-follow auto-scroll animation is in flight, so it isn't
     /// mistaken for the user manually scrolling away from the narration.
     private var isAutoScrollingPlayback = false
@@ -619,17 +619,16 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         }
     }
 
-    func setPlaybackHighlight(text: String?) {
-        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let changed = trimmed != playbackHighlightText
-        playbackHighlightText = trimmed
+    func setPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
+        let changed = highlight != playbackHighlight
+        playbackHighlight = highlight
         for cell in collectionView.visibleCells.compactMap({ $0 as? CoreTextChunkCollectionCell }) {
-            cell.applyPlaybackHighlight(text: playbackHighlightText)
+            cell.applyPlaybackHighlight(playbackHighlight)
         }
         for cell in collectionView.visibleCells.compactMap({ $0 as? BrowserScrollTileCell }) {
-            cell.applyPlaybackHighlight(text: playbackHighlightText)
+            cell.applyPlaybackHighlight(playbackHighlight)
         }
-        if changed, !(trimmed?.isEmpty ?? true) {
+        if changed, highlight != nil {
             // Defer one runloop so cells finish recomputing their highlight rects.
             DispatchQueue.main.async { [weak self] in self?.autoScrollToPlaybackHighlightIfNeeded() }
         }
@@ -1567,7 +1566,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                 preview.modalPresentationStyle = .fullScreen
                 present(preview, animated: true)
             }
-            cell.configure(tile: tile, horizontalInset: horizontalInset, leadingSpacing: chapterGap(for: indexPath.item))
+            cell.configure(tile: tile, horizontalInset: horizontalInset, leadingSpacing: chapterGap(for: indexPath.item), verticalInset: verticalInset)
             return cell
         }
         let cell = collectionView.dequeueReusableCell(
@@ -1616,11 +1615,11 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             if let chapter = selectionChapter {
                 chunkCell.applySelection(chapterIndex: chapter, chapterRange: currentSelectionRange)
             }
-            chunkCell.applyPlaybackHighlight(text: playbackHighlightText)
+            chunkCell.applyPlaybackHighlight(playbackHighlight)
             chunkCell.applyAnnotations(textAnnotations)
             reconcileInlineVideos()
         } else if let tileCell = cell as? BrowserScrollTileCell {
-            tileCell.applyPlaybackHighlight(text: playbackHighlightText)
+            tileCell.applyPlaybackHighlight(playbackHighlight)
             tileCell.applyAnnotations(textAnnotations)
         }
     }

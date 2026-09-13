@@ -63,7 +63,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     private let interactor = TextSelectionInteractor()
     private let playbackOverlay = InteractionOverlayView()
     private let interactionOverlay = InteractionOverlayView()
-    private var playbackHighlightText: String?
+    private var playbackHighlight: ReaderPlaybackHighlight?
     private var textAnnotations: [CoreTextTextAnnotation] = []
     private var annotationOverlays: [LayerKey: InteractionOverlayView] = [:]
     private let noteMarkerOverlay = NoteMarkerOverlayView()
@@ -173,8 +173,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         refreshAccessibility()
     }
 
-    func setPlaybackHighlight(text: String?) {
-        playbackHighlightText = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+    func setPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
+        playbackHighlight = highlight
         updatePlaybackHighlightOverlay()
     }
 
@@ -2081,8 +2081,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             return
         }
         guard let layout,
-              let text = playbackHighlightText,
-              !text.isEmpty,
+              let playbackHighlight,
               localPageIndex < layout.pageRanges.count
         else {
             playbackOverlay.clearSelection()
@@ -2101,9 +2100,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             return
         }
 
-        let pageText = (layout.attributedString.string as NSString).substring(with: pageRange)
-        let found = (pageText as NSString).range(of: text, options: [.caseInsensitive, .diacriticInsensitive])
-        guard found.location != NSNotFound, found.length > 0 else {
+        // Searched in chapter coordinates, restricted to this page, so the offset the
+        // reader derived from the narration unit can pick between repeated lines.
+        guard let found = playbackHighlight.occurrence(
+            in: layout.attributedString.string as NSString,
+            searchRange: pageRange,
+            chapterIndex: layout.spineIndex
+        ) else {
             playbackOverlay.clearSelection()
             playbackOverlay.isHidden = false
             return
@@ -2114,8 +2117,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             playbackOverlay.isHidden = false
             return
         }
-        let chapterRange = NSRange(location: pageRange.location + found.location, length: found.length)
-        let rects = selectionRects(for: chapterRange, in: context)
+        let rects = selectionRects(for: found, in: context)
         Self.applyTTSPlaybackStyle(to: playbackOverlay)
         playbackOverlay.selectionRects = rects
         playbackOverlay.startHandlePoint = nil
@@ -2224,7 +2226,7 @@ final class CoreTextPageViewController: UIViewController {
     private var pendingLayout: CoreTextPaginator.ChapterLayout?
     private var pendingLocalPage: Int = 0
     private var pendingFallbackColor: UIColor = .systemBackground
-    private var pendingPlaybackHighlightText: String?
+    private var pendingPlaybackHighlight: ReaderPlaybackHighlight?
     private var pendingTextAnnotations: [CoreTextTextAnnotation] = []
 
     /// The layout/page this controller is currently showing, retained so inline video views can be
@@ -2254,7 +2256,7 @@ final class CoreTextPageViewController: UIViewController {
             installImageTapHandler()
             pageView.configure(layout: layout, pageIndex: localPage, fallbackBackgroundColor: fallbackBackgroundColor)
             pageView.setTextAnnotations(pendingTextAnnotations)
-            pageView.setPlaybackHighlight(text: pendingPlaybackHighlightText)
+            pageView.setPlaybackHighlight(pendingPlaybackHighlight)
             syncInlineVideos()
         } else {
             pendingLayout = layout
@@ -2262,10 +2264,10 @@ final class CoreTextPageViewController: UIViewController {
         }
     }
 
-    func setPlaybackHighlight(text: String?) {
-        pendingPlaybackHighlightText = text
+    func setPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
+        pendingPlaybackHighlight = highlight
         guard isViewLoaded else { return }
-        pageView.setPlaybackHighlight(text: text)
+        pageView.setPlaybackHighlight(highlight)
     }
 
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {
@@ -2287,7 +2289,7 @@ final class CoreTextPageViewController: UIViewController {
         if let layout = pendingLayout {
             pageView.configure(layout: layout, pageIndex: pendingLocalPage, fallbackBackgroundColor: pendingFallbackColor)
             pageView.setTextAnnotations(pendingTextAnnotations)
-            pageView.setPlaybackHighlight(text: pendingPlaybackHighlightText)
+            pageView.setPlaybackHighlight(pendingPlaybackHighlight)
             pendingLayout = nil
             syncInlineVideos()
         }

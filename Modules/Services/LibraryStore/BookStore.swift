@@ -46,7 +46,12 @@ private struct PersistedPositionSnapshot: Equatable {
 }
 
 class BookStore: ObservableObject, BookProvider {
-    @Published private var records: [ReadingBook] = []
+    @Published private var records: [ReadingBook] = [] {
+        didSet { mutationRevision &+= 1 }
+    }
+    /// The network may finish after an import, deletion or reading-position edit.
+    /// A result may replace the shelf only while its input snapshot is current.
+    private(set) var mutationRevision: UInt64 = 0
 
     /// Only explicit shelf members are exposed to shelf, widget and sync clients.
     var books: [ReadingBook] {
@@ -1995,7 +2000,12 @@ class BookStore: ObservableObject, BookProvider {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
-    func replaceBooksFromSync(_ syncedBooks: [ReadingBook]) {
+    @discardableResult
+    func replaceBooksFromSync(_ syncedBooks: [ReadingBook], expectedMutationRevision: UInt64? = nil) -> Bool {
+        if let expectedMutationRevision, expectedMutationRevision != mutationRevision {
+            // Keep the live shelf; the next sync includes these newer local edits.
+            return false
+        }
         // The synced copy omits `onlineChapters` (kept local & re-fetchable from the
         // source) to stay under Firestore's 1 MB document limit. Preserve whatever the
         // device already has so we don't drop a fetched table of contents.
@@ -2011,6 +2021,7 @@ class BookStore: ObservableObject, BookProvider {
             (lhs.lastOpenedDate ?? lhs.addedDate) > (rhs.lastOpenedDate ?? rhs.addedDate)
         }
         saveMetaImmediately()
+        return true
     }
 
     private func saveMetaImmediately() {

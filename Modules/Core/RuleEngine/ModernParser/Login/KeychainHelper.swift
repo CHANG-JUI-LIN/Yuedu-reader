@@ -7,18 +7,32 @@ import Security
 
 enum KeychainHelper {
 
-    private static let service = "com.yuedu.loginCredentials"
+    /// Book-source logins. Callers that store something else pass their own service so two
+    /// unrelated secrets can never collide on one account name — there is deliberately no
+    /// second Keychain wrapper in this project.
+    static let loginService = "com.yuedu.loginCredentials"
+    /// BYOK AI API keys. Separate service so clearing one never clears the other.
+    static let aiService = "com.yuedu.aiCredentials"
 
     /// Persist a string value in the Keychain, creating or updating the item as needed.
     @discardableResult
-    static func save(account: String, data: String, accessibility: CFString? = nil) -> Bool {
+    static func save(
+        account: String,
+        data: String,
+        service: String = loginService,
+        accessibility: CFString? = nil,
+        synchronizable: Bool? = nil
+    ) -> Bool {
         guard let dataBytes = data.data(using: .utf8) else { return false }
 
-        let baseQuery: [String: Any] = [
+        var baseQuery: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        if let synchronizable {
+            baseQuery[kSecAttrSynchronizable as String] = synchronizable as CFBoolean
+        }
 
         var attributes: [String: Any] = [kSecValueData as String: dataBytes]
         if let accessibility {
@@ -40,12 +54,20 @@ enum KeychainHelper {
     }
 
     /// Load a previously saved string value from the Keychain. Returns `nil` if not found.
-    static func load(account: String, accessibility: CFString? = nil) -> String? {
-        let baseQuery: [String: Any] = [
+    static func load(
+        account: String,
+        service: String = loginService,
+        accessibility: CFString? = nil,
+        synchronizable: Bool? = nil
+    ) -> String? {
+        var baseQuery: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        if let synchronizable {
+            baseQuery[kSecAttrSynchronizable as String] = synchronizable as CFBoolean
+        }
         var query = baseQuery
         query.merge([
             kSecReturnData as String:  true,
@@ -89,12 +111,15 @@ enum KeychainHelper {
 
     /// Remove an item from the Keychain. Returns `true` if deleted or not found.
     @discardableResult
-    static func delete(account: String) -> Bool {
-        let query: [String: Any] = [
+    static func delete(account: String, service: String = loginService, synchronizable: Bool? = nil) -> Bool {
+        var query: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        if let synchronizable {
+            query[kSecAttrSynchronizable as String] = synchronizable as CFBoolean
+        }
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
     }

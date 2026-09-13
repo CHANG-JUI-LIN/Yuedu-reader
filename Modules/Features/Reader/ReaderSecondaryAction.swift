@@ -11,6 +11,7 @@ struct ReaderSecondaryAction: Identifiable {
         case download
         case changeSource
         case refresh
+        case aiAssistant
     }
 
     let id: ID

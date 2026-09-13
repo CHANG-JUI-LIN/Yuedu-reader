@@ -495,7 +495,7 @@ struct ReaderRenderRefreshTests {
             engine: engine,
             pageTurnStyle: .slide,
             theme: .white,
-            playbackHighlightText: nil,
+            playbackHighlight: nil,
             isRTL: false,
             isDoublePageSpread: false,
             spreadGutter: 0,

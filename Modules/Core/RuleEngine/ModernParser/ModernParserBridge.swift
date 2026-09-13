@@ -165,6 +165,32 @@ class ModernParserBridge {
         jsEngine.resolvedSourceHeaders()
     }
 
+    /// Resolve authentication after the source's click action has finished, using
+    /// the same runtime and header precedence as chapter/JS network requests.
+    func sourceBrowserRequest(urlString: String) -> URLRequest? {
+        guard let url = URL(string: urlString),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme) else { return nil }
+        evaluateJsLibIfNeeded()
+        var request = URLRequest(url: url)
+        applySourceAuthentication(to: &request)
+        return request
+    }
+
+    private func applySourceAuthentication(to request: inout URLRequest) {
+        for (key, value) in resolvedSourceHeaders() {
+            if request.value(forHTTPHeaderField: key) == nil {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
+        }
+        loginManager.applyLoginHeaders(to: &request, sourceUrl: sourceRuleData.source.bookSourceUrl)
+        if request.value(forHTTPHeaderField: "Cookie") == nil,
+           let url = request.url?.absoluteString {
+            let jar = CookieStore.shared.get(url: url)
+            if !jar.isEmpty { request.setValue(jar, forHTTPHeaderField: "Cookie") }
+        }
+    }
+
     /// Executes Legado `ruleToc.preUpdateJs` in the source's JavaScript runtime
     /// before the TOC request. It is a Rhino/JSCore rule hook, not page JavaScript:
     /// opening a WebView here both changed its bindings and added a navigation plus
@@ -423,19 +449,7 @@ class ModernParserBridge {
                 )
             }
             guard var request = analyzeUrl.toURLRequest() else { return nil }
-            for (key, value) in self.resolvedSourceHeaders() {
-                if request.value(forHTTPHeaderField: key) == nil {
-                    request.setValue(value, forHTTPHeaderField: key)
-                }
-            }
-            LoginManager.shared.applyLoginHeaders(to: &request, sourceUrl: sourceUrl)
-            if request.value(forHTTPHeaderField: "Cookie") == nil,
-               let reqUrl = request.url?.absoluteString {
-                let jar = CookieStore.shared.get(url: reqUrl)
-                if !jar.isEmpty {
-                    request.setValue(jar, forHTTPHeaderField: "Cookie")
-                }
-            }
+            self.applySourceAuthentication(to: &request)
             // AnalyzeUrl options (for example `url,{"headers":...}`) are still
             // source-JS network requests. Keep them behind the same injectable
             // transport boundary as plain `java.ajax`/`java.get`; otherwise fixture
@@ -2468,31 +2482,7 @@ class ModernParserBridge {
                   request.httpBody.flatMap { String(data: $0, encoding: .utf8) } ?? "nil")
         }
 
-        // Apply source-level headers (don't overwrite per-request ones)
-        for (key, value) in resolvedSourceHeaders() {
-            if request.value(forHTTPHeaderField: key) == nil {
-                request.setValue(value, forHTTPHeaderField: key)
-            }
-        }
-
-        // Apply login headers
-        loginManager.applyLoginHeaders(
-            to: &request, sourceUrl: sourceRuleData.source.bookSourceUrl
-        )
-
-        // Explicitly attach the cookie jar for this URL when no Cookie header is set.
-        // Some endpoints require a cookie to be SENT alongside a matching URL param
-        // (double-submit CSRF) — 起点 榜單/分類 reject the request unless the `_csrfToken`
-        // cookie == the `_csrfToken` query param (verified: param-only → 0 books;
-        // param+cookie → 20). URLSession.shared *should* auto-send it from HTTPCookieStorage,
-        // but being explicit (mirroring WebFetcher) guarantees it isn't dropped.
-        if request.value(forHTTPHeaderField: "Cookie") == nil,
-           let reqUrl = request.url?.absoluteString {
-            let jar = CookieStore.shared.get(url: reqUrl)
-            if !jar.isEmpty {
-                request.setValue(jar, forHTTPHeaderField: "Cookie")
-            }
-        }
+        applySourceAuthentication(to: &request)
 
         // Use a cooperative timeout so a hanging server never blocks the search/reader
         // indefinitely. The per-source search already has its own timeout in the

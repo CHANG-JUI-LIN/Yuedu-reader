@@ -78,9 +78,9 @@ final class ReaderSpreadPageViewController: UIViewController, PageIndexProviding
         installPages()
     }
 
-    func applyPlaybackHighlight(text: String?) {
-        (primaryViewController as? CoreTextPageViewController)?.setPlaybackHighlight(text: text)
-        (secondaryViewController as? CoreTextPageViewController)?.setPlaybackHighlight(text: text)
+    func applyPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
+        (primaryViewController as? CoreTextPageViewController)?.setPlaybackHighlight(highlight)
+        (secondaryViewController as? CoreTextPageViewController)?.setPlaybackHighlight(highlight)
     }
 
     private func installPages() {

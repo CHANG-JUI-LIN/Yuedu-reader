@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var showLegadoMigration = false
     @State private var showTTSSettings = false
     @State private var showNetworkSettings = false
+    @State private var showAISettings = false
     #if DEBUG
     @State private var autoOpenDiagnostics = false
     #endif
@@ -153,6 +154,15 @@ struct SettingsView: View {
                             title: localized("語音朗讀設定"),
                             action: { showTTSSettings = true }
                         )
+
+                        DSSettingsRow(
+                            icon: "sparkles",
+                            // Named for what it is — the reader's panel is also called
+                            // 「AI 助手」, and someone looking for 人物卡 went here first.
+                            title: localized("AI 助手設定"),
+                            detail: aiAssistantDetail,
+                            action: { showAISettings = true }
+                        )
                         
                         DSSettingsRow(
                             icon: "text.magnifyingglass",
@@ -263,6 +273,9 @@ struct SettingsView: View {
             .sheet(isPresented: $showNetworkSettings) {
                 NetworkSettingsView()
             }
+            .sheet(isPresented: $showAISettings) {
+                AISettingsView()
+            }
             .sheet(isPresented: $showReplaceRules) {
                 ReplaceRuleListView()
             }
@@ -306,6 +319,12 @@ struct SettingsView: View {
 
     private var downloadedBooksCount: Int {
         store.books.filter { $0.isOnline && $0.offlineDownloadState == .available }.count
+    }
+
+    /// Says whether AI is usable at a glance. A reader who has not set it up should not have
+    /// to open the screen to find that out.
+    private var aiAssistantDetail: String {
+        AIAPIKeyStore.hasKey ? localized("已啟用") : localized("未設定")
     }
 
     @ViewBuilder func AccountRowContent() -> some View {

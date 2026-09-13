@@ -12,7 +12,9 @@ import SwiftUI
         onNextChapter: { false },
         onSelectChapter: { _ in },
         bookID: UUID(),
-        detectedSpeakers: ["張若塵", "池瑤"]
+        detectedSpeakers: ["張若塵", "池瑤"],
+        aiAdapter: AIBookContentAdapter(bookID: UUID(), chapters: [], textForChapter: { _ in nil }),
+        aiProgress: 0.42
     )
 }
 
@@ -32,6 +34,11 @@ struct TTSPanelView: View {
     /// Characters detected in the chapter being read, for 多角色朗讀. Computed by the
     /// reader, which is the only thing holding the chapter's narration text.
     let detectedSpeakers: [String]
+    /// Passed through to 多角色朗讀 so character cards can be built where they are used.
+    let aiAdapter: AIBookContentAdapter
+    /// Reading position on the chunks' 0…1 scale, so the character list defaults to who has
+    /// actually appeared.
+    let aiProgress: Double
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var gs = GlobalSettings.shared
     @State private var isScrubbing = false
@@ -114,7 +121,12 @@ struct TTSPanelView: View {
                         }
                     }
                     NavigationLink(
-                        destination: TTSRoleCastView(bookID: bookID, detectedSpeakers: detectedSpeakers)
+                        destination: TTSRoleCastView(
+                            bookID: bookID,
+                            detectedSpeakers: detectedSpeakers,
+                            adapter: aiAdapter,
+                            progress: aiProgress
+                        )
                     ) {
                         HStack {
                             Image(systemName: "person.2.wave.2")

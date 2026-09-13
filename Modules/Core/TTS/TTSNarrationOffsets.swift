@@ -20,6 +20,10 @@ struct TTSNarrationOffsetMap {
     /// One longer than the narration, so the end position maps too.
     private let offsets: [Int]
 
+    private init(offsets: [Int]) {
+        self.offsets = offsets
+    }
+
     init(narration: String, source: String) {
         let narrationNS = narration as NSString
         let sourceNS = source as NSString
@@ -48,6 +52,22 @@ struct TTSNarrationOffsetMap {
     func sourceOffset(forNarrationOffset offset: Int) -> Int {
         guard !offsets.isEmpty else { return 0 }
         return offsets[min(max(offset, 0), offsets.count - 1)]
+    }
+
+    /// The same map for a narration whose first `count` UTF-16 units have been dropped.
+    ///
+    /// Resuming mid-chapter hands the engine `narration[startCharOffset...]`, so every
+    /// range the engine reports is short by that much. Re-aligning the slice against the
+    /// chapter would be wrong, not just wasteful: alignment is greedy from the start of
+    /// the source, so a slice would match its first occurrence rather than its real one.
+    func droppingNarrationPrefix(_ count: Int) -> TTSNarrationOffsetMap {
+        guard count > 0 else { return self }
+        guard count < offsets.count else {
+            // Nothing of the narration survives the slice; keep the end position so
+            // conversions still clamp somewhere inside the chapter.
+            return TTSNarrationOffsetMap(offsets: offsets.suffix(1).map { $0 })
+        }
+        return TTSNarrationOffsetMap(offsets: Array(offsets.dropFirst(count)))
     }
 
     /// The source range a narration range came from.

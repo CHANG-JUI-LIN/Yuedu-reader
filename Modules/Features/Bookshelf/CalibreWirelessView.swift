@@ -21,7 +21,7 @@ struct CalibreWirelessView: View {
             } header: {
                 Text(localized("連線狀態"))
             } footer: {
-                Text(localized("在電腦 Calibre 的「連線／分享」選單啟動無線裝置連線，再於此頁連接電腦。連線成功後，可在電腦選取書籍並按「傳送至裝置」。"))
+                Text(localized("先在電腦 Calibre 的「連線／分享」啟動無線裝置連線。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()
@@ -60,7 +60,7 @@ struct CalibreWirelessView: View {
                 } header: {
                     Text(localized("附近的 Calibre"))
                 } footer: {
-                    Text(localized("電腦與此裝置須連接同一區域網路，並允許悅讀存取本機網路。找不到電腦時，可在下方手動輸入位址。"))
+                    Text(localized("需要同一區域網路，並允許本 App 存取本機網路。"))
                         .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
@@ -92,7 +92,7 @@ struct CalibreWirelessView: View {
             } header: {
                 Text(localized("接收紀錄"))
             } footer: {
-                Text(localized("支援 EPUB、PDF、TXT 與 Markdown。傳送期間請保持此頁開啟；接收並匯入成功後，書籍會加入書架供離線閱讀。離開此頁或切至背景會中斷連線。"))
+                Text(localized("傳送期間請保持此頁開啟，離開或切背景會中斷。支援 EPUB、PDF、TXT、Markdown。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()

@@ -356,7 +356,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         overlay.endHandlePoint = containsEnd ? rects.last.map { CGPoint(x: $0.maxX, y: $0.maxY) } : nil
     }
 
-    func applyPlaybackHighlight(text: String?) {
+    func applyPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
         let s = GlobalSettings.shared
         guard s.ttsHighlightEnabled else {
             playbackOverlay.clearSelection()
@@ -366,7 +366,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             playbackOverlay.isHidden = true
             return
         }
-        guard let text, !text.isEmpty,
+        guard let highlight,
               let chunk = currentChunk,
               chunk.chapterIndex >= 0
         else {
@@ -375,17 +375,13 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             return
         }
 
-        let nsString = chunk.attributedString.string as NSString
         let searchRange = NSRange(location: chunk.charRange.location,
                                   length: min(chunk.charRange.length, chunk.attributedString.length - chunk.charRange.location))
-        guard searchRange.length > 0 else {
-            playbackOverlay.clearSelection()
-            playbackOverlay.isHidden = false
-            return
-        }
-
-        let found = nsString.range(of: text, options: [.caseInsensitive, .diacriticInsensitive], range: searchRange)
-        guard found.location != NSNotFound, found.length > 0 else {
+        guard let found = highlight.occurrence(
+            in: chunk.attributedString.string as NSString,
+            searchRange: searchRange,
+            chapterIndex: chunk.chapterIndex
+        ) else {
             playbackOverlay.clearSelection()
             playbackOverlay.isHidden = false
             return

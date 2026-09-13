@@ -1,0 +1,49 @@
+Yuedu Reader（閱讀）
+Copyright 2026 CHANG-JUI-LIN
+
+This product includes software developed by third parties.
+
+--------------------------------------------------------------------------------
+ChatBook — Apache License 2.0
+https://github.com/bsnmldb/ChatBook
+--------------------------------------------------------------------------------
+
+Yuedu's AI reading assistant is derived from ChatBook. The following files are
+ports or adaptations of ChatBook sources, each carrying a header naming the file
+it came from:
+
+  Modules/Core/AI/LLMProviding.swift
+  Modules/Core/AI/LLMStreamDecoding.swift
+  Modules/Core/AI/AIChunking.swift
+  Modules/Core/AI/AIRetrieval.swift
+  Modules/Core/AI/AIBM25Index.swift
+  Modules/Core/AI/AIBookRetrievalIndex.swift
+  Modules/Core/AI/AISelfAssessment.swift
+  Modules/Core/AI/AIRAGPipeline.swift
+  Modules/Core/AI/AICharacterProfile.swift
+  Modules/Core/AI/AIRecap.swift
+  Modules/Services/AI/OpenAICompatibleProvider.swift
+  Modules/Services/AI/AIProviderSettings.swift
+  Modules/Services/AI/AIConnectionTest.swift
+
+The Apache License 2.0 grants no permission to use the ChatBook name, logo, app
+icon, or other product identity, and none is used here. A copy of the licence is
+at https://www.apache.org/licenses/LICENSE-2.0.
+
+--------------------------------------------------------------------------------
+Other dependencies
+--------------------------------------------------------------------------------
+
+Package versions and their transitive dependencies are recorded in
+Technotes/Dependencies.md. Their licences:
+
+  Readium (ReadiumShared, ReadiumStreamer, ReadiumZIPFoundation, ReadiumFuzi)
+                           — BSD 3-Clause
+  SwiftSoup                — MIT
+  GoogleSignIn             — Apache License 2.0
+  CryptoSwift              — zlib/libpng
+  SQLite.swift             — MIT
+  Zip                      — MIT
+  DifferenceKit            — Apache License 2.0
+  GCDWebServer             — BSD 3-Clause
+  Lexbor (Packages/CLexbor) — see Packages/CLexbor/NOTICE

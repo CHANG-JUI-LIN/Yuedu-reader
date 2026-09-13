@@ -590,7 +590,7 @@ struct BookPackage {
 enum OnlineChapterRenderArtifact {
     /// Bump when normalized chapter HTML semantics change in a way that cannot
     /// be reconstructed from the persisted plain-text chapter body.
-    static let currentVersion = 3
+    static let currentVersion = 4
 }
 
 struct ChapterPackageArtifact: Codable, Equatable {

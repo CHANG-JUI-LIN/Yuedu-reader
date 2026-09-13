@@ -8,6 +8,8 @@ Yuedu Reader — native iOS EPUB/TXT/RSS/web-novel reader. SwiftUI + CoreText, t
 
 ## Build & Test
 
+Run the smallest relevant regression after the final related edits, as defined in AGENTS.md. Reuse passing evidence while the code, environment, and claim are unchanged. A test run that builds the relevant target supplies compilation evidence; a separate build or `clean` is needed only for a specific target/configuration requirement or unresolved concern.
+
 Simulators on this machine are deleted and re-installed often, so **nothing in this repo hardcodes a device name, an OS version, or an Xcode path**. Resolve them at call time:
 
 ```bash
@@ -24,7 +26,7 @@ SIM="$(bash scripts/sim.sh dest)"
 # Build for simulator
 xcodebuild -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" build
 
-# Run all unit tests. `-parallel-testing-enabled NO` is MANDATORY — see below.
+# Full unit suite: only when explicitly requested or affected scope requires it.
 xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -parallel-testing-enabled NO
 
 # Run a single test class (many tests depend on shared state)
@@ -38,15 +40,20 @@ Use `-quiet` to suppress build output, but pair it with `-resultBundlePath` — 
 
 ### Simulator gotchas
 
-- **Always pass `-parallel-testing-enabled NO` to `xcodebuild test`.** Without it Xcode
-  clones the destination simulator into `~/Library/Developer/XCTestDevices` for every run,
-  and **`xcodebuild` can hang forever tearing those clones down after the tests have already
-  passed**. Measured twice: `✔ Test run with 84 tests in 9 suites passed after 1.340 seconds`
-  in the log, then the process sitting at 0% CPU with no `swift-frontend` alive and no output
-  for 5–10 minutes, never exiting. It reads exactly like a stuck compile, and it is not one —
-  always check whether the log already contains a test verdict before concluding the build
-  hung. The flag is also simply correct here: these tests share state and must not run in
-  parallel.
+- **`xcodebuild test` hangs after the tests have already passed. Use `scripts/xctest.sh`.**
+  It regularly prints its verdict and then sits at 0% CPU, with no `swift-frontend` alive and
+  no further output, for five to fifteen minutes without exiting. Measured 2026-09-13: tests
+  finished at 02:44:31, the log's last write was 02:45:11, the process was still alive and
+  idle at 02:53. It reads exactly like a stuck compile and it is not one.
+  `scripts/xctest.sh` runs the tests, watches the log, and kills `xcodebuild` the moment a
+  verdict appears — the same run that cost 8+ minutes finishes in 1m26s. **The verdict is the
+  result; the wrap-up is not.** Before concluding that a run hung, always
+  `grep -E "Test run with|Test Suite 'All tests'"` the log first.
+- **Always pass `-parallel-testing-enabled NO`** (`xctest.sh` does). This is a *separate*
+  problem from the hang above, and it does not fix it — verified: a hung run with the flag set
+  had left zero clones behind. What the flag prevents is Xcode cloning the destination
+  simulator into `~/Library/Developer/XCTestDevices` for every run. The flag is also simply
+  correct here: these tests share state and must not run in parallel.
   Killed or interrupted runs leave their clones behind and nothing ever reclaims them;
   `xcrun simctl --set ~/Library/Developer/XCTestDevices delete all` clears them. Note that
   `du` and disk-analyzer tools wildly overstate their size (28 clones reported as 903 GB on a

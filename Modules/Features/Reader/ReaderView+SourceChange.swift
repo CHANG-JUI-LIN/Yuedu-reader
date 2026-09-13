@@ -632,6 +632,7 @@ extension ReaderView {
         let narration = narrationForTTSChapter(chapterIndex)
         var text = narration.text
         var hints = narration.pronunciationHints
+        var offsets = narration.sourceOffsets
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // The moment listening stops. Previously a `notice` buried among thousands:
             // a real user's export had seven of these and nothing marking them as the
@@ -665,8 +666,12 @@ extension ReaderView {
                 else { return nil }
                 return hint.rebased(to: shifted)
             }
+            // The engine will report offsets into the slice, so the map has to be slid by
+            // the same amount or every highlight lands `startCharOffset` characters early.
+            offsets = offsets?.droppingNarrationPrefix(startCharOffset)
         }
 
+        ttsNarrationOffsets = offsets
         ttsChapterIndex = chapterIndex
         ttsPendingChapterIndex = nil
         let anchor = startCharOffset > 0
@@ -685,6 +690,7 @@ extension ReaderView {
             // and the cast is per book. Empty when 多角色朗讀 is off, which is also what
             // tells the engines not to split the chapter at quote boundaries at all.
             ttsCoordinator.roleVoices = activeTTSRoleVoices()
+            ttsCoordinator.roleAliases = activeTTSRoleAliases()
             ttsCoordinator.speak(
                 text: text,
                 title: chapters[chapterIndex].title,
@@ -715,6 +721,7 @@ extension ReaderView {
         let baseChapter = ttsChapterIndex ?? currentChapterIndex
         guard let target = narratableTTSChapter(from: baseChapter, direction: 1) else {
             ttsChapterIndex = nil
+            ttsNarrationOffsets = nil
             return .finished
         }
         let narration = narrationForTTSChapter(target)
@@ -725,20 +732,22 @@ extension ReaderView {
             beginWaitingForTTSChapter(target)
             return .waiting
         }
-        commitTTSChapterAdvance(to: target, text: text)
+        commitTTSChapterAdvance(to: target, narration: narration)
         return .ready(narration)
     }
 
     /// Shared tail of both advance paths (immediate and post-wait): move the anchor, retitle
     /// Now Playing, and start preparing the chapter after this one.
-    private func commitTTSChapterAdvance(to target: Int, text: String) {
+    private func commitTTSChapterAdvance(to target: Int, narration: TTSNarrationUnit) {
         ttsChapterIndex = target
+        // A chapter advance always starts at the top, so the unit's own map applies as-is.
+        ttsNarrationOffsets = narration.sourceOffsets
         ttsPendingChapterIndex = nil
         setActiveTTSAnchor(
             .chapterStart(target),
             alignReader: true
         )
-        ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title, text: text)
+        ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title, text: narration.text)
         prepareNextTTSChapter(after: target)
     }
 
@@ -857,7 +866,7 @@ extension ReaderView {
             return
         }
         ttsLog("[TTS][Reader] chapter wait resolved chapter=\(target) textCount=\(text.count)")
-        commitTTSChapterAdvance(to: target, text: text)
+        commitTTSChapterAdvance(to: target, narration: narration)
         ttsCoordinator.supplyPendingNarration(narration, chapterTitle: chapters[target].title)
     }
 
@@ -960,6 +969,20 @@ extension ReaderView {
     /// Read from the same narration text playback uses, through the same annotator, so the
     /// names offered are exactly the ones the engine will attribute — a name that shows up
     /// here is one that can actually be cast, and one that does not never will be.
+    /// alias → canonical name for the open book, from its AI character cards.
+    ///
+    /// Empty until the reader builds cards, and narration is fully usable without them — the
+    /// difference is that 張若塵, 若塵 and 塵哥 stop being three characters with three voices.
+    func activeTTSRoleAliases() -> [String: String] {
+        guard GlobalSettings.shared.ttsMultiRoleEnabled else { return [:] }
+        // The AI-verified roster first: it is the only thing here that can tell 試探 (an
+        // adverb the heuristic mistook for a name) from a person, and it also folds a
+        // character's nicknames onto one name. Character cards add whatever aliases they
+        // found on top.
+        return AISpeakerRosterStore.shared.roster(forBook: bookId)
+            .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId)) { _, card in card }
+    }
+
     func detectedTTSSpeakers() -> [String] {
         let chapterIndex = ttsChapterIndex ?? currentChapterIndex
         guard chapters.indices.contains(chapterIndex) else { return [] }
@@ -967,8 +990,17 @@ extension ReaderView {
         guard !text.isEmpty else { return [] }
         var seen: Set<String> = []
         var ordered: [String] = []
-        for attribution in TTSSpeakerAnnotator.attributions(in: text) {
+        // Folded through the same alias table playback uses, so the cast screen lists the
+        // characters that will actually be spoken rather than every name in the prose.
+        let aliases = AISpeakerRosterStore.shared.roster(forBook: bookId)
+            .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId)) { _, card in card }
+        for attribution in TTSSpeakerAnnotator.attributions(in: text, aliases: aliases) {
             guard let speaker = attribution.speaker, seen.insert(speaker).inserted else { continue }
+            // Once a roster exists, anything it left out was judged not to be a person.
+            // Before that it cannot filter, or the list would be empty on first open.
+            if !aliases.isEmpty, aliases[speaker] == nil, !aliases.values.contains(speaker) {
+                continue
+            }
             ordered.append(speaker)
         }
         return ordered
@@ -1047,6 +1079,67 @@ extension ReaderView {
 
     func textForTTSChapter(_ chapterIndex: Int) -> String {
         narrationForTTSChapter(chapterIndex).text
+    }
+
+    // MARK: - AI assistant
+
+    /// The open book, as the AI layer wants it.
+    ///
+    /// Laid-out text first — it is in the same offset space as the reading position, so a
+    /// citation lands on the sentence — and `aiChapterTexts` for everything else.
+    ///
+    /// `chapters[i].content` is **not** a fallback here: every reader path builds its
+    /// chapter list with `content: ""` (the text lives in the epub, the mapped txt file or
+    /// the online cache), so reading it was reading nothing. That left the AI seeing only
+    /// what `LayoutCache` held — five chapters of a whole novel.
+    func aiBookAdapter() -> AIBookContentAdapter {
+        AIBookContentAdapter(bookID: bookId, chapters: chapters) { index in
+            if usesCoreTextEPUB, let laidOut = epubRenderer.engine?.chapterText(forSpine: index) {
+                return laidOut
+            }
+            return aiChapterTexts[index]
+        }
+    }
+
+    /// Reads every chapter the device already has, so the AI features see the book instead of
+    /// the five chapters that happen to be laid out.
+    ///
+    /// Runs when an AI surface opens rather than at book open: it is only worth anything to a
+    /// reader who uses these features, and a long web novel is thousands of file reads.
+    /// Chapters already gathered are skipped, so re-opening the panel costs nothing.
+    func gatherAIBookText() async {
+        let count = chapters.count
+        guard count > 0 else { return }
+        var gathered = aiChapterTexts
+        var changed = false
+        for index in 0..<count {
+            if Task.isCancelled { return }
+            guard gathered[index] == nil else { continue }
+            // Gathered even for a chapter that is laid out right now: `LayoutCache` evicts,
+            // and skipping it here would leave a hole in the index the moment it does.
+            guard let text = await epubRenderer.chapterSourceText(at: index),
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { continue }
+            gathered[index] = text
+            changed = true
+        }
+        // Published once, at the end. Every write re-evaluates the reader's body and changes
+        // the index fingerprint, so publishing progress would rebuild the index repeatedly
+        // and answer questions from a book that is still half-loaded.
+        if changed { aiChapterTexts = gathered }
+    }
+
+    /// How far the reader has got, on the same scale the chunks carry.
+    ///
+    /// This is the spoiler ceiling, so it is derived from the adapter's own character counts
+    /// rather than from chapter index — a 200-character preface followed by a 40,000-character
+    /// chapter would otherwise read as 50% after the preface.
+    func aiReadingProgress() -> Double {
+        let position = currentPagedReadingPositionForModeSwitch()
+        return aiBookAdapter().progress(
+            forSpine: position?.spineIndex ?? currentChapterIndex,
+            charOffset: position?.charOffset ?? 0
+        )
     }
 
 }

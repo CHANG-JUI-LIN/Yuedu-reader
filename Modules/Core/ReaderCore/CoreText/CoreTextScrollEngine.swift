@@ -449,11 +449,13 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         do {
             if let browserAutoEngine, let chapter = try await browserAutoEngine.makeScrollChapter(
                 at: chapterIndex, settings: renderSettings,
-                contentSize: CGSize(width: contentWidth, height: max(1, viewportExtent))) {
+                contentSize: renderSettings.writingMode.isVertical
+                    ? CGSize(width: max(1, viewportExtent), height: contentWidth)
+                    : CGSize(width: contentWidth, height: max(1, viewportExtent))) {
                 guard generation == resliceGeneration, !Task.isCancelled else { return }
                 chapterCharacterCounts[chapterIndex] = (chapter.document.sourceText as NSString).length
                 let vacatedIndex = removeLoadingPlaceholder(for: chapterIndex)
-                insert(items: chapter.tiles(width: contentWidth), chapterIndex: chapterIndex, at: vacatedIndex)
+                insert(items: chapter.tiles(width: contentWidth, heightCap: renderSettings.writingMode.isVertical ? max(1, viewportExtent) : 2000), chapterIndex: chapterIndex, at: vacatedIndex)
                 loadedChapters.insert(chapterIndex)
                 pendingMissingChapters.remove(chapterIndex)
                 SourcePerfTrace.record("browser.scroll.loadChapter", "spine=\(chapterIndex) height=\(chapter.document.contentHeight)",
@@ -862,7 +864,15 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         guard let range = chapterRanges[chapter] else { return nil }
         if let first = range.first, case .browser(let tile) = chunks[first] {
             if charOffset <= 0 { return first }
-            let y = tile.chapter.document.documentY(forCharOffset: charOffset)
+            let document = tile.chapter.document
+            if tile.chapter.writingMode.isVertical {
+                guard let point = document.documentPoint(forCharOffset: charOffset) else { return range.last }
+                return range.first { index in
+                    guard case .browser(let candidate) = chunks[index] else { return false }
+                    return point.x > candidate.documentRect.minX && point.x <= candidate.documentRect.maxX
+                } ?? range.last
+            }
+            let y = document.documentY(forCharOffset: charOffset)
             return range.first { index in
                 guard case .browser(let candidate) = chunks[index] else { return false }
                 return y >= candidate.documentRect.minY && y < candidate.documentRect.maxY
