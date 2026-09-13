@@ -116,6 +116,8 @@ struct LLMGenerationResult: Sendable {
     let promptVersion: String
     let hasEvidence: Bool
     var selfAssessment: AISelfAssessment? = nil
+    var provenance: AIChatProvenance? = nil
+    var notices: [String] = []
 
     init(
         content: String,

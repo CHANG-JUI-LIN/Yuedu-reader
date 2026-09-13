@@ -21,7 +21,7 @@ struct AIStatusView: View {
                 LabeledContent(localized("本機可用正文"), value: "\(adapter.manifest.chapters.filter { $0.status == .available }.count) / \(adapter.manifest.chapters.count)")
                 LabeledContent(localized("已索引章節"), value: "\(service.indexedChapterCounts[adapter.chunkBookID] ?? 0)")
                 LabeledContent(localized("檢索索引"), value: indexDescription)
-                LabeledContent(localized("全書人物抽取"), value: localized("尚未實作"))
+                NavigationLink(localized("逐批人物建檔")) { AICharacterMemoryView(adapter: adapter) }
                 ForEach(adapter.manifest.chapters.filter { $0.status != .available }, id: \.order) { chapter in
                     LabeledContent(String(format: localized("第 %d 章"), chapter.order + 1), value: availability(chapter.status))
                 }
@@ -38,6 +38,13 @@ struct AIStatusView: View {
                 }
             } footer: {
                 Text(localized("契約驗證與語意品質不同；尚未評測語意品質。模型不可用時仍可使用關鍵字檢索。"))
+                    .dsSectionFooter()
+            }
+            Section {
+                LabeledContent(localized("每題模型呼叫上限"), value: "\(AIQuestionBudget().maximumModelCalls)")
+                LabeledContent(localized("每題搜尋詞上限"), value: "\(AIQuestionBudget().maximumQueries)")
+            } footer: {
+                Text(localized("追問釐清與補查共用每題預算，最多補查及修訂一次；每次模型呼叫可能由供應商計費。"))
                     .dsSectionFooter()
             }
             Section {

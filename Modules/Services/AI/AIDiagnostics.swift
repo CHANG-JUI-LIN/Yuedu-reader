@@ -18,8 +18,9 @@ final class AIRequestTrace: @unchecked Sendable {
         let origin: AIDiagnostics.Origin
         let events: [Event]
         let selectedContent: [String: [String]]?
+        let unavailableContentCategories: [String]
     }
-    let requestID = UUID()
+    let requestID: UUID
     let bookID: UUID
     let origin: AIDiagnostics.Origin
     private let start = Date()
@@ -29,7 +30,8 @@ final class AIRequestTrace: @unchecked Sendable {
     private let captureContent: Bool
 
     init(feature: String, bookID: UUID, adapter: AIBookContentAdapter, boundary: AIReadingBoundary,
-         origin: AIDiagnostics.Origin = .observed, captureContent: Bool = false) {
+         origin: AIDiagnostics.Origin = .observed, captureContent: Bool = false, requestID: UUID = UUID()) {
+        self.requestID = requestID
         self.bookID = bookID
         self.origin = origin
         self.captureContent = captureContent
@@ -40,7 +42,7 @@ final class AIRequestTrace: @unchecked Sendable {
             "boundarySectionDigest": AISourceManifest.digest(boundary.sectionID), "wholeBook": "\(boundary.wholeBook)",
             "totalChapters": "\(adapter.manifest.chapters.count)",
             "availableChapters": "\(adapter.manifest.chapters.filter { $0.status == .available }.count)",
-            "llmExtraction": "notImplemented"])
+            "llmExtraction": feature == "characterMemory" ? "batchedCharacterMemory" : "notApplicable"])
         for chapter in adapter.manifest.chapters where chapter.status != .available {
             event("missingChapter", ["order": "\(chapter.order)", "status": chapter.status.rawValue])
         }
@@ -75,7 +77,8 @@ final class AIRequestTrace: @unchecked Sendable {
         let selected = sensitive.filter { categories.contains($0.key) }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(Export(requestID: requestID, origin: origin, events: events,
-            selectedContent: selected.isEmpty ? nil : selected))
+            selectedContent: selected.isEmpty ? nil : selected,
+            unavailableContentCategories: categories.filter { sensitive[$0] == nil }.sorted()))
     }
     static func redact(_ value: String) -> String {
         var result = value
@@ -94,12 +97,17 @@ final class AIDiagnosticStore: ObservableObject {
     @Published var captureNextRequestContent = false
     @Published private(set) var retrievalDegradation: String?
     @Published private(set) var latest: AIRequestTrace?
-    func begin(feature: String, bookID: UUID, adapter: AIBookContentAdapter, boundary: AIReadingBoundary, origin: AIDiagnostics.Origin = .observed) -> AIRequestTrace {
+    func begin(feature: String, bookID: UUID, adapter: AIBookContentAdapter, boundary: AIReadingBoundary, origin: AIDiagnostics.Origin = .observed, requestID: UUID = UUID()) -> AIRequestTrace {
         let trace = AIRequestTrace(feature: feature, bookID: bookID, adapter: adapter, boundary: boundary,
-            origin: origin, captureContent: captureNextRequestContent)
+            origin: origin, captureContent: captureNextRequestContent, requestID: requestID)
         captureNextRequestContent = false
         latest = trace
         return trace
+    }
+    func recordPresentation(requestID: UUID, status: String) {
+        guard let trace = latest, trace.requestID == requestID else { return }
+        trace.event("uiFinalState", ["status": status])
+        finish(trace)
     }
     func finish(_ trace: AIRequestTrace) {
         // Only the most recently started request owns the displayed/exported result.
@@ -125,7 +133,7 @@ struct AITracedProvider: LLMProviding {
         let start = Date()
         trace?.event("messages", ["roles": request.messages.map { $0.role.rawValue }.joined(separator: ","),
             "count": "\(request.messages.count)", "characterCounts": request.messages.map { String($0.content.count) }.joined(separator: ","),
-            "history": "false", "dataMessages": "\(request.messages.filter { $0.role == .user }.count)", "provider": identifier, "model": AIRequestTrace.redact(model ?? defaultModel),
+            "history": "\(request.messages.contains { $0.content.hasPrefix("<conversation-data") })", "dataMessages": "\(request.messages.filter { $0.role == .user }.count)", "provider": identifier, "model": AIRequestTrace.redact(model ?? defaultModel),
             "maxOutputTokens": request.maxTokens.map(String.init) ?? "providerDefault"])
         trace?.content("messages", request.messages.map { "\($0.role.rawValue):\n\($0.content)" })
         do {

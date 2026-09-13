@@ -5,6 +5,7 @@ struct AIBookContentAdapter: AIChunkableContent {
     let chunkBookID: UUID
     let chunkSections: [AIChunkableSection]
     let manifest: AISourceManifest
+    private(set) var readingPositionVerified = false
     private(set) var readingBoundary: AIReadingBoundary?
     let contentFingerprint: String
     let acquisitionMilliseconds: Double?
@@ -50,15 +51,17 @@ struct AIBookContentAdapter: AIChunkableContent {
             readingBoundary = .init(sourceVersion: contentFingerprint, sectionID: sections[position.spine].id,
                 spineIndex: position.spine, utf16Offset: AITextCoordinates.sourceBoundaryOffset(
                     source: sections[position.spine].text, rendered: renderedText, renderedOffset: position.utf16Offset))
+            readingPositionVerified = renderedText == sections[position.spine].text || (readingBoundary?.utf16Offset ?? 0) > 0
         } else { readingBoundary = nil }
     }
 
     func atReadingPosition(spine: Int, renderedOffset: Int, renderedText: String?) -> Self {
         var snapshot = self
-        guard chunkSections.indices.contains(spine) else { snapshot.readingBoundary = nil; return snapshot }
+        guard chunkSections.indices.contains(spine) else { snapshot.readingBoundary = nil; snapshot.readingPositionVerified = false; return snapshot }
         snapshot.readingBoundary = .init(sourceVersion: contentFingerprint, sectionID: chunkSections[spine].id,
             spineIndex: spine, utf16Offset: AITextCoordinates.sourceBoundaryOffset(source: chunkSections[spine].text,
                 rendered: renderedText, renderedOffset: renderedOffset))
+        snapshot.readingPositionVerified = renderedText == chunkSections[spine].text || (snapshot.readingBoundary?.utf16Offset ?? 0) > 0
         return snapshot
     }
 

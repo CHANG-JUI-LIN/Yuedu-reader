@@ -1130,6 +1130,10 @@ class BookStore: ObservableObject, BookProvider {
     }
 
     func delete(bookId: UUID) {
+        Task { @MainActor in
+            do { try await AICharacterMemoryService.shared.clear(book: bookId) }
+            catch { AppLogger.error("Character memory cleanup failed") }
+        }
         if let idx = records.firstIndex(where: { $0.id == bookId }) {
             let book = records[idx]
             if book.remoteSource != nil {

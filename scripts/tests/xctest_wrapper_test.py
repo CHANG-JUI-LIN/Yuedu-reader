@@ -16,6 +16,14 @@ case "$YUEDU_WRAPPER_FIXTURE" in
     echo "Test run with 6 tests in 1 suite passed"
     echo "** TEST SUCCEEDED **"
     exec sleep 30 ;;
+  nonzero)
+    echo "Test run with 6 tests in 1 suite passed"
+    echo "** TEST SUCCEEDED **"
+    exit 65 ;;
+  zero)
+    echo "Test run with 0 tests in 0 suites passed"
+    echo "** TEST SUCCEEDED **"
+    exit 0 ;;
   failure)
     echo "Test run with 2 tests in 1 suite failed"
     echo "** TEST FAILED **"
@@ -27,7 +35,7 @@ esac
     fake.chmod(0o755)
     sentinel = subprocess.Popen(["bash", "-c", "exec -a 'xcodebuild test unrelated-fixture' sleep 120"])
     try:
-        for case, expected in [("success", 0), ("failure", 1), ("missing", 1), ("timeout", 1)]:
+        for case, expected in [("success", 0), ("failure", 1), ("missing", 1), ("timeout", 1), ("nonzero", 1), ("zero", 1)]:
             env = dict(os.environ, PATH=str(directory) + os.pathsep + os.environ["PATH"],
                        DEVELOPER_DIR="fixture", YUEDU_DEST="fixture",
                        YUEDU_WRAPPER_FIXTURE=case)

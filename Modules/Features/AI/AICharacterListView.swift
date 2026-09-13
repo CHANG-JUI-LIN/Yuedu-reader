@@ -77,9 +77,12 @@ struct AICharacterListView: View {
             if isScanning { scanningSection }
             scopeSection
             Section {
+                NavigationLink(localized("逐批人物建檔")) { AICharacterMemoryView(adapter: adapter) }
+            }
+            Section {
                 NavigationLink(localized("AI 狀態與診斷")) { AIStatusView(adapter: adapter) }
             } footer: {
-                Text(localized("候選來自啟發式掃描，尚未進行全書人物抽取。"))
+                Text(localized("候選來自啟發式掃描；逐批人物建檔需另外啟動。"))
                     .dsSectionFooter()
                 if scope == .read, store.profiles(forBook: bookID).count > profiles.count {
                     Text(localized("部分卡片來源或範圍未驗證，已在安全模式隱藏；自訂設定仍保留。"))

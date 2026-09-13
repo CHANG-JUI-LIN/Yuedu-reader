@@ -1,8 +1,8 @@
 import Foundation
 
 /// One turn in the reader's conversation about a book.
-struct AIChatMessage: Identifiable, Equatable, Codable {
-    enum Role: String, Codable {
+struct AIChatMessage: Identifiable, Equatable, Codable, Sendable {
+    enum Role: String, Codable, Sendable {
         case user
         case assistant
     }
@@ -21,6 +21,30 @@ struct AIChatMessage: Identifiable, Equatable, Codable {
     /// `false` when the answer cited nothing from the book.
     var hasEvidence: Bool
     let createdAt: Date
+    var provenance: AIChatProvenance? = nil
+    var notices: [String]? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case id, role, text, citations, isPending, errorMessage, hasEvidence, createdAt, provenance, notices
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        role = try values.decode(Role.self, forKey: .role)
+        text = try values.decode(String.self, forKey: .text)
+        citations = try values.decodeIfPresent([LLMCitation].self, forKey: .citations) ?? []
+        isPending = try values.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
+        errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+        hasEvidence = try values.decodeIfPresent(Bool.self, forKey: .hasEvidence) ?? false
+        createdAt = try values.decode(Date.self, forKey: .createdAt)
+        // Incomplete provenance means unknown scope, not a reason to delete old prose.
+        // This compatibility path is removable once legacy chats are no longer supported.
+        do { provenance = try values.decodeIfPresent(AIChatProvenance.self, forKey: .provenance) }
+        catch { provenance = nil; AppLogger.error("AI chat provenance invalid; preserving history without context eligibility") }
+        do { notices = try values.decodeIfPresent([String].self, forKey: .notices) }
+        catch { notices = nil; AppLogger.error("AI chat notices invalid; preserving history") }
+    }
 
     init(
         id: UUID = UUID(),
@@ -48,7 +72,7 @@ struct AIChatMessage: Identifiable, Equatable, Codable {
 /// Opening the assistant starts a new one, the way a chat app does — the previous thread is
 /// not lost, it moves into the list. Carrying on yesterday's conversation about a chapter you
 /// have since read past is rarely what anyone wants.
-struct AIChatSession: Identifiable, Equatable, Codable {
+struct AIChatSession: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var messages: [AIChatMessage]
     let createdAt: Date
@@ -103,4 +127,30 @@ struct AIChatSuggestion: Identifiable, Equatable {
             kind: .prompt("我剛剛讀到的這一段發生了什麼事？")
         ),
     ]
+}
+
+extension AIChatSession {
+    /// Retry replaces the failed assistant slot while retaining the original user identity.
+    /// A completed or pending turn cannot be appended again by a double tap.
+    mutating func prepareQuestion(_ question: String, metadata: AIChatProvenance, retrying userID: UUID? = nil) -> (user: UUID, assistant: UUID)? {
+        guard metadata.conversationID == id, !messages.contains(where: \.isPending) else { return nil }
+        let user: UUID
+        if let userID {
+            guard let i = messages.firstIndex(where: { $0.id == userID && $0.role == .user && $0.text == question }),
+                  i + 1 == messages.count - 1,
+                  messages[i + 1].role == .assistant, messages[i + 1].errorMessage != nil else { return nil }
+            messages.remove(at: i + 1)
+            messages[i].provenance = metadata
+            user = userID
+        } else {
+            var message = AIChatMessage(role: .user, text: question)
+            message.provenance = metadata
+            messages.append(message)
+            user = message.id
+        }
+        var assistant = AIChatMessage(role: .assistant, text: "", isPending: true)
+        assistant.provenance = metadata
+        messages.append(assistant)
+        return (user, assistant.id)
+    }
 }

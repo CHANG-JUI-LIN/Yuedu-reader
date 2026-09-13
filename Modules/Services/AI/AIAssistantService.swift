@@ -157,23 +157,16 @@ final class AIAssistantService: ObservableObject {
         boundary: AIReadingBoundary? = nil
     ) async throws -> LLMGenerationResult {
         let boundary = boundary ?? adapter.boundary()
-        return try await traced("answer", adapter: adapter, boundary: boundary) {
+        return try await answer(context: .init(bookID: bookID, question: question, source: adapter, boundary: boundary))
+    }
+
+    func answer(context: AIQuestionContext,
+                onStage: (@MainActor @Sendable (AIQuestionStage) -> Void)? = nil) async throws -> LLMGenerationResult {
+        try await traced("answer", adapter: context.source, boundary: context.boundary, requestID: context.requestID) {
             let provider = try resolveProvider()
-            let index = try await index(forBook: bookID, adapter: adapter)
-            let hits = try await index.retrieve(
-                query: question,
-                maximumProgress: progress,
-                limit: 8,
-                embedding: AIEmbeddingModelStore.shared.readyProvider(),
-                boundary: boundary
-            )
-            return try await AIRAGPipeline.answer(
-                query: question,
-                hits: hits,
-                provider: provider,
-                sectionTitleByID: index.sectionTitleByID,
-                spoilerLimited: !boundary.wholeBook
-            )
+            let index = try await index(forBook: context.bookID, adapter: context.source)
+            return try await AIAgenticAssistant.answerQuestion(context: context, index: index, provider: provider,
+                embedding: AIEmbeddingModelStore.shared.readyProvider(), onStage: onStage)
         }
     }
 
@@ -283,10 +276,10 @@ final class AIAssistantService: ObservableObject {
         return false
     }
 
-    private func traced<T>(_ feature: String, adapter: AIBookContentAdapter, boundary: AIReadingBoundary, operation: () async throws -> T) async throws -> T {
+    private func traced<T>(_ feature: String, adapter: AIBookContentAdapter, boundary: AIReadingBoundary, requestID: UUID = UUID(), operation: () async throws -> T) async throws -> T {
         try Task.checkCancellation()
         activate(adapter)
-        let trace = AIDiagnosticStore.shared.begin(feature: feature, bookID: adapter.chunkBookID, adapter: adapter, boundary: boundary, origin: diagnosticOrigin)
+        let trace = AIDiagnosticStore.shared.begin(feature: feature, bookID: adapter.chunkBookID, adapter: adapter, boundary: boundary, origin: diagnosticOrigin, requestID: requestID)
         defer { AIDiagnosticStore.shared.finish(trace) }
         return try await AIDiagnostics.$current.withValue(trace) {
             do {

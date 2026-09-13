@@ -55,11 +55,12 @@ VERDICT="\*\* TEST (SUCCEEDED|FAILED) \*\*|\*\* BUILD FAILED \*\*|The following 
 # alone is 107s). TIMEOUT is the only other exit.
 
 elapsed=0
+VERDICT_STOP=false
 while kill -0 "$BUILD_PID" 2>/dev/null; do
   if grep -qE "$VERDICT" "$LOG" 2>/dev/null; then
     # Give the tail of the output a moment to land, then stop waiting.
     sleep 5
-    kill "$BUILD_PID" 2>/dev/null
+    if kill "$BUILD_PID" 2>/dev/null; then VERDICT_STOP=true; fi
     break
   fi
   if (( elapsed >= TIMEOUT )); then
@@ -71,6 +72,8 @@ while kill -0 "$BUILD_PID" 2>/dev/null; do
   elapsed=$((elapsed + 3))
 done
 wait "$BUILD_PID" 2>/dev/null
+RAW_STATUS=$?
+echo "xcodebuild status: $RAW_STATUS; wrapper verdict stop: $VERDICT_STOP"
 
 echo "--- errors ---"
 grep -nE "^/Users.*error:" "$LOG" | sed "s|$ROOT/||" | head -25
@@ -79,6 +82,14 @@ grep -E "Test run with [0-9]+ tests|Test Suite 'All tests' (passed|failed)|✘ S
 
 # Framework/background logs can contain "failed" on a successful run. Only the test
 # runner's final verdict is authoritative; absence of a verdict is never success.
+# A natural nonzero exit is failure even when a success line was printed earlier.
+# Only our intentional post-verdict signal may replace normal process completion.
+if (( RAW_STATUS != 0 )) && ! { [[ "$VERDICT_STOP" == true ]] && (( RAW_STATUS >= 128 )); }; then
+  exit 1
+fi
+if ! grep -qE 'Test run with [1-9][0-9]* tests|Executed [1-9][0-9]* tests?' "$LOG"; then
+  exit 1
+fi
 if grep -qE "\*\* TEST SUCCEEDED \*\*" "$LOG" && ! grep -qE "✘|\*\* TEST FAILED \*\*|\*\* BUILD FAILED \*\*" "$LOG"; then
   exit 0
 fi

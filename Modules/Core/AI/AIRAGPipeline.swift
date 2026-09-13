@@ -97,6 +97,11 @@ enum AIRAGPipeline {
         let nonce = makeNonce()
         let raw = try await provider.generate(request(query: query, chunks: chunks, nonce: nonce))
 
+        return try result(raw: raw, chunks: chunks, nonce: nonce, sectionTitleByID: sectionTitleByID)
+    }
+
+    static func result(raw: LLMRawResponse, chunks: [AIContentChunk], nonce: String,
+                       sectionTitleByID: [String: String]) throws -> LLMGenerationResult {
         try raw.validateCompletion()
         let parseStarted = Date()
         var parser = AISelfAssessmentStreamParser(nonce: nonce)

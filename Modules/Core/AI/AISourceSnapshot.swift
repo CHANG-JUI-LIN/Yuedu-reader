@@ -67,10 +67,13 @@ enum AITextCoordinates {
     }
     static func uniqueRange(of quote: String, in text: String) -> Range<String.Index>? {
         guard !quote.isEmpty, let range = text.range(of: quote, options: .literal),
-              text.range(of: quote, options: .literal, range: range.upperBound..<text.endIndex) == nil,
               text.indices.contains(range.lowerBound),
               range.upperBound == text.endIndex || text.indices.contains(range.upperBound)
         else { return nil }
+        // Search from the next source character, not the end of the first match:
+        // overlapping occurrences (e.g. "aa" in "aaa") are ambiguous too.
+        let next = text.index(after: range.lowerBound)
+        guard text.range(of: quote, options: .literal, range: next..<text.endIndex) == nil else { return nil }
         return range
     }
     /// When extraction and layout differ, a unique literal quote verifies the destination.

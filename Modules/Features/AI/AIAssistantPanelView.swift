@@ -29,12 +29,16 @@ struct AIAssistantPanelView: View {
     @GestureState(resetTransaction: Transaction(animation: DSAnimation.standard))
     private var drag = DrawerDrag()
     @State private var task: Task<Void, Never>?
+    @State private var requestOwner: AIChatRequestOwner?
+    @State private var questionStage: AIQuestionStage = .searching
     @FocusState private var inputFocused: Bool
 
     private var messages: [AIChatMessage] { session.messages }
     private var isBusy: Bool { messages.last?.isPending == true }
     /// The ceiling retrieval is allowed to reach.
     private var effectiveProgress: Double { gs.aiSpoilerSafe ? progress : 1.0 }
+
+    private var currentBoundary: AIReadingBoundary { adapter.boundary(wholeBook: !gs.aiSpoilerSafe) }
 
     var body: some View {
         // The conversation list is the layer underneath; the chat sits on top of it and
@@ -121,9 +125,13 @@ struct AIAssistantPanelView: View {
                 cancel()
                 AIAssistantService.shared.activate(adapter)
             }
+            .onChange(of: currentBoundary) { _, boundary in
+                if let owner = requestOwner, !boundary.contains(owner.boundary) { cancel() }
+            }
+            .onChange(of: bookID) { _, _ in cancel(); start() }
             .onAppear(perform: start)
             .onDisappear {
-                task?.cancel()
+                cancel()
                 persist()
             }
             .sheet(isPresented: $showSettings, onDismiss: {
@@ -163,6 +171,12 @@ struct AIAssistantPanelView: View {
             }.accessibilityLabel(localized("AI 狀態與診斷"))
         }
         if isConfigured {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    AICharacterMemoryView(adapter: adapter, onOpenCitation: onOpenCitation)
+                } label: { Image(systemName: "person.text.rectangle").accessibilityHidden(true) }
+                .accessibilityLabel(localized("逐批人物建檔"))
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     withAnimation(DSAnimation.standard) { showHistory.toggle() }
@@ -251,12 +265,18 @@ struct AIAssistantPanelView: View {
     @ViewBuilder
     private func assistantBubble(_ message: AIChatMessage) -> some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            if message.isPending, message.text.isEmpty {
+            if let provenance = message.provenance, !currentBoundary.contains(provenance.boundary) {
+                Text(localized("此回覆超出目前可確認的來源或閱讀範圍，已暫時隱藏。"))
+                    .font(DSFont.footnote).foregroundStyle(DSColor.textSecondary)
+            } else if message.isPending, message.text.isEmpty {
                 thinkingIndicator
             } else if let error = message.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(DSFont.subheadline)
                     .foregroundStyle(DSColor.destructive)
+                if message.id == messages.last?.id, message.provenance != nil {
+                    Button(localized("重試這個問題")) { retry(message) }.disabled(isBusy)
+                }
             } else if message.text.isEmpty {
                 // An answer that came back empty is a failure, not a blank bubble with a
                 // red warning under it.
@@ -284,7 +304,7 @@ struct AIAssistantPanelView: View {
     private var thinkingIndicator: some View {
         HStack(spacing: DSSpacing.sm) {
             ProgressView()
-            Text(localized("思考中…"))
+            Text(questionStage.label)
                 .font(DSFont.subheadline)
                 .foregroundStyle(DSColor.textSecondary)
         }
@@ -304,6 +324,9 @@ struct AIAssistantPanelView: View {
                 .font(DSFont.footnote)
                 .foregroundStyle(DSColor.destructive)
         }
+        ForEach(message.notices ?? [], id: \.self) { notice in
+            Text(notice).font(DSFont.footnote).foregroundStyle(DSColor.textSecondary)
+        }
         ForEach(message.citations, id: \.chunkID) { citation in
             citationRow(citation)
         }
@@ -319,11 +342,9 @@ struct AIAssistantPanelView: View {
                     .foregroundStyle(DSColor.textSecondary)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    if let title = citation.sectionTitle {
-                        Text(title)
-                            .font(DSFont.caption)
-                            .foregroundStyle(DSColor.textSecondary)
-                    }
+                    Text(citation.sectionTitle ?? String(format: localized("第 %d 章"), citation.spineIndex + 1))
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.textSecondary)
                     if citation.sourceVersion != adapter.contentFingerprint {
                         Text(localized("來源已變更，需重新整理引用"))
                             .font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
@@ -481,15 +502,15 @@ struct AIAssistantPanelView: View {
     }
 
     private func startNewConversation() {
+        cancel()
         persist()
-        task?.cancel()
         session = AIChatSession()
         withAnimation(DSAnimation.standard) { showHistory = false }
     }
 
     private func open(_ selected: AIChatSession) {
+        cancel()
         persist()
-        task?.cancel()
         session = selected
         withAnimation(DSAnimation.standard) { showHistory = false }
     }
@@ -497,7 +518,7 @@ struct AIAssistantPanelView: View {
     private func delete(_ id: UUID) {
         AIChatStore.shared.delete(sessionID: id, forBook: bookID)
         history = AIChatStore.shared.sessions(forBook: bookID)
-        if session.id == id { session = AIChatSession() }
+        if session.id == id { cancel(); session = AIChatSession() }
     }
 
     private func persist() {
@@ -516,45 +537,65 @@ struct AIAssistantPanelView: View {
         }
     }
 
-    private func send(_ text: String) {
+    private func retry(_ message: AIChatMessage) {
+        guard let i = messages.firstIndex(where: { $0.id == message.id }), i > 0,
+              messages[i - 1].role == .user else { return }
+        let user = messages[i - 1]
+        send(user.text, existingUserID: user.id)
+    }
+
+    private func send(_ text: String, existingUserID: UUID? = nil) {
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isBusy else { return }
         draft = ""
         inputFocused = false
-        append(AIChatMessage(role: .user, text: question))
-        let pending = AIChatMessage(role: .assistant, text: "", isPending: true)
-        append(pending)
-
+        let context = AIQuestionContext(bookID: bookID, conversationID: session.id, question: question,
+            source: adapter, boundary: currentBoundary, history: messages.filter { $0.id != existingUserID })
+        let owner = AIChatRequestOwner(requestID: context.requestID, conversationID: session.id, bookID: bookID, boundary: currentBoundary)
+        let metadata = AIChatProvenance(requestID: context.requestID, bookID: bookID, conversationID: session.id,
+            boundary: currentBoundary, status: .pending)
+        guard let turn = session.prepareQuestion(question, metadata: metadata, retrying: existingUserID) else { return }
+        let userID = turn.user
+        let pendingID = turn.assistant
+        persist()
         task?.cancel()
+        requestOwner = owner
+        questionStage = .searching
         task = Task {
             do {
-                let result = try await AIAssistantService.shared.answer(
-                    question: question,
-                    bookID: bookID,
-                    adapter: adapter,
-                    progress: effectiveProgress,
-                    boundary: adapter.boundary(wholeBook: !gs.aiSpoilerSafe)
-                )
-                guard !Task.isCancelled else { return }
-                resolve(
-                    pending.id,
-                    text: result.content,
-                    citations: result.citations,
-                    hasEvidence: result.hasEvidence
-                )
-            } catch is CancellationError {
-                remove(pending.id)
+                let result = try await AIAssistantService.shared.answer(context: context) { stage in
+                    if requestOwner == owner { questionStage = stage }
+                }
+                guard !Task.isCancelled, owns(owner) else { return }
+                if let i = session.messages.firstIndex(where: { $0.id == userID }) { session.messages[i].provenance = result.provenance }
+                resolve(pendingID, text: result.content, citations: result.citations, hasEvidence: result.hasEvidence,
+                    provenance: result.provenance, notices: result.notices)
+                AIDiagnosticStore.shared.recordPresentation(requestID: owner.requestID, status: "displayed")
+                requestOwner = nil
             } catch {
-                guard !Task.isCancelled else { return }
-                resolve(pending.id, error: error.localizedDescription)
+                guard !Task.isCancelled, owns(owner) else { return }
+                var failed = metadata; failed.status = error is CancellationError ? .cancelled : .failed
+                if let i = session.messages.firstIndex(where: { $0.id == userID }) { session.messages[i].provenance = failed }
+                resolve(pendingID, error: error.localizedDescription, provenance: failed)
+                AIDiagnosticStore.shared.recordPresentation(requestID: owner.requestID, status: "failed")
+                requestOwner = nil
             }
         }
+    }
+
+    private func owns(_ owner: AIChatRequestOwner) -> Bool {
+        owner.canPublish(requestID: requestOwner?.requestID, conversationID: session.id, bookID: bookID, boundary: currentBoundary)
     }
 
     /// 前情提要 does not go through retrieval: it is seeded from the most recent already-read
     /// passages, so it reads forwards instead of answering a query.
     private func askRecap() {
         guard !isBusy else { return }
+        let snapshot = adapter
+        let boundary = currentBoundary
+        let owner = AIChatRequestOwner(requestID: UUID(), conversationID: session.id, bookID: bookID, boundary: boundary)
+        requestOwner = owner
+        questionStage = .answering
         append(AIChatMessage(role: .user, text: localized("最近已讀片段提要")))
         let pending = AIChatMessage(role: .assistant, text: "", isPending: true)
         append(pending)
@@ -566,22 +607,24 @@ struct AIAssistantPanelView: View {
                 let recap = try await AIAssistantService.shared.recap(
                     bookID: bookID,
                     bookTitle: bookTitle,
-                    adapter: adapter,
+                    adapter: snapshot,
                     progress: effectiveProgress,
                     stored: stored,
-                    boundary: adapter.boundary(wholeBook: !gs.aiSpoilerSafe)
+                    boundary: boundary
                 )
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, owns(owner) else { return }
                 guard let recap else {
                     resolve(pending.id, error: localized("已讀範圍還太少，無法產生提要。"))
                     return
                 }
                 AIRecapStore.shared.save(recap, forBook: bookID)
-                resolve(pending.id, text: recap.text, citations: [], hasEvidence: true)
+                resolve(pending.id, text: recap.text, citations: [], hasEvidence: true,
+                    provenance: .init(requestID: owner.requestID, bookID: bookID, conversationID: owner.conversationID, boundary: boundary, status: .completed))
+                requestOwner = nil
             } catch is CancellationError {
-                remove(pending.id)
+                if owns(owner) { remove(pending.id) }
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, owns(owner) else { return }
                 resolve(pending.id, error: error.localizedDescription)
             }
         }
@@ -589,8 +632,15 @@ struct AIAssistantPanelView: View {
 
     private func cancel() {
         task?.cancel()
+        if let owner = requestOwner { AIDiagnosticStore.shared.recordPresentation(requestID: owner.requestID, status: "cancelledOrScopeChanged") }
+        requestOwner = nil
         if let last = messages.last, last.isPending {
-            remove(last.id)
+            if let i = session.messages.indices.last {
+                session.messages[i].isPending = false
+                session.messages[i].errorMessage = localized("已停止本次問答。")
+                session.messages[i].provenance?.status = .cancelled
+            }
+            persist()
         }
     }
 
@@ -606,7 +656,9 @@ struct AIAssistantPanelView: View {
         text: String = "",
         citations: [LLMCitation] = [],
         hasEvidence: Bool = true,
-        error: String? = nil
+        error: String? = nil,
+        provenance: AIChatProvenance? = nil,
+        notices: [String] = []
     ) {
         guard let index = session.messages.firstIndex(where: { $0.id == id }) else { return }
         session.messages[index].isPending = false
@@ -614,6 +666,8 @@ struct AIAssistantPanelView: View {
         session.messages[index].citations = citations
         session.messages[index].hasEvidence = hasEvidence
         session.messages[index].errorMessage = error
+        session.messages[index].provenance = provenance
+        session.messages[index].notices = notices
         persist()
     }
 
