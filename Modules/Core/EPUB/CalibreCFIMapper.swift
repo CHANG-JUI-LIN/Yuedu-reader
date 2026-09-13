@@ -85,10 +85,17 @@ enum CalibreCFIMapper {
         // ruby annotations or attachments; ambiguity stays an explicit error.
         // A one-sided context also covers text next to a rasterized table: the
         // reader has one attachment where the server DOM has many cell texts.
-        let windows = [512, 256, 128, 64, 32, 16, 8].flatMap { radius in
-            [NSRange(location: max(0, target - radius), length: min(context.length, target + radius) - max(0, target - radius)),
-             NSRange(location: target, length: min(radius, context.length - target)),
-             NSRange(location: max(0, target - radius), length: min(context.length, target + 1) - max(0, target - radius))]
+        // Keep range arithmetic explicit so Swift 6.3 can type-check Release builds.
+        let radii: [Int] = [512, 256, 128, 64, 32, 16, 8]
+        var windows: [NSRange] = []
+        for radius in radii {
+            let start = max(0, target - radius)
+            let end = min(context.length, target + radius)
+            let forwardLength = min(radius, context.length - target)
+            let backwardEnd = min(context.length, target + 1)
+            windows.append(NSRange(location: start, length: end - start))
+            windows.append(NSRange(location: target, length: forwardLength))
+            windows.append(NSRange(location: start, length: backwardEnd - start))
         }
         for requested in windows {
             let window = context.rangeOfComposedCharacterSequences(for:
