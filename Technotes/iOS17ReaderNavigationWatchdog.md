@@ -32,6 +32,18 @@ region. Do not restore `@Environment(\.dismiss)` in these two views without
 running the actual iOS 17 entry tests. Delaying navigation or retrying chapter
 loading does not address this dependency cycle.
 
+`FixedPageReaderView` (manga, PDF, fixed-layout EPUB) is the format reader
+below `BookReaderView` for those books and follows the same two rules as
+`ReaderView`: it reads `presentationMode`, never `@Environment(\.dismiss)`, and
+it lets `ReaderNavigationContainer` decide whether it needs a NavigationStack of
+its own. A missing `readerNavigator` does not mean modal: a detail-origin reader
+is pushed onto the detail's stack with `readerUsesParentNavigationStack`. When
+the fixed-page reader moved its controls into the native toolbar it wrapped
+itself in a NavigationStack whenever it had no navigator, nesting a second
+stack inside that destination, and manga stopped opening from a book detail
+(reported 2026-09-28). `DetailReaderStackTests` pins both the pushed and the
+modal case.
+
 This is separate from the synchronous publication during bookshelf probe
 teardown, addressed by owner-scoped deferred navigation detachment.
 The iOS 17 coordinator regression also exposed that UIKit can release an

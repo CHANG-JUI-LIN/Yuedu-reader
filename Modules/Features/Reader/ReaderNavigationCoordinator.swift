@@ -706,11 +706,12 @@ final class ReaderNavigationCoordinator: ObservableObject {
 // MARK: - Environment bridge
 //
 // Optional coordinator injected by migrated entry points (currently the
-// bookshelf push). Modal presentations (online book detail, in-app browser,
-// now-playing hub) do not inject a coordinator, so the reader falls back to
-// its existing `dismiss` action there. Keeping this optional means the same
-// `BookReaderView` works for both push and modal paths without branching on
-// presentation style.
+// bookshelf push). A reader without one is either presented modally (in-app
+// browser, now-playing hub, Open In) or pushed onto a book detail's own SwiftUI
+// stack (`readerUsesParentNavigationStack`), so a missing coordinator does not
+// mean modal; both close through their presentation binding. Keeping this
+// optional means the same `BookReaderView` works for both push and modal paths
+// without branching on presentation style.
 
 private struct ReaderNavigatorKey: EnvironmentKey {
     static let defaultValue: ReaderNavigationCoordinator? = nil

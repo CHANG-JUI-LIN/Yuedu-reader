@@ -62,6 +62,31 @@ private struct DetailStackFixture: View {
     }
 }
 
+/// The fixed-page (manga) reader where OnlineBookView and RemoteLibraryBookDetailView
+/// put it: a destination of the detail's own stack, with no card navigator.
+private struct FixedPageDetailStackFixture: View {
+    @ObservedObject var state: DetailStackState
+    let store: BookStore
+
+    var body: some View {
+        NavigationStack(path: $state.path) {
+            Text("Explore")
+                .background(StackAppearanceProbe { state.onAppear("explore", nil) }.frame(width: 0, height: 0))
+                .navigationDestination(for: ExploreNavigationRoute.self) { _ in
+                    Text("Book detail")
+                        .background(StackAppearanceProbe { state.onAppear("bookDetail", nil) }.frame(width: 0, height: 0))
+                        .navigationDestination(item: $state.reader) { route in
+                            FixedPageReaderView(bookId: route.id)
+                                .environmentObject(store)
+                                .environment(\.readerNavigator, nil)
+                                .environment(\.readerUsesParentNavigationStack, true)
+                                .background(StackAppearanceProbe { state.onAppear("reader", nil) }.frame(width: 0, height: 0))
+                        }
+                }
+        }
+    }
+}
+
 @MainActor
 final class DetailReaderStackTests: XCTestCase {
     func testExploreReaderStaysOnSameStackThroughRefreshAndDetailRoundTrip() async throws {
@@ -115,6 +140,73 @@ final class DetailReaderStackTests: XCTestCase {
         XCTAssertEqual(state.path.count, 1)
         await awaitScreen("reader") { state.reader = DetailReaderRoute(id: bookID) }
         XCTAssertNotEqual(identities.last, originalIdentity)
+    }
+
+    /// The fixed-page reader used to wrap itself in a NavigationStack whenever it
+    /// had no card navigator, nesting a second stack inside the detail's
+    /// destination; manga stopped opening from a book detail. The reader picks
+    /// its stack before it looks the book up, so an empty shelf exercises that
+    /// choice without loading any pages.
+    func testFixedPageReaderPushedFromDetailJoinsTheDetailStack() async throws {
+        let metadataURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("books-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: metadataURL) }
+        let state = DetailStackState()
+        let host = UIHostingController(rootView: FixedPageDetailStackFixture(
+            state: state,
+            store: BookStore(metadataFileURL: metadataURL)
+        ))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKey()
+        }
+        func awaitScreen(_ name: String, line: UInt = #line, action: () -> Void) async {
+            let appeared = expectation(description: "\(name) at line \(line)")
+            state.onAppear = { screen, _ in
+                if screen == name { appeared.fulfill() }
+            }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction, action)
+            await fulfillment(of: [appeared], timeout: 5)
+        }
+        await awaitScreen("explore") { window.makeKeyAndVisible() }
+        await awaitScreen("bookDetail") { state.path.append(ExploreNavigationRoute.search("fixture")) }
+        await awaitScreen("reader") { state.reader = DetailReaderRoute(id: UUID()) }
+        let stacks = navigationControllers(in: host)
+        XCTAssertEqual(stacks.count, 1, "A manga reader pushed from a book detail must not create a second NavigationStack")
+        XCTAssertEqual(stacks.first?.viewControllers.count, 3)
+    }
+
+    /// The other side of the same choice: a modal fixed-page reader still brings
+    /// the NavigationStack its toolbar lives in.
+    func testFixedPageReaderPresentedModallyOwnsItsStack() async throws {
+        let metadataURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("books-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: metadataURL) }
+        let appeared = expectation(description: "modal reader")
+        let host = UIHostingController(rootView:
+            FixedPageReaderView(bookId: UUID())
+                .environmentObject(BookStore(metadataFileURL: metadataURL))
+                .background(StackAppearanceProbe { appeared.fulfill() }.frame(width: 0, height: 0))
+        )
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKey()
+        }
+        window.makeKeyAndVisible()
+        await fulfillment(of: [appeared], timeout: 5)
+        XCTAssertEqual(navigationControllers(in: host).count, 1, "A modal manga reader needs a stack of its own for its toolbar")
     }
 
     private func navigationControllers(in root: UIViewController) -> [UINavigationController] {

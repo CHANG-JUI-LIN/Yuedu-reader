@@ -54,8 +54,13 @@ struct FixedPageChapterListItem: Identifiable, Equatable {
 struct FixedPageReaderView: View {
     let bookId: UUID
     @EnvironmentObject var store: BookStore
-    @Environment(\.dismiss) private var dismiss
+    // iOS 17 invalidates DismissAction over and over while a reader is pushed above
+    // a book detail, and this reader's toolbar feeds every rebuild back into
+    // navigation layout. Same stable binding as BookReaderView and ReaderView
+    // (Technotes/iOS17ReaderNavigationWatchdog.md).
+    @Environment(\.presentationMode) private var presentationMode
     @Environment(\.readerNavigator) private var readerNavigator
+    @Environment(\.readerUsesParentNavigationStack) private var usesParentNavigationStack
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appDependencies) private var dependencies
     @StateObject private var state = FixedPageReaderState()
@@ -63,8 +68,14 @@ struct FixedPageReaderView: View {
     @State private var showTouchZoneEditor = false
 
     var body: some View {
+        // The shelf's card push hosts this reader in a UIKit controller whose bar
+        // carries the toolbar. Every other entry lets ReaderNavigationContainer
+        // decide, as the flowing reader does: a modal reader brings its own stack,
+        // a reader pushed from a book detail joins the detail's. No card navigator
+        // does not mean modal; the detail's destination must never hold a second
+        // NavigationStack (DetailReaderStackTests).
         if readerNavigator == nil {
-            NavigationStack { readerContent }
+            ReaderNavigationContainer { readerContent }
         } else {
             readerContent
         }
@@ -94,12 +105,13 @@ struct FixedPageReaderView: View {
                 if state.showControls {
                     FixedPageReaderControlsOverlay(
                         state: state,
-                        isModal: readerNavigator == nil,
+                        isModal: readerNavigator == nil && !usesParentNavigationStack,
                         onClose: {
                             if let readerNavigator {
                                 readerNavigator.close()
                             } else {
-                                dismiss()
+                                // Pops a detail-origin push, dismisses a modal reader.
+                                presentationMode.wrappedValue.dismiss()
                             }
                         },
                         onOpenTouchZoneEditor: {
