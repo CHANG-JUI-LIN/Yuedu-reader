@@ -23,12 +23,10 @@ final class TestFlightAccessController: ObservableObject {
     private var generation = 0
 
     convenience init() {
-        #if DEBUG
-        let localDevelopment = true
-        #else
-        let localDevelopment = false
-        #endif
-        self.init(localDevelopment: localDevelopment, environment: {
+        // TestFlight membership verification is switched off: every build,
+        // TestFlight included, starts `.unrestricted` and never runs the
+        // server check, so no launch/foreground gate is shown.
+        self.init(localDevelopment: true, environment: {
             let result = try await AppTransaction.shared
             guard case .verified(let transaction) = result else {
                 throw AccountBackendError.invalidResponse

@@ -120,7 +120,7 @@ struct yuedu_appApp: App {
                     ContentView()
                 }
                 #else
-                TestFlightMembershipRoot { ContentView() }
+                ContentView()
                 #endif
             }
                 .environmentObject(bookStore)
