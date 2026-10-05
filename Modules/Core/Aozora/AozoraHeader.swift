@@ -68,18 +68,6 @@ enum AozoraHeaderParser {
         return header
     }
 
-    /// The header lines of a document: everything before the first blank line,
-    /// with ruby removed the way aozora2html `parse_header` does (`｜` and
-    /// `《…》` are dropped).
-    static func headerLines(of text: String) -> [String] {
-        var lines: [String] = []
-        for line in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
-            guard !AozoraDocumentDetector.isBlank(line) else { break }
-            lines.append(strippingRuby(String(line)))
-        }
-        return lines
-    }
-
     enum ElementType: Equatable {
         case original, editor, henyaku, translator
     }
@@ -118,25 +106,6 @@ enum AozoraHeaderParser {
 
     private static func isCredit(_ type: ElementType) -> Bool {
         type != .original
-    }
-
-    static func strippingRuby(_ line: String) -> String {
-        var result = ""
-        var index = line.startIndex
-        while index < line.endIndex {
-            let character = line[index]
-            if character == "｜" {
-                index = line.index(after: index)
-                continue
-            }
-            if character == "《", let closing = line[index...].firstIndex(of: "》") {
-                index = line.index(after: closing)
-                continue
-            }
-            result.append(character)
-            index = line.index(after: index)
-        }
-        return result
     }
 
     /// Characters aozora2html treats as a line written in the original

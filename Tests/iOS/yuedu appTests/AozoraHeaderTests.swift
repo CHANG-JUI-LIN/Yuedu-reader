@@ -84,9 +84,9 @@ struct AozoraHeaderTests {
         #expect(AozoraHeaderParser.parse(headerLines: []) == nil)
     }
 
-    @Test("header lines stop at the first blank line and drop ruby")
+    @Test("header lines stop at the first blank line, keep ruby bases and resolve gaiji")
     func headerLinesFromText() {
-        let text = "めくらぶどうと｜虹《にじ》\r\n宮沢賢治\r\n\u{3000}\r\n本文"
-        #expect(AozoraHeaderParser.headerLines(of: text) == ["めくらぶどうと虹", "宮沢賢治"])
+        let text = "めくらぶどうと｜虹《にじ》\r\n優しき歌　※［＃ローマ数字1、1-13-21］\r\n宮沢賢治\r\n\u{3000}\r\n本文"
+        #expect(AozoraDocumentParser.headerLines(of: text) == ["めくらぶどうと虹", "優しき歌　Ⅰ", "宮沢賢治"])
     }
 }

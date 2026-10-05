@@ -7,6 +7,10 @@ struct AozoraDiagnostics: Equatable, Sendable {
         /// A hyphen line opened the notation block and none closed it; the
         /// rest of the file is read as body.
         case unclosedNotationBlock
+        /// A gaiji with only a shape description, shown as ※（description）.
+        case unresolvedGaiji
+        /// A gaiji whose JIS or U+ code has no character.
+        case unmappedGaijiCode
     }
 
     private(set) var counts: [Kind: Int] = [:]
