@@ -4,7 +4,14 @@
 
 **Goal:** Import official Aozora Bunko downloads, and build the single Aozora parser (document sections, syntax tree, gaiji/accent/kunojiten tables, source map), with unit and corpus tests. Existing TXT books must render exactly as before.
 
-**Scope of this plan:** Phases 0 and 1a are detailed because they do not depend on the open decisions in the spec. Two exceptions: Task 4 assumes decision 3 (bundled CC0 table), and Task 7 assumes decision 4 (description-only gaiji stay out of the displayed text). Phases 1b, 1c and 2 are outlined. Their detail is written once the route (decision 1) and the migration policy (decision 2) are settled.
+**Scope of this plan:** The spec's decisions are settled:
+- route C, converting at import;
+- automatic migration of existing Aozora TXT books;
+- the bundled CC0 tables;
+- gaiji described only by shape shown as `※` followed by the description in smaller type;
+- 傍点 in both engines.
+
+Phases 0 and 1a are detailed. Phases 1b, 1c and 2 are outlined and get detailed tasks once Phase 1a lands, because they build on its syntax tree and source map.
 
 **Architecture:** A new `Modules/Core/Aozora/` folder holds the parser:
 - a detector;
@@ -333,6 +340,8 @@ git commit -m "feat(aozora): split documents into header, notation block, body a
 - A JIS code (`[12]-row-cell`, with or without 第3／第4水準) resolves through `AozoraTables`.
 - `U+XXXX` resolves directly.
 - Anything else stays `resolved == nil`, with the description kept.
+  - It displays as `※` followed by the description in full-width parentheses, with the page-line reference dropped: `※［＃「口＋世」、ページ数-行数］` → `※（口＋世）` (spec decision 4).
+  - Phase 1b renders the parenthesised part in smaller type.
 - A gaiji counts as kanji for ruby, so `※［＃コト、1-2-24］《こと》` becomes ruby over ヿ.
 
 - [ ] **Step 3: Accent decomposition and kunojiten**
@@ -346,7 +355,7 @@ Cover each rule, plus:
 - the PD fixture's two gaiji followed by ruby, which become ruby;
 - a gaiji outside the BMP;
 - a combining sequence;
-- an unmapped description-only gaiji;
+- a description-only gaiji, displayed as `※（口＋世）` with the page-line reference dropped;
 - `〔注〕`, which stays as written.
 
 ```bash
@@ -407,7 +416,7 @@ git commit -m "feat(aozora): parse annotations into the syntax tree"
 
 - [ ] **Step 1: Implement**
 
-- The displayed text is the document's visible text: blocks joined by `"\n"`, with ruby readings, notes and unknown annotations excluded.
+- The displayed text is the document's visible text: blocks joined by `"\n"`. Ruby readings, notes and unknown annotations are excluded, and a description-only gaiji contributes `※（description）`.
 - The map is a sorted list of runs (displayed start, source start, displayed length, source length). It supports deletions (markup), replacements (gaiji, accents, kunojiten) and growth (gaiji outside the BMP).
 - API: `displayedOffset(forSource:)` and `sourceOffset(forDisplayed:)`. Both are monotonic. Inside a replaced run, an offset maps to the run's start.
 
@@ -466,14 +475,13 @@ git commit -m "test(aozora): check the parser against the full Aozora corpus"
 
 ---
 
-## Phase 1b (outline — detail after decision 1)
-
-With route C (convert at import):
+## Phase 1b (outline — route C, convert at import)
 
 - **Writer.** `AozoraEPUBWriter` turns the syntax tree into EPUB 3 with `Archive(url:accessMode: .create)`.
   - The `mimetype` entry comes first and is stored uncompressed.
   - It writes `package.opf` (title, author, translator, `ja`), `nav.xhtml` from heading levels, one XHTML file per section, one app-owned stylesheet, and the images the document references.
   - It does not set `writing-mode`.
+  - A description-only gaiji is written as `※` plus a smaller `（…）` span. Size only, no colour, so reader themes still apply.
 - **Sections.** Split at 大／中見出し. Text before the first heading forms its own section, and the colophon is the last section. When there are no headings and the body exceeds 100 KB, split at paragraph boundaries.
 - **Engine text parity test (Mac).** For each converted chapter, the text that `BrowserChapterLayout.sourceText` and the legacy builder produce equals the writer's displayed text. Positions depend on it.
 - **Import.**
@@ -482,7 +490,7 @@ With route C (convert at import):
   - The converter version and the source encoding are recorded on the book.
 - **Regeneration.** When the converter version changes, the EPUB is regenerated on open. A corpus test proves that style-only changes keep every chapter's text.
 
-## Phase 1c (outline — detail after decision 2)
+## Phase 1c (outline — automatic migration on first open)
 
 1. **Coordinate-space tag, one release first.** Add a coordinate-space id to synced reading positions. New clients ignore remote positions from another space. Confirm that the decoding of `SyncEnvelope<CoreTextReadingPosition>` tolerates the unknown field on old clients.
 2. **Inverse projection.** Add the inverse of `displayedOffset(forSourceOffset:)` for the TXT path.
@@ -494,4 +502,4 @@ With route C (convert at import):
 ## Phase 2 (outline)
 
 - **CSS group.** Map 字下げ, 地付き／字上げ, headings, page breaks, 字級, 太字 and 斜体 in the app stylesheet. Check each mapping in horizontal and vertical writing in both engines.
-- **傍点／傍線.** `text-emphasis` in YueduCoreText. Decide separately how the legacy fallback shows them.
+- **傍点／傍線.** Show them in both engines (spec decision 5), so a chapter that falls back to the legacy engine keeps them: `text-emphasis` in YueduCoreText, plus an equivalent in the legacy engine.
