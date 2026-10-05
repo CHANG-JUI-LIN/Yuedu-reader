@@ -276,6 +276,8 @@ struct AppearanceCustomizationSnapshot {
 /// claiming a flat "done".
 struct AppearanceImportSummary {
     var themes = 0
+    /// The imported theme now selected, in the slot on screen.
+    var selectedThemeID: String?
     var tabIcons = 0
     var launchImages = 0
     var restoredPageBackgrounds = false

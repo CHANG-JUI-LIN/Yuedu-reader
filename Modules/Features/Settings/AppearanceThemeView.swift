@@ -699,9 +699,9 @@ struct AppearanceThemeView: View {
             Task { @MainActor in
                 do {
                     let summary = try await settings.importAppearanceCustomizationPackage(from: data)
-                    let selected = summary.themes > 0
-                        ? settings.customAppearanceThemes.first { $0.id == settings.appearanceThemeID }
-                        : nil
+                    let selected = summary.selectedThemeID.flatMap { id in
+                        settings.customAppearanceThemes.first { $0.id == id }
+                    }
                     // Up only once the import has finished — after an `await`, so never
                     // while the document picker is still on its way out.
                     importProgress = CustomizationImportProgress(phase: .finished(

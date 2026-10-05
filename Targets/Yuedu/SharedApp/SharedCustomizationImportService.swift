@@ -81,9 +81,9 @@ enum SharedCustomizationImportService {
         switch plan {
         case .appearance(let data):
             let summary = try settings.importAppearanceCustomization(from: data)
-            let selected = summary.themes > 0
-                ? settings.customAppearanceThemes.first { $0.id == settings.appearanceThemeID }
-                : nil
+            let selected = summary.selectedThemeID.flatMap { id in
+                settings.customAppearanceThemes.first { $0.id == id }
+            }
             return CustomizationImportOverview(appearance: summary, selectedTheme: selected)
         case .reader(let plan):
             try ReaderSettingsImportService.apply(plan)

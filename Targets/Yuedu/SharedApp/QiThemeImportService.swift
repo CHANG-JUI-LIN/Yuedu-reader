@@ -145,8 +145,8 @@ enum QiThemeImportService {
         do {
             let encoded = try JSONEncoder().encode(bundle)
             outcome.appearance = try settings.importAppearanceCustomization(from: encoded)
-            if outcome.appearance.themes > 0 {
-                outcome.theme = settings.customAppearanceThemes.first { $0.id == settings.appearanceThemeID }
+            outcome.theme = outcome.appearance.selectedThemeID.flatMap { id in
+                settings.customAppearanceThemes.first { $0.id == id }
             }
         } catch {
             AppLogger.parse("⟐ qitheme appearance apply failed", context: ["error": "\(error)"])

@@ -3302,7 +3302,7 @@ class GlobalSettings: ObservableObject {
             throw AppearanceThemeImportError.invalidFile
         }
         var summary = AppearanceImportSummary()
-        summary.themes = importThemeFiles(files)
+        (summary.themes, summary.selectedThemeID) = importThemeFiles(files)
         return summary
     }
 
@@ -3329,7 +3329,7 @@ class GlobalSettings: ObservableObject {
     /// Appends a custom theme per entry, then selects the last one and applies
     /// its page-background snapshot — so a single-theme import behaves the way
     /// it always has, and a pack import leaves you looking at one of them.
-    private func importThemeFiles(_ files: [AppearanceThemeExportFile]) -> Int {
+    private func importThemeFiles(_ files: [AppearanceThemeExportFile]) -> (count: Int, selectedID: String?) {
         var imported: [AppearanceCustomTheme] = []
         for file in files {
             let custom = customTheme(from: file)
@@ -3337,9 +3337,12 @@ class GlobalSettings: ObservableObject {
             imported.append(custom)
         }
         if let last = imported.last {
-            appearanceThemeID = last.id
+            // Into the slot on screen. It was always the light slot's: with 單獨設定深色主題
+            // on and the app dark, nothing in view changed while 匯入完成 said the pack was
+            // the theme now (2026-10-05).
+            selectAppearanceTheme(id: last.id, for: appearanceOnScreen.colorScheme)
         }
-        return imported.count
+        return (imported.count, imported.last?.id)
     }
 
     private func importAppearanceCustomizationBundle(
@@ -3352,7 +3355,7 @@ class GlobalSettings: ObservableObject {
             // land on them as they are — replacing this device's edits of the same theme.
             appearanceBuiltInThemeColors.merge(colors) { _, imported in imported }
         }
-        summary.themes = importThemeFiles(bundle.themes)
+        (summary.themes, summary.selectedThemeID) = importThemeFiles(bundle.themes)
         if let configuration = bundle.regexHighlightConfiguration {
             regexHighlightConfiguration = configuration.sanitized()
         }

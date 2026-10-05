@@ -24,3 +24,9 @@ TestFlight 測試者的螢幕錄影。設定是 Pro、自訂主題、跟隨系�
 - **閱讀器不把預覽當成裝置換外觀**（`alignReaderDarkMode`）：在 iPad 上，閱讀器可能還開在另一個分頁。預覽結束後，回到的外觀照常交給它。
 
 測試：`AppearanceSlotTabTests`、`ReaderBackgroundBindingTests.aPreviewOfTheOtherSlotIsNotTheDeviceTurning`。修正拿掉時，其中三個失敗。模擬器上兩條路都照錄影的步驟走過。
+
+## 匯入主題包只進淺色欄
+
+重現時順帶發現：開著「單獨設定深色主題」、畫面是深色時匯入主題包，`importThemeFiles` 一律寫入 `appearanceThemeID`，也就是淺色欄。畫面完全沒變，匯入完成頁卻寫「已成為你的外觀主題」，「設定」那一列也還顯示「默認」。
+
+修法（使用者選擇）：選進畫面上那一欄（`selectAppearanceTheme(for: appearanceOnScreen)`）。`AppearanceImportSummary.selectedThemeID` 交給三個顯示匯入結果的地方，不再各自去讀 `appearanceThemeID`。測試：`AppearanceSlotTabTests.anImportLandsInTheSlotOnScreen`，用舊寫法時會失敗。
