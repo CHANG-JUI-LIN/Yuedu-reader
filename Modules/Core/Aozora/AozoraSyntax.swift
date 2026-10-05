@@ -110,6 +110,9 @@ indirect enum AozoraInline: Equatable, Sendable {
     case horizontal([AozoraInline])
     /// キャプション.
     case caption([AozoraInline])
+    /// A figure set into a line of text; on a line of its own it is an
+    /// `AozoraBlock.image`.
+    case image(source: String, width: Int?, height: Int?, caption: [AozoraInline])
     /// ［＃改行］, or the end of a line inside a multi-line heading.
     case lineBreak
     /// 底本では…, ママ, 入力者注 and other proofreading notes. Never displayed.
@@ -161,7 +164,7 @@ extension AozoraInline {
              .bold(let children), .italic(let children), .size(_, let children),
              .tateChuYoko(let children), .script(_, let children), .warichu(let children),
              .heading(_, _, let children), .boxed(let children), .horizontal(let children),
-             .caption(let children):
+             .caption(let children), .image(_, _, _, let children):
             return children.displayedText
         }
     }

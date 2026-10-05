@@ -11,6 +11,14 @@ struct AozoraDiagnostics: Equatable, Sendable {
         case unresolvedGaiji
         /// A gaiji whose JIS or U+ code has no character.
         case unmappedGaijiCode
+        /// An annotation the parser does not know, by `shape(of:)`.
+        case unknownAnnotation(String)
+        /// ［＃「X」に…］ whose X is not in the text before it.
+        case missingForwardReference
+        /// A range or block left open, closed at the end of its line or section.
+        case unclosedRange
+        /// ［＃…終わり］ with nothing open to close.
+        case unopenedRangeEnd
     }
 
     private(set) var counts: [Kind: Int] = [:]
@@ -24,4 +32,34 @@ struct AozoraDiagnostics: Equatable, Sendable {
     }
 
     var isEmpty: Bool { counts.isEmpty }
+
+    /// An annotation with its quoted text and numbers abstracted, so unknown
+    /// kinds group together: 「…」は分数, N行目 (the census `shape`).
+    static func shape(of command: String) -> String {
+        var result = ""
+        var depth = 0
+        var lastWasDigit = false
+        for character in command {
+            if character == "「" {
+                if depth == 0 { result += "「…" }
+                depth += 1
+                lastWasDigit = false
+                continue
+            }
+            if character == "」", depth > 0 {
+                depth -= 1
+                if depth == 0 { result += "」" }
+                continue
+            }
+            guard depth == 0 else { continue }
+            if character.isNumber {
+                if !lastWasDigit { result += "N" }
+                lastWasDigit = true
+            } else {
+                result.append(character)
+                lastWasDigit = false
+            }
+        }
+        return result
+    }
 }
