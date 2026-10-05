@@ -522,15 +522,14 @@ extension ReaderView {
         }
     }
 
-    func openPlaybackPanel() {
+    func handleListeningAction() {
         let chapterIndex = currentChapterIndex
         if isEPUB, epubRenderer.mediaOverlaysByChapter[chapterIndex] != nil {
             activeMediaOverlayChapterIndex = chapterIndex
             showMediaOverlayPanel = true
         } else {
-            showTTSPanel = true
-            // Opening the listening controls starts or resumes narration. Reopening
-            // them during playback must not toggle the current chapter into pause.
+            // Narration publishes the floating capsule through NowPlayingHub.
+            // The capsule opens the full panel only when its artwork is tapped.
             if ttsCoordinator.playbackState != .playing {
                 handleTTSPlayPause()
             }

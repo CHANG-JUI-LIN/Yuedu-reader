@@ -708,7 +708,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
     }
 
     @MainActor
-    func testTTSPanelAndRoleDestinationLoad() throws {
+    func testListeningStartsCapsuleAndRolePanelRemainsAvailable() throws {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
@@ -733,24 +733,27 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         let listen = app.buttons["Audiobook"].firstMatch
         XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
         listen.tap()
-        let playback = app.buttons["tts_panel_play_pause"]
-        XCTAssertTrue(playback.waitForExistence(timeout: 15), "Listening must open the TTS panel.\n\(app.debugDescription)")
+        let playback = app.buttons["now_playing_reader_play_pause"]
+        let panelPlayback = app.buttons["tts_panel_play_pause"]
+        XCTAssertTrue(playback.waitForExistence(timeout: 15), "Listening must show the floating capsule.\n\(app.debugDescription)")
         func awaitPlaybackLabel(_ label: String, line: UInt = #line) {
             let state = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: playback)
             XCTAssertEqual(XCTWaiter.wait(for: [state], timeout: 10), .completed, app.debugDescription, line: line)
+            XCTAssertFalse(panelPlayback.exists, "Listening must keep the full TTS panel closed", line: line)
         }
         awaitPlaybackLabel("Pause")
         XCTAssertTrue(playback.isHittable, app.debugDescription)
         playback.tap()
         awaitPlaybackLabel("Play")
-        app.navigationBars.buttons["Done"].firstMatch.tap()
         XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
         listen.tap()
         awaitPlaybackLabel("Pause")
-        app.navigationBars.buttons["Done"].firstMatch.tap()
         XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
         listen.tap()
         awaitPlaybackLabel("Pause")
+        attachScreenshot(app, named: "Listening starts the floating capsule")
+        app.buttons["now_playing_reader_open_panel"].tap()
+        XCTAssertTrue(panelPlayback.waitForExistence(timeout: 5), "The capsule must still open the full controls on demand.\n\(app.debugDescription)")
         let roles = app.buttons["Multi-voice narration"].firstMatch
         XCTAssertTrue(roles.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(roles.isHittable)

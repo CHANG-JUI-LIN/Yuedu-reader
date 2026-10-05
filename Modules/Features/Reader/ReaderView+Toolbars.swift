@@ -119,7 +119,7 @@ extension ReaderView {
             onRefresh: { refreshCurrentChapter() },
             onOpenChangeSource: { showChangeSourceSheet = true },
             onDownloadAction: { handleDownloadAction() },
-            onOpenTTS: { openPlaybackPanel() },
+            onOpenTTS: { handleListeningAction() },
             onOpenTOC: { showTOC = true },
             onOpenBookmarks: { showBookmarkList = true },
             onToggleDarkMode: { toggleReaderDarkMode() },
@@ -405,7 +405,7 @@ extension ReaderView {
                 id: .playback,
                 icon: "headphones",
                 label: localized("聽書"),
-                action: { openPlaybackPanel() }
+                action: { handleListeningAction() }
             )
         ]
 

@@ -484,7 +484,7 @@ private struct ThemedSurfaceBackground: ViewModifier {
 struct NowPlayingMiniPlayer: View {
     /// Where the mini-player lives. `.reader` is the in-reader TTS bar; `.global` is the
     /// app-root bar that controls audiobook playback from any page.
-    enum Placement { case reader, global }
+    enum Placement: String { case reader, global }
     var placement: Placement = .reader
 
     /// Whether the host reader's top/bottom bars are showing. Only meaningful for
@@ -593,6 +593,7 @@ struct NowPlayingMiniPlayer: View {
             .buttonStyle(.plain)
             .accessibilityLabel(nowPlayingLabel)
             .accessibilityHint(localized("打開播放控制面板"))
+            .accessibilityIdentifier("now_playing_\(placement.rawValue)_open_panel")
 
             Button {
                 performTapAction {
@@ -607,6 +608,7 @@ struct NowPlayingMiniPlayer: View {
                     .overlay(Circle().stroke(Color.secondary.opacity(0.35), lineWidth: 2))
             }
             .accessibilityLabel(localized(hub.playbackState == .playing ? "暫停" : "播放"))
+            .accessibilityIdentifier("now_playing_\(placement.rawValue)_play_pause")
 
             Button {
                 performTapAction {
