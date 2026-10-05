@@ -4,11 +4,12 @@
 require "json"
 require "open3"
 
-root = ARGV[0] || (Dir.exist?("Resources") ? "Resources" : "iOS")
-files = Dir.glob(File.join(root, "*.lproj", "Localizable.strings")).sort
+root = ARGV[0] || "Resources"
+pattern = File.join(root, "*.lproj", "Localizable.strings")
+files = Dir.glob(pattern).sort
 
-if files.empty?
-  warn "No Localizable.strings files found under #{root}"
+if files.size < 2
+  warn "#{pattern} matched #{files.size} file(s); need at least two languages to compare keys"
   exit 1
 end
 
