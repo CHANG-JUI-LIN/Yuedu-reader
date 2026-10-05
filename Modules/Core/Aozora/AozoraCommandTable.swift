@@ -133,10 +133,9 @@ enum AozoraCommandTable {
         !command.isEmpty && command.allSatisfy { "一二三四五六七八九十レ上中下甲乙丙丁天地人".contains($0) }
     }
 
-    /// 訓点送り仮名, written （ヲ）: the text inside the parentheses.
-    static func okurigana(_ command: String) -> String? {
-        guard command.count > 2, command.hasPrefix("（"), command.hasSuffix("）") else { return nil }
-        return String(command.dropFirst().dropLast())
+    /// 訓点送り仮名, written （ヲ）.
+    static func isOkurigana(_ command: String) -> Bool {
+        command.count > 2 && command.hasPrefix("（") && command.hasSuffix("）")
     }
 
     /// Proofreading notes and structure markers: the census `editorial` and

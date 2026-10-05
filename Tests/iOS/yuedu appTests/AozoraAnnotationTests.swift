@@ -89,6 +89,25 @@ struct AozoraAnnotationTests {
         #expect(inlines("一レ点").displayedText == "一レ点")
     }
 
+    @Test("a 訓点送り仮名 shows what its own markup stands for")
+    func markedUpOkurigana() {
+        // Both shapes occur in the corpus: a gaiji inside the parentheses, and
+        // a forward reference to text inside them.
+        #expect(inlines("稍［＃（※［＃二の字点、1-2-22］）］有") == [
+            .text("稍"), .kuntenOkurigana("\u{303B}"), .text("有"),
+        ])
+        #expect(inlines("為［＃（之天［＃「之天」に白丸傍点］）］備") == [
+            .text("為"), .kuntenOkurigana("之天"), .text("備"),
+        ])
+    }
+
+    @Test("a left ruby written as a range")
+    func leftRubyRange() {
+        #expect(inlines("［＃左にルビ付き］仲間［＃左に「ナカマ」のルビ付き終わり］") == [
+            .ruby(base: [.text("仲間")], reading: "ナカマ", side: .left),
+        ])
+    }
+
     @Test("a code in a forward reference replaces the text with that character")
     func forwardGaiji() {
         let result = inlines("酒？！［＃「？！」は一文字、第3水準1-8-77、210-11］")
@@ -221,6 +240,15 @@ struct AozoraAnnotationTests {
             .plain,
         ])
         #expect(replaced.diagnostics[.unclosedRange] == 0)
+        // The same when the blocks also set 字詰め.
+        let combined = AozoraDocumentParser.parse(
+            "題\n\n［＃ここから２字下げ、２０字詰め］\n一\n［＃ここから４字下げ、２０字詰め］\n二\n［＃ここで字下げ終わり］\n三\n")
+        #expect(combined.body.suffix(3).map(style) == [
+            AozoraParagraphStyle(firstLineIndent: 2, indent: 2, characterLimit: 20),
+            AozoraParagraphStyle(firstLineIndent: 4, indent: 4, characterLimit: 20),
+            .plain,
+        ])
+        #expect(combined.diagnostics[.unclosedRange] == 0)
     }
 
     @Test("地付き and 字上げ: at the line start, after the text, and splitting a line")

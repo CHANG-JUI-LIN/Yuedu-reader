@@ -974,8 +974,11 @@ private final class AozoraBlockParser {
             appendLeaf(AozoraNode(kind: .kaeriten, text: command, source: token.range), type: .other)
             return
         }
-        if let okurigana = AozoraCommandTable.okurigana(command) {
-            appendLeaf(AozoraNode(kind: .okurigana, text: okurigana, source: token.range), type: .other)
+        if AozoraCommandTable.isOkurigana(command) {
+            // What the parentheses hold can itself be marked up:
+            // ［＃（※［＃二の字点、1-2-22］）］, ［＃（之天［＃「之天」に白丸傍点］）］.
+            let inner = (token.content.lowerBound + 1)..<(token.content.upperBound - 1)
+            appendLeaf(AozoraNode(kind: .okurigana, text: visibleText(inner), source: token.range), type: .other)
             return
         }
         if command.contains("字下げ"), let width = AozoraCommandTable.count(before: "字下げ", in: command) {
@@ -991,7 +994,7 @@ private final class AozoraBlockParser {
             }
             return
         }
-        if command == "注記付き" || command == "左に注記付き" {
+        if ["注記付き", "左に注記付き", "ルビ付き", "左にルビ付き"].contains(command) {
             openRange(command, container: .ruby(reading: "", side: command.hasPrefix("左") ? .left : .right),
                       token: token)
             return
@@ -1074,9 +1077,10 @@ private final class AozoraBlockParser {
             if !endBlock(name) { diagnostics.record(.unopenedRangeEnd) }
             return
         }
-        if name.hasSuffix("注記付き"),
-           let index = openRanges.lastIndex(where: { $0.command.hasSuffix("注記付き") }) {
-            // ［＃注記付き］X［＃「Y」の注記付き終わり］: Y is X's ruby.
+        if name.hasSuffix("注記付き") || name.hasSuffix("ルビ付き"),
+           let index = openRanges.lastIndex(where: { $0.command.hasSuffix("注記付き") || $0.command.hasSuffix("ルビ付き") }) {
+            // ［＃注記付き］X［＃「Y」の注記付き終わり］ and
+            // ［＃左にルビ付き］X［＃左に「Y」のルビ付き終わり］: Y is X's ruby.
             var reading = ""
             if let open = name.firstIndex(of: "「"), let close = name.lastIndex(of: "」"), open < close {
                 let offset = name[..<name.index(after: open)].utf16.count
@@ -1177,10 +1181,12 @@ private final class AozoraBlockParser {
             style.kinds.insert(.size)
         }
         guard !style.kinds.isEmpty else { return false }
-        // aozora2html `implicit_close`: a new 字下げ or 地付き block replaces an
-        // open one of the same kind instead of nesting in it.
-        if let top = blockStyles.last, !top.kinds.isEmpty,
-           top.kinds.isSubset(of: [.indent, .endAlignment]), !top.kinds.isDisjoint(with: style.kinds) {
+        // aozora2html `implicit_close`: a new 字下げ or 地付き block replaces the
+        // innermost open one of the same kind instead of nesting in it, also
+        // when either carries more (［＃ここから２字下げ、２０字詰め］ repeated
+        // without its 終わり).
+        if let top = blockStyles.last,
+           !top.kinds.isDisjoint(with: style.kinds.intersection([.indent, .endAlignment])) {
             blockStyles.removeLast()
         }
         blockStyles.append(style)
