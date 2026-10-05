@@ -21,8 +21,7 @@ enum TXTMetadataProbe {
         // An Aozora Bunko file names its work and author on its first lines,
         // with no 書名／作者 labels; the brackets in 『…』中篇自序 belong to the title.
         if AozoraDocumentDetector.isAozoraDocument(prefix),
-           let header = AozoraHeaderParser.parse(headerLines: AozoraDocumentParser.headerLines(of: prefix)),
-           header.title.count <= 120 {
+           let header = AozoraHeaderParser.parse(headerLines: AozoraDocumentParser.headerLines(of: prefix)) {
             return TXTBookMetadata(title: header.title, author: header.author)
         }
         let sample = String(prefix.prefix(maximumMetadataCharacters))
