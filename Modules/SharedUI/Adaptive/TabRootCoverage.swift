@@ -5,7 +5,7 @@ import UIKit
 extension View {
     /// Marks a tab's root page: a tab bar at the bottom shows while this page is the one on
     /// screen, and hides while any page covers it — pushed onto its navigation stack, or
-    /// presented over it as a sheet, a full-screen cover or a popover. An alert, a
+    /// presented over it as a sheet or a full-screen cover. A popover, an alert, a
     /// confirmation dialog or the search field leaves it up: none of them is a page.
     ///
     /// `rootTabTitle(_:onScroll:)` applies it, so every tab root has it.
@@ -19,7 +19,7 @@ extension View {
 }
 
 /// Whether another page covers a tab's root page, read from UIKit: SwiftUI has no signal
-/// for a sheet or a popover covering a page (the page stays on screen beneath it), and
+/// for a sheet covering a page (the page stays on screen beneath it), and
 /// a page pushed over the root is no screen of the root's to mark.
 @MainActor
 enum TabRootCoverage {
@@ -59,9 +59,13 @@ enum TabRootCoverage {
 
     /// Whether a presented view controller is a page over the root. An alert or a
     /// confirmation dialog is not; nor is the search field's own controller, which a
-    /// tab root's active search presents. A page on its way out no longer covers it.
+    /// tab root's active search presents; nor a popover (product decision, 2026-10-05).
+    /// A page on its way out no longer covers it.
     static func coversRoot(_ presented: UIViewController) -> Bool {
         if presented is UIAlertController || presented is UISearchController { return false }
+        // The style asked for, not the one shown: a popover that a compact width adapts
+        // into a sheet leaves the tab bar up too.
+        if presented.modalPresentationStyle == .popover { return false }
         return !presented.isBeingDismissed
     }
 
