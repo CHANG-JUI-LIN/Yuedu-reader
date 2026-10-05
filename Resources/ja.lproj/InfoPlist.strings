@@ -6,3 +6,5 @@
 "Yuedu Log File" = "Yuedu ログファイル";
 
 "NSLocalNetworkUsageDescription" = "ローカルネットワークの書庫への接続、Calibre から送られた書籍の受信、および端末内の音声サービスの利用に使用します。";
+
+"NSPhotoLibraryAddUsageDescription" = "書籍の表紙と共有用の読書画像を写真ライブラリに保存するために使用します。";
