@@ -91,20 +91,6 @@ struct ReaderCommentBubbleSettingsView: View {
                     .foregroundStyle(DSColor.textSecondary)
             }
             .interfaceSectionSurface()
-
-            Section(header: Text(localized("文字大小")).foregroundStyle(DSColor.textSecondary)) {
-                BubbleSliderRow(
-                    title: localized("數字字號比例"),
-                    valueText: "\(Int((settings.commentBubbleTextScale * 100).rounded()))%",
-                    value: bubbleTextScaleBinding,
-                    range: GlobalSettings.commentBubbleTextScaleRange,
-                    step: 0.05
-                )
-                Text(localized("這裡調整段評數字相對於氣泡的大小。"))
-                    .font(DSFont.caption)
-                    .foregroundStyle(DSColor.textSecondary)
-            }
-            .interfaceSectionSurface()
         }
         .softScrollEdges()
         .navigationTitle(localized("氣泡設定"))
@@ -262,7 +248,7 @@ struct ReaderCommentBubbleSettingsView: View {
             svg: bubble.replacingDisplayText(with: "99"),
             pointSize: 34,
             themeTextColor: .label,
-            textScaleRatio: CGFloat(GlobalSettings.defaultCommentBubbleTextScale)
+            textFace: .reader
         )
     }
 
@@ -285,16 +271,6 @@ struct ReaderCommentBubbleSettingsView: View {
             get: { settings.commentBubbleScale },
             set: { value in
                 settings.commentBubbleScale = value
-                settings.commentBubbleFollowsSourceSVG = false
-            }
-        )
-    }
-
-    private var bubbleTextScaleBinding: Binding<Double> {
-        Binding(
-            get: { settings.commentBubbleTextScale },
-            set: { value in
-                settings.commentBubbleTextScale = value
                 settings.commentBubbleFollowsSourceSVG = false
             }
         )

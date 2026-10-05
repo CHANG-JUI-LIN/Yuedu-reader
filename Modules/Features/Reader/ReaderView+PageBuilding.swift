@@ -24,7 +24,6 @@ extension ReaderView {
             commentBubbleCustomStyles: settings.commentBubbleCustomStyles,
             commentBubbleSelectedCustomStyleID: settings.commentBubbleSelectedCustomStyleID,
             commentBubbleScale: settings.commentBubbleScale,
-            commentBubbleTextScale: settings.commentBubbleTextScale,
             readerTextUnderlineDecorationEnabled: settings.readerTextUnderlineDecorationEnabled,
             readerTextUnderlineDecorationColorHex: settings.readerTextUnderlineDecorationColorHex,
             readerTextUnderlineStyle: settings.readerTextUnderlineStyle,

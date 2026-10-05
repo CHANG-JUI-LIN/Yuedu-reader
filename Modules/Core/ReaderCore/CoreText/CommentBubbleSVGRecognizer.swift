@@ -11,14 +11,26 @@ struct CommentBubbleSVG {
         case path(d: String, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?, transform: CGAffineTransform)
         case rect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, rx: CGFloat, ry: CGFloat, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?, transform: CGAffineTransform)
         case image(data: Data, rect: CGRect, transform: CGAffineTransform)
-        case text(text: String, x: CGFloat, y: CGFloat, fontSize: CGFloat, fontWeight: String?, anchor: String?, color: UIColor?, transform: CGAffineTransform)
+        case text(text: String, x: CGFloat, y: CGFloat, fontSize: CGFloat, fontFamily: String?, fontWeight: String?, anchor: String?, color: UIColor?, transform: CGAffineTransform)
     }
     
     let elements: [Element]
+    /// `preserveAspectRatio`: how the viewBox sits in the `width`×`height` the SVG declares.
+    var viewBoxFit = ViewBoxFit()
+
+    /// SVG's default is `xMidYMid meet`: the whole viewBox, scaled uniformly, centred.
+    struct ViewBoxFit {
+        /// `none`: stretched over the declared size on each axis.
+        var stretches = false
+        /// `slice`: scaled to cover the declared size instead of fitting inside it.
+        var slices = false
+        /// Where the leftover space goes, 0 (min) … 1 (max) on each axis.
+        var align = CGPoint(x: 0.5, y: 0.5)
+    }
 
     var displayText: String? {
         for element in elements {
-            if case .text(let text, _, _, _, _, _, _, _) = element {
+            if case .text(let text, _, _, _, _, _, _, _, _) = element {
                 return text
             }
         }
@@ -31,7 +43,7 @@ struct CommentBubbleSVG {
             width: width,
             height: height,
             elements: elements.map { element in
-                guard case let .text(_, x, y, fontSize, fontWeight, anchor, color, transform) = element else {
+                guard case let .text(_, x, y, fontSize, fontFamily, fontWeight, anchor, color, transform) = element else {
                     return element
                 }
                 return .text(
@@ -39,12 +51,14 @@ struct CommentBubbleSVG {
                     x: x,
                     y: y,
                     fontSize: fontSize,
+                    fontFamily: fontFamily,
                     fontWeight: fontWeight,
                     anchor: anchor,
                     color: color,
                     transform: transform
                 )
-            }
+            },
+            viewBoxFit: viewBoxFit
         )
     }
 }
@@ -56,7 +70,7 @@ extension CommentBubbleSVG.Element {
         case .path(_, _, _, _, let t): return t
         case .rect(_, _, _, _, _, _, _, _, _, let t): return t
         case .image(_, _, let t): return t
-        case .text(_, _, _, _, _, _, _, let t): return t
+        case .text(_, _, _, _, _, _, _, _, let t): return t
         }
     }
 }
@@ -108,15 +122,6 @@ struct CommentBubbleSVGRecognizer {
         case .custom:
             return customSVG.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-    }
-
-    static func inlineAttachmentHeight(
-        pointSize: CGFloat,
-        lineHeight: CGFloat,
-        overallScale: CGFloat
-    ) -> CGFloat {
-        let boundedOverallScale = min(max(overallScale, 0.5), 2.0)
-        return max(pointSize, lineHeight) * boundedOverallScale
     }
 
     // MARK: - Diagnostics (⟐ bubble) — deduped so a chapter's hundreds of bubbles
@@ -208,6 +213,14 @@ struct CommentBubbleSVGRecognizer {
             with: "$displayText"
         )
         return (normalized, displayText)
+    }
+
+    /// Which face draws a bubble's count. legado draws a source's SVG with the faces it
+    /// names (AndroidSVG); Sigma draws a bubble package — the reader's own templates — with
+    /// the reading font.
+    enum BubbleTextFace: String, Sendable {
+        case declared
+        case reader
     }
 
     /// Why an SVG is being parsed. The two callers need different strictness, and
@@ -374,7 +387,8 @@ struct CommentBubbleSVGRecognizer {
         svgContent: String?,
         pointSize: CGFloat,
         themeTextColor: UIColor,
-        recognizedBubble: CommentBubbleSVG? = nil
+        recognizedBubble: CommentBubbleSVG? = nil,
+        sourceTextFace: BubbleTextFace = .declared
     ) -> UIImage? {
         let cacheKey = ReaderDocumentTrace.measuringSync("bubbleKey") {
             bubbleImageCacheKey(
@@ -382,7 +396,8 @@ struct CommentBubbleSVGRecognizer {
                 svgContent: svgContent,
                 pointSize: pointSize,
                 themeTextColor: themeTextColor,
-                displayText: recognizedBubble?.displayText
+                displayText: recognizedBubble?.displayText,
+                sourceTextFace: sourceTextFace
             )
         }
         if let cached = bubbleImageCache.object(forKey: cacheKey) {
@@ -394,7 +409,8 @@ struct CommentBubbleSVGRecognizer {
             svgContent: svgContent,
             pointSize: pointSize,
             themeTextColor: themeTextColor,
-            sourceBubble: recognizedBubble
+            sourceBubble: recognizedBubble,
+            sourceTextFace: sourceTextFace
         ) else { return nil }
         bubbleImageCache.setObject(image, forKey: cacheKey)
         noteBubbleCache(hit: false)
@@ -418,7 +434,10 @@ struct CommentBubbleSVGRecognizer {
             svgContent: builtinBubbleSVG,
             pointSize: pointSize,
             themeTextColor: themeTextColor,
-            recognizedBubble: template.replacingDisplayText(with: count)
+            recognizedBubble: template.replacingDisplayText(with: count),
+            // The app's own template, not a source's SVG: its count reads in the reading
+            // font, as a bubble package's does.
+            sourceTextFace: .reader
         )
     }
 
@@ -431,7 +450,8 @@ struct CommentBubbleSVGRecognizer {
         svgContent: String?,
         pointSize: CGFloat,
         themeTextColor: UIColor,
-        displayText: String?
+        displayText: String?,
+        sourceTextFace: BubbleTextFace
     ) -> NSString {
         let identity = (svgContent?.isEmpty == false) ? svgContent! : src
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -444,8 +464,7 @@ struct CommentBubbleSVGRecognizer {
             s.commentBubbleSelectedCustomStyleID?.uuidString ?? "-",
             s.commentBubbleSelectedCustomStyle.map { "L\($0.svg.utf8.count)" } ?? "-",
             String(format: "%.2f", s.commentBubbleScale),
-            String(format: "%.2f", s.commentBubbleTextScale),
-            s.readerFontBold ? "B1" : "B0",
+            sourceTextFace.rawValue,
             s.selectedReaderFontPostScript ?? "sys"
         ].joined(separator: "|")
         let textIdentity = displayText.map { "|T\($0)" } ?? ""
@@ -457,14 +476,15 @@ struct CommentBubbleSVGRecognizer {
         svgContent: String?,
         pointSize: CGFloat,
         themeTextColor: UIColor,
-        sourceBubble: CommentBubbleSVG? = nil
+        sourceBubble: CommentBubbleSVG? = nil,
+        sourceTextFace: BubbleTextFace
     ) -> UIImage? {
         guard let sourceBubble = sourceBubble ?? recognize(src: src, svgContent: svgContent) else {
             return nil
         }
         let settings = GlobalSettings.shared
         if settings.commentBubbleFollowsSourceSVG {
-            return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor)
+            return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor, textFace: sourceTextFace)
         }
 
         let bubbleText = sourceBubble.displayText ?? "0"
@@ -510,14 +530,14 @@ struct CommentBubbleSVGRecognizer {
             ?? recognizeUserTemplate(builtinBubbleSVG)
 
         guard let template else {
-            return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor)
+            return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor, textFace: sourceTextFace)
         }
         return draw(
             svg: template.replacingDisplayText(with: bubbleText),
             pointSize: pointSize,
             themeTextColor: themeTextColor,
             overallScale: CGFloat(settings.commentBubbleScale),
-            textScaleRatio: CGFloat(settings.commentBubbleTextScale)
+            textFace: .reader
         )
     }
 
@@ -604,6 +624,7 @@ struct CommentBubbleSVGRecognizer {
         
         let finalWidth = width > 0 ? width : viewBox.width
         let finalHeight = height > 0 ? height : viewBox.height
+        let viewBoxFit = parseViewBoxFit(extractAttribute("preserveAspectRatio", in: svgTag))
 
         // The SVG-level `color` (attribute or `style="color: …"`) is what `currentColor`
         // resolves to on descendants. 光遇 段評 bubbles paint their shapes with
@@ -744,22 +765,33 @@ struct CommentBubbleSVGRecognizer {
                     // `dy` (e.g. "0.35em") shifts the baseline — count bubbles use it to vertically
                     // center the digit on its anchor point. Folded into y here (same user units).
                     let dy = parseDy(extractAttribute("dy", in: tag), fontSize: resolvedFontSize)
+                    let fontFamily = extractAttribute("font-family", in: tag)
+                        ?? styleProperty("font-family", in: tag)
                     let fontWeight = extractAttribute("font-weight", in: tag)
+                        ?? styleProperty("font-weight", in: tag)
                     let anchor = extractAttribute("text-anchor", in: tag)
                     let elementColor = resolveElementColor(in: tag, inheritedColor: rootColor)
                     let color = resolvePaint("fill", in: tag, inheritedColor: elementColor)
                     let transform = composedTransform(at: tagRange.location, groups: groupSpans)
 
-                    elements.append(.text(text: text, x: x, y: y + dy, fontSize: resolvedFontSize, fontWeight: fontWeight, anchor: anchor, color: color, transform: transform))
+                    elements.append(.text(text: text, x: x, y: y + dy, fontSize: resolvedFontSize, fontFamily: fontFamily, fontWeight: fontWeight, anchor: anchor, color: color, transform: transform))
                 }
             }
         }
         
-        return CommentBubbleSVG(viewBox: viewBox, width: finalWidth, height: finalHeight, elements: elements)
+        return CommentBubbleSVG(
+            viewBox: viewBox,
+            width: finalWidth,
+            height: finalHeight,
+            elements: elements,
+            viewBoxFit: viewBoxFit
+        )
     }
     
     private static func extractAttribute(_ name: String, in tag: String) -> String? {
-        let pattern = #"\b"# + name + #"\s*=\s*["']([^"']*)["']"#
+        // Not `\b`: a hyphen is a word boundary, so `\bopacity` also matched inside
+        // `fill-opacity` and `\bwidth` inside `stroke-width`.
+        let pattern = #"(?<![\w:-])"# + NSRegularExpression.escapedPattern(for: name) + #"\s*=\s*["']([^"']*)["']"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
         let ns = tag as NSString
         guard let match = regex.firstMatch(in: tag, range: NSRange(location: 0, length: ns.length)) else { return nil }
@@ -805,6 +837,29 @@ struct CommentBubbleSVGRecognizer {
         return true
     }
     
+    /// `preserveAspectRatio="<align> [meet|slice]"`; nil or unreadable is SVG's default.
+    private static func parseViewBoxFit(_ value: String?) -> CommentBubbleSVG.ViewBoxFit {
+        var fit = CommentBubbleSVG.ViewBoxFit()
+        let tokens = (value ?? "").lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let align = tokens.first else { return fit }
+        if align == "none" {
+            fit.stretches = true
+            return fit
+        }
+        fit.slices = tokens.dropFirst().first == "slice"
+        func fraction(_ token: Substring) -> CGFloat {
+            token == "min" ? 0 : (token == "max" ? 1 : 0.5)
+        }
+        // `xMinYMax` → x "min", y "max".
+        if align.count == 8, align.hasPrefix("x"), align.dropFirst(4).hasPrefix("y") {
+            fit.align = CGPoint(
+                x: fraction(align.dropFirst(1).prefix(3)),
+                y: fraction(align.dropFirst(5).prefix(3))
+            )
+        }
+        return fit
+    }
+
     private static func parseDouble(_ val: String?) -> CGFloat {
         guard let val else { return 0 }
         let clean = val.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -926,8 +981,60 @@ struct CommentBubbleSVGRecognizer {
         if clean.hasPrefix("rgb(") && clean.hasSuffix(")") {
             return parseRGBColor(clean)
         }
+        if let rgb = cssNamedColors[clean] {
+            return UIColor(
+                red: CGFloat((rgb >> 16) & 0xFF) / 255.0,
+                green: CGFloat((rgb >> 8) & 0xFF) / 255.0,
+                blue: CGFloat(rgb & 0xFF) / 255.0,
+                alpha: 1.0
+            )
+        }
         return parseHexColor(clean)
     }
+
+    /// The CSS colour keywords, which AndroidSVG takes in any paint as legado draws a
+    /// bubble. Bubble packs outline their shapes with `fill="black"` and `fill="white"`;
+    /// without the names those shapes drew nothing (猫咪气泡 lost its outline and its box).
+    private static let cssNamedColors: [String: UInt32] = {
+        let table = """
+        aliceblue f0f8ff antiquewhite faebd7 aqua 00ffff aquamarine 7fffd4 azure f0ffff
+        beige f5f5dc bisque ffe4c4 black 000000 blanchedalmond ffebcd blue 0000ff blueviolet 8a2be2
+        brown a52a2a burlywood deb887 cadetblue 5f9ea0 chartreuse 7fff00 chocolate d2691e
+        coral ff7f50 cornflowerblue 6495ed cornsilk fff8dc crimson dc143c cyan 00ffff
+        darkblue 00008b darkcyan 008b8b darkgoldenrod b8860b darkgray a9a9a9 darkgreen 006400
+        darkgrey a9a9a9 darkkhaki bdb76b darkmagenta 8b008b darkolivegreen 556b2f darkorange ff8c00
+        darkorchid 9932cc darkred 8b0000 darksalmon e9967a darkseagreen 8fbc8f darkslateblue 483d8b
+        darkslategray 2f4f4f darkslategrey 2f4f4f darkturquoise 00ced1 darkviolet 9400d3
+        deeppink ff1493 deepskyblue 00bfff dimgray 696969 dimgrey 696969 dodgerblue 1e90ff
+        firebrick b22222 floralwhite fffaf0 forestgreen 228b22 fuchsia ff00ff gainsboro dcdcdc
+        ghostwhite f8f8ff gold ffd700 goldenrod daa520 gray 808080 green 008000 greenyellow adff2f
+        grey 808080 honeydew f0fff0 hotpink ff69b4 indianred cd5c5c indigo 4b0082 ivory fffff0
+        khaki f0e68c lavender e6e6fa lavenderblush fff0f5 lawngreen 7cfc00 lemonchiffon fffacd
+        lightblue add8e6 lightcoral f08080 lightcyan e0ffff lightgoldenrodyellow fafad2
+        lightgray d3d3d3 lightgreen 90ee90 lightgrey d3d3d3 lightpink ffb6c1 lightsalmon ffa07a
+        lightseagreen 20b2aa lightskyblue 87cefa lightslategray 778899 lightslategrey 778899
+        lightsteelblue b0c4de lightyellow ffffe0 lime 00ff00 limegreen 32cd32 linen faf0e6
+        magenta ff00ff maroon 800000 mediumaquamarine 66cdaa mediumblue 0000cd mediumorchid ba55d3
+        mediumpurple 9370db mediumseagreen 3cb371 mediumslateblue 7b68ee mediumspringgreen 00fa9a
+        mediumturquoise 48d1cc mediumvioletred c71585 midnightblue 191970 mintcream f5fffa
+        mistyrose ffe4e1 moccasin ffe4b5 navajowhite ffdead navy 000080 oldlace fdf5e6 olive 808000
+        olivedrab 6b8e23 orange ffa500 orangered ff4500 orchid da70d6 palegoldenrod eee8aa
+        palegreen 98fb98 paleturquoise afeeee palevioletred db7093 papayawhip ffefd5
+        peachpuff ffdab9 peru cd853f pink ffc0cb plum dda0dd powderblue b0e0e6 purple 800080
+        rebeccapurple 663399 red ff0000 rosybrown bc8f8f royalblue 4169e1 saddlebrown 8b4513
+        salmon fa8072 sandybrown f4a460 seagreen 2e8b57 seashell fff5ee sienna a0522d silver c0c0c0
+        skyblue 87ceeb slateblue 6a5acd slategray 708090 slategrey 708090 snow fffafa
+        springgreen 00ff7f steelblue 4682b4 tan d2b48c teal 008080 thistle d8bfd8 tomato ff6347
+        turquoise 40e0d0 violet ee82ee wheat f5deb3 white ffffff whitesmoke f5f5f5 yellow ffff00
+        yellowgreen 9acd32
+        """
+        let tokens = table.split(whereSeparator: \.isWhitespace)
+        var colors: [String: UInt32] = [:]
+        for index in stride(from: 0, to: tokens.count - 1, by: 2) {
+            colors[String(tokens[index])] = UInt32(tokens[index + 1], radix: 16)
+        }
+        return colors
+    }()
 
     /// Parses a CSS `rgb(r, g, b)` colour (0–255 integer channels). bubble.json
     /// SVG templates emit outline fills as e.g. `fill="rgb(254,254,254)"`;
@@ -985,12 +1092,18 @@ struct CommentBubbleSVGRecognizer {
     private static func resolvePaint(_ property: String, in tag: String, inheritedColor: UIColor?) -> UIColor? {
         let raw = styleProperty(property, in: tag) ?? extractAttribute(property, in: tag)
         guard let base = resolveColor(raw, inheritedColor: inheritedColor) else { return nil }
-        if let opacityStr = styleProperty("\(property)-opacity", in: tag) ?? extractAttribute("\(property)-opacity", in: tag),
-           let opacity = Double(opacityStr.trimmingCharacters(in: .whitespacesAndNewlines)),
-           opacity >= 0, opacity < 1 {
-            return base.withAlphaComponent(CGFloat(opacity))
-        }
-        return base
+        // The paint's own opacity and the element's `opacity` both fade it, as AndroidSVG
+        // composes them; a lone shape's group opacity is its paints' alpha.
+        let alpha = opacityValue("\(property)-opacity", in: tag) * opacityValue("opacity", in: tag)
+        return alpha < 1 ? base.withAlphaComponent(alpha) : base
+    }
+
+    /// An opacity property as a 0…1 factor; 1 when absent or unreadable.
+    private static func opacityValue(_ name: String, in tag: String) -> CGFloat {
+        guard let raw = styleProperty(name, in: tag) ?? extractAttribute(name, in: tag),
+              let value = Double(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        else { return 1 }
+        return CGFloat(min(max(value, 0), 1))
     }
 
     /// Reads `stroke-width` from the inline `style=` first (sources write `stroke-width: 2.5px`),
@@ -1032,15 +1145,18 @@ extension CommentBubbleSVGRecognizer {
         pointSize: CGFloat,
         themeTextColor: UIColor,
         overallScale: CGFloat = 1,
-        textScaleRatio: CGFloat? = nil
+        textFace: BubbleTextFace = .declared
     ) -> UIImage {
         let defaultHeight = max(12, pointSize * 0.96)
         let targetHeight = max(8, defaultHeight * min(max(overallScale, 0.5), 2.0))
         
         let vW = svg.viewBox.size.width > 0 ? svg.viewBox.size.width : svg.width
         let vH = svg.viewBox.size.height > 0 ? svg.viewBox.size.height : svg.height
-        
-        let ratio = vW > 0 ? vW / vH : 1.25
+
+        // The canvas is the size the SVG declares, as AndroidSVG and WebKit draw it, with the
+        // viewBox fitted inside it. 起点's bubble declares 200×150 around a 1300×1280 viewBox:
+        // drawn at the viewBox's own shape it came out a third larger than in legado.
+        let ratio = svg.width > 0 && svg.height > 0 ? svg.width / svg.height : (vW > 0 ? vW / vH : 1.25)
         let targetWidth = targetHeight * ratio
         
         let leadingGap: CGFloat = 0
@@ -1056,10 +1172,19 @@ extension CommentBubbleSVGRecognizer {
             let context = rendererContext.cgContext
 
             context.saveGState()
-            context.translateBy(x: leadingGap, y: 0)
 
-            let scaleX = targetWidth / vW
-            let scaleY = targetHeight / vH
+            var scaleX = targetWidth / vW
+            var scaleY = targetHeight / vH
+            var offsetX: CGFloat = 0
+            var offsetY: CGFloat = 0
+            if !svg.viewBoxFit.stretches {
+                let uniform = svg.viewBoxFit.slices ? max(scaleX, scaleY) : min(scaleX, scaleY)
+                scaleX = uniform
+                scaleY = uniform
+                offsetX = (targetWidth - vW * uniform) * svg.viewBoxFit.align.x
+                offsetY = (targetHeight - vH * uniform) * svg.viewBoxFit.align.y
+            }
+            context.translateBy(x: leadingGap + offsetX, y: offsetY)
             context.scaleBy(x: scaleX, y: scaleY)
             context.translateBy(x: -svg.viewBox.origin.x, y: -svg.viewBox.origin.y)
 
@@ -1133,36 +1258,33 @@ extension CommentBubbleSVGRecognizer {
             // large-viewBox bubbles (墨圈 216×200, 光遇 style0 1224×1224, style3 88×76)
             // → the number vanished. Drawing here, in identity/canvas space, fixes that.
             for element in svg.elements {
-                guard case let .text(text, x, y, fontSize, fontWeight, anchor, color, transform) = element else { continue }
+                guard case let .text(text, x, y, fontSize, fontFamily, fontWeight, anchor, color, transform) = element else { continue }
                 // The <g> transform maps the anchor point; glyphs themselves stay upright.
                 let vbPos = CGPoint(x: x, y: y).applying(transform)
                 let vbOrg = svg.viewBox.origin
-                let canvasX = (vbPos.x - vbOrg.x) * scaleX + leadingGap
-                let canvasY = (vbPos.y - vbOrg.y) * scaleY
+                let canvasX = (vbPos.x - vbOrg.x) * scaleX + leadingGap + offsetX
+                let canvasY = (vbPos.y - vbOrg.y) * scaleY + offsetY
 
-                let sourceFontSize = max(6, min(fontSize * scaleY, targetHeight * 0.5))
-                let canvasFontSize: CGFloat
-                if let textScaleRatio {
-                    let boundedTextScale = min(max(textScaleRatio, 0.2), 0.8)
-                    canvasFontSize = max(6, min(targetHeight * boundedTextScale, targetHeight * 0.8))
-                } else {
-                    canvasFontSize = sourceFontSize
-                }
+                // legado (AndroidSVG) draws the count at the size the SVG gives it, scaled with
+                // the viewBox like every other element. The 50% clamp and the reader's
+                // 數字字號比例 that replaced it set the number against the bubble's height
+                // instead, which is how 光遇's and the bubble packs' 99+ outgrew their frames.
+                let canvasFontSize = max(1, fontSize * scaleY)
                 let textColor = color ?? themeTextColor
-                let isSVGBold = (fontWeight?.lowercased().contains("bold") ?? false)
-                    || (Int((fontWeight ?? "").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) >= 600
-                let isBold = isSVGBold || GlobalSettings.shared.readerFontBold
-                let font = UserReaderFontResolver.bodyFont(size: canvasFontSize, isBold: isBold)
-                var textAttrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: textColor
-                ]
-                textAttrs.merge(
-                    UserReaderFontResolver.syntheticBoldAttributes(
-                        for: font,
-                        isBoldRequested: isBold
-                    )
-                ) { _, new in new }
+                // Weight is the SVG's own; the reader's bold setting widened every count.
+                let isBold = isBoldSVGWeight(fontWeight)
+                var textAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: textColor]
+                let font: UIFont
+                switch textFace {
+                case .declared:
+                    font = declaredFont(family: fontFamily, isBold: isBold, size: canvasFontSize)
+                case .reader:
+                    font = UserReaderFontResolver.bodyFont(size: canvasFontSize, isBold: isBold)
+                    textAttrs.merge(
+                        UserReaderFontResolver.syntheticBoldAttributes(for: font, isBoldRequested: isBold)
+                    ) { _, new in new }
+                }
+                textAttrs[.font] = font
                 let textSize = (text as NSString).size(withAttributes: textAttrs)
 
                 var drawX = canvasX
@@ -1179,19 +1301,61 @@ extension CommentBubbleSVGRecognizer {
 
         }
 
-        // Crop the baked-in viewBox / canvas padding (起点 fills it, but 企点·光遇·番茄
-        // leave large transparent margins) so the bubble sits flush against the paragraph
-        // text and starts at the left margin when it wraps to a new line.
-        let trimmed = ReaderDocumentTrace.measuringSync("bubbleTrim") {
-            rendered.trimmingTransparentPixels() ?? rendered
-        }
+        // The whole viewBox, margins included, as legado draws it: the SVG's own space
+        // around its shape is what keeps the bubble off the paragraph's last character.
+        // Cropping it (b1efe83b) pressed every bubble against the text.
         diag("draw:vb=\(Int(svg.viewBox.width))x\(Int(svg.viewBox.height))", context: [
             "canvasPt": "\(Int(canvasSize.width))x\(Int(canvasSize.height))",
-            "trimmedPt": String(format: "%.0fx%.0f", trimmed.size.width, trimmed.size.height),
             "hasTransform": svg.elements.contains { !$0.transform.isIdentity },
             "elements": svg.elements.count
         ])
-        return trimmed
+        return rendered
+    }
+
+    /// `bold`/`bolder`, or a numeric weight of 600 and up.
+    private static func isBoldSVGWeight(_ weight: String?) -> Bool {
+        guard let weight = weight?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+            return false
+        }
+        return weight.hasPrefix("bold") || (Int(weight) ?? 0) >= 600
+    }
+
+    /// The face an SVG `font-family` list names, as AndroidSVG resolves it for legado: the
+    /// first family that exists wins; `sans-serif` and the system aliases are the system
+    /// face; with nothing usable named it falls back to serif, AndroidSVG's default.
+    private static func declaredFont(family: String?, isBold: Bool, size: CGFloat) -> UIFont {
+        let names = (family ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \t\n'\"")) }
+            .filter { !$0.isEmpty }
+        for name in names {
+            switch name.lowercased() {
+            case "sans-serif", "-apple-system", "system-ui", "blinkmacsystemfont", "cursive", "fantasy":
+                return UIFont.systemFont(ofSize: size, weight: isBold ? .bold : .regular)
+            case "monospace":
+                return UIFont.monospacedSystemFont(ofSize: size, weight: isBold ? .bold : .regular)
+            case "serif":
+                return installedFont(family: "Times New Roman", isBold: isBold, size: size)
+                    ?? UIFont.systemFont(ofSize: size, weight: isBold ? .bold : .regular)
+            default:
+                if let font = installedFont(family: name, isBold: isBold, size: size) {
+                    return font
+                }
+            }
+        }
+        return installedFont(family: "Times New Roman", isBold: isBold, size: size)
+            ?? UIFont.systemFont(ofSize: size, weight: isBold ? .bold : .regular)
+    }
+
+    private static func installedFont(family: String, isBold: Bool, size: CGFloat) -> UIFont? {
+        guard let installed = UIFont.familyNames.first(where: {
+            $0.caseInsensitiveCompare(family) == .orderedSame
+        }) else { return nil }
+        var descriptor = UIFontDescriptor(fontAttributes: [.family: installed])
+        if isBold, let bold = descriptor.withSymbolicTraits(.traitBold) {
+            descriptor = bold
+        }
+        return UIFont(descriptor: descriptor, size: size)
     }
 }
 

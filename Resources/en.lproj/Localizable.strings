@@ -1253,9 +1253,6 @@
 "整體大小" = "Overall Size";
 "當前樣式大小" = "Current Style Size";
 "這裡調整目前選取氣泡樣式的整體大小。" = "Adjust the overall size of the currently selected bubble style.";
-"文字大小" = "Text Size";
-"數字字號比例" = "Number Text Ratio";
-"這裡調整段評數字相對於氣泡的大小。" = "Adjust the size of the paragraph-comment number relative to its bubble.";
 "樣式名稱" = "Style Name";
 "自訂樣式" = "Custom Style";
 "SVG 檔案過大，請使用小於 %d KB 的氣泡樣式。" = "The SVG is too large. Use a bubble style smaller than %d KB.";

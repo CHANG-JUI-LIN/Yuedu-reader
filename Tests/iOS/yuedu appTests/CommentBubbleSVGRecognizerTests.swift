@@ -47,7 +47,7 @@ struct CommentBubbleSVGRecognizerTests {
                 }
             }
             let hasColoredText = bubble.elements.contains { element in
-                guard case let .text(_, _, _, _, _, _, color, _) = element else { return false }
+                guard case let .text(_, _, _, _, _, _, _, color, _) = element else { return false }
                 return color != nil
             }
 
@@ -105,24 +105,6 @@ struct CommentBubbleSVGRecognizerTests {
         #expect(GlobalSettings.sanitizedCommentBubbleScale(2.5) == 2.0)
         #expect(GlobalSettings.sanitizedCommentBubbleTextScale(0.1) == 0.2)
         #expect(GlobalSettings.sanitizedCommentBubbleTextScale(1.0) == 0.8)
-    }
-
-    @Test("preserves the selected bubble scale in the inline attachment height")
-    func resolvesScaledInlineAttachmentHeight() {
-        #expect(
-            CommentBubbleSVGRecognizer.inlineAttachmentHeight(
-                pointSize: 18,
-                lineHeight: 24,
-                overallScale: 0.5
-            ) == 12
-        )
-        #expect(
-            CommentBubbleSVGRecognizer.inlineAttachmentHeight(
-                pointSize: 18,
-                lineHeight: 24,
-                overallScale: 1.5
-            ) == 36
-        )
     }
 
     @Test("accepts the bubble.json ${num} placeholder as a replaceable count")

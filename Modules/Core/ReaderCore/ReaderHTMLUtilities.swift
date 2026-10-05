@@ -1273,7 +1273,8 @@ enum ReaderHTMLUtilities {
             cleanedTag.removeSubrange(range)
         }
 
-        let clickStyle = legadoClickStyle(fromConfigSuffix: suffix)?.lowercased()
+        let authoredClickStyle = legadoClickStyle(fromConfigSuffix: suffix)
+        let clickStyle = authoredClickStyle?.lowercased()
         let imageSource = firstCapture(
             in: tag,
             pattern: #"\bsrc\s*=\s*[\"']([^\"']*)[\"']"#
@@ -1284,7 +1285,7 @@ enum ReaderHTMLUtilities {
         // marker attribute the renderer reads — the suffix itself must be stripped so SwiftSoup's
         // `src` parsing doesn't choke on its inner quotes.
         if clickStyle == "text" {
-            cleanedTag = markImageAsTextSized(cleanedTag)
+            cleanedTag = markImageAsTextSized(cleanedTag, isWide: authoredClickStyle == "TEXT")
         }
 
         // Same reason, different payload: a Legado `headers` option belongs to the image's own
@@ -1557,14 +1558,15 @@ enum ReaderHTMLUtilities {
         return out
     }
 
-    /// Inserts a `data-yd-imgstyle="text"` marker as the first attribute of an `<img>` tag so the
-    /// renderer sizes it to the surrounding text height. Idempotent.
-    private static func markImageAsTextSized(_ tag: String) -> String {
+    /// Inserts a `data-yd-imgstyle` marker as the first attribute of an `<img>` tag so the
+    /// renderer sizes it as a character of the surrounding text: `TEXT` for legado's wide
+    /// form, `text` otherwise. Idempotent.
+    private static func markImageAsTextSized(_ tag: String, isWide: Bool) -> String {
         guard tag.range(of: "data-yd-imgstyle", options: .caseInsensitive) == nil,
               let r = tag.range(of: "<img", options: .caseInsensitive)
         else { return tag }
         var result = tag
-        result.replaceSubrange(r, with: "<img data-yd-imgstyle=\"text\"")
+        result.replaceSubrange(r, with: "<img data-yd-imgstyle=\"\(isWide ? "TEXT" : "text")\"")
         return result
     }
 

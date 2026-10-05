@@ -139,10 +139,13 @@ public struct RenderStyle: Sendable {
     /// Explicit width/height (common for images / card blocks)
     public var width: CGFloat?
     public var height: CGFloat?
-    /// Legado `style:"text"` image directive — render this image inline at the surrounding text's
-    /// line height (a small character-sized icon, e.g. 段評 comment bubbles), regardless of the
-    /// image's intrinsic size. Set from the click-config suffix; never from CSS.
+    /// Legado `style:"text"` image directive — render this image inline as one character of the
+    /// surrounding text, as wide as legado's placeholder (a 段評 comment bubble), regardless of
+    /// the image's intrinsic size. Set from the click-config suffix; never from CSS.
     public var isTextSizedImage: Bool
+    /// The uppercase `style:"TEXT"` form, which legado lays out half again as wide as the
+    /// lowercase one (`ChapterProvider.reviewCharWidth`, 1.5556 × the `袮` placeholder).
+    public var isWideTextImage = false
     /// Opacity (common for images / decoration)
     public var opacity: CGFloat
     public var borderTopWidth: CGFloat

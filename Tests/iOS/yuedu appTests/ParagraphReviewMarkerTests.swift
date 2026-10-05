@@ -439,7 +439,8 @@ struct ParagraphReviewMarkerTests {
         )
 
         #expect(cleaned.contains(#"class="yd-review-image""#))
-        #expect(cleaned.contains(#"data-yd-imgstyle="text""#))
+        // Uppercase `TEXT` is legado's wide bubble cell; the marker keeps the case.
+        #expect(cleaned.contains(#"data-yd-imgstyle="TEXT""#))
         #expect(!cleaned.contains(#""click":"#))
 
         let href = try #require(firstReviewHref(in: cleaned))
@@ -466,7 +467,7 @@ struct ParagraphReviewMarkerTests {
         )
 
         #expect(cleaned.contains(#"class="yd-review-image""#))
-        #expect(cleaned.contains(#"data-yd-imgstyle="text""#))
+        #expect(cleaned.contains(#"data-yd-imgstyle="TEXT""#))
         let href = try #require(firstReviewHref(in: cleaned))
         let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(href))
         #expect(marker.url.isEmpty)

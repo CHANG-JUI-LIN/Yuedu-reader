@@ -323,8 +323,9 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             let alt = attributes["alt"] ?? ""
             // Legado `style:"text"` click-config directive → render at the surrounding text size
             // (small inline 段評 bubble), not the SVG's intrinsic 180×144.
-            if attributes["data-yd-imgstyle"]?.lowercased() == "text" {
+            if let imageStyle = attributes["data-yd-imgstyle"], imageStyle.lowercased() == "text" {
                 style.isTextSizedImage = true
+                style.isWideTextImage = imageStyle == "TEXT"
             }
             node = .image(src: src, alt: alt, style: style)
 

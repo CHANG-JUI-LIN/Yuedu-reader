@@ -1241,9 +1241,13 @@ struct NodeAttributedStringRenderer {
             return NSAttributedString()
         }
         var style = RenderStyle.none
-        style.width = image.size.width
-        style.height = image.size.height
         style.isTextSizedImage = true
+        let settings = GlobalSettings.shared
+        style.width = textSizedImageWidth(
+            style: style,
+            font: ctx.font,
+            scale: settings.commentBubbleFollowsSourceSVG ? 1 : CGFloat(settings.commentBubbleScale)
+        )
         let placeholder = NSMutableAttributedString(
             attributedString: await makeImagePlaceholder(
                 image: image,
@@ -1294,15 +1298,13 @@ struct NodeAttributedStringRenderer {
                     recognizedBubble: recognized
                 ) ?? CommentBubbleSVGRecognizer.draw(svg: recognized, pointSize: ctx.font.pointSize, themeTextColor: ctx.textColor)
                 var bubbleStyle = style
-                if !settings.commentBubbleFollowsSourceSVG {
-                    bubbleStyle.rawWidthPercent = nil
-                    bubbleStyle.width = nil
-                    bubbleStyle.height = CommentBubbleSVGRecognizer.inlineAttachmentHeight(
-                        pointSize: ctx.font.pointSize,
-                        lineHeight: ctx.font.lineHeight,
-                        overallScale: CGFloat(settings.commentBubbleScale)
-                    )
-                }
+                bubbleStyle.rawWidthPercent = nil
+                bubbleStyle.height = nil
+                bubbleStyle.width = textSizedImageWidth(
+                    style: style,
+                    font: ctx.font,
+                    scale: settings.commentBubbleFollowsSourceSVG ? 1 : CGFloat(settings.commentBubbleScale)
+                )
                 let metrics = await resolvedImageMetrics(
                     image: image,
                     style: bubbleStyle,
@@ -1339,17 +1341,12 @@ struct NodeAttributedStringRenderer {
                     renderWidth: resolvedWidth
                 )
             }
-            var image = await ReaderDocumentTrace.measuring("svgRaster") {
+            let image = await ReaderDocumentTrace.measuring("svgRaster") {
                 await SVGWebViewRasterizer.shared.render(
                     svgString: drawnSVG,
                     size: targetSize,
                     baseURL: nil
                 )
-            }
-            if style.isTextSizedImage, let img = image {
-                image = ReaderDocumentTrace.measuringSync("svgTrim") {
-                    img.trimmingTransparentPixels() ?? img
-                }
             }
             if image == nil {
                 guard !alt.isEmpty else { return NSAttributedString() }
@@ -1404,21 +1401,8 @@ struct NodeAttributedStringRenderer {
             return NSAttributedString(string: "[\(alt)]\n", attributes: attrs)
         }
 
-        var image = src.isEmpty ? nil : await ReaderDocumentTrace.measuring("imageLoad") {
+        let image = src.isEmpty ? nil : await ReaderDocumentTrace.measuring("imageLoad") {
             await config.imageLoader?(src)
-        }
-        // Measure and apply the crop once. Diagnostics consume its actual output rather
-        // than rescanning every source SVG just to construct a deduplicated log message.
-        let sizeBeforeTrim = image?.size
-        if style.isTextSizedImage, let img = image {
-            image = ReaderDocumentTrace.measuringSync("imageTrim") { img.trimmingTransparentPixels() ?? img }
-        }
-        if svgContent != nil || src.lowercased().contains("svg") {
-            let fp = src.range(of: ";base64,").map { String(src[$0.upperBound...].prefix(10)) } ?? String(src.prefix(10))
-            let before = sizeBeforeTrim.map { "\(Int($0.width))x\(Int($0.height))" } ?? "nil"
-            let after = image.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? before
-            CommentBubbleSVGRecognizer.diag("loaderTrim fp=\(fp) isTextSized=\(style.isTextSizedImage)",
-                context: ["before": before, "after": after])
         }
         CoreTextPaginator.debugVerticalLog("EPUBFLOW render.inlineImage.node src=\(src) alt=\(alt) imageLoaded=\(image != nil) writingMode=\(config.writingMode) fontSize=\(ctx.font.pointSize) styleWidth=\(style.width.map { "\($0)" } ?? "nil") styleHeight=\(style.height.map { "\($0)" } ?? "nil")")
         if let side = style.floatSide {
@@ -1894,6 +1878,17 @@ struct NodeAttributedStringRenderer {
         return output
     }
 
+    /// The width legado gives a Legado `style:"text"` image — a 段評 bubble: the advance of
+    /// its placeholder character `袮` in the paragraph's font, and 1.5556 times that for the
+    /// uppercase `"TEXT"` (`ChapterProvider.reviewCharWidth`). The bitmap keeps its own
+    /// aspect inside that width, transparent margins included, and the paginator centres it
+    /// on the line. `scale` is 整體大小 for the reader's own templates, as Sigma scales a
+    /// bubble package by its `sizeScale`.
+    private func textSizedImageWidth(style: RenderStyle, font: UIFont, scale: CGFloat) -> CGFloat {
+        let placeholder = ("袮" as NSString).size(withAttributes: [.font: font]).width
+        return placeholder * (style.isWideTextImage ? 1.5556 : 1) * min(max(scale, 0.5), 2.0)
+    }
+
     private func makeImagePlaceholder(
         image: UIImage?,
         style: RenderStyle,
@@ -2327,13 +2322,8 @@ struct NodeAttributedStringRenderer {
                 drawWidth = image.size.width * ratio
                 drawHeight = explicitHeight
             } else if style.isTextSizedImage {
-                // Legado `style:"text"`: scale the image so its height matches the surrounding text
-                // line height — a small inline icon (段評 comment bubble) that sits at the line end,
-                // not a full-size illustration. Preserve aspect ratio from the rasterized bitmap.
-                let targetHeight = max(font.lineHeight, font.pointSize)
-                let ratio = targetHeight / max(image.size.height, 1)
-                drawWidth = image.size.width * ratio
-                drawHeight = targetHeight
+                drawWidth = textSizedImageWidth(style: style, font: font, scale: 1)
+                drawHeight = image.size.height * drawWidth / max(image.size.width, 1)
             } else {
                 drawWidth = image.size.width
                 drawHeight = image.size.height

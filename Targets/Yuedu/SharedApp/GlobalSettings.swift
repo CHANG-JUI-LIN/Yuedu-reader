@@ -1141,6 +1141,11 @@ class GlobalSettings: ObservableObject {
             }
         }
     }
+    /// The old 數字字號比例. Nothing draws with it any more: a bubble's count is the size its
+    /// SVG gives it, as in legado and Sigma's bubble packs, and the slider is gone. It stays
+    /// stored because themes and synced reading settings carry it as a non-optional
+    /// `AppearanceThemeReadingSettings.CommentBubble.textScale`, which builds before this one
+    /// still decode. Remove it together with that field once no such build syncs.
     @Published var commentBubbleTextScale: Double {
         didSet {
             let sanitized = Self.sanitizedCommentBubbleTextScale(commentBubbleTextScale)

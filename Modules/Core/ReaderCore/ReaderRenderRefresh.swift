@@ -64,7 +64,6 @@ struct ReaderDocumentStyleFingerprint: Equatable {
     let commentBubbleCustomStyles: [ReaderCommentBubbleCustomStyle]
     let commentBubbleSelectedCustomStyleID: UUID?
     let commentBubbleScale: Double
-    let commentBubbleTextScale: Double
     let readerTextUnderlineDecorationEnabled: Bool
     let readerTextUnderlineDecorationColorHex: UInt32
     let readerTextUnderlineStyle: ReaderTextUnderlineStyle

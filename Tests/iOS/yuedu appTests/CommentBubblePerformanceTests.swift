@@ -98,8 +98,8 @@ struct CommentBubblePerformanceTests {
         }
     }
 
-    @Test("unrecognized text-sized SVG image trims preserve links and pixels")
-    func diagnosticTrimComparison() async throws {
+    @Test("unrecognized text-sized SVG image keeps its links and its untrimmed pixels")
+    func unrecognizedTextSizedImageKeepsPixels() async throws {
         let image = try Self.rasterImage()
         let renderer = NodeAttributedStringRenderer(config: .init(
             from: Self.renderSettings, textColor: .black, renderWidth: 360,
@@ -120,8 +120,8 @@ struct CommentBubblePerformanceTests {
         let output = await ReaderDocumentTrace.$renderLeaves.withValue(metrics) {
             await renderer.render(nodes)
         }
-        print("BUBBLE_PERF diagnosticTrim totalMs=\((SourcePerfTrace.now - start) * 1000) \(metrics.logDetail)")
-        let expected = try #require(image.trimmingTransparentPixels()?.pngData())
+        print("BUBBLE_PERF unrecognizedTextSized totalMs=\((SourcePerfTrace.now - start) * 1000) \(metrics.logDetail)")
+        let expected = try #require(image.pngData())
         try Self.verify(output, hasBubbles: true, expectedImageData: expected)
     }
 
