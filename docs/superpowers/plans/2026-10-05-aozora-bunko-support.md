@@ -39,7 +39,7 @@ Phases 0 and 1a are detailed. Phases 1b, 1c and 2 are outlined and get detailed 
   - The only real work allowed in fixtures is the public-domain `Fixtures/TXTEncodings/aozora-neko-jijo.txt`.
 - **Corpus.** It stays outside the repo. The corpus suite reads `AOZORA_CORPUS`, which reaches the test runner as `TEST_RUNNER_AOZORA_CORPUS=<path>`, and is disabled when the variable is unset.
 - **No change to how existing TXT books display.** `AozoraTXTTests`, `TXTReaderIndexMigrationTests` and `TXTLocationMigrationTests` must pass unchanged through Phase 1a.
-- **Strings.** Every user-facing string goes through `localized()`, with keys in zh-Hant, zh-Hans and en.
+- **Strings.** Every user-facing string goes through `localized()`, with keys in every `Resources/*.lproj`: zh-Hant, zh-Hans, en, ja and ko. `ruby scripts/check_localizations.rb` (macOS) checks them.
 - **Errors.** No `try?` that discards a parse or IO error; log through `AppLogger`, outside `#if DEBUG`.
 - **Commits.** Stage exact paths only, one commit per task, English commit messages.
 
