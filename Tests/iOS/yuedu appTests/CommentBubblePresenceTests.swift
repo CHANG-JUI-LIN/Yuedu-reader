@@ -47,6 +47,17 @@ struct CommentBubblePresenceTests {
         #expect(CommentBubbleSVGRecognizer.containsRecognizedBubble(inChapterHTML: chapter))
     }
 
+    /// The reader asks this of the chapter package's content — the source's own output, in
+    /// which a `<comment>` marker is not yet a review link. 起点 qimo's iOS branch emits only
+    /// these, so its chapters drew bubbles while the entry stayed hidden.
+    @Test func aRawCommentMarkerCounts() {
+        let chapter = #"<div rs-native>正文<comment count="1" onClick="java.startBrowser('https://qdgo.qimo.host/reviews?bookId=1&chapterId=2&paragraphId=2','起点段评')"/></div>"#
+        #expect(ReaderHTMLUtilities.containsParagraphReviewLinks(in: chapter))
+        #expect(!ReaderHTMLUtilities.containsParagraphReviewLinks(
+            in: #"<div rs-native>正文<comment count="1"/></div>"#
+        ))
+    }
+
     @Test func reviewLinksStillCount() {
         #expect(ReaderHTMLUtilities.containsParagraphReviewLinks(
             in: #"<a href="ydreview://r?d=abc" class="yd-review">3</a>"#

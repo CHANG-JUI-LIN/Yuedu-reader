@@ -354,6 +354,57 @@ struct ParagraphReviewMarkerTests {
         #expect(!cleaned.contains(#"<div data-yd-review-style="full">"#))
     }
 
+    /// 起点 qimo's iOS branch puts the tap on the card itself — the handler its `<comment>`
+    /// markers carry — instead of in a `,{…}` suffix. Unrewritten, the 熱評 and 本章讨论 cards
+    /// opened the image preview, and the 熱評 card shared its paragraph's last line.
+    @Test("rewrites an onClick hot-review card into a FULL review block")
+    func rewritesOnClickHotReviewCard() throws {
+        let svg = """
+        <svg width="1000" height="140" xmlns="http://www.w3.org/2000/svg">\
+        <rect width="100%" height="100%" fill="rgba(255,255,255,0.5)" rx="70"/>\
+        <text x="102" y="84" font-size="32">热评</text><text x="196" y="84" font-size="40">来抄书</text></svg>
+        """
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let url = "https://qdgo.qimo.host/reviews?bookId=1043196323&chapterId=836617373&paragraphId=9"
+        let raw = #"<div rs-native>正文<comment count="5" onClick="java.startBrowser('\#(url)','起点段评')"/>"#
+            + "\n" + #"<img src="data:image/svg+xml;base64,\#(base64)" onClick="java.startBrowser('\#(url)','起点段评')"/></div>"#
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(
+            raw,
+            reviewContext: ReaderHTMLUtilities.LegadoReviewContext(
+                sourceName: "起点小说（qimo）",
+                sourceURL: "https://qdgo.qimo.host"
+            )
+        )
+
+        #expect(cleaned.contains(#"class="yd-review-image" data-yd-review-style="full""#))
+        let cardAnchor = try #require(
+            try NSRegularExpression(pattern: #"<a href="(ydreview://[^"]+)" class="yd-review-image""#)
+                .firstMatch(in: cleaned, range: NSRange(location: 0, length: (cleaned as NSString).length))
+        )
+        let cardHref = (cleaned as NSString).substring(with: cardAnchor.range(at: 1))
+        let marker = try #require(ReaderHTMLUtilities.decodeReviewHref(cardHref))
+        #expect(marker.url == url)
+        #expect(marker.title == "起点段评")
+        #expect(marker.sourceJS.contains("java.startBrowser"))
+    }
+
+    @Test("keeps an onClick bubble inline")
+    func keepsOnClickBubbleInline() {
+        let svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">\
+        <path d="M2 2 H30 V24 H12 L6 30 V24 H2 Z" fill="#FFFFFF" stroke="#999999"/>\
+        <text x="16" y="17" font-size="10" text-anchor="middle">12</text></svg>
+        """
+        let base64 = Data(svg.utf8).base64EncodedString()
+        let raw = #"<p>正文<img src="data:image/svg+xml;base64,\#(base64)" onClick="java.startBrowser('https://example.com/r?p=1','段评')"/></p>"#
+
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(raw)
+
+        #expect(cleaned.contains(#"class="yd-review-image""#))
+        #expect(!cleaned.contains("data-yd-review-style"))
+    }
+
     @Test("does not turn an ordinary FULL image into a review block")
     func leavesOrdinaryFullImageInline() {
         let svg = #"<svg width="120" height="80"><rect width="120" height="80"/></svg>"#

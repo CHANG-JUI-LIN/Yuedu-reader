@@ -780,6 +780,11 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 accessory.deleteCharacters(in: NSRange(location: index, length: 1))
             }
         }
+        // The bubble arrives glued for the body; the title joins it with its own thin space.
+        let glue = NodeAttributedStringRenderer.textSizedImageGlue
+        if accessory.string.hasPrefix(glue) {
+            accessory.deleteCharacters(in: NSRange(location: 0, length: (glue as NSString).length))
+        }
         guard accessory.length > 0 else { return }
 
         let titleText = title.string as NSString

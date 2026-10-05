@@ -1255,10 +1255,13 @@ struct NodeAttributedStringRenderer {
             )
         )
         guard placeholder.length > 0 else { return placeholder }
+        let glueLength = placeholder.string.hasPrefix(Self.textSizedImageGlue)
+            ? (Self.textSizedImageGlue as NSString).length
+            : 0
         placeholder.addAttribute(
             HTMLAttributedStringBuilder.internalLinkAttribute,
             value: reviewURL,
-            range: NSRange(location: 0, length: placeholder.length)
+            range: NSRange(location: glueLength, length: placeholder.length - glueLength)
         )
         return placeholder
     }
@@ -1937,8 +1940,25 @@ struct NodeAttributedStringRenderer {
         )
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttributes(ctx.baseAttributes, range: range)
+        if style.isTextSizedImage, displayMode == .inline {
+            var glueAttributes = ctx.baseAttributes
+            glueAttributes[HTMLAttributedStringBuilder.internalLinkAttribute] = nil
+            placeholder.insert(
+                NSAttributedString(string: Self.textSizedImageGlue, attributes: glueAttributes),
+                at: 0
+            )
+        }
         return placeholder
     }
+
+    /// Put before every text-sized inline image — the 段評 bubble, which `<comment>` markers
+    /// and `style:"text"` images are the only sources of. CoreText may break a line right
+    /// before an attachment, so a paragraph whose last line was full left its bubble alone at
+    /// the start of the next line (起点 qimo 第2章, paragraph 68). The word joiner forbids that
+    /// break: the last character comes down with the bubble, as legado's own engine
+    /// (huajideshutiao, `LineBreaker.fixOrphanLastLine`) does. It carries no review link, so
+    /// a bubble's link range still starts at its attachment.
+    static let textSizedImageGlue = "\u{2060}"
 
     private func normalizedLinkRegions(
         _ regions: [HTMLTableRasterLinkRegion],

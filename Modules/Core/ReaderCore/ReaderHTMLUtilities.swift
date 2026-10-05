@@ -688,17 +688,40 @@ enum ReaderHTMLUtilities {
     /// exact stage where a duplicate semantic target first appears without logging prose, tokens,
     /// SVG payloads, or full review URLs.
     /// Whether a chapter shows paragraph-review bubbles — what 閱讀設定 › 段評氣泡 styles,
-    /// and so whether that entry is shown. Three forms, the three the renderer draws:
-    /// a review link (`<comment>` markers and review images rewritten at fetch time), a
-    /// raw `showCmt(` call, and a bubble SVG with no link at all.
+    /// and so whether that entry is shown. Four forms, the four the renderer draws:
+    /// a review link, a `<comment>` marker, a raw `showCmt(` call, and a bubble SVG with
+    /// no link at all.
     ///
-    /// The last one used to be missing: the entry was gated on review *links*, while the
-    /// renderer draws any SVG `CommentBubbleSVGRecognizer` accepts as a bubble — so a
-    /// source whose tap handler was not one this app runs showed bubbles on every page
-    /// and no way to restyle them.
+    /// The reader asks this of the chapter package's content, which is the source's own
+    /// output: `<comment>` markers become review links only in the normalized HTML, so
+    /// the raw marker has to be recognized here too. Missing it hid the entry for every
+    /// iOS-runtime `<comment>` source (起点 qimo: 11 bubbles on 第2章, entry absent).
+    ///
+    /// The bubble SVG used to be missing as well: the entry was gated on review *links*,
+    /// while the renderer draws any SVG `CommentBubbleSVGRecognizer` accepts as a bubble —
+    /// so a source whose tap handler was not one this app runs showed bubbles on every
+    /// page and no way to restyle them.
     static func containsParagraphReviewLinks(in content: String) -> Bool {
         content.range(of: "showcmt(", options: .caseInsensitive) != nil
             || content.range(of: "\(reviewURLScheme)://", options: .caseInsensitive) != nil
+            || containsCommentMarker(in: content)
+    }
+
+    /// Whether `html` carries a `<comment>` marker `rewriteReviewComments` turns into a bubble.
+    private static func containsCommentMarker(in html: String) -> Bool {
+        guard html.range(of: "<comment", options: .caseInsensitive) != nil,
+              let tagRegex = try? NSRegularExpression(
+                  pattern: #"<comment\b[^>]*>"#,
+                  options: [.caseInsensitive]
+              ) else { return false }
+        let ns = html as NSString
+        var found = false
+        tagRegex.enumerateMatches(in: html, range: NSRange(location: 0, length: ns.length)) { match, _, stop in
+            guard let match, commentMarker(inTag: ns.substring(with: match.range)) != nil else { return }
+            found = true
+            stop.pointee = true
+        }
+        return found
     }
 
     static func reviewMarkupDiagnostics(in html: String) -> ReviewMarkupDiagnostics {
@@ -1016,13 +1039,19 @@ enum ReaderHTMLUtilities {
         )
     }
 
-    private static func anchorMarkup(forCommentTag tag: String, context: LegadoReviewContext?) -> String? {
+    /// A `<comment>` marker's count and the page its handler opens, or nil when the tag is
+    /// not one the reader can turn into a bubble.
+    private static func commentMarker(inTag tag: String) -> (count: String, url: String, title: String)? {
         guard let count = firstCapture(in: tag, pattern: #"count\s*=\s*"([^"]*)""#),
               let args = showReadingBrowserArgs(in: tag)
         else { return nil }
         let url = unescapeHTMLEntities(args.url)
-        let title = unescapeHTMLEntities(args.title)
         guard !url.isEmpty else { return nil }
+        return (count, url, unescapeHTMLEntities(args.title))
+    }
+
+    private static func anchorMarkup(forCommentTag tag: String, context: LegadoReviewContext?) -> String? {
+        guard let (count, url, title) = commentMarker(inTag: tag) else { return nil }
         let target = sourceBrowserTarget(url: url, title: title, context: context)
         guard let href = reviewHref(
             count: count, url: target.url, title: target.title,
@@ -1187,7 +1216,9 @@ enum ReaderHTMLUtilities {
         reviewContext: LegadoReviewContext?
     ) -> String {
         guard html.range(of: "<img", options: .caseInsensitive) != nil,
-              html.range(of: ",{") != nil,
+              html.range(of: ",{") != nil
+                || html.range(of: "onclick", options: .caseInsensitive) != nil
+                || html.range(of: "onpress", options: .caseInsensitive) != nil,
               let tagRegex = try? NSRegularExpression(
                 pattern: #"<img\b[^>]*>"#,
                 options: [.caseInsensitive]
@@ -1232,7 +1263,9 @@ enum ReaderHTMLUtilities {
         _ tag: String,
         reviewContext: LegadoReviewContext?
     ) -> String {
-        guard let configMatch = legadoClickConfigMatch(in: tag) else { return tag }
+        guard let configMatch = legadoClickConfigMatch(in: tag) else {
+            return rewriteImageHandlerTag(tag, reviewContext: reviewContext)
+        }
         let ns = tag as NSString
         let suffix = ns.substring(with: configMatch.range)
         var cleanedTag = tag
@@ -1304,6 +1337,63 @@ enum ReaderHTMLUtilities {
         // without changing how the source's prose structure is detected.
         let reviewStyle = clickStyle == "full" ? " data-yd-review-style=\"full\"" : ""
         return "<a href=\"\(href)\" class=\"yd-review-image\"\(reviewStyle)>\(cleanedTag)</a>"
+    }
+
+    /// The iOS-runtime form of the same tap contract: the handler sits on the image itself —
+    /// `<img src="data:…svg" onClick="java.startBrowser('<url>','起点段评')"/>` — exactly as it
+    /// sits on a `<comment>` marker, instead of in a Legado `,{"click":…}` suffix. 起点 qimo's
+    /// `qidianggetCommentsIOS` builds its 熱評 and 本章讨论 cards this way; with no rewrite the
+    /// card rendered as a bare picture and a tap opened the image preview.
+    ///
+    /// The markup carries no `style`. Those cards are what the Android branch of the same
+    /// source marks `FULL`, so anything that is not a bubble becomes a block: left inline, a
+    /// 熱評 card shares its paragraph's last line box and the line holding that paragraph's
+    /// bubble is justified across the column.
+    private static func rewriteImageHandlerTag(
+        _ tag: String,
+        reviewContext: LegadoReviewContext?
+    ) -> String {
+        guard let handler = firstCapture(
+            in: tag,
+            pattern: #"\bon(?:click|press)\s*=\s*"([^"]*)""#
+        ) ?? firstCapture(
+            in: tag,
+            pattern: #"\bon(?:click|press)\s*=\s*'([^']*)'"#
+        ) else { return tag }
+        let action = unescapeHTMLEntities(handler).trimmingCharacters(in: .whitespacesAndNewlines)
+        let imageSource = firstCapture(
+            in: tag,
+            pattern: #"\bsrc\s*=\s*[\"']([^\"']*)[\"']"#
+        ).map(unescapeHTMLEntities) ?? ""
+
+        let target: ReviewTarget?
+        if let args = showReadingBrowserArgs(in: action) {
+            let url = unescapeHTMLEntities(args.url)
+            target = url.isEmpty
+                ? nil
+                : sourceBrowserTarget(url: url, title: unescapeHTMLEntities(args.title), context: reviewContext)
+        } else {
+            target = reviewTarget(
+                forLegadoAction: action,
+                context: reviewContext,
+                sourceResult: imageSource,
+                allowsSourceJSFallback: isSourceFunctionCall(action)
+            )
+        }
+        guard let target,
+              let href = reviewHref(
+                count: "",
+                url: target.url,
+                title: target.title,
+                sourceJS: target.sourceJS,
+                sourceURL: target.sourceURL,
+                actionContext: target.actionContext
+              )
+        else { return tag }
+
+        let isBubble = CommentBubbleSVGRecognizer.recognize(src: imageSource, svgContent: nil) != nil
+        let reviewStyle = isBubble ? "" : " data-yd-review-style=\"full\""
+        return "<a href=\"\(href)\" class=\"yd-review-image\"\(reviewStyle)>\(tag)</a>"
     }
 
     private static func isQidianSource(_ context: LegadoReviewContext?) -> Bool {
