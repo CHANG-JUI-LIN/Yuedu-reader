@@ -1,0 +1,18 @@
+{
+  "commit": "9ca5395fef8d5e96c44a0b0d7f4bba27013e66a4",
+  "entries": {
+    "aozora-accent.json": 72,
+    "aozora-jis2ucs.json": 11233
+  },
+  "generator": "scripts/aozora_tables.py",
+  "inputs": {
+    "yml/accent_table.yml": "4f214be0dca8ed6d3b983a29821b8290c1fad42d9546a02b277cadea8505226c",
+    "yml/jis2ucs.yml": "07b6bcbeaa0ce4c42dcff92161582140a79793176b14acd41a33b87074954c75"
+  },
+  "license": "CC0-1.0",
+  "outputs": {
+    "aozora-accent.json": "57400f3fd2b5aa3f3e9204a2fcc74f972b3525cc80bf08763bc39a2d21e1382c",
+    "aozora-jis2ucs.json": "82be12a24bc953e741254d9670aa266c56d4252a0c777c5eb7971a7d440af051"
+  },
+  "upstream": "https://github.com/aozorahack/aozora2html"
+}
