@@ -88,6 +88,11 @@ struct AozoraDocument: Equatable, Sendable {
     var headerBlocks: [AozoraBlock]
     var body: [AozoraBlock]
     var colophon: [AozoraBlock]
+    /// What the reader sees: the header, body and colophon blocks joined by
+    /// "\n". The notation block is not part of it.
+    var displayedText: String
+    /// Between UTF-16 offsets of `displayedText` and of the source text.
+    var sourceMap: AozoraSourceMap
     var diagnostics: AozoraDiagnostics
 }
 
@@ -106,6 +111,8 @@ enum AozoraDocumentParser {
             header: AozoraHeaderParser.parse(headerLines: headerBlocks.map(\.displayedText)),
             bibliography: bibliography(of: colophon.map(\.displayedText)),
             headerBlocks: headerBlocks, body: body, colophon: colophon,
+            displayedText: parser.segments.map(\.text).joined(),
+            sourceMap: AozoraSourceMap(segments: parser.segments, source: source.units),
             diagnostics: parser.diagnostics)
     }
 
@@ -452,6 +459,15 @@ private final class AozoraBlockParser {
     private(set) var diagnostics: AozoraDiagnostics
 
     private var blocks: [AozoraBlock] = []
+    /// What the reader sees across every section read so far, in order, with
+    /// the source each piece stands for.
+    private(set) var segments: [AozoraSourceMap.Segment] = []
+    private var hasEmittedBlock = false
+    /// The source the "\n" before the next block stands for: the line break
+    /// after the previous block, or the annotation that split a line.
+    private var pendingSeparator: Range<Int>?
+    private var needsSeparatorSource = false
+    private var lineStart = 0
     /// ［＃ここから…］ styles, innermost last.
     private var blockStyles: [BlockStyle] = []
     /// The lines of an open ［＃ここから…見出し］.
@@ -521,9 +537,12 @@ private final class AozoraBlockParser {
         blockStyles = []
         heading = nil
         resetLine()
-        for token in AozoraTokenizer.tokenize(source.units, in: source.range(ofLines: lines)) {
+        let range = source.range(ofLines: lines)
+        lineStart = range.lowerBound
+        for token in AozoraTokenizer.tokenize(source.units, in: range) {
             if token.kind == .newline {
                 finishLine(newline: token.range)
+                lineStart = token.range.upperBound
             } else {
                 lineHasTokens = true
                 handle(token, accents: false)
@@ -556,12 +575,45 @@ private final class AozoraBlockParser {
         closeOpenRanges()
         if heading != nil {
             absorbLineIntoHeading(newline: newline)
-        } else if !lineHasTokens {
-            blocks.append(.paragraph([], paragraphStyle()))
         } else {
-            emitLine()
+            if !lineHasTokens {
+                emit(.paragraph([], paragraphStyle()), showing: [], at: lineStart)
+            } else {
+                emitLine()
+            }
+            if needsSeparatorSource, let newline {
+                pendingSeparator = newline
+                needsSeparatorSource = false
+            }
         }
         resetLine()
+    }
+
+    /// Adds a block, and to the displayed text its line break and its leaves.
+    /// A block that shows nothing still takes its place between two breaks.
+    private func emit(_ block: AozoraBlock, showing shown: [AozoraNode], at position: Int) {
+        var leaves: [AozoraSourceMap.Segment] = []
+        for node in shown { collectLeaves(node, into: &leaves) }
+        if hasEmittedBlock {
+            let start = leaves.first?.source.lowerBound ?? position
+            segments.append(AozoraSourceMap.Segment(text: "\n", source: pendingSeparator ?? start..<start))
+        }
+        segments.append(contentsOf: leaves)
+        blocks.append(block)
+        hasEmittedBlock = true
+        pendingSeparator = nil
+        needsSeparatorSource = true
+    }
+
+    private func collectLeaves(_ node: AozoraNode, into leaves: inout [AozoraSourceMap.Segment]) {
+        switch node.kind {
+        case .text, .gaiji, .kaeriten, .okurigana, .lineBreak:
+            leaves.append(AozoraSourceMap.Segment(text: node.text, source: node.source))
+        case .container:
+            for child in node.children { collectLeaves(child, into: &leaves) }
+        case .editorialNote, .unknownAnnotation, .rangeStart, .endAlignedTail, .pageBreak:
+            break
+        }
     }
 
     /// The line's blocks: split at a mid-line 地付き when text follows it, and
@@ -569,31 +621,36 @@ private final class AozoraBlockParser {
     private func emitLine() {
         var segment: [AozoraNode] = []
         var endAlignment = lineEndAlignment
-        func flush() {
-            if segment.contains(where: \.isContent) {
-                emitBlock(segment, endAlignment: endAlignment)
-            }
-            segment = []
+        func flush() -> Bool {
+            defer { segment = [] }
+            guard segment.contains(where: \.isContent) else { return false }
+            emitBlock(segment, endAlignment: endAlignment)
+            return true
         }
         for (index, node) in nodes.enumerated() {
             switch node.kind {
             case .endAlignedTail(let offset):
                 let textFollows = nodes[(index + 1)...].contains { $0.isContent && !$0.isWhitespaceText }
-                if textFollows, segment.contains(where: \.isContent) {
-                    flush()
+                if textFollows, segment.contains(where: \.isContent), flush() {
+                    // The line break between the two blocks stands for the annotation.
+                    pendingSeparator = node.source
+                    needsSeparatorSource = false
                 }
                 // With nothing after it, the annotation was written after the
                 // line it aligns, e.g. （明治四十四年一月）［＃地付き］.
                 endAlignment = offset
             case .pageBreak(let kind):
-                flush()
-                blocks.append(.pageBreak(kind))
+                if flush() {
+                    pendingSeparator = node.source
+                    needsSeparatorSource = false
+                }
+                emit(.pageBreak(kind), showing: [], at: node.source.lowerBound)
                 endAlignment = nil
             default:
                 segment.append(node)
             }
         }
-        flush()
+        _ = flush()
     }
 
     private func emitBlock(_ nodes: [AozoraNode], endAlignment: Int?) {
@@ -605,17 +662,20 @@ private final class AozoraBlockParser {
         if let image = content.first(where: { if case .container(.image) = $0.kind { return true }; return false }),
            content.allSatisfy({ $0 === image || isLayoutSpace($0) }),
            case .container(.image(let file, let width, let height)) = image.kind {
-            blocks.append(.image(source: file, width: width, height: height, caption: freeze(image.children)))
+            emit(.image(source: file, width: width, height: height, caption: freeze(image.children)),
+                 showing: [image], at: image.source.lowerBound)
             return
         }
         if let headingNode = content.first(where: { if case .container(.style(.heading)) = $0.kind { return true }; return false }),
            content.allSatisfy({ $0 === headingNode || isLayoutSpace($0) }),
            case .container(.style(.heading(let level, let kind))) = headingNode.kind {
             let flattened = nodes.flatMap { $0 === headingNode ? $0.children : [$0] }
-            blocks.append(.heading(level, kind, blockInlineStyles(freeze(flattened)), style))
+            emit(.heading(level, kind, blockInlineStyles(freeze(flattened)), style), showing: nodes,
+                 at: nodes.first?.source.lowerBound ?? lineStart)
             return
         }
-        blocks.append(.paragraph(blockInlineStyles(freeze(nodes)), style))
+        emit(.paragraph(blockInlineStyles(freeze(nodes)), style), showing: nodes,
+             at: nodes.first?.source.lowerBound ?? lineStart)
     }
 
     private func paragraphStyle() -> AozoraParagraphStyle {
@@ -682,7 +742,14 @@ private final class AozoraBlockParser {
             run = RubyRun()
         }
         guard block.nodes.contains(where: \.isContent) else { return }
-        blocks.append(.heading(block.level, block.kind, blockInlineStyles(freeze(block.nodes)), block.style))
+        emit(.heading(block.level, block.kind, blockInlineStyles(freeze(block.nodes)), block.style),
+             showing: block.nodes, at: block.nodes.first?.source.lowerBound ?? lineStart)
+        // The break after the heading is the one after its last line, not the
+        // one after ［＃ここで…見出し終わり］.
+        if let next = block.pendingBreaks.first {
+            pendingSeparator = next
+            needsSeparatorSource = false
+        }
     }
 
     // MARK: Tokens
