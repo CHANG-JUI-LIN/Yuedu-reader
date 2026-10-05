@@ -135,6 +135,15 @@ struct AozoraAnnotationTests {
         #expect(unknown.diagnostics[.unknownAnnotation("「…」は分数")] == 1)
     }
 
+    @Test("the diagnostics summary gives each kind once, unknown annotations by shape")
+    func diagnosticsSummary() {
+        let document = AozoraDocumentParser.parse(
+            "題\n\n本文［＃「x」は分数］［＃「y」は分数］［＃謎］［＃「無」に傍点］※［＃「口＋世」、ページ数-行数］\n")
+        #expect(document.diagnostics.summary
+                == "unresolvedGaiji=1 missingForwardReference=1 unknownAnnotation=[「…」は分数×2, 謎×1]")
+        #expect(AozoraDiagnostics().summary == "clean")
+    }
+
     @Test("an unclosed range closes at its line end; an unopened end is diagnosed")
     func unclosedRange() {
         let unclosed = AozoraDocumentParser.parse("題\n\n［＃傍点］強調だけ\n次の行\n")

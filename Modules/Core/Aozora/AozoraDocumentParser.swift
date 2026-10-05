@@ -98,7 +98,20 @@ struct AozoraDocument: Equatable, Sendable {
 
 /// The only place that reads Aozora Bunko notation.
 enum AozoraDocumentParser {
+    /// Parses a whole document, timed as `aozora.parse`. What could not be read
+    /// is logged once per document, as counts, never per occurrence.
     static func parse(_ text: String, tables: AozoraTables = .shared) -> AozoraDocument {
+        let document = SourcePerfTrace.span("aozora.parse", "units=\(text.utf16.count)") {
+            parseDocument(text, tables: tables)
+        }
+        AppLogger.parse(
+            "[Aozora] \(document.sourceMap.sourceLength) units, \(document.body.count) body blocks: "
+                + document.diagnostics.summary,
+            level: document.diagnostics.isEmpty ? .info : .notice)
+        return document
+    }
+
+    private static func parseDocument(_ text: String, tables: AozoraTables) -> AozoraDocument {
         let source = AozoraSource(text)
         var diagnostics = AozoraDiagnostics()
         let structure = structure(of: source, diagnostics: &diagnostics)
