@@ -23,7 +23,7 @@ Modules/
 ├── Features/              # SwiftUI screens: Bookshelf, Reader, RSS, BookSource, Settings, Search, WebBrowser...
 ├── Services/              # LibraryStore, Online, WebDAV, iCloud, OPDS, Network, Account, RSS, Migration...
 └── SharedUI/              # DesignSystem (DSColor, DSFont, DSSpacing), Components, Extensions, Utilities, Adaptive layout
-Resources/                 # Assets.xcassets, Assets/ (book source engine JS), en.lproj, zh-Hans.lproj, zh-Hant.lproj
+Resources/                 # Assets.xcassets, Assets/ (book source engine JS), {en,ja,ko,zh-Hans,zh-Hant}.lproj
 Targets/Yuedu/             # SharedApp, iPhone/, iPad/ entry points
 ```
 
@@ -68,7 +68,7 @@ BookSourceFetcher.searchBooks()
 - **Reading position identity**: Use `(spineIndex, charOffset)` not `globalPage`. Pages shift when chapters load.
 - **Margin flow**: `GlobalSettings.pageMarginH/V` → `currentContentInsets()` → `CoreTextPaginator.paginate(contentInsets:)` → `ChapterLayout.contentInsets` → `CoreTextPageView.draw()`
 - **Dependency injection**: `AppDependencies` + `@Environment` for services; singletons for caches
-- **Localization**: All UI strings via `localized()`; keys in zh-Hant, zh-Hans, en
+- **Localization**: All UI strings via `localized()`; keys in every `.lproj` (zh-Hant, zh-Hans, en, ja, ko), `InfoPlist.strings` included; `scripts/check_localizations.rb` enforces this
 
 ## Dependencies
 
