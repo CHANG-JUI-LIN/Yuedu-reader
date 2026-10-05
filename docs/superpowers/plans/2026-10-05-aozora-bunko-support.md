@@ -79,7 +79,7 @@ Phases 0 and 1a are detailed. Phases 1b, 1c and 2 are outlined and get detailed 
 - Create: `Modules/Core/Aozora/AozoraDocumentDetector.swift`
 - Create: `Tests/iOS/yuedu appTests/AozoraDocumentDetectorTests.swift`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Cases:
 - the PD fixture is detected;
@@ -88,7 +88,7 @@ Cases:
 - a `readme.txt` sample is not detected;
 - every existing non-Aozora TXT fixture under `Fixtures/TXTEncodings/` is not detected.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 ```swift
 enum AozoraDocumentDetector {
@@ -101,7 +101,7 @@ enum AozoraDocumentDetector {
 
 Read only a bounded prefix and suffix, so a large non-Aozora TXT is not scanned whole.
 
-- [ ] **Step 3: Run and commit**
+- [x] **Step 3: Run and commit**
 
 ```bash
 export DEVELOPER_DIR="$(bash scripts/sim.sh xcode)"
@@ -116,7 +116,7 @@ git commit -m "feat(aozora): detect Aozora Bunko documents"
 - Modify: `Modules/Services/LibraryStore/LocalBookImportService.swift`
 - Modify: `Tests/iOS/yuedu appTests/LocalBookImportServiceTests.swift`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Build the zips inside the test with `Archive(url:accessMode: .create)`:
 - the PD fixture zipped → imported as a TXT book whose text equals the fixture;
@@ -124,14 +124,14 @@ Build the zips inside the test with `Archive(url:accessMode: .create)`:
 - images plus a non-Aozora `readme.txt` → manga;
 - audio → audiobook, as today.
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 - In the `zip` branch, after the audio check, look for a `.txt` entry that `AozoraDocumentDetector` accepts.
 - If one exists, extract it to a temporary file and call `store.importTxt(url:title:)`. Images in the zip are ignored until Phase 1b.
 - Otherwise keep the manga import.
 - Remove the temporary file whether or not the import succeeds, and log failures with `AppLogger`.
 
-- [ ] **Step 3: Run and commit**
+- [x] **Step 3: Run and commit**
 
 ```bash
 bash scripts/xctest.sh -- -only-testing:'yuedu appTests/LocalBookImportServiceTests'
@@ -146,7 +146,7 @@ git commit -m "fix(import): open official Aozora Bunko zips as books instead of 
 - Modify: `Modules/Core/TXT/TXTMetadataProbe.swift`
 - Modify: `Tests/iOS/yuedu appTests/TXTMetadataProbeTests.swift`
 
-- [ ] **Step 1: Port `build_header_info`**
+- [x] **Step 1: Port `build_header_info`**
 
 The header is the lines before the first blank line. Port the assignment of title, original title, subtitle, author, translator, editor and 編訳 for header lengths 2–6, including the "original" test (a line made only of ASCII and the listed JIS rows) and the 編／訳／編訳 patterns.
 
@@ -167,15 +167,15 @@ enum AozoraHeaderParser {
 }
 ```
 
-- [ ] **Step 2: Tests**
+- [x] **Step 2: Tests**
 
 Write one self-written header for each length from 2 to 6. Include a translated work, so the author and the translator are kept apart.
 
-- [ ] **Step 3: Use it in the probe**
+- [x] **Step 3: Use it in the probe**
 
 In `TXTMetadataProbe.infer`, when `AozoraDocumentDetector` accepts the sample, take the title and author from `AozoraHeaderParser`. Otherwise keep the current patterns. The PD fixture must yield the title 『吾輩は猫である』中篇自序 and the author 夏目漱石, not the filename.
 
-- [ ] **Step 4: Run and commit**
+- [x] **Step 4: Run and commit**
 
 ```bash
 bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraHeaderTests' -only-testing:'yuedu appTests/TXTMetadataProbeTests'
@@ -193,7 +193,7 @@ git commit -m "fix(import): read the title and author of Aozora Bunko files from
 - Create: `Tests/iOS/yuedu appTests/AozoraTablesTests.swift`
 - Modify: `NOTICE`
 
-- [ ] **Step 1: Generate the tables**
+- [x] **Step 1: Generate the tables**
 
 ```bash
 git clone --depth 1 https://github.com/aozorahack/aozora2html /tmp/aozora2html
@@ -206,7 +206,7 @@ Expected: 11,233 JIS entries.
 - `accent_table.yml` maps a base character plus a mark to a JIS code. Store it as `base + mark → JIS code`, resolved through the JIS table at load time.
 - Running the script twice must produce identical bytes.
 
-- [ ] **Step 2: Loader and tests**
+- [x] **Step 2: Loader and tests**
 
 `AozoraTables` loads both files once with `Bundle.main.url(forResource:withExtension:)` and logs a missing or corrupt resource through `AppLogger`.
 
@@ -223,7 +223,7 @@ Test these mappings:
 
 Also test one accent mapping per mark type that `accent_table.yml` defines.
 
-- [ ] **Step 3: NOTICE and commit**
+- [x] **Step 3: NOTICE and commit**
 
 ```bash
 bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraTablesTests'
@@ -237,7 +237,7 @@ git commit -m "feat(aozora): bundle the JIS X 0213 and accent tables from aozora
 - Create: `Modules/Core/Aozora/AozoraTokenizer.swift`
 - Create: `Tests/iOS/yuedu appTests/AozoraTokenizerTests.swift`
 
-- [ ] **Step 1: Types**
+- [x] **Step 1: Types**
 
 ```swift
 indirect enum AozoraInline: Equatable, Sendable {
@@ -270,7 +270,7 @@ struct AozoraGaiji: Equatable, Sendable {
 }
 ```
 
-- [ ] **Step 2: Tokenizer**
+- [x] **Step 2: Tokenizer**
 
 Tokens:
 - text runs;
@@ -284,7 +284,7 @@ Tokens:
 
 Every token carries its source UTF-16 range.
 
-- [ ] **Step 3: Tests and commit**
+- [x] **Step 3: Tests and commit**
 
 Cover:
 - each token kind;
@@ -303,14 +303,14 @@ git commit -m "feat(aozora): add the syntax tree and tokenizer"
 - Create: `Modules/Core/Aozora/AozoraDocumentParser.swift` (sections only in this task)
 - Create: `Tests/iOS/yuedu appTests/AozoraDocumentStructureTests.swift`
 
-- [ ] **Step 1: Implement the aozora2html states**
+- [x] **Step 1: Implement the aozora2html states**
 
 - Header: until the first blank line; parsed by `AozoraHeaderParser`.
 - Notation block: a hyphen line within the next five non-blank lines opens it, and the next hyphen line closes it. Drop the content.
 - Body.
 - Colophon: from the first line starting with `底本：` after the body starts. Keep its lines, and extract 底本, 初出, 入力 and 校正.
 
-- [ ] **Step 2: Tests and commit**
+- [x] **Step 2: Tests and commit**
 
 Cover:
 - with and without a notation block;
@@ -329,13 +329,13 @@ git commit -m "feat(aozora): split documents into header, notation block, body a
 - Modify: `Modules/Core/Aozora/AozoraDocumentParser.swift`
 - Create: `Tests/iOS/yuedu appTests/AozoraInlineRulesTests.swift`
 
-- [ ] **Step 1: Ruby**
+- [x] **Step 1: Ruby**
 
 - `｜` fixes the base start.
 - Without `｜`, the base is the preceding run of one character class: kanji (including 々〆ヶ and gaiji), hiragana, katakana, full-width alphanumerics or half-width alphanumerics. Port the classes from aozora2html `ruby_buffer.rb`.
 - In Aozora documents every `《…》` is ruby. The current kana-reading guard belongs to the TXT path only.
 
-- [ ] **Step 2: Gaiji**
+- [x] **Step 2: Gaiji**
 
 - A JIS code (`[12]-row-cell`, with or without 第3／第4水準) resolves through `AozoraTables`.
 - `U+XXXX` resolves directly.
@@ -344,12 +344,12 @@ git commit -m "feat(aozora): split documents into header, notation block, body a
   - Phase 1b renders the parenthesised part in smaller type.
 - A gaiji counts as kanji for ruby, so `※［＃コト、1-2-24］《こと》` becomes ruby over ヿ.
 
-- [ ] **Step 3: Accent decomposition and kunojiten**
+- [x] **Step 3: Accent decomposition and kunojiten**
 
 - `〔…〕` containing a letter followed by a mark converts through the accent table and loses the brackets. Otherwise the brackets stay.
 - `／＼` → U+3033 U+3035, and `／″＼` → U+3034 U+3035.
 
-- [ ] **Step 4: Tests and commit**
+- [x] **Step 4: Tests and commit**
 
 Cover each rule, plus:
 - the PD fixture's two gaiji followed by ruby, which become ruby;
@@ -370,7 +370,7 @@ git commit -m "feat(aozora): resolve ruby, gaiji, accents and kunojiten"
 - Modify: `Modules/Core/Aozora/AozoraDocumentParser.swift`
 - Create: `Tests/iOS/yuedu appTests/AozoraAnnotationTests.swift`
 
-- [ ] **Step 1: Command table**
+- [x] **Step 1: Command table**
 
 Start from aozora2html `yml/command_table.yml`. Add the categories the census counts:
 - 字下げ, 地付き／字上げ／寄せ, 見出し, 改ページ類, 字級, 太字, 斜体;
@@ -381,18 +381,18 @@ Start from aozora2html `yml/command_table.yml`. Add the categories the census co
 
 The census script's `CATEGORIES` list is the cross-check.
 
-- [ ] **Step 2: Forward references**
+- [x] **Step 2: Forward references**
 
 `［＃「X」に傍点］`, `［＃「X」は太字］`, `［＃「X」は中見出し］`: find the nearest preceding X in the same paragraph, matching base text without ruby readings, and wrap it. If X is not found, record a diagnostic and drop the annotation.
 
-- [ ] **Step 3: Ranges and blocks**
+- [x] **Step 3: Ranges and blocks**
 
 - Handle `［＃傍点］…［＃傍点終わり］` and `［＃ここから…］…［＃ここで…終わり］` with a style stack (see `style_stack.rb`).
 - Close an unclosed range at block end, with a diagnostic.
 - Line-start `［＃N字下げ］`, `［＃地付き］` and `［＃地からN字上げ］` set the paragraph style.
 - A standalone `［＃改ページ］` becomes a page break.
 
-- [ ] **Step 4: Tests and commit**
+- [x] **Step 4: Tests and commit**
 
 Cover:
 - each category;
@@ -414,13 +414,13 @@ git commit -m "feat(aozora): parse annotations into the syntax tree"
 - Create: `Modules/Core/Aozora/AozoraSourceMap.swift`
 - Create: `Tests/iOS/yuedu appTests/AozoraSourceMapTests.swift`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 - The displayed text is the document's visible text: blocks joined by `"\n"`. Ruby readings, notes and unknown annotations are excluded, and a description-only gaiji contributes `※（description）`.
 - The map is a sorted list of runs (displayed start, source start, displayed length, source length). It supports deletions (markup), replacements (gaiji, accents, kunojiten) and growth (gaiji outside the BMP).
 - API: `displayedOffset(forSource:)` and `sourceOffset(forDisplayed:)`. Both are monotonic. Inside a replaced run, an offset maps to the run's start.
 
-- [ ] **Step 2: Tests and commit**
+- [x] **Step 2: Tests and commit**
 
 Round-trip every token boundary of the PD fixture. Also cover a non-BMP gaiji and a run that grows.
 
@@ -435,11 +435,11 @@ git commit -m "feat(aozora): map displayed offsets to source offsets"
 - Create: `Modules/Core/Aozora/AozoraDiagnostics.swift`
 - Modify: `Modules/Core/Aozora/AozoraDocumentParser.swift`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 Each document gets one `AppLogger` summary line with counts per diagnostic kind: unknown annotations by shape, missing forward references, unclosed ranges and unresolved gaiji. Do not log each occurrence. Wrap `parse` in a `SourcePerfTrace` span named `aozora.parse`.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git commit -m "feat(aozora): summarise parse diagnostics and time the parser"
@@ -450,7 +450,7 @@ git commit -m "feat(aozora): summarise parse diagnostics and time the parser"
 **Files:**
 - Create: `Tests/iOS/yuedu appTests/AozoraCorpusTests.swift`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
 
 Enable the suite only when `AOZORA_CORPUS` is set. Pick one file per work the same way `scripts/aozora_annotation_census.py` does. Assert:
 - no parse throws;
@@ -458,7 +458,7 @@ Enable the suite only when `AOZORA_CORPUS` is set. Pick one file per work the sa
 - the only unresolved gaiji are description-only;
 - totals match the census JSON within 1% (gaiji types, heading count).
 
-- [ ] **Step 2: Run on the Mac**
+- [x] **Step 2: Run on the Mac**
 
 ```bash
 git clone --depth 1 https://github.com/aozorahack/aozorabunko_text ~/aozorabunko_text
@@ -467,11 +467,43 @@ TEST_RUNNER_AOZORA_CORPUS=~/aozorabunko_text bash scripts/xctest.sh -- -only-tes
 
 Record the parse time of the largest file (2.07 MB) from the `aozora.parse` span on a device.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git commit -m "test(aozora): check the parser against the full Aozora corpus"
 ```
+
+## Phase 0 and 1a: what landed
+
+2026-10-06. Phase 0: 155f7cfd, 164a49ae, 70d8b2b6. Phase 1a: bd7e992c, ca09ace3, aed5871b, 7b515265, 7cd0c5f4, d6a393fb, 46646885, 61d37b88, f5223b37.
+
+Phase 1b builds on these decisions, made while implementing:
+
+- **Notation block.** A hyphen-fenced block after the header is dropped only when it explains notation: a `《》：`-style definition, or 記号／表記について in its title. The corpus has 16,007 such blocks and 3 hyphen-fenced blocks of body text; one of them holds 1,125 lines of poems.
+- **Displayed text.**
+  - A line holding only annotations is no block, and its line break goes with it.
+  - A mid-line 地付き／字上げ followed by text splits the line, the tail end-aligned (1,705 works); the "\n" between the two blocks stands for the annotation. Written after the text, it aligns the whole line.
+  - 割り注 gets （） unless the text already has them, as in aozora2html.
+  - 返り点, 訓点送り仮名 and the caption of a 「…」のキャプション付きの図 are displayed text.
+  - A figure contributes only its caption. Before any position migration, Phase 1b must reconcile this with what each engine emits for an image.
+- **Headings.** A line holding one heading (any kind) is a heading block. A heading sharing its line with other text stays inline (`AozoraInline.heading`): nearly every 同行 and 窓 heading. The lines of ［＃ここから…見出し］ make one heading, with `.lineBreak` between them.
+- **Figures.** `AozoraBlock.image` for a figure alone on its line; `AozoraInline.image` for one set into text (840 in the corpus).
+- **Corpus check.** Leaks are judged by provenance: no displayed unit is a verbatim copy of a ruby, annotation, gaiji or くの字点 token. The corpus quotes the notation itself with gaiji (［］ are 1-1-46/47, 《》 1-1-52/53) and carries a few stray brackets as typos, so a plain search for ［＃ or 《 finds text, not markup.
+
+Corpus run, 17,158 works:
+
+| Check | Result | Census |
+|---|---:|---:|
+| Decode failures | 0 | |
+| Markup units copied into the text | 0 | |
+| 〔…〕 left with a known decomposition | 0 | |
+| Gaiji: JIS / U+ / description only | 46,692 / 3,313 / 3,138 | 46,666 / 3,313 / 3,138 |
+| Works with a heading / two or more | 3,572 / 3,511 | 3,577 / 3,513 |
+| Unknown annotations | 2,556 in 524 works | |
+
+The unknown annotations are long-tail layout notes, led by ページの左右中央 (712 in 214 works), 「…」～「…」に傍点 (200 in 2 works) and typefaces (ゴシック体).
+
+Parse time of the largest file (2.07 MB): 593 ms on the iOS 27 simulator by its `aozora.parse` span (1,040 ms while the corpus suite parses other works concurrently), 316 ms in a macOS build of the same sources. A device measurement is still to be recorded.
 
 ---
 
