@@ -120,7 +120,7 @@ enum AozoraHeaderParser {
         type != .original
     }
 
-    private static func strippingRuby(_ line: String) -> String {
+    static func strippingRuby(_ line: String) -> String {
         var result = ""
         var index = line.startIndex
         while index < line.endIndex {
