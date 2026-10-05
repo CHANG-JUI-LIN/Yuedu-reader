@@ -41,38 +41,29 @@ private struct SearchResultNavigationModifier<Destination: View>: ViewModifier {
 
 /// Everything the search page pushes through its one item-based destination.
 ///
-/// One destination for every kind, not one each. TestFlight build 5 gave 最近閱讀's
-/// reader a second `navigationDestination(item:)` beside the results' own, and on iOS 17
-/// the result's detail then lost its own reader push: the second time through, the manga
+/// One destination, never one per kind. TestFlight build 5 gave 最近閱讀's reader a
+/// second `navigationDestination(item:)` beside the results' own, and on iOS 17 the
+/// result's detail then lost its own reader push: the second time through, the manga
 /// reader would not open from the detail, or would not leave it on Back (iOS 17.5
 /// simulator; `DetailReaderBackSwipeUITests.testSearchTabMangaResultOpensEveryTime`).
 /// With this page still reading `DismissAction`, the same build froze on the first tap of
-/// a result instead (Technotes/iOS17ReaderNavigationWatchdog.md).
+/// a result instead (Technotes/iOS17ReaderNavigationWatchdog.md). 最近閱讀's reader is
+/// no longer pushed at all — see `recentReaderRoute`.
 private enum SearchPagePush: Hashable {
     /// A search result. Pushed this way on iOS 17 only; later systems push results by
     /// value from the list's `NavigationLink`.
     case result(BookSearchResultRoute)
-    /// A shelf book from 最近閱讀, back into its reader.
-    case reader(DetailReaderRoute)
 }
 
 /// Resolves a push without capturing `BookSearchView` or its live `SearchAggregator`
 /// (Technotes/iOS17SearchWatchdogPostmortem.md, guardrail 3).
 private struct SearchPagePushDestination: View {
     let push: SearchPagePush
-    @EnvironmentObject private var bookStore: BookStore
 
     var body: some View {
         switch push {
         case .result(let route):
             SearchResultDestination(route: route)
-        case .reader(let route):
-            BookReaderView(bookId: route.id)
-                .environmentObject(bookStore)
-                .environment(\.readerNavigator, nil)
-                .environment(\.readerUsesParentNavigationStack, true)
-                .navigationBarBackButtonHidden(true)
-                .reservingNavigationBackSwipe()
         }
     }
 }
@@ -148,10 +139,15 @@ struct BookSearchView: View {
     /// The session scope as the reader changes it on this page.
     @State private var editedSessionScope: SearchSourceScope?
     /// What this page has pushed through its one item-based destination: a result on
-    /// iOS 17, or a book opened from 最近閱讀 — pushed onto this stack, as a detail page
-    /// pushes its reader. Audiobooks keep their own modal player.
+    /// iOS 17.
     @State private var pushed: SearchPagePush?
-    @State private var audiobookReaderRoute: DetailReaderRoute?
+    /// A book opened from 最近閱讀, full screen over the search, as Apple Books opens a
+    /// book from its search; closing it comes back to the list as it was left. 最近閱讀
+    /// shows only while the search field is active, and pushed onto this stack the reader
+    /// lost its hidden navigation bar: the active `UISearchController` puts back the bar
+    /// it had collapsed as the push starts (`_navigationControllerWillShowViewController:`,
+    /// right after SwiftUI hid it), which left a bar-high band above the classic top bar.
+    @State private var recentReaderRoute: DetailReaderRoute?
     @AppStorage(RecentSearchQueries.storageKey) private var recentQueries = RecentSearchQueries()
 
     /// The scope this page searches: its own session scope, else the saved one.
@@ -222,7 +218,7 @@ struct BookSearchView: View {
         )
         // The page's only item-based destination (see `SearchPagePush`).
         .navigationDestination(item: $pushed, destination: SearchPagePushDestination.init(push:))
-        .fullScreenCover(item: $audiobookReaderRoute) { route in
+        .fullScreenCover(item: $recentReaderRoute) { route in
             BookReaderView(bookId: route.id)
                 .environmentObject(bookStore)
                 .environment(\.readerNavigator, nil)
@@ -500,11 +496,7 @@ struct BookSearchView: View {
     /// as opening it from the shelf does.
     private func openRecentBook(_ book: ReadingBook) {
         bookStore.updateLastOpened(bookId: book.id)
-        if book.resolvedPipelineKind == .audio {
-            audiobookReaderRoute = DetailReaderRoute(id: book.id)
-        } else {
-            pushed = .reader(DetailReaderRoute(id: book.id))
-        }
+        recentReaderRoute = DetailReaderRoute(id: book.id)
     }
 }
 
