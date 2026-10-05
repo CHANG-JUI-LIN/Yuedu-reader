@@ -2,7 +2,7 @@
 
 > Spec: [青空文庫支援設計](../specs/2026-10-05-aozora-bunko-support-design.md). Evidence: [annotation census](../../aozora/annotation-census-2026-10-05.md). Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Import official Aozora Bunko downloads, and build the single Aozora parser (document sections, syntax tree, gaiji/accent/kunojiten tables, source map), with unit and corpus tests. Existing TXT books must render exactly as before.
+**Goal:** Import official Aozora Bunko downloads, build the single Aozora parser (document sections, syntax tree, gaiji/accent/kunojiten tables, source map), and convert Aozora documents to EPUB 3 at import (Phase 1b), with unit and corpus tests. Existing TXT books must render exactly as before.
 
 **Scope of this plan:** The spec's decisions are settled:
 - route C, converting at import;
@@ -11,7 +11,9 @@
 - gaiji described only by shape shown as `※` followed by the description in smaller type;
 - 傍点 in both engines.
 
-Phases 0 and 1a are detailed. Phases 1b, 1c and 2 are outlined and get detailed tasks once Phase 1a lands, because they build on its syntax tree and source map.
+Phases 0, 1a and 1b are detailed. Phases 1c, 1d and 2 are outlined and get detailed tasks when the phase before them lands.
+
+Vertical writing for Aozora books (Phase 1d) waits for the [vertical typography plan](2026-10-06-vertical-typography.md) (maintainer decision, 2026-10-06): both engines must first set punctuation, Latin, digits and kana as W3C requires. Phase 1b ships Aozora books horizontal only.
 
 **Architecture:** A new `Modules/Core/Aozora/` folder holds the parser:
 - a detector;
@@ -22,7 +24,7 @@ Phases 0 and 1a are detailed. Phases 1b, 1c and 2 are outlined and get detailed 
 - three lookup tables loaded from bundled JSON;
 - a source map between displayed and source UTF-16 offsets.
 
-`AozoraMarkupParser` and the TXT reader are not touched until Phase 1c. The reader does not change in these phases.
+`AozoraMarkupParser` and the TXT reader are not touched until Phase 1c. The reader does not change in Phases 0 to 1b, except for the gate that regenerates a converted book (Task 20). Phase 1d changes three reader gates so a converted book follows the 排版方向 setting.
 
 **Tech Stack:** Swift 6, Swift Testing, Foundation, `ReadiumZIPFoundation` (already used by `LocalMangaArchive` and `ReaderStylePackage`), Python 3 for the table generator.
 
@@ -70,6 +72,23 @@ Phases 0 and 1a are detailed. Phases 1b, 1c and 2 are outlined and get detailed 
   - `AozoraSourceMap.swift`
   - `AozoraDiagnostics.swift`
 - Tests: `AozoraTablesTests`, `AozoraTokenizerTests`, `AozoraDocumentStructureTests`, `AozoraInlineRulesTests`, `AozoraAnnotationTests`, `AozoraSourceMapTests`, `AozoraCorpusTests`.
+
+### Phase 1b
+
+- Modify `Modules/Core/Aozora/AozoraDocumentParser.swift`: ASCII whitespace in the displayed text (Task 12) and block spans (Task 13).
+- Create in `Modules/Core/Aozora/`:
+  - `AozoraChapterPlanner.swift`: chapters, navigation entries, per-chapter text and source map;
+  - `AozoraXHTMLWriter.swift`: chapter XHTML and the app's stylesheet;
+  - `AozoraEPUBWriter.swift`: the OCF package and its `yuedu-aozora.json` manifest.
+- Create in `Modules/Services/LibraryStore/`: `AozoraBookImporter.swift` and `AozoraBookRegenerator.swift`.
+- Modify:
+  - `Modules/Services/LibraryStore/Models.swift` (`ReadingBook.aozora`);
+  - `LocalBookImportService.swift`, `BookStore.swift` (`delete`);
+  - `Modules/Services/iCloud/ICloudSyncManager.swift` (`bookFilePayloads`);
+  - `Modules/Services/Calibre/CalibreWirelessService.swift` (`returnBookFile`);
+  - `Modules/Features/Reader/BookReaderView.swift` (the regeneration gate).
+- Create `docs/aozora/epub-text-contract.md`: what each engine makes of the XHTML the writer emits.
+- Tests: `AozoraChapterPlannerTests`, `AozoraXHTMLWriterTests`, `AozoraEPUBWriterTests`, `AozoraEngineParityTests`, `AozoraBookImportTests`, `AozoraBookRegeneratorTests`; extend `AozoraInlineRulesTests`, `AozoraSourceMapTests`, `LocalBookImportServiceTests` and `AozoraCorpusTests`.
 
 ---
 
@@ -507,20 +526,502 @@ Parse time of the largest file (2.07 MB): 593 ms on the iOS 27 simulator by its 
 
 ---
 
-## Phase 1b (outline — route C, convert at import)
+## Phase 1b: EPUB writer and import
 
-- **Writer.** `AozoraEPUBWriter` turns the syntax tree into EPUB 3 with `Archive(url:accessMode: .create)`.
-  - The `mimetype` entry comes first and is stored uncompressed.
-  - It writes `package.opf` (title, author, translator, `ja`), `nav.xhtml` from heading levels, one XHTML file per section, one app-owned stylesheet, and the images the document references.
-  - It does not set `writing-mode`.
-  - A description-only gaiji is written as `※` plus a smaller `（…）` span. Size only, no colour, so reader themes still apply.
-- **Sections.** Split at 大／中見出し. Text before the first heading forms its own section, and the colophon is the last section. When there are no headings and the body exceeds 100 KB, split at paragraph boundaries.
-- **Engine text parity test (Mac).** For each converted chapter, the text that `BrowserChapterLayout.sourceText` and the legacy builder produce equals the writer's displayed text. Positions depend on it.
-- **Import.**
-  - Aozora `.txt` and `.zip` go through the writer.
-  - The book is stored as `source = "local_epub"`, and the original bytes are kept next to it.
-  - The converter version and the source encoding are recorded on the book.
-- **Regeneration.** When the converter version changes, the EPUB is regenerated on open. A corpus test proves that style-only changes keep every chapter's text.
+Route C: an Aozora document becomes an EPUB 3 file at import, and from then on is stored and opened as an ordinary local EPUB. Phase 1b ships these books horizontal only; vertical writing is Phase 1d.
+
+### The text contract
+
+A reading position is `(spineIndex, charOffset)`. `charOffset` indexes the text of whichever engine lays the chapter out: `BrowserChapterLayout.sourceText` under BrowserAuto, or the legacy builder's attributed string after a fallback.
+
+The spec assumed that clean XHTML makes the two texts equal. It does not. On 2026-10-06 a temporary probe gave both engines the same chapters, horizontal and vertical, paged and scroll, on the iOS 27 simulator:
+
+| XHTML | BrowserAuto | Legacy |
+|---|---|---|
+| `<p>A</p><p>B</p>` | `AB`: blocks get no separator | `A\nB\n` |
+| `<p>A<br class="eol"/></p>`, with `br.eol { display: block }` | `A\n` | `A\n` |
+| `<p>A<br/></p>` | `A\n` | `A`, U+2028, `\n` |
+| `<br/>` inside a block | `\n` | U+2028 (same length) |
+| `<h1>` | like `<h2>` | adds a leading `\n` |
+| `<img>`, inline or alone in a block | nothing: `BoxTreeBuilder.appendImageRun` gives it no source text, by design | U+FFFC |
+| ASCII space at a block's edge or next to `<br/>` | kept | dropped |
+| two ASCII spaces, or a tab | one space | one space |
+| `white-space: pre-wrap` | honoured | ignored |
+| `"q"`, `'r'` | unchanged | curled (same length) |
+| `page-break-before` | ignored | adds U+200B |
+| U+3000, also at edges and alone in a block | kept | kept |
+| ruby, `<span>`, `<sub>`, `<sup>`, `<em>`, nested `<div>` blocks | identical | identical |
+
+BrowserAuto's paged and scroll texts were identical. It fell back to legacy for a non-default `ruby-position`, and, in vertical writing, for any chapter holding an `<img>` (`VerticalTextSupport.accepts`, `LogicalFlow.swift:89`).
+
+The legacy builder's cleanup of spaces between Han characters (`HTMLAttributedStringBuilder.swift:517`) never runs: ICU rejects the `\u{00A0}` in its pattern, and the `try?` leaves the regex nil. U+3000 survives in legacy only because of that.
+
+So the writer follows these rules, and Task 17 pins them:
+- **End of block.** Every block ends with `<br class="eol"/>`, and the stylesheet sets `br.eol { display: block }`. A blank line is `<p><br class="eol"/></p>`. A chapter's text is each block's displayed text followed by `"\n"`.
+- **Line break inside a block.** `<br/>`.
+- **Headings.** `<h3>`, `<h4>`, `<h5>` as aozora2html writes them; never `<h1>`. The probe checked `<h2>` to `<h4>`; Task 17 covers `<h5>`.
+- **Page breaks.** They end the chapter (Task 14); the stylesheet has no page-break property.
+- **Stylesheet limits.** No `writing-mode`, `ruby-position`, `@media`, `calc()`, tables, floats or positioning.
+- **U+3000.** Written as `&#12288;`, so the text does not depend on that cleanup staying broken.
+- **ASCII whitespace.** Collapsed in the displayed text itself (Task 12).
+- **Figures.** A figure costs legacy one U+FFFC that BrowserAuto does not have, and no markup removes that difference.
+  - The chapter text keeps BrowserAuto's form: a figure contributes only its caption, as Phase 1a defined.
+  - In a chapter that legacy lays out, an offset after a figure is one unit later for each figure before it.
+  - Works with figures are 2.8% of the corpus, and every EPUB with images already behaves this way.
+
+### Versions
+
+- `AozoraEPUBWriter.converterVersion` changes with any change to the files the writer produces.
+- `AozoraEPUBWriter.textVersion` changes only when some chapter's text changes. A text change ships with a position migration (Phase 1c's tools), never alone.
+- Both start at 1.
+
+## Task 12: ASCII whitespace in the displayed text
+
+**Files:**
+- Modify: `Modules/Core/Aozora/AozoraDocumentParser.swift`
+- Modify: `Tests/iOS/yuedu appTests/AozoraInlineRulesTests.swift`
+- Modify: `Tests/iOS/yuedu appTests/AozoraSourceMapTests.swift`
+
+The engines disagree about ASCII whitespace at a block's edge, and both collapse runs, so the displayed text must already be collapsed. This revises Phase 1a, before any position is stored against it.
+
+- [ ] **Step 1: Write the failing tests**
+
+| Source line | Displayed text | Source map |
+|---|---|---|
+| `A  B` | `A B` | second space deleted |
+| `A`, tab, `B` | `A B` | tab replaced by a space |
+| ` lead` and `trail ` | `lead` and `trail` | edge spaces deleted |
+| `A ［＃「A」に傍点］ B` | `A B` | the run across the annotation collapses |
+| heading lines `上 ` and ` 下` in ［＃ここから見出し］ | `上`, `\n`, `下` | spaces next to the line break deleted |
+| `　本文　` | unchanged | U+3000 is not ASCII whitespace |
+| spaces only | an empty block | |
+
+- [ ] **Step 2: Implement**
+
+Apply CSS `white-space: normal` to U+0020 and U+0009 over a block's leaves in order, across inline boundaries:
+- a run collapses to one space, and a surviving tab becomes a space;
+- a run at the start or end of a block, or next to a `.lineBreak`, is deleted.
+
+Do it where the parser freezes a block. Split text nodes so the kept units stay identity runs. Leave U+3000, U+00A0 and other spaces alone.
+
+- [ ] **Step 3: Corpus and commit**
+
+Rerun `AozoraCorpusTests`; every Phase 1a check still passes. Record:
+- how many works' displayed text changed;
+- how many hold U+00A0 in the displayed text. The legacy builder drops a block holding only U+00A0, so if the corpus has such blocks, Task 17 gets a case for them.
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraInlineRulesTests' -only-testing:'yuedu appTests/AozoraSourceMapTests'
+git commit -m "feat(aozora): collapse ASCII whitespace in the displayed text as HTML does"
+```
+
+## Task 13: Block spans
+
+**Files:**
+- Modify: `Modules/Core/Aozora/AozoraDocumentParser.swift`
+- Modify: `Tests/iOS/yuedu appTests/AozoraSourceMapTests.swift`
+
+The writer cuts chapters between blocks, so it needs each block's place in the displayed text and in the source.
+
+- [ ] **Step 1: Implement**
+
+`AozoraDocument` keeps its segments and gains one span per block, in document order. `AozoraBlockParser.emit` records each span as it appends the block's segments.
+
+```swift
+struct AozoraBlockSpan: Equatable, Sendable {
+    enum Section: Equatable, Sendable { case header, body, colophon }
+    var section: Section
+    /// Index into `headerBlocks`, `body` or `colophon`.
+    var index: Int
+    /// The "\n" segment before this block; nil for the document's first block.
+    var separator: Int?
+    /// The block's own segments.
+    var leaves: Range<Int>
+}
+```
+
+- [ ] **Step 2: Tests and commit**
+
+Use the PD fixture, plus a fixture with a page break and a line split by 地付き. Assert:
+- each span's leaves spell its block's `displayedText`;
+- the separators and leaves, in order, rebuild `displayedText`;
+- a page-break block has no leaves.
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraSourceMapTests'
+git commit -m "feat(aozora): record where each block sits in the displayed text"
+```
+
+## Task 14: Chapters and navigation
+
+**Files:**
+- Create: `Modules/Core/Aozora/AozoraChapterPlanner.swift`
+- Create: `Tests/iOS/yuedu appTests/AozoraChapterPlannerTests.swift`
+
+- [ ] **Step 1: Write the failing tests**
+
+Use short self-written documents. Chapters:
+- the header is the title page, and the colophon is the last chapter;
+- a 大見出し or 中見出し block starts a chapter; a 小見出し or an inline heading does not;
+- every page break (改ページ, 改丁, 改段, 改見開き) ends a chapter;
+- body text before the first heading is a chapter of its own;
+- blank blocks at the start and end of a chapter are dropped, and a chapter left empty disappears;
+- a chapter over the limit splits before the block that would cross it; a single block longer than the limit stays whole;
+- a chapter's text is each block's text plus `"\n"`; page breaks contribute nothing;
+- the chapter's source map sends every offset inside a block to the same source offset as the document's map, and the `"\n"` after a block to the line break that followed it.
+
+Navigation:
+- the title page is listed under the work's title;
+- each heading block and inline heading is listed at its level, pointing at its anchor;
+- parts of a split chapter are listed as `題(1)`, `題(2)`, … as `TXTChapterParser.swift:216` titles them;
+- the colophon is listed as `底本`;
+- text before the first heading has no entry of its own, unless it is split into parts.
+
+- [ ] **Step 2: Implement**
+
+```swift
+struct AozoraChapter: Equatable, Sendable {
+    enum Role: Equatable, Sendable { case titlePage, body, colophon }
+    var role: Role
+    var spans: [AozoraBlockSpan]
+    var navigation: [AozoraNavigationEntry]
+    var text: String
+    var sourceMap: AozoraSourceMap
+}
+
+struct AozoraNavigationEntry: Equatable, Sendable {
+    var title: String
+    /// 1 大, 2 中, 3 小. The title page, parts and the colophon are 1.
+    var level: Int
+    /// The element id, or nil for the chapter's start.
+    var anchor: String?
+}
+```
+
+- **Limit.** 51,200 UTF-16 units. The TXT path splits at 100 KB of source bytes (`TXTChapterParser.swift:173`), which is 51,200 characters of Shift_JIS text.
+- **Chapter map.** Build it with `AozoraSourceMap(segments:source:)` from the chapter's spans: each span's leaves, then a `"\n"` segment.
+  - That segment's source is the separator of the block that follows in the document.
+  - After the document's last block, it is empty, at the end of the source.
+- **Anchors.** `h` plus the block's index among all spans (`h12`), so regeneration keeps them stable. A heading that starts its chapter points at the chapter itself, with no fragment.
+- **Heading titles.** A multi-line heading's title joins its lines with a space.
+
+- [ ] **Step 3: Run and commit**
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraChapterPlannerTests'
+git commit -m "feat(aozora): plan chapters and navigation from the syntax tree"
+```
+
+## Task 15: Chapter XHTML
+
+**Files:**
+- Create: `Modules/Core/Aozora/AozoraXHTMLWriter.swift`
+- Create: `Tests/iOS/yuedu appTests/AozoraXHTMLWriterTests.swift`
+
+Class names follow aozora2html (`lib/aozora2html.rb` and `yml/command_table.yml` at the pinned `9ca5395`), so the app's stylesheet reads like 青空文庫's own. Phase 1b's stylesheet gives most of them no rule yet; Phase 2 does.
+
+- [ ] **Step 1: Write the failing tests**
+
+One test per row, comparing the written `<body>` content with the expected string.
+
+| Syntax tree | XHTML |
+|---|---|
+| paragraph | `<p>…<br class="eol"/></p>` |
+| empty paragraph | `<p><br class="eol"/></p>` |
+| 字下げ, 地付き, 字詰め, 字の大きさ | classes on the `<p>`: `jisage_2`, plus `first_1` when the first line differs (折り返して); `chitsuki_1`; `jizume_20`; `dai1`, `sho2` |
+| heading block 大, 中, 小 | `<h3 class="o-midashi" id="h3">…<br class="eol"/></h3>`, `h4.naka-midashi`, `h5.ko-midashi` |
+| 同行, 窓 heading | class `dogyo-o-midashi`, `mado-o-midashi`, …; inline: `<span>` with that class and an id |
+| `.lineBreak` | `<br/>` |
+| ruby | `<ruby>漢字<rt>かんじ</rt></ruby>`; left side adds `class="left"` |
+| 傍点, 左に傍点 | `<em class="sesame_dot">`, `<em class="sesame_dot_after">` |
+| 傍線, 左に傍線 | `<em class="underline_solid">`, `<em class="overline_solid">` |
+| 太字, 斜体 | `<span class="futoji">`, `<span class="shatai">` |
+| inline 字の大きさ | `<span class="dai1">`, `<span class="sho1">` |
+| 縦中横 | `<span class="tcy">` |
+| 上付き and 行右小書き; 下付き and 行左小書き | `<sup class="superscript">`; `<sub class="subscript">` |
+| 返り点, 訓点送り仮名 | `<sub class="kaeriten">`, `<sup class="okurigana">` |
+| 割り注 | `<span class="warichu">（…）</span>` |
+| 罫囲み, 横組み, キャプション | `<span class="keigakomi">`, `yokogumi`, `caption` |
+| description-only gaiji | `※<span class="notes">（口＋世）</span>` |
+| figure in a line | `<img class="illustration" src="../images/…" alt="…" width="…" height="…"/>` (`photo` for 写真), `alt` holding the caption, which also follows it in `<span class="caption">` |
+| figure alone on its line | the same inside `<p class="figure">…<br class="eol"/></p>` |
+| figure whose file is missing | its caption only |
+| editorial note, unknown annotation, page break | nothing |
+| `&`, `<`, `>` | escaped |
+| U+3000 | `&#12288;` |
+
+Also test the whole document: XML declaration, `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja" lang="ja">`, a `<title>`, the stylesheet link, and no whitespace between blocks.
+
+- [ ] **Step 2: Implement**
+
+`AozoraXHTMLWriter.document(for chapter: AozoraChapter, in document: AozoraDocument, images: [String: String]) -> String`. `images` maps a figure's source name to its path in the package.
+
+`AozoraXHTMLWriter.stylesheet` for Phase 1b:
+
+```css
+br.eol { display: block; }
+p { margin: 0; }
+.notes { font-size: 0.8em; }
+```
+
+Size only, no colour, so reader themes still apply.
+
+- [ ] **Step 3: Run and commit**
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraXHTMLWriterTests'
+git commit -m "feat(aozora): write chapter XHTML that both engines read as the same text"
+```
+
+## Task 16: EPUB package
+
+**Files:**
+- Create: `Modules/Core/Aozora/AozoraEPUBWriter.swift`
+- Create: `Tests/iOS/yuedu appTests/AozoraEPUBWriterTests.swift`
+
+- [ ] **Step 1: Write the failing tests**
+
+Write the PD fixture plus a document with a figure (a PNG made in the test). Assert:
+- the first entry is `mimetype`, stored uncompressed, holding `application/epub+zip`;
+- `PublicationSession.open` reads the title, author and language `ja`, and finds one chapter per planned chapter;
+- `session.tocEntries` match the planned navigation, titles, levels and fragments;
+- the figure is in the package and its `src` resolves;
+- `yuedu-aozora.json` decodes, and each chapter's recorded length and SHA-256 match the planned text.
+
+- [ ] **Step 2: Implement**
+
+`AozoraEPUBWriter.write(_ document: AozoraDocument, chapters: [AozoraChapter], images: [String: URL], source: AozoraEPUBManifest.Source, identifier: String, to url: URL) async throws -> AozoraEPUBManifest`.
+
+Write the archive with `Archive(url:accessMode: .create)`, as `ReaderStylePackage.swift:123` does:
+- `mimetype` first, `compressionMethod: .none`;
+- `META-INF/container.xml`;
+- `OPS/package.opf`: EPUB 3; `dc:identifier`, `dc:title`, `dc:creator` (role `aut`), `dc:contributor` for the translator (`trl`) and the editor (`edt`), `dc:language` `ja`, `dcterms:modified`. No `primary-writing-mode` and no `page-progression-direction`: Phase 1b is horizontal.
+- `OPS/nav.xhtml`: nested `<ol>` by level;
+- `OPS/text/c0001.xhtml`, …;
+- `OPS/style/aozora.css`;
+- `OPS/images/…`: only the figures the document names;
+- `OPS/yuedu-aozora.json`, in the manifest as `application/json` and not in the spine.
+
+The manifest file holds:
+- `converterVersion`, `textVersion` and `identifier`;
+- the source's SHA-256, encoding and UTF-16 length;
+- per chapter: href, UTF-16 length, SHA-256 of the UTF-8 text, and its source map runs as flat integer arrays.
+
+The maps are what a later text-changing upgrade migrates positions with; a newer parser cannot rebuild an older version's text.
+
+- [ ] **Step 3: Run and commit**
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraEPUBWriterTests'
+git commit -m "feat(aozora): package converted chapters as an EPUB 3 file"
+```
+
+## Task 17: Engine parity
+
+**Files:**
+- Create: `Tests/iOS/yuedu appTests/AozoraEngineParityTests.swift`
+- Create: `docs/aozora/epub-text-contract.md`
+
+- [ ] **Step 1: Write the test**
+
+Convert one self-written document that uses every construct in Task 15's table, plus collapsed ASCII spaces, U+3000 at block edges, blank lines, a split 地付き line and a multi-line heading. For every chapter, in `.horizontal` and `.verticalRTL`, compare with the planned chapter text:
+- BrowserAuto's paged text (`BrowserLayoutPageEngine.testLayout(for:)`) and its scroll text (`BrowserScrollTile.chapter.document.sourceText`): equal;
+- the legacy builder's text (`EPUBAttributedStringBuilder.buildChapter`) with U+2028 read as `"\n"`, curled quotes read as straight, and U+FFFC removed: equal;
+- legacy's U+FFFC count equals the chapter's figures.
+
+`EPUBAuthoredFontCascadeTests` shows how to drive both engines.
+
+Also pin the engine choice. `choice(for:)` is `.browser` for every chapter in horizontal writing, and for every chapter without a figure in vertical writing. A future CSS rule that silently sends chapters to legacy fails here.
+
+- [ ] **Step 2: Document the contract**
+
+`docs/aozora/epub-text-contract.md` holds the probe table above, the rules, and the figure exception. Anyone changing the writer's markup or the stylesheet must keep this test green.
+
+- [ ] **Step 3: Run and commit**
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraEngineParityTests'
+git commit -m "test(aozora): pin the text both engines read from a converted chapter"
+```
+
+## Task 18: Import
+
+**Files:**
+- Create: `Modules/Services/LibraryStore/AozoraBookImporter.swift`
+- Create: `Tests/iOS/yuedu appTests/AozoraBookImportTests.swift`
+- Modify: `Modules/Services/LibraryStore/Models.swift`
+- Modify: `Modules/Services/LibraryStore/LocalBookImportService.swift`
+- Modify: `Modules/Services/Calibre/CalibreWirelessService.swift`
+- Modify: `Tests/iOS/yuedu appTests/LocalBookImportServiceTests.swift`
+
+Every way a file arrives already goes through `LocalBookImportService.importBook`: Files (`AddBookView`), the share extension (`SharedImportQueueDrainer`), Calibre wireless and the UI-test hook. That one switch is the only place to change.
+
+- [ ] **Step 1: Write the failing tests**
+
+- **Aozora `.txt`** (the PD fixture):
+  - becomes a book with `source == "local_epub"` and pipeline `.epub`, titled and credited from the header;
+  - its original bytes are kept unchanged as `<epub stem>.aozora.txt`;
+  - `book.aozora` records that file and the encoding;
+  - the EPUB opens.
+- **Official `.zip` with a figure**: the same, with the figure in the EPUB and the original kept as `.aozora.zip`.
+- **Plain `.txt`, comic `.zip`, audio `.zip`**: unchanged.
+- **Encoding**: a book without `aozora` encodes with no `aozora` key, so its iCloud hash does not change. An Aozora book round-trips.
+- **Calibre**: `returnBookFile` sends an Aozora book's original. Calibre's `lpath` names the `.txt` or `.zip` it sent, and its registry holds that file's SHA-256.
+
+The Phase 0 tests that expect a zip to open as TXT change to expect the EPUB.
+
+- [ ] **Step 2: Implement**
+
+`ReadingBook` gains an optional field, encoded only when present (see `audioPlayMode` on why):
+
+```swift
+/// Set on a book converted from an Aozora Bunko text: the original file, kept
+/// next to the EPUB, and the encoding it was read with.
+var aozora: AozoraBookSource?
+
+struct AozoraBookSource: Codable, Equatable, Sendable {
+    var originalFilename: String
+    var sourceEncoding: UInt   // String.Encoding.rawValue
+}
+```
+
+The converter version is not stored on the book. A synced field would tell device B that its copy was regenerated when only device A's was. The version lives in the EPUB's own `yuedu-aozora.json` (Task 16).
+
+`AozoraBookImporter.importBook(at:title:store:)`:
+1. **Off the main actor:**
+   - For a zip, list its entries, take the first visible `.txt` that `AozoraDocumentDetector` accepts, and extract the figures it names.
+   - Detect the encoding with `TXTFileReader.detectEncodingBySampling` and decode.
+   - Parse, plan, and write the EPUB to a temporary file.
+   - Time it as `aozora.import.convert`.
+2. **On the main actor:**
+   - `store.importEpub(url:title:author:requireValidPublication: true)`, so a package Readium rejects never reaches the shelf.
+   - Copy the original into Documents, set `book.aozora`, then `store.saveReadingBook(book)`.
+3. **Failure or cancellation:** remove the EPUB, the original copy and the temporary files.
+
+The zip probe moves from `LocalBookImportService` into the importer, so one type reads Aozora zips.
+
+`LocalBookImportService.importBook`:
+- **`txt`:** decode, and send the file to the importer when the detector accepts it.
+- **`zip`:** audio first, as now; then Aozora; otherwise manga.
+- The comment saying figures are not imported yet goes.
+
+A conversion failure surfaces as an import error; there is no TXT fallback. The corpus suite (Task 21) shows every work converts.
+
+`TXTMetadataProbe`'s Aozora branch (Phase 0) is no longer reached from import. It stays until Phase 1c settles how existing TXT Aozora books are read.
+
+- [ ] **Step 3: Run and commit**
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraBookImportTests' -only-testing:'yuedu appTests/LocalBookImportServiceTests'
+git commit -m "feat(aozora): import Aozora texts and zips as converted EPUB books"
+```
+
+## Task 19: Sync and delete
+
+**Files:**
+- Modify: `Modules/Services/iCloud/ICloudSyncManager.swift`
+- Modify: `Modules/Services/LibraryStore/BookStore.swift`
+- Modify: `Tests/iOS/yuedu appTests/AozoraBookImportTests.swift`
+
+- [ ] **Step 1: Write the failing tests**
+
+- The files iCloud syncs for an Aozora book are the EPUB, the original and the cover.
+- `BookStore.delete(bookId:)` removes the original as well as the EPUB.
+
+- [ ] **Step 2: Implement**
+
+- **Sync.** `bookFilePayloads` (`ICloudSyncManager.swift:1227`) also appends `book.aozora?.originalFilename`, under the same condition as the content file (`syncableContentFilename`, `:1253`). Expose the per-book list as a static function, so the test reads it the way existing tests read `syncableContentFilename`.
+- **Delete.** In `BookStore.delete(bookId:)` (`BookStore.swift:1276`), remove the original next to the content file.
+
+Upload markers are `recordName:size` (`:1280`), and restore only fetches missing files. So a regenerated EPUB re-uploads when its size changes, and another device keeps its own copy and regenerates it from the synced original (Task 20).
+
+- [ ] **Step 3: Run and commit**
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraBookImportTests'
+git commit -m "feat(aozora): sync and delete the original next to the converted book"
+```
+
+## Task 20: Regenerate when the converter changes
+
+**Files:**
+- Create: `Modules/Services/LibraryStore/AozoraBookRegenerator.swift`
+- Create: `Tests/iOS/yuedu appTests/AozoraBookRegeneratorTests.swift`
+- Modify: `Modules/Features/Reader/BookReaderView.swift`
+
+- [ ] **Step 1: Write the failing tests**
+
+| EPUB's manifest | Result |
+|---|---|
+| current `converterVersion` | untouched |
+| older `converterVersion`, same `textVersion`, every chapter's text unchanged | replaced; `Caches/spine_cache_<stem>.json` deleted |
+| older `converterVersion`, but a chapter's text changed | untouched, logged: a text change needs a migration |
+| older `textVersion` | untouched, logged, for the same reason |
+| missing or undecodable | regenerated, like version 0, and the failure logged |
+| newer than this build | untouched: never downgrade |
+| original not on this device yet | untouched, logged; regenerates on a later open |
+| book open in another reader (`ReadingResourceUsage.isInUse`) | untouched until it closes |
+
+- [ ] **Step 2: Implement**
+
+`AozoraBookRegenerator.prepare(book:store:) async throws`:
+1. Read `OPS/yuedu-aozora.json` from the EPUB with `Archive`.
+2. If it needs regenerating, convert the original into a staging file.
+3. Check the staging file with `PublicationSession.open`.
+4. Compare every chapter's length and SHA-256 with the old manifest.
+5. Replace the EPUB with `FileManager.replaceItemAt`, and delete its spine cache. The cache is keyed by file name (`PublicationSession.swift:424`), which regeneration keeps.
+
+Time it as `aozora.regenerate`.
+
+In `BookReaderView`, gate `ReaderView` on `prepare` for a book with `aozora`, the same way the remote gate at `BookReaderView.swift:27` waits for `remoteLibrary.prepare`. Opening never waits on a failure: a failed regeneration logs and opens the existing EPUB.
+
+The CloudKit book-file sync treats content files as immutable (`ICloudSyncManager.swift:1277`). With the behaviour Task 19 describes, each device regenerates its own copy, and a copy from a newer converter is left alone.
+
+- [ ] **Step 3: Run and commit**
+
+Record the `aozora.regenerate` time for the largest work on the simulator.
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraBookRegeneratorTests'
+git commit -m "feat(aozora): regenerate a converted book when only its styling changed"
+```
+
+## Task 21: Corpus conversion
+
+**Files:**
+- Modify: `Tests/iOS/yuedu appTests/AozoraCorpusTests.swift`
+- Create: `Tests/iOS/yuedu appTests/Fixtures/aozora-chapter-text-baseline.tsv`
+
+- [ ] **Step 1: Implement**
+
+For every work, still opt-in through `AOZORA_CORPUS`:
+- convert it and open it with `PublicationSession.open`;
+- check that the session's chapter count and table of contents match the plan;
+- check that the chapter texts, joined, equal the displayed text minus what Task 14 drops: page breaks, and blank blocks at chapter edges;
+- write one line per work: its path in the corpus, and a SHA-256 over its chapters' SHA-256s.
+
+The baseline holds hashes only, no text from the corpus. A run compares with the committed baseline. Any difference fails unless `textVersion` changed in the same commit; that is the proof the spec asks for, that a style-only change keeps every chapter's text.
+
+Run Task 17's comparison on a sample of 50 works chosen for coverage: most ruby, most gaiji, most headings, longest, 割り注, 返り点. Record the conversion time of the largest work.
+
+- [ ] **Step 2: Run and commit**
+
+```bash
+TEST_RUNNER_AOZORA_CORPUS=$HOME/aozorabunko_text bash scripts/xctest.sh -t 3600 -- -only-testing:'yuedu appTests/AozoraCorpusTests'
+git commit -m "test(aozora): convert the whole corpus and pin every chapter's text"
+```
+
+## Task 22: Record what landed
+
+Add "Phase 1b: what landed" to this plan, with:
+- the commits;
+- the corpus numbers: conversions, Readium opens, the parity sample;
+- the timings: `aozora.import.convert` and `aozora.regenerate` for the largest work;
+- every decision made while implementing.
+
+```bash
+git commit -m "docs(aozora): record what Phase 1b landed"
+```
 
 ## Phase 1c (outline — automatic migration on first open)
 
@@ -529,9 +1030,23 @@ Parse time of the largest file (2.07 MB): 593 ms on the iOS 27 simulator by its 
 3. **Migration service.** Use the journal order of `TXTReaderIndexMigrationService`: write the journal, then commit bookmarks, then positions, then switch the book record, then delete the journal.
    - Bookmarks map their start and end separately.
    - If any mapping cannot be proven, the book stays on the TXT path and remains readable, with a diagnostic.
+   - Positions land in the chapter text of Task 14: BrowserAuto's form. In a chapter that legacy lays out, an offset after a figure lands one unit early per figure before it (Phase 1b's text contract). The migration records that as a known bound, not as a failure.
 4. **One parser.** `AozoraMarkupParser` delegates to the new module in a TXT-compatible mode: it strips notes, keeps the kana-reading guard, and does no gaiji, accent or kunojiten conversion. `AozoraTXTTests` pass unchanged.
+
+## Phase 1d (outline — vertical writing for Aozora books)
+
+Starts when the [vertical typography plan](2026-10-06-vertical-typography.md) has landed.
+
+The 排版方向 control comes from that plan: a maintainer decision of 2026-10-06, after 5 of 8 Aozora Bunko readers on the App Store were confirmed to offer 縦書き／横書き switching. The other 3 mention only 縦書き. Phase 1d makes a converted book follow it:
+- `ReadingBook.allowsVerticalWritingMode` (`Models.swift:871`) is true for a book with `aozora`.
+- The writing-mode change handler (`ReaderView.swift:2391`) updates the opening direction for such a book, not only for `!isEPUB`.
+- `HomeView.resolveOpeningDirection` (`HomeView.swift:330`) uses the setting for such a book instead of inspecting the EPUB's declared flow.
+- `effectiveWritingMode` (`ReaderView+TXTVerticalScroll.swift:142`) needs no change once the first gate is open.
+- Rerun Task 17 in vertical writing with the figure exception, and add reader tests for the direction.
 
 ## Phase 2 (outline)
 
-- **CSS group.** Map 字下げ, 地付き／字上げ, headings, page breaks, 字級, 太字 and 斜体 in the app stylesheet. Check each mapping in horizontal and vertical writing in both engines.
+- **CSS group.** Map 字下げ, 地付き／字上げ, headings, 字級, 太字 and 斜体 in the app stylesheet. Check each mapping in horizontal and vertical writing in both engines. Page breaks are already chapter breaks (Task 14).
+- **Capability limits found in Phase 1b.** In vertical writing, BrowserAuto sends a chapter to legacy for `text-combine-upright` (縦中横) and for a `writing-mode` other than `vertical-rl` (横組み): `BrowserLayoutCapabilityScanner.swift:140-146`. It does the same for a non-default `ruby-position` (左にルビ). Each mapping either lands in the browser engine first, or is accepted as a fallback with Task 17 updated to expect it.
 - **傍点／傍線.** Show them in both engines (spec decision 5), so a chapter that falls back to the legacy engine keeps them: `text-emphasis` in YueduCoreText, plus an equivalent in the legacy engine.
+- **Every Phase 2 change** bumps `converterVersion` only. Task 21's baseline proves the text did not change, and Task 20 regenerates existing books.
