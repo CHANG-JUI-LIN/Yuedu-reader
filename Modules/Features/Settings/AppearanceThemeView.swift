@@ -36,16 +36,13 @@ struct AppearanceThemeView: View {
     @State private var screenAlert: ThemeScreenAlert?
     /// The 匯入完成 sheet, up from the moment an import starts writing.
     @State private var importProgress: CustomizationImportProgress?
-    /// Appearance slot the theme grid edits, once the user picks one by hand.
-    /// nil means "whatever the device is showing", which is also the only
-    /// behaviour available while 單獨設定深色主題 is off.
-    @State private var themeSlot: ColorScheme?
-
-    /// Appearance the theme grid is editing: the slot picked above the grid when
-    /// 單獨設定深色主題 is on, otherwise whatever the device is showing.
+    /// Appearance the theme grid is editing: the 淺色／深色 tab's, which the whole window
+    /// wears (`GlobalSettings.appearanceWindowColorScheme`), otherwise the one on screen.
+    /// Read from the setting rather than `colorScheme` so a pick lands on the slot just
+    /// chosen even before the window has redrawn in it.
     private var editingScheme: ColorScheme {
-        guard settings.appearanceUsesSeparateDarkTheme else { return colorScheme }
-        return themeSlot ?? colorScheme
+        guard settings.showsAppearanceSlotTab else { return colorScheme }
+        return settings.appearanceSlotOnTab(windowColorScheme: colorScheme)
     }
 
     private var isProActive: Bool {
@@ -68,17 +65,6 @@ struct AppearanceThemeView: View {
             for: colorScheme,
             isProActive: subscriptionStore.hasAccess(.readerThemePacks)
         )
-    }
-
-    /// Appearance forced on the app while a slot is being edited by hand, so the
-    /// 深色 tab shows the dark theme *in place* — picking colors you cannot see is
-    /// not a review. Flipping the window's scheme is what makes `colorScheme`
-    /// (and with it every DSColor surface, which resolves per trait, and this screen's
-    /// own tint) resolve to the edited appearance. nil = follow the device, which
-    /// is also the only state reachable while 單獨設定深色主題 is off.
-    private var previewedAppearance: ColorScheme? {
-        guard settings.appearanceUsesSeparateDarkTheme else { return nil }
-        return themeSlot
     }
 
     /// The selected theme when it is one of the user's own — the one 刪除主題 acts on.
@@ -116,17 +102,6 @@ struct AppearanceThemeView: View {
         .navigationTitle(localized("外觀主題"))
         .toolbarTitleDisplayMode(.inline)
         .tint(activeTheme.isClassic ? nil : activeTheme.accentColor)
-        .preferredColorScheme(previewedAppearance)
-        // The 淺色／深色 slot picker must repaint this screen as the edited
-        // appearance so theme picks can be judged where they will live. In
-        // practice `.preferredColorScheme` alone does not flip the environment
-        // `colorScheme` on pushed List destinations (iOS 18/26 flakiness), and
-        // `setAppearanceTheme` guards `slot == activeAppearance` — with the
-        // environment still reading the device scheme, every dark-slot pick
-        // returned before repainting (the "深色分頁點主題不變色" bug). Overriding
-        // the environment value directly is the reliable path; `AudiobookView`
-        // uses the same technique for its scoped dark page.
-        .environment(\.colorScheme, editingScheme)
         .sheet(item: $paywallFeature) { feature in
             PaywallView(highlightedFeature: feature)
                 .environmentObject(subscriptionStore)
@@ -321,7 +296,7 @@ struct AppearanceThemeView: View {
 
     private var themeSelectionCard: some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            if settings.appearanceUsesSeparateDarkTheme {
+            if settings.showsAppearanceSlotTab {
                 themeSlotPicker
             }
             LazyVGrid(columns: gridColumns, spacing: DSSpacing.lg) {
@@ -369,7 +344,7 @@ struct AppearanceThemeView: View {
                 }
             }
         }
-        .animation(reduceMotion ? nil : DSAnimation.standard, value: settings.appearanceUsesSeparateDarkTheme)
+        .animation(reduceMotion ? nil : DSAnimation.standard, value: settings.showsAppearanceSlotTab)
         // The long press lands with a firm tap of the Taptic Engine as the tile lifts —
         // the medium one was too faint to notice (2026-09-29).
         .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: liftedThemeID) { _, lifted in
@@ -403,17 +378,17 @@ struct AppearanceThemeView: View {
         }
     }
 
-    /// Chooses which appearance the grid below is picking a theme for, and flips
-    /// the app into it (see `previewedAppearance`) so the pick can be judged
-    /// against the real thing. 深色 shows each theme's dark version, not one black
-    /// theme.
+    /// Chooses which appearance the grid below is picking a theme for, and flips the
+    /// whole app into it so the pick can be judged against the real thing. With 跟隨系統
+    /// off that is the app's appearance, kept; with it on, a preview until 設定 is back.
+    /// 深色 shows each theme's dark version, not one black theme.
     private var themeSlotPicker: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             Picker(
                 localized("主題外觀"),
                 selection: Binding(
                     get: { editingScheme },
-                    set: { themeSlot = $0 }
+                    set: { settings.pickAppearanceSlot($0) }
                 )
             ) {
                 Text(localized("淺色")).tag(ColorScheme.light)
@@ -422,7 +397,11 @@ struct AppearanceThemeView: View {
             .pickerStyle(.segmented)
             .accessibilityLabel(localized("主題外觀"))
 
-            Text(localized("深色分頁會以深色主題預覽整個介面，選的是同一批主題的深色版本。"))
+            Text(localized(
+                settings.appearanceFollowsSystem
+                    ? "深色分頁會以深色主題預覽整個介面，選的是同一批主題的深色版本。"
+                    : "跟隨系統關閉時，App 固定使用這裡選的淺色或深色。"
+            ))
                 .font(DSFont.caption)
                 .foregroundStyle(DSColor.textSecondary)
         }
@@ -452,10 +431,9 @@ struct AppearanceThemeView: View {
             settings.setAppearanceTheme(
                 preset,
                 for: editingScheme,
-                // The screen is repainted as `editingScheme` by the environment
-                // override above, so that is the appearance actually on screen —
-                // not the device scheme, whose trait sync with the override is
-                // not guaranteed to have happened by the time this tap runs.
+                // The window wears `editingScheme` (`appearanceWindowColorScheme`), so
+                // that is the appearance on screen — `colorScheme` may not have caught up
+                // with a tab picked a moment ago.
                 activeAppearance: editingScheme
             )
         } label: {
@@ -547,9 +525,10 @@ struct AppearanceThemeView: View {
         Binding(
             get: { settings.appearanceFollowsSystem },
             set: {
+                // Turned off, the appearance on the tab — previewed or not — is kept.
                 settings.setAppearanceFollowsSystem(
                     $0,
-                    currentColorScheme: colorScheme
+                    currentColorScheme: editingScheme
                 )
             }
         )

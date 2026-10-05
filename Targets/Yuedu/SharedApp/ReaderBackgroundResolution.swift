@@ -97,6 +97,11 @@ extension GlobalSettings {
     /// on every trip out of the app (reported 2026-10-04).
     func alignReaderDarkMode(deviceIsDark: Bool, in phase: ScenePhase) {
         guard phase.showsDeviceAppearance else { return }
+        // Nor while 外觀主題 previews its other slot: a reader left open under another tab
+        // (iPad keeps the tab bar over it) took the preview for the device turning, and a
+        // mode set against the device came back as following once the preview ended. The
+        // preview ending hands the restored appearance back through here.
+        guard appearanceSlotPreview == nil else { return }
         if readerFollowSystemTheme {
             if readerDarkMode != deviceIsDark { readerDarkMode = deviceIsDark }
         } else if !appearanceBindReaderTheme, readerDarkMode == deviceIsDark {

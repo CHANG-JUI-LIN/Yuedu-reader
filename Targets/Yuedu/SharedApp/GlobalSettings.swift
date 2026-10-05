@@ -1243,6 +1243,15 @@ class GlobalSettings: ObservableObject {
             synchronizeAppearanceThemeExtras()
         }
     }
+    /// The slot 外觀主題's 淺色／深色 tab is previewing while 跟隨系統 is on, worn by the
+    /// whole window — pages opened from 外觀主題 included — until the user is back on 設定
+    /// or on another tab (`endAppearanceSlotPreview`). Not stored: a preview is not a setting.
+    ///
+    /// It used to be the page's own state, painted by overriding that page's environment —
+    /// which the status bar and the navigation bar never read, and `ContentView`'s
+    /// `.preferredColorScheme` overrode the page's own. Previewing 淺色 in a dark app left
+    /// the time, the battery and the page title white on white (2026-10-05).
+    @Published var appearanceSlotPreview: AppearanceColorScheme?
     @Published var appearanceBindReaderTheme: Bool {
         didSet {
             UserDefaults.standard.set(appearanceBindReaderTheme, forKey: Self.appearanceBindReaderThemeKey)
@@ -2769,7 +2778,46 @@ class GlobalSettings: ObservableObject {
         if !followsSystem {
             appearancePinnedColorScheme = AppearanceColorScheme(currentColorScheme)
         }
+        // Off, the tab is the appearance itself; on, the device decides again.
+        appearanceSlotPreview = nil
         appearanceFollowsSystem = followsSystem
+    }
+
+    /// What `ContentView` holds the window to, nil to follow the device: the appearance
+    /// picked with 跟隨系統 off, else 外觀主題's preview of the other slot.
+    var appearanceWindowColorScheme: ColorScheme? {
+        guard appearanceFollowsSystem else { return appearancePinnedColorScheme.colorScheme }
+        guard appearanceUsesSeparateDarkTheme else { return nil }
+        return appearanceSlotPreview?.colorScheme
+    }
+
+    /// Whether 外觀主題 shows its 淺色／深色 tab: to pick the dark slot's theme, and with
+    /// 跟隨系統 off to pick the appearance itself — off, nothing else can (2026-10-05).
+    var showsAppearanceSlotTab: Bool {
+        appearanceUsesSeparateDarkTheme || !appearanceFollowsSystem
+    }
+
+    /// The 淺色／深色 tab's value. `windowColorScheme` is the scheme the page is drawn in.
+    func appearanceSlotOnTab(windowColorScheme: ColorScheme) -> ColorScheme {
+        guard appearanceFollowsSystem else { return appearancePinnedColorScheme.colorScheme }
+        return appearanceSlotPreview?.colorScheme ?? windowColorScheme
+    }
+
+    /// Ends 外觀主題's preview: back on 設定, or on another tab.
+    func endAppearanceSlotPreview() {
+        guard appearanceSlotPreview != nil else { return }
+        appearanceSlotPreview = nil
+    }
+
+    /// The 淺色／深色 tab picked. With 跟隨系統 off it is the app's appearance and stays;
+    /// it used to be a preview there too, gone on leaving the page, and the appearance
+    /// held since the switch was turned off could not be changed at all (2026-10-05).
+    func pickAppearanceSlot(_ scheme: ColorScheme) {
+        if appearanceFollowsSystem {
+            appearanceSlotPreview = AppearanceColorScheme(scheme)
+        } else {
+            appearancePinnedColorScheme = AppearanceColorScheme(scheme)
+        }
     }
 
     func effectiveAppearanceColorScheme(systemColorScheme: ColorScheme) -> ColorScheme {

@@ -231,6 +231,8 @@ struct SettingsView: View {
             .softScrollEdges()
             .themedAppSurface(for: .settings)
             .rootTabTitle(localized("設定"), onScroll: .minimizesBar)
+            // Back from 外觀主題: its 淺色／深色 preview ends here.
+            .onAppear { gs.endAppearanceSlotPreview() }
             .navigationDestination(isPresented: pushedSourceListBinding) {
                 BookSourceListView(embedsNavigationStack: false)
                     .environmentObject(store)

@@ -38,9 +38,10 @@ struct ContentView: View {
         gs.effectiveAppearanceColorScheme(systemColorScheme: colorScheme)
     }
 
+    /// The one `.preferredColorScheme` in the app: an outer one overrides any a screen sets
+    /// for itself, so 外觀主題's preview has to come through here too.
     private var preferredAppearanceColorScheme: ColorScheme? {
-        guard !gs.appearanceFollowsSystem else { return nil }
-        return gs.appearancePinnedColorScheme.colorScheme
+        gs.appearanceWindowColorScheme
     }
 
     /// The theme on screen, nil for 默認: the surfaces and the tint wear the same one.
@@ -111,6 +112,8 @@ struct ContentView: View {
         // bottom (`RootTabBarVisibility`).
         .onChange(of: selectedRootTab, initial: true) { _, tab in
             rootTabBar.setSelectedTab(tab.rawValue)
+            // 外觀主題's 淺色／深色 preview is for 外觀主題; another tab is not previewing.
+            gs.endAppearanceSlotPreview()
         }
         .onChange(of: isTabBarAtBottom, initial: true) { _, atBottom in
             rootTabBar.setHidesOverCoveredRoot(atBottom)

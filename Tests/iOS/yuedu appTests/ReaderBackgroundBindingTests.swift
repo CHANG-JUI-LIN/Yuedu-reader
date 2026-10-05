@@ -250,6 +250,36 @@ struct ReaderBackgroundBindingTests {
         #expect(settings.readerDarkMode)
     }
 
+    /// 外觀主題's preview of its other slot flips the whole window (2026-10-05). A reader
+    /// left open under another tab is not to take it for the device turning: a mode set
+    /// against the device would come back as following once the preview ended.
+    @Test func aPreviewOfTheOtherSlotIsNotTheDeviceTurning() {
+        let settings = GlobalSettings.shared
+        let fixture = Fixture(settings)
+        let preview = settings.appearanceSlotPreview
+        defer {
+            settings.appearanceSlotPreview = preview
+            fixture.restore()
+        }
+
+        settings.appearanceBindReaderTheme = false
+        settings.readerCustomBackgroundID = nil
+        settings.readerFollowSystemTheme = true
+        settings.readerDarkMode = false
+        settings.alignReaderDarkMode(deviceIsDark: true, in: .active)
+        // 白天 by hand in the dark app.
+        settings.setReaderDarkMode(false, deviceIsDark: true)
+        #expect(!settings.readerFollowSystemTheme)
+
+        // 外觀主題 previews 淺色, then the preview ends and the app is dark again.
+        settings.appearanceSlotPreview = .light
+        settings.alignReaderDarkMode(deviceIsDark: false, in: .active)
+        settings.appearanceSlotPreview = nil
+        settings.alignReaderDarkMode(deviceIsDark: true, in: .active)
+        #expect(!settings.readerDarkMode)
+        #expect(!settings.readerFollowSystemTheme)
+    }
+
     /// What the reader lets go of or takes up again by itself is not a setting made here:
     /// noted, every device would hand its own state to the others.
     @Test func whatTheReaderFollowsByItselfIsNotNoted() {
