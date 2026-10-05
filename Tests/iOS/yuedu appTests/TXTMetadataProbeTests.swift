@@ -91,6 +91,42 @@ struct TXTMetadataProbeTests {
         #expect(metadata.author == nil)
     }
 
+    @Test("reads the title and author of an Aozora Bunko download from its header")
+    func readsAozoraHeader() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/TXTEncodings/aozora-neko-jijo.txt")
+
+        let metadata = try TXTMetadataProbe.probe(url: fixture, fallbackTitle: "neko_chuhen")
+
+        #expect(metadata.title == "『吾輩は猫である』中篇自序")
+        #expect(metadata.author == "夏目漱石")
+    }
+
+    @Test("keeps the author and the translator of an Aozora Bunko translation apart")
+    func readsAozoraTranslationHeader() throws {
+        let url = try writeTemporaryTXT("""
+        変身
+        フランツ・カフカ
+        原田義人訳
+
+        -------------------------------------------------------
+        【テキスト中に現れる記号について】
+
+        《》：ルビ
+        （例）一匹の巨大な毒虫《どくむし》
+        -------------------------------------------------------
+
+        　ある朝、目をさますと虫になっていた。
+
+        底本：「架空の文庫」架空書房
+        """)
+
+        let metadata = try TXTMetadataProbe.probe(url: url, fallbackTitle: "fallback")
+
+        #expect(metadata.title == "変身")
+        #expect(metadata.author == "フランツ・カフカ")
+    }
+
     @Test("BookStore imports the original TXT and inferred metadata")
     func bookStoreImportsOriginalTXTAndMetadata() async throws {
         let sourceData = Data("書名：邊城\n作者：沈從文\n\n第一章\n原始內容保持不變。".utf8)

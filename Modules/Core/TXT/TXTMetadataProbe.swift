@@ -18,6 +18,13 @@ enum TXTMetadataProbe {
     }
 
     static func infer(from prefix: String, fallbackTitle: String) -> TXTBookMetadata {
+        // An Aozora Bunko file names its work and author on its first lines,
+        // with no 書名／作者 labels; the brackets in 『…』中篇自序 belong to the title.
+        if AozoraDocumentDetector.isAozoraDocument(prefix),
+           let header = AozoraHeaderParser.parse(headerLines: AozoraHeaderParser.headerLines(of: prefix)),
+           header.title.count <= 120 {
+            return TXTBookMetadata(title: header.title, author: header.author)
+        }
         let sample = String(prefix.prefix(maximumMetadataCharacters))
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
