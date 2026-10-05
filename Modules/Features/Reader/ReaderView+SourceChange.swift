@@ -529,6 +529,11 @@ extension ReaderView {
             showMediaOverlayPanel = true
         } else {
             showTTSPanel = true
+            // Opening the listening controls starts or resumes narration. Reopening
+            // them during playback must not toggle the current chapter into pause.
+            if ttsCoordinator.playbackState != .playing {
+                handleTTSPlayPause()
+            }
         }
     }
 

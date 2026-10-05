@@ -148,6 +148,34 @@ struct NodeAttributedStringRenderer {
         return result
     }
 
+    /// TXT owns paragraph typography; inline nodes reuse the EPUB ruby renderer.
+    /// This entry preserves TXT's literal characters and paragraph attributes.
+    func renderInlineContent(
+        _ nodes: [RenderableNode],
+        paragraphAttributes: (String) -> [NSAttributedString.Key: Any]
+    ) async -> NSAttributedString {
+        let rendered = NSMutableAttributedString(attributedString:
+            await renderInlineChildren(nodes, ctx: RenderContext.makeBody(config: config)))
+        guard rendered.length > 0 else { return rendered }
+        var ruby: [(NSRange, Any)] = []
+        rendered.enumerateAttribute(HTMLAttributedStringBuilder.rubyAnnotationAttribute,
+                                    in: NSRange(location: 0, length: rendered.length)) { value, range, _ in
+            if let value { ruby.append((range, value)) }
+        }
+        let text = rendered.string as NSString
+        var cursor = 0
+        while cursor < text.length {
+            let range = text.paragraphRange(for: NSRange(location: cursor, length: 0))
+            rendered.setAttributes(paragraphAttributes(text.substring(with: range)), range: range)
+            cursor = NSMaxRange(range)
+        }
+        for (range, annotation) in ruby {
+            rendered.addAttribute(HTMLAttributedStringBuilder.rubyAnnotationAttribute, value: annotation, range: range)
+        }
+        relaxParagraphsContainingRubyAnnotations(rendered)
+        return rendered
+    }
+
     private func renderTopLevel(_ nodes: [RenderableNode]) async -> NSAttributedString {
         let result = NSMutableAttributedString()
         let ctx = RenderContext.makeBody(config: config)

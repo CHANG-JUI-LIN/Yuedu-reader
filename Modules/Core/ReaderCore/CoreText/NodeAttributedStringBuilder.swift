@@ -50,7 +50,7 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
 
     func chapterPlainText(at index: Int) async -> String? {
         guard chapters.indices.contains(index) else { return nil }
-        let text = chapters[index].plainText
+        let text = AozoraMarkupParser.parse(chapters[index].plainText).plainText
         return text.isEmpty ? nil : text
     }
 
@@ -128,10 +128,10 @@ enum TXTRenderableNodeConverter {
         // resolve the whole paragraph run starting from that space → fall back to PingFang for the
         // entire line. Real CJK text as the run's first glyph keeps the user font.
         let bodyStyle = RenderStyle(textIndent: firstLineIndent)
-        for para in chapter.paragraphs {
-            let trimmed = para.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-            nodes.append(.paragraph([.text(trimmed)], style: bodyStyle))
+        let body = chapter.paragraphs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }.joined(separator: "\n")
+        for inlines in AozoraMarkupParser.parse(body).paragraphs {
+            nodes.append(.paragraph(inlines, style: bodyStyle))
         }
 
         return nodes

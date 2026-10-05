@@ -195,6 +195,8 @@ struct TTSPanelView: View {
                                 .font(DSFont.fixed(size: 52))
                                 .foregroundColor(.accentColor)
                             }
+                            .accessibilityIdentifier("tts_panel_play_pause")
+                            .accessibilityLabel(localized(tts.playbackState == .playing ? "暫停" : "播放"))
                             .disabled(tts.playbackState == .stopped && !hasAudioSource)
 
                             Spacer()

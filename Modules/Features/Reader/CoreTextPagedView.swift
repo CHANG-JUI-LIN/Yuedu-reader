@@ -1790,6 +1790,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 .coreTextReadingPosition
                 .flatMap { currentEngine.pageIndex(for: $0) }
             sessionCoordinator?.beginInteractivePageTransition(target: interactiveTarget)
+            // The page beyond the one coming in belongs to the next swipe. UIKit builds
+            // it the moment this turn lands, and a fast reader is already dragging again
+            // ~15ms later (2026-10-05 trace): a render started on landing finished
+            // ~10ms after the page had to be drawn on the main thread. Started now, it
+            // has the whole of this swipe.
+            if let interactiveTarget {
+                prefetchPages(around: interactiveTarget)
+            }
         }
 
         func pageViewController(

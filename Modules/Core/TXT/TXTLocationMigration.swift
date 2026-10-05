@@ -47,25 +47,27 @@ struct TXTLocationMigration {
         let new = newIndexes[destination]
         let offset = position.charOffset
         guard offset >= 0, offset <= (oldRendered as NSString).length else { throw Failure.invalidPosition }
-        if old.byteRange == new.byteRange, old.title == new.title {
+        if old.byteRange == new.byteRange, old.title == new.title, oldRendered == newRendered {
             return .init(spineIndex: destination, charOffset: offset)
         }
         let oldBody = normalized(old.byteRange)
         let newBody = normalized(new.byteRange)
+        let projection = AozoraMarkupParser.parse(newBody)
         // Rendering can introduce title markers or remove/rewrite body content.
         // Only use the source projection when the actual builder proves it.
-        guard oldRendered.hasSuffix(oldBody), newRendered.hasSuffix(newBody) else {
+        guard oldRendered.hasSuffix(oldBody), newRendered.hasSuffix(projection.plainText) else {
             throw Failure.unsupportedTextTransform
         }
         let oldTitleLength = (oldRendered as NSString).length - (oldBody as NSString).length
-        let newTitleLength = (newRendered as NSString).length - (newBody as NSString).length
+        let newTitleLength = (newRendered as NSString).length - (projection.plainText as NSString).length
         let prefix = normalized(new.byteRange.lowerBound..<old.byteRange.lowerBound)
         let suffix = normalized(old.byteRange.upperBound..<new.byteRange.upperBound)
         guard prefix + oldBody + suffix == newBody else { throw Failure.unsupportedTextTransform }
         let prefixLength = (prefix as NSString).length
         let mappedOffset: Int
         if offset >= oldTitleLength, !(offset == 0 && oldBody.isEmpty) {
-            mappedOffset = newTitleLength + prefixLength + offset - oldTitleLength
+            mappedOffset = newTitleLength + projection.displayedOffset(
+                forSourceOffset: prefixLength + offset - oldTitleLength)
         } else if old.title == new.title, old.byteRange.lowerBound == new.byteRange.lowerBound {
             // Only the end boundary changed; the synthesized title is unchanged.
             guard (oldRendered as NSString).substring(to: oldTitleLength)
@@ -77,17 +79,18 @@ struct TXTLocationMigration {
             // A rejected heading is now the final source line before its old body.
             let sourceTitle = old.title + "\n"
             guard prefix.hasSuffix(sourceTitle) else { throw Failure.missingSourceIdentity }
-            let titleStart = newTitleLength + prefixLength - (sourceTitle as NSString).length
+            let sourceTitleStart = prefixLength - (sourceTitle as NSString).length
             let renderedPrefix = (oldRendered as NSString).substring(to: oldTitleLength) as NSString
             let titleRange = renderedPrefix.range(of: old.title)
             if offset == 0 {
-                mappedOffset = titleStart
+                mappedOffset = newTitleLength + projection.displayedOffset(forSourceOffset: sourceTitleStart)
             } else {
                 guard titleRange.location != NSNotFound,
                       offset >= titleRange.location, offset <= NSMaxRange(titleRange) else {
                     throw Failure.unsupportedTextTransform
                 }
-                mappedOffset = titleStart + offset - titleRange.location
+                mappedOffset = newTitleLength + projection.displayedOffset(
+                    forSourceOffset: sourceTitleStart + offset - titleRange.location)
             }
         }
         guard mappedOffset >= 0, mappedOffset <= (newRendered as NSString).length else {

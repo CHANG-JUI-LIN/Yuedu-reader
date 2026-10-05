@@ -21,7 +21,7 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
     private var index = 0
     private var targetWidth: CGFloat = 0
     private var cropBorders = false
-    private var isLiveTextEnabled = true
+    private var isLiveTextEnabled = false
     private var onRatio: ((Int, CGFloat) -> Void)?
     /// Whether Live Text's button shows (`FixedPageZoom.showsLiveTextButton`). Kept so an
     /// analysis that lands later honours it.
@@ -62,7 +62,7 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
         index: Int,
         targetWidth: CGFloat,
         cropBorders: Bool = false,
-        isLiveTextEnabled: Bool = true,
+        isLiveTextEnabled: Bool = false,
         onRatio: @escaping (Int, CGFloat) -> Void
     ) {
         self.page = page

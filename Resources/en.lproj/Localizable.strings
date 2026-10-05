@@ -3537,3 +3537,5 @@
 "一個榜單分成每欄四本，左右翻頁" = "One chart in columns of four, paged sideways";
 "同一書源的幾個分類，用標籤切換" = "Several categories of one source, switched with tabs";
 "三欄卡片，往下捲會一直載入" = "Cards in three columns that keep loading as you scroll";
+
+"TXTEncodingUnsupported" = "Unable to reliably detect the TXT encoding. Save the file as UTF-8 and import it again.";

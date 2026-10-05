@@ -7,6 +7,10 @@ import YueduCoreText
 import YueduCoreTextTypography
 import Accessibility
 
+/// Where a page finds a bitmap of exactly what it would draw, rendered ahead of
+/// time — nil until one is.
+typealias PrerenderedPageSource = @MainActor () -> UIImage?
+
 /// Single-page CoreText rendering view.
 /// `draw(_:)` paints the page line by line (supporting CJK justified alignment);
 /// `display(_:)` puts it on screen, from a bitmap drawn ahead of time when the
@@ -63,11 +67,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     private var layout: CoreTextPaginator.ChapterLayout?
     private var localPageIndex: Int = 0
-    /// Exactly what `draw(_:)` would paint for the configured page and bars, drawn
-    /// off the main thread before this page was needed
-    /// (`CoreTextPageEngine.prefetchPageImages`). Dropped the moment the page or
-    /// its bars change.
-    private var prerenderedPage: UIImage?
+    /// Where to find exactly what `draw(_:)` would paint for the configured page
+    /// and bars, drawn off the main thread (`CoreTextPageEngine.prefetchPageImages`).
+    /// Asked each time the page is displayed, not only when it was built: UIKit
+    /// builds a neighbouring page the moment a turn lands, often before that page's
+    /// render has finished. Dropped the moment the page or its bars change.
+    private var prerenderedPage: PrerenderedPageSource?
     private static let displaySignposter = OSSignposter(
         subsystem: Bundle.main.bundleIdentifier ?? "com.zhangruilin.yuedureader",
         category: "ReaderPerformance"
@@ -162,13 +167,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     }
 
     /// Sets the chapter layout and page index to render, automatically triggering a redraw.
-    /// - Parameter prerenderedPage: this very page, already drawn with the bars this
-    ///   view has, at its size; used instead of drawing it again.
+    /// - Parameter prerenderedPage: where to find this very page, drawn with the bars
+    ///   this view has; what it returns is used instead of drawing the page again.
     func configure(
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
         fallbackBackgroundColor: UIColor = .systemBackground,
-        prerenderedPage: UIImage? = nil
+        prerenderedPage: PrerenderedPageSource? = nil
     ) {
         // The single point where content is bound to a view, so the single place that can
         // say what this page is *about* to draw. A position guard being green does not
@@ -590,13 +595,15 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         let scale = contentScaleFactor
         let image: UIImage
         let signpostID = Self.displaySignposter.makeSignpostID()
-        if let prerenderedPage, prerenderedPage.size == size, prerenderedPage.scale == scale {
+        let prerendered = prerenderedPage?()
+        if let prerendered, prerendered.size == size, prerendered.scale == scale {
             Self.displaySignposter.emitEvent("PageDisplay", id: signpostID, "source=prerendered")
-            image = prerenderedPage
+            image = prerendered
         } else {
+            let reason = prerenderedPage == nil ? "noSource" : (prerendered == nil ? "notReady" : "mismatch")
             let interval = Self.displaySignposter.beginInterval(
                 "PageDisplay", id: signpostID,
-                "source=drawn prerendered=\(self.prerenderedPage == nil ? 0 : 1) size=\(Int(size.width))x\(Int(size.height))"
+                "source=drawn reason=\(reason, privacy: .public) size=\(Int(size.width))x\(Int(size.height))"
             )
             let format = UIGraphicsImageRendererFormat.preferred()
             format.scale = scale
@@ -2378,7 +2385,7 @@ final class CoreTextPageViewController: UIViewController, ReaderBookmarkRibbonHo
 
     private var pendingLayout: CoreTextPaginator.ChapterLayout?
     private var pendingLocalPage: Int = 0
-    private var pendingPrerenderedPage: UIImage?
+    private var pendingPrerenderedPage: PrerenderedPageSource?
     private var pendingFallbackColor: UIColor = .systemBackground
     private var pendingPlaybackHighlight: ReaderPlaybackHighlight?
     private var pendingTextAnnotations: [CoreTextTextAnnotation] = []
@@ -2396,7 +2403,7 @@ final class CoreTextPageViewController: UIViewController, ReaderBookmarkRibbonHo
         globalPage: Int,
         readingPosition: CoreTextReadingPosition? = nil,
         fallbackBackgroundColor: UIColor = .systemBackground,
-        prerenderedPage: UIImage? = nil
+        prerenderedPage: PrerenderedPageSource? = nil
     ) {
         self.globalPageIndex = globalPage
         self.coreTextReadingPosition = readingPosition

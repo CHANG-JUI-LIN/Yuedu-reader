@@ -184,6 +184,116 @@ struct TXTFileReaderTests {
         )
     }
 
+    @Test("real codec fixtures round-trip through every local TXT entry", arguments: [
+        "aozora-cp932", "aozora-euc-jp", "simplified-gbk", "simplified-gb18030",
+        "traditional-big5", "korean-euc-kr", "aozora-neko-jijo",
+    ])
+    func codecFixturesRoundTrip(name: String) throws {
+        let encodings: [String: CFStringEncodings] = [
+            "aozora-cp932": .dosJapanese, "aozora-euc-jp": .EUC_JP, "aozora-neko-jijo": .dosJapanese,
+            "simplified-gbk": .GB_18030_2000, "simplified-gb18030": .GB_18030_2000,
+            "traditional-big5": .big5, "korean-euc-kr": .EUC_KR,
+        ]
+        let expectedEncoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(try #require(encodings[name]).rawValue)))
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/TXTEncodings/" + name)
+        let data = try Data(contentsOf: fixture.appendingPathExtension("txt"))
+        let expected = try String(contentsOf: fixture.appendingPathExtension("utf8"), encoding: .utf8)
+        let url = try writeTemporaryTXT(data: data)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(try TXTFileReader.detectEncodingBySampling(url: url) == expectedEncoding)
+        #expect(try TXTFileReader.readTextFile(url: url) == expected)
+        let mapped = try TXTFileReader.readMappedTextFile(url: url)
+        #expect(mapped.encoding == expectedEncoding)
+        #expect(mapped.string(in: 0..<data.count) == expected)
+        let prefix = try TXTFileReader.readPrefix(url: url, maxByteCount: 129)
+        #expect(expected.hasPrefix(prefix))
+        #expect(!prefix.contains("�"))
+        let destination = url.deletingPathExtension().appendingPathExtension("copy.txt")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        try TXTFilePersistence.persistOriginal(source: url, destination: destination)
+        #expect(try Data(contentsOf: destination) == data)
+        #expect(try TXTFileReader.readTextFile(url: destination) == expected)
+    }
+
+    @Test("ASCII front matter does not dilute Japanese evidence")
+    func japaneseAfterASCIIFrontMatter() throws {
+        let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(CFStringEncodings.dosJapanese.rawValue)))
+        let text = String(repeating: "ASCII preface\n", count: 1_000)
+            + String(repeating: "私は日本語の本を読み、漢字《かんじ》を学びます。\n", count: 200)
+        let data = try #require(text.data(using: encoding))
+        let url = try writeTemporaryTXT(data: data)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(try TXTFileReader.detectEncodingBySampling(url: url) == encoding)
+        #expect(try TXTFileReader.readTextFile(url: url) == text)
+    }
+
+    @Test("UTF-8 and BOM-less UTF-16 preserve existing content", arguments: [
+        String.Encoding.utf8, .utf16LittleEndian, .utf16BigEndian,
+    ])
+    func unicodeWithoutBOM(encoding: String.Encoding) throws {
+        let text = "第一章 Unicode\n" + String(repeating: "中文、日本語、한국어。\n", count: 200)
+        let url = try writeTemporaryTXT(data: try #require(text.data(using: encoding)))
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(try TXTFileReader.detectEncodingBySampling(url: url) == encoding)
+        #expect(try TXTFileReader.readTextFile(url: url) == text)
+    }
+
+    @Test("UTF-16 big endian BOM is honored")
+    func sampledDetectionHonorsUTF16BEBOM() throws {
+        let text = "第一章 UTF16\n日本語。"
+        var data = Data([0xFE, 0xFF])
+        data.append(try #require(text.data(using: .utf16BigEndian)))
+        let url = try writeTemporaryTXT(data: data)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(try TXTFileReader.detectEncodingBySampling(url: url) == .utf16BigEndian)
+        #expect(try TXTFileReader.readTextFile(url: url) == text)
+    }
+
+    @Test("sampling tolerates a cut through a UTF-8 scalar")
+    func truncatedUTF8Sample() throws {
+        let text = String(repeating: "日本語の本を読みます。", count: 20_000) + "𠀀"
+        let url = try writeTemporaryTXT(data: Data(text.utf8))
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(try TXTFileReader.detectEncodingBySampling(url: url) == .utf8)
+        let prefix = try TXTFileReader.readPrefix(url: url, maxByteCount: 8192)
+        #expect(text.hasPrefix(prefix))
+        #expect(!prefix.contains("�"))
+    }
+
+    @Test("low-confidence invalid bytes fail instead of producing garbage")
+    func lowConfidenceIsReported() throws {
+        let url = try writeTemporaryTXT(data: Data([0xFF, 0x01, 0xFF, 0x02, 0xFF, 0x03, 0xFF]))
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(throws: TXTFileReaderError.self) {
+            try TXTFileReader.readMappedTextFile(url: url)
+        }
+    }
+
+    @Test("fixed sample cuts preserve multibyte sequences", arguments: [
+        "aozora-cp932", "aozora-euc-jp", "simplified-gb18030", "traditional-big5",
+    ])
+    func truncatedLegacySamples(name: String) throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/TXTEncodings/" + name)
+        let original = try Data(contentsOf: fixture.appendingPathExtension("txt"))
+        let text = try String(contentsOf: fixture.appendingPathExtension("utf8"), encoding: .utf8)
+        var data = Data()
+        while data.count <= 512 * 1024 + 10 { data.append(original) }
+        let url = try writeTemporaryTXT(data: data)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fullText = String(repeating: text, count: data.count / original.count)
+        let mapped = try TXTFileReader.readMappedTextFile(url: url)
+        #expect(mapped.string(in: 0..<data.count) == fullText)
+        for count in (512 * 1024 - 3)...(512 * 1024 + 3) {
+            let prefix = try TXTFileReader.readPrefix(url: url, maxByteCount: count)
+            #expect(fullText.hasPrefix(prefix))
+            #expect(!prefix.contains("�"))
+        }
+    }
+
     private func writeTemporaryTXT(data: Data) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

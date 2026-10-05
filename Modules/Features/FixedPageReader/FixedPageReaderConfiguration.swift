@@ -63,7 +63,7 @@ struct FixedPageReaderConfiguration: Equatable, Codable {
         pillarbox: Bool = false,
         pillarboxAmount: CGFloat = 0.75,
         autoScrollSpeed: Int = 3,
-        isLiveTextEnabled: Bool = true
+        isLiveTextEnabled: Bool = false
     ) {
         self.mode = mode
         self.layout = layout
@@ -98,7 +98,7 @@ struct FixedPageReaderConfiguration: Equatable, Codable {
         pillarbox = try container.decodeIfPresent(Bool.self, forKey: .pillarbox) ?? false
         pillarboxAmount = try container.decodeIfPresent(CGFloat.self, forKey: .pillarboxAmount) ?? 0.75
         autoScrollSpeed = try container.decodeIfPresent(Int.self, forKey: .autoScrollSpeed) ?? 3
-        isLiveTextEnabled = try container.decodeIfPresent(Bool.self, forKey: .isLiveTextEnabled) ?? true
+        isLiveTextEnabled = try container.decodeIfPresent(Bool.self, forKey: .isLiveTextEnabled) ?? false
     }
 
     static func recommendedDefault(for mode: FixedPageReadingMode) -> FixedPageReaderConfiguration {

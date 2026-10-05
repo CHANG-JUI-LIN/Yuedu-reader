@@ -7,16 +7,19 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
     private let chapterIndexes: [TXTChapterIndex]
     private let mappedTextFile: TXTMappedTextFile?
     private let mappedChapterIndexes: [TXTMappedChapterIndex]
+    private let parsesAozoraMarkup: Bool
 
-    init(text: String, chapterIndexes: [TXTChapterIndex]) {
+    init(text: String, chapterIndexes: [TXTChapterIndex], parsesAozoraMarkup: Bool = true) {
         self.text = text
+        self.parsesAozoraMarkup = parsesAozoraMarkup
         self.chapterIndexes = chapterIndexes
         self.mappedTextFile = nil
         self.mappedChapterIndexes = []
     }
 
-    init(mappedTextFile: TXTMappedTextFile, chapterIndexes: [TXTMappedChapterIndex]) {
+    init(mappedTextFile: TXTMappedTextFile, chapterIndexes: [TXTMappedChapterIndex], parsesAozoraMarkup: Bool = true) {
         self.text = nil
+        self.parsesAozoraMarkup = parsesAozoraMarkup
         self.chapterIndexes = []
         self.mappedTextFile = mappedTextFile
         self.mappedChapterIndexes = chapterIndexes
@@ -117,24 +120,24 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
             to: attrStr
         )
 
-        for para in paragraphs {
-            let paragraphText = para.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
-            attrStr.append(
-                NSAttributedString(
-                    string: paragraphText,
-                    attributes: ReaderHyphenation.tagging(
-                        [
-                            .font: bodyFont,
-                            .foregroundColor: themeTextColor,
-                            .baselineOffset: bodyBaselineOffset,
-                            .paragraphStyle: bodyParaStyle,
-                            .kern: settings.letterSpacing as NSNumber,
-                        ].merging(syntheticBoldAttributes) { _, new in new },
-                        forText: para
-                    )
-                )
+        let body = paragraphs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) + "\n" }.joined()
+        // Historical v5/v6 builders retain source markup only for proven location
+        // migration. Every active reader uses the same Aozora parser and ruby path.
+        let nodes = parsesAozoraMarkup ? AozoraMarkupParser.parse(body).nodes : [.text(body)]
+        let renderer = NodeAttributedStringRenderer(config: .init(from: settings, textColor: themeTextColor))
+        let renderedBody = await renderer.renderInlineContent(nodes) { paragraphText in
+            ReaderHyphenation.tagging(
+                [
+                    .font: bodyFont,
+                    .foregroundColor: themeTextColor,
+                    .baselineOffset: bodyBaselineOffset,
+                    .paragraphStyle: bodyParaStyle,
+                    .kern: settings.letterSpacing as NSNumber,
+                ].merging(syntheticBoldAttributes) { _, new in new },
+                forText: paragraphText
             )
         }
+        attrStr.append(renderedBody)
 
         if settings.regexHighlightConfiguration.isEnabled {
             await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
@@ -195,7 +198,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
 
     func chapterPlainText(at index: Int) async -> String? {
         guard let text = chapterText(at: index), !text.isEmpty else { return nil }
-        return text
+        return parsesAozoraMarkup ? AozoraMarkupParser.parse(text).plainText : text
     }
 
     private func chapterText(at index: Int, conversion: TextConversion = .original) -> String? {

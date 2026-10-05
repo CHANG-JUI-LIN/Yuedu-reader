@@ -31,7 +31,7 @@ enum TXTReaderPreparationService {
             encoding: encoding
         )
         let cached = snapshot?.version == TXTChapterParser.indexVersion ? snapshot?.indexes : nil
-        let previous = snapshot?.version == 5 ? snapshot?.indexes : nil
+        let previous = snapshot.flatMap { [5, 6].contains($0.version) ? $0.indexes : nil }
 
         let previewText: String
         if cached == nil, previous == nil {
@@ -97,9 +97,9 @@ enum TXTReaderPreparationService {
         var upperBound = count
 
         while upperBound > 0, count - upperBound <= maximumTrim {
-            if let decoded = String(
-                data: data.prefix(upperBound),
-                encoding: mappedTextFile.encoding
+            if let decoded = TXTTextDecoder.decode(
+                Data(data.prefix(upperBound)),
+                as: mappedTextFile.encoding
             ) {
                 guard decoded.unicodeScalars.first == "\u{FEFF}" else {
                     return decoded
@@ -109,6 +109,9 @@ enum TXTReaderPreparationService {
             upperBound -= step
         }
 
+        AppLogger.error("TXT preview decode failed", context: [
+            "encoding": mappedTextFile.encoding.rawValue, "bytes": count,
+        ])
         throw TXTFileReaderError.encodingNotSupported
     }
 }

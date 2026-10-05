@@ -540,6 +540,9 @@ struct FixedPageReaderSettingsView: View {
                     .environmentObject(subscriptionStore)
             }
         }
+        // Search/detail and shelf readers have different navigation hosts. This
+        // sheet owns its control tint rather than inheriting the reader bar's white.
+        .tint(DSColor.accent)
     }
 
     /// A locked control's paywall: from this sheet on iOS 18, from the controls overlay on

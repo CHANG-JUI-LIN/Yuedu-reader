@@ -248,7 +248,7 @@ final class CoreTextFontRegistrationService: FontRegistrationServicing {
 
 /// A page as `CoreTextPageView.renderPage` painted it, with the bars it was painted
 /// with: a live page uses the bitmap only when it is exactly what the page would
-/// draw itself (see `prerenderedLivePage`).
+/// draw itself (see `livePageSource`).
 final class ReaderRenderedPage {
     let image: UIImage
     let bars: ReaderPageBars?
@@ -1514,20 +1514,25 @@ _layouts.removeAll()
         category: "ReaderPerformance"
     )
 
-    /// The cached bitmap of exactly what a live page would draw itself, if there is one.
+    /// A live page's way to the cached bitmap of exactly what it would draw itself.
     ///
-    /// A live page draws its bars without the bookmark ribbon — the ribbon there is
-    /// its own animated view — while a snapshot draws it in, so a bookmarked page's
-    /// snapshot is not the live page's picture and is not offered as one.
-    private func prerenderedLivePage(
+    /// Pinned to what the page is built with: the key carries the installed layout's
+    /// revision and the bars revision, so a bitmap of a newer layout or newer bars is
+    /// never offered to a page still showing the old one. A live page draws its bars
+    /// without the bookmark ribbon — the ribbon there is its own animated view —
+    /// while a snapshot draws it in, so a bookmarked page's snapshot is not the live
+    /// page's picture and is not offered as one.
+    private func livePageSource(
         spineIndex: Int,
         localPage: Int,
         liveBars: ReaderPageBars?
-    ) -> UIImage? {
-        guard let key = snapshotKey(spineIndex: spineIndex, localPage: localPage),
-              let page = chapterSnapshots.object(forKey: key),
-              page.bars == liveBars else { return nil }
-        return page.image
+    ) -> PrerenderedPageSource? {
+        guard let key = snapshotKey(spineIndex: spineIndex, localPage: localPage) else { return nil }
+        return { [weak self] in
+            guard let page = self?.chapterSnapshots.object(forKey: key),
+                  page.bars == liveBars else { return nil }
+            return page.image
+        }
     }
 
     private static func snapshotBackgroundColor(of layout: CoreTextPaginator.ChapterLayout) -> UIColor {
@@ -1765,7 +1770,7 @@ _layouts.removeAll()
             globalPage: globalPage,
             readingPosition: readingPosition,
             fallbackBackgroundColor: themeBackgroundColor,
-            prerenderedPage: prerenderedLivePage(
+            prerenderedPage: livePageSource(
                 spineIndex: spineIndex,
                 localPage: localPage,
                 liveBars: bars?.removingBookmarkRibbon()

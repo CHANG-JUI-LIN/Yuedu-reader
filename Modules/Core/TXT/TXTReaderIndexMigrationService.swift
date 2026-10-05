@@ -35,10 +35,23 @@ enum TXTReaderIndexMigrationService {
             .appendingPathComponent("\(preparation.bookId.uuidString).txt-reindex.json")
         if FileManager.default.fileExists(atPath: journalURL.path) {
             let journal = try JSONDecoder().decode(Journal.self, from: Data(contentsOf: journalURL))
-            guard journal.version == 1, journal.bookId == preparation.bookId,
+            guard [1, 2].contains(journal.version), journal.bookId == preparation.bookId,
                   journal.fingerprint == preparation.fingerprint, journal.fileSize == preparation.fileSize,
                   journal.encoding == preparation.encoding.rawValue else {
                 throw TXTLocationMigration.Failure.missingSourceIdentity
+            }
+            // v1 targets predate ruby removal. They are still final targets for
+            // ordinary TXT, but cannot be replayed as v7 offsets for marked text.
+            // Keep that journal intact until its historical targets can be
+            // proven and projected, rather than publishing an ambiguous offset.
+            if journal.version == 1 {
+                guard journal.indexes.allSatisfy({
+                    !AozoraMarkupParser.parse(preparation.mappedTextFile.string(in: $0.byteRange)).hasChanges
+                }) else {
+                    AppLogger.error("TXT pre-ruby migration journal requires location projection",
+                                    context: ["bookId": journal.bookId.uuidString])
+                    throw TXTLocationMigration.Failure.missingSourceIdentity
+                }
             }
             return try await commit(journal, preparation: preparation, store: store, positions: positions, url: journalURL)
         }
@@ -60,17 +73,19 @@ enum TXTReaderIndexMigrationService {
         }.value
         let old = preparation.previousChapterIndexes ?? indexes
         let mapping = try TXTLocationMigration(file: preparation.mappedTextFile, oldIndexes: old, newIndexes: indexes)
-        let oldBuilder = TXTLazyAttributedStringBuilder(mappedTextFile: preparation.mappedTextFile, chapterIndexes: old)
+        let oldBuilder = TXTLazyAttributedStringBuilder(mappedTextFile: preparation.mappedTextFile,
+                                                       chapterIndexes: old, parsesAozoraMarkup: false)
         let newBuilder = TXTLazyAttributedStringBuilder(mappedTextFile: preparation.mappedTextFile, chapterIndexes: indexes)
         var oldStrings: [Int: String] = [:]
         var newStrings: [Int: String] = [:]
 
         func remap(_ position: CoreTextReadingPosition) async throws -> CoreTextReadingPosition {
             let target = try mapping.destination(for: position.spineIndex)
-            // Exact source range/title identity does not depend on current font or
-            // replacement settings. Preserve that offset without rebuilding text.
+            // Source identity preserves ordinary TXT offsets. Markup removal needs
+            // the historical and current rendered strings even at equal boundaries.
             if old[position.spineIndex].byteRange == indexes[target].byteRange,
-               old[position.spineIndex].title == indexes[target].title {
+               old[position.spineIndex].title == indexes[target].title,
+               !AozoraMarkupParser.parse(preparation.mappedTextFile.string(in: old[position.spineIndex].byteRange)).hasChanges {
                 guard position.charOffset >= 0 else { throw TXTLocationMigration.Failure.invalidPosition }
                 return .init(spineIndex: target, charOffset: position.charOffset)
             }
@@ -106,7 +121,7 @@ enum TXTReaderIndexMigrationService {
                 annotationStyle: bookmark.annotationStyle, annotationColor: bookmark.annotationColor
             ))
         }
-        let journal = Journal(version: 1, bookId: preparation.bookId, fingerprint: preparation.fingerprint,
+        let journal = Journal(version: 2, bookId: preparation.bookId, fingerprint: preparation.fingerprint,
                               fileSize: preparation.fileSize, encoding: preparation.encoding.rawValue, indexes: indexes,
                               originalPosition: originalPosition, position: position,
                               originalBookmarks: book.bookmarks, bookmarks: bookmarks)

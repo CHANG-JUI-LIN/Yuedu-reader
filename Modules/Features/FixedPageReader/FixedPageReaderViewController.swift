@@ -137,12 +137,12 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        backShelfBars()
+        backLegacyReaderBars()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        restoreShelfToolbar()
+        restoreLegacyReaderToolbar()
         saveTask?.cancel()
         let page = currentChapterPage
         store?.updateMangaPosition(
@@ -154,53 +154,65 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         )
     }
 
-    // MARK: Bars under the shelf's card push (iOS 17)
+    // MARK: Native reader bars (iOS 17)
 
-    /// The shelf's own toolbar edge appearances, put back when the reader goes.
-    private var shelfToolbarEdgeAppearances: (scrollEdge: UIToolbarAppearance?, compactScrollEdge: UIToolbarAppearance?)?
+    private weak var backedToolbar: UIToolbar?
+    private var savedToolbarAppearances: (
+        standard: UIToolbarAppearance,
+        compact: UIToolbarAppearance?,
+        scrollEdge: UIToolbarAppearance?,
+        compactScrollEdge: UIToolbarAppearance?
+    )?
 
-    /// The shelf pushes this reader in a `ReaderHostingController` straight onto its own
-    /// UIKit navigation controller, so the controls sit in the shelf's bars. A user's
-    /// iOS 17 screenshot (2026-09-28) shows both bars clear over the page, with a dark
-    /// title: `toolbarBackground(.visible)` and `toolbarColorScheme(.dark)` in
-    /// `FixedPageReaderView` did not reach them, leaving the bars' own look — clear at the
-    /// scroll edge by default, and the shelf hides its bar background under an app theme.
-    /// iOS 27 takes both modifiers; iOS 18–25 have not been looked at. Here, on iOS 17
-    /// only, the two bars get the system's default backdrop in UIKit: on the host's
-    /// navigation item, which leaves with it, and on the shared toolbar, whose edge
-    /// appearances are handed back on the way out. Unverified until tested on iOS 17.
-    /// Delete once the deployment target is iOS 18.
-    private func backShelfBars() {
+    /// iOS 17 leaves the native toolbar transparent over image pages despite SwiftUI's
+    /// toolbar background modifier. Resolve the actual navigation host for both a shelf
+    /// card push and a search/detail destination; limiting this to ReaderHostingController
+    /// left the search reader's progress controls without their backdrop. Restore the
+    /// shared toolbar on exit. Remove this compatibility path when iOS 17 is dropped.
+    private func backLegacyReaderBars() {
         guard #unavailable(iOS 18.0),
-              let parent,
-              let host = sequence(first: parent, next: { $0.parent }).lazy
-                .compactMap({ $0 as? ReaderHostingController }).first,
-              let toolbar = host.navigationController?.toolbar
+              let navigationController,
+              let toolbar = navigationController.toolbar,
+              let host = sequence(first: self as UIViewController, next: { $0.parent })
+                .first(where: { $0.parent === navigationController })
         else { return }
 
-        let bar = UINavigationBarAppearance()
-        bar.configureWithDefaultBackground()
-        host.navigationItem.standardAppearance = bar
-        host.navigationItem.compactAppearance = bar
-        host.navigationItem.scrollEdgeAppearance = bar
-        host.navigationItem.compactScrollEdgeAppearance = bar
+        // SwiftUI owns the search/detail navigation bar and its status-bar scheme.
+        // Only the shelf's UIKit card host needs its navigation-item backdrop set here.
+        if host is ReaderHostingController {
+            let bar = UINavigationBarAppearance()
+            bar.configureWithDefaultBackground()
+            host.navigationItem.standardAppearance = bar
+            host.navigationItem.compactAppearance = bar
+            host.navigationItem.scrollEdgeAppearance = bar
+            host.navigationItem.compactScrollEdgeAppearance = bar
+        }
 
-        if shelfToolbarEdgeAppearances == nil {
-            shelfToolbarEdgeAppearances = (toolbar.scrollEdgeAppearance, toolbar.compactScrollEdgeAppearance)
+        if savedToolbarAppearances == nil {
+            backedToolbar = toolbar
+            savedToolbarAppearances = (
+                toolbar.standardAppearance, toolbar.compactAppearance,
+                toolbar.scrollEdgeAppearance, toolbar.compactScrollEdgeAppearance
+            )
         }
         let bottom = UIToolbarAppearance()
         bottom.configureWithDefaultBackground()
+        toolbar.standardAppearance = bottom
+        toolbar.compactAppearance = bottom
         toolbar.scrollEdgeAppearance = bottom
         toolbar.compactScrollEdgeAppearance = bottom
     }
 
-    private func restoreShelfToolbar() {
-        guard let saved = shelfToolbarEdgeAppearances,
-              let toolbar = navigationController?.toolbar
+    private func restoreLegacyReaderToolbar() {
+        guard let saved = savedToolbarAppearances,
+              let toolbar = backedToolbar
         else { return }
+        toolbar.standardAppearance = saved.standard
+        toolbar.compactAppearance = saved.compact
         toolbar.scrollEdgeAppearance = saved.scrollEdge
         toolbar.compactScrollEdgeAppearance = saved.compactScrollEdge
-        shelfToolbarEdgeAppearances = nil
+        savedToolbarAppearances = nil
+        backedToolbar = nil
     }
 
     // MARK: Reader installation

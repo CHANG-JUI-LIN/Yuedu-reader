@@ -63,6 +63,35 @@ struct ReaderPageTurnSmoothnessTests {
         #expect(pixels(of: drawn) == pixels(of: rendered))
     }
 
+    @Test("a page built before its prefetch landed still shows the prefetched bitmap")
+    func pageBuiltBeforeItsPrefetchShowsIt() async throws {
+        let engine = try await makeLaidOutEngine()
+        // UIKit builds the next page the moment a turn lands, before its render is done.
+        let controller = engine.pageViewController(at: 4)
+        engine.prefetchPageImages(around: 4)
+        await engine.finishPageImagePrefetches()
+
+        let window = UIWindow(frame: CGRect(origin: .zero, size: Self.size))
+        let shown = try displayedContents(of: controller, in: window)
+        let prefetched = try #require(engine.renderSnapshot(forPage: 4)?.cgImage)
+        #expect(shown === prefetched)
+    }
+
+    @Test("a page built before an appearance change never takes a bitmap rendered after it")
+    func pageKeepsItsOwnLayoutAcrossAppearanceChange() async throws {
+        let engine = try await makeLaidOutEngine()
+        let controller = engine.pageViewController(at: 4)
+        engine.applyThemeChange(textColor: .white, backgroundColor: .black)
+        engine.prefetchPageImages(around: 4)
+        await engine.finishPageImagePrefetches()
+        let dark = try #require(engine.renderSnapshot(forPage: 4)?.cgImage)
+
+        let window = UIWindow(frame: CGRect(origin: .zero, size: Self.size))
+        let shown = try displayedContents(of: controller, in: window)
+        #expect(shown !== dark)
+        #expect(pixels(of: shown) != pixels(of: dark), "the page still shows the layout it was built with")
+    }
+
     @Test("a bookmarked page's snapshot carries the ribbon, so the live page draws itself")
     func bookmarkedSnapshotIsNotTheLivePage() async throws {
         let engine = try await makeLaidOutEngine()

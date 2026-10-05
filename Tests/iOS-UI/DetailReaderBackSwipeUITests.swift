@@ -167,6 +167,43 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             waitForMangaPage(app)
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             XCTAssertTrue(readerBack.waitForExistence(timeout: 8), app.debugDescription)
+            if round == 1 {
+                // The reported screenshot is a continuous image strip. Cover it as
+                // well as the paged reader in the following entry rounds.
+                app.buttons["阅读设定"].tap()
+                let mode = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "阅读模式")).firstMatch
+                XCTAssertTrue(mode.waitForExistence(timeout: 5), app.debugDescription)
+                let close = app.buttons["关闭"].firstMatch
+                XCTAssertTrue(close.isHittable, app.debugDescription)
+                attachScreenshot(app, named: "Manga reading settings - search detail")
+                mode.tap()
+                app.buttons["条漫"].firstMatch.tap()
+                close.tap()
+                let page = app.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "webtoon_page_")).firstMatch
+                XCTAssertTrue(page.waitForExistence(timeout: 15), app.debugDescription)
+            }
+            let progress = app.sliders["阅读进度"]
+            XCTAssertTrue(progress.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(progress.isHittable, "The search reader's native progress control must be usable")
+            let bottomBar = app.toolbars.firstMatch
+            XCTAssertTrue(bottomBar.exists, app.debugDescription)
+            XCTAssertGreaterThanOrEqual(progress.frame.minY, bottomBar.frame.minY)
+            XCTAssertLessThanOrEqual(progress.frame.maxY, bottomBar.frame.maxY)
+            attachScreenshot(app, named: "Search tab manga - native bottom bar - round \(round)")
+            if round == 1 {
+                app.buttons["阅读设定"].tap()
+                let mode = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "阅读模式")).firstMatch
+                XCTAssertTrue(mode.waitForExistence(timeout: 5), app.debugDescription)
+                let close = app.buttons["关闭"].firstMatch
+                XCTAssertTrue(close.isHittable, app.debugDescription)
+                attachScreenshot(app, named: "Manga reading settings - search detail - webtoon")
+                // Reading mode persists. Restore paged mode explicitly before
+                // reopening the book in the following entries.
+                mode.tap()
+                app.buttons["从右到左"].firstMatch.tap()
+                close.tap()
+                XCTAssertTrue(app.images["fixed_page_image"].waitForExistence(timeout: 15), app.debugDescription)
+            }
             readerBack.tap()
             XCTAssertTrue(read.waitForExistence(timeout: 8), "Round \(round): Back must return to the detail.\n\(app.debugDescription)")
             app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -189,7 +226,10 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"]
         app.launch()
-        let discovered = app.staticTexts["Navigation Manga Fixture"].firstMatch
+        let source = app.buttons["explore.source.Navigation Manga Fixture"]
+        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
+        source.tap()
+        let discovered = app.buttons["Navigation Manga Fixture, Regression"].firstMatch
         XCTAssertTrue(discovered.waitForExistence(timeout: 20), app.debugDescription)
         discovered.tap()
         let add = app.buttons["Bookmarked"]
@@ -216,6 +256,14 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         waitForMangaPage(app)
         showMangaControls(app, expecting: "Page 1 / 3")
         attachScreenshot(app, named: "Manga reader - shelf")
+        app.buttons["Reading Settings"].tap()
+        let mode = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Reading Mode")).firstMatch
+        XCTAssertTrue(mode.waitForExistence(timeout: 5), app.debugDescription)
+        let close = app.buttons["Close"].firstMatch
+        XCTAssertTrue(close.isHittable, app.debugDescription)
+        attachScreenshot(app, named: "Manga reading settings - shelf")
+        close.tap()
+        XCTAssertTrue(app.sliders["Progress"].waitForExistence(timeout: 5), app.debugDescription)
         app.navigationBars.buttons["Back"].tap()
         XCTAssertTrue(book.waitForExistence(timeout: 8), "Back must return to the shelf.\n\(app.debugDescription)")
     }
@@ -667,9 +715,13 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
+                               "-yd_tts_use_system_voice", "YES",
                                "-yd_appearance_reader_interface", "classic"]
         app.launch()
-        let book = app.staticTexts["Navigation Swipe Fixture"].firstMatch
+        let source = app.buttons["explore.source.Navigation Swipe Fixture"]
+        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
+        source.tap()
+        let book = app.buttons["Navigation Swipe Fixture, Regression"].firstMatch
         XCTAssertTrue(book.waitForExistence(timeout: 20), app.debugDescription)
         book.tap()
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read Now", "Continue Reading"])).firstMatch
@@ -681,6 +733,24 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         let listen = app.buttons["Audiobook"].firstMatch
         XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
         listen.tap()
+        let playback = app.buttons["tts_panel_play_pause"]
+        XCTAssertTrue(playback.waitForExistence(timeout: 15), "Listening must open the TTS panel.\n\(app.debugDescription)")
+        func awaitPlaybackLabel(_ label: String, line: UInt = #line) {
+            let state = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: playback)
+            XCTAssertEqual(XCTWaiter.wait(for: [state], timeout: 10), .completed, app.debugDescription, line: line)
+        }
+        awaitPlaybackLabel("Pause")
+        XCTAssertTrue(playback.isHittable, app.debugDescription)
+        playback.tap()
+        awaitPlaybackLabel("Play")
+        app.navigationBars.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
+        listen.tap()
+        awaitPlaybackLabel("Pause")
+        app.navigationBars.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
+        listen.tap()
+        awaitPlaybackLabel("Pause")
         let roles = app.buttons["Multi-voice narration"].firstMatch
         XCTAssertTrue(roles.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(roles.isHittable)

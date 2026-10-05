@@ -18,7 +18,7 @@ struct TXTMappedChapterIndex: Equatable, Sendable, Codable {
 }
 
 enum TXTChapterParser {
-    static let indexVersion = 6
+    static let indexVersion = 7
     struct CachedIndexes: Sendable {
         let version: Int
         let indexes: [TXTMappedChapterIndex]
@@ -267,7 +267,7 @@ enum TXTChapterParser {
         let url = cacheURL(for: bookId)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let cache = try JSONDecoder().decode(TXTChapterIndexCache.self, from: Data(contentsOf: url))
-        guard [5, indexVersion].contains(cache.version), cache.fileSize == fileSize,
+        guard [5, 6, indexVersion].contains(cache.version), cache.fileSize == fileSize,
               cache.fingerprint == fingerprint, cache.encodingRawValue == encoding.rawValue else {
             throw TXTLocationMigration.Failure.missingSourceIdentity
         }
@@ -287,8 +287,9 @@ enum TXTChapterParser {
         let cacheDir = cacheDirectoryURL()
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         let codable = indexes.map { CodableChapterIndex(index: $0.index, title: $0.title, lower: $0.byteRange.lowerBound, upper: $0.byteRange.upperBound) }
-        // v6: primary and secondary headings share contextual selection. Callers
-        // must finish location migration before replacing a v5 index.
+        // v7: Aozora markup removal changes rendered UTF-16 offsets; v6 keeps the
+        // same source chapter boundaries. Callers must finish location migration
+        // before replacing a v5/v6 index.
         let cache = TXTChapterIndexCache(version: indexVersion, fileSize: fileSize, fingerprint: fingerprint, encodingRawValue: encoding.rawValue, indexes: codable)
         try JSONEncoder().encode(cache).write(to: Self.cacheURL(for: bookId), options: .atomic)
     }
@@ -440,7 +441,7 @@ enum TXTChapterParser {
 
     /// First characters accepted by `chapterPatterns` and `specialTitlePattern`.
     /// Encoding them once lets the mapped parser reject body lines before it
-    /// allocates a String or runs regexes, including GB18030 and Big5 books.
+    /// allocates a String or runs regexes, including GB18030, Big5, CP932, EUC-JP, and EUC-KR books.
     private static let titleStartCharacters = [
         "C", "c", "P", "p", "E", "e", "I", "i",
         "第", "卷", "序", "楔", "前", "引", "尾", "終", "终",
@@ -807,7 +808,7 @@ enum TXTChapterParser {
 
     /// Enumerates only possible title lines. Raw-pointer traversal avoids the
     /// per-byte `Data` subscript overhead, while the encoding-aware matcher
-    /// rejects ordinary GB18030/Big5/UTF-8 body lines before String allocation.
+    /// rejects ordinary UTF-8/GB18030/Big5/CP932/EUC-JP/EUC-KR body lines before String allocation.
     private static func enumerateMappedTitleLines(
         in mappedTextFile: TXTMappedTextFile,
         matcher: EncodedTitleStartMatcher,

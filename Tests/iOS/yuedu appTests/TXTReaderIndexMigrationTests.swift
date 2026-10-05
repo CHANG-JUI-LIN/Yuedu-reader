@@ -85,7 +85,12 @@ struct TXTReaderIndexMigrationTests {
             } catch {}
             #expect(try Data(contentsOf: cache) == cacheData)
             #expect(FileManager.default.fileExists(atPath: journal.path))
-            interruptedJournal = try Data(contentsOf: journal)
+            // A pre-ruby release can leave its version-1 journal behind. Plain
+            // TXT must still replay those already-computed final positions.
+            var legacyJournal = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as? [String: Any])
+            legacyJournal["version"] = 1
+            interruptedJournal = try JSONSerialization.data(withJSONObject: legacyJournal)
+            try interruptedJournal?.write(to: journal)
             positions.failWrites = false
         }
         let result = try await TXTReaderIndexMigrationService.complete(preparation, store: store, positions: positions, settings: settings)

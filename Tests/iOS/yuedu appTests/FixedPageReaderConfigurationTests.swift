@@ -42,6 +42,31 @@ struct FixedPageReaderConfigurationTests {
         #expect(!webtoon.pillarbox)
         #expect(webtoon.pillarboxAmount == 0.75)
         #expect(webtoon.autoScrollSpeed == 3)
-        #expect(webtoon.isLiveTextEnabled)
+        #expect(!webtoon.isLiveTextEnabled)
+        #expect(!rtl.isLiveTextEnabled)
+        #expect(!ltr.isLiveTextEnabled)
+        #expect(!vertical.isLiveTextEnabled)
+    }
+
+    @Test("legacy settings without a Live Text choice default to disabled")
+    func missingLiveTextChoiceDefaultsToDisabled() throws {
+        let data = try JSONEncoder().encode(FixedPageReadingMode.rtl.recommendedConfiguration)
+        var legacy = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "isLiveTextEnabled")
+        let decoded = try JSONDecoder().decode(
+            FixedPageReaderConfiguration.self,
+            from: JSONSerialization.data(withJSONObject: legacy)
+        )
+        #expect(!decoded.isLiveTextEnabled)
+    }
+
+    @Test("an explicit Live Text choice survives saved settings", arguments: [false, true])
+    func explicitLiveTextChoiceIsPreserved(enabled: Bool) throws {
+        var configuration = FixedPageReadingMode.webtoon.recommendedConfiguration
+        configuration.isLiveTextEnabled = enabled
+        let decoded = try JSONDecoder().decode(
+            FixedPageReaderConfiguration.self, from: JSONEncoder().encode(configuration)
+        )
+        #expect(decoded.isLiveTextEnabled == enabled)
     }
 }
