@@ -1,4 +1,5 @@
 import Foundation
+import ReadiumZIPFoundation
 import Testing
 @testable import yuedu_app
 
@@ -115,4 +116,88 @@ struct LocalBookImportServiceTests {
         #expect(store.replaceBooksFromSync(store.books, expectedMutationRevision: store.mutationRevision))
     }
 
+    // MARK: Zip archives
+
+    private static let nekoFixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("Fixtures/TXTEncodings/aozora-neko-jijo.txt")
+
+    @Test("An official Aozora Bunko zip opens as a TXT book with the original bytes")
+    func aozoraZipImportsAsTXT() async throws {
+        let original = try Data(contentsOf: Self.nekoFixture)
+        let zip = try await makeZip(named: "2671_ruby_6335.zip", entries: [
+            "neko_chuhen.txt": original,
+        ])
+        defer { try? FileManager.default.removeItem(at: zip.deletingLastPathComponent()) }
+        let store = BookStore(metadataFileURL: zip.deletingLastPathComponent().appendingPathComponent("books.json"))
+        defer { for book in store.books { store.delete(bookId: book.id) } }
+
+        let book = try await LocalBookImportService.importBook(at: zip, store: store)
+
+        #expect(book.contentPipelineKind == .txt)
+        #expect(book.contentFilename.hasSuffix(".txt"))
+        #expect(try Data(contentsOf: StorageLocations.bookFile(book.contentFilename)) == original)
+        #expect(store.content(for: book) == (try TXTFileReader.readTextFile(url: Self.nekoFixture)))
+        #expect(store.books.map(\.id) == [book.id])
+    }
+
+    @Test("A zip of images stays a manga")
+    func imageZipImportsAsManga() async throws {
+        let zip = try await makeZip(named: "comic.zip", entries: [
+            "001.jpg": Data("one".utf8), "002.png": Data("two".utf8),
+        ])
+        defer { try? FileManager.default.removeItem(at: zip.deletingLastPathComponent()) }
+        let store = BookStore(metadataFileURL: zip.deletingLastPathComponent().appendingPathComponent("books.json"))
+        defer { for book in store.books { store.delete(bookId: book.id) } }
+
+        let book = try await LocalBookImportService.importBook(at: zip, store: store)
+
+        #expect(book.contentPipelineKind == .manga)
+    }
+
+    @Test("A comic zip with a non-Aozora readme stays a manga")
+    func imageZipWithReadmeImportsAsManga() async throws {
+        let zip = try await makeZip(named: "comic.zip", entries: [
+            "001.jpg": Data("one".utf8),
+            "readme.txt": Data("Scanned pages. 《無断転載禁止》\n｜Thanks!\n".utf8),
+        ])
+        defer { try? FileManager.default.removeItem(at: zip.deletingLastPathComponent()) }
+        let store = BookStore(metadataFileURL: zip.deletingLastPathComponent().appendingPathComponent("books.json"))
+        defer { for book in store.books { store.delete(bookId: book.id) } }
+
+        let book = try await LocalBookImportService.importBook(at: zip, store: store)
+
+        #expect(book.contentPipelineKind == .manga)
+    }
+
+    @Test("A zip of audio stays an audiobook")
+    func audioZipImportsAsAudiobook() async throws {
+        let zip = try await makeZip(named: "audio.zip", entries: [
+            "Book/01 Intro.mp3": Data("one".utf8),
+            "Book/readme.txt": Data("track list".utf8),
+        ])
+        defer { try? FileManager.default.removeItem(at: zip.deletingLastPathComponent()) }
+        let store = BookStore(metadataFileURL: zip.deletingLastPathComponent().appendingPathComponent("books.json"))
+        defer { for book in store.books { store.delete(bookId: book.id) } }
+
+        let book = try await LocalBookImportService.importBook(at: zip, title: "Audio", author: "Narrator", store: store)
+
+        #expect(book.resolvedPipelineKind == .audio)
+    }
+
+    private func makeZip(named name: String, entries: [String: Data]) async throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalBookImportZipTests-\(UUID().uuidString)", isDirectory: true)
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        let archiveURL = root.appendingPathComponent(name)
+        let archive = try await Archive(url: archiveURL, accessMode: .create)
+        for (path, data) in entries.sorted(by: { $0.key < $1.key }) {
+            let fileURL = source.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try data.write(to: fileURL)
+            try await archive.addEntry(with: path, fileURL: fileURL)
+        }
+        return archiveURL
+    }
 }
