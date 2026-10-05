@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "Resources/**/*.strings"
+      - "ShareExtension/**/*.strings"
       - "scripts/check_localizations.rb"
       - ".github/workflows/localization.yml"
   push:
@@ -12,6 +13,7 @@ on:
       - main
     paths:
       - "Resources/**/*.strings"
+      - "ShareExtension/**/*.strings"
       - "scripts/check_localizations.rb"
       - ".github/workflows/localization.yml"
 

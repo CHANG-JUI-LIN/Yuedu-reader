@@ -6,3 +6,5 @@
 "Yuedu Log File" = "Yuedu 로그 파일";
 
 "NSLocalNetworkUsageDescription" = "근거리 네트워크 서재에 연결하고, Calibre가 보낸 책을 받고, 기기 내 음성 서비스를 사용하는 데 쓰입니다.";
+
+"NSPhotoLibraryAddUsageDescription" = "책 표지와 공유용 독서 이미지를 사진 보관함에 저장하는 데 쓰입니다.";

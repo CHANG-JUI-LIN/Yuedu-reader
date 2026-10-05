@@ -13,7 +13,7 @@ Consult only the context needed for the change:
 
 - `docs/design.md`: the matching section for substantial design work or an unresolved convention.
 - `Modules/SharedUI/DesignSystem/DesignTokens.swift`: the relevant token definitions when changing styling.
-- `Resources/{zh-Hant,zh-Hans,en}.lproj/Localizable.strings`: search the affected keys when changing user-visible text. Do not read all three files in full.
+- `Resources/*.lproj/Localizable.strings` (zh-Hant, zh-Hans, en, ja, ko): search the affected keys when changing user-visible text. Do not read any of these files in full.
 
 ## Decision Order
 
@@ -22,7 +22,7 @@ Resolve conflicts in this order: **Apple platform behavior and accessibility > e
 ## Hard Rules
 
 1. Title mode: only the main root screens get a large title, always via `rootTabTitle(_:onScroll:)` — 探索, RSS, 設定 and 搜索 pass `.minimizesBar`, so on iOS 27 the native bar — title and buttons together — slides away and the native search field rises into its place — (a leading toolbar-item title that looks the same from iOS 17 on; the system `.inlineLarge` is only a small centred title on an iOS 17 iPhone). Main roots = the tab roots: `HomeView` (書架), `ExploreHomeView` (探索), `RSSListView` (RSS), `SettingsView` (設定), and the 搜索 tab's `SearchView(isTabRoot: true)`. Everything else — pushed details, sheets, overlays, reader surfaces — uses `.inline`. Never use `.automatic`, `.large`, or `.inlineLarge`.
-2. Route every user-visible string through `localized("...")` and keep zh-Hant, zh-Hans, and en synchronized.
+2. Route every user-visible string through `localized("...")` and keep every `Resources/*.lproj` synchronized: zh-Hant, zh-Hans, en, ja, ko. Text iOS shows from `Info.plist`, such as a permission prompt, goes in each language's `InfoPlist.strings`.
 3. Use `DS*` tokens for colors, semantic fonts, spacing, layout, radius, and animation. Add a missing token before use; avoid magic values. Only system-backed color and semantic font tokens adapt automatically. Validate fixed-size font and animation tokens with the Dynamic Type and Reduce Motion patterns in `docs/design.md`.
 4. Use native components; do not re-implement them. Use `NavigationStack`, `TabView`, `NavigationSplitView`, `List`/`Form` with `Section`, `Toggle`, `Picker`, `Stepper`, `NavigationLink`, `.sheet`, `Menu`, `ToolbarItem`, `contextMenu`, `swipeActions`, `searchable`, `confirmationDialog`, and `alert`. Never hand-roll List/Form rows with `ScrollView` + `VStack`/`HStack`, custom toolbars or button bars, custom switches, pickers, or dialogs. Exclusive choices use one selected value (`Picker`), not several independent toggles; a `Toggle` keeps its built-in label instead of `.labelsHidden()` on a hand-rolled `HStack`.
 5. Prefer SF Symbols. Every icon-only control needs a localized `accessibilityLabel`.

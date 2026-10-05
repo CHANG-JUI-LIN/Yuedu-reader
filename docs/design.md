@@ -36,7 +36,7 @@
 | # | 規則 | 正確 | 錯誤 |
 |---|------|------|------|
 | H1 | title mode：僅主界面根目錄（Tab 根頁）用大標題，一律經 `rootTabTitle(_:onScroll:)`；其餘一律 `.inline` | 見 §2 矩陣 | 在 pushed / sheet 用 `rootTabTitle(_:onScroll:)`，或使用 `.automatic` / `.large` / `.inlineLarge` |
-| H2 | 所有對使用者顯示的文字走 `localized("…")`，且三個 lproj 同步 | `Text(localized("書架"))` | `Text("Bookshelf")` |
+| H2 | 所有對使用者顯示的文字走 `localized("…")`，且每個 lproj 同步（目前為 zh-Hant、zh-Hans、en、ja、ko，含 `InfoPlist.strings` 的權限提示） | `Text(localized("書架"))` | `Text("Bookshelf")` |
 | H3 | 顏色、字級、間距、圓角、動畫一律用 `DS*` token | `DSColor.textSecondary` | `Color.gray` / 寫死 hex |
 | H4 | 圖示優先 SF Symbols，且與文字字重/字級一致 | `Image(systemName: "trash")` | 自製 PNG icon |
 | H5 | icon-only 按鈕必須有 `accessibilityLabel` | `.accessibilityLabel(localized("刪除"))` | 只有圖示無語意 |
