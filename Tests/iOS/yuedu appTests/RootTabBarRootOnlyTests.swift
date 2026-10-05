@@ -4,7 +4,7 @@ import UIKit
 @testable import yuedu_app
 
 /// The bottom tab bar shows on a tab's root page only: a page pushed over the root, or
-/// presented over it, hides it. A menu or a popover is not a page.
+/// presented over it, hides it. A menu is not a page.
 @Suite("Root tab bar on tab roots only", .serialized)
 @MainActor
 struct RootTabBarRootOnlyTests {
@@ -55,12 +55,12 @@ struct RootTabBarRootOnlyTests {
         #expect(TabRootCoverage.state(of: page, windowRoot: navigation) == .uncovered)
     }
 
-    @Test("Pages count as covering the root; menus, popovers, alerts and the search controller do not")
+    @Test("Pages, popovers included, count as covering the root; menus, alerts and the search controller do not")
     func whatCoversRoot() throws {
         #expect(TabRootCoverage.coversRoot(UIViewController()))
         #expect(TabRootCoverage.coversRoot(UINavigationController(rootViewController: UIViewController())))
+        #expect(TabRootCoverage.coversRoot(makePopover()))
         #expect(!TabRootCoverage.coversRoot(try makeUIKitPrivateController()))
-        #expect(!TabRootCoverage.coversRoot(makePopover()))
         #expect(!TabRootCoverage.coversRoot(UIAlertController(title: "", message: nil, preferredStyle: .alert)))
         #expect(!TabRootCoverage.coversRoot(UIAlertController(title: "", message: nil, preferredStyle: .actionSheet)))
         #expect(!TabRootCoverage.coversRoot(UISearchController(searchResultsController: nil)))
@@ -81,22 +81,6 @@ struct RootTabBarRootOnlyTests {
         await present(UIAlertController(title: "", message: nil, preferredStyle: .alert), from: root)
         #expect(TabRootCoverage.state(of: root, windowRoot: navigation) == .uncovered)
         await dismiss(from: root)
-    }
-
-    @Test("A popover leaves the root uncovered; a page presented from it covers the root")
-    func popoverLeavesRootUncovered() async throws {
-        let root = UIViewController()
-        let navigation = UINavigationController(rootViewController: root)
-        let window = try makeWindow(root: navigation)
-        defer { window.isHidden = true; window.rootViewController = nil }
-
-        let popover = makePopover(anchoredIn: root.view)
-        await present(popover, from: root)
-        #expect(TabRootCoverage.state(of: root, windowRoot: navigation) == .uncovered)
-        await present(UIViewController(), from: popover)
-        #expect(TabRootCoverage.state(of: root, windowRoot: navigation) == .covered)
-        await dismiss(from: root)
-        #expect(TabRootCoverage.state(of: root, windowRoot: navigation) == .uncovered)
     }
 
     /// iOS 17's SwiftUI TabView leaves the window's root out of the root page's
@@ -162,13 +146,9 @@ struct RootTabBarRootOnlyTests {
         return controller
     }
 
-    private func makePopover(anchoredIn sourceView: UIView? = nil) -> UIViewController {
+    private func makePopover() -> UIViewController {
         let popover = UIViewController()
         popover.modalPresentationStyle = .popover
-        if let sourceView {
-            popover.popoverPresentationController?.sourceView = sourceView
-            popover.popoverPresentationController?.sourceRect = CGRect(x: 0, y: 0, width: 1, height: 1)
-        }
         return popover
     }
 
