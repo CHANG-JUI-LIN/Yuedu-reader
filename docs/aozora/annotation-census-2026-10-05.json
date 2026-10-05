@@ -1,0 +1,567 @@
+{
+  "files_scanned": 17436,
+  "works": 17158,
+  "encodings": {
+    "cp932": 17158
+  },
+  "file_kb": {
+    "p50": 10.6,
+    "p90": 56.0,
+    "p99": 394.8,
+    "max": 2066.6
+  },
+  "structure": {
+    "notation_block": 93.3,
+    "teihon_tail": 99.2,
+    "unclosed_note_works": 1
+  },
+  "inline": {
+    "ruby": {
+      "works": 13802,
+      "pct": 80.4
+    },
+    "explicit_ruby": {
+      "works": 8758,
+      "pct": 51.0
+    },
+    "gaiji": {
+      "works": 5312,
+      "pct": 31.0
+    },
+    "gaiji_then_ruby": {
+      "works": 2672,
+      "pct": 15.6
+    },
+    "accent": {
+      "works": 480,
+      "pct": 2.8
+    },
+    "kunojiten": {
+      "works": 3517,
+      "pct": 20.5
+    }
+  },
+  "annotations": {
+    "structure": {
+      "works": 212,
+      "pct": 1.2,
+      "occurrences": 213
+    },
+    "kaeriten": {
+      "works": 470,
+      "pct": 2.7,
+      "occurrences": 25688
+    },
+    "kunten_okurigana": {
+      "works": 243,
+      "pct": 1.4,
+      "occurrences": 6173
+    },
+    "page_break": {
+      "works": 864,
+      "pct": 5.0,
+      "occurrences": 8564
+    },
+    "line_break": {
+      "works": 35,
+      "pct": 0.2,
+      "occurrences": 92
+    },
+    "page_center": {
+      "works": 225,
+      "pct": 1.3,
+      "occurrences": 747
+    },
+    "heading": {
+      "works": 3577,
+      "pct": 20.8,
+      "occurrences": 89056
+    },
+    "indent": {
+      "works": 6898,
+      "pct": 40.2,
+      "occurrences": 175176
+    },
+    "chitsuki": {
+      "works": 6051,
+      "pct": 35.3,
+      "occurrences": 18204
+    },
+    "emphasis_dots": {
+      "works": 6159,
+      "pct": 35.9,
+      "occurrences": 128289
+    },
+    "sideline": {
+      "works": 318,
+      "pct": 1.9,
+      "occurrences": 18089
+    },
+    "bold": {
+      "works": 197,
+      "pct": 1.1,
+      "occurrences": 7990
+    },
+    "italic": {
+      "works": 102,
+      "pct": 0.6,
+      "occurrences": 3192
+    },
+    "font_size": {
+      "works": 890,
+      "pct": 5.2,
+      "occurrences": 27691
+    },
+    "tate_chu_yoko": {
+      "works": 668,
+      "pct": 3.9,
+      "occurrences": 18799
+    },
+    "warichu": {
+      "works": 319,
+      "pct": 1.9,
+      "occurrences": 6449
+    },
+    "kakomi": {
+      "works": 147,
+      "pct": 0.9,
+      "occurrences": 694
+    },
+    "image": {
+      "works": 486,
+      "pct": 2.8,
+      "occurrences": 4769
+    },
+    "caption": {
+      "works": 138,
+      "pct": 0.8,
+      "occurrences": 3294
+    },
+    "left_ruby": {
+      "works": 15,
+      "pct": 0.1,
+      "occurrences": 87
+    },
+    "note_ruby": {
+      "works": 667,
+      "pct": 3.9,
+      "occurrences": 3815
+    },
+    "small_script": {
+      "works": 294,
+      "pct": 1.7,
+      "occurrences": 11149
+    },
+    "yokogumi": {
+      "works": 401,
+      "pct": 2.3,
+      "occurrences": 3418
+    },
+    "jizume": {
+      "works": 225,
+      "pct": 1.3,
+      "occurrences": 2732
+    },
+    "typeface": {
+      "works": 19,
+      "pct": 0.1,
+      "occurrences": 201
+    },
+    "dangumi": {
+      "works": 17,
+      "pct": 0.1,
+      "occurrences": 51
+    },
+    "editorial": {
+      "works": 3094,
+      "pct": 18.0,
+      "occurrences": 12461
+    },
+    "gaiji_unmarked": {
+      "works": 82,
+      "pct": 0.5,
+      "occurrences": 190
+    },
+    "other": {
+      "works": 238,
+      "pct": 1.4,
+      "occurrences": 1129
+    }
+  },
+  "gaiji": {
+    "description_only": {
+      "count": 3138,
+      "pct_of_gaiji": 5.9
+    },
+    "jis_mapped": {
+      "count": 46666,
+      "pct_of_gaiji": 87.9
+    },
+    "non_bmp": {
+      "count": 3422,
+      "pct_of_gaiji": 6.4
+    },
+    "sequence": {
+      "count": 101,
+      "pct_of_gaiji": 0.2
+    },
+    "total": {
+      "count": 53117,
+      "pct_of_gaiji": 100.0
+    },
+    "unicode": {
+      "count": 3313,
+      "pct_of_gaiji": 6.2
+    },
+    "works_all_resolvable": {
+      "works": 4466,
+      "pct": 26.0
+    },
+    "works_with_description_only": {
+      "works": 846,
+      "pct": 4.9
+    },
+    "works_with_non_bmp": {
+      "works": 649,
+      "pct": 3.8
+    }
+  },
+  "text_correct": {
+    "now": {
+      "works": 9830,
+      "pct": 57.3
+    },
+    "after_gaiji_tables_accent_kunojiten": {
+      "works": 16312,
+      "pct": 95.1
+    }
+  },
+  "formatting_coverage": [
+    {
+      "step": "now",
+      "works": 4883,
+      "pct": 28.5
+    },
+    {
+      "step": "+css (heading/indent/chitsuki/page & line break/size/bold/italic)",
+      "works": 9449,
+      "pct": 55.1
+    },
+    {
+      "step": "+emphasis (傍点/傍線)",
+      "works": 14267,
+      "pct": 83.2
+    },
+    {
+      "step": "+tate_chu_yoko",
+      "works": 14615,
+      "pct": 85.2
+    },
+    {
+      "step": "+note_ruby",
+      "works": 15013,
+      "pct": 87.5
+    },
+    {
+      "step": "+image",
+      "works": 15235,
+      "pct": 88.8
+    },
+    {
+      "step": "+kaeriten",
+      "works": 15493,
+      "pct": 90.3
+    },
+    {
+      "step": "+yokogumi",
+      "works": 15739,
+      "pct": 91.7
+    },
+    {
+      "step": "+warichu",
+      "works": 15922,
+      "pct": 92.8
+    },
+    {
+      "step": "+small_script",
+      "works": 16123,
+      "pct": 94.0
+    },
+    {
+      "step": "+kunten_okurigana",
+      "works": 16302,
+      "pct": 95.0
+    },
+    {
+      "step": "+other",
+      "works": 16482,
+      "pct": 96.1
+    },
+    {
+      "step": "+jizume",
+      "works": 16580,
+      "pct": 96.6
+    },
+    {
+      "step": "+page_center",
+      "works": 16768,
+      "pct": 97.7
+    },
+    {
+      "step": "+kakomi",
+      "works": 16901,
+      "pct": 98.5
+    },
+    {
+      "step": "+caption",
+      "works": 17030,
+      "pct": 99.3
+    },
+    {
+      "step": "+gaiji_unmarked",
+      "works": 17108,
+      "pct": 99.7
+    },
+    {
+      "step": "+typeface",
+      "works": 17126,
+      "pct": 99.8
+    },
+    {
+      "step": "+dangumi",
+      "works": 17143,
+      "pct": 99.9
+    },
+    {
+      "step": "+left_ruby",
+      "works": 17158,
+      "pct": 100.0
+    }
+  ],
+  "toc": {
+    "today": {
+      "sections": {
+        "works": 7757,
+        "pct": 45.2
+      },
+      "single": {
+        "works": 9198,
+        "pct": 53.6
+      },
+      "regex": {
+        "works": 203,
+        "pct": 1.2
+      }
+    },
+    "sections_but_has_headings": {
+      "works": 2873,
+      "pct": 16.7
+    },
+    "has_two_or_more_headings": {
+      "works": 3513,
+      "pct": 20.5
+    }
+  },
+  "unknown_top": [
+    {
+      "shape": "「…」は「…」の「…」",
+      "occurrences": 49,
+      "works": 2
+    },
+    {
+      "shape": "「…」は分数",
+      "occurrences": 34,
+      "works": 15
+    },
+    {
+      "shape": "「…」は横一列",
+      "occurrences": 21,
+      "works": 2
+    },
+    {
+      "shape": "mは上ドット付き",
+      "occurrences": 15,
+      "works": 1
+    },
+    {
+      "shape": "「…」は上部に出ている",
+      "occurrences": 14,
+      "works": 1
+    },
+    {
+      "shape": "「…」は「…」の右側に注記するような形で",
+      "occurrences": 14,
+      "works": 1
+    },
+    {
+      "shape": "sは下ドット付き",
+      "occurrences": 14,
+      "works": 2
+    },
+    {
+      "shape": "「※［＃ローマ数字N、N-N",
+      "occurrences": 14,
+      "works": 1
+    },
+    {
+      "shape": "nは上ドット付き",
+      "occurrences": 12,
+      "works": 2
+    },
+    {
+      "shape": "「…」は「…」の下にポイントを下げてN行で",
+      "occurrences": 11,
+      "works": 1
+    },
+    {
+      "shape": "一つ目の「…」は「…」付き",
+      "occurrences": 10,
+      "works": 1
+    },
+    {
+      "shape": "「…」、N-N",
+      "occurrences": 10,
+      "works": 5
+    },
+    {
+      "shape": "ここから表",
+      "occurrences": 10,
+      "works": 1
+    },
+    {
+      "shape": "ここで表終わり",
+      "occurrences": 10,
+      "works": 1
+    },
+    {
+      "shape": "「…」は注釈番号",
+      "occurrences": 9,
+      "works": 2
+    },
+    {
+      "shape": "「…」の中に「…」",
+      "occurrences": 9,
+      "works": 2
+    },
+    {
+      "shape": "「…」略",
+      "occurrences": 9,
+      "works": 1
+    },
+    {
+      "shape": "N行目",
+      "occurrences": 8,
+      "works": 1
+    },
+    {
+      "shape": "左に「…」のルビ付き終わり",
+      "occurrences": 8,
+      "works": 3
+    },
+    {
+      "shape": "mは上ドット付き。Nつめのsは下ドット付き",
+      "occurrences": 8,
+      "works": 1
+    },
+    {
+      "shape": "「…」の部分はイタリック体",
+      "occurrences": 7,
+      "works": 1
+    },
+    {
+      "shape": "「…」は小文字",
+      "occurrences": 7,
+      "works": 3
+    },
+    {
+      "shape": "「…」は指数",
+      "occurrences": 7,
+      "works": 2
+    },
+    {
+      "shape": "「…」は一字",
+      "occurrences": 7,
+      "works": 1
+    },
+    {
+      "shape": "図N、花の絵",
+      "occurrences": 7,
+      "works": 2
+    },
+    {
+      "shape": "tは下ドット付き",
+      "occurrences": 7,
+      "works": 3
+    },
+    {
+      "shape": "「…」と「…」の句の上には、この二つの句を括る波括弧あり",
+      "occurrences": 6,
+      "works": 1
+    },
+    {
+      "shape": "「…」はポイントを下げる",
+      "occurrences": 6,
+      "works": 2
+    },
+    {
+      "shape": "「…」と「…」はN列に並ぶ",
+      "occurrences": 6,
+      "works": 6
+    },
+    {
+      "shape": "劇場名",
+      "occurrences": 6,
+      "works": 3
+    },
+    {
+      "shape": "hは下ドット付き",
+      "occurrences": 6,
+      "works": 3
+    },
+    {
+      "shape": "「…」は矢印が下向き",
+      "occurrences": 5,
+      "works": 1
+    },
+    {
+      "shape": "「…」は小さい「…」",
+      "occurrences": 5,
+      "works": 1
+    },
+    {
+      "shape": "直線は中央に配置",
+      "occurrences": 5,
+      "works": 1
+    },
+    {
+      "shape": " 最後の「…」は「…」付き",
+      "occurrences": 5,
+      "works": 1
+    },
+    {
+      "shape": " 一つ目の「…」は「…」付き",
+      "occurrences": 5,
+      "works": 1
+    },
+    {
+      "shape": "「…」は「…」付き",
+      "occurrences": 5,
+      "works": 2
+    },
+    {
+      "shape": "「…」は横書き",
+      "occurrences": 5,
+      "works": 5
+    },
+    {
+      "shape": "「…」は「…」の左側に注記するような形で",
+      "occurrences": 5,
+      "works": 1
+    },
+    {
+      "shape": "未完",
+      "occurrences": 5,
+      "works": 5
+    }
+  ]
+}
