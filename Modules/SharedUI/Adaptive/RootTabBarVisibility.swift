@@ -14,9 +14,9 @@ import SwiftUI
 /// while any screen asks (`ContentView` puts `RootTabBarHider` behind each tab), so the
 /// order of those updates no longer matters.
 ///
-/// A tab bar at the bottom also shows on a tab's root page only: any page over the root —
-/// pushed, or presented as a sheet, a full-screen cover or a popover — hides it; a menu
-/// does not.
+/// A tab bar at the bottom also shows on a tab's root page only: any page over the root
+/// that reaches it — pushed, or presented as a sheet, a full-screen cover or a popover —
+/// hides it; a sheet floating clear of it, or a menu, does not.
 /// `TabRootCoverage` reports which roots are covered; the selected tab's root decides.
 @MainActor
 final class RootTabBarVisibility: ObservableObject {

@@ -164,7 +164,7 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 - 以實際 window size 自適應，不以裝置名稱推測空間；多工、Stage Manager、Split View 與旋轉都可能改變可用尺寸。
 - 延後切換到 compact 版型，直到目前版型真的無法維持可讀性與操作間距；不要只因單一 size class 或任意 breakpoint 過早縮減資訊。
 - iPhone 維持 compact/portrait 的底部 Tab Bar；iPad regular 使用系統 `TabView.sidebarAdaptable` 或 `NavigationSplitView` 等 HIG 原生容器，不自刻側欄。
-- 底部 Tab Bar 只在分頁根頁顯示（產品決定，2026-10-03；2026-10-05 釐清）：根頁以外的任何頁面，只要有一部分疊到 Tab Bar 的位置就收起——push、sheet、全螢幕、popover（iPhone 上 popover 通常就以 sheet 呈現）；menu（例如根頁 toolbar 按鈕打開的選單）、alert、確認對話框、搜尋框不是頁面，不收。根頁就是用 `rootTabTitle(_:onScroll:)` 的那五頁（它帶 `showsRootTabBarOnlyHere()`，見 `RootTabBarVisibility`），推進去的頁面不必自己藏。iPad regular 的頂部分頁列不受這條影響。
+- 底部 Tab Bar 只在分頁根頁顯示（產品決定，2026-10-03；2026-10-05 釐清）：根頁以外的任何頁面，只要有一部分疊到 Tab Bar 的位置就收起——push、sheet、全螢幕、popover（iPhone 上 popover 通常就以 sheet 呈現）；沒疊到就不收，例如 iOS 17 iPad 寬視窗裡浮在中間的 sheet 卡片；menu（例如根頁 toolbar 按鈕打開的選單）、alert、確認對話框、搜尋框不是頁面，不收。根頁就是用 `rootTabTitle(_:onScroll:)` 的那五頁（它帶 `showsRootTabBarOnlyHere()`，見 `RootTabBarVisibility`），推進去的頁面不必自己藏。iPad regular 的頂部分頁列不受這條影響。
 - iPad 橫豎向與視窗 resize 都要能重排；需要 reader 重分頁時，以 SwiftUI 已量到的 viewport size 作為唯一觸發來源。
 - 寬螢幕設定頁、sheet、清單與 reader overlay 使用 `DSLayout.readable*Width` token 限制行長；不要直接寫 640/760/960 等 magic number。
 - 閱讀器橫向雙頁是 reader 專屬模式：iPad regular + landscape 才自動啟用；切回直向或 iPhone 時回單頁，閱讀位置以 `(spineIndex, charOffset)` 保持。

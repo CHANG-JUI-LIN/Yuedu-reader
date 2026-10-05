@@ -146,18 +146,7 @@ final class ReaderHostingController: UIHostingController<AnyView> {
                 .flatMap(\.windows)
                 .first { $0.isKeyWindow }?
                 .rootViewController
-        return root.flatMap { Self.firstTabBarController(in: $0) }
-    }
-
-    private static func firstTabBarController(in controller: UIViewController) -> UITabBarController? {
-        if let tab = controller as? UITabBarController { return tab }
-        for child in controller.children {
-            if let found = firstTabBarController(in: child) { return found }
-        }
-        if let presented = controller.presentedViewController {
-            return firstTabBarController(in: presented)
-        }
-        return nil
+        return root.flatMap { UITabBarController.first(in: $0) }
     }
 
 }

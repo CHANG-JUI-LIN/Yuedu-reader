@@ -83,6 +83,24 @@ struct RootTabBarRootOnlyTests {
         await dismiss(from: root)
     }
 
+    @Test("A sheet covers the root where it reaches a tab bar at the bottom, not where it floats clear")
+    func sheetCoversRootWhereItReachesTabBar() async throws {
+        let root = UIViewController()
+        let navigation = UINavigationController(rootViewController: root)
+        let window = try makeWindow(root: navigation)
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let tabBar = CGRect(x: 0, y: window.bounds.maxY - 83, width: window.bounds.width, height: 83)
+        let sheet = UIViewController()
+        sheet.modalPresentationStyle = .formSheet
+
+        await present(sheet, from: root)
+        // A compact width (an iPhone) raises the sheet from the bottom edge, over the tab
+        // bar; a regular one (an iPad) floats it in the middle of the window.
+        let reachesTabBar = window.traitCollection.horizontalSizeClass == .compact
+        #expect(TabRootCoverage.coversRoot(sheet, tabBar: tabBar) == reachesTabBar)
+        await dismiss(from: root)
+    }
+
     /// iOS 17's SwiftUI TabView leaves the window's root out of the root page's
     /// ancestors, so a sheet the app presents from there reaches the page only through
     /// the window.

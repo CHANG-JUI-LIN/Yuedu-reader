@@ -4,9 +4,11 @@ import UIKit
 
 extension View {
     /// Marks a tab's root page: a tab bar at the bottom shows while this page is the one on
-    /// screen, and hides while any page covers it — pushed onto its navigation stack, or
-    /// presented over it as a sheet, a full-screen cover or a popover. A menu, an alert, a
-    /// confirmation dialog or the search field leaves it up: none of them is a page.
+    /// screen, and hides while any page covers it and reaches the tab bar — pushed onto its
+    /// navigation stack, or presented over it as a sheet, a full-screen cover or a popover.
+    /// A sheet floating clear of the tab bar, as in a wide iPad window before iOS 18, leaves
+    /// it up; so does a menu, an alert, a confirmation dialog or the search field: none of
+    /// them is a page.
     ///
     /// `rootTabTitle(_:onScroll:)` applies it, so every tab root has it.
     func showsRootTabBarOnlyHere() -> some View {
@@ -45,10 +47,11 @@ enum TabRootCoverage {
         // Both: `presentedViewController` reaches the presentations of the root's
         // ancestors, but on iOS 17 the root's ancestors stop short of the window's root
         // (see `ReaderHostingController.resolveRootTabBarController`).
+        let tabBar = bottomTabBarFrame(of: root, windowRoot: windowRoot)
         for presenter in [root, windowRoot] {
             var presented = presenter?.presentedViewController
             while let page = presented {
-                if coversRoot(page) { isCovered = true }
+                if coversRoot(page, tabBar: tabBar) { isCovered = true }
                 if page.transitionCoordinator?.isInteractive == true { isInteractive = true }
                 presented = page.presentedViewController
             }
@@ -57,16 +60,59 @@ enum TabRootCoverage {
         return isInteractive ? .undecided : .uncovered
     }
 
-    /// Whether a presented view controller is a page over the root. An alert or a
-    /// confirmation dialog is not; nor is the search field's own controller, which a
-    /// tab root's active search presents; nor a menu, such as one opened from a toolbar
-    /// button on the root (product decision, 2026-10-05). A popover is a page: a compact
-    /// width shows it as a sheet over the tab bar. A page on its way out no longer
-    /// covers it.
-    static func coversRoot(_ presented: UIViewController) -> Bool {
+    /// Whether a presented view controller is a page over the root that reaches the tab
+    /// bar. An alert or a confirmation dialog is not a page; nor is the search field's own
+    /// controller, which a tab root's active search presents; nor a menu, such as one
+    /// opened from a toolbar button on the root (product decision, 2026-10-05). A popover
+    /// is a page: a compact width shows it as a sheet over the tab bar. A sheet that floats
+    /// clear of the tab bar does not reach it (2026-10-05). A page on its way out no
+    /// longer covers the root.
+    ///
+    /// `tabBar`: where a tab bar at the bottom sits, in window coordinates.
+    static func coversRoot(_ presented: UIViewController, tabBar: CGRect? = nil) -> Bool {
         if presented is UIAlertController || presented is UISearchController { return false }
         if isUIKitControl(presented) { return false }
+        if let tabBar, isSheet(presented, clearOf: tabBar) { return false }
         return !presented.isBeingDismissed
+    }
+
+    /// A sheet in a regular width is a card in the middle of the window, which can stay
+    /// clear of a tab bar at the bottom — as on an iPad before iOS 18, where a wide window
+    /// keeps the tab bar at the bottom. In a compact width a sheet rises from the bottom
+    /// edge, over the tab bar, so it always reaches it.
+    ///
+    /// Read from the frame the presentation gives the sheet rather than from its view,
+    /// which is still on its way in. Without that frame, the sheet reaches the tab bar.
+    private static func isSheet(_ presented: UIViewController, clearOf tabBar: CGRect) -> Bool {
+        guard let sheet = presented.sheetPresentationController,
+              let container = sheet.containerView,
+              container.window != nil,
+              container.traitCollection.horizontalSizeClass == .regular
+        else { return false }
+        let frame = container.convert(sheet.frameOfPresentedViewInContainerView, to: nil)
+        return !frame.isEmpty && !frame.intersects(tabBar)
+    }
+
+    /// Where a tab bar at the bottom sits, in its window's coordinates: as tall as the tab
+    /// bar, along the window's bottom edge. Placed there rather than read from its frame,
+    /// which can move off screen while it is hidden. Nil without a tab bar or a window.
+    private static func bottomTabBarFrame(
+        of root: UIViewController,
+        windowRoot: UIViewController?
+    ) -> CGRect? {
+        let tabBarController = root.tabBarController
+            ?? windowRoot.flatMap { UITabBarController.first(in: $0) }
+        guard let window = windowRoot?.viewIfLoaded?.window ?? root.viewIfLoaded?.window,
+              let tabBar = tabBarController?.tabBar,
+              tabBar.bounds.height > 0
+        else { return nil }
+        let bounds = window.bounds
+        return CGRect(
+            x: bounds.minX,
+            y: bounds.maxY - tabBar.bounds.height,
+            width: bounds.width,
+            height: tabBar.bounds.height
+        )
     }
 
     /// A control UIKit presents for itself — a menu above all — rather than a page the app
