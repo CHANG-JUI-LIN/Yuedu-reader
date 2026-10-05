@@ -4,7 +4,7 @@ import UIKit
 @testable import yuedu_app
 
 /// The bottom tab bar shows on a tab's root page only: a page pushed over the root, or
-/// presented over it, hides it. A popover is not a page.
+/// presented over it, hides it. A menu or a popover is not a page.
 @Suite("Root tab bar on tab roots only", .serialized)
 @MainActor
 struct RootTabBarRootOnlyTests {
@@ -55,10 +55,11 @@ struct RootTabBarRootOnlyTests {
         #expect(TabRootCoverage.state(of: page, windowRoot: navigation) == .uncovered)
     }
 
-    @Test("Pages count as covering the root; popovers, alerts and the search controller do not")
-    func whatCoversRoot() {
+    @Test("Pages count as covering the root; menus, popovers, alerts and the search controller do not")
+    func whatCoversRoot() throws {
         #expect(TabRootCoverage.coversRoot(UIViewController()))
         #expect(TabRootCoverage.coversRoot(UINavigationController(rootViewController: UIViewController())))
+        #expect(!TabRootCoverage.coversRoot(try makeUIKitPrivateController()))
         #expect(!TabRootCoverage.coversRoot(makePopover()))
         #expect(!TabRootCoverage.coversRoot(UIAlertController(title: "", message: nil, preferredStyle: .alert)))
         #expect(!TabRootCoverage.coversRoot(UIAlertController(title: "", message: nil, preferredStyle: .actionSheet)))
@@ -147,6 +148,19 @@ struct RootTabBarRootOnlyTests {
     }
 
     // MARK: - Helpers
+
+    /// Stands in for the private controller UIKit presents a menu as, which a test cannot
+    /// create: a view controller of a class with a UIKit-private name.
+    private func makeUIKitPrivateController() throws -> UIViewController {
+        let name = "_UIYueduTestMenuViewController"
+        if NSClassFromString(name) == nil, let subclass = objc_allocateClassPair(UIViewController.self, name, 0) {
+            objc_registerClassPair(subclass)
+        }
+        let menuClass: AnyClass = try #require(NSClassFromString(name))
+        let controller = UIViewController()
+        object_setClass(controller, menuClass)
+        return controller
+    }
 
     private func makePopover(anchoredIn sourceView: UIView? = nil) -> UIViewController {
         let popover = UIViewController()

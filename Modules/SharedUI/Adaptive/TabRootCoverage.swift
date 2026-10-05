@@ -5,7 +5,7 @@ import UIKit
 extension View {
     /// Marks a tab's root page: a tab bar at the bottom shows while this page is the one on
     /// screen, and hides while any page covers it — pushed onto its navigation stack, or
-    /// presented over it as a sheet or a full-screen cover. A popover, an alert, a
+    /// presented over it as a sheet or a full-screen cover. A menu, a popover, an alert, a
     /// confirmation dialog or the search field leaves it up: none of them is a page.
     ///
     /// `rootTabTitle(_:onScroll:)` applies it, so every tab root has it.
@@ -59,14 +59,25 @@ enum TabRootCoverage {
 
     /// Whether a presented view controller is a page over the root. An alert or a
     /// confirmation dialog is not; nor is the search field's own controller, which a
-    /// tab root's active search presents; nor a popover (product decision, 2026-10-05).
-    /// A page on its way out no longer covers it.
+    /// tab root's active search presents; nor a popover; nor a menu, such as one opened
+    /// from a toolbar button on the root (product decision, 2026-10-05: none of them
+    /// covers the tab bar). A page on its way out no longer covers it.
     static func coversRoot(_ presented: UIViewController) -> Bool {
         if presented is UIAlertController || presented is UISearchController { return false }
         // The style asked for, not the one shown: a popover that a compact width adapts
         // into a sheet leaves the tab bar up too.
         if presented.modalPresentationStyle == .popover { return false }
+        if isUIKitControl(presented) { return false }
         return !presented.isBeingDismissed
+    }
+
+    /// A control UIKit presents for itself — a menu above all — rather than a page the app
+    /// presents. UIKit presents a menu as a view controller of a private class, with no
+    /// public type to test for; UIKit's private classes are the ones named `_UI…`. No page
+    /// the app presents is: the app's and SwiftUI's classes have Swift's names (`_Tt…`),
+    /// and the pages UIKit offers — the share sheet, the document picker — public ones.
+    private static func isUIKitControl(_ presented: UIViewController) -> Bool {
+        NSStringFromClass(type(of: presented)).hasPrefix("_UI")
     }
 
     /// The view controller in `navigation`'s stack that holds `page`.
