@@ -183,7 +183,7 @@ struct NodeAttributedStringRenderer {
             rendered.addAttribute(HTMLAttributedStringBuilder.rubyAnnotationAttribute, value: annotation, range: range)
         }
         // After the paragraph attributes, which replace every font.
-        CJKTypography.applyFonts(to: rendered, style: style)
+        CJKTypography.apply(to: rendered, style: style, vertical: config.writingMode.isVertical)
         relaxParagraphsContainingRubyAnnotations(rendered)
         return rendered
     }
@@ -224,8 +224,9 @@ struct NodeAttributedStringRenderer {
         // Before every pass that reads characters (CJK typography, regex highlight, dialogue
         // bubbles), so they all see the text the reader will.
         config.textConversion.apply(to: result)
-        // The fonts CJK text is drawn in, before punctuation compression measures them.
-        CJKTypography.applyFonts(to: result, style: cjkTypographyStyle)
+        // The fonts CJK text is drawn in and where its punctuation sits, before punctuation
+        // compression measures them.
+        CJKTypography.apply(to: result, style: cjkTypographyStyle, vertical: config.writingMode.isVertical)
         let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
         relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)

@@ -614,9 +614,10 @@ enum HTMLTableRasterizer {
                     ))
                 }
             }
-            // The book's CJK fonts, as the chapter text around the table has them.
+            // The book's CJK fonts and punctuation, as the chapter text around the table has
+            // them. A table is drawn horizontally in either writing mode.
             if let cjkTypographyStyle {
-                CJKTypography.applyFonts(to: output, style: cjkTypographyStyle)
+                CJKTypography.apply(to: output, style: cjkTypographyStyle, vertical: false)
             }
             return output
         }

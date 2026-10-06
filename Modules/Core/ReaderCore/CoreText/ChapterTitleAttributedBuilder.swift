@@ -182,6 +182,7 @@ enum ChapterTitleAttributedBuilder {
                     themeTextColor: themeTextColor,
                     letterSpacing: letterSpacing,
                     cjkTypographyStyle: cjkTypographyStyle,
+                    vertical: settings.writingMode.isVertical,
                     to: attr
                 )
                 return
@@ -194,6 +195,7 @@ enum ChapterTitleAttributedBuilder {
             themeTextColor: themeTextColor,
             letterSpacing: letterSpacing,
             cjkTypographyStyle: cjkTypographyStyle,
+            vertical: settings.writingMode.isVertical,
             to: attr
         )
     }
@@ -286,13 +288,15 @@ enum ChapterTitleAttributedBuilder {
         themeTextColor: UIColor,
         letterSpacing: CGFloat,
         cjkTypographyStyle: CJKTypographyStyle,
+        vertical: Bool,
         to attr: NSMutableAttributedString
     ) {
         let start = attr.length
-        // The title's CJK text in the book's fonts, where the title font has no glyph.
+        // The title's CJK text in the book's fonts where the title font has no glyph, and
+        // its punctuation where the book's style puts it.
         defer {
-            CJKTypography.applyFonts(to: attr, style: cjkTypographyStyle,
-                                     in: NSRange(location: start, length: attr.length - start))
+            CJKTypography.apply(to: attr, style: cjkTypographyStyle, vertical: vertical,
+                                in: NSRange(location: start, length: attr.length - start))
         }
         // 上距 (top spacing): CoreText ignores `paragraphSpacingBefore` on the
         // first paragraph of a frame — the chapter title is exactly that first

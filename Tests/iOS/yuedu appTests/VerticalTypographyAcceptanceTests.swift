@@ -31,21 +31,23 @@ struct VerticalTypographyAcceptanceTests {
         let lead: String
         let han: String
         let hanFont: String
+        /// A font whose punctuation sits where another region puts it (Task 6).
+        let foreignFont: String
         var description: String { name }
     }
 
     static let traditional = Script(
         name: "traditional", declared: "zh-cn",
         lead: "這裡說的是舊時候的事，誰也記不清楚了。後來聽說，那邊的園子裡還開著花。",
-        han: "國", hanFont: "PingFangTC-Regular")
+        han: "國", hanFont: "PingFangTC-Regular", foreignFont: "HiraginoSans-W3")
     static let simplified = Script(
         name: "simplified", declared: "zh-TW",
         lead: "这里说的是旧时候的事，谁也记不清楚了。后来听说，那边的园子里还开着花。",
-        han: "国", hanFont: "PingFangSC-Regular")
+        han: "国", hanFont: "PingFangSC-Regular", foreignFont: "PingFangTC-Regular")
     static let japanese = Script(
         name: "japanese", declared: "zh",
         lead: "これは昔の話である。誰もよく覚えていない。あの庭にはまだ花が咲いているそうだ。",
-        han: "国", hanFont: "HiraginoSans-W3")
+        han: "国", hanFont: "HiraginoSans-W3", foreignFont: "PingFangTC-Regular")
     static let scripts = [traditional, simplified, japanese]
 
     nonisolated static let fontSize: CGFloat = 17
@@ -69,6 +71,11 @@ struct VerticalTypographyAcceptanceTests {
         var result: [Case] = []
         for mark in positionMarks {
             result.append(Case(id: "position \(mark)") { "<p>\($0.han)\(red(mark))\($0.han)</p>" })
+        }
+        for mark in positionMarks {
+            result.append(Case(id: "foreign position \(mark)") {
+                "<p style=\"font-family: \($0.foreignFont)\">\($0.han)\(red(mark))\($0.han)</p>"
+            })
         }
         for (a, b) in pairs {
             result.append(Case(id: "pair \(a)\(b)") { "<p>\($0.han)\(red(a))\(blue(b))\($0.han)</p>" })
@@ -336,11 +343,22 @@ struct VerticalTypographyAcceptanceTests {
 
     @Test(arguments: Engine.allCases)
     func positions(engine: Engine) async throws {
+        try await checkPositions(engine: engine, casePrefix: "position")
+    }
+
+    /// The same marks in a font whose punctuation sits where another region puts it:
+    /// Hiragino Sans in Traditional text, PingFang TC in Simplified and Japanese text.
+    @Test(arguments: Engine.allCases)
+    func positionsInAForeignFont(engine: Engine) async throws {
+        try await checkPositions(engine: engine, casePrefix: "foreign position")
+    }
+
+    private func checkPositions(engine: Engine, casePrefix: String) async throws {
         for script in Self.scripts {
             let book = try await Self.open(script)
             for mode in [ReaderWritingMode.verticalRTL, .horizontal] {
                 for mark in Self.positionMarks {
-                    let spine = try #require(Self.cases.firstIndex { $0.id == "position \(mark)" })
+                    let spine = try #require(Self.cases.firstIndex { $0.id == "\(casePrefix) \(mark)" })
                     let drawn = try await Self.draw(engine, book: book, spine: spine, mode: mode)
                     let m = try Self.measure(drawn, vertical: mode.isVertical)
                     let label = "\(engine) \(script) \(mode.rawValue) \(mark) cross=\(m.crossOffset) inline=\(m.inlineOffset) route=\(drawn.route)"
@@ -350,15 +368,15 @@ struct VerticalTypographyAcceptanceTests {
                     // read as "across positive, along negative" here.
                     let cornered = m.crossOffset >= 0.12 && m.inlineOffset <= -0.12
                     let isPause = ["。", "，", "、"].contains(mark)
-                    withKnownIssue("Task 6", isIntermittent: true) {
-                        switch (script.name, isPause) {
-                        case ("traditional", _): #expect(centred, "\(label)")
-                        case (_, true): #expect(cornered, "\(label)")
-                        case ("japanese", false): #expect(centred, "\(label)")
-                        default: break // Mainland ：？ follow PingFang SC; no fixed place here.
-                        }
+                    switch (script.name, isPause) {
+                    case ("traditional", _): #expect(centred, "\(label)")
+                    case (_, true): #expect(cornered, "\(label)")
+                    case ("japanese", false): #expect(centred, "\(label)")
+                    // CLREQ puts Mainland ：？ after the text too, but their tall ink reads
+                    // differently in this measure; the position test pins PingFang SC's.
+                    default: break
                     }
-                    print("⟐VT position \(label)")
+                    print("⟐VT \(casePrefix) \(label)")
                 }
             }
         }
