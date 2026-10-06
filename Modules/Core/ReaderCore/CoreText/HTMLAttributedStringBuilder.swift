@@ -512,11 +512,6 @@ final class HTMLAttributedStringBuilder {
     private let styleResolver = HTMLBuilderStyleResolver()
     private let cssPropertyRegistry = HTMLCSSPropertyApplierRegistry.defaultRegistry
     private var epubFlowLogCounts: [String: Int] = [:]
-    private static let dirtyCJKSpaceRegex: NSRegularExpression? = {
-        // Clean up spaces (including NBSP / &nbsp;) between CJK characters that may come from conversion artifacts, preventing excessive justified spacing.
-        let pattern = "(?<=\\p{Han})(?:[\\s\\u{00A0}]+|&nbsp;+|&#160;+)+(?=\\p{Han})"
-        return try? NSRegularExpression(pattern: pattern, options: [])
-    }()
 
 
     func buildStyledAST(
@@ -525,9 +520,8 @@ final class HTMLAttributedStringBuilder {
         stylesheetCache: HTMLStylesheetCache? = nil
     ) async -> ElementNode? {
         epubFlowLog("buildStyledAST.begin htmlLen=\(html.count) configWritingMode=\(config.writingMode) fontSize=\(config.fontSize) renderWidth=\(config.renderWidth)")
-        let sanitizedHTML = cleanDirtySpacesInHTML(html)
         guard let parsed = await domParser.parse(
-            html: sanitizedHTML,
+            html: html,
             collectStyles: { document in
                 await self.collectStyles(from: document)
             },
@@ -543,7 +537,7 @@ final class HTMLAttributedStringBuilder {
         let ast = await ReaderPerfTrace.spanAsync(
             .astBuild,
             metadata: ReaderPerfMetadata(
-                characterCount: sanitizedHTML.utf16.count,
+                characterCount: html.utf16.count,
                 ruleCount: parsed.rules.count + parsed.firstLetterRules.count,
                 writingMode: String(describing: config.writingMode),
                 executor: Thread.isMainThread ? "main" : "background"
@@ -589,7 +583,7 @@ final class HTMLAttributedStringBuilder {
         // The gap between them is ElementNode construction and class-name extraction.
         SourcePerfTrace.record(
             "coreText.document.astBuild",
-            "\(ReaderDocumentTrace.spineTag)html=\(sanitizedHTML.utf16.count) "
+            "\(ReaderDocumentTrace.spineTag)html=\(html.utf16.count) "
                 + "rules=\(parsed.rules.count + parsed.firstLetterRules.count) contains=cssMatch",
             since: astBuildStart,
             thresholdMs: 0
@@ -2481,12 +2475,6 @@ final class HTMLAttributedStringBuilder {
         // ICU rejects, which silently invalidates the whole class so nothing collapses.
         let collapsed = text.replacingOccurrences(of: "[ \\t\\r\\n\\x{000C}]+", with: " ", options: .regularExpression)
         return collapsed.replacingOccurrences(of: "\u{00A0}", with: " ")
-    }
-
-    private func cleanDirtySpacesInHTML(_ rawHTML: String) -> String {
-        guard let regex = Self.dirtyCJKSpaceRegex else { return rawHTML }
-        let range = NSRange(location: 0, length: rawHTML.utf16.count)
-        return regex.stringByReplacingMatches(in: rawHTML, options: [], range: range, withTemplate: "")
     }
 
     private func extractURL(from value: String) -> String? {
