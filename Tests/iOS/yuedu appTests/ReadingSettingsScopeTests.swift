@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import YueduCoreText
 @testable import yuedu_app
 
 /// 排版生效範圍: per reading setting, the worn theme's own value or the one every theme
@@ -100,6 +101,52 @@ struct ReadingSettingsScopeTests {
         settings.appearanceThemeID = pack.id
         settings.setReadingSettingsScope(.theme, for: .fontSize)
         #expect(settings.readerFontSize == 24)
+    }
+
+    /// 排版方向 is a reading setting like the others (2026-10-06): a theme's own direction is
+    /// worn with it, and an edit stays with the theme worn when it was made.
+    @Test func aThemesWritingModeIsWornAndEditedWithIt() throws {
+        let settings = GlobalSettings.shared
+        let fixture = Fixture(settings)
+        defer { fixture.restore() }
+        fixture.reset()
+
+        var reading = AppearanceThemeReadingSettings()
+        reading.writingMode = ReaderWritingMode.verticalRTL.rawValue
+        let vertical = Self.theme("Vertical", reading: reading)
+        let plain = Self.theme("Plain", reading: nil)
+        settings.customAppearanceThemes.append(contentsOf: [vertical, plain])
+
+        settings.appearanceThemeID = vertical.id
+        #expect(settings.readerWritingMode == .verticalRTL)
+        settings.appearanceThemeID = defaultID
+        #expect(settings.readerWritingMode == .horizontal)
+
+        settings.appearanceThemeID = plain.id
+        settings.readerWritingMode = .verticalRTL
+        #expect(Self.ownReading(of: plain.id)?.writingMode == ReaderWritingMode.verticalRTL.rawValue)
+        #expect(settings.globalReadingSettings.writingMode == ReaderWritingMode.horizontal.rawValue)
+        settings.appearanceThemeID = defaultID
+        #expect(settings.readerWritingMode == .horizontal)
+        settings.appearanceThemeID = plain.id
+        #expect(settings.readerWritingMode == .verticalRTL)
+    }
+
+    /// A shared setup saved before 排版方向 joined it has no direction; it is completed
+    /// from what is on screen, or a theme with none of its own would keep the last one's.
+    @Test func aSharedSetupFromBeforeWritingModeIsCompleted() throws {
+        let settings = GlobalSettings.shared
+        let fixture = Fixture(settings)
+        defer { fixture.restore() }
+        fixture.reset()
+
+        settings.readerWritingMode = .verticalRTL
+        UserDefaults.standard.set(Data(#"{"fontSize": 18}"#.utf8), forKey: GlobalSettings.globalReadingKey)
+        #expect(settings.globalReadingSettings.writingMode == ReaderWritingMode.verticalRTL.rawValue)
+        let stored = try #require(UserDefaults.standard.data(forKey: GlobalSettings.globalReadingKey))
+        let decoded = try JSONDecoder().decode(AppearanceThemeReadingSettings.self, from: stored)
+        #expect(decoded.writingMode == ReaderWritingMode.verticalRTL.rawValue)
+        #expect(decoded.fontSize == 18)
     }
 
     // MARK: - Editing
@@ -328,10 +375,11 @@ struct ReadingSettingsScopeTests {
     }
 
     @Test func aFieldThisBuildCannotReadCostsOnlyThatField() throws {
-        let json = #"{"fontSize": 20, "barLayout": {"version": "not a number"}, "scrollMode": true}"#
+        let json = #"{"fontSize": 20, "barLayout": {"version": "not a number"}, "scrollMode": true, "writingMode": "verticalRTL"}"#
         let decoded = try JSONDecoder().decode(AppearanceThemeReadingSettings.self, from: Data(json.utf8))
         #expect(decoded.fontSize == 20)
         #expect(decoded.scrollMode == true)
+        #expect(decoded.writingMode == "verticalRTL")
         #expect(decoded.barLayout == nil)
     }
 
@@ -398,6 +446,7 @@ struct ReadingSettingsScopeTests {
             settings.lineHeightMultiple = 1.6
             settings.letterSpacing = 0
             settings.scrollMode = false
+            settings.readerWritingMode = .horizontal
             settings.readerFollowSystemTheme = false
             settings.appearanceBindReaderTheme = false
             ReaderConfig.shared.syncFromGlobalSettings()

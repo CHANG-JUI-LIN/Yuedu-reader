@@ -906,7 +906,10 @@ class GlobalSettings: ObservableObject {
         didSet { UserDefaults.standard.set(readerSpreadMode.rawValue, forKey: "yd_reader_spread_mode") }
     }
     @Published var readerWritingMode: ReaderWritingMode {
-        didSet { UserDefaults.standard.set(readerWritingMode.rawValue, forKey: "yd_reader_writing_mode") }
+        didSet {
+            UserDefaults.standard.set(readerWritingMode.rawValue, forKey: "yd_reader_writing_mode")
+            recordReadingSettingEdit { $0.writingMode = readerWritingMode.rawValue }
+        }
     }
     /// When on, tapping EITHER side edge of a paged reader turns to the next page
     /// (instead of left = previous / right = next). The center zone still toggles the menu.

@@ -69,6 +69,12 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
     var pageTurnStyle: String?
     var scrollMode: Bool?
 
+    // MARK: 排版方向
+
+    /// `ReaderWritingMode` raw value: 橫排 or 直排, for books that carry no writing mode
+    /// of their own (TXT and online books).
+    var writingMode: String?
+
     // MARK: 頁首頁尾
 
     var barLayout: ReaderBarLayout?
@@ -120,6 +126,7 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         case lineHeightMultiple, letterSpacing, paragraphSpacingMultiplier
         case pageMarginH, pageMarginV, pageMarginTop, pageMarginBottom
         case pageTurnStyle, scrollMode
+        case writingMode
         case barLayout, headerVisible, footerVisible, headerTopPadding, headerTextGap
         case headerHorizontalPadding, footerHorizontalPadding, footerBottomPadding, footerTextGap
         case chapterTitleStyle
@@ -158,6 +165,7 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         pageMarginBottom = field(.pageMarginBottom)
         pageTurnStyle = field(.pageTurnStyle)
         scrollMode = field(.scrollMode)
+        writingMode = field(.writingMode)
         barLayout = field(.barLayout)
         headerVisible = field(.headerVisible)
         footerVisible = field(.footerVisible)
@@ -199,6 +207,7 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         merged.pageMarginBottom = other.pageMarginBottom ?? pageMarginBottom
         merged.pageTurnStyle = other.pageTurnStyle ?? pageTurnStyle
         merged.scrollMode = other.scrollMode ?? scrollMode
+        merged.writingMode = other.writingMode ?? writingMode
         merged.barLayout = other.barLayout ?? barLayout
         merged.headerVisible = other.headerVisible ?? headerVisible
         merged.footerVisible = other.footerVisible ?? footerVisible
@@ -236,6 +245,7 @@ extension AppearanceThemeReadingSettings: Hashable {
         hasher.combine(lineHeightMultiple)
         hasher.combine(pageTurnStyle)
         hasher.combine(scrollMode)
+        hasher.combine(writingMode)
         hasher.combine(readerTheme)
         hasher.combine(readerBackgroundID)
         hasher.combine(customBackground)

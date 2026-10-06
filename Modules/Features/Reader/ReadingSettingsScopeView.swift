@@ -17,7 +17,7 @@ struct ReadingSettingsScopeView: View {
     /// 閱讀設定's sections, then the two settings the reader's own menu edits.
     private static let groups: [Group] = [
         Group(titleKey: "文字", items: [.font, .fontSize, .bold, .textColor]),
-        Group(titleKey: "排版", items: [.lineSpacing, .letterSpacing, .paragraphSpacing, .pageMargins]),
+        Group(titleKey: "排版", items: [.writingMode, .lineSpacing, .letterSpacing, .paragraphSpacing, .pageMargins]),
         Group(titleKey: "頁首頁尾與標題", items: [.headerFooter, .chapterTitle]),
         Group(titleKey: "閱讀裝飾", items: [.commentBubble, .dialogueBubble, .regexHighlight, .textUnderline]),
         Group(titleKey: "閱讀背景與翻頁", items: [.background, .pageTurn]),

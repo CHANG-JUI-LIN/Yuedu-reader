@@ -13,6 +13,8 @@ struct ReaderSettingsView: View {
     var allowsUserSelectedReaderFont = false
     var usesPublicationFontDefault = false
     var isVerticalWritingMode = false
+    /// TXT and online books, which carry no writing mode of their own: 排版方向 shows.
+    var allowsVerticalWritingMode = false
     var hasParagraphReviews = false
     var onOpenFontImporter: () -> Void
     var onOpenTouchZoneEditor: (() -> Void)?
@@ -428,6 +430,16 @@ struct ReaderSettingsView: View {
     /// margin no longer has to absorb them.
     private var layoutSection: some View {
         Section {
+            if allowsVerticalWritingMode {
+                Picker(selection: $settings.readerWritingMode) {
+                    Text(localized("橫排")).tag(ReaderWritingMode.horizontal)
+                    Text(localized("直排")).tag(ReaderWritingMode.verticalRTL)
+                } label: {
+                    SettingsRowLabel(localized(ReadingSettingsScopeItem.writingMode.titleKey),
+                                     systemImage: ReadingSettingsScopeItem.writingMode.systemImage)
+                }
+            }
+
             if supportsSpacing {
                 SettingsSliderRow(
                     title: localized(ReadingSettingsScopeItem.lineSpacing.titleKey),
@@ -976,6 +988,7 @@ private struct LayoutImportAlert: Identifiable {
         theme: .constant(.sepia),
         capabilities: .reflowableText,
         allowsUserSelectedReaderFont: true,
+        allowsVerticalWritingMode: true,
         onOpenFontImporter: {}
     )
 }

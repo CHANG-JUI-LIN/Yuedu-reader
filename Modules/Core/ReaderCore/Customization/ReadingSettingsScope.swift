@@ -29,6 +29,7 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
     case fontSize
     case bold
     case textColor
+    case writingMode
     case lineSpacing
     case letterSpacing
     case paragraphSpacing
@@ -50,6 +51,7 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
         case .fontSize: return "字體大小"
         case .bold: return "粗體"
         case .textColor: return "文字顏色"
+        case .writingMode: return "排版方向"
         case .lineSpacing: return "行距"
         case .letterSpacing: return "字距"
         case .paragraphSpacing: return "段距"
@@ -77,6 +79,7 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
         case .fontSize: return "plus.magnifyingglass"
         case .bold: return "bold"
         case .textColor: return "paintbrush"
+        case .writingMode: return "arrow.turn.right.down"
         case .lineSpacing: return "arrow.up.and.down.text.horizontal"
         case .letterSpacing: return "arrow.left.and.right.text.vertical"
         case .paragraphSpacing: return "paragraphsign"
@@ -140,6 +143,8 @@ extension AppearanceThemeReadingSettings {
             isBold = nil
         case .textColor:
             textColorOverrides = nil
+        case .writingMode:
+            writingMode = nil
         case .lineSpacing:
             lineHeightMultiple = nil
         case .letterSpacing:

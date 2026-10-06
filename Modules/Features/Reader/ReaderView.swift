@@ -2388,14 +2388,15 @@ struct ReaderView: View {
             handleScrollModeChanged(enabled)
         }
         .onChanged(of: settings.readerWritingMode) { writingMode in
-            if !isEPUB, (book ?? snapshotBook)?.allowsVerticalWritingMode == true {
-                readerNavigator?.updateOpeningDirection(
-                    ReaderBookOpeningDirection.resolve(
-                        writingMode: writingMode,
-                        pageProgressionIsRTL: false
-                    )
+            // Only TXT and online books follow 排版方向. It also changes with the worn
+            // theme now, and an EPUB, which keeps its own writing mode, need not relayout.
+            guard !isEPUB, (book ?? snapshotBook)?.allowsVerticalWritingMode == true else { return }
+            readerNavigator?.updateOpeningDirection(
+                ReaderBookOpeningDirection.resolve(
+                    writingMode: writingMode,
+                    pageProgressionIsRTL: false
                 )
-            }
+            )
             submitReaderRefresh(intent: .layout)
         }
         .onChanged(of: effectiveReaderSpreadMode) { _ in
@@ -2451,6 +2452,7 @@ struct ReaderView: View {
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     usesPublicationFontDefault: book?.resolvedPipelineKind == .epub,
                     isVerticalWritingMode: effectiveWritingMode.isVertical,
+                    allowsVerticalWritingMode: (book ?? snapshotBook)?.allowsVerticalWritingMode == true,
                     hasParagraphReviews: currentBookHasParagraphReviews,
                     onOpenFontImporter: requestFirstLevelReaderFontImporter,
                     onOpenTouchZoneEditor: {

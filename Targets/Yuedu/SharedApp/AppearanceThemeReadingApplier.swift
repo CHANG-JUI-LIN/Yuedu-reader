@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import YueduCoreText
 
 extension Notification.Name {
     /// Reading settings were written from outside the reader — a theme switch, a change of
@@ -116,18 +117,33 @@ extension GlobalSettings {
         get {
             if let data = UserDefaults.standard.data(forKey: Self.globalReadingKey) {
                 do {
-                    return try JSONDecoder().decode(AppearanceThemeReadingSettings.self, from: data)
+                    var stored = try JSONDecoder().decode(AppearanceThemeReadingSettings.self, from: data)
+                    if completeLaterFields(of: &stored) { storeGlobalReadingSettings(stored) }
+                    return stored
                 } catch {
                     AppLogger.error("⟐ shared reading setup unreadable, recaptured", error: error)
                 }
             }
-            let captured = appearanceExtrasBaseline?.reading ?? currentReadingSettingsSnapshot()
+            var captured = appearanceExtrasBaseline?.reading ?? currentReadingSettingsSnapshot()
+            completeLaterFields(of: &captured)
             storeGlobalReadingSettings(captured)
             return captured
         }
         set {
             storeGlobalReadingSettings(newValue)
         }
+    }
+
+    /// The shared setup must be complete, so wearing it sets every field. One saved
+    /// before a field joined the setup has none for it: 排版方向 (2026-10-06) is taken
+    /// once from what is on screen, which no theme had a value for yet. A theme with
+    /// no value of its own would otherwise keep the previous theme's direction. Can go
+    /// once no install still holds a shared setup from before that build.
+    @discardableResult
+    private func completeLaterFields(of reading: inout AppearanceThemeReadingSettings) -> Bool {
+        guard reading.writingMode == nil else { return false }
+        reading.writingMode = readerWritingMode.rawValue
+        return true
     }
 
     private func storeGlobalReadingSettings(_ reading: AppearanceThemeReadingSettings) {
@@ -281,6 +297,7 @@ extension GlobalSettings {
         snapshot.pageMarginBottom = pageMarginBottom
         snapshot.pageTurnStyle = pageTurnStyle.rawValue
         snapshot.scrollMode = scrollMode
+        snapshot.writingMode = readerWritingMode.rawValue
         snapshot.barLayout = readerBarLayout
         snapshot.headerVisible = readerHeaderVisible
         snapshot.footerVisible = readerFooterVisible
@@ -379,6 +396,7 @@ extension GlobalSettings {
         assign(\.pageMarginBottom, reading.pageMarginBottom)
         assign(\.pageTurnStyle, reading.pageTurnStyle.flatMap(PageTurnStyle.init(rawValue:)))
         assign(\.scrollMode, reading.scrollMode)
+        assign(\.readerWritingMode, reading.writingMode.flatMap(ReaderWritingMode.init(rawValue:)))
         assign(\.readerHeaderVisible, reading.headerVisible)
         assign(\.readerFooterVisible, reading.footerVisible)
         assign(\.readerHeaderTopPadding, reading.headerTopPadding)

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import YueduCoreText
 @testable import yuedu_app
 
 /// 閱讀設定 across devices (2026-09-29): each 排版生效範圍 row as last set on any device.
@@ -37,6 +38,33 @@ struct ReadingSettingsSyncTests {
         settings.synchronizeReadingSettings()
         #expect(settings.readerFontSize == 30)
         #expect(settings.lineHeightMultiple == 2)
+    }
+
+    /// 排版方向 is noted and worn as its own row, like the other reading settings.
+    @Test func aWritingModeIsNotedAndOneFromElsewhereIsWorn() throws {
+        let settings = GlobalSettings.shared
+        let fixture = Fixture(settings)
+        let originalMode = settings.readerWritingMode
+        defer {
+            settings.readerWritingMode = originalMode
+            fixture.restore()
+        }
+        settings.readerWritingMode = .horizontal
+        settings.readingSettingSyncRecords = []
+
+        settings.readerWritingMode = .verticalRTL
+        let noted = try #require(settings.readingSettingSyncRecords.first { $0.item == "writingMode" })
+        #expect(noted.values.writingMode == ReaderWritingMode.verticalRTL.rawValue)
+        #expect(noted.values.fontSize == nil)
+
+        var horizontal = AppearanceThemeReadingSettings()
+        horizontal.writingMode = ReaderWritingMode.horizontal.rawValue
+        let remote = [ReadingSettingSyncRecord(item: "writingMode", values: horizontal,
+                                               editedAt: Date(timeIntervalSince1970: 1_900_000_000))]
+        settings.applyReadingSettingsSync(remote)
+        #expect(settings.readerWritingMode == .horizontal)
+        settings.synchronizeReadingSettings()
+        #expect(settings.readerWritingMode == .horizontal)
     }
 
     /// The header/footer layout and which bubble is picked have records of their own;
