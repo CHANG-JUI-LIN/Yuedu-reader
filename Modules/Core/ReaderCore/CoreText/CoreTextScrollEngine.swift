@@ -202,6 +202,11 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
     /// Chapters currently being sliced (deduplication)
     private var slicingChapters: [Int: UUID] = [:]
+    /// Resumed when the last in-flight `loadChapter` returns, so `waitForViewportIdle`
+    /// covers a chapter that is still arriving — from a boundary, a restart or a
+    /// retry — not only one that is already laying out.
+    private var loadIdleWaiters: [CheckedContinuation<Void, Never>] = []
+    private var inFlightLoads = 0
     /// Chapters whose content and tile/chunk outline have been prepared
     private var loadedChapters: Set<Int> = []
     /// Chapters that could not be sliced because their online content was not cached yet.
@@ -523,11 +528,18 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         let generation = resliceGeneration
         let loadID = UUID()
         slicingChapters[chapterIndex] = loadID
+        inFlightLoads += 1
         defer {
             // Reslice can replace this chapter's owner while the old builder is suspended.
             // Only the task that installed this entry may release it.
             if slicingChapters[chapterIndex] == loadID {
                 slicingChapters.removeValue(forKey: chapterIndex)
+            }
+            inFlightLoads -= 1
+            if inFlightLoads == 0 {
+                let waiters = loadIdleWaiters
+                loadIdleWaiters.removeAll()
+                for waiter in waiters { waiter.resume() }
             }
         }
 
@@ -1010,11 +1022,21 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         chapterRanges[spine] = range.lowerBound..<(range.lowerBound + tiles.count)
     }
 
-    /// Tests and explicit readiness checks only: every chapter's layout requests
-    /// have been answered and installed.
+    /// Tests and explicit readiness checks only: no chapter load is in flight and
+    /// every inserted chapter's layout requests have been answered and installed.
+    /// A load counts until its tiles are inserted, so the geometry is complete
+    /// when this returns.
     func waitForViewportIdle() async {
-        while let busy = chapterRanges.keys.compactMap({ browserChapter(at: $0) }).first(where: \.hasViewportWork) {
-            await busy.waitForViewportIdle()
+        while true {
+            if inFlightLoads > 0 {
+                await withCheckedContinuation { loadIdleWaiters.append($0) }
+                continue
+            }
+            if let busy = chapterRanges.keys.compactMap({ browserChapter(at: $0) }).first(where: \.hasViewportWork) {
+                await busy.waitForViewportIdle()
+                continue
+            }
+            return
         }
     }
 

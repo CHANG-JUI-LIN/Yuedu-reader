@@ -1,0 +1,600 @@
+{
+  "generated": "2026-10-06",
+  "note": "medians of repetitions 1-5 (repetition 0 is warm-up), ms",
+  "sources": {
+    "baseline": {
+      "file": "loading-benchmark-2026-10-06-baseline.json",
+      "observations": 120,
+      "used": 100,
+      "sha256": "deb050da94f8523b32c97c0b35a22babec2fe9e2b3618b21ee2173f9d8801054"
+    },
+    "shared-evaluation": {
+      "file": "loading-benchmark-2026-10-06-shared-evaluation.json",
+      "observations": 120,
+      "used": 100,
+      "sha256": "d3ca7ea6ff20b5295f291765d75d9f115a0a1706af0702d13c8bce65c0a68872"
+    }
+  },
+  "cases": [
+    {
+      "book": "quanzhi-prose",
+      "route": "legacy-paged",
+      "baseline": {
+        "firstReadyMs": 847.4,
+        "requestReturnMs": 847.6,
+        "openingFirstReadyMs": 88.2,
+        "openingReturnMs": 99.4,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          844.7,
+          852.8
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 859.1,
+        "requestReturnMs": 859.3,
+        "openingFirstReadyMs": 71.3,
+        "openingReturnMs": 83.9,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          746.5,
+          1031.1
+        ]
+      },
+      "firstReadyChangePercent": 1.4
+    },
+    {
+      "book": "quanzhi-prose",
+      "route": "auto-paged",
+      "baseline": {
+        "firstReadyMs": 920.7,
+        "requestReturnMs": 922.6,
+        "openingFirstReadyMs": 181.1,
+        "openingReturnMs": 182.0,
+        "scannerProbeMs": 66.2,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          911.3,
+          949.1
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 797.0,
+        "requestReturnMs": 799.1,
+        "openingFirstReadyMs": 84.1,
+        "openingReturnMs": 84.9,
+        "scannerProbeMs": 38.0,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          776.4,
+          861.5
+        ]
+      },
+      "firstReadyChangePercent": -13.4
+    },
+    {
+      "book": "quanzhi-prose",
+      "route": "legacy-scroll",
+      "baseline": {
+        "firstReadyMs": 756.1,
+        "requestReturnMs": 756.1,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          717.4,
+          801.3
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 714.8,
+        "requestReturnMs": 714.8,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          689.2,
+          739.7
+        ]
+      },
+      "firstReadyChangePercent": -5.5
+    },
+    {
+      "book": "quanzhi-prose",
+      "route": "auto-scroll",
+      "baseline": {
+        "firstReadyMs": 768.1,
+        "requestReturnMs": 768.1,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 67.1,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          763.0,
+          837.3
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 705.0,
+        "requestReturnMs": 705.0,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 38.3,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          666.7,
+          720.4
+        ]
+      },
+      "firstReadyChangePercent": -8.2
+    },
+    {
+      "book": "guimi-prose",
+      "route": "legacy-paged",
+      "baseline": {
+        "firstReadyMs": 527.1,
+        "requestReturnMs": 527.3,
+        "openingFirstReadyMs": 88.3,
+        "openingReturnMs": 99.0,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          518.3,
+          537.3
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 473.4,
+        "requestReturnMs": 473.6,
+        "openingFirstReadyMs": 76.8,
+        "openingReturnMs": 82.6,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          440.7,
+          545.6
+        ]
+      },
+      "firstReadyChangePercent": -10.2
+    },
+    {
+      "book": "guimi-prose",
+      "route": "auto-paged",
+      "baseline": {
+        "firstReadyMs": 578.3,
+        "requestReturnMs": 579.8,
+        "openingFirstReadyMs": 190.5,
+        "openingReturnMs": 191.2,
+        "scannerProbeMs": 47.3,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          570.4,
+          586.4
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 495.0,
+        "requestReturnMs": 496.7,
+        "openingFirstReadyMs": 85.7,
+        "openingReturnMs": 86.5,
+        "scannerProbeMs": 26.2,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          480.4,
+          530.6
+        ]
+      },
+      "firstReadyChangePercent": -14.4
+    },
+    {
+      "book": "guimi-prose",
+      "route": "legacy-scroll",
+      "baseline": {
+        "firstReadyMs": 449.4,
+        "requestReturnMs": 449.4,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          444.9,
+          472.1
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 422.5,
+        "requestReturnMs": 422.5,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          398.2,
+          458.4
+        ]
+      },
+      "firstReadyChangePercent": -6.0
+    },
+    {
+      "book": "guimi-prose",
+      "route": "auto-scroll",
+      "baseline": {
+        "firstReadyMs": 488.0,
+        "requestReturnMs": 488.0,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 48.2,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          486.7,
+          525.9
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 431.7,
+        "requestReturnMs": 431.7,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 25.9,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          411.2,
+          450.5
+        ]
+      },
+      "firstReadyChangePercent": -11.5
+    },
+    {
+      "book": "hail-mary-prose",
+      "route": "legacy-paged",
+      "baseline": {
+        "firstReadyMs": 168.8,
+        "requestReturnMs": 217.6,
+        "openingFirstReadyMs": 19.7,
+        "openingReturnMs": 34.1,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          166.5,
+          175.6
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 154.9,
+        "requestReturnMs": 200.2,
+        "openingFirstReadyMs": 16.4,
+        "openingReturnMs": 17.7,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          144.3,
+          173.0
+        ]
+      },
+      "firstReadyChangePercent": -8.2
+    },
+    {
+      "book": "hail-mary-prose",
+      "route": "auto-paged",
+      "baseline": {
+        "firstReadyMs": 316.3,
+        "requestReturnMs": 318.4,
+        "openingFirstReadyMs": 61.3,
+        "openingReturnMs": 61.4,
+        "scannerProbeMs": 148.3,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          314.5,
+          319.2
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 175.6,
+        "requestReturnMs": 178.0,
+        "openingFirstReadyMs": 16.9,
+        "openingReturnMs": 17.0,
+        "scannerProbeMs": 95.9,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          157.5,
+          178.3
+        ]
+      },
+      "firstReadyChangePercent": -44.5
+    },
+    {
+      "book": "hail-mary-prose",
+      "route": "legacy-scroll",
+      "baseline": {
+        "firstReadyMs": 208.5,
+        "requestReturnMs": 208.5,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          205.3,
+          210.0
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 191.7,
+        "requestReturnMs": 191.7,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          187.8,
+          210.9
+        ]
+      },
+      "firstReadyChangePercent": -8.1
+    },
+    {
+      "book": "hail-mary-prose",
+      "route": "auto-scroll",
+      "baseline": {
+        "firstReadyMs": 288.6,
+        "requestReturnMs": 288.6,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 149.8,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          283.9,
+          291.8
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 129.5,
+        "requestReturnMs": 129.5,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 96.5,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          118.1,
+          139.0
+        ]
+      },
+      "firstReadyChangePercent": -55.1
+    },
+    {
+      "book": "game-designer-fallback",
+      "route": "legacy-paged",
+      "baseline": {
+        "firstReadyMs": 850.2,
+        "requestReturnMs": 850.3,
+        "openingFirstReadyMs": 70.6,
+        "openingReturnMs": 83.5,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          846.7,
+          878.2
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 774.5,
+        "requestReturnMs": 774.6,
+        "openingFirstReadyMs": 62.0,
+        "openingReturnMs": 68.4,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          732.8,
+          989.8
+        ]
+      },
+      "firstReadyChangePercent": -8.9
+    },
+    {
+      "book": "game-designer-fallback",
+      "route": "auto-paged",
+      "baseline": {
+        "firstReadyMs": 1255.6,
+        "requestReturnMs": 1256.1,
+        "openingFirstReadyMs": 155.1,
+        "openingReturnMs": 155.6,
+        "scannerProbeMs": 162.2,
+        "effectiveEngine": "legacy: capability positioned,unknown-block-display,flex-grid",
+        "firstReadyRange": [
+          1241.9,
+          1265.4
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 1059.7,
+        "requestReturnMs": 1060.1,
+        "openingFirstReadyMs": 63.8,
+        "openingReturnMs": 64.4,
+        "scannerProbeMs": 92.8,
+        "effectiveEngine": "legacy: capability positioned,unknown-block-display,flex-grid",
+        "firstReadyRange": [
+          1004.1,
+          1184.7
+        ]
+      },
+      "firstReadyChangePercent": -15.6
+    },
+    {
+      "book": "game-designer-fallback",
+      "route": "legacy-scroll",
+      "baseline": {
+        "firstReadyMs": 727.8,
+        "requestReturnMs": 727.8,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          721.2,
+          729.6
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 696.0,
+        "requestReturnMs": 696.0,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          648.3,
+          737.2
+        ]
+      },
+      "firstReadyChangePercent": -4.4
+    },
+    {
+      "book": "game-designer-fallback",
+      "route": "auto-scroll",
+      "baseline": {
+        "firstReadyMs": 1075.6,
+        "requestReturnMs": 1075.6,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 161.9,
+        "effectiveEngine": "legacy: capability positioned,unknown-block-display,flex-grid",
+        "firstReadyRange": [
+          1063.9,
+          1077.4
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 952.5,
+        "requestReturnMs": 952.5,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 90.7,
+        "effectiveEngine": "legacy: capability positioned,unknown-block-display,flex-grid",
+        "firstReadyRange": [
+          887.4,
+          1024.8
+        ]
+      },
+      "firstReadyChangePercent": -11.4
+    },
+    {
+      "book": "guimi-long",
+      "route": "legacy-paged",
+      "baseline": {
+        "firstReadyMs": 5408.9,
+        "requestReturnMs": 5794.7,
+        "openingFirstReadyMs": 87.4,
+        "openingReturnMs": 99.7,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          5381.6,
+          5424.6
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 4937.3,
+        "requestReturnMs": 5285.7,
+        "openingFirstReadyMs": 76.7,
+        "openingReturnMs": 83.4,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          4652.8,
+          5466.2
+        ]
+      },
+      "firstReadyChangePercent": -8.7
+    },
+    {
+      "book": "guimi-long",
+      "route": "auto-paged",
+      "baseline": {
+        "firstReadyMs": 6164.0,
+        "requestReturnMs": 6178.0,
+        "openingFirstReadyMs": 188.3,
+        "openingReturnMs": 189.0,
+        "scannerProbeMs": 1020.6,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          6110.3,
+          6232.5
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 4788.4,
+        "requestReturnMs": 4805.9,
+        "openingFirstReadyMs": 78.9,
+        "openingReturnMs": 79.6,
+        "scannerProbeMs": 769.8,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          4505.5,
+          5740.9
+        ]
+      },
+      "firstReadyChangePercent": -22.3
+    },
+    {
+      "book": "guimi-long",
+      "route": "legacy-scroll",
+      "baseline": {
+        "firstReadyMs": 4873.6,
+        "requestReturnMs": 4873.6,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          4814.6,
+          4938.0
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 4487.0,
+        "requestReturnMs": 4487.0,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": null,
+        "effectiveEngine": "legacy",
+        "firstReadyRange": [
+          4266.9,
+          5117.7
+        ]
+      },
+      "firstReadyChangePercent": -7.9
+    },
+    {
+      "book": "guimi-long",
+      "route": "auto-scroll",
+      "baseline": {
+        "firstReadyMs": 5341.4,
+        "requestReturnMs": 5341.4,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 1022.3,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          5282.5,
+          5435.7
+        ]
+      },
+      "shared-evaluation": {
+        "firstReadyMs": 4066.8,
+        "requestReturnMs": 4066.8,
+        "openingFirstReadyMs": null,
+        "openingReturnMs": null,
+        "scannerProbeMs": 756.2,
+        "effectiveEngine": "browser",
+        "firstReadyRange": [
+          3831.8,
+          4530.8
+        ]
+      },
+      "firstReadyChangePercent": -23.9
+    }
+  ]
+}

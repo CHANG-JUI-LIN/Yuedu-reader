@@ -1,0 +1,4022 @@
+[
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 19799.324958235957,
+    "cachedRequestMs" : 0.08549995254725218,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4103,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 987.993749906309,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 114.25020836759359,
+      "69" : 971.7649582307786
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 131.21845829300582,
+    "openingReturnMs" : 137.47375004459172,
+    "repetition" : 0,
+    "requestReturnMs" : 988.7426666682586,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 524.7311666607857,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 19275.445708306506,
+    "cachedRequestMs" : 0.03329163882881403,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 881.9562083808705,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 77.56658340804279
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 98.57187501620501,
+    "openingReturnMs" : 99.4237499544397,
+    "repetition" : 0,
+    "requestReturnMs" : 884.1885000001639,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.69" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.69" : 2,
+      "images.0" : 1,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 1.4002916868776083,
+      "css.69" : 280.5422500241548,
+      "fonts" : 171.27258330583572,
+      "html.0" : 1.4561250573024154,
+      "html.69" : 5.473583354614675,
+      "images.0" : 83.45250005368143,
+      "images.69" : 337.7163748955354
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 39.44879164919257,
+    "sessionOpenMs" : 423.2136666541919,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.004749977961182594,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 722.4339166423306,
+    "legacyBuildCounts" : {
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "69" : 713.3950833231211
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 722.4339166423306,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 426.02908331900835,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.003249966539442539,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 709.962833323516,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 709.962833323516,
+    "resourceCalls" : {
+      "css.69" : 2,
+      "fonts" : 1,
+      "html.69" : 2,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.69" : 238.55637502856553,
+      "fonts" : 141.94224996026605,
+      "html.69" : 4.498166614212096,
+      "images.69" : 270.40525001939386
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 38.75866672024131,
+    "sessionOpenMs" : 425.7766667287797,
+    "spine" : 69
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 14596.38629166875,
+    "cachedRequestMs" : 0.0556666636839509,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3251,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 525.3814166644588,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 87.22320839297026,
+      "80" : 516.2716249469668
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 88.40300003066659,
+    "openingReturnMs" : 100.18354165367782,
+    "repetition" : 0,
+    "requestReturnMs" : 525.5805000197142,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 490.9739999566227,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 14614.908499992453,
+    "cachedRequestMs" : 0.03720843233168125,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 527.2209167014807,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 84.20962491072714
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 88.61654158681631,
+    "openingReturnMs" : 89.3402915680781,
+    "repetition" : 0,
+    "requestReturnMs" : 529.1372917126864,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.80" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.80" : 2,
+      "images.0" : 1,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.9243334643542767,
+      "css.80" : 235.4105832055211,
+      "fonts" : 75.93183335848153,
+      "html.0" : 1.6017915913835168,
+      "html.80" : 6.549000041559339,
+      "images.0" : 82.76620833203197,
+      "images.80" : 153.63412501756102
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 28.312791720964015,
+    "sessionOpenMs" : 493.1168332695961,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.003916677087545395,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 446.32520829327404,
+    "legacyBuildCounts" : {
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "80" : 440.5302500817925
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 446.32520829327404,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 494.45804161950946,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.0033333199098706245,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 439.36658336315304,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 439.36658336315304,
+    "resourceCalls" : {
+      "css.80" : 2,
+      "fonts" : 1,
+      "html.80" : 2,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.80" : 202.5936667341739,
+      "fonts" : 62.77466670144349,
+      "html.80" : 6.247916608117521,
+      "images.80" : 130.1575000397861
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 28.77679164521396,
+    "sessionOpenMs" : 491.58404173795134,
+    "spine" : 80
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 13.552000047639012,
+    "cachedRequestMs" : 0.05754164885729551,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 25016,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 178.47975005861372,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 17.908708308823407,
+      "6" : 160.24420829489827
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 18.998000072315335,
+    "openingReturnMs" : 34.452500054612756,
+    "repetition" : 0,
+    "requestReturnMs" : 227.4571666494012,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 15.018208301626146,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 14.210499939508736,
+    "cachedRequestMs" : 0.038541737012565136,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 191.6874167509377,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 16.253291629254818
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 19.34616663493216,
+    "openingReturnMs" : 19.45766666904092,
+    "repetition" : 0,
+    "requestReturnMs" : 194.2948333453387,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.6" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.6" : 2,
+      "images.0" : 1,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 7.283875020220876,
+      "css.6" : 8.5605833446607,
+      "fonts" : 0.009624985978007317,
+      "html.0" : 0.5767500260844827,
+      "html.6" : 1.0481667704880238,
+      "images.0" : 2.191291656345129,
+      "images.6" : 5.156666622497141
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 102.77979169040918,
+    "sessionOpenMs" : 16.371749923564494,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.0038750004023313522,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 8,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 211.94654167629778,
+    "legacyBuildCounts" : {
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "6" : 169.33312499895692
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 211.94654167629778,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 14.7922916803509,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.0035833800211548805,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 136.5399583010003,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 136.5399583010003,
+    "resourceCalls" : {
+      "css.6" : 2,
+      "fonts" : 1,
+      "html.6" : 2,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.6" : 8.872916689142585,
+      "fonts" : 0.005333335138857365,
+      "html.6" : 1.0637916857376695,
+      "images.6" : 4.899000050500035
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 101.08950000721961,
+    "sessionOpenMs" : 13.998750015161932,
+    "spine" : 6
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 10911.16800007876,
+    "cachedRequestMs" : 0.039083417505025864,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 869.4216667208821,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 69.50912496540695,
+      "10" : 860.1983333937824
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 70.59833337552845,
+    "openingReturnMs" : 83.491750061512,
+    "repetition" : 0,
+    "requestReturnMs" : 869.6015001041815,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 276.3007499743253,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 11019.13104171399,
+    "cachedRequestMs" : 0.34541659988462925,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 1175.3131250152364,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 71.03920832742006,
+      "10" : 840.4932083794847
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 72.19795836135745,
+    "openingReturnMs" : 72.77829176746309,
+    "repetition" : 0,
+    "requestReturnMs" : 1175.8173750713468,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.10" : 1,
+      "fonts" : 1,
+      "html.0" : 2,
+      "html.10" : 1,
+      "images.0" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.7540417136624455,
+      "css.10" : 198.77837505191565,
+      "fonts" : 0.005541718564927578,
+      "html.0" : 2.5680833496153355,
+      "html.10" : 0.7884999504312873,
+      "images.0" : 65.47554163262248
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 97.90370834525675,
+    "sessionOpenMs" : 275.149833294563,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.0035833800211548805,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 728.5740417428315,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 723.363499972038
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 728.5740417428315,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 272.3623332567513,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.0036249402910470963,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 1000.532791716978,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 725.3623333526775
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 1000.532791716978,
+    "resourceCalls" : {
+      "css.10" : 1,
+      "html.10" : 1
+    },
+    "resourceMs" : {
+      "css.10" : 170.27633334510028,
+      "html.10" : 0.7591666653752327
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 99.1373750148341,
+    "sessionOpenMs" : 272.8447917615995,
+    "spine" : 10
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 15557.694916729815,
+    "cachedRequestMs" : 0.06937491707503796,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 29112,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 5432.703000027686,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 85.48645838163793,
+      "64" : 5378.759791725315
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 86.65912493597716,
+    "openingReturnMs" : 101.77129169460386,
+    "repetition" : 0,
+    "requestReturnMs" : 5832.0559583371505,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 487.79095825739205,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 15518.055750057101,
+    "cachedRequestMs" : 0.07225002627819777,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 5147.133291698992,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 82.60700001846999
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 90.27587505988777,
+    "openingReturnMs" : 91.01462503895164,
+    "repetition" : 0,
+    "requestReturnMs" : 5164.505708264187,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.64" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.0" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.892541604116559,
+      "css.64" : 256.7793750204146,
+      "fonts" : 471.73704172018915,
+      "html.0" : 1.3562501408159733,
+      "html.64" : 5.870791734196246,
+      "image.64" : 67.06245837267488,
+      "images.0" : 84.68762505799532,
+      "images.64" : 3174.911958281882
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 837.6057500718161,
+    "sessionOpenMs" : 495.17833325080574,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.004333327524363995,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 36,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 4836.86983329244,
+    "legacyBuildCounts" : {
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "64" : 4500.515041640028
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 4836.86983329244,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 488.1284583825618,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.0037084100767970085,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 4235.254708328284,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 0,
+    "requestReturnMs" : 4235.254708328284,
+    "resourceCalls" : {
+      "css.64" : 2,
+      "fonts" : 1,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.64" : 218.7485833419487,
+      "fonts" : 405.2994584199041,
+      "html.64" : 5.846375017426908,
+      "image.64" : 56.28687492571771,
+      "images.64" : 2652.30687498115
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 830.4922917159274,
+    "sessionOpenMs" : 489.4317915895954,
+    "spine" : 64
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.0033333199098706245,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 705.0248333252966,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 705.0248333252966,
+    "resourceCalls" : {
+      "css.69" : 2,
+      "fonts" : 1,
+      "html.69" : 2,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.69" : 239.75462513044477,
+      "fonts" : 140.69379167631269,
+      "html.69" : 4.671708331443369,
+      "images.69" : 270.2878750860691
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 38.291166769340634,
+    "sessionOpenMs" : 425.64029165077955,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.004333327524363995,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 714.7783749969676,
+    "legacyBuildCounts" : {
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "69" : 707.0910417241976
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 714.7783749969676,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 419.76750001776963,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 19221.43799997866,
+    "cachedRequestMs" : 0.03658328205347061,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 850.5135833984241,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 76.94904168602079
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 88.51037500426173,
+    "openingReturnMs" : 89.36737501062453,
+    "repetition" : 1,
+    "requestReturnMs" : 852.8453750768676,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.69" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.69" : 2,
+      "images.0" : 1,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.9818749967962503,
+      "css.69" : 278.6920000799,
+      "fonts" : 168.46083325799555,
+      "html.0" : 1.3026249362155795,
+      "html.69" : 4.984250059351325,
+      "images.0" : 82.61399995535612,
+      "images.69" : 325.37637499626726
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 39.31829170323908,
+    "sessionOpenMs" : 422.29229176882654,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 19056.81829166133,
+    "cachedRequestMs" : 0.04575005732476711,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4103,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 859.1187916463241,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 80.10204159654677,
+      "69" : 848.7671666080132
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 81.27545833121985,
+    "openingReturnMs" : 83.90233328100294,
+    "repetition" : 1,
+    "requestReturnMs" : 859.3180832685903,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 425.45945825986564,
+    "spine" : 69
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.003166613169014454,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 431.685124989599,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 431.685124989599,
+    "resourceCalls" : {
+      "css.80" : 2,
+      "fonts" : 1,
+      "html.80" : 2,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.80" : 198.17220827098936,
+      "fonts" : 62.20695830415934,
+      "html.80" : 5.745041649788618,
+      "images.80" : 128.56170837767422
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 28.37645832914859,
+    "sessionOpenMs" : 480.3193750558421,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.0033333199098706245,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 445.1673333533108,
+    "legacyBuildCounts" : {
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "80" : 439.86841663718224
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 445.1673333533108,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 480.8407500386238,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 14405.952208326198,
+    "cachedRequestMs" : 0.04095828626304865,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 530.5552500067279,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 84.61212494876236
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 87.71620830520988,
+    "openingReturnMs" : 88.48620834760368,
+    "repetition" : 1,
+    "requestReturnMs" : 532.3968749726191,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.80" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.80" : 2,
+      "images.0" : 1,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.8732082787901163,
+      "css.80" : 238.31054160837084,
+      "fonts" : 75.81012509763241,
+      "html.0" : 1.4668331714347005,
+      "html.80" : 6.5989583963528275,
+      "images.0" : 82.03175000380725,
+      "images.80" : 155.23975004907697
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 28.75766670331359,
+    "sessionOpenMs" : 484.8483334062621,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 14650.963374995627,
+    "cachedRequestMs" : 0.05633337423205376,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3251,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 522.8744166670367,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 88.15858338493854,
+      "80" : 514.7157916799188
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 89.34812492225319,
+    "openingReturnMs" : 98.3255832688883,
+    "repetition" : 1,
+    "requestReturnMs" : 523.1165416771546,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 480.3802917012945,
+    "spine" : 80
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.0029999064281582832,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 137.21416669432074,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 137.21416669432074,
+    "resourceCalls" : {
+      "css.6" : 2,
+      "fonts" : 1,
+      "html.6" : 2,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.6" : 9.291124995797873,
+      "fonts" : 0.00583333894610405,
+      "html.6" : 1.1904584243893623,
+      "images.6" : 5.163624999113381
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 103.96283329464495,
+    "sessionOpenMs" : 14.793875045143068,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.004375004209578037,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 8,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 206.44645835272968,
+    "legacyBuildCounts" : {
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "6" : 163.88216672930866
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 206.44645835272968,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 13.60249996650964,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 13.902958249673247,
+    "cachedRequestMs" : 0.038958387449383736,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 175.58145837392658,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 15.748708392493427
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 19.45316675119102,
+    "openingReturnMs" : 19.56512499600649,
+    "repetition" : 1,
+    "requestReturnMs" : 178.0008333735168,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.6" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.6" : 2,
+      "images.0" : 1,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 7.152041653171182,
+      "css.6" : 8.816208341158926,
+      "fonts" : 0.009041628800332546,
+      "html.0" : 0.6641666404902935,
+      "html.6" : 1.0050416458398104,
+      "images.0" : 2.2458332823589444,
+      "images.6" : 4.992750007659197
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 101.44758329261094,
+    "sessionOpenMs" : 13.870083377696574,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 13.309041620232165,
+    "cachedRequestMs" : 0.059291603974998,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 25016,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 167.9978333413601,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 18.153166747651994,
+      "6" : 155.61329165939242
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 19.204625044949353,
+    "openingReturnMs" : 36.7209583055228,
+    "repetition" : 1,
+    "requestReturnMs" : 217.2702084062621,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 14.257875038310885,
+    "spine" : 6
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.003916677087545395,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 1024.8061249731109,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 748.9494166802615
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 1024.8061249731109,
+    "resourceCalls" : {
+      "css.10" : 1,
+      "html.10" : 1
+    },
+    "resourceMs" : {
+      "css.10" : 171.2834166828543,
+      "html.10" : 0.6697500357404351
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 98.97587494924664,
+    "sessionOpenMs" : 276.7142499797046,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.003125052899122238,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 737.2043749783188,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 732.226875028573
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 737.2043749783188,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 277.70462492480874,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 10958.904708386399,
+    "cachedRequestMs" : 0.34962501376867294,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 1167.9952082922682,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 69.46258328389376,
+      "10" : 837.8587915794924
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 74.43604164291173,
+    "openingReturnMs" : 75.01016661990434,
+    "repetition" : 1,
+    "requestReturnMs" : 1168.5062915785238,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.10" : 1,
+      "fonts" : 1,
+      "html.0" : 2,
+      "html.10" : 1,
+      "images.0" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.758041744120419,
+      "css.10" : 202.38220831379294,
+      "fonts" : 0.005083391442894936,
+      "html.0" : 2.7650416595861316,
+      "html.10" : 0.8767499821260571,
+      "images.0" : 67.51374993473291
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 98.0429999763146,
+    "sessionOpenMs" : 272.9292499134317,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 11241.655708290637,
+    "cachedRequestMs" : 0.04754157271236181,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 852.5434583425522,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 69.62337496224791,
+      "10" : 845.2516666147858
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 70.76437503565103,
+    "openingReturnMs" : 83.61537498421967,
+    "repetition" : 1,
+    "requestReturnMs" : 852.7062917128205,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 269.06208333093673,
+    "spine" : 10
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.0037499703466892242,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 4447.865541675128,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 4447.865541675128,
+    "resourceCalls" : {
+      "css.64" : 2,
+      "fonts" : 1,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.64" : 218.84483331814408,
+      "fonts" : 428.2292500138283,
+      "html.64" : 6.240458344109356,
+      "image.64" : 56.398333283141255,
+      "images.64" : 2717.326083336957
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 840.7948749372736,
+    "sessionOpenMs" : 489.2992499517277,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.003916677087545395,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 36,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 4834.146749926731,
+    "legacyBuildCounts" : {
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "64" : 4492.813750053756
+    },
+    "repetition" : 1,
+    "requestReturnMs" : 4834.146749926731,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 495.54200004786253,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 15447.111041634344,
+    "cachedRequestMs" : 0.0662083039060235,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 5135.856291628443,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 84.24454170744866
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 94.29883328266442,
+    "openingReturnMs" : 95.06962494924664,
+    "repetition" : 1,
+    "requestReturnMs" : 5154.610166675411,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.64" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.0" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.9060418233275414,
+      "css.64" : 252.30462499894202,
+      "fonts" : 468.98404171224684,
+      "html.0" : 1.8279999494552612,
+      "html.64" : 6.652208394370973,
+      "image.64" : 69.49670834001154,
+      "images.0" : 88.27954158186913,
+      "images.64" : 3165.4346249997616
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 853.7454582983628,
+    "sessionOpenMs" : 495.8896666066721,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 16753.24370828457,
+    "cachedRequestMs" : 0.06683333776891232,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 29112,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 5396.23608335387,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 87.74641656782478,
+      "64" : 5353.822458302602
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 88.92920834477991,
+    "openingReturnMs" : 100.05187499336898,
+    "repetition" : 1,
+    "requestReturnMs" : 5795.738541637547,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 496.5663750190288,
+    "spine" : 64
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 19833.69912498165,
+    "cachedRequestMs" : 0.056458404287695885,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4103,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 1031.0911249835044,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 83.98891659453511,
+      "69" : 1008.3082916680723
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 85.41554166004062,
+    "openingReturnMs" : 99.11562502384186,
+    "repetition" : 2,
+    "requestReturnMs" : 1031.334333238192,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 424.14133332204074,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 19927.255999995396,
+    "cachedRequestMs" : 0.05012506153434515,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 861.5411666687578,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 81.29125006962568
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 87.16916665434837,
+    "openingReturnMs" : 88.02679169457406,
+    "repetition" : 2,
+    "requestReturnMs" : 863.6592084076256,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.69" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.69" : 2,
+      "images.0" : 1,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 1.0289583588019013,
+      "css.69" : 284.0235417243093,
+      "fonts" : 171.21870839037,
+      "html.0" : 1.6442915657535195,
+      "html.69" : 4.975999938324094,
+      "images.0" : 81.08150004409254,
+      "images.69" : 327.2334582870826
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 38.19999995175749,
+    "sessionOpenMs" : 427.88945825304836,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.0034583499655127525,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 714.2182916868478,
+    "legacyBuildCounts" : {
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "69" : 706.4830833114684
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 714.2182916868478,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 421.4437500340864,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.0034583499655127525,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 711.4008750068024,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 711.4008750068024,
+    "resourceCalls" : {
+      "css.69" : 2,
+      "fonts" : 1,
+      "html.69" : 2,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.69" : 239.92349999025464,
+      "fonts" : 143.3350833831355,
+      "html.69" : 4.692333401180804,
+      "images.69" : 268.4554166626185
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 39.0817082952708,
+    "sessionOpenMs" : 412.88195829838514,
+    "spine" : 69
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 14668.114958330989,
+    "cachedRequestMs" : 0.05249993409961462,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3251,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 545.6441250862554,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 88.04804168175906,
+      "80" : 537.3810416786
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 89.16908327955753,
+    "openingReturnMs" : 101.06495837680995,
+    "repetition" : 2,
+    "requestReturnMs" : 545.8425417309627,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 500.7621250115335,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 15063.134916708805,
+    "cachedRequestMs" : 0.03545836079865694,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 530.4415416903794,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 85.99308331031352
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 91.19449998252094,
+    "openingReturnMs" : 91.97283338289708,
+    "repetition" : 2,
+    "requestReturnMs" : 532.4217500165105,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.80" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.80" : 2,
+      "images.0" : 1,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.9550834074616432,
+      "css.80" : 238.6690416606143,
+      "fonts" : 75.90854179579765,
+      "html.0" : 1.355875050649047,
+      "html.80" : 6.644666660577059,
+      "images.0" : 84.9634165642783,
+      "images.80" : 154.61629163473845
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 31.466791639104486,
+    "sessionOpenMs" : 502.1274583414197,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.003541703335940838,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 458.43916665762663,
+    "legacyBuildCounts" : {
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "80" : 452.75941665749997
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 458.43916665762663,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 537.5800833571702,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.0037499703466892242,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 450.52120834589005,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 450.52120834589005,
+    "resourceCalls" : {
+      "css.80" : 2,
+      "fonts" : 1,
+      "html.80" : 2,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.80" : 201.54062495566905,
+      "fonts" : 65.54979167412966,
+      "html.80" : 6.077625090256333,
+      "images.80" : 138.7061249697581
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 32.19724993687123,
+    "sessionOpenMs" : 506.1165416846052,
+    "spine" : 80
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 14.966916642151773,
+    "cachedRequestMs" : 0.06737501826137304,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 25016,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 172.95695841312408,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 19.841249915771186,
+      "6" : 160.60270834714174
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 20.85391664877534,
+    "openingReturnMs" : 35.03654163796455,
+    "repetition" : 2,
+    "requestReturnMs" : 222.1167084062472,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 15.252208337187767,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 14.890541671775281,
+    "cachedRequestMs" : 0.044791726395487785,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 178.29324991907924,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 16.130291623994708
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 19.4936249172315,
+    "openingReturnMs" : 19.622458261437714,
+    "repetition" : 2,
+    "requestReturnMs" : 181.08979158569127,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.6" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.6" : 2,
+      "images.0" : 1,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 7.085166638717055,
+      "css.6" : 8.64766666200012,
+      "fonts" : 0.00900006853044033,
+      "html.0" : 0.5241249455139041,
+      "html.6" : 1.1634166585281491,
+      "images.0" : 2.0635833498090506,
+      "images.6" : 4.809666657820344
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 101.3360416982323,
+    "sessionOpenMs" : 15.854958328418434,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.004124944098293781,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 8,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 210.9087916323915,
+    "legacyBuildCounts" : {
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "6" : 167.76754159945995
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 210.9087916323915,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 14.002708368934691,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.0035833800211548805,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 139.0082499710843,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 139.0082499710843,
+    "resourceCalls" : {
+      "css.6" : 2,
+      "fonts" : 1,
+      "html.6" : 2,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.6" : 9.284500032663345,
+      "fonts" : 0.005791662260890007,
+      "html.6" : 1.2350833276286721,
+      "images.6" : 4.948416608385742
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 104.68450002372265,
+    "sessionOpenMs" : 13.682333286851645,
+    "spine" : 6
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 11135.114166652784,
+    "cachedRequestMs" : 0.04958338104188442,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 989.7825417574495,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 70.06587507203221,
+      "10" : 970.9928333759308
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 71.14174996968359,
+    "openingReturnMs" : 84.19774996582419,
+    "repetition" : 2,
+    "requestReturnMs" : 990.0054166791961,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 269.6583750657737,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 11027.999083395116,
+    "cachedRequestMs" : 0.32587500754743814,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 1184.6565833548084,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 71.62920839618891,
+      "10" : 856.6203749505803
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 73.88558331876993,
+    "openingReturnMs" : 74.43858333863318,
+    "repetition" : 2,
+    "requestReturnMs" : 1185.152249992825,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.10" : 1,
+      "fonts" : 1,
+      "html.0" : 2,
+      "html.10" : 1,
+      "images.0" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.7381250616163015,
+      "css.10" : 198.58566671609879,
+      "fonts" : 0.006083282642066479,
+      "html.0" : 2.9124999418854713,
+      "html.10" : 0.8103332947939634,
+      "images.0" : 66.84758327901363
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 99.69662490766495,
+    "sessionOpenMs" : 277.0077916793525,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.004541710950434208,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 723.8626666367054,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 718.39779173024
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 723.8626666367054,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 272.40087499376386,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.003541703335940838,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 990.4739167541265,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 719.0004582516849
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 990.4739167541265,
+    "resourceCalls" : {
+      "css.10" : 1,
+      "html.10" : 1
+    },
+    "resourceMs" : {
+      "css.10" : 168.6860000481829,
+      "html.10" : 0.8167501073330641
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 97.72866661660373,
+    "sessionOpenMs" : 274.94274999480695,
+    "spine" : 10
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 15531.86729166191,
+    "cachedRequestMs" : 0.06570830009877682,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 29112,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 5466.19420836214,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 84.56054166890681,
+      "64" : 5420.870999922045
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 85.6497916392982,
+    "openingReturnMs" : 100.14029161538929,
+    "repetition" : 2,
+    "requestReturnMs" : 5846.934666740708,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 488.00091666635126,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 17341.844416689128,
+    "cachedRequestMs" : 0.09295833297073841,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 5740.901833283715,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 82.56616664584726
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 91.79741668049246,
+    "openingReturnMs" : 92.5534584093839,
+    "repetition" : 2,
+    "requestReturnMs" : 5784.192708320916,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.64" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.0" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.9207084076479077,
+      "css.64" : 251.63783330935985,
+      "fonts" : 476.02800000458956,
+      "html.0" : 1.4380000066012144,
+      "html.64" : 6.531916675157845,
+      "image.64" : 106.59887501969934,
+      "images.0" : 85.98387509118766,
+      "images.64" : 3660.5269166175276
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 934.8954999586567,
+    "sessionOpenMs" : 495.305624906905,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.004375004209578037,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 36,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 5117.696999921463,
+    "legacyBuildCounts" : {
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "64" : 4759.158874978311
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 5117.696999921463,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 521.2639584206045,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.004333327524363995,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 4530.784916714765,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 2,
+    "requestReturnMs" : 4530.784916714765,
+    "resourceCalls" : {
+      "css.64" : 2,
+      "fonts" : 1,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.64" : 251.19079160504043,
+      "fonts" : 424.964000005275,
+      "html.64" : 6.0009167063981295,
+      "image.64" : 66.65749999228865,
+      "images.64" : 2794.9523749994114
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 1128.9132499368861,
+    "sessionOpenMs" : 495.6402915995568,
+    "spine" : 64
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.003374996595084667,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 720.4072916647419,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 720.4072916647419,
+    "resourceCalls" : {
+      "css.69" : 2,
+      "fonts" : 1,
+      "html.69" : 2,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.69" : 241.53474997729063,
+      "fonts" : 144.5966666797176,
+      "html.69" : 4.6865000622347,
+      "images.69" : 280.1237916573882
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 39.40704162232578,
+    "sessionOpenMs" : 456.4722083741799,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.004125060513615608,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 729.5939166797325,
+    "legacyBuildCounts" : {
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "69" : 723.2306665973738
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 729.5939166797325,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 395.1923750573769,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 18937.3020833591,
+    "cachedRequestMs" : 0.029583345167338848,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 777.5845000287518,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 71.49245834443718
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 84.0518333716318,
+    "openingReturnMs" : 84.86904168967158,
+    "repetition" : 3,
+    "requestReturnMs" : 779.7072083922103,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.69" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.69" : 2,
+      "images.0" : 1,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 1.0044167283922434,
+      "css.69" : 266.85245835687965,
+      "fonts" : 146.7320000519976,
+      "html.0" : 1.2740000383928418,
+      "html.69" : 4.610999953001738,
+      "images.0" : 78.54679168667644,
+      "images.69" : 290.27216660324484
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 33.61587505787611,
+    "sessionOpenMs" : 394.9038749560714,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 17043.074291665107,
+    "cachedRequestMs" : 0.05437503568828106,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4103,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 746.5394583996385,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 67.1324166469276,
+      "69" : 737.8058333415538
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 68.25095834210515,
+    "openingReturnMs" : 82.66754169017076,
+    "repetition" : 3,
+    "requestReturnMs" : 746.6711250599474,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 377.1676250034943,
+    "spine" : 69
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.002666609361767769,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 416.2306666839868,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 416.2306666839868,
+    "resourceCalls" : {
+      "css.80" : 2,
+      "fonts" : 1,
+      "html.80" : 2,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.80" : 189.35387500096112,
+      "fonts" : 60.44475000817329,
+      "html.80" : 5.337583366781473,
+      "images.80" : 127.21395830158144
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 25.84520832169801,
+    "sessionOpenMs" : 414.082458242774,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.0027082860469818115,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 398.1772916158661,
+    "legacyBuildCounts" : {
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "80" : 393.23904167395085
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 398.1772916158661,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 430.54679164197296,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 13104.111166670918,
+    "cachedRequestMs" : 0.03770831972360611,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 491.9474583584815,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 79.29004170000553
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 82.99491670913994,
+    "openingReturnMs" : 83.78754172008485,
+    "repetition" : 3,
+    "requestReturnMs" : 493.90679167117923,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.80" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.80" : 2,
+      "images.0" : 1,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.9080000454559922,
+      "css.80" : 217.60466671548784,
+      "fonts" : 68.0897084530443,
+      "html.0" : 1.242916681803763,
+      "html.80" : 5.415624938905239,
+      "images.0" : 78.11691670212895,
+      "images.80" : 145.76824998948723
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 24.686458287760615,
+    "sessionOpenMs" : 456.87312504742295,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 13036.718499963172,
+    "cachedRequestMs" : 0.03995827864855528,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3251,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 440.6540000345558,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 72.27862509898841,
+      "80" : 434.16187493130565
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 73.67624994367361,
+    "openingReturnMs" : 82.36412494443357,
+    "repetition" : 3,
+    "requestReturnMs" : 440.7998750684783,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 430.0588333280757,
+    "spine" : 80
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.00241666566580534,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 118.1473332690075,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 118.1473332690075,
+    "resourceCalls" : {
+      "css.6" : 2,
+      "fonts" : 1,
+      "html.6" : 2,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.6" : 8.23908334132284,
+      "fonts" : 0.004708301275968552,
+      "html.6" : 1.101041678339243,
+      "images.6" : 4.740916658192873
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 92.4699583556503,
+    "sessionOpenMs" : 13.004291686229408,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.004708301275968552,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 8,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 187.80433328356594,
+    "legacyBuildCounts" : {
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "6" : 149.45920824538916
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 187.80433328356594,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 12.625416624359787,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 11.917375028133392,
+    "cachedRequestMs" : 0.026250025257468224,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 157.5036250287667,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 13.652874971739948
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 16.3710416527465,
+    "openingReturnMs" : 16.472541610710323,
+    "repetition" : 3,
+    "requestReturnMs" : 160.21841671317816,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.6" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.6" : 2,
+      "images.0" : 1,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 6.144416751340032,
+      "css.6" : 7.54483335185796,
+      "fonts" : 0.0074999406933784485,
+      "html.0" : 0.4274583188816905,
+      "html.6" : 0.8308750111609697,
+      "images.0" : 2.0338334143161774,
+      "images.6" : 4.448916646651924
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 86.20929170865566,
+    "sessionOpenMs" : 11.900666635483503,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 10.914166690781713,
+    "cachedRequestMs" : 0.05379167851060629,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 25016,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 144.3054584087804,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 14.93416668381542,
+      "6" : 133.24487500358373
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 15.755875036120415,
+    "openingReturnMs" : 17.65145838726312,
+    "repetition" : 3,
+    "requestReturnMs" : 187.66520835924894,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 11.693708365783095,
+    "spine" : 6
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.0040833838284015656,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 887.3619167134166,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 644.3795417435467
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 887.3619167134166,
+    "resourceCalls" : {
+      "css.10" : 1,
+      "html.10" : 1
+    },
+    "resourceMs" : {
+      "css.10" : 152.64295833185315,
+      "html.10" : 0.6118749734014273
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 90.22354171611369,
+    "sessionOpenMs" : 248.45179170370102,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.002374988980591297,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 648.3129999833182,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 644.1431250423193
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 648.3129999833182,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 243.74424992129207,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 9761.630041641183,
+    "cachedRequestMs" : 0.34479168243706226,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 1004.1483333334327,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 58.13895841129124,
+      "10" : 723.2879166258499
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 61.01245840545744,
+    "openingReturnMs" : 61.53691664803773,
+    "repetition" : 3,
+    "requestReturnMs" : 1004.571916651912,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.10" : 1,
+      "fonts" : 1,
+      "html.0" : 2,
+      "html.10" : 1,
+      "images.0" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.7472917204722762,
+      "css.10" : 175.58912502136081,
+      "fonts" : 0.004166620783507824,
+      "html.0" : 2.1886666072532535,
+      "html.10" : 0.5518749821931124,
+      "images.0" : 55.49749999772757
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 84.7420833306387,
+    "sessionOpenMs" : 241.37887498363853,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 9806.647666729987,
+    "cachedRequestMs" : 0.03616674803197384,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 732.8201250638813,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 56.85879162047058,
+      "10" : 726.8202083650976
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 57.893416727893054,
+    "openingReturnMs" : 65.940041677095,
+    "repetition" : 3,
+    "requestReturnMs" : 732.9267082968727,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 240.2055417187512,
+    "spine" : 10
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.002749962732195854,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 3831.790499971248,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 3831.790499971248,
+    "resourceCalls" : {
+      "css.64" : 2,
+      "fonts" : 1,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.64" : 203.30837497022003,
+      "fonts" : 358.60854166094214,
+      "html.64" : 5.419333348982036,
+      "image.64" : 50.91541667934507,
+      "images.64" : 2425.431291689165
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 728.8852916099131,
+    "sessionOpenMs" : 427.86612501367927,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.0036249402910470963,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 36,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 4266.895208274946,
+    "legacyBuildCounts" : {
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "64" : 3979.2198749491945
+    },
+    "repetition" : 3,
+    "requestReturnMs" : 4266.895208274946,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 437.3709582723677,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 13864.170666667633,
+    "cachedRequestMs" : 0.05662499461323023,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 4505.491958349012,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 74.14633326698095
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 76.43920835107565,
+    "openingReturnMs" : 77.14837498497218,
+    "repetition" : 3,
+    "requestReturnMs" : 4521.929083392024,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.64" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.0" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.8830416481941938,
+      "css.64" : 230.6589166400954,
+      "fonts" : 417.8242916241288,
+      "html.0" : 1.171416719444096,
+      "html.64" : 5.401458358392119,
+      "image.64" : 62.776833306998014,
+      "images.0" : 71.25520834233612,
+      "images.64" : 2799.3029166245833
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 725.9345001075417,
+    "sessionOpenMs" : 428.5738334292546,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 14346.129624987952,
+    "cachedRequestMs" : 0.07329171057790518,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 29112,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 4652.804624987766,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 70.74212504085153,
+      "64" : 4615.610999986529
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 71.9775416655466,
+    "openingReturnMs" : 83.255416713655,
+    "repetition" : 3,
+    "requestReturnMs" : 4988.338000024669,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 443.5412916354835,
+    "spine" : 64
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 18395.332249929197,
+    "cachedRequestMs" : 0.05491671618074179,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4103,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 887.6967083197087,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 69.41391667351127,
+      "69" : 878.1460416503251
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 70.56795828975737,
+    "openingReturnMs" : 82.55862502846867,
+    "repetition" : 4,
+    "requestReturnMs" : 887.8533749375492,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 399.84487497713417,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 18091.06608328875,
+    "cachedRequestMs" : 0.028541660867631435,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 776.3875833479688,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 70.21512498613447
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 74.94475005660206,
+    "openingReturnMs" : 75.72675007395446,
+    "repetition" : 4,
+    "requestReturnMs" : 778.4079583361745,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.69" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.69" : 2,
+      "images.0" : 1,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 1.0216666851192713,
+      "css.69" : 258.5204999195412,
+      "fonts" : 150.53499990608543,
+      "html.0" : 1.1672499822452664,
+      "html.69" : 4.269000026397407,
+      "images.0" : 69.87916666548699,
+      "images.69" : 298.7458750139922
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 38.01229177042842,
+    "sessionOpenMs" : 380.8022083248943,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.00341667328029871,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 739.7017499897629,
+    "legacyBuildCounts" : {
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "69" : 732.3008333332837
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 739.7017499897629,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 417.9913749685511,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.002666725777089596,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 666.7242499534041,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 666.7242499534041,
+    "resourceCalls" : {
+      "css.69" : 2,
+      "fonts" : 1,
+      "html.69" : 2,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.69" : 233.25437493622303,
+      "fonts" : 133.90679168514907,
+      "html.69" : 4.382750135846436,
+      "images.69" : 250.26837503537536
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 35.01724998932332,
+    "sessionOpenMs" : 399.3698750855401,
+    "spine" : 69
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 13798.902624985203,
+    "cachedRequestMs" : 0.039375037886202335,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3251,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 467.3318749992177,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 75.20116667728871,
+      "80" : 460.43895836919546
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 76.23454160057008,
+    "openingReturnMs" : 82.62883336283267,
+    "repetition" : 4,
+    "requestReturnMs" : 467.4548750044778,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 454.98845842666924,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 13661.902833380736,
+    "cachedRequestMs" : 0.026541645638644695,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 494.969958323054,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 75.17383340746164
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 75.71925001684576,
+    "openingReturnMs" : 76.5044167637825,
+    "repetition" : 4,
+    "requestReturnMs" : 496.73820834141225,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.80" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.80" : 2,
+      "images.0" : 1,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.8718334138393402,
+      "css.80" : 226.60966671537608,
+      "fonts" : 70.43916673865169,
+      "html.0" : 1.1435833293944597,
+      "html.80" : 5.829666624777019,
+      "images.0" : 70.91654161922634,
+      "images.80" : 141.13137498497963
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 24.838833371177316,
+    "sessionOpenMs" : 430.0032916944474,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.0029583461582660675,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 422.53383330535144,
+    "legacyBuildCounts" : {
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "80" : 417.50858328305185
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 422.53383330535144,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 453.45870836172253,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.0027084024623036385,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 411.1505832988769,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 411.1505832988769,
+    "resourceCalls" : {
+      "css.80" : 2,
+      "fonts" : 1,
+      "html.80" : 2,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.80" : 191.1182083422318,
+      "fonts" : 59.959708247333765,
+      "html.80" : 5.201416672207415,
+      "images.80" : 120.8669584011659
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 25.858875014819205,
+    "sessionOpenMs" : 452.00199994724244,
+    "spine" : 80
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 11.50729157961905,
+    "cachedRequestMs" : 0.05654164124280214,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 25016,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 154.9329583067447,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 15.55379165802151,
+      "6" : 143.27187498565763
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 16.398791573010385,
+    "openingReturnMs" : 16.578958253376186,
+    "repetition" : 4,
+    "requestReturnMs" : 200.1868332736194,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 13.236749917268753,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 12.88862491492182,
+    "cachedRequestMs" : 0.037624966353178024,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 176.28666665405035,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 13.762083370238543
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 16.67312509380281,
+    "openingReturnMs" : 16.767333378084004,
+    "repetition" : 4,
+    "requestReturnMs" : 181.85583339072764,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.6" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.6" : 2,
+      "images.0" : 1,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 6.291875150054693,
+      "css.6" : 7.551458314992487,
+      "fonts" : 0.008291564881801605,
+      "html.0" : 0.47808350063860416,
+      "html.6" : 0.8780000498518348,
+      "images.0" : 1.9006667425855994,
+      "images.6" : 5.023958277888596
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 95.8610416855663,
+    "sessionOpenMs" : 12.99841667059809,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.003791647031903267,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 8,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 191.6724583134055,
+    "legacyBuildCounts" : {
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "6" : 151.82429167907685
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 191.6724583134055,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 12.755666626617312,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.0027084024623036385,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 125.12137496378273,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 125.12137496378273,
+    "resourceCalls" : {
+      "css.6" : 2,
+      "fonts" : 1,
+      "html.6" : 2,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.6" : 8.505916688591242,
+      "fonts" : 0.004041707143187523,
+      "html.6" : 0.8850833401083946,
+      "images.6" : 4.764124983921647
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 92.579958261922,
+    "sessionOpenMs" : 12.471624999307096,
+    "spine" : 6
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 10113.356833346188,
+    "cachedRequestMs" : 0.03891671076416969,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 767.4532916862518,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 60.93033333308995,
+      "10" : 761.4903750363737
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 61.98783335275948,
+    "openingReturnMs" : 65.88508340064436,
+    "repetition" : 4,
+    "requestReturnMs" : 767.5687916344032,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 254.17366670444608,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 10227.52383328043,
+    "cachedRequestMs" : 0.3656666958704591,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 1033.5869999835268,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 60.68574998062104,
+      "10" : 744.2534998990595
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 63.60662495717406,
+    "openingReturnMs" : 64.1904582735151,
+    "repetition" : 4,
+    "requestReturnMs" : 1034.0954166604206,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.10" : 1,
+      "fonts" : 1,
+      "html.0" : 2,
+      "html.10" : 1,
+      "images.0" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.7453332655131817,
+      "css.10" : 175.8942917222157,
+      "fonts" : 0.005124951712787151,
+      "html.0" : 2.259375061839819,
+      "html.10" : 0.6553750718012452,
+      "images.0" : 57.579541695304215
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 90.55645833723247,
+    "sessionOpenMs" : 247.88016674574465,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.0021667219698429108,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 677.0194582641125,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 672.7223333436996
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 677.0194582641125,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 254.661624901928,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.0028333161026239395,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 940.7089166343212,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 682.7307917410508
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 940.7089166343212,
+    "resourceCalls" : {
+      "css.10" : 1,
+      "html.10" : 1
+    },
+    "resourceMs" : {
+      "css.10" : 161.9644167367369,
+      "html.10" : 0.6187083199620247
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 90.03562503494322,
+    "sessionOpenMs" : 255.5977499578148,
+    "spine" : 10
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 14488.964458345436,
+    "cachedRequestMs" : 0.052833231166005135,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 29112,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 4861.436375067569,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 75.58754167985171,
+      "64" : 4822.095416602679
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 76.67024992406368,
+    "openingReturnMs" : 82.7190832933411,
+    "repetition" : 4,
+    "requestReturnMs" : 5208.634125068784,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 451.2872083578259,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 14492.776208324358,
+    "cachedRequestMs" : 0.033125048503279686,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 4686.959708342329,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 74.30379162542522
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 78.82933330256492,
+    "openingReturnMs" : 79.52466665301472,
+    "repetition" : 4,
+    "requestReturnMs" : 4702.797166653909,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.64" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.0" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.9105833014473319,
+      "css.64" : 236.8744999403134,
+      "fonts" : 446.91470835823566,
+      "html.0" : 1.3357499847188592,
+      "html.64" : 5.445833201520145,
+      "image.64" : 60.80099998507649,
+      "images.0" : 73.61716660670936,
+      "images.64" : 2915.054333396256
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 769.8343750089407,
+    "sessionOpenMs" : 458.2459583180025,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.0037499703466892242,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 36,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 4487.001833273098,
+    "legacyBuildCounts" : {
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "64" : 4203.4705833066255
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 4487.001833273098,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 455.8120417641476,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.003625056706368923,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 4006.96837506257,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 4,
+    "requestReturnMs" : 4006.96837506257,
+    "resourceCalls" : {
+      "css.64" : 2,
+      "fonts" : 1,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.64" : 210.5675416532904,
+      "fonts" : 378.6288333358243,
+      "html.64" : 5.494125070981681,
+      "image.64" : 55.780208320356905,
+      "images.64" : 2507.812041672878
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 756.1700833030045,
+    "sessionOpenMs" : 456.96945826057345,
+    "spine" : 64
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.003166613169014454,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 676.9678749842569,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 676.9678749842569,
+    "resourceCalls" : {
+      "css.69" : 2,
+      "fonts" : 1,
+      "html.69" : 2,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.69" : 231.46091669332236,
+      "fonts" : 138.06349993683398,
+      "html.69" : 4.27816656883806,
+      "images.69" : 258.8003750424832
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 34.75029161199927,
+    "sessionOpenMs" : 406.25191666185856,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "cachedRequestMs" : 0.004041707143187523,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 689.2370833083987,
+    "legacyBuildCounts" : {
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "69" : 682.6682082610205
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 689.2370833083987,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 397.435333346948,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 18073.138125007972,
+    "cachedRequestMs" : 0.026708352379500866,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4031,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 797.0462084049359,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 69.99183329753578
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 73.28379165846854,
+    "openingReturnMs" : 74.10133338999003,
+    "repetition" : 5,
+    "requestReturnMs" : 799.1382917389274,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.69" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.69" : 2,
+      "images.0" : 1,
+      "images.69" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 1.0629165917634964,
+      "css.69" : 265.6490833032876,
+      "fonts" : 157.63545827940106,
+      "html.0" : 1.167083391919732,
+      "html.69" : 4.544500028714538,
+      "images.0" : 68.10937507543713,
+      "images.69" : 302.78499994892627
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 36.25116671901196,
+    "sessionOpenMs" : 391.9363332679495,
+    "spine" : 69
+  },
+  {
+    "book" : "quanzhi-prose",
+    "byteScanMs" : 18019.62774991989,
+    "cachedRequestMs" : 0.0927499495446682,
+    "chapterCount" : 1881,
+    "chapterHTMLBytes" : 13962,
+    "contentUnits" : 4103,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 796.6320832492784,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "69" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 69.75804164540023,
+      "69" : 786.8582917144522
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 71.30133337341249,
+    "openingReturnMs" : 84.15712509304285,
+    "repetition" : 5,
+    "requestReturnMs" : 796.7829166445881,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 386.769708362408,
+    "spine" : 69
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.00241666566580534,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 436.3521250197664,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 436.3521250197664,
+    "resourceCalls" : {
+      "css.80" : 2,
+      "fonts" : 1,
+      "html.80" : 2,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.80" : 202.33004167675972,
+      "fonts" : 64.24270826391876,
+      "html.80" : 5.47287508379668,
+      "images.80" : 130.85608335677534
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 24.88362498115748,
+    "sessionOpenMs" : 468.3167083421722,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "cachedRequestMs" : 0.002666725777089596,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 4,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 421.9569166889414,
+    "legacyBuildCounts" : {
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "80" : 416.90958326216787
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 421.9569166889414,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 447.5996666587889,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 13943.165750009939,
+    "cachedRequestMs" : 0.02520834095776081,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3173,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 480.42241658549756,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 76.74158341251314
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 85.72804171126336,
+    "openingReturnMs" : 86.49737504310906,
+    "repetition" : 5,
+    "requestReturnMs" : 482.0210416801274,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.80" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.80" : 2,
+      "images.0" : 1,
+      "images.80" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.9600416524335742,
+      "css.80" : 217.2137500019744,
+      "fonts" : 67.9702915949747,
+      "html.0" : 1.2549583334475756,
+      "html.80" : 5.7873750338330865,
+      "images.0" : 80.72404167614877,
+      "images.80" : 138.88162502553314
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 26.243624975904822,
+    "sessionOpenMs" : 462.0431666262448,
+    "spine" : 80
+  },
+  {
+    "book" : "guimi-prose",
+    "byteScanMs" : 13960.144166601822,
+    "cachedRequestMs" : 0.0437082489952445,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 10917,
+    "contentUnits" : 3251,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 473.4016249421984,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "80" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 75.49895835109055,
+      "80" : 466.4447082905099
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 76.84441667515785,
+    "openingReturnMs" : 82.4350833427161,
+    "repetition" : 5,
+    "requestReturnMs" : 473.5636250115931,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 457.03654165845364,
+    "spine" : 80
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.0029583461582660675,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 129.46433341130614,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 129.46433341130614,
+    "resourceCalls" : {
+      "css.6" : 2,
+      "fonts" : 1,
+      "html.6" : 2,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.6" : 8.525541750714183,
+      "fonts" : 0.006333342753350735,
+      "html.6" : 1.2123750057071447,
+      "images.6" : 5.179041647352278
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 96.46875003818423,
+    "sessionOpenMs" : 13.084333389997482,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "cachedRequestMs" : 0.002916669473052025,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 8,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 189.9504583561793,
+    "legacyBuildCounts" : {
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "6" : 150.3895417554304
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 189.9504583561793,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 12.810624903067946,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 12.355541693978012,
+    "cachedRequestMs" : 0.02462498378008604,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 24820,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 166.57225007656962,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 13.71295831631869
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 16.900124959647655,
+    "openingReturnMs" : 16.994083300232887,
+    "repetition" : 5,
+    "requestReturnMs" : 168.7243334017694,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.6" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.6" : 2,
+      "images.0" : 1,
+      "images.6" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 6.344250054098666,
+      "css.6" : 7.635333342477679,
+      "fonts" : 0.00683334656059742,
+      "html.0" : 0.4434998845681548,
+      "html.6" : 0.833833240903914,
+      "images.0" : 2.0637083798646927,
+      "images.6" : 4.8440416576340795
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 95.85408330895007,
+    "sessionOpenMs" : 12.36208330374211,
+    "spine" : 6
+  },
+  {
+    "book" : "hail-mary-prose",
+    "byteScanMs" : 11.694125016219914,
+    "cachedRequestMs" : 0.04462490323930979,
+    "chapterCount" : 41,
+    "chapterHTMLBytes" : 33642,
+    "contentUnits" : 25016,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 152.4372500134632,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "6" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 15.241958317346871,
+      "6" : 140.779500012286
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 16.111041652038693,
+    "openingReturnMs" : 17.547416733577847,
+    "repetition" : 5,
+    "requestReturnMs" : 197.3230834119022,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 12.40312505979091,
+    "spine" : 6
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.0027082860469818115,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 952.4659583112225,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 693.7905417289585
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 952.4659583112225,
+    "resourceCalls" : {
+      "css.10" : 1,
+      "html.10" : 1
+    },
+    "resourceMs" : {
+      "css.10" : 163.53695839643478,
+      "html.10" : 0.6294999038800597
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 90.68733337335289,
+    "sessionOpenMs" : 256.1814999207854,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "cachedRequestMs" : 0.003291643224656582,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 3,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 696.0144583135843,
+    "legacyBuildCounts" : {
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "10" : 691.2297916132957
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 696.0144583135843,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 256.06366666033864,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 10346.696708234958,
+    "cachedRequestMs" : 0.3512499388307333,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy: capability positioned,unknown-block-display,flex-grid",
+    "firstReadyMs" : 1059.6585416933522,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 60.72741677053273,
+      "10" : 769.9862084118649
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 63.83583333808929,
+    "openingReturnMs" : 64.39783342648298,
+    "repetition" : 5,
+    "requestReturnMs" : 1060.1137917255983,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.10" : 1,
+      "fonts" : 1,
+      "html.0" : 2,
+      "html.10" : 1,
+      "images.0" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.7779167499393225,
+      "css.10" : 176.554000005126,
+      "fonts" : 0.006166636012494564,
+      "html.0" : 2.265083254314959,
+      "html.10" : 0.5920416442677379,
+      "images.0" : 58.07912501040846
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 92.84804167691618,
+    "sessionOpenMs" : 254.44733339827508,
+    "spine" : 10
+  },
+  {
+    "book" : "game-designer-fallback",
+    "byteScanMs" : 10352.82799997367,
+    "cachedRequestMs" : 0.04508334677666426,
+    "chapterCount" : 1192,
+    "chapterHTMLBytes" : 10912,
+    "contentUnits" : 2270,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 774.50070832856,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "10" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 60.44662499334663,
+      "10" : 768.3616250287741
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 61.66812498122454,
+    "openingReturnMs" : 68.44254164025187,
+    "repetition" : 5,
+    "requestReturnMs" : 774.6337500866503,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 253.44129174482077,
+    "spine" : 10
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.002874992787837982,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 4066.8088749516755,
+    "legacyBuildCounts" : {
+
+    },
+    "legacyBuildMs" : {
+
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 4066.8088749516755,
+    "resourceCalls" : {
+      "css.64" : 2,
+      "fonts" : 1,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.64" : 214.22266657464206,
+      "fonts" : 379.48870833497494,
+      "html.64" : 9.483833331614733,
+      "image.64" : 57.216000044718385,
+      "images.64" : 2608.0937917577103
+    },
+    "route" : "auto-scroll",
+    "scannerProbeMs" : 753.9682916831225,
+    "sessionOpenMs" : 450.4227082943544,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "cachedRequestMs" : 0.0034583499655127525,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 36,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 4431.403083377518,
+    "legacyBuildCounts" : {
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "64" : 4141.7200833093375
+    },
+    "repetition" : 5,
+    "requestReturnMs" : 4431.403083377518,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-scroll",
+    "sessionOpenMs" : 439.9959583533928,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 14685.840291669592,
+    "cachedRequestMs" : 0.05070830229669809,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 28099,
+    "effectiveEngine" : "browser",
+    "firstReadyMs" : 4788.399958400987,
+    "legacyBuildCounts" : {
+      "0" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 74.50862508267164
+    },
+    "openingEngine" : "browser",
+    "openingFirstReadyMs" : 78.9354583248496,
+    "openingReturnMs" : 79.64149990584701,
+    "repetition" : 5,
+    "requestReturnMs" : 4805.895125027746,
+    "resourceCalls" : {
+      "css.0" : 2,
+      "css.64" : 2,
+      "fonts" : 2,
+      "html.0" : 2,
+      "html.64" : 2,
+      "image.64" : 1,
+      "images.0" : 1,
+      "images.64" : 1
+    },
+    "resourceMs" : {
+      "css.0" : 0.8620417211204767,
+      "css.64" : 237.46237496379763,
+      "fonts" : 445.9447916597128,
+      "html.0" : 1.1725834337994456,
+      "html.64" : 5.637291702441871,
+      "image.64" : 63.5855000000447,
+      "images.0" : 74.21583333052695,
+      "images.64" : 2994.9269166681916
+    },
+    "route" : "auto-paged",
+    "scannerProbeMs" : 756.5837500151247,
+    "sessionOpenMs" : 456.5318749519065,
+    "spine" : 64
+  },
+  {
+    "book" : "guimi-long",
+    "byteScanMs" : 14762.388916686177,
+    "cachedRequestMs" : 0.06237498018890619,
+    "chapterCount" : 1594,
+    "chapterHTMLBytes" : 121736,
+    "contentUnits" : 29112,
+    "effectiveEngine" : "legacy",
+    "firstReadyMs" : 4937.25520838052,
+    "legacyBuildCounts" : {
+      "0" : 1,
+      "64" : 1
+    },
+    "legacyBuildMs" : {
+      "0" : 73.22441670112312,
+      "64" : 4897.959666559473
+    },
+    "openingEngine" : "legacy",
+    "openingFirstReadyMs" : 74.48170834686607,
+    "openingReturnMs" : 83.36666668765247,
+    "repetition" : 5,
+    "requestReturnMs" : 5285.739666665904,
+    "resourceCalls" : {
+
+    },
+    "resourceMs" : {
+
+    },
+    "route" : "legacy-paged",
+    "sessionOpenMs" : 447.60758336633444,
+    "spine" : 64
+  }
+]

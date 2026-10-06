@@ -1,5 +1,4 @@
 import Foundation
-import SwiftSoup
 import UIKit
 import YueduCoreText
 
@@ -321,6 +320,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// Font demand belongs to the admitted chapter's scan, with the same lifetime
     /// as its engine choice. No second DOM/CSS parse is needed to discover faces.
     private var chapterFontRequests: [Int: Set<BrowserFontRequest>] = [:]
+    /// The evaluation admission built for an admitted chapter — its parsed DOM and
+    /// style tree — held only until the layout that follows takes it. One parse
+    /// then serves the verdict, the font-scale policy and the layout; a layout
+    /// that comes later (a changed font size) evaluates the chapter afresh.
+    private var pendingEvaluations: [Int: BrowserChapterEvaluation] = [:]
     private var browserChapters: [Int: BrowserChapterLayout] = [:]
 
     /// Per-chapter lifecycle state — the SOURCE OF TRUTH for "is this chapter
@@ -374,8 +378,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     func activatePagedLayout() async {
         usesViewportScrolling = false
         if !delegateStarted, let startBookID {
-            await delegate.start(renderSize: renderSize, bookId: startBookID)
+            await delegate.start(renderSize: renderSize, bookId: startBookID, preloadingFirstChapter: false)
             delegateStarted = true
+            // Chapter 0 goes through admission like every other chapter; the
+            // delegate lays it out only when admission hands it over.
+            await preloadChapter(at: 0)
         }
     }
 
@@ -464,7 +471,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         self.renderSize = renderSize
         startBookID = bookId
         if usesViewportScrolling { rebuildOffsets(); return }
-        await delegate.start(renderSize: renderSize, bookId: bookId)
+        // The delegate starts without building chapter 0: admission below decides
+        // its engine, and only a fallback asks the delegate to lay it out.
+        await delegate.start(renderSize: renderSize, bookId: bookId, preloadingFirstChapter: false)
         delegateStarted = true
         await preloadChapter(at: 0)
         #if DEBUG
@@ -496,7 +505,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 // Preserve the existing capability fallback for unsupported EPUB chapters.
                 // Their legacy renderer still needs its own pagination/semantic content.
                 if !delegateStarted, let startBookID {
-                    await delegate.start(renderSize: renderSize, bookId: startBookID)
+                    await delegate.start(renderSize: renderSize, bookId: startBookID, preloadingFirstChapter: false)
                     delegateStarted = true
                 }
                 return await delegate.preloadChapter(at: spineIndex)
@@ -605,16 +614,33 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         guard isCurrentWork(generation) else { return nil }
         // Parses the chapter's HTML and CSS: off the main thread, which a chapter
         // arriving mid-scroll would otherwise stall (14.trace: part of 235 ms).
+        // The parse is kept: the font-scale policy reads the body from it, the
+        // cascade below styles it with the layout configuration, and the layout
+        // that follows an admission starts from that style tree instead of
+        // parsing the chapter a second and third time.
         let writingMode = settings.writingMode
-        // Font tuples depend on the inherited family and reader bold setting,
-        // not the chapter's font-scale policy. Keep admission's existing geometry
-        // defaults and avoid another full DOM parse merely to obtain font sizes.
-        let scanConfig = BrowserLayoutConfig(
-            fontFamilies: settings.fontPostScriptName.map { [$0] } ?? [], isBold: settings.isBold)
-        let scan = await Task.detached(priority: .userInitiated) {
-            BrowserLayoutCapabilityScanner.scan(input: input, writingMode: writingMode,
-                configuration: scanConfig)
+        let parseStart = SourcePerfTrace.now
+        guard let document = await Task.detached(priority: .userInitiated) { () -> BrowserChapterDocument? in
+            do {
+                return try BrowserChapterDocument(input: input)
+            } catch {
+                AppLogger.parse("Browser admission could not parse the chapter", context: [
+                    "spine": spineIndex, "error": String(describing: error),
+                ])
+                return nil
+            }
+        }.value else {
+            guard isCurrentWork(generation) else { return nil }
+            return .legacyEngineFailure(.resourceFailure("chapterParse"))
+        }
+        guard isCurrentWork(generation) else { return nil }
+        let config = makeBrowserConfig(
+            fontScalePolicy: PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle))
+        let evaluation = await Task.detached(priority: .userInitiated) {
+            document.evaluate(configuration: config, writingMode: writingMode)
         }.value
+        SourcePerfTrace.record("browser.admission", "spine=\(spineIndex)", since: parseStart, thresholdMs: 0)
+        let scan = evaluation.capabilities
         guard isCurrentWork(generation) else { return nil }
         let decision: ChapterEngineChoice
         if scan.supported {
@@ -630,7 +656,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         } else {
             decision = .legacyFallback(scan.unsupportedFeatures)
         }
-        if decision.isBrowser { chapterFontRequests[spineIndex] = scan.fontRequests }
+        if decision.isBrowser {
+            chapterFontRequests[spineIndex] = scan.fontRequests
+            pendingEvaluations[spineIndex] = evaluation
+        }
         let isBrowser: Bool
         switch decision {
         case .browser: isBrowser = true
@@ -676,8 +705,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             ))
             guard isCurrentWork(generation) else { return }
 
-            let fontPolicy = Self.fontScalePolicy(for: html)
-            let config = makeBrowserConfig(fontScalePolicy: fontPolicy)
+            // The configuration is made after the fonts are prepared so its resolver
+            // sees them; its cascade inputs are the admission configuration's.
+            let evaluation = try await chapterEvaluation(for: spineIndex, input: input) { policy in
+                makeBrowserConfig(fontScalePolicy: policy)
+            }
+            guard isCurrentWork(generation) else { return }
+            let config = evaluation.configuration
             if settings.regexHighlightConfiguration.isEnabled {
                 await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
                     configuration: settings.regexHighlightConfiguration,
@@ -689,8 +723,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // A chapter ensures at most once normally; more than twice on a
             // NON-terminal chapter is the livelock — fault loudly in debug.
             noteSessionEnsure(spineIndex: spineIndex, generation: generation)
-            let session = BrowserLayoutSession(
-                input: input, config: config,
+            let session = try BrowserLayoutSession(
+                evaluation: evaluation,
                 imageLoader: { [store] in store.image(for: $0) }, generation: generation
             )
             session.diagnosticSpine = spineIndex
@@ -868,11 +902,37 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     /// Chapter font-scale policy from the body inline style
     /// (`zy-fontsize-adjust: fixed` → fixed; otherwise reader-adjustable).
-    static func fontScalePolicy(for html: String) -> PublicationFontScalePolicy {
-        guard let doc = try? SwiftSoup.parse(html),
-              let body = doc.body() else { return .readerAdjustable }
-        let inline = (try? body.attr("style")) ?? ""
-        return PublicationFontScalePolicy.resolve(bodyInlineStyle: inline)
+    /// The chapter's evaluation for the layout about to run: the one admission
+    /// built, when its cascade inputs are still the layout's; otherwise a fresh
+    /// one (a layout after a font-size change, say). `makeConfiguration` builds
+    /// the layout configuration from the chapter's font-scale policy — call it
+    /// after the fonts are prepared, so the resolver it snapshots sees them.
+    /// Either way the chapter is parsed once here, never again for this layout.
+    private func chapterEvaluation(
+        for spineIndex: Int,
+        input: CSSFrontendInput,
+        makeConfiguration: (PublicationFontScalePolicy) -> BrowserLayoutConfig
+    ) async throws -> BrowserChapterEvaluation {
+        if let pending = pendingEvaluations.removeValue(forKey: spineIndex) {
+            let configuration = makeConfiguration(
+                PublicationFontScalePolicy.resolve(bodyInlineStyle: pending.document.bodyInlineStyle))
+            if let rebound = pending.rebound(to: configuration) {
+                return rebound
+            }
+            BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) admissionEvaluationStale spine=\(spineIndex)")
+        }
+        let writingMode = settings.writingMode
+        let start = SourcePerfTrace.now
+        let document = try await Task.detached(priority: .userInitiated) {
+            try BrowserChapterDocument(input: input)
+        }.value
+        let configuration = makeConfiguration(
+            PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle))
+        let evaluation = await Task.detached(priority: .userInitiated) {
+            document.evaluate(configuration: configuration, writingMode: writingMode)
+        }.value
+        SourcePerfTrace.record("browser.evaluation", "spine=\(spineIndex)", since: start, thresholdMs: 0)
+        return evaluation
     }
 
     private func fallbackToLegacy(_ spineIndex: Int, reason: BrowserFallbackReason) async {
@@ -972,6 +1032,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         backgroundFinishTasks.removeAll()
         choices.removeAll()
         chapterFontRequests.removeAll()
+        pendingEvaluations.removeAll()
         engineStatus.removeAll()
         chapterLayoutStates.removeAll()
         forcedUnsupportedFeatures.removeAll()
@@ -1032,6 +1093,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         evictAllDisplayLists()
         choices.removeValue(forKey: spineIndex)
         chapterFontRequests.removeValue(forKey: spineIndex)
+        pendingEvaluations.removeValue(forKey: spineIndex)
         chapterLayoutStates.removeValue(forKey: spineIndex)
         forcedUnsupportedFeatures.removeValue(forKey: spineIndex)
         sessionEnsureCounts.removeValue(forKey: "\(layoutGeneration):\(spineIndex)")
@@ -1275,6 +1337,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             || self.settings.isBold != settings.isBold {
             choices.removeAll()
             chapterFontRequests.removeAll()
+            pendingEvaluations.removeAll()
         }
         let regexActive = self.settings.regexHighlightConfiguration.isEnabled
             || settings.regexHighlightConfiguration.isEnabled
@@ -1901,10 +1964,13 @@ extension BrowserLayoutPageEngine {
         try Task.checkCancellation()
         let store = BrowserLayoutImageStore(await resource.prefetchImages(
             forChapter: spine, html: html, renderWidth: contentSize.width))
-        var config = makeBrowserConfig(fontScalePolicy: Self.fontScalePolicy(for: html),
-                                       scrollSettings: settings, scrollSize: contentSize)
-        // The scroll host owns the reader's outer margins and fixed bars.
-        config.contentInsets = .zero
+        let evaluation = try await chapterEvaluation(for: spine, input: input) { policy in
+            var config = makeBrowserConfig(fontScalePolicy: policy, scrollSettings: settings, scrollSize: contentSize)
+            // The scroll host owns the reader's outer margins and fixed bars.
+            config.contentInsets = .zero
+            return config
+        }
+        let config = evaluation.configuration
         if settings.regexHighlightConfiguration.isEnabled {
             await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
                 configuration: settings.regexHighlightConfiguration, appearance: settings.readerStyleAppearance)
@@ -1913,8 +1979,8 @@ extension BrowserLayoutPageEngine {
         if settings.writingMode == .horizontal {
             // Session creation (CSS cascade, box tree) and every layout transaction
             // run on the chapter's owner, never on the main thread.
-            let document = HTMLLayoutDocument(input: input, configuration: config,
-                                              imageLoader: { [store] in store.image(for: $0) })
+            let document = try HTMLLayoutDocument(evaluation: evaluation,
+                                                  imageLoader: { [store] in store.image(for: $0) })
             let createStart = SourcePerfTrace.now
             let owner = try await Task.detached(priority: .userInitiated) {
                 try BrowserViewportLayoutOwner(document: document, validateCapabilities: false)
@@ -1946,8 +2012,8 @@ extension BrowserLayoutPageEngine {
                 mediaAttachments: owner.facts.mediaAttachments.mapValues { resource.resolveMediaAttachment(forChapter: spine, media: $0) })
         }
         // Vertical writing lays out the whole chapter, also off the main thread.
-        let htmlDocument = HTMLLayoutDocument(input: input, configuration: config,
-                                              imageLoader: { [store] in store.image(for: $0) })
+        let htmlDocument = try HTMLLayoutDocument(evaluation: evaluation,
+                                                  imageLoader: { [store] in store.image(for: $0) })
         let prepareStart = SourcePerfTrace.now
         // These package results are not Sendable. A continuation transfers each
         // freshly built result once; a Task.value would expose a shared result.

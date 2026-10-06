@@ -463,6 +463,14 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
     }
 
     func start(renderSize: CGSize, bookId: String) async {
+        await start(renderSize: renderSize, bookId: bookId, preloadingFirstChapter: true)
+    }
+
+    /// `preloadingFirstChapter: false` is the browser engine's start: it owns the
+    /// first chapter's admission and lays it out with whichever engine that picks,
+    /// asking this one through `preloadChapter(at:)` only on a fallback. Building
+    /// chapter 0 here as well laid it out twice on every open of a browser book.
+    func start(renderSize: CGSize, bookId: String, preloadingFirstChapter: Bool) async {
         startupBeganUptime = ProcessInfo.processInfo.systemUptime
         self.renderSize = renderSize
         updateBuilderRenderSize(renderSize)
@@ -490,6 +498,11 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
 
         // 2. Load chapter 0. Restore targets are supplied by ReaderNavigator/ReaderView;
         // the engine no longer reads persisted position independently.
+        guard preloadingFirstChapter else {
+            startupTrace("preload skipped: the browser engine admits chapter 0")
+            AppLogger.render("[CoreTextEngine] start done without chapter 0 (browser admission)")
+            return
+        }
         var priority = Set<Int>()
         priority.insert(0) // Cover/TOC is always needed
         startupTrace("preload priority=\(priority.sorted())")

@@ -395,7 +395,11 @@ struct BrowserViewportHostTests {
         }
         #expect(delegate.layouts.isEmpty)
         await browser.activatePagedLayout()
-        #expect(!delegate.layouts.isEmpty, "switching back must initialize the paged engine")
+        // Chapter 0 is admitted and laid out by the engine admission picks; the
+        // delegate no longer paginates it on its own before admission.
+        #expect(browser.choice(for: 0) != nil, "switching back must admit chapter 0")
+        #expect(browser.chapterPagination(forSpine: 0, charOffset: 0) != nil || !delegate.layouts.isEmpty,
+                "switching back must initialize the paged engine")
     }
 
     @Test func supersededContentTaskCannotReplaceTheNewViewportSession() async throws {
