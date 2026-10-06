@@ -22,6 +22,7 @@ struct ReaderRenderSettingsSnapshotInput {
     let dialogueBubbleStyle: ReaderDialogueBubbleStyle
     var textConversion: TextConversion = .original
     var translation: ReaderTranslationPresentation = .off
+    var bookID: UUID? = nil
 }
 
 enum ReaderRenderSurface {
@@ -68,7 +69,8 @@ enum ReaderRenderSettingsSnapshotBuilder {
             readerStyleAssetRevision: input.readerStyleAssetRevision,
             dialogueBubbleStyle: input.dialogueBubbleStyle,
             textConversion: input.textConversion,
-            translation: input.translation
+            translation: input.translation,
+            bookID: input.bookID
         )
     }
 }

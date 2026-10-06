@@ -635,7 +635,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         guard isCurrentWork(generation) else { return nil }
         let config = makeBrowserConfig(
-            fontScalePolicy: PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle))
+            html: html, fontScalePolicy: PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle))
         let evaluation = await Task.detached(priority: .userInitiated) {
             document.evaluate(configuration: config, writingMode: writingMode)
         }.value
@@ -708,7 +708,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // The configuration is made after the fonts are prepared so its resolver
             // sees them; its cascade inputs are the admission configuration's.
             let evaluation = try await chapterEvaluation(for: spineIndex, input: input) { policy in
-                makeBrowserConfig(fontScalePolicy: policy)
+                makeBrowserConfig(html: html, fontScalePolicy: policy)
             }
             guard isCurrentWork(generation) else { return }
             let config = evaluation.configuration
@@ -851,9 +851,15 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         rebuildOffsets()
     }
 
-    private func makeBrowserConfig(fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable,
+    private func makeBrowserConfig(html: String, fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable,
         scrollSettings: ReaderRenderSettings? = nil, scrollSize: CGSize? = nil) -> BrowserLayoutConfig {
         let settings = scrollSettings ?? self.settings
+        // The same decision the legacy builders reach from their rendered text: what the
+        // reader will show, after 繁簡轉換.
+        let cjkTypographyStyle = CJKTypographyStyleResolver.shared.style(
+            for: CJKTypographyStyleResolver.textSample(fromHTML: html).converted(to: settings.textConversion),
+            book: settings.bookID, conversion: settings.textConversion,
+            declaredLanguage: resource.declaredLanguage)
         let contentWidth = scrollSize?.width ?? self.contentWidth
         let contentHeight = scrollSize?.height ?? self.contentHeight
         let themeTextColor = scrollSettings?.textColor ?? self.themeTextColor
@@ -882,7 +888,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                     size: size, weight: weight, italic: italic)
                 ?? publicationResolver?(families, weight, italic, size)
             },
-            writingMode: settings.writingMode
+            writingMode: settings.writingMode,
+            cjkTypographyStyle: cjkTypographyStyle
         )
     }
 
@@ -1965,7 +1972,7 @@ extension BrowserLayoutPageEngine {
         let store = BrowserLayoutImageStore(await resource.prefetchImages(
             forChapter: spine, html: html, renderWidth: contentSize.width))
         let evaluation = try await chapterEvaluation(for: spine, input: input) { policy in
-            var config = makeBrowserConfig(fontScalePolicy: policy, scrollSettings: settings, scrollSize: contentSize)
+            var config = makeBrowserConfig(html: html, fontScalePolicy: policy, scrollSettings: settings, scrollSize: contentSize)
             // The scroll host owns the reader's outer margins and fixed bars.
             config.contentInsets = .zero
             return config

@@ -60,7 +60,8 @@ extension ReaderView {
             readerStyleAssetRevision: settings.readerStyleAssetRevision,
             dialogueBubbleStyle: settings.dialogueBubbleStyle,
             textConversion: settings.textConversion,
-            translation: effectiveReaderTranslation
+            translation: effectiveReaderTranslation,
+            bookID: bookId
         )
 
         let surface: ReaderRenderSurface
