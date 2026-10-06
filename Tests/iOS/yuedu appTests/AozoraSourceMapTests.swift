@@ -129,6 +129,72 @@ struct AozoraSourceMapTests {
         #expect(document.displayedText.hasPrefix("『吾輩は猫である』中篇自序\n夏目漱石\n"))
     }
 
+    @Test("each block's span spells its text, and the spans with their separators rebuild the displayed text")
+    func blockSpans() throws {
+        for text in [try TXTFileReader.readTextFile(url: Self.fixture), Self.sample] {
+            let document = AozoraDocumentParser.parse(text)
+            let sections: [AozoraBlockSpan.Section: [AozoraBlock]] = [
+                .header: document.headerBlocks, .body: document.body, .colophon: document.colophon,
+            ]
+            #expect(document.blockSpans.count
+                == document.headerBlocks.count + document.body.count + document.colophon.count)
+            var rebuilt = ""
+            var sawPageBreak = false
+            for (position, span) in document.blockSpans.enumerated() {
+                let block = try #require(sections[span.section]?[span.index])
+                let leaves = document.segments[span.leaves].map(\.text).joined()
+                #expect(leaves == block.displayedText)
+                if case .pageBreak = block {
+                    #expect(span.leaves.isEmpty)
+                    sawPageBreak = true
+                }
+                #expect((span.separator == nil) == (position == 0))
+                if let separator = span.separator {
+                    #expect(document.segments[separator].text == "\n")
+                    #expect(separator == span.leaves.lowerBound - 1)
+                    rebuilt += "\n"
+                }
+                rebuilt += leaves
+            }
+            #expect(rebuilt == document.displayedText)
+            if text == Self.sample { #expect(sawPageBreak) }
+        }
+    }
+
+    @Test("collapsed ASCII whitespace: kept spaces are copies, a surviving tab is replaced, the rest is deleted")
+    func collapsedWhitespace() throws {
+        let text = "題\n\nA  B\tC\n trail \n"
+        let document = AozoraDocumentParser.parse(text)
+        #expect(document.displayedText == "題\n\nA B C\ntrail")
+        let map = document.sourceMap
+        let units = text as NSString
+        let a = units.range(of: "A").location
+        let b = units.range(of: "B").location
+        let tab = units.range(of: "\t").location
+        let trail = units.range(of: "trail").location
+        // The first space of a run is kept as a copy; the second is deleted.
+        #expect(map.displayedOffset(forSource: a + 1) == 4)
+        #expect(map.sourceOffset(forDisplayed: 4) == a + 1)
+        #expect(map.displayedOffset(forSource: a + 2) == 5)
+        #expect(map.sourceOffset(forDisplayed: 5) == b)
+        // The tab shows as one space that stands for it.
+        let replaced = try #require(map.runs.first { $0.sourceStart == tab })
+        #expect(!replaced.isIdentity)
+        #expect(replaced.displayedLength == 1)
+        #expect(replaced.sourceLength == 1)
+        #expect(map.sourceOffset(forDisplayed: 6) == tab)
+        // Spaces at a block's edges are deleted.
+        #expect(map.displayedOffset(forSource: trail - 1) == 9)
+        #expect(map.sourceOffset(forDisplayed: 9) == trail)
+        #expect(map.displayedOffset(forSource: trail + 5) == document.displayedText.utf16.count)
+        let displayed = Array(document.displayedText.utf16)
+        let source = Array(text.utf16)
+        for run in map.runs where run.isIdentity {
+            #expect(displayed[run.displayedStart..<(run.displayedStart + run.displayedLength)]
+                .elementsEqual(source[run.sourceStart..<(run.sourceStart + run.sourceLength)]))
+        }
+    }
+
     @Test("a line split at 地付き maps its line break to the annotation")
     func splitLine() {
         let text = "題\n\n文。［＃地付き］（未完）"

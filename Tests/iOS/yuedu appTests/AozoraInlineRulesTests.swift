@@ -152,6 +152,36 @@ struct AozoraInlineRulesTests {
         #expect(inlines("さま／゛＼の").displayedText == "さま\u{3034}\u{3035}の")
     }
 
+    // MARK: ASCII whitespace
+
+    @Test("ASCII spaces and tabs collapse as HTML collapses them", arguments: [
+        ("A  B", "A B"),                    // a run keeps one space
+        ("A\tB", "A B"),                    // a tab that survives becomes a space
+        (" lead", "lead"),                  // the start of a block
+        ("trail ", "trail"),                // the end of a block
+        ("A ［＃「A」に傍点］ B", "A B"),     // a run across an annotation
+        ("　本文　", "　本文　"),             // U+3000 is not ASCII whitespace
+    ])
+    func asciiWhitespace(line: String, displayed: String) {
+        #expect(inlines(line).displayedText == displayed)
+    }
+
+    @Test("a line of ASCII spaces is an empty block")
+    func spacesOnly() {
+        let document = AozoraDocumentParser.parse("題\n\n本文\n   \n")
+        #expect(document.body.suffix(2).map(\.displayedText) == ["本文", ""])
+    }
+
+    @Test("spaces next to a heading's line break go")
+    func spacesAroundHeadingLineBreak() throws {
+        let document = AozoraDocumentParser.parse("題\n\n［＃ここから中見出し］\n上 \n 下\n［＃ここで中見出し終わり］\n")
+        guard case .heading(_, _, let inlines, _)? = document.body.last else {
+            Issue.record("no heading block: \(document.body)")
+            return
+        }
+        #expect(inlines == [.text("上"), .lineBreak, .text("下")])
+    }
+
     // MARK: Helpers
 
     private func ruby(_ base: String, _ reading: String) -> AozoraInline {

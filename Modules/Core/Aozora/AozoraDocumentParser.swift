@@ -93,7 +93,24 @@ struct AozoraDocument: Equatable, Sendable {
     var displayedText: String
     /// Between UTF-16 offsets of `displayedText` and of the source text.
     var sourceMap: AozoraSourceMap
+    /// `displayedText` piece by piece, with the source each piece stands for.
+    var segments: [AozoraSourceMap.Segment]
+    /// Where each block sits in `segments`, in document order.
+    var blockSpans: [AozoraBlockSpan]
     var diagnostics: AozoraDiagnostics
+}
+
+/// One block's place in the displayed text: the "\n" segment before it and its
+/// own segments. The EPUB writer cuts chapters between blocks with these.
+struct AozoraBlockSpan: Hashable, Sendable {
+    enum Section: Hashable, Sendable { case header, body, colophon }
+    var section: Section
+    /// Index into `headerBlocks`, `body` or `colophon`.
+    var index: Int
+    /// The "\n" segment before this block; nil for the document's first block.
+    var separator: Int?
+    /// The block's own segments.
+    var leaves: Range<Int>
 }
 
 /// The only place that reads Aozora Bunko notation.
@@ -116,9 +133,9 @@ enum AozoraDocumentParser {
         var diagnostics = AozoraDiagnostics()
         let structure = structure(of: source, diagnostics: &diagnostics)
         let parser = AozoraBlockParser(source: source, tables: tables, diagnostics: diagnostics)
-        let headerBlocks = parser.parse(lines: structure.header)
-        let body = parser.parse(lines: structure.body)
-        let colophon = parser.parse(lines: structure.colophon)
+        let headerBlocks = parser.parse(lines: structure.header, section: .header)
+        let body = parser.parse(lines: structure.body, section: .body)
+        let colophon = parser.parse(lines: structure.colophon, section: .colophon)
         return AozoraDocument(
             structure: structure,
             header: AozoraHeaderParser.parse(headerLines: headerBlocks.map(\.displayedText)),
@@ -126,6 +143,8 @@ enum AozoraDocumentParser {
             headerBlocks: headerBlocks, body: body, colophon: colophon,
             displayedText: parser.segments.map(\.text).joined(),
             sourceMap: AozoraSourceMap(segments: parser.segments, source: source.units),
+            segments: parser.segments,
+            blockSpans: parser.spans,
             diagnostics: parser.diagnostics)
     }
 
@@ -137,7 +156,7 @@ enum AozoraDocumentParser {
             source.line($0).allSatisfy(\.isWhitespace)
         } ?? source.lines.count
         let parser = AozoraBlockParser(source: source, tables: tables, diagnostics: AozoraDiagnostics())
-        return parser.parse(lines: 0..<headerEnd).map(\.displayedText)
+        return parser.parse(lines: 0..<headerEnd, section: .header).map(\.displayedText)
     }
 
     // MARK: Sections
@@ -462,6 +481,115 @@ private func freeze(_ nodes: [AozoraNode]) -> [AozoraInline] {
     return result
 }
 
+/// CSS `white-space: normal` for U+0020 and U+0009 over a block's displayed
+/// leaves, in order and across inline boundaries: a run collapses to one space,
+/// a tab that survives becomes a space, and a run at the start or end of the
+/// block or next to a line break goes. BrowserAuto keeps ASCII spaces at a
+/// block's edge and legacy drops them, and both collapse runs, so the displayed
+/// text is collapsed already and both engines read it the same way
+/// (docs/superpowers/plans/2026-10-05-aozora-bunko-support.md, Task 12).
+/// U+3000, U+00A0 and other spaces stay. Kept characters stay identity runs of
+/// the source map: a verbatim leaf is split around what goes, and a surviving
+/// tab becomes a one-space replacement of its own.
+private func collapseASCIIWhitespace(_ nodes: [AozoraNode]) -> [AozoraNode] {
+    enum Edit { case delete, space }
+    var leaves: [AozoraNode] = []
+    func collect(_ list: [AozoraNode]) {
+        for node in list {
+            switch node.kind {
+            case .container: collect(node.children)
+            case .text, .gaiji, .kaeriten, .okurigana, .lineBreak: leaves.append(node)
+            case .editorialNote, .unknownAnnotation, .rangeStart, .endAlignedTail, .pageBreak: break
+            }
+        }
+    }
+    collect(nodes)
+
+    var edits: [ObjectIdentifier: [Int: Edit]] = [:]
+    // The space the current run keeps so far, and whether nothing shown precedes
+    // it in the block or since the last line break.
+    var kept: (node: AozoraNode, offset: Int)?
+    var atEdge = true
+    func dropKept() {
+        if let kept { edits[ObjectIdentifier(kept.node), default: [:]][kept.offset] = .delete }
+        kept = nil
+    }
+    for leaf in leaves {
+        switch leaf.kind {
+        case .lineBreak:
+            dropKept()
+            atEdge = true
+        case .text:
+            for (offset, unit) in leaf.text.utf16.enumerated() {
+                guard unit == 0x20 || unit == 0x09 else {
+                    kept = nil
+                    atEdge = false
+                    continue
+                }
+                if atEdge || kept != nil {
+                    edits[ObjectIdentifier(leaf), default: [:]][offset] = .delete
+                } else {
+                    kept = (leaf, offset)
+                    if unit == 0x09 { edits[ObjectIdentifier(leaf), default: [:]][offset] = .space }
+                }
+            }
+        default:
+            kept = nil
+            atEdge = false
+        }
+    }
+    dropKept()
+    guard !edits.isEmpty else { return nodes }
+
+    func applying(_ nodeEdits: [Int: Edit], to node: AozoraNode) -> [AozoraNode] {
+        let units = Array(node.text.utf16)
+        guard node.isVerbatim else {
+            // A replacement (an accent, くの字点): its text changes, its source stays.
+            var shown: [UInt16] = []
+            for (offset, unit) in units.enumerated() {
+                switch nodeEdits[offset] {
+                case .delete?: continue
+                case .space?: shown.append(0x20)
+                case nil: shown.append(unit)
+                }
+            }
+            guard !shown.isEmpty else { return [] }
+            node.text = String(decoding: shown, as: UTF16.self)
+            return [node]
+        }
+        var result: [AozoraNode] = []
+        var stretchStart = 0
+        func flush(upTo end: Int) {
+            guard end > stretchStart else { return }
+            let lower = node.source.lowerBound
+            result.append(.text(String(decoding: units[stretchStart..<end], as: UTF16.self),
+                                source: (lower + stretchStart)..<(lower + end), verbatim: true))
+        }
+        for offset in units.indices {
+            guard let edit = nodeEdits[offset] else { continue }
+            flush(upTo: offset)
+            if edit == .space {
+                let at = node.source.lowerBound + offset
+                result.append(.text(" ", source: at..<(at + 1), verbatim: false))
+            }
+            stretchStart = offset + 1
+        }
+        flush(upTo: units.count)
+        return result
+    }
+    func rebuild(_ list: [AozoraNode]) -> [AozoraNode] {
+        list.flatMap { node -> [AozoraNode] in
+            if case .container = node.kind {
+                node.children = rebuild(node.children)
+                return [node]
+            }
+            guard let nodeEdits = edits[ObjectIdentifier(node)] else { return [node] }
+            return applying(nodeEdits, to: node)
+        }
+    }
+    return rebuild(nodes)
+}
+
 /// Reads the lines of one section into blocks. A line is a paragraph; a blank
 /// line is an empty paragraph; a line holding only annotations is no block.
 /// ［＃ここから…］ styles the lines up to its ［＃ここで…終わり］, and the lines
@@ -475,6 +603,9 @@ private final class AozoraBlockParser {
     /// What the reader sees across every section read so far, in order, with
     /// the source each piece stands for.
     private(set) var segments: [AozoraSourceMap.Segment] = []
+    /// Each block's place in `segments`, across every section read so far.
+    private(set) var spans: [AozoraBlockSpan] = []
+    private var section = AozoraBlockSpan.Section.body
     private var hasEmittedBlock = false
     /// The source the "\n" before the next block stands for: the line break
     /// after the previous block, or the annotation that split a line.
@@ -545,7 +676,8 @@ private final class AozoraBlockParser {
         self.diagnostics = diagnostics
     }
 
-    func parse(lines: Range<Int>) -> [AozoraBlock] {
+    func parse(lines: Range<Int>, section: AozoraBlockSpan.Section) -> [AozoraBlock] {
+        self.section = section
         blocks = []
         blockStyles = []
         heading = nil
@@ -607,11 +739,16 @@ private final class AozoraBlockParser {
     private func emit(_ block: AozoraBlock, showing shown: [AozoraNode], at position: Int) {
         var leaves: [AozoraSourceMap.Segment] = []
         for node in shown { collectLeaves(node, into: &leaves) }
+        var separator: Int?
         if hasEmittedBlock {
             let start = leaves.first?.source.lowerBound ?? position
+            separator = segments.count
             segments.append(AozoraSourceMap.Segment(text: "\n", source: pendingSeparator ?? start..<start))
         }
+        let firstLeaf = segments.count
         segments.append(contentsOf: leaves)
+        spans.append(AozoraBlockSpan(section: section, index: blocks.count, separator: separator,
+                                     leaves: firstLeaf..<segments.count))
         blocks.append(block)
         hasEmittedBlock = true
         pendingSeparator = nil
@@ -675,19 +812,22 @@ private final class AozoraBlockParser {
         if let image = content.first(where: { if case .container(.image) = $0.kind { return true }; return false }),
            content.allSatisfy({ $0 === image || isLayoutSpace($0) }),
            case .container(.image(let file, let width, let height)) = image.kind {
+            let shown = collapseASCIIWhitespace([image])
             emit(.image(source: file, width: width, height: height, caption: freeze(image.children)),
-                 showing: [image], at: image.source.lowerBound)
+                 showing: shown, at: image.source.lowerBound)
             return
         }
         if let headingNode = content.first(where: { if case .container(.style(.heading)) = $0.kind { return true }; return false }),
            content.allSatisfy({ $0 === headingNode || isLayoutSpace($0) }),
            case .container(.style(.heading(let level, let kind))) = headingNode.kind {
-            let flattened = nodes.flatMap { $0 === headingNode ? $0.children : [$0] }
-            emit(.heading(level, kind, blockInlineStyles(freeze(flattened)), style), showing: nodes,
+            let shown = collapseASCIIWhitespace(nodes)
+            let flattened = shown.flatMap { $0 === headingNode ? $0.children : [$0] }
+            emit(.heading(level, kind, blockInlineStyles(freeze(flattened)), style), showing: shown,
                  at: nodes.first?.source.lowerBound ?? lineStart)
             return
         }
-        emit(.paragraph(blockInlineStyles(freeze(nodes)), style), showing: nodes,
+        let shown = collapseASCIIWhitespace(nodes)
+        emit(.paragraph(blockInlineStyles(freeze(shown)), style), showing: shown,
              at: nodes.first?.source.lowerBound ?? lineStart)
     }
 
@@ -755,8 +895,9 @@ private final class AozoraBlockParser {
             run = RubyRun()
         }
         guard block.nodes.contains(where: \.isContent) else { return }
-        emit(.heading(block.level, block.kind, blockInlineStyles(freeze(block.nodes)), block.style),
-             showing: block.nodes, at: block.nodes.first?.source.lowerBound ?? lineStart)
+        let shown = collapseASCIIWhitespace(block.nodes)
+        emit(.heading(block.level, block.kind, blockInlineStyles(freeze(shown)), block.style),
+             showing: shown, at: block.nodes.first?.source.lowerBound ?? lineStart)
         // The break after the heading is the one after its last line, not the
         // one after ［＃ここで…見出し終わり］.
         if let next = block.pendingBreaks.first {
