@@ -118,15 +118,17 @@ enum AozoraChapterPlanner {
             let pieces = draft.role == .body ? parts(of: positions) : [positions]
             // The chapter's own title: the heading it starts with.
             var startTitle: (title: String, level: Int)?
-            if case .heading(let level, _, let inlines, _) = block(spans[positions[0]]) {
+            if case .heading(let level, _, let inlines, _) = block(spans[positions[0]]), isListed(headingTitle(inlines)) {
                 startTitle = (headingTitle(inlines), level.navigationLevel)
             }
             let partTitle = startTitle?.title ?? lastHeadingTitle ?? workTitle
             for (pieceIndex, piece) in pieces.enumerated() {
                 var navigation: [AozoraNavigationEntry] = []
                 switch draft.role {
-                case .titlePage:
+                case .titlePage where isListed(workTitle):
                     navigation.append(AozoraNavigationEntry(title: workTitle, level: 1, anchor: nil))
+                case .titlePage:
+                    break
                 case .colophon:
                     navigation.append(AozoraNavigationEntry(title: "底本", level: 1, anchor: nil))
                 case .body:
@@ -155,8 +157,14 @@ enum AozoraChapterPlanner {
     }
 
     /// The table-of-contents entries for the headings a block holds: the block
-    /// itself when it is a heading, and every inline heading in it.
+    /// itself when it is a heading, and every inline heading in it, but for one
+    /// whose title shows nothing.
     private static func headings(in block: AozoraBlock, blockIndex: Int) -> [AozoraNavigationEntry] {
+        allHeadings(in: block, blockIndex: blockIndex).filter { isListed($0.title) }
+    }
+
+    /// Every heading, numbered as the writer numbers their ids.
+    private static func allHeadings(in block: AozoraBlock, blockIndex: Int) -> [AozoraNavigationEntry] {
         switch block {
         case .heading(let level, _, let inlines, _):
             return [AozoraNavigationEntry(title: headingTitle(inlines), level: level.navigationLevel,
@@ -179,6 +187,14 @@ enum AozoraChapterPlanner {
         case .pageBreak, .image:
             return []
         }
+    }
+
+    /// Whether a title gets an entry. A reading system ignores an entry whose label
+    /// is blank once white space is trimmed, and every entry nested under it (EPUB 3
+    /// Content Documents, nav); some works set U+3000 alone as a heading, as
+    /// ［＃大見出し］　［＃大見出し終わり］.
+    private static func isListed(_ title: String) -> Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// A heading's title: its displayed text, its lines joined by a space.
@@ -213,22 +229,6 @@ private extension AozoraHeadingLevel {
         case .large: return 1
         case .medium: return 2
         case .small: return 3
-        }
-    }
-}
-
-private extension AozoraInline {
-    /// The inlines this one wraps, for walking the tree.
-    var children: [AozoraInline] {
-        switch self {
-        case .ruby(let children, _, _), .emphasis(_, _, let children), .sideline(_, _, let children),
-             .bold(let children), .italic(let children), .size(_, let children),
-             .tateChuYoko(let children), .script(_, let children), .warichu(let children),
-             .heading(_, _, let children), .boxed(let children), .horizontal(let children),
-             .caption(let children), .image(_, _, _, let children):
-            return children
-        case .text, .gaiji, .kaeriten, .kuntenOkurigana, .lineBreak, .editorialNote, .unknownAnnotation:
-            return []
         }
     }
 }

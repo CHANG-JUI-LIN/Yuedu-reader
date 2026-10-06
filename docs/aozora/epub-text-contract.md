@@ -35,6 +35,13 @@ BrowserAuto's paged and scroll texts were identical. It fell back to legacy for 
 - **ASCII whitespace.** Collapsed in the displayed text itself, as HTML collapses it (`AozoraDocumentParser`, Phase 1b Task 12): the engines disagree only about spaces at a block's edge, and there are none left.
 - **Quotes.** Legacy curls straight quotes into characters of the same length; the parity test reads them back as straight.
 
+## The ruby exception
+
+BrowserAuto lays out a ruby only over a base of inline text that shows something, with no ruby inside it (`HorizontalRubySupport`): no nested `<ruby>`, no `<rtc>`, no `<img>` in the base. A chapter holding any other ruby goes to legacy in both writing modes. Both engines read the same text from it, so positions hold; only the engine changes. `AozoraEngineParityTests` pins both cases.
+
+- **A word with readings on both sides**, a ruby and a 左に…のルビ on the same text, is written as a ruby inside a ruby: 82 chapters in 31 works of the corpus.
+- **A ruby over a figure**, as 黒死館殺人事件 sets Hebrew letters (a figure, with the letter's name as its reading), keeps the figure as its base: 19 rubies, all in that one work. When the figure's file is missing, as for a `.txt` imported without its zip, the ruby would annotate nothing, and the writer leaves it out.
+
 ## The figure exception
 
 A figure costs legacy one U+FFFC that BrowserAuto does not have, and no markup removes that difference.

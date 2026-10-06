@@ -107,6 +107,15 @@ struct AozoraXHTMLWriterTests {
             == #"<p>前<span class="caption">猫の図</span>後<br class="eol"/></p>"#)
     }
 
+    @Test("a ruby over a figure keeps the figure as its base, and goes when the file is missing")
+    func rubyOverFigure() {
+        // As 黒死館殺人事件 sets Hebrew letters: ［＃ヘブライ文字「YOD」（fig1317_24.png…）入る］《ヨッド》.
+        let line = "文字［＃ヘブライ文字「YOD」（fig1.png、横15×縦23）入る］《ヨッド》まで"
+        #expect(body(line, images: ["fig1.png": "../images/fig1.png"])
+            == #"<p>文字<ruby><img class="illustration" src="../images/fig1.png" alt="" width="15" height="23"/><rt>ヨッド</rt></ruby>まで<br class="eol"/></p>"#)
+        #expect(body(line) == #"<p>文字まで<br class="eol"/></p>"#)
+    }
+
     // MARK: Document
 
     @Test("the document is XHTML in Japanese with its title and stylesheet, and no whitespace between blocks")

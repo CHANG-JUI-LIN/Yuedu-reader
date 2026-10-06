@@ -129,6 +129,9 @@ enum AozoraXHTMLWriter {
         case .text(let text):
             return escaped(text)
         case .ruby(let base, let reading, let side):
+            // A ruby over nothing, such as a figure whose file is missing, is left out:
+            // it annotates nothing, and BrowserAuto lays out no ruby without a base.
+            guard shows(base, images: images) else { return wrap("", "", base) }
             return wrap(side == .left ? "<ruby class=\"left\">" : "<ruby>", "<rt>\(escaped(reading))</rt></ruby>", base)
         case .emphasis(let style, let side, let children):
             let name = style.className + (side == .left ? "_after" : "")
@@ -177,6 +180,19 @@ enum AozoraXHTMLWriter {
             return "<br/>"
         case .editorialNote, .unknownAnnotation:
             return ""
+        }
+    }
+
+    /// Whether inlines show anything: text other than white space, as BrowserAuto
+    /// judges a ruby base, or a figure the package holds.
+    private static func shows(_ inlines: [AozoraInline], images: [String: String]) -> Bool {
+        !inlines.displayedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || holdsFigure(inlines, images)
+    }
+
+    private static func holdsFigure(_ inlines: [AozoraInline], _ images: [String: String]) -> Bool {
+        inlines.contains { inline in
+            if case .image(let source, _, _, _) = inline, images[source] != nil { return true }
+            return holdsFigure(inline.children, images)
         }
     }
 

@@ -174,6 +174,22 @@ extension Array where Element == AozoraInline {
     var displayedText: String { map(\.displayedText).joined() }
 }
 
+extension AozoraInline {
+    /// The inlines this one wraps, for walking the tree; a figure's are its caption.
+    var children: [AozoraInline] {
+        switch self {
+        case .ruby(let children, _, _), .emphasis(_, _, let children), .sideline(_, _, let children),
+             .bold(let children), .italic(let children), .size(_, let children),
+             .tateChuYoko(let children), .script(_, let children), .warichu(let children),
+             .heading(_, _, let children), .boxed(let children), .horizontal(let children),
+             .caption(let children), .image(_, _, _, let children):
+            return children
+        case .text, .gaiji, .kaeriten, .kuntenOkurigana, .lineBreak, .editorialNote, .unknownAnnotation:
+            return []
+        }
+    }
+}
+
 extension AozoraBlock {
     var displayedText: String {
         switch self {

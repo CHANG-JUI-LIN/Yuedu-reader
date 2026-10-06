@@ -106,6 +106,19 @@ struct AozoraChapterPlannerTests {
         #expect(chapters.last?.navigation == [AozoraNavigationEntry(title: "二 副題", level: 2, anchor: nil)])
     }
 
+    @Test("a heading that shows only white space has no entry, and the headings after it keep theirs")
+    func blankHeading() {
+        // As a few works set U+3000 alone as a 大見出し. Readium, as EPUB 3 asks, ignores
+        // an entry with a blank label together with every entry nested under it.
+        let chapters = plan("題\n\n［＃大見出し］　［＃大見出し終わり］\n献呈［＃「献呈」は中見出し］\n本文\n")
+        #expect(chapters.map(\.text) == ["題\n", "　\n", "献呈\n本文\n"])
+        #expect(chapters.map(\.navigation) == [
+            [AozoraNavigationEntry(title: "題", level: 1, anchor: nil)],
+            [],
+            [AozoraNavigationEntry(title: "献呈", level: 2, anchor: nil)],
+        ])
+    }
+
     // MARK: Source map
 
     @Test("a chapter's map agrees with the document's inside blocks, and its line breaks map to the source's")
