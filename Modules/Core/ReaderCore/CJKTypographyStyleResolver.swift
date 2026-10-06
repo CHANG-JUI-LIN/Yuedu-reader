@@ -20,9 +20,10 @@ final class CJKTypographyStyleResolver: @unchecked Sendable {
     /// A book keeps the style its first decisive text gave it, so a title page or a
     /// chapter title that shows no script is set like the rest of the book. Text of a
     /// book not yet decided, or of no book, decides for itself; when it cannot, the
-    /// declared language does, then the interface language.
+    /// declared language does, then the interface language. The text is read only
+    /// when the book is not decided yet: sampling a chapter's markup is its cost.
     func style(
-        for text: String,
+        for text: @autoclosure () -> String,
         book: UUID?,
         conversion: TextConversion,
         declaredLanguage: String?
@@ -31,7 +32,7 @@ final class CJKTypographyStyleResolver: @unchecked Sendable {
         if let key, let style = lock.withLock({ decided[key] }) {
             return style
         }
-        if let style = CJKTypographyStyle.detect(in: text) {
+        if let style = CJKTypographyStyle.detect(in: text()) {
             if let key {
                 let isNew = lock.withLock { () -> Bool in
                     guard decided[key] == nil else { return false }
