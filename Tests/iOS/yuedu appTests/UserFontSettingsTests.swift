@@ -64,9 +64,7 @@ struct UserFontSettingsTests {
         )
 
         let bodyStart = result.attributedString.string.count > "第一章\n".count ? "第一章\n".count : 0
-        let bodyFont = try #require(
-            result.attributedString.attribute(.font, at: bodyStart, effectiveRange: nil) as? UIFont
-        )
+        let bodyFont = try #require(result.attributedString.askedFont(at: bodyStart))
         #expect(bodyFont.fontName == selectedFont.fontName)
     }
 
@@ -155,9 +153,7 @@ struct UserFontSettingsTests {
 
         let contentStart = try #require(result.attributedString.string.range(of: "線上內容"))
         let nsIndex = NSRange(contentStart, in: result.attributedString.string).location
-        let bodyFont = try #require(
-            result.attributedString.attribute(.font, at: nsIndex, effectiveRange: nil) as? UIFont
-        )
+        let bodyFont = try #require(result.attributedString.askedFont(at: nsIndex))
         #expect(bodyFont.fontName == selectedFont.fontName)
     }
 
@@ -234,9 +230,7 @@ struct UserFontSettingsTests {
         )
         let contentRange = try #require(result.attributedString.string.range(of: "這是一段粗體文字"))
         let index = NSRange(contentRange, in: result.attributedString.string).location
-        let font = try #require(
-            result.attributedString.attribute(.font, at: index, effectiveRange: nil) as? UIFont
-        )
+        let font = try #require(result.attributedString.askedFont(at: index))
         let strokeWidth = try #require(
             result.attributedString.attribute(.strokeWidth, at: index, effectiveRange: nil) as? NSNumber
         )
@@ -280,9 +274,7 @@ struct UserFontSettingsTests {
         )
         let contentRange = try #require(result.attributedString.string.range(of: "線上粗體"))
         let index = NSRange(contentRange, in: result.attributedString.string).location
-        let font = try #require(
-            result.attributedString.attribute(.font, at: index, effectiveRange: nil) as? UIFont
-        )
+        let font = try #require(result.attributedString.askedFont(at: index))
         let strokeWidth = try #require(
             result.attributedString.attribute(.strokeWidth, at: index, effectiveRange: nil) as? NSNumber
         )

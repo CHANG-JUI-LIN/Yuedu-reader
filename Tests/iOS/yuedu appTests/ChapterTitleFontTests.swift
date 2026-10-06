@@ -52,13 +52,14 @@ struct ChapterTitleFontTests {
         )
     }
 
+    /// The font the title asked for. Han the picked font has no glyph for are drawn by
+    /// the book's CJK stand-in, which records the font it stands in for.
     private static func font(
         for text: String,
         in attributed: NSAttributedString
     ) throws -> UIFont {
         let range = try #require(attributed.string.range(of: text))
-        let location = NSRange(range, in: attributed.string).location
-        return try #require(attributed.attribute(.font, at: location, effectiveRange: nil) as? UIFont)
+        return try #require(attributed.askedFont(at: NSRange(range, in: attributed.string).location))
     }
 
     // MARK: - Resolver

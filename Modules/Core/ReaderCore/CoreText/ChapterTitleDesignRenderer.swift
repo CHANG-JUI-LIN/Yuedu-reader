@@ -1,4 +1,5 @@
 import YueduCoreText
+import YueduCoreTextTypography
 import CoreText
 import UIKit
 
@@ -110,7 +111,8 @@ enum ChapterTitleDesignRenderer {
         appearance: ReaderStyleAppearance,
         writingMode: ReaderWritingMode,
         renderWidth: CGFloat,
-        assetStore: ReaderStyleAssetStore
+        assetStore: ReaderStyleAssetStore,
+        cjkTypographyStyle: CJKTypographyStyle? = nil
     ) async throws -> ChapterTitleRenderPlan {
         guard design.version == ChapterTitleDesign.currentVersion else {
             throw ChapterTitleDesignRendererError.unsupportedDesignVersion(design.version)
@@ -162,13 +164,18 @@ enum ChapterTitleDesignRenderer {
                 originalTitle: title,
                 splitTitle: splitTitle
             )
-            let attributedText = text.map {
-                makeAttributedText(
-                    $0,
+            let attributedText = text.map { text -> NSAttributedString in
+                let attributed = makeAttributedText(
+                    text,
                     layerKind: layer.kind,
                     style: style,
                     appearance: appearance
                 )
+                // The book's CJK fonts where the layer's own font has no glyph.
+                guard let cjkTypographyStyle else { return attributed }
+                let styled = NSMutableAttributedString(attributedString: attributed)
+                CJKTypography.applyFonts(to: styled, style: cjkTypographyStyle)
+                return styled
             }
             let contentImageID = contentImageID(for: layer.content)
                 ?? style.imagePresentation?.assetID

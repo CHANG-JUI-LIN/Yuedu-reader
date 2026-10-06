@@ -124,12 +124,20 @@ struct BrowserLayoutLineBreakBaselineTests {
         let images = await adapter.prefetchImages(
             forChapter: spine, html: html, renderWidth: contentSize.width
         )
+        // CJK text in its language's fonts, as the reader sets it
+        // (`BrowserLayoutPageEngine.makeBrowserConfig`). Each chapter decides from its own
+        // text rather than from the chapters before it, so a strided run lays a chapter
+        // out as the whole-book run does.
+        let cjkTypographyStyle = CJKTypographyStyleResolver.shared.style(
+            for: CJKTypographyStyleResolver.textSample(fromHTML: html), book: nil,
+            conversion: .original, declaredLanguage: adapter.declaredLanguage)
         let config = BrowserLayoutConfig(
             renderWidth: contentSize.width, renderHeight: contentSize.height,
             rootFontSize: settings.fontSize, fontFamilies: [],
             textColor: settings.textColor, backgroundColor: settings.backgroundColor,
             contentInsets: settings.contentInsets, lineHeight: settings.lineHeightMultiple,
-            fontResolver: adapter.fontResolver()
+            fontResolver: adapter.fontResolver(),
+            cjkTypographyStyle: cjkTypographyStyle
         )
         var metrics = LayoutMetrics()
         guard let frontend = try? LegacyCSSFrontend().buildStyleTree(
@@ -161,6 +169,7 @@ struct BrowserLayoutLineBreakBaselineTests {
             writingMode: config.writingMode,
             sourceText: sourceText.text,
             fontResolver: config.fontResolver,
+            cjkTypographyStyle: config.cjkTypographyStyle,
             fragmentHeight: contentSize.height
         )
         let pages = PageFragmentation.fragment(

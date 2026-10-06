@@ -79,7 +79,9 @@ struct VerticalTypographyAcceptanceTests {
         result.append(Case(id: "tcy") {
             "<p>\($0.han)<span style=\"color:#FF0000;text-combine-upright:all;-webkit-text-combine:horizontal\">12</span>\($0.han)</p>"
         })
-        result.append(Case(id: "orientation") { _ in "<p>漢字かなカナKindle 2014年ーー「本」</p>" })
+        // The script's own Han: a Simplified book does not write 漢, and with it this
+        // chapter's three sentences would not show one script.
+        result.append(Case(id: "orientation") { "<p>\($0.han)字かなカナ한글Kindle 2014年ーー「本」</p>" })
         return result
     }
 
@@ -388,25 +390,31 @@ struct VerticalTypographyAcceptanceTests {
 
     @Test(arguments: Engine.allCases)
     func orientationAndFonts(engine: Engine) async throws {
+        let system = UIFont.systemFont(ofSize: Self.fontSize).fontName
         for script in Self.scripts {
             let book = try await Self.open(script)
             let spine = try #require(Self.cases.firstIndex { $0.id == "orientation" })
-            let drawn = try await Self.draw(engine, book: book, spine: spine, mode: .verticalRTL)
-            let facts = Self.facts(of: drawn.text)
-            func fact(_ character: String) -> GlyphFact? { facts.first { $0.character == character } }
-            let label = "\(engine) \(script) " + facts.map { "\($0.character)\($0.upright ? "↑" : "→")\($0.font)" }.joined(separator: " ")
-            print("⟐VT orientation \(label)")
-            for character in ["漢", "字", "か", "な", "カ", "ナ", "年", "ー", "「", "」"] {
-                #expect(fact(character)?.upright == true, "\(character) upright: \(label)")
-            }
-            for character in ["K", "i", "n", "d", "l", "e", "2", "0", "1", "4"] {
-                #expect(fact(character)?.upright == false, "\(character) rotated: \(label)")
-            }
-            withKnownIssue("Task 5", isIntermittent: true) {
-                #expect(fact("漢")?.font == script.hanFont, "Han font: \(label)")
-                if script.name == "japanese" {
-                    #expect(fact("か")?.font == "HiraginoSans-W3", "kana font: \(label)")
+            for mode in [ReaderWritingMode.verticalRTL, .horizontal] {
+                let drawn = try await Self.draw(engine, book: book, spine: spine, mode: mode)
+                let facts = Self.facts(of: drawn.text)
+                func fact(_ character: String) -> GlyphFact? { facts.first { $0.character == character } }
+                let label = "\(engine) \(script) \(mode.rawValue) "
+                    + facts.map { "\($0.character)\($0.upright ? "↑" : "→")\($0.font)" }.joined(separator: " ")
+                print("⟐VT orientation \(label)")
+                if mode.isVertical {
+                    for character in [script.han, "字", "か", "な", "カ", "ナ", "한", "글", "年", "ー", "「", "」"] {
+                        #expect(fact(character)?.upright == true, "\(character) upright: \(label)")
+                    }
+                    for character in ["K", "i", "n", "d", "l", "e", "2", "0", "1", "4"] {
+                        #expect(fact(character)?.upright == false, "\(character) rotated: \(label)")
+                    }
                 }
+                // The book's Han in its script's font; kana always Japanese, Hangul always
+                // Korean; Latin in the system font. The same in both orientations.
+                #expect(fact(script.han)?.font == script.hanFont, "Han font: \(label)")
+                #expect(fact("か")?.font == "HiraginoSans-W3", "kana font: \(label)")
+                #expect(fact("한")?.font == "AppleSDGothicNeo-Regular", "Hangul font: \(label)")
+                #expect(fact("K")?.font == system, "Latin font: \(label)")
             }
         }
     }
@@ -421,15 +429,7 @@ struct VerticalTypographyAcceptanceTests {
                 let m = try Self.measure(drawn, vertical: true)
                 let label = "\(engine) \(script) \(id) cross=\(m.crossOffset) crossExtent=\(m.targetCrossExtent) route=\(drawn.route)"
                 print("⟐VT rotated \(label)")
-                if engine == .legacy {
-                    // Legacy draws Han from the system font's fallback, which CoreText sets
-                    // off the baseline in vertical text; Task 5 names the CJK font outright.
-                    withKnownIssue("Task 5", isIntermittent: true) {
-                        #expect(abs(m.crossOffset) <= (id == "latin" ? 0.05 : 0.1), "\(label)")
-                    }
-                } else {
-                    #expect(abs(m.crossOffset) <= (id == "latin" ? 0.05 : 0.1), "\(label)")
-                }
+                #expect(abs(m.crossOffset) <= (id == "latin" ? 0.05 : 0.1), "\(label)")
                 if id != "latin" {
                     // A dash or an ellipsis turned along the column is narrow across it.
                     #expect(m.targetCrossExtent <= 0.3, "\(label)")

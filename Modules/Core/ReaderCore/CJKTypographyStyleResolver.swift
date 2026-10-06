@@ -49,9 +49,46 @@ final class CJKTypographyStyleResolver: @unchecked Sendable {
     }
 
     /// The style the interface language implies; Traditional unless the interface is
-    /// Simplified Chinese or Japanese, as zh-Hant is the app's development language.
+    /// Simplified Chinese, Japanese or Korean, as zh-Hant is the app's development language.
     static var interfaceStyle: CJKTypographyStyle {
         CJKTypographyStyle.declared(Bundle.main.preferredLocalizations.first) ?? .traditional
+    }
+
+    /// The readable text of the nodes the legacy engine renders, enough of it to tell
+    /// its script. Ruby readings are left out, as `textSample(fromHTML:)` leaves them.
+    static func textSample(from nodes: [RenderableNode]) -> String {
+        var sample = ""
+        var length = 0
+        // A TXT chapter is one text node; take only what detection reads.
+        func append(_ text: some StringProtocol) {
+            let piece = text.prefix(max(0, CJKTypographyStyle.sampleLength - length))
+            sample += piece
+            length += piece.utf16.count
+        }
+        func collect(_ node: RenderableNode) {
+            guard length < CJKTypographyStyle.sampleLength else { return }
+            switch node {
+            case .text(let text):
+                append(text)
+            case .paragraph(let children, _), .heading(let children, _, _), .blockquote(let children),
+                 .listItem(let children, _), .block(_, let children, _), .unsupportedInteractive(_, _, let children, _):
+                // A block ends a sentence for detection, as a line break does.
+                children.forEach(collect)
+                append("\n")
+            case .inline(_, let children, _), .anchor(_, let children), .ruby(let children, _, _):
+                children.forEach(collect)
+            case .anchorTarget(_, let child):
+                collect(child)
+            case .rawHTML(let html):
+                append(textSample(fromHTML: html))
+            case .lineBreak:
+                append("\n")
+            case .horizontalRule, .image, .mathML, .table, .media, .commentBadge, .pageBreak:
+                break
+            }
+        }
+        nodes.forEach(collect)
+        return String(sample.prefix(CJKTypographyStyle.sampleLength))
     }
 
     /// The readable text of a chapter's XHTML, enough of it to tell its script: the

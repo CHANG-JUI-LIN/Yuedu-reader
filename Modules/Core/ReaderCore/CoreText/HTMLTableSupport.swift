@@ -1,4 +1,5 @@
 import YueduCoreText
+import YueduCoreTextTypography
 import Foundation
 import UIKit
 
@@ -439,7 +440,8 @@ enum HTMLTableRasterizer {
         textColor: UIColor,
         backgroundColor: UIColor,
         resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
-        imagesBySource: [String: UIImage] = [:]
+        imagesBySource: [String: UIImage] = [:],
+        cjkTypographyStyle: CJKTypographyStyle? = nil
     ) -> UIImage? {
         renderPages(
             table: table,
@@ -449,7 +451,8 @@ enum HTMLTableRasterizer {
             textColor: textColor,
             backgroundColor: backgroundColor,
             resolvedFont: resolvedFont,
-            imagesBySource: imagesBySource
+            imagesBySource: imagesBySource,
+            cjkTypographyStyle: cjkTypographyStyle
         ).first?.image
     }
 
@@ -462,7 +465,8 @@ enum HTMLTableRasterizer {
         textColor: UIColor,
         backgroundColor _: UIColor,
         resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
-        imagesBySource: [String: UIImage] = [:]
+        imagesBySource: [String: UIImage] = [:],
+        cjkTypographyStyle: CJKTypographyStyle? = nil
     ) -> [HTMLTableRasterPage] {
         let columns = max(1, table.columnCount)
         guard columns > 0, !table.rows.isEmpty else { return [] }
@@ -609,6 +613,10 @@ enum HTMLTableRasterizer {
                         attributes: attributes
                     ))
                 }
+            }
+            // The book's CJK fonts, as the chapter text around the table has them.
+            if let cjkTypographyStyle {
+                CJKTypography.applyFonts(to: output, style: cjkTypographyStyle)
             }
             return output
         }

@@ -164,7 +164,11 @@ struct BrowserViewportHostTests {
                   let old = oldBaselines.first(where: { $0.0 == text.sourceRange.location }) else { return nil }
             return abs(text.baselineY - old.1)
         }
-        let staleShift = try #require(shifts.max())
+        // The correction can move the old tile's text out of the tile altogether: the
+        // estimate assumes 0.7 em a character, and the Latin half of this fixture is
+        // narrower in the system font. Then other text paints where the stale snapshot
+        // put its own — a positional error larger than any shared line could measure.
+        let staleShift = shifts.max() ?? .infinity
         print("[ViewportPrefetch] staleBaselineShift=\(staleShift)")
         #expect(staleShift > 1, "fixture must expose a positional error, not only a different CTLine identity")
         controller.collectionView(collection, willDisplay: prefetched, forItemAt: path)
@@ -328,6 +332,19 @@ struct BrowserViewportHostTests {
         let sourceBeforeInsertion = visibleBeforeInsertion.currentTile?.chapter.spineIndex
         await engine.start(initialChapter: 0, contentWidth: size.width - 24, viewportExtent: size.height, loadAdjacentChapters: false)
         await engine.start(initialChapter: 2, contentWidth: size.width - 24, viewportExtent: size.height, loadAdjacentChapters: false)
+        // The drag above may already have begun loading a neighbour; start() then
+        // deduplicates that load without awaiting it. Observe each actual commit, as
+        // the tracking test does, rather than assuming it beat the next line.
+        for spine in [0, 2] where engine.chapterRanges[spine] == nil {
+            var arrival: AnyCancellable?
+            await withCheckedContinuation { continuation in
+                arrival = engine.events.sink { event in
+                    guard case .chunksInserted(_, let chapter) = event, chapter == spine else { return }
+                    arrival?.cancel()
+                    continuation.resume()
+                }
+            }
+        }
         await withCheckedContinuation { continuation in RunLoop.main.perform { continuation.resume() } }
         collection.layoutIfNeeded()
         controller.scrollViewDidEndDecelerating(collection)

@@ -17,6 +17,7 @@ struct CJKTypographyStyleTests {
         #expect(CJKTypographyStyle.detect(in: Self.traditional) == .traditional)
         #expect(CJKTypographyStyle.detect(in: Self.simplified) == .simplified)
         #expect(CJKTypographyStyle.detect(in: Self.japanese) == .japanese)
+        #expect(CJKTypographyStyle.detect(in: "오늘은 날씨가 좋습니다. 學校에 갑니다.") == .korean)
         #expect(CJKTypographyStyle.detect(in: "我的天") == nil)
         #expect(CJKTypographyStyle.detect(in: "Hello world.") == nil)
     }
@@ -35,7 +36,7 @@ struct CJKTypographyStyleTests {
     @Test(arguments: [
         ("zh-cn", CJKTypographyStyle.simplified), ("zh", .simplified), ("zh-Hans", .simplified),
         ("zh-TW", .traditional), ("zh-HK", .traditional), ("zh-Hant", .traditional), ("zh_MO", .traditional),
-        ("ja", .japanese), ("ja-jp", .japanese),
+        ("ja", .japanese), ("ja-jp", .japanese), ("ko", .korean), ("ko-KR", .korean),
     ])
     func declaredLanguages(tag: String, style: CJKTypographyStyle) {
         #expect(CJKTypographyStyle.declared(tag) == style)
@@ -84,6 +85,18 @@ struct CJKTypographyStyleTests {
         #expect(ChineseScript.of("這是什麼") == .traditional)
         #expect(ChineseScript.of("这是什么") == .simplified)
         #expect(ChineseScript.of("我的天") == nil)
+    }
+
+    @Test func nodeSamplesDropReadingsAndStopAtTheSampleLength() {
+        let nodes: [RenderableNode] = [
+            .heading([.text("第一回")], level: 1),
+            .paragraph([.ruby(base: [.text("漢")], text: "かん"), .text("字"), .lineBreak, .text("後來")]),
+            .paragraph([.text(String(repeating: "花", count: CJKTypographyStyle.sampleLength * 2))]),
+        ]
+        let sample = CJKTypographyStyleResolver.textSample(from: nodes)
+        #expect(sample.hasPrefix("第一回\n漢字\n後來\n花"))
+        #expect(!sample.contains("かん"))
+        #expect(sample.utf16.count == CJKTypographyStyle.sampleLength)
     }
 
     @Test func htmlSamplesDropMarkupAndReadings() {

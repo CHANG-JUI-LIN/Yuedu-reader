@@ -1,4 +1,5 @@
 import YueduCoreText
+import YueduCoreTextTypography
 import UIKit
 
 /// Builds the in-content chapter-title run(s) from a `ChapterTitleStyle` and
@@ -41,6 +42,15 @@ enum ChapterTitleAttributedBuilder {
         let trimmed = title.converted(to: settings.textConversion)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // The book's CJK typography, as its body has it. A title that shows no script
+        // (第一回) takes the style the book's text already decided; only the first
+        // chapter's title, typeset before its body, can decide before the book has.
+        let cjkTypographyStyle = CJKTypographyStyleResolver.shared.style(
+            for: trimmed,
+            book: settings.bookID,
+            conversion: settings.textConversion,
+            declaredLanguage: nil
+        )
 
         if style.advancedCSSEnabled {
             guard let design = style.design else {
@@ -93,7 +103,8 @@ enum ChapterTitleAttributedBuilder {
                     writingMode: settings.writingMode,
                     renderWidth: renderWidth,
                     bottomSpacing: style.bottomSpacing,
-                    assetStore: .shared
+                    assetStore: .shared,
+                    cjkTypographyStyle: cjkTypographyStyle
                 )
                 if style.topSpacing > 0 {
                     attr.append(spacerLine(height: style.topSpacing))
@@ -170,6 +181,7 @@ enum ChapterTitleAttributedBuilder {
                     style: style,
                     themeTextColor: themeTextColor,
                     letterSpacing: letterSpacing,
+                    cjkTypographyStyle: cjkTypographyStyle,
                     to: attr
                 )
                 return
@@ -181,6 +193,7 @@ enum ChapterTitleAttributedBuilder {
             style: style,
             themeTextColor: themeTextColor,
             letterSpacing: letterSpacing,
+            cjkTypographyStyle: cjkTypographyStyle,
             to: attr
         )
     }
@@ -196,7 +209,8 @@ enum ChapterTitleAttributedBuilder {
         writingMode: ReaderWritingMode,
         renderWidth: CGFloat,
         bottomSpacing: CGFloat,
-        assetStore: ReaderStyleAssetStore
+        assetStore: ReaderStyleAssetStore,
+        cjkTypographyStyle: CJKTypographyStyle? = nil
     ) async throws -> NSAttributedString {
         let plan = try await ChapterTitleDesignRenderer.compile(
             title: title,
@@ -204,7 +218,8 @@ enum ChapterTitleAttributedBuilder {
             appearance: appearance,
             writingMode: writingMode,
             renderWidth: renderWidth,
-            assetStore: assetStore
+            assetStore: assetStore,
+            cjkTypographyStyle: cjkTypographyStyle
         )
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = plan.canvasSize.height
@@ -270,8 +285,15 @@ enum ChapterTitleAttributedBuilder {
         style: ChapterTitleStyle,
         themeTextColor: UIColor,
         letterSpacing: CGFloat,
+        cjkTypographyStyle: CJKTypographyStyle,
         to attr: NSMutableAttributedString
     ) {
+        let start = attr.length
+        // The title's CJK text in the book's fonts, where the title font has no glyph.
+        defer {
+            CJKTypography.applyFonts(to: attr, style: cjkTypographyStyle,
+                                     in: NSRange(location: start, length: attr.length - start))
+        }
         // 上距 (top spacing): CoreText ignores `paragraphSpacingBefore` on the
         // first paragraph of a frame — the chapter title is exactly that first
         // paragraph — so a fixed-height spacer line carries the top spacing

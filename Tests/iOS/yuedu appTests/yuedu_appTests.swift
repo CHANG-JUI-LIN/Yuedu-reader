@@ -973,7 +973,7 @@ struct yuedu_appTests {
         <body><p class='kai'>你好</p></body></html>
         """
         let result = await builder.build(html: html, config: config).attributedString
-        let font = result.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        let font = result.askedFont(at: 0)
         #expect(font?.fontName.localizedCaseInsensitiveContains("courier") == true)
     }
 
@@ -997,7 +997,7 @@ struct yuedu_appTests {
         <body><p class='kai'>你好</p></body></html>
         """
         let result = await builder.build(html: html, config: config).attributedString
-        let font = result.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        let font = result.askedFont(at: 0)
         #expect(font?.fontName.localizedCaseInsensitiveContains("timesnewroman") == true)
     }
 
@@ -1174,7 +1174,7 @@ struct yuedu_appTests {
         <body><p class='emph'>測試</p></body></html>
         """
         let result = await builder.build(html: html, config: config).attributedString
-        let font = result.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        let font = result.askedFont(at: 0)
         #expect(capturedFamilies == ["kai"])
         #expect(capturedWeight == 700)
         #expect(capturedItalic == true)

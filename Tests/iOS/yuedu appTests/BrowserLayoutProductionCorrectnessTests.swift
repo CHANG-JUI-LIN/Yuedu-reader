@@ -223,12 +223,19 @@ struct BrowserLayoutProductionCorrectnessTests {
             for y in yRange where isDarkGreen(x, y) { return true }
             return false
         }
-        let top = edgeHasDot(xRange: cx-40...cx+40, y: Int(rect.minY) + 1)
-        let bottom = edgeHasDot(xRange: cx-40...cx+40, y: Int(rect.maxY) - 1)
-        // The 1pt stroke centers on the rect edge: left lands at pixel
-        // rect.minX (119), right at rect.maxX-1 (320). Scan the boundary.
-        let left = edgeHasDot(yRange: cy-40...cy+40, x: Int(rect.minX))
-        let right = edgeHasDot(yRange: cy-40...cy+40, x: Int(rect.maxX) - 1)
+        // The 1pt stroke centres on the rect edge, so which pixel row or column it
+        // darkens depends on the edge's fraction of a point: the card's height follows
+        // its line box, which follows the font. Scan the pixels either side of each edge.
+        func edgeHasDot(xRange: ClosedRange<Int>, near y: CGFloat) -> Bool {
+            (Int(y) - 1...Int(y) + 1).contains { edgeHasDot(xRange: xRange, y: $0) }
+        }
+        func edgeHasDot(yRange: ClosedRange<Int>, near x: CGFloat) -> Bool {
+            (Int(x) - 1...Int(x) + 1).contains { edgeHasDot(yRange: yRange, x: $0) }
+        }
+        let top = edgeHasDot(xRange: cx-40...cx+40, near: rect.minY)
+        let bottom = edgeHasDot(xRange: cx-40...cx+40, near: rect.maxY)
+        let left = edgeHasDot(yRange: cy-40...cy+40, near: rect.minX)
+        let right = edgeHasDot(yRange: cy-40...cy+40, near: rect.maxX)
         #expect(top, "top dotted edge not painted")
         #expect(bottom, "bottom dotted edge not painted")
         #expect(left, "left dotted edge not painted")

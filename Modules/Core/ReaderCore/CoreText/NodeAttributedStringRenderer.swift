@@ -140,8 +140,9 @@ struct NodeAttributedStringRenderer {
         // Reuse an already-bound collector rather than shadowing it, so an outer scope (a test,
         // or a nested render) still sees the leaves this call performed.
         let leaves = ReaderDocumentTrace.renderLeaves ?? RenderLeafMetrics()
+        let style = cjkTypographyStyle(for: nodes)
         let result = await ReaderDocumentTrace.$renderLeaves.withValue(leaves) {
-            await renderTopLevel(nodes)
+            await renderTopLevel(nodes, cjkTypographyStyle: style)
         }
         // `walk` is the header total minus the awaited leaves: the tree recursion, attribute
         // construction, CJK typography and margin-collapse passes.
@@ -162,8 +163,9 @@ struct NodeAttributedStringRenderer {
         _ nodes: [RenderableNode],
         paragraphAttributes: (String) -> [NSAttributedString.Key: Any]
     ) async -> NSAttributedString {
+        let style = cjkTypographyStyle(for: nodes)
         let rendered = NSMutableAttributedString(attributedString:
-            await renderInlineChildren(nodes, ctx: RenderContext.makeBody(config: config)))
+            await renderInlineChildren(nodes, ctx: RenderContext.makeBody(config: config, cjkTypographyStyle: style)))
         guard rendered.length > 0 else { return rendered }
         var ruby: [(NSRange, Any)] = []
         rendered.enumerateAttribute(HTMLAttributedStringBuilder.rubyAnnotationAttribute,
@@ -180,13 +182,25 @@ struct NodeAttributedStringRenderer {
         for (range, annotation) in ruby {
             rendered.addAttribute(HTMLAttributedStringBuilder.rubyAnnotationAttribute, value: annotation, range: range)
         }
+        // After the paragraph attributes, which replace every font.
+        CJKTypography.applyFonts(to: rendered, style: style)
         relaxParagraphsContainingRubyAnnotations(rendered)
         return rendered
     }
 
-    private func renderTopLevel(_ nodes: [RenderableNode]) async -> NSAttributedString {
+    /// The book's CJK typography, decided by the text these nodes will show.
+    private func cjkTypographyStyle(for nodes: [RenderableNode]) -> CJKTypographyStyle {
+        CJKTypographyStyleResolver.shared.style(
+            for: CJKTypographyStyleResolver.textSample(from: nodes).converted(to: config.textConversion),
+            book: config.bookID,
+            conversion: config.textConversion,
+            declaredLanguage: config.declaredLanguage
+        )
+    }
+
+    private func renderTopLevel(_ nodes: [RenderableNode], cjkTypographyStyle: CJKTypographyStyle) async -> NSAttributedString {
         let result = NSMutableAttributedString()
-        let ctx = RenderContext.makeBody(config: config)
+        let ctx = RenderContext.makeBody(config: config, cjkTypographyStyle: cjkTypographyStyle)
         for node in nodes {
             // A bare `<img>` becomes a TOP-LEVEL `.image` node (the converter never wraps it in a
             // block), so it would otherwise render as an inline attachment, left-aligned. Online
@@ -210,6 +224,8 @@ struct NodeAttributedStringRenderer {
         // Before every pass that reads characters (CJK typography, regex highlight, dialogue
         // bubbles), so they all see the text the reader will.
         config.textConversion.apply(to: result)
+        // The fonts CJK text is drawn in, before punctuation compression measures them.
+        CJKTypography.applyFonts(to: result, style: cjkTypographyStyle)
         let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
         relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)
@@ -307,7 +323,7 @@ struct NodeAttributedStringRenderer {
 
         case .text(let str):
             // Tag Latin-script runs with their language so CoreText can hyphenate them when the
-            // line is justified. CJK runs are deliberately left untagged — see ReaderHyphenation.
+            // line is justified. CJK runs get their language from CJKTypography.applyFonts.
             return NSAttributedString(
                 string: str,
                 attributes: ReaderHyphenation.tagging(ctx.baseAttributes, forText: str)
@@ -1659,7 +1675,8 @@ struct NodeAttributedStringRenderer {
                 textColor: blockCtx.textColor,
                 backgroundColor: config.backgroundColor,
                 resolvedFont: config.resolvedFont,
-                imagesBySource: tableImages
+                imagesBySource: tableImages,
+                cjkTypographyStyle: blockCtx.cjkTypographyStyle
             )
         }
         guard !rasterPages.isEmpty else {
@@ -2248,6 +2265,7 @@ struct NodeAttributedStringRenderer {
         guard content.length > 0 else { return NSAttributedString() }
         let annotation = NSMutableAttributedString(attributedString: content)
         annotation.normalizeForVerticalLayoutInPlace()
+        CJKTypography.applyFonts(to: annotation, style: annotationCtx.cjkTypographyStyle)
         annotation.addAttribute(
             NSAttributedString.Key(kCTVerticalFormsAttributeName as String),
             value: true,
@@ -3038,6 +3056,9 @@ struct NodeAttributedStringRenderer {
         /// Records the body's base font size for heading proportional scaling.
         var baseSize: CGFloat
 
+        /// The book's CJK typography, for text rendered apart from the chapter (notes).
+        var cjkTypographyStyle: CJKTypographyStyle
+
         var baseAttributes: [NSAttributedString.Key: Any] {
             var attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
@@ -3075,7 +3096,7 @@ struct NodeAttributedStringRenderer {
             return attrs
         }
 
-        static func makeBody(config: Config) -> RenderContext {
+        static func makeBody(config: Config, cjkTypographyStyle: CJKTypographyStyle) -> RenderContext {
             let font = UIFont.systemFont(ofSize: config.baseFontSize)
             let targetLineHeight = ReaderTypographyCorrection.targetLineHeight(
                 font: font,
@@ -3107,7 +3128,8 @@ struct NodeAttributedStringRenderer {
                 strikethrough: false,
                 inheritedBlockMarginLeft: 0,
                 inheritedBlockMarginRight: 0,
-                baseSize: config.baseFontSize
+                baseSize: config.baseFontSize,
+                cjkTypographyStyle: cjkTypographyStyle
             )
         }
     }
