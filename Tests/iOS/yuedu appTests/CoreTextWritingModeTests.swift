@@ -466,8 +466,8 @@ struct CoreTextWritingModeTests {
         #expect(verticalForm == true)
     }
 
-    @Test("vertical Latin ranges remove vertical forms and apply centering offset")
-    func verticalLatinRangesUseIdeographicCenteredBaseline() async throws {
+    @Test("vertical Latin ranges lie on their side, lowered half their font's box")
+    func verticalLatinRangesLieOnTheirSideCentred() async throws {
         let font = UIFont.systemFont(ofSize: 18)
         let text = "版DNA-BN N00004905校"
         let attr = NSAttributedString(string: text, attributes: [.font: font])
@@ -549,9 +549,11 @@ struct CoreTextWritingModeTests {
         #expect(latinVerticalForm != true)
         #expect(hyphenVerticalForm != true)
         #expect(numericVerticalForm != true)
-        #expect(latinBaselineClass == (kCTBaselineClassIdeographicCentered as String))
-        #expect(hyphenBaselineClass == (kCTBaselineClassIdeographicCentered as String))
-        #expect(numericBaselineClass == (kCTBaselineClassIdeographicCentered as String))
+        // The ideographic-centred baseline class moved nothing; text on its side is
+        // centred by its offset alone (CJKTypography.centreSideways).
+        #expect(latinBaselineClass == nil)
+        #expect(hyphenBaselineClass == nil)
+        #expect(numericBaselineClass == nil)
         #expect(actualLatinOffset < 0)
         #expect(abs(actualLatinOffset - expectedLatinOffset) < 0.1)
         #expect(abs(actualHyphenOffset - expectedLatinOffset) < 0.1)
@@ -1153,16 +1155,17 @@ struct CoreTextWritingModeTests {
         return nil
     }
 
+    /// Half the font's ascent-to-descent box: what puts text on its side on the column's
+    /// centre line (measured within 0.03 em for SF, Georgia, PingFang and Hiragino).
     private func verticalLatinCenteringOffset(for fontValue: Any?) -> CGFloat? {
-        let correctionFactor: CGFloat = 0.5
         if let font = fontValue as? UIFont {
-            return -((font.ascender + font.descender) / 2) * correctionFactor
+            return -(font.ascender + font.descender) / 2
         }
         guard let fontValue,
               CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID()
         else { return nil }
         let font = fontValue as! CTFont
-        return -((CTFontGetAscent(font) - CTFontGetDescent(font)) / 2) * correctionFactor
+        return -(CTFontGetAscent(font) - CTFontGetDescent(font)) / 2
     }
 
     private func containsNonWhitePixel(in rect: CGRect, image: UIImage) -> Bool {

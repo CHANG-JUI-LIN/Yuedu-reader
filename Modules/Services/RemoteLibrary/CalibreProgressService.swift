@@ -163,8 +163,7 @@ final class CalibreProgressService: ObservableObject {
                 // before any write, retaining its own original reading time.
                 guard pending[bookID] == snapshot else { continue }
                 let matched = try CalibreCFIMapper.match(document: document, spineIndex: index,
-                    renderedText: snapshot.renderedText, charOffset: snapshot.contextOffset,
-                    isVertical: snapshot.isVertical ?? false)
+                    renderedText: snapshot.renderedText, charOffset: snapshot.contextOffset)
                 try Task.checkCancellation()
                 // Re-check opt-in immediately before the external write, including
                 // when the user disabled it while the prepared chapter was loading.

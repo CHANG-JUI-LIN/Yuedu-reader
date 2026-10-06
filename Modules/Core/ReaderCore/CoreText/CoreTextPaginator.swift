@@ -1681,16 +1681,8 @@ final class CoreTextPaginator {
         debugVerticalLog("prepare.begin len=\(mutable.length) rawPrefix=\"\(debugTextPreview(mutable.string, limit: 80))\"", verbose: true)
         debugAttributedPrefix(mutable, label: "prepare.before", limit: 18)
 
-        // Step 1: Build per-font vertical substitution map from the primary font.
-        //         Only substitutes characters the font truly lacks vert alternates for.
-        let primaryFont = (attrStr.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? UIFont.systemFont(ofSize: fontSize)
-        let verticalConfig = VerticalLayoutConfig(font: primaryFont as CTFont)
-        let verticalMap = verticalConfig.substitutionMap
-
-        // Step 2: Normalize punctuation in-place on mutableString to preserve attributes.
-        //         Phase 1: half-width brackets → full-width (always).
-        //         Phase 2: full-width → vertical presentation forms (only where font lacks vert glyphs).
-        mutable.normalizeForVerticalLayoutInPlace(using: verticalMap)
+        // No character is replaced: punctuation keeps its own code point, and the
+        // orientation pass below gives it its vertical form (CSS Writing Modes 3).
 
         // Step 2b: CoreText trims or collapses leading whitespace at line starts.
         // In vertical books, EPUBs often encode first-line indent literally as
@@ -1769,21 +1761,19 @@ final class CoreTextPaginator {
             }
         }
 
-        // Step 5: Apply vertical forms globally.
+        // Step 5: Orientation, by the pass BrowserAuto runs too: each character upright
+        // or on its side as CSS Writing Modes 3 `text-orientation: mixed` sets it (UAX
+        // #50). The engine's own boxes — images, indent spacers, notes — are run
+        // delegates the pass leaves alone; they keep the sideways, centred geometry they
+        // have always been measured with.
         let verticalFormsKey = NSAttributedString.Key(kCTVerticalFormsAttributeName as String)
-        mutable.addAttribute(verticalFormsKey, value: true, range: fullRange)
-
-        // Step 6: Remove vertical forms from non-CJK Latin / numeric / ASCII
-        // punctuation ranges so mixed English IDs stay in one sideways run.
-        let latinPattern = "[^\\p{Han}\u{3000}-\u{303F}\u{FF00}-\u{FFEF}\u{FE30}-\u{FE4F}\u{FE10}-\u{FE1F}]+"
-        if let regex = try? NSRegularExpression(pattern: latinPattern, options: []) {
-            let matches = regex.matches(in: mutable.string, options: [], range: fullRange)
-            for match in matches {
-                mutable.removeAttribute(verticalFormsKey, range: match.range)
-                applyVerticalLatinBaselineAlignment(to: mutable, range: match.range)
-            }
-            debugVerticalLog("prepare.latinRuns count=\(matches.count)", verbose: true)
+        mutable.enumerateAttribute(NSAttributedString.Key(kCTRunDelegateAttributeName as String),
+                                   in: fullRange) { value, range, _ in
+            guard value != nil else { return }
+            mutable.removeAttribute(verticalFormsKey, range: range)
+            alignAttachmentSideways(mutable, in: range)
         }
+        CJKTypography.applyOrientation(to: mutable)
         debugAttributedPrefix(mutable, label: "prepare.final", limit: 24)
         return mutable
     }
@@ -1989,31 +1979,28 @@ final class CoreTextPaginator {
 
     /// Keep sideways Latin centered on the same ideographic baseline axis as
     /// neighboring full-width CJK glyphs in vertical frames.
-    private static func applyVerticalLatinBaselineAlignment(
-        to attributedString: NSMutableAttributedString,
-        range: NSRange
-    ) {
+    /// The cross-axis placement inline images, indent spacers and notes have been
+    /// measured with since vertical writing shipped: the ideographic-centred baseline
+    /// class and half the font's box midpoint. Their run-delegate metrics are tuned to
+    /// it, so it stays; text on its side is centred by `CJKTypography` instead.
+    private static func alignAttachmentSideways(_ attributedString: NSMutableAttributedString, in range: NSRange) {
         attributedString.addAttribute(
             NSAttributedString.Key(kCTBaselineClassAttributeName as String),
             value: kCTBaselineClassIdeographicCentered,
             range: range
         )
         attributedString.enumerateAttribute(.font, in: range, options: []) { value, fontRange, _ in
-            guard let offset = verticalLatinCenteringOffset(for: value) else { return }
+            let offset: CGFloat
+            if let font = value as? UIFont {
+                offset = -((font.ascender + font.descender) / 2) * 0.5
+            } else if let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() {
+                let font = value as! CTFont
+                offset = -((CTFontGetAscent(font) - CTFontGetDescent(font)) / 2) * 0.5
+            } else {
+                return
+            }
             attributedString.addAttribute(.baselineOffset, value: offset, range: fontRange)
         }
-    }
-
-    private static func verticalLatinCenteringOffset(for fontValue: Any?) -> CGFloat? {
-        let correctionFactor: CGFloat = 0.5
-        if let font = fontValue as? UIFont {
-            return -((font.ascender + font.descender) / 2) * correctionFactor
-        }
-        guard let fontValue,
-              CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID()
-        else { return nil }
-        let font = fontValue as! CTFont
-        return -((CTFontGetAscent(font) - CTFontGetDescent(font)) / 2) * correctionFactor
     }
 
     private static func baselineOffsetValue(_ value: Any?) -> CGFloat? {

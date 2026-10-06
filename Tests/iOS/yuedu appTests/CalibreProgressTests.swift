@@ -41,7 +41,7 @@ struct CalibreCFIMapperTests {
         #expect(prepared.string != source)
         let position = (prepared.string as NSString).range(of: "庚").location
         let result = try CalibreCFIMapper.match(document: calibreDOM(source), spineIndex: 2,
-            renderedText: prepared.string, charOffset: position, isVertical: true)
+            renderedText: prepared.string, charOffset: position)
         let expected = (source as NSString).range(of: "庚").location
         #expect(result.cfi == "epubcfi(/6/2/4/2/1:\(expected))")
         #expect((result.text as NSString).substring(from: result.textOffset).hasPrefix("庚)"))

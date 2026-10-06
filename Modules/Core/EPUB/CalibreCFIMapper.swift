@@ -1,5 +1,4 @@
 import Foundation
-import YueduCoreTextTypography
 
 /// Calibre 9.x uses a spine prefix followed by the DOM path, rather than the
 /// EPUB package CFI (/6/...!). Work from its actual prepared JSON DOM: Calibre
@@ -18,14 +17,12 @@ enum CalibreCFIMapper {
     /// Whitespace collapsed by CSS and renderer-inserted separators have no
     /// durable DOM offset. Map to the next actual character, preserving the
     /// source's UTF-16 offset (including entities, emoji and combining marks).
-    private static func normalize(_ value: String, isVertical: Bool) throws -> Normalized {
-        // Use the renderer's existing deterministic 1:1 substitutions on both
-        // sides. Font-specific vertical glyph fallbacks otherwise turn matching
-        // brackets into different Unicode values. Offsets still address raw DOM.
-        let comparable = isVertical ? value.normalizedForVerticalLayout() : value
-        guard comparable.utf16.count == value.utf16.count else { throw CalibreProgressError.invalidData }
+    private static func normalize(_ value: String) throws -> Normalized {
+        // Neither engine replaces characters in vertical text any more (vertical
+        // forms come from the font), so the rendered text and the DOM compare as
+        // they are. Offsets address the raw DOM.
         var result = Normalized(), offset = 0
-        for scalar in comparable.unicodeScalars {
+        for scalar in value.unicodeScalars {
             let length = scalar.utf16.count
             if !CharacterSet.whitespacesAndNewlines.contains(scalar), scalar.value != 0xFFFC {
                 result.text.unicodeScalars.append(scalar)
@@ -36,8 +33,7 @@ enum CalibreCFIMapper {
         return result
     }
 
-    static func match(document: Data, spineIndex: Int, renderedText: String, charOffset: Int,
-                      isVertical: Bool = false) throws -> Match {
+    static func match(document: Data, spineIndex: Int, renderedText: String, charOffset: Int) throws -> Match {
         guard spineIndex >= 0,
               let json = try JSONSerialization.jsonObject(with: document) as? [String: Any],
               (json["version"] as? Int) == 1,
@@ -47,14 +43,14 @@ enum CalibreCFIMapper {
         let rendered = renderedText as NSString
         guard charOffset >= 0, charOffset < rendered.length,
               rendered.character(at: charOffset) != 0xFFFC else { throw CalibreProgressError.unmappedPosition }
-        let needle = try normalize(renderedText, isVertical: isVertical)
+        let needle = try normalize(renderedText)
         guard let target = needle.offsets.firstIndex(where: { $0 >= charOffset }) else {
             throw CalibreProgressError.unmappedPosition
         }
 
         var source = "", locations: [Location] = []
         func add(_ text: String, path: String) throws {
-            let normalized = try normalize(text, isVertical: isVertical)
+            let normalized = try normalize(text)
             source += normalized.text
             locations.append(contentsOf: normalized.offsets.map { Location(path: path, offset: $0, text: text) })
         }
