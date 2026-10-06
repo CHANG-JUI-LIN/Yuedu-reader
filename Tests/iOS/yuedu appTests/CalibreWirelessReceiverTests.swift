@@ -155,6 +155,57 @@ struct CalibreWirelessReceiverTests {
         await nextServer.stop()
     }
 
+    @Test("A converted Aozora book goes back to Calibre as the text Calibre sent")
+    func aozoraBookReturnsItsOriginal() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("CalibreAozoraTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = BookStore(metadataFileURL: root.appendingPathComponent("books.json"))
+        let registryURL = root.appendingPathComponent("device.json")
+        let service = CalibreWirelessService(registryURL: registryURL)
+        defer {
+            service.disconnect()
+            for book in store.books { store.delete(bookId: book.id) }
+        }
+        let server = try CalibreTestServer()
+        defer { Task { await server.stop() } }
+        let port = try await server.start()
+        service.connect(host: "127.0.0.1", port: port, password: "secret", store: store)
+        let desktop = try await server.accept()
+        try await desktop.connect()
+        try await handshake(desktop)
+        let text = try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/TXTEncodings/aozora-neko-jijo.txt"))
+        let metadata: [String: CalibreJSON] = ["title": .string("中篇自序"), "authors": .array([.string("夏目漱石")]),
+                                               "uuid": .string("calibre-aozora-book"), "lpath": .string("neko.txt")]
+        try await desktop.send(CalibreFrame(8, ["lpath": .string("neko.txt"), "length": .number(Double(text.count)),
+                                               "willStreamBinary": .bool(true), "metadata": .object(metadata)]))
+        #expect(try await desktop.readFrame().opcode == 0)
+        var body = text
+        body.append(try CalibreFrame(3).encoded())
+        try await desktop.sendData(body)
+        #expect(try await desktop.readFrame().arguments["device_info"]?.object != nil)
+
+        let imported = try #require(store.books.first)
+        #expect(imported.resolvedPipelineKind == .epub)
+        #expect(imported.aozora?.originalFilename.hasSuffix(".aozora.txt") == true)
+        let registry = try CalibreDeviceRegistry.load(from: registryURL)
+        #expect(registry.books.first?.lpath == "neko.txt")
+        #expect(registry.books.first?.sha256 == AozoraEPUBWriter.sha256(text))
+
+        try await desktop.send(CalibreFrame(14, ["lpath": .string("neko.txt"), "position": .number(0), "canStreamBinary": .bool(true)]))
+        let returned = try await desktop.readFrame()
+        let length = Int(try #require(returned.arguments["fileLength"]?.integer))
+        #expect(length == text.count)
+        var bytes = Data()
+        while bytes.count < length {
+            bytes.append(try await desktop.readBinary(upTo: length - bytes.count))
+        }
+        #expect(bytes == text)
+        await desktop.cancel()
+        await server.stop()
+    }
+
     @Test("Disconnecting a partial receive does not create a shelf record or device registry entry")
     func partialTCPReceiveIsDiscarded() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("CalibreCancelTests-\(UUID().uuidString)")

@@ -121,8 +121,8 @@ struct LocalBookImportServiceTests {
     private static let nekoFixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("Fixtures/TXTEncodings/aozora-neko-jijo.txt")
 
-    @Test("An official Aozora Bunko zip opens as a TXT book with the original bytes")
-    func aozoraZipImportsAsTXT() async throws {
+    @Test("An official Aozora Bunko zip becomes an EPUB book, with the zip kept beside it")
+    func aozoraZipImportsAsEPUB() async throws {
         let original = try Data(contentsOf: Self.nekoFixture)
         let zip = try await makeZip(named: "2671_ruby_6335.zip", entries: [
             "neko_chuhen.txt": original,
@@ -133,10 +133,12 @@ struct LocalBookImportServiceTests {
 
         let book = try await LocalBookImportService.importBook(at: zip, store: store)
 
-        #expect(book.contentPipelineKind == .txt)
-        #expect(book.contentFilename.hasSuffix(".txt"))
-        #expect(try Data(contentsOf: StorageLocations.bookFile(book.contentFilename)) == original)
-        #expect(store.content(for: book) == (try TXTFileReader.readTextFile(url: Self.nekoFixture)))
+        #expect(book.contentPipelineKind == .epub)
+        #expect(book.contentFilename.hasSuffix(".epub"))
+        let aozora = try #require(book.aozora)
+        #expect(aozora.originalFilename.hasSuffix(".aozora.zip"))
+        #expect(try Data(contentsOf: StorageLocations.bookFile(aozora.originalFilename)) == (try Data(contentsOf: zip)))
+        #expect(book.title == "『吾輩は猫である』中篇自序")
         #expect(store.books.map(\.id) == [book.id])
     }
 

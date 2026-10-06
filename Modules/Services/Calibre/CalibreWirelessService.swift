@@ -363,7 +363,9 @@ final class CalibreWirelessService: ObservableObject {
             try await transport.send(CalibreFrame(20, ["message": .string(CalibreWirelessError.invalidBook.localizedDescription)]))
             return
         }
-        let url = StorageLocations.bookFile(book.contentFilename)
+        // A converted Aozora book goes back as the original Calibre sent, which is
+        // what its lpath names and its registry SHA-256 describes.
+        let url = StorageLocations.bookFile(book.aozora?.originalFilename ?? book.contentFilename)
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         let size = Int64(values.fileSize ?? 0)
         guard position <= size else { throw CalibreWirelessError.invalidBook }

@@ -292,6 +292,13 @@ struct ReadingBook: Identifiable, Codable {
     var audioOpenCreditsSeconds: Int?
     var audioCloseCreditsSeconds: Int?
 
+    /// Set on a book converted from an Aozora Bunko text: the original file, kept
+    /// next to the EPUB, and the encoding it was read with. Optional and encoded only
+    /// when present, for the reason `audioPlayMode` gives. The converter's version is
+    /// not here but in the EPUB's own `yuedu-aozora.json`: a synced field would tell
+    /// another device that its copy was regenerated when only this one was.
+    var aozora: AozoraBookSource?
+
     init(
         title: String, author: String = "未知作者",
         source: String = "local", contentFilename: String
@@ -381,6 +388,7 @@ struct ReadingBook: Identifiable, Codable {
         audioPlayMode = try? c.decode(AudiobookPlayMode.self, forKey: .audioPlayMode)
         audioOpenCreditsSeconds = try? c.decode(Int.self, forKey: .audioOpenCreditsSeconds)
         audioCloseCreditsSeconds = try? c.decode(Int.self, forKey: .audioCloseCreditsSeconds)
+        aozora = try c.decodeIfPresent(AozoraBookSource.self, forKey: .aozora)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -394,6 +402,7 @@ struct ReadingBook: Identifiable, Codable {
         case mangaChapterIndex, mangaPage
         case audioChapterIndex, audioTimeSeconds
         case audioPlayMode, audioOpenCreditsSeconds, audioCloseCreditsSeconds
+        case aozora
     }
 
     /// Read only: where builds before `BookChapterStore` kept the table of contents.
@@ -604,6 +613,14 @@ struct EPUBChapterRaw {
         self.baseURL = baseURL
         self.mediaType = mediaType
     }
+}
+
+/// The original of a book converted from an Aozora Bunko text (`ReadingBook.aozora`).
+struct AozoraBookSource: Codable, Equatable, Sendable {
+    /// The original `.txt` or `.zip`, in the book files' folder next to the EPUB.
+    var originalFilename: String
+    /// `String.Encoding.rawValue` of the encoding the text was read with.
+    var sourceEncoding: UInt
 }
 
 struct EPUBTocEntry: Codable, Equatable {

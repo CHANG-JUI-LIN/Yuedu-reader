@@ -1318,6 +1318,14 @@ class BookStore: ObservableObject, BookProvider {
                 } catch {
                     AppLogger.cache("Failed to remove document file \(book.contentFilename): \(error)")
                 }
+                // A converted Aozora book keeps its original beside the EPUB.
+                if let original = book.aozora?.originalFilename {
+                    do {
+                        try FileManager.default.removeItem(at: documentsURL(for: original))
+                    } catch {
+                        AppLogger.cache("Failed to remove the Aozora original \(original): \(error)")
+                    }
+                }
                 if book.resolvedPipelineKind == .manga || book.resolvedPipelineKind == .fixedPage {
                     do {
                         try FileManager.default.removeItem(at: LocalMangaArchive.bookDirectory(bookId: book.id))

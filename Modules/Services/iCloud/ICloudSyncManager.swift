@@ -1232,22 +1232,36 @@ final class ICloudSyncManager: ObservableObject {
         // Documents (the user's own files), covers moved to Application Support.
         // `recordName` still hashes the bare filename, so the relocation does not
         // change any record's sync identity.
-        func append(_ name: String?, resolvedBy locate: (String) -> URL) {
-            guard let name, !name.isEmpty, seen.insert(name).inserted else { return }
-            payloads.append(
-                ICloudSyncPayloadFile(
-                    recordName: "bookfile_" + Self.shortHash(name),
-                    localURL: locate(name)
-                )
-            )
-        }
-
         for book in books {
-            // Content file only for syncable local books; cover for every book.
-            append(Self.syncableContentFilename(for: book), resolvedBy: StorageLocations.bookFile)
-            append(book.coverImagePath, resolvedBy: StorageLocations.coverFile)
+            for file in Self.syncableFiles(for: book) {
+                guard !file.name.isEmpty, seen.insert(file.name).inserted else { continue }
+                payloads.append(
+                    ICloudSyncPayloadFile(
+                        recordName: "bookfile_" + Self.shortHash(file.name),
+                        localURL: file.url
+                    )
+                )
+            }
         }
         return payloads
+    }
+
+    /// The files iCloud syncs for one book, by name and location: its content file
+    /// and, for a converted Aozora book, the original kept beside it, both only for a
+    /// syncable local book; and its cover, for every book. Another device converts its
+    /// own copy from the original rather than taking this one's EPUB.
+    static func syncableFiles(for book: ReadingBook) -> [(name: String, url: URL)] {
+        var files: [(name: String, url: URL)] = []
+        if let content = syncableContentFilename(for: book) {
+            files.append((content, StorageLocations.bookFile(content)))
+            if let original = book.aozora?.originalFilename {
+                files.append((original, StorageLocations.bookFile(original)))
+            }
+        }
+        if let cover = book.coverImagePath {
+            files.append((cover, StorageLocations.coverFile(cover)))
+        }
+        return files
     }
 
     static func syncableContentFilename(for book: ReadingBook) -> String? {
