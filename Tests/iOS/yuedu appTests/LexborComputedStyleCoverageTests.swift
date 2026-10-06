@@ -1,6 +1,7 @@
 @testable import YueduCoreText
 import Testing
 import UIKit
+import YueduCoreTextTypography
 @testable import yuedu_app
 
 @Suite(.serialized)
@@ -27,9 +28,19 @@ struct LexborComputedStyleCoverageTests {
             "white-space", "text-align", "text-indent", "width", "height", "min-width", "max-width", "min-height", "max-height",
             "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-right", "padding-bottom", "padding-left",
             "border-top-width", "border-right-width", "border-bottom-width", "border-left-width", "border-top-style", "border-right-style",
-            "border-bottom-style", "border-left-style", "border-color", "border-radius", "ruby-align", "ruby-position", "ruby-merge"
+            "border-bottom-style", "border-left-style", "border-color", "border-radius", "ruby-align", "ruby-position", "ruby-merge",
+            "text-combine-upright"
         ]
         #expect(LexborComputedStyleAdapter.coveredProperties == requiredProperties)
+    }
+
+    @Test func textCombineUprightMapsEverySpelling() {
+        #expect(mapped([("text-combine-upright", "all")]).0.textCombineUpright == .all)
+        #expect(mapped([("text-combine-upright", "digits 3")]).0.textCombineUpright == .digits(3))
+        #expect(mapped([("-webkit-text-combine", "horizontal")]).0.textCombineUpright == .all)
+        let parent = mapped([("text-combine-upright", "all")]).0
+        #expect(mapped([("text-combine-upright", "inherit")], parent: parent).0.textCombineUpright == .all)
+        #expect(mapped([("text-combine-upright", "sideways")]).1.blocksCutover)
     }
 
     @Test func boxLonghandsKeepSymbolicUnitsAndAuto() {

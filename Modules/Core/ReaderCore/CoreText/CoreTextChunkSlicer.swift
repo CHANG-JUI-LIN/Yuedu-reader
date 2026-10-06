@@ -476,6 +476,7 @@ enum CoreTextChunkSlicer {
                     writingMode: writingMode,
                     blockRenderables: titleRenderables,
                     inlineAnnotations: annotations,
+                    combinedUprightCells: CoreTextChunk.combinedUprightCells(in: finalFrame, chunkSize: chunkSize),
                     pageBackgroundColor: pageBackgroundColor,
                     pageBackgroundImage: pageBackgroundImage
                 )

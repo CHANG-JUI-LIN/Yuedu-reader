@@ -2,6 +2,7 @@ import CoreText
 import SwiftSoup
 import UIKit
 import YueduCoreText
+import YueduCoreTextTypography
 
 /// HTML/CSS -> NSAttributedString builder for local EPUB.
 /// This path intentionally avoids DTCoreText so that font mapping,
@@ -36,6 +37,12 @@ final class HTMLAttributedStringBuilder {
     static let spacerRunAttribute = NSAttributedString.Key("ReaderSpacerRun")
     /// Marker attribute for vertical inline annotation runs (e.g. span.small notes).
     static let inlineAnnotationRunAttribute = NSAttributedString.Key("ReaderInlineAnnotationRun")
+    /// Authored 縦中横 on rendered text: a `TextCombineUprightMark`, one per text node, so
+    /// neighbouring nodes make separate cells as in BrowserAuto.
+    static let textCombineUprightAttribute = NSAttributedString.Key("ReaderTextCombineUpright")
+    /// One 縦中横 cell in the prepared vertical string: a `CombinedUprightCell` over its
+    /// characters, which run delegates size and the page view draws.
+    static let combinedUprightCellAttribute = NSAttributedString.Key("ReaderCombinedUprightCell")
     /// Marker attribute for EPUB CSS-forced page boundaries.
     static let pageBreakAttribute = NSAttributedString.Key("ReaderForcedPageBreak")
     /// Marker attribute preserving HTML5 semantic element identity through CoreText rendering.
@@ -249,6 +256,8 @@ final class HTMLAttributedStringBuilder {
         /// CSS `float` side (`left`/`right`). Non-nil makes the element a float: the builder emits a
         /// zero-width marker and the paginator wraps surrounding text around it. Not inherited.
         var floatSide: FloatSide? = nil
+        /// CSS `text-combine-upright` (inherited): 縦中横 in vertical text.
+        var textCombineUpright: TextCombineUpright = .none
         /// True when the author explicitly removed the border via `border: none` / `border-style: none`
         /// (keyword `none`/`hidden`). Used so a borderless, background-less `<hr>` renders as an
         /// invisible separator instead of a stray rule (e.g. calibre's `.transition` scene break).
@@ -1519,7 +1528,7 @@ final class HTMLAttributedStringBuilder {
     }
 
     private func inheritedStyle(from parent: ResolvedStyle, tag: String) -> ResolvedStyle {
-        ResolvedStyle(
+        var style = ResolvedStyle(
             fontSize: parent.fontSize,
             fontFamilies: parent.fontFamilies,
             fontWeight: parent.fontWeight,
@@ -1578,6 +1587,8 @@ final class HTMLAttributedStringBuilder {
             pageBreakAfter: false,
             avoidsPageBreakInside: false
         )
+        style.textCombineUpright = parent.textCombineUpright
+        return style
     }
 
     private func makeRootStyle(config: Config) -> ResolvedStyle {

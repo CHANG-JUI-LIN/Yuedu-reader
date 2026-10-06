@@ -1,6 +1,7 @@
 import YueduCoreText
 import Foundation
 import UIKit
+import YueduCoreTextTypography
 
 struct ResolvedFontRequest: Hashable {
     let family: String
@@ -524,6 +525,7 @@ private extension RenderStyle {
             underline: s.underline,
             strikethrough: s.strikethrough,
             isVerticalWritingMode: s.isVerticalWritingMode,
+            textCombineUpright: s.textCombineUpright,
             borderRadius: s.borderRadius,
             floatSide: s.floatSide.map { side in
                 switch side {

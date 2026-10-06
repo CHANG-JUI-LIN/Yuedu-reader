@@ -1,6 +1,7 @@
 import YueduCoreText
 import Foundation
 import UIKit
+import YueduCoreTextTypography
 
 // MARK: - RenderableNode
 //
@@ -173,6 +174,8 @@ public struct RenderStyle: Sendable {
     public var borderRadius: CGFloat
     public var isInlineAnnotation: Bool
     public var isVerticalWritingMode: Bool
+    /// CSS `text-combine-upright` (inherited): 縦中横 in vertical text.
+    public var textCombineUpright: TextCombineUpright
     public var floatSide: RenderFloatSide?
     /// A block whose child paragraphs should not inherit reader default paragraph spacing.
     /// Used for EPUB chat-thread wrappers containing floated message bubbles.
@@ -245,6 +248,7 @@ public struct RenderStyle: Sendable {
         strikethrough: Bool = false,
         isInlineAnnotation: Bool = false,
         isVerticalWritingMode: Bool = false,
+        textCombineUpright: TextCombineUpright = .none,
         borderRadius: CGFloat = 0,
         floatSide: RenderFloatSide? = nil,
         compactChildBlockSpacing: Bool = false,
@@ -309,6 +313,7 @@ public struct RenderStyle: Sendable {
         self.borderRadius = borderRadius
         self.isInlineAnnotation = isInlineAnnotation
         self.isVerticalWritingMode = isVerticalWritingMode
+        self.textCombineUpright = textCombineUpright
         self.floatSide = floatSide
         self.compactChildBlockSpacing = compactChildBlockSpacing
         self.avoidsPageBreakInside = avoidsPageBreakInside

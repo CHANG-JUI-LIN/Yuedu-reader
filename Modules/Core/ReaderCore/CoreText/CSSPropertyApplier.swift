@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import YueduCoreTextTypography
 
 struct HTMLCSSApplyContext {
     let parentStyle: HTMLAttributedStringBuilder.ResolvedStyle
@@ -61,6 +62,11 @@ final class HTMLCSSPropertyApplierRegistry {
         WritingModeApplier(),
         WebkitWritingModeApplier(),
         EPUBWritingModeApplier(),
+        TextCombineUprightApplier(key: "text-combine-upright", legacy: false),
+        TextCombineUprightApplier(key: "-epub-text-combine-horizontal", legacy: false),
+        TextCombineUprightApplier(key: "-ms-text-combine-horizontal", legacy: false),
+        TextCombineUprightApplier(key: "-webkit-text-combine", legacy: true),
+        TextCombineUprightApplier(key: "-epub-text-combine", legacy: true),
     ])
 }
 
@@ -328,6 +334,29 @@ private struct DirectionApplier: HTMLCSSPropertyApplier {
             inherited: context.parentStyle.baseWritingDirection
         ) {
             style.baseWritingDirection = direction
+        }
+    }
+}
+
+/// `text-combine-upright` and its prefixed forms, parsed by the rules BrowserAuto uses.
+/// The older `-webkit-text-combine` / `-epub-text-combine` take `horizontal` for `all`.
+private struct TextCombineUprightApplier: HTMLCSSPropertyApplier {
+    let key: String
+    let legacy: Bool
+
+    func apply(
+        value: String,
+        style: inout HTMLAttributedStringBuilder.ResolvedStyle,
+        context: HTMLCSSApplyContext
+    ) {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch v {
+        case "inherit", "unset": style.textCombineUpright = context.parentStyle.textCombineUpright
+        case "initial": style.textCombineUpright = .none
+        default:
+            let parsed = legacy ? TextCombineUpright.parseLegacy(v) : TextCombineUpright.parse(v)
+            // An unknown value is invalid CSS: the declaration is dropped.
+            if parsed.isSupported { style.textCombineUpright = parsed }
         }
     }
 }

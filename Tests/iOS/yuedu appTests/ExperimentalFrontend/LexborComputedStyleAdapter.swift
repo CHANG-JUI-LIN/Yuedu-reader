@@ -1,6 +1,7 @@
 @testable import YueduCoreText
 import Foundation
 import UIKit
+import YueduCoreTextTypography
 
 /// The only conversion from Lexbor's winning longhand declarations to the
 /// existing layout model. This layer never matches selectors or reruns cascade.
@@ -16,7 +17,8 @@ enum LexborComputedStyleAdapter {
         "padding-top", "padding-right", "padding-bottom", "padding-left",
         "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
         "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
-        "border-color", "border-radius", "ruby-align", "ruby-position", "ruby-merge"
+        "border-color", "border-radius", "ruby-align", "ruby-position", "ruby-merge",
+        "text-combine-upright"
     ]
 
     static func apply(
@@ -60,7 +62,7 @@ enum LexborComputedStyleAdapter {
         if ["inherit", "initial", "unset"].contains(value) {
             let inherited: Set<String> = ["visibility", "font-family", "font-size", "font-style",
                 "font-weight", "line-height", "color", "white-space", "text-align", "text-indent",
-                "ruby-align", "ruby-position", "ruby-merge"]
+                "ruby-align", "ruby-position", "ruby-merge", "text-combine-upright"]
             let source = value == "inherit" || (value == "unset" && inherited.contains(property))
                 ? parent : initialStyle(config: config)
             if !copy(property, from: source, to: &style, config: config) { gap("Property has no computed-style representation") }
@@ -257,6 +259,12 @@ enum LexborComputedStyleAdapter {
         case "ruby-merge", "-epub-ruby-merge", "-webkit-ruby-merge":
             style.rubyMerge = RubyMerge.parse(value)
             if style.rubyMerge != .separate { gap() }
+        case "text-combine-upright", "-epub-text-combine-horizontal", "-ms-text-combine-horizontal":
+            style.textCombineUpright = TextCombineUpright.parse(value)
+            if !style.textCombineUpright.isSupported { gap() }
+        case "-webkit-text-combine", "-epub-text-combine":
+            style.textCombineUpright = TextCombineUpright.parseLegacy(value)
+            if !style.textCombineUpright.isSupported { gap() }
         default: gap("Property has no computed-style representation")
         }
     }
@@ -335,6 +343,9 @@ enum LexborComputedStyleAdapter {
         case "ruby-align", "-epub-ruby-align", "-webkit-ruby-align": style.rubyAlign = source.rubyAlign
         case "ruby-position", "-epub-ruby-position", "-webkit-ruby-position": style.rubyPosition = source.rubyPosition
         case "ruby-merge", "-epub-ruby-merge", "-webkit-ruby-merge": style.rubyMerge = source.rubyMerge
+        case "text-combine-upright", "-epub-text-combine-horizontal", "-ms-text-combine-horizontal",
+             "-webkit-text-combine", "-epub-text-combine":
+            style.textCombineUpright = source.textCombineUpright
         default: return false
         }
         return true

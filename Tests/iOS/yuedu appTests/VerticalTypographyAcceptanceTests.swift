@@ -484,15 +484,13 @@ struct VerticalTypographyAcceptanceTests {
             let m = try Self.measure(drawn, vertical: true)
             let label = "\(engine) \(script) tcy inline=\(m.targetInlineExtent) cross=\(m.targetCrossExtent) offset=\(m.crossOffset) route=\(drawn.route)"
             print("⟐VT tcy \(label)")
-            withKnownIssue("Task 8", isIntermittent: true) {
-                // Upright and side by side, 「12」 is wider across the column than along it;
-                // turned on its side, as text without 縦中横 is, it is the other way round.
-                #expect(m.targetCrossExtent > m.targetInlineExtent, "\(label)")
-                #expect(m.targetInlineExtent <= 1.05, "\(label)")
-                #expect(m.targetCrossExtent <= 1.0, "\(label)")
-                #expect(abs(m.crossOffset) <= 0.1, "\(label)")
-                if engine == .browser { #expect(drawn.route == "browser", "\(label)") }
-            }
+            // Upright and side by side, 「12」 is wider across the column than along it;
+            // turned on its side, as text without 縦中横 is, it is the other way round.
+            #expect(m.targetCrossExtent > m.targetInlineExtent, "\(label)")
+            #expect(m.targetInlineExtent <= 1.05, "\(label)")
+            #expect(m.targetCrossExtent <= 1.0, "\(label)")
+            #expect(abs(m.crossOffset) <= 0.1, "\(label)")
+            if engine == .browser { #expect(drawn.route == "browser", "\(label)") }
             #expect(drawn.text.string.contains("12"), "the text keeps both digits: \(label)")
         }
     }

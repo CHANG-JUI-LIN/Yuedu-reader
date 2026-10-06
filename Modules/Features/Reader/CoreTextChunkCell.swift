@@ -126,6 +126,7 @@ enum CoreTextChunkPainter {
         let attachments: [CoreTextPaginator.RenderedAttachment]
         let blockRenderables: [CoreTextPaginator.RenderedBlockRenderable]
         let inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation]
+        let combinedUprightCells: [CoreTextPaginator.RenderedCombinedUpright]
 
         /// Snapshot a chunk's paint inputs. Main thread: `attachments`,
         /// `blockRenderables` and `inlineAnnotations` are filled in by materialization.
@@ -137,6 +138,7 @@ enum CoreTextChunkPainter {
             attachments = chunk.attachments
             blockRenderables = chunk.blockRenderables
             inlineAnnotations = chunk.inlineAnnotations
+            combinedUprightCells = chunk.combinedUprightCells
         }
     }
 
@@ -204,6 +206,9 @@ enum CoreTextChunkPainter {
         // Phase 2b: Inline text annotations (span.small notes in vertical writing)
         if content.writingMode.isVertical, !content.inlineAnnotations.isEmpty {
             CoreTextPageView.drawInlineAnnotations(content.inlineAnnotations)
+        }
+        if content.writingMode.isVertical, !content.combinedUprightCells.isEmpty {
+            CoreTextPageView.drawCombinedUpright(content.combinedUprightCells, from: content.attributedString, in: ctx)
         }
 
         // Phase 3: Block image attachments (UIKit coordinates)

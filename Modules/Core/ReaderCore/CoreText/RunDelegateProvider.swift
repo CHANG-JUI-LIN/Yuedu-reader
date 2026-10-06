@@ -69,6 +69,54 @@ class ImageRunInfo {
     }
 }
 
+/// Sizes one 縦中横 cell in a vertical line: the first character of the cell carries
+/// one em of advance and the rest none, an em across the column centred on it. A
+/// subclass of ImageRunInfo, with no image, so delegate scanners that cast every refCon
+/// stay safe.
+final class CombinedUprightRunInfo: ImageRunInfo {
+    init(advance: CGFloat, em: CGFloat) {
+        super.init(
+            image: nil,
+            width: advance,
+            height: em,
+            drawWidth: em,
+            drawHeight: em,
+            ascent: em / 2,
+            descent: em / 2,
+            paddingLeft: 0,
+            paddingRight: 0,
+            source: "",
+            displayMode: .inline,
+            opacity: 1,
+            isTextSized: false
+        )
+    }
+
+    static func delegate(advance: CGFloat, em: CGFloat) -> CTRunDelegate? {
+        var callbacks = CTRunDelegateCallbacks(
+            version: kCTRunDelegateCurrentVersion,
+            dealloc: { pointer in
+                Unmanaged<CombinedUprightRunInfo>.fromOpaque(pointer).release()
+            },
+            getAscent: { pointer in
+                Unmanaged<CombinedUprightRunInfo>.fromOpaque(pointer).takeUnretainedValue().ascent
+            },
+            getDescent: { pointer in
+                Unmanaged<CombinedUprightRunInfo>.fromOpaque(pointer).takeUnretainedValue().descent
+            },
+            getWidth: { pointer in
+                Unmanaged<CombinedUprightRunInfo>.fromOpaque(pointer).takeUnretainedValue().width
+            }
+        )
+        let retained = Unmanaged.passRetained(CombinedUprightRunInfo(advance: advance, em: em)).toOpaque()
+        guard let delegate = CTRunDelegateCreate(&callbacks, retained) else {
+            Unmanaged<CombinedUprightRunInfo>.fromOpaque(retained).release()
+            return nil
+        }
+        return delegate
+    }
+}
+
 /// Holds vertical inline annotation metadata. It subclasses ImageRunInfo so
 /// older delegate scanners that cast all refCons to ImageRunInfo remain safe.
 final class InlineAnnotationRunInfo: ImageRunInfo {

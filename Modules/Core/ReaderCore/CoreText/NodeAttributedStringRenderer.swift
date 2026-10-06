@@ -326,10 +326,14 @@ struct NodeAttributedStringRenderer {
         case .text(let str):
             // Tag Latin-script runs with their language so CoreText can hyphenate them when the
             // line is justified. CJK runs get their language from CJKTypography.applyFonts.
-            return NSAttributedString(
-                string: str,
-                attributes: ReaderHyphenation.tagging(ctx.baseAttributes, forText: str)
-            )
+            var attributes = ReaderHyphenation.tagging(ctx.baseAttributes, forText: str)
+            // 縦中横 keeps its characters; the vertical paginator turns the marked runs into
+            // cells. One mark per text node, as BrowserAuto combines per node.
+            if ctx.textCombineUpright != .none {
+                attributes[HTMLAttributedStringBuilder.textCombineUprightAttribute] =
+                    TextCombineUprightMark(mode: ctx.textCombineUpright)
+            }
+            return NSAttributedString(string: str, attributes: attributes)
 
         case .lineBreak:
             // \u{2028} = Unicode Line Separator (matching HTMLAttributedStringBuilder convention)
@@ -950,6 +954,7 @@ struct NodeAttributedStringRenderer {
         headingLevel: Int = 0
     ) -> RenderContext {
         var newCtx = ctx
+        newCtx.textCombineUpright = style.textCombineUpright
 
         // ── Font size ──
         let sizeMultiplier: CGFloat
@@ -1113,6 +1118,8 @@ struct NodeAttributedStringRenderer {
     // MARK: - Apply Inline Style to Context
 
     private func applyInlineStyle(_ style: RenderStyle, to ctx: RenderContext) -> RenderContext {
+        var ctx = ctx
+        ctx.textCombineUpright = style.textCombineUpright
         guard style.bold || style.italic || style.color != nil || !style.fontFamilies.isEmpty
                 || style.underline || style.strikethrough || style.fontSizeMultiplier != 1.0
                 || style.ssmlIPA != nil else { return ctx }
@@ -3061,6 +3068,9 @@ struct NodeAttributedStringRenderer {
         /// The book's CJK typography, for text rendered apart from the chapter (notes).
         var cjkTypographyStyle: CJKTypographyStyle
 
+        /// Authored 縦中横 of the element being rendered (inherited, as CSS has it).
+        var textCombineUpright: TextCombineUpright = .none
+
         var baseAttributes: [NSAttributedString.Key: Any] {
             var attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
@@ -3145,5 +3155,15 @@ private extension UIFont {
     }
     var isItalic: Bool {
         fontDescriptor.symbolicTraits.contains(.traitItalic)
+    }
+}
+
+/// Authored 縦中横 on one rendered text node. A class, so that two neighbouring nodes
+/// never merge into one attribute run and stay separate cells.
+final class TextCombineUprightMark: NSObject {
+    let mode: TextCombineUpright
+
+    init(mode: TextCombineUpright) {
+        self.mode = mode
     }
 }

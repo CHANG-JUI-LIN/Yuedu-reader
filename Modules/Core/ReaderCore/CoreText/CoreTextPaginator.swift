@@ -176,6 +176,26 @@ final class CoreTextPaginator {
         let attributedString: NSAttributedString
     }
 
+    /// One 縦中横 cell in a prepared vertical string: its characters and the em they share.
+    final class CombinedUprightCell: NSObject {
+        let range: NSRange
+        let em: CGFloat
+
+        init(range: NSRange, em: CGFloat) {
+            self.range = range
+            self.em = em
+        }
+    }
+
+    /// A 縦中横 cell placed on a page or chunk. The characters stay in the laid-out string,
+    /// so the drawn text follows appearance changes; `uiRect` is the em square in UIKit
+    /// coordinates (origin top-left, Y downward).
+    struct RenderedCombinedUpright {
+        let uiRect: CGRect
+        let range: NSRange
+        let em: CGFloat
+    }
+
     enum PageKind {
         case text
         case image
@@ -234,6 +254,8 @@ final class CoreTextPaginator {
         /// drawing stay in its offsets; every reading position goes through this map. See
         /// `ChapterLayout+Translation.swift`.
         var translation: ReaderTranslationLayout? = nil
+        /// pageIndex → authored 縦中横 cells, drawn after the text.
+        var combinedUprightCells: [Int: [RenderedCombinedUpright]] = [:]
 
         /// Page count for global-offset/progress math: the real count when
         /// complete, the extrapolated estimate while partial.
@@ -489,7 +511,8 @@ final class CoreTextPaginator {
                 pageFloatNotches: pageFloatNotches,
                 isPartial: isPartial,
                 estimatedPageCount: estimatedPageCount,
-                translation: translation
+                translation: translation,
+                combinedUprightCells: combinedUprightCells
             )
         }
 
@@ -656,6 +679,7 @@ final class CoreTextPaginator {
 
             hasher.combine(attrs[HTMLAttributedStringBuilder.spacerRunAttribute] != nil)
             hasher.combine(attrs[HTMLAttributedStringBuilder.inlineAnnotationRunAttribute] != nil)
+            hasher.combine(attrs[HTMLAttributedStringBuilder.textCombineUprightAttribute] != nil)
             hasher.combine(attrs[HTMLAttributedStringBuilder.pageBreakAttribute] != nil)
             hasher.combine(attrs[verticalFormsKey] as? Bool ?? false)
             // The language tag drives hyphenation, hence line breaks, hence pagination.
@@ -1215,6 +1239,14 @@ final class CoreTextPaginator {
             contentPathRect: contentPathRect,
             writingMode: writingMode
         )
+        var uprightCells: [Int: [RenderedCombinedUpright]] = [:]
+        if writingMode.isVertical {
+            for (pageIdx, artifact) in pageArtifacts.enumerated() {
+                let cells = combinedUprightCells(in: artifact.frame, origins: artifact.lineOrigins,
+                                                 pathOrigin: contentPathRect.origin, canvasHeight: renderSize.height)
+                if !cells.isEmpty { uprightCells[pageIdx] = cells }
+            }
+        }
         let blockRenderables = extractBlockRenderables(
             pageArtifacts: pageArtifacts,
             contentPathRect: contentPathRect,
@@ -1281,7 +1313,8 @@ final class CoreTextPaginator {
             writingMode: writingMode,
             pageFloatNotches: pageFloatNotches,
             isPartial: isPartial,
-            estimatedPageCount: estimatedPageCount
+            estimatedPageCount: estimatedPageCount,
+            combinedUprightCells: uprightCells
         )
     }
 
@@ -1761,6 +1794,9 @@ final class CoreTextPaginator {
             }
         }
 
+        // Step 4b: Authored 縦中横 cells, before orientation, which leaves their delegates alone.
+        markCombinedUprightCells(in: mutable, range: fullRange)
+
         // Step 5: Orientation, by the pass BrowserAuto runs too: each character upright
         // or on its side as CSS Writing Modes 3 `text-orientation: mixed` sets it (UAX
         // #50). The engine's own boxes — images, indent spacers, notes — are run
@@ -1771,11 +1807,86 @@ final class CoreTextPaginator {
                                    in: fullRange) { value, range, _ in
             guard value != nil else { return }
             mutable.removeAttribute(verticalFormsKey, range: range)
+            // A 縦中横 cell is centred on the column by its own metrics, as the upright
+            // characters around it are; it takes no attachment offset.
+            guard mutable.attribute(HTMLAttributedStringBuilder.combinedUprightCellAttribute,
+                                    at: range.location, effectiveRange: nil) == nil else { return }
             alignAttachmentSideways(mutable, in: range)
         }
         CJKTypography.applyOrientation(to: mutable)
         debugAttributedPrefix(mutable, label: "prepare.final", limit: 24)
         return mutable
+    }
+
+    /// Authored 縦中横 (CSS Writing Modes 3 §9.1): each marked text node, or each short
+    /// digit run of it, becomes one upright cell an em long, as in BrowserAuto. The
+    /// characters stay, so reading offsets do not move. Run delegates size the cell: the
+    /// first character carries an em of advance and the rest none. Their own glyphs take
+    /// the context's fill colour, which `drawVerticalFrame` makes clear; the page view
+    /// draws the cell's text horizontally afterwards (`CombinedUpright.line`).
+    private static func markCombinedUprightCells(in text: NSMutableAttributedString, range: NSRange) {
+        var cells: [NSRange] = []
+        let string = text.string as NSString
+        text.enumerateAttribute(HTMLAttributedStringBuilder.textCombineUprightAttribute, in: range) { value, runRange, _ in
+            guard let mark = value as? TextCombineUprightMark else { return }
+            var location = runRange.location
+            for segment in mark.mode.segments(of: string.substring(with: runRange)) {
+                let cell = NSRange(location: location, length: (segment.text as NSString).length)
+                location = NSMaxRange(cell)
+                guard segment.combined, !segment.text.allSatisfy(\.isWhitespace) else { continue }
+                cells.append(cell)
+            }
+        }
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        for cell in cells {
+            guard let value = text.attribute(.font, at: cell.location, effectiveRange: nil) else { continue }
+            let em: CGFloat
+            if let font = value as? UIFont {
+                em = font.pointSize
+            } else if CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() {
+                em = CTFontGetSize(value as! CTFont)
+            } else {
+                continue
+            }
+            let head = string.rangeOfComposedCharacterSequence(at: cell.location)
+            guard let first = CombinedUprightRunInfo.delegate(advance: em, em: em) else { continue }
+            // Letter-spacing does not apply inside the composition (§9.1.3).
+            text.removeAttribute(.kern, range: cell)
+            text.addAttribute(delegateKey, value: first, range: head)
+            if cell.length > head.length, let rest = CombinedUprightRunInfo.delegate(advance: 0, em: em) {
+                text.addAttribute(delegateKey, value: rest,
+                                  range: NSRange(location: NSMaxRange(head), length: NSMaxRange(cell) - NSMaxRange(head)))
+            }
+            text.addAttribute(HTMLAttributedStringBuilder.spacerRunAttribute, value: true, range: cell)
+            text.addAttribute(NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String),
+                              value: true, range: cell)
+            text.addAttribute(HTMLAttributedStringBuilder.combinedUprightCellAttribute,
+                              value: CombinedUprightCell(range: cell, em: em), range: cell)
+        }
+    }
+
+    /// 縦中横 cells in a vertical frame, in UIKit coordinates of a canvas `canvasHeight`
+    /// tall whose frame path starts at `pathOrigin`. A cell begins where its first
+    /// character does along the column, and is centred across it on the line's
+    /// baseline, raised by the text's own baseline offset as its neighbours are.
+    static func combinedUprightCells(in frame: CTFrame, origins: [CGPoint], pathOrigin: CGPoint,
+                                     canvasHeight: CGFloat) -> [RenderedCombinedUpright] {
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var cells: [RenderedCombinedUpright] = []
+        for (index, line) in lines.enumerated() where index < origins.count {
+            for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+                let attributes = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
+                guard let cell = attributes[HTMLAttributedStringBuilder.combinedUprightCellAttribute] as? CombinedUprightCell,
+                      CTRunGetStringRange(run).location == cell.range.location else { continue }
+                let raise = (attributes[.baselineOffset] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
+                let centreX = pathOrigin.x + origins[index].x + raise
+                let top = canvasHeight - (pathOrigin.y + origins[index].y) + GlyphBoundary.offset(line, at: cell.range.location)
+                cells.append(RenderedCombinedUpright(
+                    uiRect: CGRect(x: centreX - cell.em / 2, y: top, width: cell.em, height: cell.em),
+                    range: cell.range, em: cell.em))
+            }
+        }
+        return cells
     }
 
     private static func replaceLeadingIdeographicSpacesWithVerticalSpacers(

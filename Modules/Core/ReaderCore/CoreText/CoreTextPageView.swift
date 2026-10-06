@@ -765,6 +765,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             CoreTextPaginator.debugVerticalLog("EPUBFLOW pageView.drawOverlays page=\(pageIndex) inlineAnnotations=\(pageAnnotations.count) inlineImages=\(pageInlineImages.count)")
         }
         drawInlineAnnotations(pageAnnotations)
+        if let cells = layout.combinedUprightCells[pageIndex] {
+            Self.drawCombinedUpright(cells, from: layout.attributedString, in: ctx)
+        }
 
         // 3b. Block attachments (block images without blockRenderStyle)
         Self.drawAttachments(layout.blockAttachments[pageIndex] ?? [])
@@ -802,6 +805,29 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     nonisolated static func drawAttachments(_ attachments: [CoreTextPaginator.RenderedAttachment]) {
         for attachment in attachments {
             attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+        }
+    }
+
+    /// Draws authored 縦中横 cells, in UIKit coordinates, from the laid-out string: each
+    /// cell's text horizontal and centred in its em square (`CombinedUpright.line`).
+    nonisolated static func drawCombinedUpright(
+        _ cells: [CoreTextPaginator.RenderedCombinedUpright],
+        from attributedString: NSAttributedString,
+        in ctx: CGContext
+    ) {
+        for cell in cells where NSMaxRange(cell.range) <= attributedString.length {
+            let line = CombinedUpright.line(attributedString.attributedSubstring(from: cell.range), em: cell.em)
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+            ctx.saveGState()
+            ctx.textMatrix = .identity
+            ctx.translateBy(x: cell.uiRect.midX - width / 2,
+                            y: cell.uiRect.minY + (cell.em + ascent - descent) / 2)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.textPosition = .zero
+            CTLineDraw(line, ctx)
+            ctx.restoreGState()
         }
     }
 
@@ -943,6 +969,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         suppressedRanges: [NSRange],
         in ctx: CGContext
     ) {
+        // 縦中横 cells keep their characters in the frame; only they take the context's
+        // fill colour, so a clear fill hides them, and `drawCombinedUpright` draws them
+        // horizontally afterwards.
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        ctx.setFillColor(UIColor.clear.cgColor)
         guard !suppressedRanges.isEmpty else {
             CTFrameDraw(frame, ctx)
             return

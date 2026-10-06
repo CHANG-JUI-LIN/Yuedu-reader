@@ -41,6 +41,8 @@ final class CoreTextChunk {
     private(set) var blockRenderables: [CoreTextPaginator.RenderedBlockRenderable] = []
     /// Inline text annotations (span.small notes in vertical writing mode). Extracted during slicing or frame materialization.
     private(set) var inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation] = []
+    /// Authored 縦中横 cells (vertical writing mode). Extracted during slicing or frame materialization.
+    private(set) var combinedUprightCells: [CoreTextPaginator.RenderedCombinedUpright] = []
 
     init(chapterIndex: Int,
          charRange: CFRange,
@@ -55,6 +57,7 @@ final class CoreTextChunk {
          floatAttachments: [CoreTextPaginator.RenderedAttachment] = [],
          blockRenderables: [CoreTextPaginator.RenderedBlockRenderable] = [],
          inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation] = [],
+         combinedUprightCells: [CoreTextPaginator.RenderedCombinedUpright] = [],
          pageBackgroundColor: UIColor? = nil,
          pageBackgroundImage: UIImage? = nil) {
         self.chapterIndex = chapterIndex
@@ -72,6 +75,7 @@ final class CoreTextChunk {
         self.floatAttachments = floatAttachments
         self.blockRenderables = blockRenderables
         self.inlineAnnotations = inlineAnnotations
+        self.combinedUprightCells = combinedUprightCells
         if let preset = presetAttachments {
             self.attachments = preset
         } else if let f = frame {
@@ -115,6 +119,16 @@ final class CoreTextChunk {
         let attachments: [CoreTextPaginator.RenderedAttachment]
         let inlineAnnotations: [CoreTextPaginator.RenderedInlineAnnotation]
         let blockRenderables: [CoreTextPaginator.RenderedBlockRenderable]
+        let combinedUprightCells: [CoreTextPaginator.RenderedCombinedUpright]
+    }
+
+    /// The 縦中横 cells of a chunk's vertical frame, in the chunk's UIKit coordinates.
+    static func combinedUprightCells(in frame: CTFrame, chunkSize: CGSize) -> [CoreTextPaginator.RenderedCombinedUpright] {
+        let count = CFArrayGetCount(CTFrameGetLines(frame))
+        var origins = [CGPoint](repeating: .zero, count: count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, count), &origins)
+        return CoreTextPaginator.combinedUprightCells(in: frame, origins: origins, pathOrigin: .zero,
+                                                      canvasHeight: chunkSize.height)
     }
 
     /// Builds with the chapter's shared `framesetter`, which the main thread owns
@@ -159,7 +173,8 @@ final class CoreTextChunk {
             frame: f,
             attachments: builtAttachments,
             inlineAnnotations: builtInline,
-            blockRenderables: builtBlocks
+            blockRenderables: builtBlocks,
+            combinedUprightCells: writingMode.isVertical ? Self.combinedUprightCells(in: f, chunkSize: size) : []
         )
     }
 
@@ -171,6 +186,9 @@ final class CoreTextChunk {
         if attachments.isEmpty { attachments = built.attachments }
         if writingMode.isVertical && inlineAnnotations.isEmpty {
             inlineAnnotations = built.inlineAnnotations
+        }
+        if writingMode.isVertical && combinedUprightCells.isEmpty {
+            combinedUprightCells = built.combinedUprightCells
         }
         if !writingMode.isVertical && blockRenderables.isEmpty {
             blockRenderables = built.blockRenderables
