@@ -497,8 +497,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             )
             AppLogger.render("⟐ ccsCard", context: [
                 "chapter": index,
-                "hasCard": rawHTML.contains("androidshowChapterComments"),
-                "bubbles": rawHTML.components(separatedBy: "showCmt(").count - 1,
+                "hasCard": rawHTML.containsMarker("androidshowChapterComments"),
+                "bubbles": rawHTML.countMarkers("showCmt("),
                 "len": rawHTML.count
             ])
             result = await buildHTMLChapter(
@@ -524,7 +524,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             in: NSRange(location: 0, length: result.attributedString.length)
         ) { value, _, _ in
             guard let href = value as? String,
-                  ReaderHTMLUtilities.decodeReviewHref(href) != nil
+                  ReaderHTMLUtilities.decodeReviewHref(href, includingActionContext: false) != nil
             else { return }
             renderedReviewAnchors.append(#"<a href="\#(href)"></a>"#)
         }

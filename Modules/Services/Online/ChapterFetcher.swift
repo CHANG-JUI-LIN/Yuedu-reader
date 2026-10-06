@@ -84,9 +84,9 @@ struct ChapterFetcher {
             "branch": looksHTML ? "HTML(SwiftSoup)" : "PLAIN(escaped)",
             "rawLen": rawTrimmed.count,
             "plainLen": plainTextContent.count,
-            "hasImg": raw.contains("<img"),
-            "hasDataImg": raw.contains("data:image"),
-            "hasUsehtml": raw.range(of: "usehtml", options: .caseInsensitive) != nil,
+            "hasImg": raw.containsMarker("<img"),
+            "hasDataImg": raw.containsMarker("data:image"),
+            "hasUsehtml": raw.containsMarker("usehtml", ignoringCase: true),
             "rawComment": Self.countOccurrences(of: "<comment", in: raw, caseInsensitive: true),
             "rawShowCmt": Self.countOccurrences(of: "showCmt", in: raw, caseInsensitive: true),
             "rawAndroidShowCmt": Self.countOccurrences(of: "androidshowCmt", in: raw, caseInsensitive: true),
@@ -430,7 +430,8 @@ struct ChapterFetcher {
     }
 
     private static func containsLikelyHTMLTags(_ text: String) -> Bool {
-        if text.contains("<img") || text.contains("<p") || text.contains("<div") || text.contains("<span") {
+        if text.containsMarker("<img") || text.containsMarker("<p") || text.containsMarker("<div")
+            || text.containsMarker("<span") {
             return true
         }
         guard let regex = try? NSRegularExpression(pattern: "<[a-zA-Z][^>]*>") else {
@@ -443,7 +444,7 @@ struct ChapterFetcher {
     /// Returns the first `,{…}` click-config suffix plus ~60 chars of trailing context (base64
     /// collapsed), so a device log shows the exact suffix shape and the char that follows it.
     private static func clickConfigSample(in text: String) -> String {
-        guard let r = text.range(of: ",{") else { return "(none)" }
+        guard let r = text.rangeOfMarker(",{") else { return "(none)" }
         // back up ~12 chars to show the tail of the data URI, then take a window forward.
         let startIdx = text.index(r.lowerBound, offsetBy: -12, limitedBy: text.startIndex) ?? text.startIndex
         let endIdx = text.index(r.lowerBound, offsetBy: 140, limitedBy: text.endIndex) ?? text.endIndex
@@ -459,9 +460,7 @@ struct ChapterFetcher {
         caseInsensitive: Bool = false
     ) -> Int {
         guard !needle.isEmpty, !text.isEmpty else { return 0 }
-        let haystack = caseInsensitive ? text.lowercased() : text
-        let target = caseInsensitive ? needle.lowercased() : needle
-        return max(0, haystack.components(separatedBy: target).count - 1)
+        return text.countMarkers(needle, ignoringCase: caseInsensitive)
     }
 
     func parseChapterRequest(_ raw: String) -> ChapterRequestSpec {
@@ -666,15 +665,17 @@ struct ChapterFetcher {
     }
 
     private static func normalizeLegadoContent(_ text: String) -> String {
-        var output = text
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Runs three times per chapter on a document a 段評 source makes hundreds of KB; the
+        // carriage-return replaces are a full copy each, so only pay for them when there is one.
+        var output = text.containsMarker("\r")
+            ? text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            : text
+        output = output.trimmingCharacters(in: .whitespacesAndNewlines)
         if output.isEmpty { return "" }
         if Self.containsContentImageTag(output) {
             return Self.preserveImageBearingHTML(output)
         }
-        if output.contains("<") {
+        if output.containsMarker("<") {
             // SwiftSoup follows HTML whitespace rules: literal CR/LF inside one block element is
             // ordinary whitespace. Promote source line breaks before extracting text so Legado
             // rules that return one `<p>` containing many paragraphs do not become one long line.
@@ -686,7 +687,7 @@ struct ChapterFetcher {
                 return Self.preserveImageBearingHTML(output)
             }
         }
-        while output.contains("\n\n\n") {
+        while output.containsMarker("\n\n\n") {
             output = output.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         }
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -700,12 +701,12 @@ struct ChapterFetcher {
     }
 
     private static func preserveImageBearingHTML(_ html: String) -> String {
-        var output = html
-            .replacingOccurrences(of: "\u{00A0}", with: " ")
-            .replacingOccurrences(of: "&nbsp;", with: " ", options: .caseInsensitive)
-            .replacingOccurrences(of: "&ensp;", with: " ", options: .caseInsensitive)
-            .replacingOccurrences(of: "&emsp;", with: " ", options: .caseInsensitive)
-            .replacingOccurrences(of: "&thinsp;", with: "", options: .caseInsensitive)
+        var output = html.replacingOccurrences(of: "\u{00A0}", with: " ")
+        // Each case-insensitive replace walks the whole document; only pay for the ones present.
+        for (entity, replacement) in [("&nbsp;", " "), ("&ensp;", " "), ("&emsp;", " "), ("&thinsp;", "")]
+        where output.containsMarker(entity, ignoringCase: true) {
+            output = output.replacingOccurrences(of: entity, with: replacement, options: .caseInsensitive)
+        }
         output = output.replacingOccurrences(
             of: #"(?is)<(script|style|noscript|iframe|object|embed)\b[^>]*>.*?</\1\s*>"#,
             with: "",
@@ -716,7 +717,7 @@ struct ChapterFetcher {
             with: "",
             options: .regularExpression
         )
-        while output.contains("\n\n\n") {
+        while output.containsMarker("\n\n\n") {
             output = output.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         }
         return output.trimmingCharacters(in: .whitespacesAndNewlines)

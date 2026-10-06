@@ -166,20 +166,13 @@ enum ReaderHTMLUtilities {
     /// so turn them into real paragraph boundaries before parsing. Existing paragraph attributes
     /// are retained on every resulting paragraph.
     private static func splitNewlineSeparatedParagraphContents(in html: String) -> String {
-        let hasLineBreak = html.unicodeScalars.contains { scalar in
-            scalar.value == 0x0A || scalar.value == 0x0D
-        }
-        guard hasLineBreak else { return html }
+        guard html.containsMarker("\n") || html.containsMarker("\r") else { return html }
 
         var result = ""
         var cursor = html.startIndex
         var didSplit = false
 
-        while let openingPrefix = html.range(
-            of: "<p",
-            options: [.caseInsensitive],
-            range: cursor..<html.endIndex
-        ) {
+        while let openingPrefix = html.rangeOfMarker("<p", ignoringCase: true, from: cursor) {
             let afterP = openingPrefix.upperBound
             guard afterP == html.endIndex || html[afterP] == ">" || html[afterP].isWhitespace else {
                 result += html[cursor..<afterP]
@@ -187,10 +180,8 @@ enum ReaderHTMLUtilities {
                 continue
             }
             guard let openingEnd = html[afterP...].firstIndex(of: ">"),
-                  let closingRange = html.range(
-                    of: "</p>",
-                    options: [.caseInsensitive],
-                    range: html.index(after: openingEnd)..<html.endIndex
+                  let closingRange = html.rangeOfMarker(
+                    "</p>", ignoringCase: true, from: html.index(after: openingEnd)
                   )
             else {
                 break
@@ -384,18 +375,17 @@ enum ReaderHTMLUtilities {
     /// whether it separates paragraphs depends on the block it sits in, which is decided on the
     /// parsed tree by `promoteBreakSeparatedParagraphs(in:)`.
     private static func containsBlockContainerTag(_ html: String) -> Bool {
-        let lower = html.lowercased()
         let containerTags = [
             "<p", "<div", "<li", "<ul", "<ol", "<h1", "<h2", "<h3", "<h4", "<h5", "<h6",
             "<blockquote", "<section", "<article", "<table", "<figure", "<pre", "<dl", "<dd", "<dt",
             // A raw inline <svg> document may contain internal newlines — never split it into <p>.
             "<svg"
         ]
-        return containerTags.contains { lower.contains($0) }
+        return containerTags.contains { html.containsMarker($0, ignoringCase: true) }
     }
 
     private static func containsBlockLevelTag(_ html: String) -> Bool {
-        html.lowercased().contains("<br") || containsBlockContainerTag(html)
+        html.containsMarker("<br", ignoringCase: true) || containsBlockContainerTag(html)
     }
 
     static func bodyParagraphs(fromPlainText text: String, excludingLeadingTitle title: String) -> [String] {
@@ -702,21 +692,17 @@ enum ReaderHTMLUtilities {
     /// so a source whose tap handler was not one this app runs showed bubbles on every
     /// page and no way to restyle them.
     static func containsParagraphReviewLinks(in content: String) -> Bool {
-        content.range(of: "showcmt(", options: .caseInsensitive) != nil
-            || content.range(of: "\(reviewURLScheme)://", options: .caseInsensitive) != nil
+        content.containsMarker("showcmt(", ignoringCase: true)
+            || content.containsMarker("\(reviewURLScheme)://", ignoringCase: true)
             || containsCommentMarker(in: content)
     }
 
     /// Whether `html` carries a `<comment>` marker `rewriteReviewComments` turns into a bubble.
     private static func containsCommentMarker(in html: String) -> Bool {
-        guard html.range(of: "<comment", options: .caseInsensitive) != nil,
-              let tagRegex = try? NSRegularExpression(
-                  pattern: #"<comment\b[^>]*>"#,
-                  options: [.caseInsensitive]
-              ) else { return false }
+        guard html.containsMarker("<comment", ignoringCase: true) else { return false }
         let ns = html as NSString
         var found = false
-        tagRegex.enumerateMatches(in: html, range: NSRange(location: 0, length: ns.length)) { match, _, stop in
+        commentTagRegex.enumerateMatches(in: html, range: NSRange(location: 0, length: ns.length)) { match, _, stop in
             guard let match, commentMarker(inTag: ns.substring(with: match.range)) != nil else { return }
             found = true
             stop.pointee = true
@@ -724,18 +710,28 @@ enum ReaderHTMLUtilities {
         return found
     }
 
+    // The markup scanners below run several times per chapter over documents that a 段評 source
+    // makes hundreds of KB; compiling them per call was a measurable share of that.
+    private static let imageTagRegex = try! NSRegularExpression(pattern: #"<img\b[^>]*>"#, options: [.caseInsensitive])
+    private static let commentTagRegex = try! NSRegularExpression(pattern: #"<comment\b[^>]*>"#, options: [.caseInsensitive])
+    private static let reviewHrefRegex = try! NSRegularExpression(
+        pattern: #"href\s*=\s*["'](ydreview://[^"']+)["']"#, options: [.caseInsensitive]
+    )
+    /// A Legado `,{json}` click-config suffix ending at an attribute boundary.
+    private static let clickConfigSuffixRegex = try! NSRegularExpression(
+        pattern: #",\{(?:[^{}]|\{[^{}]*\})*\}(?=["'>\s])"#
+    )
+    private static let useHTMLTagRegex = try! NSRegularExpression(pattern: #"</?usehtml\b[^>]*>"#, options: [.caseInsensitive])
+    private static let base64PayloadRegex = try! NSRegularExpression(pattern: #";base64,([A-Za-z0-9+/=]{64,})"#)
+
     static func reviewMarkupDiagnostics(in html: String) -> ReviewMarkupDiagnostics {
         var targetSequence: [String] = []
         var rawReviewImageCount = 0
         var reviewAnchorCount = 0
 
-        if html.range(of: "<img", options: .caseInsensitive) != nil,
-           let imageRegex = try? NSRegularExpression(
-               pattern: #"<img\b[^>]*>"#,
-               options: [.caseInsensitive]
-           ) {
+        if html.containsMarker("<img", ignoringCase: true) {
             let ns = html as NSString
-            for match in imageRegex.matches(
+            for match in imageTagRegex.matches(
                 in: html,
                 range: NSRange(location: 0, length: ns.length)
             ) {
@@ -750,18 +746,14 @@ enum ReaderHTMLUtilities {
             }
         }
 
-        if html.range(of: "\(reviewURLScheme)://", options: .caseInsensitive) != nil,
-           let hrefRegex = try? NSRegularExpression(
-               pattern: #"href\s*=\s*["'](ydreview://[^"']+)["']"#,
-               options: [.caseInsensitive]
-           ) {
+        if html.containsMarker("\(reviewURLScheme)://", ignoringCase: true) {
             let ns = html as NSString
-            for match in hrefRegex.matches(
+            for match in reviewHrefRegex.matches(
                 in: html,
                 range: NSRange(location: 0, length: ns.length)
             ) where match.numberOfRanges >= 2 {
                 let href = ns.substring(with: match.range(at: 1))
-                guard let marker = decodeReviewHref(href) else { continue }
+                guard let marker = decodeReviewHref(href, includingActionContext: false) else { continue }
                 reviewAnchorCount += 1
                 if let key = reviewDiagnosticTargetKey(from: marker) {
                     targetSequence.append(key)
@@ -770,13 +762,9 @@ enum ReaderHTMLUtilities {
         }
 
         let commentTagCount: Int
-        if html.range(of: "<comment", options: .caseInsensitive) != nil,
-           let commentRegex = try? NSRegularExpression(
-               pattern: #"<comment\b[^>]*>"#,
-               options: [.caseInsensitive]
-           ) {
+        if html.containsMarker("<comment", ignoringCase: true) {
             let ns = html as NSString
-            commentTagCount = commentRegex.numberOfMatches(
+            commentTagCount = commentTagRegex.numberOfMatches(
                 in: html,
                 range: NSRange(location: 0, length: ns.length)
             )
@@ -848,14 +836,10 @@ enum ReaderHTMLUtilities {
     /// Anchors and their `href` are always preserved and `href` is in the builder allowlist.
     /// Idempotent: a string with no `<comment …>` markers is returned unchanged.
     static func rewriteReviewComments(_ html: String, reviewContext: LegadoReviewContext? = nil) -> String {
-        guard html.range(of: "<comment", options: .caseInsensitive) != nil else { return html }
-        guard let tagRegex = try? NSRegularExpression(
-            pattern: #"<comment\b[^>]*>"#,
-            options: [.caseInsensitive]
-        ) else { return html }
+        guard html.containsMarker("<comment", ignoringCase: true) else { return html }
 
         let ns = html as NSString
-        let matches = tagRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        let matches = commentTagRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return html }
 
         var result = ""
@@ -884,7 +868,7 @@ enum ReaderHTMLUtilities {
             "tags": matches.count,
             "converted": converted,
             "failed": failed,
-            "outYdreview": result.components(separatedBy: "ydreview://").count - 1,
+            "outYdreview": result.countMarkers("ydreview://"),
             "failedTag": String(Self.redactedReviewLogSnippet(firstFailedTag).prefix(180))
         ])
         return result
@@ -912,12 +896,9 @@ enum ReaderHTMLUtilities {
         // Strip `,{…}` click-config suffixes that sit at the very end of an attribute value
         // (immediately followed by a closing quote / tag-end / whitespace). Anchoring on the
         // trailing delimiter keeps prose like "foo,{bar} baz" inside body text untouched.
-        if result.range(of: ",{") != nil,
-           let regex = try? NSRegularExpression(
-            pattern: #",\{(?:[^{}]|\{[^{}]*\})*\}(?=["'>\s])"#
-           ) {
+        if result.containsMarker(",{") {
             let ns = result as NSString
-            result = regex.stringByReplacingMatches(
+            result = clickConfigSuffixRegex.stringByReplacingMatches(
                 in: result,
                 range: NSRange(location: 0, length: ns.length),
                 withTemplate: ""
@@ -925,13 +906,9 @@ enum ReaderHTMLUtilities {
         }
 
         // Unwrap <usehtml>…</usehtml> markers, keeping the inner HTML.
-        if result.range(of: "usehtml", options: .caseInsensitive) != nil,
-           let regex = try? NSRegularExpression(
-            pattern: #"</?usehtml\b[^>]*>"#,
-            options: [.caseInsensitive]
-           ) {
+        if result.containsMarker("usehtml", ignoringCase: true) {
             let ns = result as NSString
-            result = regex.stringByReplacingMatches(
+            result = useHTMLTagRegex.stringByReplacingMatches(
                 in: result,
                 range: NSRange(location: 0, length: ns.length),
                 withTemplate: ""
@@ -953,12 +930,10 @@ enum ReaderHTMLUtilities {
     /// inside any remaining base64, can't prefix-collide with each other, are plain ASCII (SwiftSoup
     /// never escapes them), and won't occur in book prose.
     static func extractDataURIPayloads(_ html: String) -> (slimmed: String, restore: [(token: String, payload: String)]) {
-        guard html.range(of: ";base64,") != nil,
-              let regex = try? NSRegularExpression(pattern: #";base64,([A-Za-z0-9+/=]{64,})"#)
-        else { return (html, []) }
+        guard html.containsMarker(";base64,") else { return (html, []) }
 
         let ns = html as NSString
-        let matches = regex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        let matches = base64PayloadRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return (html, []) }
 
         var restore: [(token: String, payload: String)] = []
@@ -976,14 +951,50 @@ enum ReaderHTMLUtilities {
         return (result, restore)
     }
 
-    /// Restores payloads lifted by `extractDataURIPayloads`. Order-independent: tokens never
-    /// substring-collide, so a plain per-token replace is correct.
+    /// Restores payloads lifted by `extractDataURIPayloads`.
+    ///
+    /// One pass over the text: a token is `__YD_B64_<n>__`, so the scan looks for the prefix,
+    /// reads the number, and copies that payload in. Replacing token by token instead re-walked
+    /// the whole document once per bubble — 120 passes over 450KB on a 光遇 chapter, ~140ms,
+    /// and the same again inside the DOM variant below.
     static func restoreDataURIPayloads(_ html: String, restore: [(token: String, payload: String)]) -> String {
         guard !restore.isEmpty else { return html }
-        var result = html
-        for entry in restore {
-            result = result.replacingOccurrences(of: entry.token, with: entry.payload)
-        }
+        return restoringDataURITokens(in: html, payloads: payloadsByToken(restore))
+    }
+
+    private static let dataURITokenPrefix = "__YD_B64_"
+
+    private static func payloadsByToken(_ restore: [(token: String, payload: String)]) -> [String: String] {
+        Dictionary(restore.map { ($0.token, $0.payload) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// `text` with every `__YD_B64_<n>__` token that `payloads` knows replaced by its payload.
+    /// Unknown tokens are left as they are.
+    private static func restoringDataURITokens(in text: String, payloads: [String: String]) -> String {
+        guard var tokenRange = text.rangeOfMarker(dataURITokenPrefix) else { return text }
+        var result = ""
+        result.reserveCapacity(text.utf8.count + payloads.values.reduce(0) { $0 + $1.utf8.count })
+        var cursor = text.startIndex
+        repeat {
+            // The token ends at the first "__" after its prefix; the number in between is ASCII digits.
+            var end = tokenRange.upperBound
+            while end < text.endIndex, text[end].isASCII, text[end].isNumber {
+                end = text.index(after: end)
+            }
+            let closing = text.index(end, offsetBy: 2, limitedBy: text.endIndex) ?? text.endIndex
+            if end > tokenRange.upperBound, text[end..<closing] == "__",
+               let payload = payloads[String(text[tokenRange.lowerBound..<closing])] {
+                result += text[cursor..<tokenRange.lowerBound]
+                result += payload
+                cursor = closing
+            } else {
+                result += text[cursor..<tokenRange.upperBound]
+                cursor = tokenRange.upperBound
+            }
+            guard let next = text.rangeOfMarker(dataURITokenPrefix, from: cursor) else { break }
+            tokenRange = next
+        } while true
+        result += text[cursor..<text.endIndex]
         return result
     }
 
@@ -993,10 +1004,8 @@ enum ReaderHTMLUtilities {
     /// over-long content as a multi-chapter merge, or the chapter gets endlessly re-fetched.
     static func lengthExcludingBase64Payloads(_ content: String) -> Int {
         let ns = content as NSString
-        guard content.range(of: ";base64,") != nil,
-              let regex = try? NSRegularExpression(pattern: #";base64,([A-Za-z0-9+/=]{64,})"#)
-        else { return ns.length }
-        let matches = regex.matches(in: content, range: NSRange(location: 0, length: ns.length))
+        guard content.containsMarker(";base64,") else { return ns.length }
+        let matches = base64PayloadRegex.matches(in: content, range: NSRange(location: 0, length: ns.length))
         let payloadChars = matches.reduce(0) { $0 + $1.range(at: 1).length }
         return ns.length - payloadChars
     }
@@ -1007,17 +1016,13 @@ enum ReaderHTMLUtilities {
     /// token are touched, and a quick map keys the lookup by token.
     static func restoreDataURIPayloads(in document: Document, restore: [(token: String, payload: String)]) {
         guard !restore.isEmpty else { return }
-        let map = Dictionary(restore.map { ($0.token, $0.payload) }, uniquingKeysWith: { a, _ in a })
+        let payloads = payloadsByToken(restore)
         let elements = (try? document.select("[src], [href]").array()) ?? []
         for element in elements {
             for attr in ["src", "href", "xlink:href"] {
                 guard let value = try? element.attr(attr),
-                      value.range(of: "__YD_B64_") != nil else { continue }
-                var restored = value
-                for (token, payload) in map where restored.contains(token) {
-                    restored = restored.replacingOccurrences(of: token, with: payload)
-                }
-                _ = try? element.attr(attr, restored)
+                      value.containsMarker(dataURITokenPrefix) else { continue }
+                _ = try? element.attr(attr, restoringDataURITokens(in: value, payloads: payloads))
             }
         }
     }
@@ -1062,7 +1067,10 @@ enum ReaderHTMLUtilities {
     }
 
     /// Decodes a `ydreview://` href back into its comment count, review URL, and title.
-    static func decodeReviewHref(_ href: String) -> ReviewMarker? {
+    /// - Parameter includingActionContext: the action context is the bulk of the payload and
+    ///   the only part that needs `JSONDecoder`; the diagnostics that fingerprint every anchor
+    ///   of a chapter several times over read only the target, so they pass `false`.
+    static func decodeReviewHref(_ href: String, includingActionContext: Bool = true) -> ReviewMarker? {
         guard href.hasPrefix("\(reviewURLScheme)://") else { return nil }
         guard let dRange = href.range(of: "d=") else { return nil }
         let encoded = String(href[dRange.upperBound...])
@@ -1071,7 +1079,7 @@ enum ReaderHTMLUtilities {
         else { return nil }
         let url = obj["u"] ?? ""
         let sourceJS = obj["j"] ?? ""
-        let actionContext: LegadoSourceActionContext? = obj["x"].flatMap { encoded in
+        let actionContext: LegadoSourceActionContext? = !includingActionContext ? nil : obj["x"].flatMap { encoded in
             guard let contextData = base64URLDecode(encoded) else { return nil }
             return try? JSONDecoder().decode(LegadoSourceActionContext.self, from: contextData)
         }
@@ -1192,15 +1200,17 @@ enum ReaderHTMLUtilities {
         return displayText(fromHTMLFragment: (try? element.html()) ?? "")
     }
 
+    // Legado forks use several equivalent browser entry points for paragraph
+    // reviews. 书山 v5.33 emits `startBrowser` on iOS and `startBrowserDp`
+    // under its QingRead branch; older sources use `showReadingBrowser` or
+    // `showCmt`. They all carry the same (url, optional title) payload.
+    private static let browserEntryArgsRegex = try! NSRegularExpression(
+        pattern: #"(?:showReadingBrowser|showCmt|startBrowser(?:Dp)?)\(\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)"#,
+        options: [.caseInsensitive]
+    )
+
     private static func showReadingBrowserArgs(in tag: String) -> (url: String, title: String)? {
-        // Legado forks use several equivalent browser entry points for paragraph
-        // reviews. 书山 v5.33 emits `startBrowser` on iOS and `startBrowserDp`
-        // under its QingRead branch; older sources use `showReadingBrowser` or
-        // `showCmt`. They all carry the same (url, optional title) payload.
-        guard let regex = try? NSRegularExpression(
-            pattern: #"(?:showReadingBrowser|showCmt|startBrowser(?:Dp)?)\(\s*'([^']*)'(?:\s*,\s*'([^']*)')?\s*\)"#,
-            options: [.caseInsensitive]
-        ) else { return nil }
+        let regex = browserEntryArgsRegex
         let ns = tag as NSString
         guard let m = regex.firstMatch(in: tag, range: NSRange(location: 0, length: ns.length)),
               m.numberOfRanges >= 2
@@ -1215,18 +1225,14 @@ enum ReaderHTMLUtilities {
         _ html: String,
         reviewContext: LegadoReviewContext?
     ) -> String {
-        guard html.range(of: "<img", options: .caseInsensitive) != nil,
-              html.range(of: ",{") != nil
-                || html.range(of: "onclick", options: .caseInsensitive) != nil
-                || html.range(of: "onpress", options: .caseInsensitive) != nil,
-              let tagRegex = try? NSRegularExpression(
-                pattern: #"<img\b[^>]*>"#,
-                options: [.caseInsensitive]
-              )
+        guard html.containsMarker("<img", ignoringCase: true),
+              html.containsMarker(",{")
+                || html.containsMarker("onclick", ignoringCase: true)
+                || html.containsMarker("onpress", ignoringCase: true)
         else { return html }
 
         let ns = html as NSString
-        let matches = tagRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        let matches = imageTagRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return html }
 
         var result = ""
@@ -1238,7 +1244,7 @@ enum ReaderHTMLUtilities {
             result += ns.substring(with: NSRange(location: cursor, length: range.location - cursor))
             let tag = ns.substring(with: range)
             let rewritten = rewriteLegadoImageTag(tag, reviewContext: reviewContext)
-            if rewritten.range(of: "yd-review-image", options: .caseInsensitive) != nil {
+            if rewritten.containsMarker("yd-review-image", ignoringCase: true) {
                 reviewImages += 1
             } else if rewritten != tag {
                 cleanedOnly += 1
@@ -1253,7 +1259,7 @@ enum ReaderHTMLUtilities {
                 "imgTags": matches.count,
                 "reviewImages": reviewImages,
                 "cleanedOnly": cleanedOnly,
-                "outYdreview": result.components(separatedBy: "ydreview://").count - 1
+                "outYdreview": result.countMarkers("ydreview://")
             ])
         }
         return result
@@ -1598,11 +1604,8 @@ enum ReaderHTMLUtilities {
     }
 
     private static func legadoClickConfigMatch(in text: String) -> NSTextCheckingResult? {
-        guard let regex = try? NSRegularExpression(
-            pattern: #",\{(?:[^{}]|\{[^{}]*\})*\}(?=["'>\s])"#
-        ) else { return nil }
         let ns = text as NSString
-        return regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
+        return clickConfigSuffixRegex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))
     }
 
     private static func legadoClickAction(fromConfigSuffix suffix: String) -> String? {
@@ -1875,7 +1878,7 @@ enum ReaderHTMLUtilities {
     }
 
     private static func legadoFunctionArgs(named name: String, in action: String) -> [String]? {
-        guard let regex = try? NSRegularExpression(
+        guard let regex = RuleEngine.cachedRegex(
             pattern: #"\b\#(name)\s*\(([\s\S]*)\)\s*;?\s*$"#,
             options: [.caseInsensitive]
         ) else { return nil }
@@ -2060,7 +2063,7 @@ enum ReaderHTMLUtilities {
     }
 
     private static func firstCapture(in text: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        guard let regex = RuleEngine.cachedRegex(pattern: pattern, options: [.caseInsensitive]) else { return nil }
         let ns = text as NSString
         guard let m = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
               m.numberOfRanges >= 2

@@ -1593,23 +1593,22 @@ class ModernParserBridge {
             AppLogger.parse("⏱ chapter.jsNet \(Int(_jsNetMs))ms \(source.bookSourceName)")
         }
 
-        let lowerContent = content.lowercased()
-        let lowerInput = html.lowercased()
-        let bubbleCount = content.components(separatedBy: "data:image/svg").count - 1
+        let bubbleCount = content.countMarkers("data:image/svg")
         AppLogger.parse("⟐ contentJS done", context: [
             "ms": _contentMs,
             "len": content.count,
             "bubbles": bubbleCount,
-            "commentTags": lowerContent.components(separatedBy: "<comment").count - 1,
-            "ydreview": lowerContent.components(separatedBy: "ydreview://").count - 1,
-            "showCmt": lowerContent.components(separatedBy: "showcmt").count - 1,
-            "androidShowCmt": lowerContent.components(separatedBy: "androidshowcmt").count - 1,
+            "commentTags": content.countMarkers("<comment", ignoringCase: true),
+            "ydreview": content.countMarkers("ydreview://", ignoringCase: true),
+            "showCmt": content.countMarkers("showcmt", ignoringCase: true),
+            "androidShowCmt": content.countMarkers("androidshowcmt", ignoringCase: true),
             "aliasParaForiOS": aliasedParaForiOS,
             "inputLen": html.count,
             "baseURL": String(baseURL.prefix(120)),
             "inputHex": Self.hexPreview(html, byteLimit: 32),
-            "inputHasContent": lowerInput.contains(#""content""#),
-            "inputHasReview": lowerInput.contains("review") || lowerInput.contains("comment"),
+            "inputHasContent": html.containsMarker(#""content""#, ignoringCase: true),
+            "inputHasReview": html.containsMarker("review", ignoringCase: true)
+                || html.containsMarker("comment", ignoringCase: true),
             "empty": content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             "jsError": contentRuleError ?? "none",
             "head": String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
@@ -1628,8 +1627,8 @@ class ModernParserBridge {
                 "❖SHUSHAN TRACE❖ stage=content.end len=%d bubbles=%d commentTags=%d showCmt=%d jsNetMs=%d jsError=%@",
                 content.count,
                 bubbleCount,
-                lowerContent.components(separatedBy: "<comment").count - 1,
-                lowerContent.components(separatedBy: "showcmt").count - 1,
+                content.countMarkers("<comment", ignoringCase: true),
+                content.countMarkers("showcmt", ignoringCase: true),
                 Int(_jsNetMs),
                 contentRuleError ?? "none"
             )
