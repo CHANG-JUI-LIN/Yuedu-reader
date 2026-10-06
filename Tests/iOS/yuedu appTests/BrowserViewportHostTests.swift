@@ -205,7 +205,13 @@ struct BrowserViewportHostTests {
         let builder = MockAttributedStringBuilder(texts: chapters.map(\.html))
         let delegate = CoreTextPageEngine(attributedBuilder: builder, renderSettings: settings,
             offsetStore: CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
-        let browser = BrowserLayoutPageEngine(resource: MockBrowserLayoutResource(chapters: chapters),
+        // The host starts the engine itself on its first layout, adjacent chapters
+        // included (kickoffEngineIfNeeded). This test starts chapter 2 first, so
+        // that start owns chapter 0: hold its content, as a slow fetch would,
+        // until the reader has scrolled back toward it (below).
+        let resource = HeldChapterResource(MockBrowserLayoutResource(chapters: chapters), holding: 0)
+        defer { resource.release() }
+        let browser = BrowserLayoutPageEngine(resource: resource,
             delegate: delegate, settings: settings, mode: .browserAuto)
         browser.usesViewportScrolling = true
         let size = scene.coordinateSpace.bounds.size
@@ -216,8 +222,7 @@ struct BrowserViewportHostTests {
                            viewportExtent: size.height, loadAdjacentChapters: false)
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
             horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
-        // Begin in the middle so the host does not independently request the
-        // previous chapter before this test explicitly completes its arrival.
+        // Begin in the middle, away from both neighbors.
         let initial = try #require(engine.browserChapter(at: 1)?.facts?.anchorOffsets["p30"])
         controller.setInitialPosition(chapter: 1, charOffset: initial)
         let window = UIWindow(windowScene: scene)
@@ -233,9 +238,25 @@ struct BrowserViewportHostTests {
         // tracking mode, never default mode: the user need not lift their finger
         // before the outline and newly exposed text become available.
         for spine in [2, 0] {
+            if spine == 0 {
+                // Scrolling up toward chapter 1's top is what requests the previous
+                // chapter in the reader, so it arrives inside the window the host
+                // keeps resident (visible bounds ± 2000 pt) with the first screen it
+                // was built with. Released any earlier, it could arrive while the
+                // viewport was still mid-chapter 1 and be retired there before the
+                // jump below reached it. The drag also abandons a restore still
+                // waiting for its layout, which would pull the viewport back.
+                controller.scrollViewWillBeginDragging(collection)
+                let first = try #require(engine.chapterRanges[1]?.first)
+                let top = try #require(collection.layoutAttributesForItem(at: IndexPath(item: first, section: 0))?.frame)
+                collection.setContentOffset(CGPoint(x: 0, y: top.minY + 300), animated: false)
+                controller.scrollViewDidScroll(collection)
+                collection.layoutIfNeeded()
+                resource.release()
+            }
             await engine.start(initialChapter: spine, contentWidth: size.width - 24,
                                viewportExtent: size.height, loadAdjacentChapters: false)
-            // Scrolling in the previous iteration may already own this load.
+            // The host's own start may already own this load (see `resource`).
             // start() deduplicates an in-flight request; it does not await that
             // request's completion. Observe its actual commit, without pumping
             // default mode or imposing an arbitrary wait.
@@ -478,6 +499,37 @@ private final class SuspendedViewportResource: BrowserLayoutResourceProviding {
     }
     func release() { suspended?.resume(); suspended = nil }
     func cssFrontendInput(forChapter index: Int, html: String) async -> CSSFrontendInput { .currentCompatibility(html: html, cssTexts: []) }
+    func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
+    func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
+    func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
+}
+
+/// Withholds one chapter's HTML, as a slow fetch would, until `release()`.
+/// The scroll host loads a neighbor on its own, so only the resource can decide
+/// when that neighbor arrives.
+@MainActor
+private final class HeldChapterResource: BrowserLayoutResourceProviding {
+    private let base: MockBrowserLayoutResource
+    private var held: Int?
+    private var readers: [CheckedContinuation<Void, Never>] = []
+    init(_ base: MockBrowserLayoutResource, holding chapter: Int) { self.base = base; held = chapter }
+    func release() {
+        held = nil
+        let waiting = readers
+        readers.removeAll()
+        waiting.forEach { $0.resume() }
+    }
+    var chapterCount: Int { base.chapterCount }
+    func chapterTitle(at index: Int) -> String { base.chapterTitle(at: index) }
+    func chapterSourceHref(at index: Int) -> String? { base.chapterSourceHref(at: index) }
+    func chapterHTML(at index: Int) async throws -> String {
+        if index == held { await withCheckedContinuation { readers.append($0) } }
+        return try await base.chapterHTML(at: index)
+    }
+    func cssFrontendInput(forChapter index: Int, html: String) async -> CSSFrontendInput {
+        await base.cssFrontendInput(forChapter: index, html: html)
+    }
+    func prepareFonts(requests: Set<BrowserFontRequest>) async { await base.prepareFonts(requests: requests) }
     func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
     func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
     func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
