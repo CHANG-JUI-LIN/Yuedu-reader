@@ -53,6 +53,26 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     /// Legado's `errorDownloadMap`: a relaunch is a fresh set of attempts.
     private var chapterAttempts: [UUID: [Int: Int]] = [:]
 
+    /// Chapter outcomes not yet written to the store, per book.
+    ///
+    /// Every write of the download task publishes the store to every view on it — the
+    /// shelf, the reader — and refreshes the Live Activity, so writing one per chapter made
+    /// a 2000-chapter download re-render the app several times a second for its whole
+    /// duration. Outcomes are staged here and written in one batch at most once per
+    /// `progressPublishInterval`, the way legado's shelf collects its book flow with
+    /// `conflate()` rather than per row. `claimNextChapter` reads the stage too, so a
+    /// finished chapter is never handed out again before its write lands.
+    private struct PendingProgress {
+        var completed: Set<Int> = []
+        var failed: [Int: OfflineChapterFailure] = [:]
+        var removed: Set<Int> = []
+        var isEmpty: Bool { completed.isEmpty && failed.isEmpty && removed.isEmpty }
+        var indices: Set<Int> { completed.union(failed.keys).union(removed) }
+    }
+    private var pendingProgress: [UUID: PendingProgress] = [:]
+    private var progressFlushes: [UUID: Task<Void, Never>] = [:]
+    private static let progressPublishInterval: Duration = .seconds(1)
+
     /// Legado gives each chapter three tries before recording a failure
     /// (`CacheBook.onPostError`). Paid sources, sources behind a login, and chapters that
     /// also fetch 段評 all take longer and are the ones that lose to a single blip; failing
@@ -124,6 +144,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
             await chapterFetcher.cancelChapter(bookId: bookId, chapterIndex: chapterIndex)
         }
         await job?.value
+        await publishProgress(bookId: bookId, store: store, isRunning: false)
         await MainActor.run {
             guard var task = store.books.first(where: { $0.id == bookId })?.offlineDownloadTask else {
                 return
@@ -191,6 +212,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         // the user just cleared.
         await chapterFetcher.cancelAll(for: bookId, includingDownloads: true)
         await job?.value
+        discardStagedProgress(bookId: bookId)
         // Cancelling a download cancels many chapters at once. Each one that surfaced as a
         // failure counted against the book's quarantine budget, which only ever reset on a
         // success — so removing a download could quarantine the book permanently.
@@ -365,6 +387,9 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                     // Nothing left to hand out. Workers still in flight are the last writers
                     // of this task, so the download is only finished once they have returned.
                     if running == 0 {
+                        if await publishProgress(bookId: book.id, store: store, isRunning: false) {
+                            break
+                        }
                         await MainActor.run {
                             guard let finalTask = store.books
                                 .first(where: { $0.id == book.id })?.offlineDownloadTask else { return }
@@ -382,13 +407,13 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
 
                 guard let refs = book.onlineChapters, refs.indices.contains(index) else {
                     releaseChapter(index, bookId: book.id)
-                    await removeInvalidIndex(index, bookId: book.id, store: store)
+                    removeInvalidIndex(index, bookId: book.id, store: store)
                     continue
                 }
                 let ref = refs[index]
                 if ref.shouldRenderAsVolumeSeparator {
                     releaseChapter(index, bookId: book.id)
-                    await removeInvalidIndex(index, bookId: book.id, store: store)
+                    removeInvalidIndex(index, bookId: book.id, store: store)
                     continue
                 }
 
@@ -499,7 +524,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                 guard finalValidation == .complete else {
                     throw OfflineDownloadManagerError.invalidPackage
                 }
-                await markCompleted(index, bookId: book.id, store: store)
+                markCompleted(index, bookId: book.id, store: store)
                 return
             } catch is CancellationError {
                 return
@@ -534,7 +559,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                     continue
                 }
 
-                await markFailed(
+                markFailed(
                     index,
                     title: ref.title,
                     error: error,
@@ -550,7 +575,8 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     /// The lowest pending index no worker holds, claimed for the caller.
     private func claimNextChapter(bookId: UUID, task: BookOfflineDownloadTask) -> Int? {
         let claimed = inFlightChapters[bookId] ?? []
-        guard let index = task.pendingIndices.subtracting(claimed).min() else { return nil }
+        let staged = pendingProgress[bookId]?.indices ?? []
+        guard let index = task.pendingIndices.subtracting(claimed).subtracting(staged).min() else { return nil }
         inFlightChapters[bookId, default: []].insert(index)
         return index
     }
@@ -616,15 +642,11 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         }
     }
 
-    private func markCompleted(_ index: Int, bookId: UUID, store: BookStore) async {
+    private func markCompleted(_ index: Int, bookId: UUID, store: BookStore) {
         chapterAttempts[bookId]?.removeValue(forKey: index)
-        await MainActor.run {
-            guard var task = store.books.first(where: { $0.id == bookId })?.offlineDownloadTask else {
-                return
-            }
-            task.markCompleted(index)
-            store.replaceOfflineDownloadTask(bookId: bookId, task: task, isRunning: true)
-        }
+        pendingProgress[bookId, default: PendingProgress()].completed.insert(index)
+        pendingProgress[bookId]?.failed.removeValue(forKey: index)
+        scheduleProgressPublish(bookId: bookId, store: store)
         ReaderTelemetry.shared.log("book_download_progress", attributes: [
             "bookId": bookId.uuidString,
             "chapterIndex": "\(index)",
@@ -638,7 +660,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         error: Error,
         bookId: UUID,
         store: BookStore
-    ) async {
+    ) {
         let category = failureCategory(for: error)
         let failure = OfflineChapterFailure(
             chapterIndex: index,
@@ -647,13 +669,9 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
             message: error.localizedDescription,
             occurredAt: Date()
         )
-        await MainActor.run {
-            guard var task = store.books.first(where: { $0.id == bookId })?.offlineDownloadTask else {
-                return
-            }
-            task.markFailed(failure)
-            store.replaceOfflineDownloadTask(bookId: bookId, task: task, isRunning: true)
-        }
+        pendingProgress[bookId, default: PendingProgress()].failed[index] = failure
+        pendingProgress[bookId]?.completed.remove(index)
+        scheduleProgressPublish(bookId: bookId, store: store)
         AppLogger.error("Offline chapter download failed [\(category.rawValue)] index=\(index)", error: error)
         ReaderTelemetry.shared.log("book_download_progress", attributes: [
             "bookId": bookId.uuidString,
@@ -663,14 +681,49 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         ])
     }
 
-    private func removeInvalidIndex(_ index: Int, bookId: UUID, store: BookStore) async {
+    private func removeInvalidIndex(_ index: Int, bookId: UUID, store: BookStore) {
+        pendingProgress[bookId, default: PendingProgress()].removed.insert(index)
+        pendingProgress[bookId]?.completed.remove(index)
+        pendingProgress[bookId]?.failed.removeValue(forKey: index)
+        scheduleProgressPublish(bookId: bookId, store: store)
+    }
+
+    private func scheduleProgressPublish(bookId: UUID, store: BookStore) {
+        guard progressFlushes[bookId] == nil else { return }
+        progressFlushes[bookId] = Task { [weak self] in
+            // A rate limit on publishing, not a wait for anything: the outcomes are already
+            // staged, and the next batch goes out when this interval ends.
+            try? await Task.sleep(for: Self.progressPublishInterval)
+            guard !Task.isCancelled else { return }
+            _ = await self?.publishProgress(bookId: bookId, store: store, isRunning: true)
+        }
+    }
+
+    /// Writes every staged outcome of the book to its task in one store write. Returns
+    /// whether there was anything to write.
+    @discardableResult
+    private func publishProgress(bookId: UUID, store: BookStore, isRunning: Bool) async -> Bool {
+        progressFlushes[bookId]?.cancel()
+        progressFlushes.removeValue(forKey: bookId)
+        guard let pending = pendingProgress.removeValue(forKey: bookId), !pending.isEmpty else {
+            return false
+        }
         await MainActor.run {
             guard var task = store.books.first(where: { $0.id == bookId })?.offlineDownloadTask else {
                 return
             }
-            task.removeRequestedIndices([index])
-            store.replaceOfflineDownloadTask(bookId: bookId, task: task, isRunning: true)
+            for index in pending.completed { task.markCompleted(index) }
+            for failure in pending.failed.values { task.markFailed(failure) }
+            if !pending.removed.isEmpty { task.removeRequestedIndices(pending.removed) }
+            store.replaceOfflineDownloadTask(bookId: bookId, task: task, isRunning: isRunning)
         }
+        return true
+    }
+
+    private func discardStagedProgress(bookId: UUID) {
+        progressFlushes[bookId]?.cancel()
+        progressFlushes.removeValue(forKey: bookId)
+        pendingProgress.removeValue(forKey: bookId)
     }
 
     private func finishBook(bookId: UUID) {

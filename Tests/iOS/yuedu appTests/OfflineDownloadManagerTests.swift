@@ -41,6 +41,33 @@ struct OfflineDownloadManagerTests {
         #expect(fixture.store.books.first?.offlineDownloadTask == nil)
     }
 
+    @Test("a download writes its task in batches, not once per chapter", .timeLimit(.minutes(1)))
+    @MainActor
+    func progressIsBatched() async throws {
+        let fixture = makeFixture(chapters: 40)
+        defer { fixture.cleanup() }
+        let publications = OSAllocatedUnfairLock(initialState: 0)
+        let subscription = fixture.store.objectWillChange.sink {
+            publications.withLock { $0 += 1 }
+        }
+        defer { subscription.cancel() }
+
+        await fixture.manager.start(
+            book: fixture.book,
+            selection: .range(0...39),
+            store: fixture.store
+        )
+        await fixture.manager.waitUntilIdle()
+
+        let task = try #require(fixture.store.books.first?.offlineDownloadTask)
+        #expect(task.completedIndices == Set(0...39))
+        #expect(fixture.store.books.first?.offlineDownloadState == .available)
+        // Starting the task is one write; the 40 outcomes then land in batches at most once a
+        // second — these chapters fetch instantly, so one batch at the end. Per chapter it was
+        // two publishes (the cache mark and the task), 80 here.
+        #expect(publications.withLock { $0 } <= 4)
+    }
+
     @Test("one failure does not block the next chapter")
     @MainActor
     func failureContinues() async throws {
