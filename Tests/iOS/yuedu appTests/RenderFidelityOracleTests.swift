@@ -12,7 +12,7 @@ import WebKit
 /// pixel grid. `scripts/fidelity/fidelity.py` scores the pair; nothing here decides
 /// a score. Contract: `docs/browser-layout/fidelity-loop/ORACLE.md`.
 ///
-/// Frozen for the fidelity loop: `scripts/fidelity/oracle.lock` pins this file.
+/// Frozen: `scripts/fidelity/oracle.lock` pins this file.
 /// Ordinary test runs do nothing — the plan path arrives through the environment.
 @Suite(.serialized)
 @MainActor
@@ -136,8 +136,8 @@ private struct FidelityPlan: Decodable {
 
     /// The chapter sample, from the chapter list the reader itself uses.
     /// `dev`: pinned chapters plus evenly spaced ones, both ends included.
-    /// `holdout`: the midpoints between them, never a `dev` chapter. The loop
-    /// tunes against `dev`; `holdout` exists to catch a fix that only fits it.
+    /// `holdout`: the midpoints between them, never a `dev` chapter. Fixes are
+    /// tuned against `dev`; `holdout` exists to catch a fix that only fits it.
     static func sample(count: Int, book: Book, sets: [String]) -> [(spine: Int, set: String)] {
         guard count > 0 else { return [] }
         if let only = book.only {

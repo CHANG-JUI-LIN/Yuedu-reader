@@ -515,28 +515,5 @@ class BreakAgreement(unittest.TestCase):
         self.assertEqual(fidelity.break_score([], []), 1.0)
 
 
-class GatePaths(unittest.TestCase):
-    BASELINE = "docs/browser-layout/line-break-baseline/redchamber.tsv"
-
-    def test_a_slice_may_rerecord_the_line_break_baseline_for_the_verifier_to_check(self):
-        kind, reason = fidelity.classify_change("reader", self.BASELINE)
-        self.assertEqual(kind, "note")
-        self.assertIn("every changed row", reason)
-
-    def test_every_other_recorded_baseline_still_needs_a_person(self):
-        for name in ("docs/browser-layout/line-break-baseline/redchamber-2026-09-23.tsv",
-                     "docs/browser-layout/line-break-baseline/attribution-2026-09-23.tsv",
-                     "Tests/iOS/yuedu appTests/Fixtures/chapter.xhtml",
-                     "Tests/iOS/yuedu appTests/geometry.tsv"):
-            self.assertEqual(fidelity.classify_change("reader", name)[0], "stop", name)
-        self.assertEqual(fidelity.classify_change("package", self.BASELINE)[0], "stop")
-
-    def test_frozen_and_outside_files_stop_and_sources_pass(self):
-        self.assertEqual(fidelity.classify_change("reader", "scripts/fidelity/fidelity.py")[0], "stop")
-        self.assertEqual(fidelity.classify_change("reader", "Modules/Features/Reader/ReaderView.swift")[0], "stop")
-        self.assertIsNone(fidelity.classify_change("reader", "Modules/Core/ReaderCore/BrowserLayout/A.swift"))
-        self.assertIsNone(fidelity.classify_change("package", "Sources/YueduCoreText/Inline/B.swift"))
-
-
 if __name__ == "__main__":
     unittest.main(verbosity=2)

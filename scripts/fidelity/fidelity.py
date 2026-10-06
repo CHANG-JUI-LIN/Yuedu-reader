@@ -5,7 +5,7 @@ Compares the reader's own rendering of an EPUB chapter with a WKWebView
 reference. The captures come from `RenderFidelityOracleTests`; this file only
 reads them. Contract: docs/browser-layout/fidelity-loop/ORACLE.md.
 
-Frozen for the fidelity loop (scripts/fidelity/oracle.lock). Standard library only.
+Frozen by scripts/fidelity/oracle.lock. Standard library only.
 """
 
 import argparse
@@ -1081,8 +1081,8 @@ def render_html(report, run_directory, reference_root):
 
 # --------------------------------------------------------------------------- oracle lock
 
-# What decides a score. The loop may not change any of these; a human who does
-# re-records the lock and the baseline (ORACLE.md, "Changing the oracle").
+# What decides a score. Whoever changes one of these re-records the lock, and the
+# baseline too when scores can move (ORACLE.md, "改量法").
 FROZEN = [
     "scripts/fidelity/fidelity.py",
     "scripts/fidelity/measure.sh",
@@ -1121,97 +1121,6 @@ def command_lock(args):
             print(f"  {problem}")
         sys.exit(2)
     print(f"oracle lock ok ({len(FROZEN)} files, {len(trees)} tree{'s' if len(trees) > 1 else ''})")
-
-
-# --------------------------------------------------------------------------- change gate
-
-# What one loop slice may change without a person looking first. Everything
-# else — the legacy renderer, reader UI, project files, recorded baselines,
-# and the loop's own paperwork, which lives in the main checkout — is parked
-# for review however good the score looks.
-ALLOWED = {
-    "reader": ["Modules/Core/ReaderCore/BrowserLayout/", "Tests/iOS/yuedu appTests/"],
-    "package": ["Sources/YueduCoreText/", "Tests/", "CHANGELOG.md"],
-}
-RECORDED = ["/Fixtures/", "docs/browser-layout/line-break-baseline/", ".tsv"]
-# The one recorded baseline a slice may re-record: the Red Chamber line-break
-# fingerprints, when the slice's rule is meant to move line breaks. The person
-# decided this on 2026-10-01; the slice report lists every changed chapter and
-# the verifier checks them (LOOP.md, "斷行基線").
-RERECORDABLE = {"docs/browser-layout/line-break-baseline/redchamber.tsv"}
-MAX_FILES = 12
-WAITS = re.compile(r"Task\.sleep|asyncAfter|Thread\.sleep|\busleep\(|\bsleep\(")
-WEAKENED = re.compile(r"\.disabled\(|XCTSkip|withKnownIssue|\.enabled\(if: false")
-
-
-def git(tree, *arguments):
-    done = subprocess.run(["git", "-C", str(tree), *arguments], capture_output=True, text=True)
-    if done.returncode != 0:
-        raise SystemExit(f"git {' '.join(arguments)} failed in {tree}: {done.stderr.strip()}")
-    return done.stdout
-
-
-def classify_change(label, name):
-    """What the gate makes of one changed path: ("stop", reason), ("note", reason) or None."""
-    if label == "reader" and name in FROZEN:
-        return "stop", f"{label}: {name} is a frozen oracle file"
-    if label == "reader" and name in RERECORDABLE:
-        return "note", (f"{label}: {name} was re-recorded; every changed row must be in the slice report "
-                        f"with its reason (LOOP.md, 斷行基線)")
-    if not any(name.startswith(prefix) for prefix in ALLOWED[label]):
-        return "stop", f"{label}: {name} is outside what the loop may change on its own"
-    if any(marker in name for marker in RECORDED):
-        return "stop", f"{label}: {name} is a recorded baseline; updating it needs a person (PHASES.md D-09)"
-    return None
-
-
-def command_gate(args):
-    """Mechanical checks on one slice. Exit 0: may be committed on the loop
-    branch. Exit 2: park it for a person, with the reasons printed."""
-    corpus = load_corpus()
-    titles = sorted({run for book in discover_books(corpus) for run in re.findall(r"[\u4e00-\u9fff]{3,}", book["file"])})
-    stops, notes = [], []
-    total = 0
-    for label, tree, base in (("reader", args.reader, args.reader_base), ("package", args.package, args.package_base)):
-        if not tree:
-            continue
-        changed = set(git(tree, "diff", "--name-only", base).split("\n")) \
-            | set(line[3:].strip('"') for line in git(tree, "status", "--porcelain").split("\n") if line)
-        changed.discard("")
-        total += len(changed)
-        for name in sorted(changed):
-            verdict = classify_change(label, name)
-            if verdict:
-                (stops if verdict[0] == "stop" else notes).append(verdict[1])
-        added = [line[1:] for line in git(tree, "diff", "-U0", base, "--", "*.swift").split("\n")
-                 if line.startswith("+") and not line.startswith("+++")]
-        removed = [line[1:] for line in git(tree, "diff", "-U0", base, "--", "*.swift").split("\n")
-                   if line.startswith("-") and not line.startswith("---")]
-        for line in added:
-            hit = next((title for title in titles if title in line), None)
-            if hit:
-                stops.append(f"{label}: an added line names a corpus book ({hit}); a rule must not depend on the book")
-            if WAITS.search(line):
-                stops.append(f"{label}: an added line waits on a timer: {line.strip()[:90]}")
-            if WEAKENED.search(line):
-                stops.append(f"{label}: an added line disables or skips a test: {line.strip()[:90]}")
-            if "try?" in line:
-                notes.append(f"{label}: added `try?` — confirm an empty result is truly equivalent: {line.strip()[:90]}")
-        checks = lambda lines: sum(1 for line in lines if "#expect" in line or "#require" in line or "XCTAssert" in line)
-        if checks(removed) > checks(added):
-            notes.append(f"{label}: more assertions removed ({checks(removed)}) than added ({checks(added)})")
-    if total > MAX_FILES:
-        stops.append(f"{total} files changed; a slice is at most {MAX_FILES}")
-    if total == 0:
-        stops.append("no change to gate")
-    for note in notes:
-        print(f"note: {note}")
-    if stops:
-        print("GATE: ESCALATE")
-        for stop in dict.fromkeys(stops):
-            print(f"  - {stop}")
-        sys.exit(2)
-    print(f"GATE: PASS ({total} files)")
 
 
 # --------------------------------------------------------------------------- cli
@@ -1277,11 +1186,11 @@ def compare_reports(base, new, full=False):
     A chapter's set (dev or holdout) is the base run's: a chapter re-measured
     alone is still the chapter it was in the full sample.
 
-    A chapter the legacy renderer drew both times is out of any slice's reach
-    (the gate keeps the legacy renderer closed), and its score drifts a little
-    from run to run (up to ±3 on one chapter, measured 2026-10-01; new-engine
-    chapters repeat exactly). Book scores here leave those chapters out, so
-    their drift is neither progress nor regression."""
+    A chapter the legacy renderer drew both times drifts a little from run to
+    run (up to ±3 on one chapter, measured 2026-10-01; new-engine chapters
+    repeat exactly). Book scores here leave those chapters out, so their drift
+    is neither progress nor regression; a change to the legacy renderer itself
+    has to be read from the two runs' own reports."""
     old = {(chapter["book"], chapter["spine"]): chapter for chapter in base["chapters"]}
     now = {(chapter["book"], chapter["spine"]): chapter for chapter in new["chapters"]}
     shared = sorted(old.keys() & now.keys())
@@ -1446,12 +1355,6 @@ def main():
     lock.add_argument("--check", action="store_true")
     lock.add_argument("--tree", help="also check this checkout's copies")
     lock.set_defaults(handler=command_lock)
-    gate = commands.add_parser("gate", help="mechanical checks on one loop slice")
-    gate.add_argument("--reader", help="reader checkout holding the slice")
-    gate.add_argument("--reader-base", default="HEAD", help="commit the slice started from")
-    gate.add_argument("--package", help="YueduCoreText checkout holding the slice")
-    gate.add_argument("--package-base", default="HEAD")
-    gate.set_defaults(handler=command_gate)
     args = parser.parse_args()
     args.handler(args)
 

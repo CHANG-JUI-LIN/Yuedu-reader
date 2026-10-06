@@ -1,12 +1,12 @@
 {
  "schema": 1,
  "files": {
-  "scripts/fidelity/fidelity.py": "93288dd4e0b3f8703de05ff4d6b220d2109e779737e37c715c8fdba50b47bd9e",
-  "scripts/fidelity/measure.sh": "f5cf41b4b3e2fc14114ea3b579e0944fdf481c78c9fa634a68eca08f0a6bff9f",
+  "scripts/fidelity/fidelity.py": "7ccfa6881569d00a6e516949efc4c62ca8899fbd67ecf2bcc5bb960b7773fb29",
+  "scripts/fidelity/measure.sh": "15010f599962f2ea1eeec7af49efa45ac1ae288ac686a9d33cb445d65b650e1c",
   "scripts/fidelity/corpus.json": "8d92ca52ce18bd968cf438a56b812bce5e03c3b9b322a6573c9bf606a224e03c",
-  "scripts/fidelity/test_fidelity.py": "95e660647f514cebd0b1ba84004077dd9fd9312782da9ec8b1b7524cacecacc4",
-  "Tests/iOS/yuedu appTests/RenderFidelityOracleTests.swift": "5e2cfd434832534ec44ae2e3f0e36a183109330bdde5deb0d45742e6dac8cfb1",
-  "docs/browser-layout/fidelity-loop/ORACLE.md": "87f702ca172c934421cd3c375b40d14bdad9d176e51c76fcff36fa31074e7a66",
-  "docs/browser-layout/fidelity-loop/GOAL.md": "fd9e4beaf474a28163be9982f57c857701265c0c9ecc11587dcd0d4c081e7ff3"
+  "scripts/fidelity/test_fidelity.py": "662b8ea6ed2651e299139801a72f5d7944858d1c799795ea30c96102d83bbe45",
+  "Tests/iOS/yuedu appTests/RenderFidelityOracleTests.swift": "ce2aca72cce485d6d69923164bdff97931c03adf652831222f96da79ae788c56",
+  "docs/browser-layout/fidelity-loop/ORACLE.md": "9a154d15c51e4d0be4918154da00cd8be9bdd6aa622a77900487eacd142fc6d5",
+  "docs/browser-layout/fidelity-loop/GOAL.md": "524ff549d32e0b01c16254433e17572c51638d6903125777f16c3c5db5928856"
  }
 }

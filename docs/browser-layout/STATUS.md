@@ -1,6 +1,6 @@
 ---
 title: BrowserLayout 目前狀態與下一步
-updated: 2026-10-01
+updated: 2026-10-07
 phase: 5A
 status: 進行中，未結案
 tags: [yuedu, browser-layout, status]
@@ -10,11 +10,15 @@ tags: [yuedu, browser-layout, status]
 
 [文件首頁](../README.md) · [歷史台帳](PHASES.md) · [5A 設計](../superpowers/specs/2026-09-04-lexbor-css-frontend-production-migration-design.md) · [5A 計畫](../superpowers/plans/2026-09-04-lexbor-css-frontend-production-migration.md)
 
+## 2026-10-07：不跑 loop 了，相似度量測留下來手動跑
+
+使用者決定不再讓 Codex 照相似度分數自己修引擎。拆掉的：Codex 的四個 fidelity skill、loop 的工作副本與 `loop/fidelity` 分支、操作手冊、執行紀錄、S001 三次嘗試的報告與量測，以及 `fidelity.py gate`。留下的：量法（`scripts/fidelity/`、`RenderFidelityOracleTests.swift`）、16 本書與 WebView 對照組、基線分數。原本的佇列整理成 [已知差距](fidelity-loop/GAPS.md)；怎麼量、改了排版要跑哪些測試在 [fidelity-loop/](fidelity-loop/README.md)。S001 沒合入的候選收在本機 git 的 `refs/archive/fidelity-S001-attempt3`。量法的鎖已照「改量法」只做第 2、3 步重錄（`SCORER_VERSION` 不變，基線照舊可比）。
+
 ## 2026-10-01：和 WebView 的相似度有了量法與基線，loop 已備好交給 Codex
 
 目標：測試資料夾（`~/Desktop/Test document/EPUB Format`）裡每一本 EPUB，閱讀器的渲染和 WKWebView 至少 80 分相似。量法、基線、佇列與給 Codex 的操作手冊都在 [fidelity-loop/](fidelity-loop/README.md)。
 
-**基線（`baseline-2026-09-30`，16 本、249 章）：11 本過關，5 本沒過**——georgia 58.3、草枕 65.3、AI 術語詞典 75.2、紅樓夢脂評直排 76.6、Mahabharata 78.5。走新引擎的 177 章平均 91.8，回退舊引擎的 72 章平均 78.2；差距主要在回退的章節。[完整報告](fidelity-loop/reports/baseline-2026-09-30.md) · [佇列與記分板](fidelity-loop/STATE.md)。
+**基線（`baseline-2026-09-30`，16 本、249 章）：11 本過關，5 本沒過**——georgia 58.3、草枕 65.3、AI 術語詞典 75.2、紅樓夢脂評直排 76.6、Mahabharata 78.5。走新引擎的 177 章平均 91.8，回退舊引擎的 72 章平均 78.2；差距主要在回退的章節。[完整報告](fidelity-loop/reports/baseline-2026-09-30.md) · [已知差距](fidelity-loop/GAPS.md)（原本的佇列，10-07 改名）。
 
 量法是 Claude 寫的，loop 不准改（`scripts/fidelity/oracle.lock`）：兩邊用同一個捲動版面（390×800、繁體中文語言環境），以「同一個字」對齊後比每段的換行、位置、字級與整頁畫面。51 個量法自測；每條擷取路徑（新引擎橫直排、舊引擎橫直排、由右至左）都把量到的方塊疊回截圖核對過。整份基線在同一台模擬器重量一次，走新引擎的 177 章每一章分數完全相同，舊引擎的章節最多漂移 2.8 分；換一台語言設定不同的模擬器重量同樣的章節，分數也一樣（抽 6 章驗證；量測固定用繁體中文）。
 

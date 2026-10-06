@@ -1,16 +1,16 @@
 ---
-title: 渲染相似度 loop
-updated: 2026-10-01
+title: EPUB 渲染相似度量測
+updated: 2026-10-07
 tags: [yuedu, browser-layout, fidelity-loop, index]
 ---
 
-# 渲染相似度 loop
+# EPUB 渲染相似度量測
 
 [BrowserLayout 目前狀態](../STATUS.md) · [歷史台帳](../PHASES.md)
 
-讓 Codex 自己一輪一輪地把新引擎修到：測試資料夾裡每一本 EPUB，渲染結果和 WebView 至少八成相似。
+把測試資料夾（`~/Desktop/Test document/EPUB Format`）裡的每一本 EPUB，用閱讀器和 WKWebView 各排一次，比兩邊有幾成像。目標是每本至少 80 分（[GOAL.md](GOAL.md)），分數怎麼算在 [ORACLE.md](ORACLE.md)。
 
-它由三樣東西組成：一個誰都不能偷改的**量法**、一份**工作佇列**、和一套**每個修改都要被另一個代理重新量過才算數**的流程。做法參考 [loop-engineering](https://github.com/cobusgreyling/loop-engineering)，但照這個專案和 Codex 目前的規格重寫過。
+2026-09-30 到 10-01 曾經讓 Codex 照這個分數一輪一輪自己修引擎（loop）。2026-10-07 起不跑 loop 了：Codex 的 skill、工作副本、佇列和執行紀錄都拆掉，量測留下來當 EPUB 測試，改了排版之後手動量、和基線比。
 
 ## 現在的分數
 
@@ -41,96 +41,101 @@ tags: [yuedu, browser-layout, fidelity-loop, index]
 
 讀這張表要知道的三件事：
 
-- **卡住沒過的五本的原因，就是佇列的前六項**，見 [STATE.md](STATE.md)。
+- **沒過的五本卡在哪裡，見 [GAPS.md](GAPS.md)。**
 - **回退舊引擎的章節分數偏低，有一部分是量法看不到。** 舊引擎把表格畫成一張圖，裡面的字量不到（georgia、洪武大帝第 43 章）。這些章節改走新引擎之後才量得準。
 - **分數是穩定的。** 同一台模擬器把整份基線重量一次，走新引擎的 177 章每一章分數完全相同；走舊引擎的章節會小幅漂移（最多一章差 2.8），比較兩次量測時這些章節不算進去。換一台語言設定不同的模擬器重量同樣的章節，分數也一樣（抽 6 章驗證）。
 
-## 這幾頁各是什麼
+## 怎麼量
 
-| 頁面 | 內容 | 誰可以改 |
-|---|---|---|
-| [GOAL.md](GOAL.md) | 目標、完成條件、範圍、什麼時候停 | 只有你 |
-| [ORACLE.md](ORACLE.md) | 「幾成像」怎麼算、看不到什麼 | 只有你 |
-| [LOOP.md](LOOP.md) | 給代理的操作手冊：一輪怎麼做、要過哪些關、預算 | 只有你 |
-| [STATE.md](STATE.md) | 記分板、佇列、進行中、等你決定、已合入 | loop；「等你決定」由你回答 |
-| [RUNLOG.md](RUNLOG.md) | 每一輪一行的紀錄 | loop |
-| `reports/` | 只有數字的量測報告 | loop |
-| `designs/` | 新排版模式動工前的設計筆記 | loop |
-
-程式碼的修改都在另外的工作副本裡（`~/Desktop/Yuedu-fidelity-loop/`，分支 `loop/fidelity`）。上面後四樣 loop 會直接寫在這個資料夾，所以你在 Obsidian 裡看到的就是最新的；它不會自己提交這些檔案。
-
-## 怎麼啟動
-
-前置作業只要做一次，見最下面「還沒做的事」。
-
-在 ChatGPT App 的 Codex 開一個**新對話**，專案資料夾選 `~/Desktop/Yuedu-fidelity-loop/Yuedu-reader`。第一次開這個資料夾時 Codex 會問要不要信任它，選信任，專案裡的 skill 才會載入。然後貼下面其中一段。
-
-### 先一次跑一個切片（建議前兩三次這樣跑）
-
-```text
-照 ~/Desktop/Yuedu-reader/docs/browser-layout/fidelity-loop/LOOP.md 做一輪：只做 STATE.md 佇列最上面的一個切片。
-先讀同一個資料夾裡的 GOAL.md、LOOP.md、STATE.md（讀主工作目錄的那幾份，不是這個工作副本裡的），做完「開工檢查」再動手。
-用 $fidelity-fix 實作、$fidelity-measure 量測，然後交給子代理 fidelity-verifier 判定；只有 APPROVE 才 commit 到 loop/fidelity。
-做完更新主工作目錄的 STATE.md 和 RUNLOG.md，然後停下來，用繁體中文告訴我：改了哪條規則、哪幾本書的分數從多少到多少（附 run 編號）、驗證者的判定。
-程式碼只在 ~/Desktop/Yuedu-fidelity-loop 底下改；不 push、不發版、不改量法。
-```
-
-### 連續跑到完成或預算用完
-
-在輸入框打 `/goal`，目標文字貼這段，並在 Goal 的設定裡給一個 token 預算：
-
-```text
-讓 ~/Desktop/Test document/EPUB Format 裡每一本 EPUB 達到 ~/Desktop/Yuedu-reader/docs/browser-layout/fidelity-loop/GOAL.md 的完成條件。
-照同一個資料夾裡 LOOP.md 的流程，一輪一個切片，反覆做：
-每一輪先讀主工作目錄的 GOAL.md、LOOP.md、STATE.md 並做「開工檢查」；用 $fidelity-triage 維護佇列、$fidelity-fix 實作最上面一項、$fidelity-measure 量測；每個切片交給子代理 fidelity-verifier 判定，只有 APPROVE 才 commit 到 loop/fidelity；每一輪結束更新主工作目錄的 STATE.md 和 RUNLOG.md。
-程式碼只在 ~/Desktop/Yuedu-fidelity-loop 底下改；不 push、不發版、不改量法。
-遇到 GOAL.md 的任何一個停止條件就停下，用繁體中文告訴我停在哪裡、為什麼。
-```
-
-### 每天固定跑一輪
-
-在 Codex 的排程（Automations）新增一個每日任務，執行位置選本機專案 `~/Desktop/Yuedu-fidelity-loop/Yuedu-reader`，提示用「一次跑一個切片」那一段。電腦要開著、App 要在執行。
-
-### 會遇到的放行要求
-
-Codex 的沙盒只讓它寫專案資料夾。loop 還要寫三個地方：引擎的工作副本（`~/Desktop/Yuedu-fidelity-loop/YueduCoreText`）、量測快取（`~/Library/Caches/YueduFidelity`）、這個資料夾裡的狀態檔。你現在的設定是自動審核，通常不用你按；如果它停下來問，這三個地方可以放行，其他地方不該出現。
-
-## 怎麼暫停和停止
-
-- **暫停**：在這個資料夾（`~/Desktop/Yuedu-reader/docs/browser-layout/fidelity-loop/`）建一個叫 `PAUSE` 的空檔案。loop 在下一輪開工檢查時會停下。刪掉就恢復。
-- **立刻停**：在 Codex 裡停止那個對話，或在 Goal 上按暫停。做到一半的改動會留在工作副本裡沒有 commit；下一輪的開工檢查會因此停下來，等你決定怎麼處理。
-- **整個收掉**：`bash scripts/fidelity/loop-worktrees.sh remove`（工作副本裡還有沒提交的東西時會拒絕）。分支 `loop/fidelity` 會留著。
-
-## 你要做的事
-
-1. 偶爾看 [STATE.md](STATE.md) 的「等你決定」。那裡的項目沒有你回答不會動；直接在那一項底下寫你的決定就可以。
-2. 看分數有沒有在動：[RUNLOG.md](RUNLOG.md) 每輪一行，STATE.md 最上面是記分板。
-3. 想把成果收回主線時，告訴我或 Codex「把 loop/fidelity 合回 main」。引擎那邊（YueduCoreText）合併後還要照平常的流程發版、更新 App 的版本要求，這一步 loop 不會自己做。
-
-## 自己量一次
+`measure.sh` 會自己把語言環境固定成繁體中文。WebView 那一邊擷取一次後重複使用，每次只重新跑閱讀器這一邊。
 
 ```bash
+# 量主工作目錄，只量幾本書的 dev 章節
 bash scripts/fidelity/measure.sh --run 我的測試 --books guimi,quanzhi
-```
 
-比較兩次量測：
+# 量另一個工作目錄（例如某個分支的 worktree）；要用本機的 YueduCoreText 時，
+# 給一個把閱讀器和套件配在一起的 workspace
+YUEDU_WORKSPACE=<workspace> bash scripts/fidelity/measure.sh --tree <那個 Yuedu-reader> --run 我的測試-after --books kusamakura
 
-```bash
+# 驗收：全部的書，dev 和 holdout 都量
+bash scripts/fidelity/measure.sh --sets dev,holdout --run 我的測試-verify
+
+# 只重新評分已經擷取過的 run
+python3 scripts/fidelity/fidelity.py score --run 我的測試 --verbose
+
+# 兩次量測比較
 python3 scripts/fidelity/fidelity.py compare --run 我的測試 --base baseline-2026-09-30
-```
 
-量法自己的測試（不需要 Xcode）：
-
-```bash
+# 量法自己的測試（不需要 Xcode）
 python3 scripts/fidelity/test_fidelity.py
 ```
 
-## 前置作業（已完成）
+- `compare` 只比兩次都量到的章節。兩次都走舊引擎的章節每次量會小幅漂移，所以不算進書的分數；改的是舊引擎本身時，要直接看兩次各自的 `report.md`。結束碼 0＝`PASS`，4＝`FAIL` 或 `NO PROGRESS`。
+- 產物都在 `~/Library/Caches/YueduFidelity/runs/<run>/`：`report.md`、`report.json`、並排圖 `index.html`。說到分數一律附 run 編號，才查得到。
+- 兩邊對同一台模擬器跑測試時，後開始的會重裝 App、把先開始的砍掉。和別的測試同時跑時，用 `YUEDU_DEST` 指定另一台。
 
-2026-10-01 做完，不用再做：
+## 改了排版要跑的測試
 
-- loop 的檔案和 Codex 的按需字型改動已提交到 main（`e00db072`、`f94a6133`）；另一個對話還在做的閱讀器介面改動沒有動。
-- 工作副本已建立：`~/Desktop/Yuedu-fidelity-loop/Yuedu-reader`、`~/Desktop/Yuedu-fidelity-loop/YueduCoreText`（分支 `loop/fidelity`），和把兩者配在一起的 `Loop.xcworkspace`。Codex 在工作副本裡找得到四個 fidelity skill。
-- 在工作副本完整編譯並量過一次（run `loop-start`）：報告開頭寫的是 `~/Desktop/Yuedu-fidelity-loop/YueduCoreText @ local`，也就是量到的是工作副本裡的引擎；和基線比較是 `NO PROGRESS`、沒有任何失敗，走新引擎的 177 章每一章分數都和基線相同。
+`-only-testing` 寫的是 struct／class 的名字，不是檔名：一個檔案裡常有好幾個測試型別（例如 `BrowserLayoutEngineTests.swift` 裡有 10 個，沒有一個叫 `BrowserLayoutEngineTests`），寫檔名會空跑。跑完核對 log 裡 `Test run with N tests in M suites` 的數字；0 個或比下面少都不算通過。
 
-剩下的只有你這邊：在 Codex 開新對話，貼上面「先一次跑一個切片」那一段。
+基本的一組，每次都跑（2026-10-01 在 main 上是 **84 tests in 15 suites**，全過；新增測試會讓數字變大，變小或有失敗就要查）：
+
+```bash
+bash scripts/xctest.sh -- \
+  -only-testing:'yuedu appTests/BrowserLayoutFeatureTests' -only-testing:'yuedu appTests/CSSLengthResolverTests' \
+  -only-testing:'yuedu appTests/ComputedStyleTests' -only-testing:'yuedu appTests/ComputedStyleTreeTests' \
+  -only-testing:'yuedu appTests/BlockLayoutTests' -only-testing:'yuedu appTests/CoreTextLineBreakerTests' \
+  -only-testing:'yuedu appTests/InlineLayoutTests' -only-testing:'yuedu appTests/PageFragmentationTests' \
+  -only-testing:'yuedu appTests/BrowserLayoutDocumentTests' -only-testing:'yuedu appTests/DisplayListTests' \
+  -only-testing:'yuedu appTests/BrowserLayoutPageEngineTests' -only-testing:'yuedu appTests/EPUBAutoRoutingTests' \
+  -only-testing:'yuedu appTests/BrowserLayoutCapabilityScannerTests' \
+  -only-testing:'yuedu appTests/BrowserAutoSupportedSubsetCorrectnessGateTests' \
+  -only-testing:'yuedu appTests/BrowserLayoutDeterminismTests'
+```
+
+| 改到什麼 | 再加跑 |
+|---|---|
+| 斷行、行內排版 | `BrowserLayoutLineBreakerClusterTests`、`BrowserLayoutJustificationTests`、`BrowserLayoutInlineRunGeometryTests`、`BrowserLayoutInlineFormattingContextParityTests`、`BrowserLayoutWhiteSpaceTests` |
+| 字型、字級、行高 | `BrowserLayoutFontFallbackTests`、`BrowserReaderTypographyTests`、`BrowserFontDemandTests`、`BrowserLayoutUsedValueResolutionTests` |
+| 邊距、縮排、float | `BrowserLayoutTextIndentTests`、`BrowserLayoutFloatLayoutTests`、`BrowserLayoutFloatStyleTests`、`BrowserLayoutLogicalGeometryTests` |
+| 圖片 | `BrowserLayoutImageTests`、`BrowserLayoutProductionCorrectnessTests` |
+| 背景、邊框、裝飾 | `BrowserLayoutInlineDecorationTests`、`BrowserLayoutFragmentedDecorationTests`、`BrowserScrollPageBackgroundTests` |
+| 注音 | `BrowserLayoutRubySubsetTests`、`BrowserLayoutRubyUnitTests`、`BrowserLayoutRubyMeasurementTests`、`BrowserLayoutRubyFragmentTests`、`BrowserLayoutRubyInteractionTests`、`BrowserLayoutRubyCorpusTests` |
+| 直排 | `CoreTextWritingModeTests`、`BrowserVerticalReaderRouteTests` |
+| 捲動與 viewport | `BrowserScrollDocumentTests`、`BrowserViewportSessionTests`、`BrowserViewportRegressionTests` |
+| 連結、選字 | `BrowserLayoutLinkInteractionTests`、`BrowserLayoutSelectionContractTests`、`BrowserTextInteractionTests` |
+
+`BrowserLayoutSnapshotTests` 比的是已錄製的結果。它因為一個正確的修正而失敗時，不要直接重錄：先有根因與正確性證據，由人確認（[PHASES.md](../PHASES.md) D-09）。
+
+`BrowserLayoutRedChamberRegressionTests` 不比錄製的結果，是對整本《紅樓夢》做的結構檢查（章節定位、樣式表、封面頁幾何、背景圖），失敗就照一般回歸處理。2026-10-01 在 main 上是 12 tests 全過。
+
+### 斷行基線
+
+`BrowserLayoutLineBreakBaselineTests` 比對整本《紅樓夢》458 章的斷行指紋（`docs/browser-layout/line-break-baseline/redchamber.tsv`）。基線是用繁體中文錄的，而程序語言會改變斷行（英文下有 196 章不同），所以跑它一定要加 `-testLanguage zh-Hant -testRegion TW`；沒加會立刻失敗，訊息會說要加什麼。整本書跑一次約 3 分鐘：
+
+```bash
+bash scripts/xctest.sh -t 1500 -- \
+  -only-testing:'yuedu appTests/BrowserLayoutLineBreakBaselineTests' -testLanguage zh-Hant -testRegion TW
+```
+
+它失敗時（2026-10-01 使用者決定；依據 PHASES.md D-09：先有原因，只更新受影響的列）：
+
+- **改動不是要改斷行**（碰不到行內排版、字型、字級、行高、縮排、內容寬度）：這是回歸，要修掉。
+- **改動本來就是要改斷行**：在同一個 commit 重錄，指令是上面那行前面加 `TEST_RUNNER_YUEDU_LINEBREAK_REGEN=1`，重錄後再跑一次要通過，檔頭仍然寫著 `zh-Hant`。紀錄寫出變了幾章和全部的 spine 編號（`git diff` 這個檔案就看得到），並抽 3 章說明章裡哪一段 CSS／HTML 用到了這次改的規則（解壓 EPUB 後的檔名＋那段樣式或標籤）。
+
+## 這幾頁各是什麼
+
+| 頁面 | 內容 |
+|---|---|
+| [GOAL.md](GOAL.md) | 目標與完成條件（鎖住） |
+| [ORACLE.md](ORACLE.md) | 分數怎麼算、它看不到什麼、怎麼改量法（鎖住） |
+| [GAPS.md](GAPS.md) | 量出來還沒修的差距，以及量法的雜訊 |
+| `reports/` | 只有數字的量測報告 |
+
+## loop 留下的東西
+
+- **S001 最後一次的候選改動沒有合入**，收在本機 git 的 `refs/archive/fidelity-S001-attempt3`（閱讀器和 YueduCoreText 兩個 repo 各一個，不會上傳）。它讓 ai-glossary 從 75.2 到 97.7，但第 15 章的有序清單編號不見了；細節在 [GAPS.md](GAPS.md)。要接著做時，在對應的 repo 裡：
+  ```bash
+  git diff refs/archive/fidelity-S001-attempt3^ refs/archive/fidelity-S001-attempt3 | git apply
+  ```
+- 量法的鎖（`scripts/fidelity/oracle.lock`）還在，改法見 [ORACLE.md](ORACLE.md)「改量法」。

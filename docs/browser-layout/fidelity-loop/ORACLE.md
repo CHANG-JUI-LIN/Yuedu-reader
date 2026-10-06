@@ -1,15 +1,15 @@
 ---
 title: 渲染相似度的量法（oracle 規格）
-updated: 2026-09-30
+updated: 2026-10-07
 status: 凍結；只有人可以改
 tags: [yuedu, browser-layout, fidelity-loop]
 ---
 
 # 渲染相似度的量法
 
-[Loop 首頁](README.md) · [目標](GOAL.md) · [操作手冊](LOOP.md) · [目前佇列](STATE.md)
+[首頁](README.md) · [目標](GOAL.md) · [已知差距](GAPS.md)
 
-這份文件定義「和 WebView 幾成像」這個數字。Loop 裡改引擎的代理**不能改這裡的任何東西**：量法、腳本與測試由 `scripts/fidelity/oracle.lock` 鎖住雜湊，驗證時用主工作目錄的副本來評分。
+這份文件定義「和 WebView 幾成像」這個數字。量法、腳本與測試由 `scripts/fidelity/oracle.lock` 鎖住雜湊：這些檔案一改，`measure.sh` 就不量，直到照下面「改量法」重新上鎖。量別的程式樹時用主工作目錄的副本來評分，被量的改動不會同時改到評分方式。
 
 ## 比的是什麼
 
@@ -108,7 +108,7 @@ img{max-width:100%;height:auto}svg,video{max-width:100%}
 - **dev**：釘選章節（`corpus.json` 的 `pinned`，來自歷史抽查清單與已知問題章）＋ 等距 10 章，頭尾都含。
 - **holdout**：dev 兩兩之間的中點 6 章，不和 dev 重疊。
 
-Loop 平常對著 dev 找問題、改引擎；holdout 只在驗證時量，用來抓「只對看過的章節有效」的修法。章數不到 10 的書全部進 dev。
+平常對著 dev 找問題、改引擎；holdout 只在驗收時量，用來抓「只對看過的章節有效」的修法。章數不到 10 的書全部進 dev。
 
 ## 兩次量測怎麼比
 
@@ -173,4 +173,4 @@ Loop 平常對著 dev 找問題、改引擎；holdout 只在驗證時量，用�
 3. `python3 scripts/fidelity/fidelity.py lock --write` 重錄雜湊。
 4. 重跑基線，把新舊分數差異寫進 `reports/`，因為之後的分數和之前的不能直接比。
 
-只改閘門（`fidelity.py gate`）不會改變分數的意義：`SCORER_VERSION` 不加、基線不重跑，只做第 2、3 步。
+只改說明文字（文件、註解）或拆掉不參與評分的指令，不會改變分數的意義：`SCORER_VERSION` 不加、基線不重跑，只做第 2、3 步（2026-10-07 拆掉 loop 的 `gate` 指令就是這樣做的）。

@@ -2,9 +2,9 @@
 # Measure render fidelity for one checkout: plan → capture → score.
 #
 # The oracle is the copy in THIS directory. The engine being measured comes from
-# --tree. The loop's verifier runs the main checkout's copy against the loop
-# worktree, so a change under test cannot also change how it is scored; the
-# tree's own copies of the frozen files are checked against oracle.lock first.
+# --tree. Running the main checkout's copy against another checkout keeps a
+# change under test from also changing how it is scored; the tree's own
+# copies of the frozen files are checked against oracle.lock first.
 #
 # Usage:
 #   scripts/fidelity/measure.sh [--run NAME] [--sets dev|holdout|dev,holdout] [--books id,id]
@@ -12,7 +12,7 @@
 #                               [--tiles N] [--timeout SECONDS] [--require-goal] [--score-only]
 #
 # Environment:
-#   YUEDU_WORKSPACE     workspace to build with; a loop worktree pairs the app with its package checkout
+#   YUEDU_WORKSPACE     workspace to build with, e.g. one pairing the app with a local package checkout
 #   YUEDU_DEST          simulator destination (default: scripts/sim.sh dest)
 #   YUEDU_FIDELITY_OUT  capture cache (default: ~/Library/Caches/YueduFidelity)
 #
