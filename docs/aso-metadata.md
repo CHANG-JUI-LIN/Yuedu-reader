@@ -113,7 +113,7 @@ Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/st
 ## 日本語 — 主打 縦書き／青空文庫
 - 名稱：`Yuedu - EPUBリーダー 縦書き対応`
 - 副標題：`TXT・コミック・OPDS・読み上げ`
-- 関鍵字：`電子書籍,小説,ライトノベル,本棚,青空文庫,マンガ,CBZ,RSS,WebDAV,Calibre,ハイライト,しおり,メモ,ダークモード,iCloud,PDF`
+- キーワード：`電子書籍,小説,ライトノベル,本棚,ルビ,マンガ,CBZ,RSS,WebDAV,Calibre,ハイライト,しおり,メモ,ダークモード,iCloud,PDF`
 - プロモーションテキスト：縦書きにも横書きにも対応した、iOSネイティブの電子書籍リーダー。EPUB・TXT・コミックを開き、読み上げ、ハイライト、iCloud同期も使えます。
 
 説明：
