@@ -2986,10 +2986,11 @@ struct ReaderView: View {
             return
         }
 
-        // Bookshelf has chapters: open reader immediately, repair metadata in background.
+        // Bookshelf has chapters: open reader immediately, repair metadata in background —
+        // at `.utility`, so the opening chapter's parse goes first on the source's bridge.
         if currentBook.onlineChapters?.isEmpty == false {
             loadContent()
-            Task {
+            Task(priority: .utility) {
                 _ = try? await store.refreshOnlineBookMetadata(
                     bookId: currentBook.id,
                     forceInfoRefresh: true,

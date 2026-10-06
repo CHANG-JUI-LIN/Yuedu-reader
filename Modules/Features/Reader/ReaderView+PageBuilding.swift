@@ -273,7 +273,10 @@ extension ReaderView {
         currentChapterIndex = initialChapter
         ensureChapterReady(chapterIndex: initialChapter)
         if initialChapter != 0 {
-            ensureChapterReady(chapterIndex: 0)
+            // Nobody is looking at chapter 0 yet: at `.immediate` it raced the saved chapter
+            // for the source's bridge and, winning the toss, made a 段評 book's open wait one
+            // extra chapter fetch (~2.7s measured 2026-10-06).
+            ensureChapterReady(chapterIndex: 0, priority: .prefetch)
         }
     }
 

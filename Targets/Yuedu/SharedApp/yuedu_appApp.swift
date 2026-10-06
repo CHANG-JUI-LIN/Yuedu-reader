@@ -182,7 +182,10 @@ struct yuedu_appApp: App {
                     // Before anything runs a source: `java.startBrowser(Await)` opens its page
                     // through this from any script — search, a chapter, 書源驗證.
                     SourceBrowserPresenter.install()
-                    Task {
+                    // `.utility`: this walks every online book's table of contents through
+                    // its source's bridge, and a chapter the reader opens meanwhile must
+                    // not wait behind it (`BookSourceSession.withBridge`).
+                    Task(priority: .utility) {
                         await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true)
                     }
                     // Prime the WebView cookie mirror before the first source request
@@ -233,7 +236,9 @@ struct yuedu_appApp: App {
                         // Returning to the foreground also checks online books for
                         // new chapters (throttled). Cold launch already kicked one
                         // off in onAppear; the throttle skips the duplicate.
-                        Task { await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true) }
+                        Task(priority: .utility) {
+                            await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true)
+                        }
                     }
                     // Seamless iCloud: push/merge when leaving the app.
                     if newPhase == .background, GlobalSettings.shared.iCloudAutoSync {
