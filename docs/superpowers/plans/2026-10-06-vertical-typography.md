@@ -384,11 +384,11 @@ git commit -m "feat(reader): let readers choose 橫排 or 直排 again"
 
 ## Task 10: Acceptance
 
-- [ ] `VerticalTypographyAcceptanceTests` has no known issues left.
-- [ ] Regression: `CoreTextWritingModeTests`, `JapaneseVerticalRubyTests`, `BrowserVerticalReaderRouteTests`, `CoreTextPipelineTests`, the YueduCoreText test targets, and the fidelity loop's required set (`docs/browser-layout/fidelity-loop/LOOP.md`).
-- [ ] `fidelity.py compare` scores for `redchamber-vertical` and `kusamakura`, before and after.
-- [ ] Timings for one vertical chapter in each engine, before and after, including `cjk.typography.prepare`.
-- [ ] Screenshots of the reported pages in both engines, for the maintainer: 紅樓夢's 版權頁 (`text/part0001.html`) and 第一回, from `redchamber-vertical` in the fidelity corpus.
+- [x] `VerticalTypographyAcceptanceTests` has no known issues left.
+- [x] Regression: `CoreTextWritingModeTests`, `JapaneseVerticalRubyTests`, `BrowserVerticalReaderRouteTests`, `CoreTextPipelineTests`, the YueduCoreText test targets, and the basic set in `docs/browser-layout/fidelity-loop/README.md` (it was the fidelity loop's required set until the loop was retired on 2026-10-07).
+- [x] `fidelity.py compare` scores for `redchamber-vertical` and `kusamakura`, before and after.
+- [x] Timings for one vertical chapter in each engine, before and after, including `cjk.typography.prepare`.
+- [x] Screenshots of the reported pages in both engines, for the maintainer: 紅樓夢's 版權頁 (`text/part0001.html`) and 第一回, from `redchamber-vertical` in the fidelity corpus.
 
 ## Task 11: Record what landed
 
@@ -399,3 +399,79 @@ git commit -m "feat(reader): let readers choose 橫排 or 直排 again"
 ```bash
 git commit -m "docs(vertical): record what the vertical typography plan landed"
 ```
+
+---
+
+## What landed
+
+2026-10-06 to 10-07. YueduCoreText 0.7.0 and the app branch `vertical-typography`, rebased on `main` and merged into it.
+
+| Task | YueduCoreText | App |
+|---|---|---|
+| 1 Acceptance tests | | `e47a158a` (on `main`) |
+| 2 UAX #50 table | `5061836` | |
+| 3 Style per book | `bbc9aad` | `d1d20b6c` |
+| 4 Orientation | `aa60f90` | `dc505ce4` |
+| 5 Fonts by style | `818552c` | `fe8c65e7` |
+| 6 Punctuation positions | `19098da` | `3fb0e4b1` |
+| 7 Spacing between adjacent punctuation | `420f52b` | `7f265a7c` |
+| Selection after a squeeze | `e8c2fa4` | `e5bb6f26` |
+| 8 Authored 縦中横 | `727061c` | `0470ce2e` |
+| 9 The 排版方向 control | | `168bc84b` |
+| 10 `cjk.typography.prepare` | `786fa1d` | `f55570c9` |
+| Loading cost the pass added | `4c1804a` | `978e41c5` |
+
+Task 1's acceptance tests pinned every reported failure as a known issue; each task's commit retired its own, and none is left.
+
+### Decisions
+
+The maintainer's, after the five above (2026-10-06):
+- **Quotes next to Chinese** (“”‘’) are set in the Chinese font in both engines, and squeeze like brackets.
+- **Selection after a squeeze** is fixed in both engines on this branch, not later.
+- **排版方向** is the first row of 閱讀設定 → 排版, a menu picker. It follows the theme, like the other 排版 settings, and syncs with them.
+
+Made while implementing:
+- **CLREQ, read in the W3C text rather than in summaries.** A bracket next to another mark shrinks the pair from 2 em to 1.5 em in every region's style, the space taken so the bracket stays against the text it encloses; Taiwan's style adjusts nothing else. ：；？！ keep their square in vertical text everywhere, and ？！ in Taiwan and Hong Kong horizontal text. Japanese follows JLREQ §3.1.4: only the space between the marks goes, middle dots and dividing marks stay whole, so ？」 stays 2 em.
+- **Fonts are named, not left to the system fallback.** iOS chooses a fallback by the device's languages and ignores `kCTLanguageAttributeName`, so Traditional text came out in PingFang SC. PingFang reached through the SF fallback list is also scaled 1.8% (Han at 17.3 pt for 17 pt text); named, it is 17.0 pt.
+- **Kerns go on the whole character before a mark.** On half of a surrogate pair CoreText split the glyph (𠀀 drew as two missing glyphs, 0.6 em wider). A combining sequence, which CoreText kerns by no consistent rule, is left alone.
+- **Character boundaries after a negative kern** come from `GlyphBoundary`, in both engines: `CTLineGetOffsetForStringIndex` puts the boundary half the kern inside the next glyph, and selections, highlights and narration cut a quarter em off it.
+- **Legacy sideways Latin sat 0.13 em off the column's centre** because `centreSideways` replaced the line-height baseline correction instead of adding to it.
+- **Legacy 縦中横** keeps the characters in the string: a run delegate makes the cell, the characters' own glyphs are drawn clear, and the page view and scroll chunks draw the cell's text horizontally on top.
+- **`CJKTypographyProcessor`** keeps quote conversion and its line-breaking classes; its compression is gone.
+- **The line-break baseline** was re-recorded twice by the fidelity rule: fonts changed 276 of 458 chapters (`rerecord-2026-10-06-cjk-fonts.md`), spacing 289 (`rerecord-2026-10-06-spacing.md`). A control run of the same build with squeezing off matched the previous baseline exactly.
+
+### Numbers
+
+Fidelity, `fidelity.py` scorer v1, reference `ios27.0-32c823fa58959671`, iPhone 18 Pro on iOS 27.0, zh-Hant. Before is `main f1229f7d` with YueduCoreText 0.6.2 (run `vt-base`), after the branch at `f55570c9` with the package at `786fa1d` (run `vt-after`). `vt-before` (2026-10-06, `main 0d6fbe32`, 0.6.1) scored the same as `vt-base`.
+
+| Book | Before | After | BrowserAuto / legacy chapters |
+|---|---:|---:|---|
+| `kusamakura` | 65.0 | 65.8 | 13 / 2 → 14 / 1 |
+| `redchamber-vertical` | 76.5 | 74.8 | 2 / 14 → 2 / 14 |
+
+- `kusamakura:14` now runs in BrowserAuto, since its 縦中横 no longer sends it to legacy: 57.0 → 67.9.
+- `redchamber-vertical` lost its points in its two BrowserAuto chapters: spine 92, 91.4 → 73.5, and spine 72, 91.1 → 83.6. The squeezed pairs (」、「, ：「, 。」) fit more text in each column, so every later column breaks elsewhere, and the WebKit reference does not squeeze. Side by side, the text is the same and the punctuation is where CLREQ puts it. The 14 legacy chapters moved −1.0 to +0.3, inside legacy's run-to-run drift.
+
+Timings, Debug build on the simulator:
+- **Legacy pass** (`⏱ cjk.typography.prepare`): 3–7 ms for a chapter of 5,000–10,800 characters in `redchamber-vertical`; the first chapter of a session pays up to 65 ms while fonts and measurements are cached. In Release (Task 7), 3.8 and 4.9 ms for a 14,000-character chapter, against 26.3 and 28.0 ms for the compression it replaced.
+- **BrowserAuto layout** (`⏱ browser.scroll.loadChapter`, `kusamakura` chapters 1 and 7–12, both builds measured back to back): +8% to +29%, median +19% (spine 12: 520 → 611 ms). A temporary probe put the pass at 24–48 ms a chapter over 400–970 calls, one per paragraph and per ruby base: fonts 7–18 ms, positions 3–23 ms (new glyphs are measured once), orientation about 3 ms, spacing about 1 ms, `GlyphBoundary` about 2 ms. The rest is CoreText setting more runs. Whole-chapter capture time: +1% to +8%.
+- **`redchamber-vertical` capture time per chapter**: BrowserAuto ±0%; legacy −1% over the 14 chapters.
+- **Opening a horizontal book** (`EPUBEngineLoadingBenchmarkTests`, first-page medians of 6, Debug; `main f1229f7d` against the branch with the package at `786fa1d`):
+
+  | Case | Legacy paged | Auto paged | Legacy scroll | Auto scroll |
+  |---|---:|---:|---:|---:|
+  | 全職高手 short chapter | 760.7 → 769.0 | 778.8 → 777.0 | 658.1 → 662.4 | 657.9 → 652.5 |
+  | 詭秘之主 short chapter | 463.9 → 470.9 | 476.4 → 473.6 | 410.6 → 416.7 | 410.4 → 409.7 |
+  | Project Hail Mary | 156.8 → 161.9 | **166.0 → 195.0** | 198.1 → 206.5 | 124.5 → 134.0 |
+  | 全能遊戲設計師, falls back | 757.2 → 757.9 | 1033.8 → 1038.0 | 686.8 → 669.9 | 947.0 → 923.0 |
+  | 詭秘之主 long chapter | 4825.4 → 4833.5 | 4673.9 → 4687.0 | 4378.4 → 4414.1 | 3908.0 → 3867.0 |
+
+  Chinese books are within run-to-run noise (±2.5%). The English book is not: it has no CJK text, so its style is never decided and falls back to the interface language's, and both engines run the pass on every paragraph. An A/B in one build (the same chapter with and without a style) put BrowserAuto's cost at 13–20 ms on 200 ms. Two fixes followed, each measured on that chapter: `applyFonts` returns early for text with no CJK that it would leave alone (`4c1804a`: its share 10.4 → 4.4 ms), and the resolver no longer samples a chapter once its book is decided (`978e41c5`: 3.2 ms a configuration, two a chapter, saved for every decided book). An English book still decides on every chapter; letting a book with no CJK skip the pass altogether is left for later.
+
+Screenshots of 版權頁 and 第一回, before and after and in both engines, went to the maintainer on 2026-10-07. 第一回 holds marker images, so BrowserAuto sends it to legacy in vertical writing; forced into BrowserAuto, it lays out nothing.
+
+### Not in this plan
+
+- BrowserAuto still sends a vertical chapter holding an image to legacy (`docs/browser-layout/fidelity-loop/GAPS.md`, S005).
+- Line-start and line-end trimming (CLREQ; GB/T 15834 for the Mainland).
+- In legacy, the small-print notes at the end of 第一回 are set with wide gaps between characters, before and after this plan; to be looked at separately.
