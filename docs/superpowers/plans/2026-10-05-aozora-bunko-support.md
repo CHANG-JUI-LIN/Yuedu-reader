@@ -1023,7 +1023,46 @@ Add "Phase 1b: what landed" to this plan, with:
 git commit -m "docs(aozora): record what Phase 1b landed"
 ```
 
+## Phase 1b: what landed
+
+2026-10-07. Task 12–13: 9171a1e8. Task 14: 9221d65c. Task 15: b406bb96. Task 16: 878c65f8. Task 17: ad26548b. Tasks 18–19, landed together: 1c9afdf6. Task 20: 2bfeb0cc. Task 21: 4a50ad0a, and a688ab82 for what it found.
+
+Decisions made while implementing:
+
+- **ASCII whitespace (Task 12).** The collapse runs over a block's leaves in order, across inline boundaries. A copied leaf splits around a deleted unit, so the text it keeps stays an identity run; a surviving tab becomes a one-unit replacement. The corpus changed 3,365 units in 139 works, counted as ASCII spaces and tabs in plain-text tokens that no identity run copies. No work shows U+00A0 at all, so Task 17 needs no case for a block holding only U+00A0.
+- **Anchors (Task 14).** `h` and the block's index among all spans; a block's second inline heading and later add `-2`, `-3`, ….
+- **Parts (Task 14).** A split chapter's parts are titled after the heading that starts it. Text before the first heading has no heading, so its parts take the last heading before them, or the work's title.
+- **Figures (Tasks 15–16).** The syntax tree does not tell 写真 from 挿絵, so every figure is an `illustration`. A figure is packaged as `OPS/images/<n>-<its file name, cleaned>`: named after the figure the text names, numbered so two names that clean up alike stay apart.
+- **Import (Task 18).** Detection reads a `.txt` off the main actor. A zip without an Aozora text returns nil and falls through to the manga importer. The original is kept as `<epub stem>.aozora.txt` or `.zip`. A failure after the book reached the shelf deletes it with its files.
+- **Regeneration (Task 20).** The reader passes its own id to `prepare`, so its own hold on the book does not count as another reader (`ReadingResourceUsage.isInUse(bookID:besides:)`). The reader shows its opening view while `prepare` runs.
+- **Ruby BrowserAuto does not lay out (Task 21).** The first corpus parity sample sent three chapters to legacy, and `HorizontalRubySupport` explained both causes. A word with readings on both sides is a ruby inside a ruby, and a ruby over a figure has an `<img>` in its base; BrowserAuto takes neither, nor `rtc`. Such a chapter goes to legacy in both writing modes, with the same text, and the contract records it as its second exception. The corpus holds 82 such chapters in 31 works, and 19 rubies over a figure, all in 黒死館殺人事件 (Hebrew letters). A ruby whose base shows nothing, a figure whose file is missing, is no longer written: it annotates nothing. Task 17's fixture gained a chapter for both cases.
+- **Table of contents titles (Task 21).** Readium cleans a navigation label as EPUB asks: every run of white space, U+3000 included, becomes one space, and `PublicationSession.sanitizedTitle` does the same after it. So 「第一部　医学博士…」 is listed as 「第一部 医学博士…」, as in every EPUB; nav.xhtml keeps the planned title, and the corpus test compares under that rule (it was 829 of the first run's 833 problems).
+- **Blank headings (Task 21).** A label that is blank after that cleanup is ignored, together with every entry nested under it. Four works set U+3000 alone as a heading (［＃大見出し］　［＃大見出し終わり］), and Readium dropped 4 to 82 entries of each of them. Such a heading still starts its chapter but gets no entry, and the title page gets none when the work's title is blank.
+- **Parity (Tasks 17 and 21).** Legacy's text is compared scalar by scalar. A curled quote in it stands for a straight one only where the plan has a straight quote, so a work's own curly quotes are compared as themselves. A failure prints the first difference with its context, not two whole chapters.
+
+Corpus run, 17,158 works, with `TEST_RUNNER_AOZORA_CORPUS` on the iOS 27 simulator:
+
+| Check | Result |
+|---|---:|
+| Converted, and opened by Readium | 17,158 |
+| Chapters | 113,562 |
+| Chapter count, table of contents or text off the plan | 0 (first run: 833, see above) |
+| Baseline | recorded on the first run; the second matched all 17,158 lines |
+| Parity sample, horizontal | 50 works, 194 chapters in 111 s: every text as planned |
+| Parity sample, vertical | 50 works, 194 chapters in 136 s: every text as planned |
+
+The baseline, `Tests/iOS/yuedu appTests/Fixtures/aozora-chapter-text-baseline.tsv`, holds one line per work: its folder and the first 16 hex digits of a SHA-256 over its chapters' SHA-256s. Its header names `textVersion` and the corpus commit (0984f7dc), and a run on another checkout says so instead of comparing.
+
+The parity sample takes 50 works round-robin by the most ruby, gaiji, headings, length, 割り注 and 返り点. In each it checks the title page, the first body chapter, the colophon, and the chapter richest in what the work was chosen for. Legacy, BrowserAuto paged and BrowserAuto scroll read every one of them as planned, in both writing modes; the two holding a ruby inside a ruby went to legacy, as the contract now expects.
+
+Timings for the largest work, `50685_ruby_67979` (2.1 MB, 324 chapters), three runs each on the iOS 27 simulator, end to end: conversion on its own 1.44–1.60 s, `LocalBookImportService.importBook` 1.54–1.71 s, `AozoraBookRegenerator.prepare` regenerating it 1.59–1.75 s. One earlier single run measured about twice that (2.5–3.5 s); its cause was not looked into. Converting and opening all 17,158 works took 170 s, `activeProcessorCount` at a time. A device measurement is still to be recorded.
+
 ## Phase 1c (outline — automatic migration on first open)
+
+**Skipped for now (maintainer, 2026-10-07).** This is a developer build with no Aozora readers yet, and none expected before a release. What that leaves:
+- Two Aozora parsers coexist until step 4: `AozoraMarkupParser` on the TXT path and the new module.
+- A TXT Aozora book imported before Phase 1b stays on the TXT path.
+- A converter change that changes displayed text, and so `textVersion`, needs this phase's tools first. The regenerator refuses such a change on its own (`.textChanged`, `.olderTextVersion`), so nothing is migrated silently.
 
 1. **Coordinate-space tag, one release first.** Add a coordinate-space id to synced reading positions. New clients ignore remote positions from another space. Confirm that the decoding of `SyncEnvelope<CoreTextReadingPosition>` tolerates the unknown field on old clients.
 2. **Inverse projection.** Add the inverse of `displayedOffset(forSourceOffset:)` for the TXT path.
@@ -1035,7 +1074,7 @@ git commit -m "docs(aozora): record what Phase 1b landed"
 
 ## Phase 1d (outline — vertical writing for Aozora books)
 
-Starts when the [vertical typography plan](2026-10-06-vertical-typography.md) has landed.
+**Landed 2026-10-07 in f7f9c593**, after the [vertical typography plan](2026-10-06-vertical-typography.md); see "Phase 1d: what landed" below.
 
 The 排版方向 control comes from that plan: a maintainer decision of 2026-10-06, after 5 of 8 Aozora Bunko readers on the App Store were confirmed to offer 縦書き／横書き switching. The other 3 mention only 縦書き. Phase 1d makes a converted book follow it:
 - `ReadingBook.allowsVerticalWritingMode` (`Models.swift:871`) is true for a book with `aozora`.
@@ -1043,6 +1082,15 @@ The 排版方向 control comes from that plan: a maintainer decision of 2026-10-
 - `HomeView.resolveOpeningDirection` (`HomeView.swift:330`) uses the setting for such a book instead of inspecting the EPUB's declared flow.
 - `effectiveWritingMode` (`ReaderView+TXTVerticalScroll.swift:142`) needs no change once the first gate is open.
 - Rerun Task 17 in vertical writing with the figure exception, and add reader tests for the direction.
+
+### Phase 1d: what landed
+
+- `ReadingBook.allowsVerticalWritingMode` is true for a book with `aozora`, so 閱讀設定 offers 排版方向 and `effectiveWritingMode` follows it.
+- `ReadingBook.opensWithDeclaredEPUBFlow` decides whether a book opens as its EPUB declares; `HomeView.resolveOpeningDirection` reads it, and a converted book opens the way the setting lays it out.
+- The writing-mode change handler keys on `allowsVerticalWritingMode` alone; `!isEPUB` had been redundant with it.
+- Tests: `WritingDirectionVisibilityTests` (offer and opening direction); Task 17 already ran vertical with the figure exception, and the corpus parity sample now runs vertical too.
+- Checked on the iOS 27 simulator with 『吾輩は猫である』中篇自序 imported from its text: Writing Direction is offered, and Vertical lays the book out vertically, its ruby on the right.
+- Phase 2's capability note on 縦中横 is out of date: since YueduCoreText 0.7.0, BrowserAuto sets supported `text-combine-upright` values in vertical writing itself (`BrowserLayoutCapabilityScanner.declaration`). 横組み (a `writing-mode` other than `vertical-rl`) and a non-default `ruby-position` still send a chapter to legacy.
 
 ## Phase 2 (outline)
 
