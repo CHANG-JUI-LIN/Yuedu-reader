@@ -1,5 +1,6 @@
 import Foundation
 import NaturalLanguage
+import YueduCoreTextTypography
 
 /// A language the AI writes in: the language of every answer the reader reads, or the target
 /// of a translation. No prompt names a fixed language — answers follow the reader.
@@ -61,10 +62,10 @@ enum AIAnswerLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
         guard let best = scores.max(by: { $0.probability < $1.probability }),
               best.probability >= minimumConfidence else { return fallback }
         guard best.language.isChinese else { return best.language }
-        switch (text.changes(under: "Hant-Hans"), text.changes(under: "Hans-Hant")) {
-        case (true, false): return .traditionalChinese
-        case (false, true): return .simplifiedChinese
-        default: return fallback.isChinese ? fallback : best.language
+        switch ChineseScript.of(text) {
+        case .traditional: return .traditionalChinese
+        case .simplified: return .simplifiedChinese
+        case nil: return fallback.isChinese ? fallback : best.language
         }
     }
 
@@ -104,12 +105,5 @@ enum AIAnswerLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
         case .spanish: return "西班牙文"
         case .russian: return "俄文"
         }
-    }
-}
-
-private extension String {
-    /// Whether the ICU transform `id` changes this text. A transform that fails changes nothing.
-    func changes(under id: String) -> Bool {
-        (applyingTransform(StringTransform(rawValue: id), reverse: false) ?? self) != self
     }
 }

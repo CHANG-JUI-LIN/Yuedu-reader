@@ -677,7 +677,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             guard isCurrentWork(generation) else { return }
 
             let fontPolicy = Self.fontScalePolicy(for: html)
-            let config = makeBrowserConfig(fontScalePolicy: fontPolicy)
+            let config = makeBrowserConfig(html: html, fontScalePolicy: fontPolicy)
             if settings.regexHighlightConfiguration.isEnabled {
                 await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
                     configuration: settings.regexHighlightConfiguration,
@@ -817,9 +817,15 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         rebuildOffsets()
     }
 
-    private func makeBrowserConfig(fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable,
+    private func makeBrowserConfig(html: String, fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable,
         scrollSettings: ReaderRenderSettings? = nil, scrollSize: CGSize? = nil) -> BrowserLayoutConfig {
         let settings = scrollSettings ?? self.settings
+        // The same decision the legacy builders reach from their rendered text: what the
+        // reader will show, after 繁簡轉換.
+        let cjkTypographyStyle = CJKTypographyStyleResolver.shared.style(
+            for: CJKTypographyStyleResolver.textSample(fromHTML: html).converted(to: settings.textConversion),
+            book: settings.bookID, conversion: settings.textConversion,
+            declaredLanguage: resource.declaredLanguage)
         let contentWidth = scrollSize?.width ?? self.contentWidth
         let contentHeight = scrollSize?.height ?? self.contentHeight
         let themeTextColor = scrollSettings?.textColor ?? self.themeTextColor
@@ -848,7 +854,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                     size: size, weight: weight, italic: italic)
                 ?? publicationResolver?(families, weight, italic, size)
             },
-            writingMode: settings.writingMode
+            writingMode: settings.writingMode,
+            cjkTypographyStyle: cjkTypographyStyle
         )
     }
 
@@ -1901,7 +1908,7 @@ extension BrowserLayoutPageEngine {
         try Task.checkCancellation()
         let store = BrowserLayoutImageStore(await resource.prefetchImages(
             forChapter: spine, html: html, renderWidth: contentSize.width))
-        var config = makeBrowserConfig(fontScalePolicy: Self.fontScalePolicy(for: html),
+        var config = makeBrowserConfig(html: html, fontScalePolicy: Self.fontScalePolicy(for: html),
                                        scrollSettings: settings, scrollSize: contentSize)
         // The scroll host owns the reader's outer margins and fixed bars.
         config.contentInsets = .zero

@@ -279,7 +279,8 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                     let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
                     return self.resourceProvider.resourceURL(for: resolved).absoluteString
                 },
-                baseWritingDirection: config.baseWritingDirection
+                baseWritingDirection: config.baseWritingDirection,
+                declaredLanguage: session.language
             )
         )
         if localBuilder.detectedVerticalWritingMode {
