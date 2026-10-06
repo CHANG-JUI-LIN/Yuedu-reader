@@ -327,7 +327,7 @@ struct HomeView: View {
                 pageProgressionIsRTL: configuration.progression == .rightToLeft
             )
         }
-        if book.resolvedPipelineKind == .epub {
+        if book.opensWithDeclaredEPUBFlow {
             let url = store.localEPUBURL(for: book)
             AppLogger.info("⟐ resolveOpeningDirection EPUB url=\(url.lastPathComponent) starting inspect")
             let t0 = CACurrentMediaTime()
@@ -351,7 +351,7 @@ struct HomeView: View {
             writingMode: writingMode,
             pageProgressionIsRTL: false
         )
-        AppLogger.info("⟐ resolveOpeningDirection non-EPUB done direction=\(direction)")
+        AppLogger.info("⟐ resolveOpeningDirection follows 排版方向 done direction=\(direction)")
         return direction
     }
 

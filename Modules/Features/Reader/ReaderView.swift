@@ -2388,9 +2388,10 @@ struct ReaderView: View {
             handleScrollModeChanged(enabled)
         }
         .onChanged(of: settings.readerWritingMode) { writingMode in
-            // Only TXT and online books follow 排版方向. It also changes with the worn
-            // theme now, and an EPUB, which keeps its own writing mode, need not relayout.
-            guard !isEPUB, (book ?? snapshotBook)?.allowsVerticalWritingMode == true else { return }
+            // Only TXT, online and converted Aozora books follow 排版方向. It also changes
+            // with the worn theme now, and an EPUB, which keeps its own writing mode, need
+            // not relayout.
+            guard (book ?? snapshotBook)?.allowsVerticalWritingMode == true else { return }
             readerNavigator?.updateOpeningDirection(
                 ReaderBookOpeningDirection.resolve(
                     writingMode: writingMode,

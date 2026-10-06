@@ -888,9 +888,17 @@ enum TOCLayoutMode {
 }
 
 extension ReadingBook {
+    /// Books with no writing mode of their own follow 排版方向: TXT, online books, and
+    /// an Aozora text converted at import, whose EPUB declares none.
     var allowsVerticalWritingMode: Bool {
-        if isOnline { return true }
+        if isOnline || aozora != nil { return true }
         return resolvedPipelineKind == .txt
+    }
+
+    /// An EPUB opens the way its package declares; one that follows 排版方向 opens the
+    /// way the setting lays it out.
+    var opensWithDeclaredEPUBFlow: Bool {
+        resolvedPipelineKind == .epub && !allowsVerticalWritingMode
     }
 }
 
