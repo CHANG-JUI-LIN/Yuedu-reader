@@ -123,17 +123,15 @@ extension BookSourceFetcher {
             ) {
                 try await session.bridgeForAsyncOperations.fetch(ruleUrl: effectiveTOCURL)
             }
-            let parsed = try await SourceScriptThread.run {
+            let parsed = try await session.parse { bridge in
                 try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
-                    try session.withBridge { bridge in
-                        let chapters = try bridge.parseTOC(
-                            html: html,
-                            baseURL: finalUrl,
-                            source: source,
-                            runtimeVariables: effectiveRuntimeVariables
-                        )
-                        return (chapters, bridge.lastTOCRuntimeVariables)
-                    }
+                    let chapters = try bridge.parseTOC(
+                        html: html,
+                        baseURL: finalUrl,
+                        source: source,
+                        runtimeVariables: effectiveRuntimeVariables
+                    )
+                    return (chapters, bridge.lastTOCRuntimeVariables)
                 }
             }
             let normalized = normalizedChaptersWithNextURL(parsed.0)

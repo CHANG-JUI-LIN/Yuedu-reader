@@ -309,18 +309,16 @@ extension BookSourceFetcher {
         ) {
             try await session.bridgeForAsyncOperations.fetch(ruleUrl: ref.url)
         }
-        let parsed = try await SourceScriptThread.run {
+        let parsed = try await session.parse { bridge in
             try SourcePerfTrace.span("chapter.parse", source.bookSourceName) {
-                try session.withBridge { bridge in
-                    try bridge.parseChapterResult(
-                        html: html,
-                        baseURL: finalUrl,
-                        source: source,
-                        runtimeVariables: ref.runtimeVariables,
-                        chapterRef: ref,
-                        nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
-                    )
-                }
+                try bridge.parseChapterResult(
+                    html: html,
+                    baseURL: finalUrl,
+                    source: source,
+                    runtimeVariables: ref.runtimeVariables,
+                    chapterRef: ref,
+                    nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
+                )
             }
         }
         let content = await ChapterFetcher.shared.resolveContent(

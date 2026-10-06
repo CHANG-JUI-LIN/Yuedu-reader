@@ -14,11 +14,14 @@ import Foundation
 /// (`ModernParserBridge.jsEngine`), so a pure CSS/XPath source costs nothing here.
 ///
 /// Concurrency: parse calls mutate bridge-level context (book/chapter bridges,
-/// runtime variables) before evaluating, so `withBridge` serializes callers
-/// with a lock — same-source parses queue briefly, different sources never
-/// block each other. Async operations (network `fetch`, runtime search) use
-/// `bridgeForAsyncOperations` without the lock, relying on the JS engine's own
-/// serial queue exactly as separate bridges did before.
+/// runtime variables) before evaluating, so `withBridge` serializes callers —
+/// same-source parses queue, different sources never block each other. The queue
+/// is ordered by the caller's task priority (see `withBridge`), because a 段評
+/// source's content rule holds the bridge for the whole of its own network round
+/// trips: ~2s per chapter on 光遇番茄, measured 2026-10-06. Async operations
+/// (network `fetch`, runtime search) use `bridgeForAsyncOperations` without the
+/// lock, relying on the JS engine's own serial queue exactly as separate bridges
+/// did before.
 ///
 /// Staleness: the cache key includes the source's `lastUpdateTime`, which the
 /// store bumps on every edit/import — an updated source naturally maps to a
@@ -27,7 +30,6 @@ final class BookSourceSession {
 
     let source: BookSource
     private let bridge: ModernParserBridge
-    private let lock = NSLock()
 
     private init(source: BookSource) {
         self.source = source
@@ -37,13 +39,109 @@ final class BookSourceSession {
         self.bridge = ModernParserBridge(source: source)
     }
 
+    // MARK: - Serialized bridge access
+    //
+    // Waiters are served highest task priority first, FIFO within a priority. With a plain
+    // lock the chapter the reader is waiting on took its turn behind every queued prefetch:
+    // after a jump the reader prefetches four neighbours, each holding the bridge ~2s on a
+    // 段評 source, so a second jump could wait ~8s before its own fetch even started, and a
+    // chapter opened right after launch sat behind the shelf's table-of-contents refreshes.
+    // The priority is the one the task already carries (`ChapterFetchPriority.taskPriority`,
+    // the shelf refresh's `.utility`), read where the caller is still on its task or, on the
+    // source-script thread, from the QoS `SourceScriptThread` enforced from it.
+    //
+    // Nothing is preempted or cancelled here — a jump that cancelled its siblings was the
+    // main manufacturer of spurious 章節載入失敗 (see `ChapterFetchManager.fetchChapter`).
+    // Only a task that was cancelled anyway leaves the queue instead of still running its
+    // parse (`parse(_:)`); a holder always finishes.
+    private let gate = NSCondition()
+    private var bridgeInUse = false
+    private var waiting: [Waiter] = []
+    private var nextTicket: UInt64 = 0
+
+    private struct Waiter {
+        let ticket: UInt64
+        let priority: UInt8
+    }
+
+    /// Set under `gate`; flipped by the task's cancellation handler while it waits for the bridge.
+    final class WaitCancellation {
+        fileprivate var isCancelled = false
+    }
+
     /// Serialized bridge access for synchronous parse calls (the bridge sets
     /// per-call context before evaluating; two interleaved parses would bleed
-    /// book/chapter state into each other).
-    func withBridge<T>(_ body: (ModernParserBridge) throws -> T) rethrows -> T {
-        lock.lock()
-        defer { lock.unlock() }
+    /// book/chapter state into each other). Queued by `priority`, highest first.
+    func withBridge<T>(
+        priority: TaskPriority = Task.currentPriority,
+        _ body: (ModernParserBridge) throws -> T
+    ) rethrows -> T {
+        _ = acquireBridge(priority: priority.rawValue, cancellation: nil)
+        defer { releaseBridge() }
         return try body(bridge)
+    }
+
+    /// `withBridge` for async callers: runs `body` on the source-script thread, queued by the
+    /// calling task's priority, and throws `CancellationError` without running it if the task is
+    /// cancelled before its turn — a closed reader's queued prefetches must not each still take
+    /// the bridge for their full parse.
+    func parse<T>(_ body: @escaping (ModernParserBridge) throws -> T) async throws -> T {
+        let priority = Task.currentPriority
+        let cancellation = WaitCancellation()
+        return try await withTaskCancellationHandler {
+            try await SourceScriptThread.run {
+                guard self.acquireBridge(priority: priority.rawValue, cancellation: cancellation) else {
+                    throw CancellationError()
+                }
+                defer { self.releaseBridge() }
+                return try body(self.bridge)
+            }
+        } onCancel: {
+            self.gate.lock()
+            cancellation.isCancelled = true
+            self.gate.broadcast()
+            self.gate.unlock()
+        }
+    }
+
+    /// Blocks until the bridge is free and no waiter outranks the caller. Returns false only
+    /// when `cancellation` was flipped first; the caller then owns nothing.
+    private func acquireBridge(priority: UInt8, cancellation: WaitCancellation?) -> Bool {
+        gate.lock()
+        defer { gate.unlock() }
+        let ticket = nextTicket
+        nextTicket += 1
+        waiting.append(Waiter(ticket: ticket, priority: priority))
+        while true {
+            if cancellation?.isCancelled == true {
+                waiting.removeAll { $0.ticket == ticket }
+                gate.broadcast()
+                return false
+            }
+            let outranked = waiting.contains {
+                $0.priority > priority || ($0.priority == priority && $0.ticket < ticket)
+            }
+            if !bridgeInUse, !outranked {
+                waiting.removeAll { $0.ticket == ticket }
+                bridgeInUse = true
+                return true
+            }
+            gate.wait()
+        }
+    }
+
+    /// Callers currently waiting for the bridge (tests watch the queue form).
+    var queuedCallers: Int {
+        gate.lock()
+        defer { gate.unlock() }
+        return waiting.count
+    }
+
+    private func releaseBridge() {
+        gate.lock()
+        bridgeInUse = false
+        gate.broadcast()
+        gate.unlock()
     }
 
     /// Bridge access for async operations (`fetch(ruleUrl:)`, runtime search…)

@@ -51,17 +51,15 @@ extension BookSourceFetcher {
             ) {
                 try await session.bridgeForAsyncOperations.fetch(ruleUrl: url)
             }
-            let info = try await SourceScriptThread.run {
+            let info = try await session.parse { bridge in
                 try SourcePerfTrace.span("detail.parse", source.bookSourceName) {
-                    try session.withBridge { bridge in
-                        try bridge.parseBookInfo(
-                            html: html,
-                            bookUrl: url,
-                            baseURL: finalUrl,
-                            source: source,
-                            runtimeVariables: runtimeVariables
-                        )
-                    }
+                    try bridge.parseBookInfo(
+                        html: html,
+                        bookUrl: url,
+                        baseURL: finalUrl,
+                        source: source,
+                        runtimeVariables: runtimeVariables
+                    )
                 }
             }
             return saveBookInfoPackage(
