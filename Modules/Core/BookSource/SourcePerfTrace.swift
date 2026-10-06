@@ -12,6 +12,8 @@ import Foundation
 ///   coreText.scroll.loadChapter / coreText.scroll.slice / coreText.scroll.placeholderSlice
 ///   coreText.document.buildChapter  (per-phase totals; sub-phases below are nested in it)
 ///   coreText.document.htmlParse / cssCollect / cssParse / astBuild / cssMatch
+///   cjk.typography.prepare  (the legacy engine's CJK pass over a chapter; the browser
+///     engine's runs per paragraph and is a YueduCoreText Points of Interest interval)
 ///   reader.open.transition / reader.open.contentGate / reader.open.contentHold
 ///   reader.open.deferredPreload
 ///   search.presentation.runtimeMarkers / kindInference / coverURL / introSanitize / mainMerge

@@ -183,7 +183,9 @@ struct NodeAttributedStringRenderer {
             rendered.addAttribute(HTMLAttributedStringBuilder.rubyAnnotationAttribute, value: annotation, range: range)
         }
         // After the paragraph attributes, which replace every font.
-        CJKTypography.apply(to: rendered, style: style, vertical: config.writingMode.isVertical)
+        SourcePerfTrace.span("cjk.typography.prepare", "txt chars=\(rendered.length)") {
+            CJKTypography.apply(to: rendered, style: style, vertical: config.writingMode.isVertical)
+        }
         relaxParagraphsContainingRubyAnnotations(rendered)
         return rendered
     }
@@ -228,7 +230,9 @@ struct NodeAttributedStringRenderer {
         // goes with that text's font, as in BrowserAuto, and the spacing between adjacent
         // marks measures the fonts the reader will see.
         let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
-        CJKTypography.apply(to: processed, style: cjkTypographyStyle, vertical: config.writingMode.isVertical)
+        SourcePerfTrace.span("cjk.typography.prepare", "chars=\(processed.length)") {
+            CJKTypography.apply(to: processed, style: cjkTypographyStyle, vertical: config.writingMode.isVertical)
+        }
         relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)
         // The converter flattens body children into top-level nodes, so each block's
