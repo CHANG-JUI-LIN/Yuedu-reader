@@ -31,7 +31,7 @@ BrowserAuto's paged and scroll texts were identical. It fell back to legacy for 
 - **Headings.** `<h3>`, `<h4>`, `<h5>`, as aozora2html writes them; never `<h1>`.
 - **Page breaks.** They end the chapter; the stylesheet has no page-break property.
 - **Stylesheet limits.** No `writing-mode`, `ruby-position`, `@media`, `calc()`, tables, floats or positioning.
-- **U+3000.** Written as `&#12288;`, so the text does not depend on legacy's cleanup of spaces between Han characters, which never runs (its pattern fails to compile).
+- **U+3000.** Written as `&#12288;`. Legacy's cleanup of spaces between Han characters never ran (its pattern failed to compile) and was deleted in 55711b23; `HTMLCJKSeparatorPreservationTests` now pins U+3000 between Han verbatim, and the character reference stays, harmless.
 - **ASCII whitespace.** Collapsed in the displayed text itself, as HTML collapses it (`AozoraDocumentParser`, Phase 1b Task 12): the engines disagree only about spaces at a block's edge, and there are none left.
 - **Quotes.** Legacy curls straight quotes into characters of the same length; the parity test reads them back as straight.
 

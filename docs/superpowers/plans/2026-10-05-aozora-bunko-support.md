@@ -554,7 +554,7 @@ The spec assumed that clean XHTML makes the two texts equal. It does not. On 202
 
 BrowserAuto's paged and scroll texts were identical. It fell back to legacy for a non-default `ruby-position`, and, in vertical writing, for any chapter holding an `<img>` (`VerticalTextSupport.accepts`, `LogicalFlow.swift:89`).
 
-The legacy builder's cleanup of spaces between Han characters (`HTMLAttributedStringBuilder.swift:517`) never runs: ICU rejects the `\u{00A0}` in its pattern, and the `try?` leaves the regex nil. U+3000 survives in legacy only because of that.
+The legacy builder's cleanup of spaces between Han characters (`HTMLAttributedStringBuilder.swift:517`) never runs: ICU rejects the `\u{00A0}` in its pattern, and the `try?` leaves the regex nil. U+3000 survives in legacy only because of that. (55711b23 deleted the cleanup on 2026-10-06.)
 
 So the writer follows these rules, and Task 17 pins them:
 - **End of block.** Every block ends with `<br class="eol"/>`, and the stylesheet sets `br.eol { display: block }`. A blank line is `<p><br class="eol"/></p>`. A chapter's text is each block's displayed text followed by `"\n"`.
@@ -562,7 +562,7 @@ So the writer follows these rules, and Task 17 pins them:
 - **Headings.** `<h3>`, `<h4>`, `<h5>` as aozora2html writes them; never `<h1>`. The probe checked `<h2>` to `<h4>`; Task 17 covers `<h5>`.
 - **Page breaks.** They end the chapter (Task 14); the stylesheet has no page-break property.
 - **Stylesheet limits.** No `writing-mode`, `ruby-position`, `@media`, `calc()`, tables, floats or positioning.
-- **U+3000.** Written as `&#12288;`, so the text does not depend on that cleanup staying broken.
+- **U+3000.** Written as `&#12288;`, so the text does not depend on that cleanup staying broken; it was later deleted (55711b23).
 - **ASCII whitespace.** Collapsed in the displayed text itself (Task 12).
 - **Figures.** A figure costs legacy one U+FFFC that BrowserAuto does not have, and no markup removes that difference.
   - The chapter text keeps BrowserAuto's form: a figure contributes only its caption, as Phase 1a defined.
