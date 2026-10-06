@@ -21,4 +21,9 @@ final class ReadingResourceUsage {
     }
 
     func isInUse(bookID: UUID) -> Bool { owners[bookID]?.isEmpty == false }
+
+    /// Whether a reader other than `ownerID` holds the book.
+    func isInUse(bookID: UUID, besides ownerID: UUID) -> Bool {
+        owners[bookID]?.contains { $0 != ownerID } == true
+    }
 }

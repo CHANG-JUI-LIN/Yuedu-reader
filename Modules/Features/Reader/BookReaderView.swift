@@ -15,6 +15,8 @@ struct BookReaderView: View {
     @Environment(\.presentationMode) private var presentationMode
     @State private var resourceOwnerID = UUID()
     @State private var remoteReady = false
+    /// A converted Aozora book is brought up to this build's converter before it opens.
+    @State private var aozoraReady = false
     @State private var remoteError: String?
     @State private var retryGeneration = 0
     @State private var holdsCache = false
@@ -30,6 +32,8 @@ struct BookReaderView: View {
                     onRetry: { retryGeneration += 1 },
                     onClose: closeReader
                 )
+            } else if book?.aozora != nil && !aozoraReady {
+                RemoteReaderOpeningView(error: nil, onRetry: {}, onClose: closeReader)
             } else if isAudiobook {
                 AudiobookReaderView(bookId: bookId)
             } else if shouldUseFixedPageReader {
@@ -71,6 +75,19 @@ struct BookReaderView: View {
             } catch {
                 remoteError = error.localizedDescription
             }
+        }
+        .task(id: bookId) {
+            guard let book, book.aozora != nil, !aozoraReady else { return }
+            do {
+                _ = try await AozoraBookRegenerator.prepare(book: book, store: store, readerID: resourceOwnerID)
+            } catch is CancellationError {
+                return
+            } catch {
+                // Opening never waits on a failure: the existing EPUB still reads.
+                AppLogger.error("Aozora regeneration failed; opening the existing EPUB", error: error,
+                                context: ["book": bookId.uuidString])
+            }
+            aozoraReady = true
         }
         .onAppear {
             ReadingResourceUsage.shared.retain(bookID: bookId, ownerID: resourceOwnerID)
