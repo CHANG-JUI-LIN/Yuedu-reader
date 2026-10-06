@@ -12,49 +12,49 @@ struct AozoraBookRegeneratorTests {
     @Test("an EPUB from this converter is left alone")
     func current() async throws {
         try await withBook { store, book in
-            let before = try epubData(book)
+            let before = try Self.epubData(book)
             #expect(try await AozoraBookRegenerator.prepare(book: book, store: store) == .current)
-            #expect(try epubData(book) == before)
+            #expect(try Self.epubData(book) == before)
         }
     }
 
     @Test("an older converter with the same text is replaced, and its spine cache goes")
     func olderConverterSameText() async throws {
         try await withBook { store, book in
-            try await rewriteManifest(of: book) { $0.converterVersion = 0 }
-            let cache = spineCache(book)
+            try await Self.rewriteManifest(of: book) { $0.converterVersion = 0 }
+            let cache = Self.spineCache(book)
             try Data("{}".utf8).write(to: cache)
             #expect(try await AozoraBookRegenerator.prepare(book: book, store: store) == .regenerated)
-            let manifest = try #require(await AozoraBookRegenerator.recordedManifest(in: epubURL(book)))
+            let manifest = try #require(await AozoraBookRegenerator.recordedManifest(in: Self.epubURL(book)))
             #expect(manifest.converterVersion == AozoraEPUBWriter.converterVersion)
             #expect(!FileManager.default.fileExists(atPath: cache.path))
-            _ = try await PublicationSession.open(sourceURL: epubURL(book))
+            _ = try await PublicationSession.open(sourceURL: Self.epubURL(book))
         }
     }
 
     @Test("an older converter whose text would change is left alone")
     func olderConverterChangedText() async throws {
         try await withBook { store, book in
-            try await rewriteManifest(of: book) {
+            try await Self.rewriteManifest(of: book) {
                 $0.converterVersion = 0
                 $0.chapters[0].sha256 = String(repeating: "0", count: 64)
             }
-            let before = try epubData(book)
+            let before = try Self.epubData(book)
             #expect(try await AozoraBookRegenerator.prepare(book: book, store: store) == .textChanged)
-            #expect(try epubData(book) == before)
+            #expect(try Self.epubData(book) == before)
         }
     }
 
     @Test("an older text version is left alone")
     func olderTextVersion() async throws {
         try await withBook { store, book in
-            try await rewriteManifest(of: book) {
+            try await Self.rewriteManifest(of: book) {
                 $0.converterVersion = 0
                 $0.textVersion = 0
             }
-            let before = try epubData(book)
+            let before = try Self.epubData(book)
             #expect(try await AozoraBookRegenerator.prepare(book: book, store: store) == .olderTextVersion)
-            #expect(try epubData(book) == before)
+            #expect(try Self.epubData(book) == before)
         }
     }
 
@@ -62,9 +62,9 @@ struct AozoraBookRegeneratorTests {
     func missingManifest() async throws {
         for broken in [nil, Data("not json".utf8)] {
             try await withBook { store, book in
-                try await rewriteManifest(of: book, replacingWith: broken)
+                try await Self.rewriteManifest(of: book, replacingWith: broken)
                 #expect(try await AozoraBookRegenerator.prepare(book: book, store: store) == .regenerated)
-                #expect(await AozoraBookRegenerator.recordedManifest(in: epubURL(book)) != nil)
+                #expect(await AozoraBookRegenerator.recordedManifest(in: Self.epubURL(book)) != nil)
             }
         }
     }
@@ -72,28 +72,28 @@ struct AozoraBookRegeneratorTests {
     @Test("an EPUB from a newer converter is never downgraded")
     func newer() async throws {
         try await withBook { store, book in
-            try await rewriteManifest(of: book) { $0.converterVersion = AozoraEPUBWriter.converterVersion + 1 }
-            let before = try epubData(book)
+            try await Self.rewriteManifest(of: book) { $0.converterVersion = AozoraEPUBWriter.converterVersion + 1 }
+            let before = try Self.epubData(book)
             #expect(try await AozoraBookRegenerator.prepare(book: book, store: store) == .newer)
-            #expect(try epubData(book) == before)
+            #expect(try Self.epubData(book) == before)
         }
     }
 
     @Test("without the original on this device, nothing changes until a later open")
     func originalMissing() async throws {
         try await withBook { store, book in
-            try await rewriteManifest(of: book) { $0.converterVersion = 0 }
+            try await Self.rewriteManifest(of: book) { $0.converterVersion = 0 }
             try FileManager.default.removeItem(at: StorageLocations.bookFile(try #require(book.aozora).originalFilename))
-            let before = try epubData(book)
+            let before = try Self.epubData(book)
             #expect(try await AozoraBookRegenerator.prepare(book: book, store: store) == .originalMissing)
-            #expect(try epubData(book) == before)
+            #expect(try Self.epubData(book) == before)
         }
     }
 
     @Test("a book open in another reader is left alone until it closes")
     func inUse() async throws {
         try await withBook { store, book in
-            try await rewriteManifest(of: book) { $0.converterVersion = 0 }
+            try await Self.rewriteManifest(of: book) { $0.converterVersion = 0 }
             let other = UUID()
             let mine = UUID()
             ReadingResourceUsage.shared.retain(bookID: book.id, ownerID: other)
@@ -121,25 +121,25 @@ struct AozoraBookRegeneratorTests {
         try await body(store, book)
     }
 
-    private func epubURL(_ book: ReadingBook) -> URL { StorageLocations.bookFile(book.contentFilename) }
+    static func epubURL(_ book: ReadingBook) -> URL { StorageLocations.bookFile(book.contentFilename) }
 
-    private func epubData(_ book: ReadingBook) throws -> Data { try Data(contentsOf: epubURL(book)) }
+    private static func epubData(_ book: ReadingBook) throws -> Data { try Data(contentsOf: Self.epubURL(book)) }
 
-    private func spineCache(_ book: ReadingBook) -> URL {
+    private static func spineCache(_ book: ReadingBook) -> URL {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         let name = book.contentFilename.replacingOccurrences(of: ".epub", with: "")
         return caches.appendingPathComponent("spine_cache_\(name).json")
     }
 
-    private func rewriteManifest(of book: ReadingBook, _ change: (inout AozoraEPUBManifest) -> Void) async throws {
-        var manifest = try #require(await AozoraBookRegenerator.recordedManifest(in: epubURL(book)))
+    static func rewriteManifest(of book: ReadingBook, _ change: (inout AozoraEPUBManifest) -> Void) async throws {
+        var manifest = try #require(await AozoraBookRegenerator.recordedManifest(in: Self.epubURL(book)))
         change(&manifest)
-        try await rewriteManifest(of: book, replacingWith: try JSONEncoder().encode(manifest))
+        try await Self.rewriteManifest(of: book, replacingWith: try JSONEncoder().encode(manifest))
     }
 
     /// Rebuilds the EPUB with its manifest replaced, or left out when `data` is nil.
-    private func rewriteManifest(of book: ReadingBook, replacingWith data: Data?) async throws {
-        let source = epubURL(book)
+    static func rewriteManifest(of book: ReadingBook, replacingWith data: Data?) async throws {
+        let source = Self.epubURL(book)
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("rewrite-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }

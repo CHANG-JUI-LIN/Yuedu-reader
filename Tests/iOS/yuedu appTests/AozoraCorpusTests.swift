@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import YueduCoreText
 @testable import yuedu_app
 
 /// The parser over the whole Aozora Bunko text corpus. The corpus stays out of
@@ -7,7 +8,11 @@ import Testing
 /// Aozora Bunko with permission): point AOZORA_CORPUS at a checkout of
 /// https://github.com/aozorahack/aozorabunko_text. It reaches the test runner
 /// as TEST_RUNNER_AOZORA_CORPUS=<path>; without it the suite is skipped.
-@Suite("Aozora corpus", .enabled(if: ProcessInfo.processInfo.environment["AOZORA_CORPUS"] != nil))
+///
+/// The conversion test compares every work's chapter text with
+/// Fixtures/aozora-chapter-text-baseline.tsv. A change to `textVersion` records a
+/// new baseline in the same commit: run once with TEST_RUNNER_AOZORA_RECORD_BASELINE=1.
+@Suite("Aozora corpus", .serialized, .enabled(if: ProcessInfo.processInfo.environment["AOZORA_CORPUS"] != nil))
 struct AozoraCorpusTests {
     @Test("every work parses, nothing of the notation is left in its text, and the counts match the census")
     func corpus() throws {
@@ -15,7 +20,7 @@ struct AozoraCorpusTests {
         let works = try Self.pickWorks(in: root.appendingPathComponent("cards"))
         try #require(!works.isEmpty)
 
-        let results = Results(count: works.count)
+        let results = Slots<Result>(count: works.count)
         let clock = ContinuousClock()
         let started = clock.now
         DispatchQueue.concurrentPerform(iterations: works.count) { index in
@@ -93,7 +98,396 @@ struct AozoraCorpusTests {
             unopened range ends \(parsed.reduce(0) { $0 + $1.unopenedRangeEnds }), \
             unknown annotations \(unknown.values.reduce(0, +)) in \(parsed.filter { !$0.unknownShapes.isEmpty }.count) works
             ⟐ top unknown: \(unknown.sorted { $0.value > $1.value }.prefix(25).map { "\($0.key)×\($0.value)" })
+            ⟐ ASCII whitespace collapsed: \(parsed.reduce(0) { $0 + $1.collapsedWhitespace }) units in \
+            \(parsed.filter { $0.collapsedWhitespace > 0 }.count) works; U+00A0 shown: \(parsed.reduce(0) { $0 + $1.nbsp }) \
+            in \(parsed.filter { $0.nbsp > 0 }.count) works; blocks of U+00A0 alone: \
+            \(parsed.reduce(0) { $0 + $1.nbspOnlyBlocks }) in \(parsed.filter { $0.nbspOnlyBlocks > 0 }.map(\.path).prefix(10))
             """)
+    }
+
+    // MARK: Conversion (Phase 1b, Task 21)
+
+    @Test("every work converts into an EPUB that Readium opens as planned, and every chapter keeps the baseline's text")
+    func conversion() async throws {
+        let root = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["AOZORA_CORPUS"]))
+        let works = try Self.pickWorks(in: root.appendingPathComponent("cards"))
+        try #require(!works.isEmpty)
+
+        let clock = ContinuousClock()
+        let started = clock.now
+        let conversions = await Self.concurrentMap(works, width: ProcessInfo.processInfo.activeProcessorCount) {
+            await Self.convert($0, root: root)
+        }
+        let elapsed = clock.now - started
+        let problems = conversions.flatMap(\.problems)
+        for problem in problems { print("⟐ conversion problem: \(problem)") }
+        #expect(problems.isEmpty, "\(problems.count) problems, e.g. \(problems.prefix(10))")
+
+        // One line per work: a hash over its chapters' SHA-256s, keyed by its folder.
+        try #require(Set(conversions.map(\.key)).count == conversions.count, "two works share a folder name")
+        let hashes = Dictionary(uniqueKeysWithValues: conversions.map { ($0.key, $0.hash) })
+        let header = "# textVersion \(AozoraEPUBWriter.textVersion); corpus \(Self.corpusCommit(root))"
+        if ProcessInfo.processInfo.environment["AOZORA_RECORD_BASELINE"] != nil {
+            let lines = [header] + hashes.keys.sorted().map { "\($0)\t\(hashes[$0] ?? "")" }
+            try (lines.joined(separator: "\n") + "\n").write(to: Self.baselineURL, atomically: true, encoding: .utf8)
+            print("⟐ recorded the chapter-text baseline: \(hashes.count) works")
+        } else {
+            let lines = try String(contentsOf: Self.baselineURL, encoding: .utf8).split(separator: "\n").map(String.init)
+            let recorded = lines.first ?? ""
+            #expect(recorded == header, """
+                the baseline is «\(recorded)», this run «\(header)»: a textVersion change records a new baseline \
+                (TEST_RUNNER_AOZORA_RECORD_BASELINE=1) in the same commit, and another corpus checkout needs its own
+                """)
+            if recorded == header {
+                var baseline: [String: String] = [:]
+                for line in lines.dropFirst() {
+                    let fields = line.split(separator: "\t").map(String.init)
+                    if fields.count == 2 { baseline[fields[0]] = fields[1] }
+                }
+                let changed = hashes.filter { key, hash in baseline[key].map { $0 != hash } ?? false }.keys.sorted()
+                let added = hashes.keys.filter { baseline[$0] == nil }.sorted()
+                let missing = baseline.keys.filter { hashes[$0] == nil }.sorted()
+                #expect(changed.isEmpty, "\(changed.count) works' chapter text changed with textVersion unchanged, e.g. \(changed.prefix(10))")
+                #expect(added.isEmpty, "\(added.count) works are not in the baseline, e.g. \(added.prefix(10))")
+                #expect(missing.isEmpty, "\(missing.count) baseline works were not converted, e.g. \(missing.prefix(10))")
+            }
+        }
+
+        let largest = try #require(conversions.max { $0.bytes < $1.bytes })
+        var timings: [(convert: Duration, import: Duration, regenerate: Duration)] = []
+        for _ in 0..<3 { timings.append(try await Self.timeLargest(root.appendingPathComponent(largest.path))) }
+        func range(_ value: KeyPath<(convert: Duration, import: Duration, regenerate: Duration), Duration>) -> String {
+            let values = timings.map { $0[keyPath: value] }.sorted()
+            return "\(values.first ?? .zero)–\(values.last ?? .zero)"
+        }
+        print("""
+            ⟐ Aozora conversion: \(conversions.count) works converted and opened by Readium in \(elapsed), \
+            \(conversions.reduce(0) { $0 + $1.chapters }) chapters
+            ⟐ largest \(largest.path) (\(largest.bytes) bytes, \(largest.chapters) chapters), three times each: \
+            converted on its own in \(range(\.convert)), imported in \(range(\.import)), regenerated in \(range(\.regenerate))
+            ⟐ chapters left to legacy for a ruby inside a ruby: \(conversions.reduce(0) { $0 + $1.nestedRubyChapters }) \
+            in \(conversions.filter { $0.nestedRubyChapters > 0 }.count) works; rubies over a figure: \
+            \(conversions.reduce(0) { $0 + $1.rubiesOverFigures }) in \(conversions.filter { $0.rubiesOverFigures > 0 }.count) works
+            """)
+    }
+
+    private struct Conversion: Sendable {
+        var path = ""
+        /// The work's folder: one per work, the baseline's key.
+        var key = ""
+        var bytes = 0
+        var chapters = 0
+        var hash = ""
+        var problems: [String] = []
+        /// Chapters BrowserAuto leaves to legacy for a ruby inside a ruby.
+        var nestedRubyChapters = 0
+        /// Rubies over a figure: written without a base when the figure's file is missing.
+        var rubiesOverFigures = 0
+    }
+
+    @concurrent
+    private static func convert(_ url: URL, root: URL) async -> Conversion {
+        var result = Conversion()
+        result.path = String(url.path.dropFirst(root.path.count + 1))
+        result.key = url.deletingLastPathComponent().lastPathComponent
+        var problems: [String] = []
+        do {
+            result.bytes = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard let converted = try await AozoraBookImporter.convert(url, isZip: false) else {
+                result.problems = ["\(result.path): the converter declined it"]
+                return result
+            }
+            defer { AozoraBookImporter.remove(converted.workDirectory, reason: "work folder") }
+            let session = try await PublicationSession.open(
+                sourceURL: converted.epub, cacheDirectory: converted.workDirectory.appendingPathComponent("cache"))
+            // The plan the converter followed, made once more to check the package against.
+            let text = try TXTFileReader.readTextFile(url: url)
+            let document = AozoraDocumentParser.parse(text)
+            let chapters = AozoraChapterPlanner.plan(document, source: text)
+            result.chapters = chapters.count
+            problems = packageProblems(session: session, manifest: converted.manifest, document: document, chapters: chapters)
+            result.nestedRubyChapters = chapters.filter {
+                AozoraEngineParityTests.holdsLegacyRuby(AozoraXHTMLWriter.document(for: $0, in: document, images: [:]))
+            }.count
+            result.rubiesOverFigures = rubiesOverFigures(in: document)
+            let chapterHashes = converted.manifest.chapters.map(\.sha256).joined(separator: "\n")
+            result.hash = String(AozoraEPUBWriter.sha256(Data(chapterHashes.utf8)).prefix(16))
+        } catch {
+            problems.append("\(error)")
+        }
+        result.problems = problems.map { "\(result.path): \($0)" }
+        return result
+    }
+
+    private static func rubiesOverFigures(in document: AozoraDocument) -> Int {
+        func holdsFigure(_ inlines: [AozoraInline]) -> Bool {
+            inlines.contains { inline in
+                if case .image = inline { return true }
+                return holdsFigure(inline.children)
+            }
+        }
+        func count(_ inlines: [AozoraInline]) -> Int {
+            inlines.reduce(0) { total, inline in
+                if case .ruby(let base, _, _) = inline, holdsFigure(base) { return total + 1 + count(base) }
+                return total + count(inline.children)
+            }
+        }
+        return (document.headerBlocks + document.body + document.colophon).reduce(0) { total, block in
+            switch block {
+            case .paragraph(let inlines, _), .heading(_, _, let inlines, _): return total + count(inlines)
+            case .image(_, _, _, let caption): return total + count(caption)
+            case .pageBreak: return total
+            }
+        }
+    }
+
+    /// What a converted package gets wrong against its plan.
+    private static func packageProblems(session: PublicationSession, manifest: AozoraEPUBManifest,
+                                        document: AozoraDocument, chapters: [AozoraChapter]) -> [String] {
+        var problems: [String] = []
+        if manifest.chapters.map(\.sha256) != chapters.map({ AozoraEPUBWriter.sha256(Data($0.text.utf8)) }) {
+            problems.append("the manifest's chapter hashes are not the plan's")
+        }
+        if session.chapters.count != chapters.count {
+            problems.append("Readium opened \(session.chapters.count) chapters of \(chapters.count)")
+        }
+
+        var planned: [(title: String, level: Int, href: String)] = []
+        for (index, chapter) in chapters.enumerated() {
+            let file = String(format: "text/c%04d.xhtml", index + 1)
+            for entry in chapter.navigation {
+                planned.append((entry.title, entry.level, entry.anchor.map { "\(file)#\($0)" } ?? file))
+            }
+        }
+        let toc = session.tocEntries
+        if toc.count != planned.count {
+            problems.append("""
+                the table of contents has \(toc.count) entries of \(planned.count): \
+                \(toc.map(\.title).prefix(5)) for \(planned.map(\.title).prefix(5))
+                """)
+        } else if let index = planned.indices.first(where: { toc[$0].title != shownTitle(planned[$0].title) }) {
+            problems.append("table of contents entry \(index) is «\(toc[index].title)», planned «\(planned[index].title)»")
+        } else if toc.map(\.level) != AozoraEPUBWriter.nestingDepths(planned.map(\.level)) {
+            problems.append("table of contents levels \(toc.map(\.level).prefix(12)) for \(planned.map(\.level).prefix(12))")
+        } else if let index = planned.indices.first(where: { !toc[$0].href.hasSuffix(planned[$0].href) }) {
+            problems.append("table of contents entry \(index) points at \(toc[index].href), planned \(planned[index].href)")
+        }
+
+        // The chapters hold the displayed text, less page breaks and the blank blocks
+        // at their edges: the same lines once blank lines are left out.
+        func lines(_ text: String) -> [ArraySlice<UInt16>] {
+            Array(text.utf16).split(separator: 0x0A, omittingEmptySubsequences: true)
+        }
+        let shown = lines(document.displayedText)
+        let read = lines(chapters.map(\.text).joined())
+        if shown != read {
+            let line = zip(shown, read).enumerated().first { $0.element.0 != $0.element.1 }?.offset
+                ?? min(shown.count, read.count)
+            problems.append("the chapters' text leaves the displayed text at line \(line) of \(shown.count) (read \(read.count))")
+        }
+        return problems
+    }
+
+    /// A planned title as the table of contents shows it. Readium cleans a navigation
+    /// label as EPUB asks, every run of white space (U+3000 included) becoming one
+    /// space, and `PublicationSession.sanitizedTitle` does the same after it, for
+    /// every EPUB; nav.xhtml keeps the title as planned.
+    private static func shownTitle(_ title: String) -> String {
+        title.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The largest work's conversion on its own, and the import and regeneration
+    /// the app runs, each timed end to end.
+    @MainActor
+    private static func timeLargest(_ url: URL) async throws -> (convert: Duration, import: Duration, regenerate: Duration) {
+        let clock = ContinuousClock()
+        var started = clock.now
+        let converted = try #require(try await Task.detached { try await AozoraBookImporter.convert(url, isZip: false) }.value)
+        let convertTime = clock.now - started
+        AozoraBookImporter.remove(converted.workDirectory, reason: "work folder")
+
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("AozoraCorpusTiming-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BookStore(metadataFileURL: folder.appendingPathComponent("books.json"))
+        defer {
+            for book in store.books { store.delete(bookId: book.id) }
+            AozoraBookImporter.remove(folder, reason: "timing folder")
+        }
+        let copy = folder.appendingPathComponent(url.lastPathComponent)
+        try FileManager.default.copyItem(at: url, to: copy)
+        started = clock.now
+        let book = try await LocalBookImportService.importBook(at: copy, store: store)
+        let importTime = clock.now - started
+        #expect(book.aozora != nil)
+        try await AozoraBookRegeneratorTests.rewriteManifest(of: book) { $0.converterVersion = 0 }
+        started = clock.now
+        let outcome = try await AozoraBookRegenerator.prepare(book: book, store: store)
+        let regenerateTime = clock.now - started
+        #expect(outcome == .regenerated)
+        return (convertTime, importTime, regenerateTime)
+    }
+
+    private static let baselineURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("Fixtures/aozora-chapter-text-baseline.tsv")
+
+    /// The corpus checkout's commit, read from its .git folder.
+    private static func corpusCommit(_ root: URL) -> String {
+        let git = root.appendingPathComponent(".git")
+        guard let head = try? String(contentsOf: git.appendingPathComponent("HEAD"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) else { return "unknown" }
+        guard head.hasPrefix("ref: ") else { return head }
+        let ref = String(head.dropFirst("ref: ".count))
+        if let commit = try? String(contentsOf: git.appendingPathComponent(ref), encoding: .utf8) {
+            return commit.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let packed = (try? String(contentsOf: git.appendingPathComponent("packed-refs"), encoding: .utf8)) ?? ""
+        return packed.split(separator: "\n").first { $0.hasSuffix(" " + ref) }.map { String($0.prefix(40)) } ?? "unknown"
+    }
+
+    // MARK: Engine parity on a sample (Phase 1b, Task 21)
+
+    @Test("both engines read a sample of 50 works chosen for coverage as planned", arguments: [
+        ReaderWritingMode.horizontal, ReaderWritingMode.verticalRTL,
+    ])
+    @MainActor
+    func engineParitySample(mode: ReaderWritingMode) async throws {
+        let root = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["AOZORA_CORPUS"]))
+        let works = try Self.pickWorks(in: root.appendingPathComponent("cards"))
+        let coverage = await Task.detached { Self.coverage(of: works, root: root) }.value
+        let sample = Self.coverageSample(coverage, count: 50)
+        try #require(sample.count == 50)
+
+        let clock = ContinuousClock()
+        let started = clock.now
+        var checked = 0
+        for (work, criterion) in sample {
+            let begun = clock.now
+            let url = work.url
+            let converted = try #require(try await Task.detached { try await AozoraBookImporter.convert(url, isZip: false) }.value)
+            defer { AozoraBookImporter.remove(converted.workDirectory, reason: "work folder") }
+            let text = try TXTFileReader.readTextFile(url: url)
+            let document = AozoraDocumentParser.parse(text)
+            let chapters = AozoraChapterPlanner.plan(document, source: text)
+            let session = try await PublicationSession.open(
+                sourceURL: converted.epub, cacheDirectory: converted.workDirectory.appendingPathComponent("cache"))
+            // The title page, the first body chapter, the colophon, and the chapter with
+            // the most of what the work was chosen for.
+            let units = Array(text.utf16)
+            let richness = chapters.map { Self.counts(in: Self.sourceText(of: $0, in: units))[criterion] }
+            let richest = richness.indices.max { richness[$0] < richness[$1] } ?? 0
+            let spines = Set([0, 1, chapters.count - 1, richest]).filter { chapters.indices.contains($0) }.sorted()
+            // The corpus is text only: no figure reaches the package.
+            var xhtml: [Int: String] = [:]
+            for spine in spines { xhtml[spine] = AozoraXHTMLWriter.document(for: chapters[spine], in: document, images: [:]) }
+            try await AozoraEngineParityTests.expectPlannedText(
+                in: session, chapters: chapters, spines: spines,
+                figures: { AozoraEngineParityTests.figureCount(in: xhtml[$0] ?? "") },
+                legacyRuby: { AozoraEngineParityTests.holdsLegacyRuby(xhtml[$0] ?? "") }, mode: mode, label: work.path)
+            checked += spines.count
+            print("""
+                ⟐ parity \(mode): \(work.path), chosen for \(Self.coverageCriteria[criterion]) \
+                \(work.counts[criterion]), chapters \(spines) of \(chapters.count) in \(clock.now - begun)
+                """)
+        }
+        print("⟐ parity \(mode): \(sample.count) works, \(checked) chapters in \(clock.now - started)")
+    }
+
+    /// Raw counts in the source of what a parity sample should cover, in the order
+    /// of `coverageCriteria`.
+    private struct Coverage: Sendable {
+        var url: URL
+        var path: String
+        var counts: [Int]
+    }
+
+    private static let coverageCriteria = ["ruby", "gaiji", "headings", "length", "割り注", "返り点", "U+00A0"]
+
+    private static func coverage(of works: [URL], root: URL) -> [Coverage] {
+        let slots = Slots<Coverage>(count: works.count)
+        DispatchQueue.concurrentPerform(iterations: works.count) { index in
+            let url = works[index]
+            var coverage = Coverage(url: url, path: String(url.path.dropFirst(root.path.count + 1)),
+                                    counts: Array(repeating: 0, count: coverageCriteria.count))
+            do {
+                coverage.counts = counts(in: try TXTFileReader.readTextFile(url: url))
+            } catch {
+                // The parse test reports a work that does not decode; it is simply not sampled.
+            }
+            slots.store(coverage, at: index)
+        }
+        return slots.all
+    }
+
+    private static let kaeriten = try! NSRegularExpression(pattern: "［＃[一二三四上中下甲乙丙丁天地人レ]+］")
+
+    private static func counts(in text: String) -> [Int] {
+        [
+            text.utf16.reduce(0) { $0 + ($1 == 0x300A ? 1 : 0) },
+            text.ranges(of: "※［＃").count,
+            text.ranges(of: "見出し］").count,
+            text.utf16.count,
+            text.ranges(of: "［＃割り注］").count,
+            kaeriten.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text)),
+            text.utf16.reduce(0) { $0 + ($1 == 0xA0 ? 1 : 0) },
+        ]
+    }
+
+    /// The source a chapter's displayed text comes from.
+    private static func sourceText(of chapter: AozoraChapter, in units: [UInt16]) -> String {
+        let shown = chapter.sourceMap.runs.filter { $0.displayedLength > 0 }
+        guard let first = shown.first, let last = shown.last else { return "" }
+        return String(decoding: units[first.sourceStart..<(last.sourceStart + last.sourceLength)], as: UTF16.self)
+    }
+
+    /// Round-robin over the criteria, each taking its highest count not chosen yet.
+    private static func coverageSample(_ works: [Coverage], count: Int) -> [(work: Coverage, criterion: Int)] {
+        let rankings = coverageCriteria.indices.map { criterion in
+            works.filter { $0.counts[criterion] > 0 }.sorted {
+                ($0.counts[criterion], $1.path) > ($1.counts[criterion], $0.path)
+            }
+        }
+        var chosen: [(work: Coverage, criterion: Int)] = []
+        var taken = Set<String>()
+        var cursors = Array(repeating: 0, count: rankings.count)
+        while chosen.count < count, rankings.indices.contains(where: { cursors[$0] < rankings[$0].count }) {
+            for criterion in rankings.indices where chosen.count < count {
+                while cursors[criterion] < rankings[criterion].count,
+                      taken.contains(rankings[criterion][cursors[criterion]].path) {
+                    cursors[criterion] += 1
+                }
+                guard cursors[criterion] < rankings[criterion].count else { continue }
+                let work = rankings[criterion][cursors[criterion]]
+                taken.insert(work.path)
+                chosen.append((work, criterion))
+            }
+        }
+        return chosen
+    }
+
+    /// `body` over every element, at most `width` at a time, results in order.
+    private static func concurrentMap<Element: Sendable, Mapped: Sendable>(
+        _ elements: [Element], width: Int, _ body: @escaping @Sendable (Element) async -> Mapped
+    ) async -> [Mapped] {
+        await withTaskGroup(of: (Int, Mapped).self) { group in
+            var results = [Mapped?](repeating: nil, count: elements.count)
+            var next = 0
+            func start(_ index: Int) {
+                group.addTask { (index, await body(elements[index])) }
+            }
+            while next < min(width, elements.count) {
+                start(next)
+                next += 1
+            }
+            while let (index, mapped) = await group.next() {
+                results[index] = mapped
+                if next < elements.count {
+                    start(next)
+                    next += 1
+                }
+            }
+            return results.compactMap { $0 }
+        }
     }
 
     // MARK: One work
@@ -122,6 +516,12 @@ struct AozoraCorpusTests {
         var unclosedRanges = 0
         var unopenedRangeEnds = 0
         var unknownShapes: [String: Int] = [:]
+        /// ASCII spaces and tabs in plain text that the collapse deleted or turned
+        /// into a space (Task 12): units that no identity run copies.
+        var collapsedWhitespace = 0
+        var nbsp = 0
+        /// Blocks showing nothing but U+00A0 and spaces, which legacy drops.
+        var nbspOnlyBlocks = 0
     }
 
     private static func examine(_ url: URL) -> Result {
@@ -155,6 +555,7 @@ struct AozoraCorpusTests {
         // Displayed units copied verbatim from markup in the source.
         let source = AozoraSource(text)
         var markup: [(range: Range<Int>, name: String)] = []
+        var plain: [Range<Int>] = []
         let structure = document.structure
         for section in [structure.header, structure.body, structure.colophon] {
             for token in AozoraTokenizer.tokenize(source.units, in: source.range(ofLines: section)) {
@@ -162,7 +563,8 @@ struct AozoraCorpusTests {
                 case .ruby: markup.append((token.range, "ruby"))
                 case .annotation, .gaiji: markup.append((token.range, "annotation"))
                 case .kunojiten: markup.append((token.range, "くの字点"))
-                case .text, .rubyBar, .accent, .newline: break
+                case .text: plain.append(token.range)
+                case .rubyBar, .accent, .newline: break
                 }
             }
         }
@@ -185,6 +587,23 @@ struct AozoraCorpusTests {
                     }
                 }
                 probe += 1
+            }
+        }
+
+        var copied = [Bool](repeating: false, count: source.units.count)
+        for run in document.sourceMap.runs where run.isIdentity {
+            for offset in run.sourceStart..<(run.sourceStart + run.sourceLength) { copied[offset] = true }
+        }
+        for range in plain {
+            for offset in range where !copied[offset] && (source.units[offset] == 0x20 || source.units[offset] == 0x09) {
+                result.collapsedWhitespace += 1
+            }
+        }
+        result.nbsp = displayed.reduce(0) { $0 + ($1 == 0xA0 ? 1 : 0) }
+        for span in document.blockSpans {
+            let block = document.segments[span.leaves].map(\.text).joined().unicodeScalars
+            if block.contains("\u{A0}"), block.allSatisfy({ $0 == "\u{A0}" || $0 == " " }) {
+                result.nbspOnlyBlocks += 1
             }
         }
 
@@ -286,7 +705,7 @@ struct AozoraCorpusTests {
 
     /// One file per work, as scripts/aozora_annotation_census.py picks them:
     /// the ruby edition over the plain one, then the larger file.
-    private static func pickWorks(in cards: URL) throws -> [URL] {
+    static func pickWorks(in cards: URL) throws -> [URL] {
         let pattern = try NSRegularExpression(pattern: #"^(\d+)_(ruby|txt)(?:_(\d+))?$"#)
         var chosen: [String: (rank: (Int, Int), url: URL)] = [:]
         guard let enumerator = FileManager.default.enumerator(
@@ -314,17 +733,17 @@ struct AozoraCorpusTests {
         abs(value - expected) * 100 <= expected
     }
 
-    /// Results written from concurrent iterations, one slot each.
-    private final class Results: @unchecked Sendable {
-        private var storage: [Result]
+    /// Values written from concurrent iterations, one slot each.
+    private final class Slots<Element: Sendable>: @unchecked Sendable {
+        private var storage: [Element?]
         private let lock = NSLock()
 
-        init(count: Int) { storage = Array(repeating: Result(), count: count) }
+        init(count: Int) { storage = Array(repeating: nil, count: count) }
 
-        func store(_ result: Result, at index: Int) {
-            lock.withLock { storage[index] = result }
+        func store(_ element: Element, at index: Int) {
+            lock.withLock { storage[index] = element }
         }
 
-        var all: [Result] { lock.withLock { storage } }
+        var all: [Element] { lock.withLock { storage.compactMap { $0 } } }
     }
 }
