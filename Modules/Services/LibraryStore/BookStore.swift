@@ -1913,6 +1913,10 @@ class BookStore: ObservableObject, BookProvider {
         let progressiveTOCURL = tocURL
         let progressiveRuntimeVariables = runtimeVariables
         let progressiveInfoPackage = infoPackage
+        // The first page's commit runs on its own; the final merge waits for it so it plans
+        // from the list that commit left (the runtime fetch hands the whole list over as
+        // the first page, so this is every refresh, not only multi-page ones).
+        let firstPageCommit = TaskBox()
 
         let tocPackage = try await bookSourceFetcher.fetchTOCPackage(
             tocUrl: tocURL,
@@ -1920,7 +1924,7 @@ class BookStore: ObservableObject, BookProvider {
             runtimeVariables: runtimeVariables,
             onFirstPageReady: { [weak self] firstChapters in
                 guard let self else { return }
-                Task.detached(priority: .utility) {
+                firstPageCommit.set(Task.detached(priority: .utility) {
                     guard OnlineTOCCommitPolicy.decide(
                         refreshedCount: firstChapters.count
                     ) == .commit else {
@@ -1937,44 +1941,25 @@ class BookStore: ObservableObject, BookProvider {
                         refreshed: firstChapters,
                         preservingExistingTail: true
                     )
-                    let chaptersChanged = Self.chapterListChanged(existing: existingChapters, refreshed: firstChapters)
-                    let listChanged = mergedChapters != existingChapters
+                    // The first page never raises the new-chapter badge or re-pends cached
+                    // chapters; the final merge decides both.
+                    let plan = MergePlan(
+                        existing: existingChapters,
+                        merged: mergedChapters,
+                        chaptersChanged: Self.chapterListChanged(existing: existingChapters, refreshed: firstChapters),
+                        listChanged: mergedChapters != existingChapters,
+                        gainedChapters: false,
+                        staleIndices: []
+                    )
                     await MainActor.run {
                         guard let idx = self.records.firstIndex(where: { $0.id == bookId }) else { return }
-                        var updated = self.records[idx]
-                        let tocChanged = self.normalizedOnlineValue(updated.tocURL) != progressiveTOCURL
-                        let runtimeChanged = (updated.runtimeVariables ?? [:]) != (progressiveRuntimeVariables ?? [:])
-                        updated.bookSourceId = source.id
-                        updated.bookInfoURL = bookURL
-                        updated.tocURL = progressiveTOCURL
-                        updated.runtimeVariables = progressiveRuntimeVariables
-                        updated.onlineChapters = mergedChapters
-                        if let progressiveInfoPackage {
-                            let resolvedName = self.normalizedOnlineValue(progressiveInfoPackage.name)
-                            let resolvedAuthor = self.normalizedOnlineValue(progressiveInfoPackage.author)
-                            if !resolvedName.isEmpty {
-                                updated.title = resolvedName
-                            }
-                            if !resolvedAuthor.isEmpty {
-                                updated.author = resolvedAuthor
-                            }
-                        }
-                        let titleChanged = updated.title != self.records[idx].title
-                        let authorChanged = updated.author != self.records[idx].author
-                        let sourceChanged = updated.bookSourceId != self.records[idx].bookSourceId
-                            || updated.bookInfoURL != self.records[idx].bookInfoURL
-                        // One assignment, and only for a change: every assignment publishes
-                        // the whole store to every view on it.
-                        if runtimeChanged || chaptersChanged || listChanged || tocChanged
-                            || titleChanged || authorChanged || sourceChanged {
-                            self.records[idx] = updated
-                        }
-                        if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged {
-                            self.saveMeta()
-                        }
-                        onFirstChaptersReady?(self.readingBook(id: bookId) ?? self.records[idx])
+                        let book = self.commitRefreshedList(
+                            at: idx, plan: plan, source: source, bookURL: bookURL, tocURL: progressiveTOCURL,
+                            runtimeVariables: progressiveRuntimeVariables, infoPackage: progressiveInfoPackage
+                        )
+                        onFirstChaptersReady?(book)
                     }
-                }
+                })
             },
             // Always hit the network here: this is the "check for new chapters"
             // path, so the stale cached TOC must be bypassed or serial novels
@@ -2009,71 +1994,66 @@ class BookStore: ObservableObject, BookProvider {
         // and any local function of it run on the caller's actor, which for the launch
         // refresh is the main one.
         let refreshed = tocPackage.chapters
-        let prepared = await Task.detached(priority: .utility) { [chapterStore] in
-            Self.mergePlan(
-                existing: chapterStore.chapters(for: bookId) ?? [], refreshed: refreshed,
-                originalChapterCount: originalChapterCount, originalLatestTitle: originalLatestTitle
-            )
-        }.value
-
-        let updateResult = await MainActor.run { () -> (ReadingBook, MergePlan)? in
-            guard let idx = records.firstIndex(where: { $0.id == bookId }) else {
-                return nil
-            }
-            // A chapter cached while the plan was being made (a download marks one per
-            // chapter) changed the list under it; plan again from what is there now.
-            let current = chapterStore.chapters(for: bookId) ?? []
-            let plan = current == prepared.existing ? prepared : Self.mergePlan(
-                existing: current, refreshed: refreshed,
-                originalChapterCount: originalChapterCount, originalLatestTitle: originalLatestTitle
-            )
-            let mergedChapters = plan.merged
-            let chaptersChanged = plan.chaptersChanged
-            let listChanged = plan.listChanged
-            let gainedChapters = plan.gainedChapters
-            var updated = records[idx]
-            let tocChanged = normalizedOnlineValue(updated.tocURL) != finalTOCURL
-            let runtimeChanged = (updated.runtimeVariables ?? [:]) != (finalRuntimeVariables ?? [:])
-
-            updated.bookSourceId = source.id
-            updated.bookInfoURL = bookURL
-            updated.tocURL = finalTOCURL
-            updated.runtimeVariables = finalRuntimeVariables
-            updated.onlineChapters = mergedChapters
-
-            if let finalInfoPackage {
-                let resolvedName = normalizedOnlineValue(finalInfoPackage.name)
-                let resolvedAuthor = normalizedOnlineValue(finalInfoPackage.author)
-                if !resolvedName.isEmpty {
-                    updated.title = resolvedName
-                }
-                if !resolvedAuthor.isEmpty {
-                    updated.author = resolvedAuthor
-                }
-            }
-            if gainedChapters {
-                updated.hasNewChapterUpdate = true
-            }
-
-            let titleChanged = updated.title != records[idx].title
-            let authorChanged = updated.author != records[idx].author
-            let sourceChanged = updated.bookSourceId != records[idx].bookSourceId
-                || updated.bookInfoURL != records[idx].bookInfoURL
-            let badgeChanged = updated.hasNewChapterUpdate != records[idx].hasNewChapterUpdate
-
-            if runtimeChanged || chaptersChanged || listChanged || tocChanged
-                || titleChanged || authorChanged || sourceChanged || badgeChanged {
-                records[idx] = updated
-            }
-            if runtimeChanged || chaptersChanged || tocChanged || titleChanged || authorChanged || gainedChapters {
-                saveMeta()
-            }
-            return (readingBook(id: bookId) ?? records[idx], plan)
+        await firstPageCommit.value?.value
+        @Sendable func detachedPlan(existing: [OnlineChapterRef]?) async -> MergePlan {
+            await Task.detached(priority: .utility) { [chapterStore] in
+                Self.mergePlan(
+                    existing: existing ?? chapterStore.chapters(for: bookId) ?? [], refreshed: refreshed,
+                    originalChapterCount: originalChapterCount, originalLatestTitle: originalLatestTitle
+                )
+            }.value
         }
-
-        guard let (updated, committed) = updateResult else {
+        enum CommitOutcome {
+            case gone
+            case listMoved([OnlineChapterRef])
+            case committed(ReadingBook, MergePlan)
+        }
+        var prepared = await detachedPlan(existing: nil)
+        // A chapter cached while the plan was being made (a download marks one per chapter)
+        // changes the list under it. The commit only lands on the list it was planned from;
+        // otherwise it is planned again from what is there now — off the main thread, a few
+        // times, before giving in and planning there.
+        var replans = 0
+        var result: (updated: ReadingBook, committed: MergePlan)?
+        while result == nil {
+            let outcome = await MainActor.run { () -> CommitOutcome in
+                guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return .gone }
+                let current = chapterStore.chapters(for: bookId) ?? []
+                let plan: MergePlan
+                if current == prepared.existing {
+                    plan = prepared
+                } else if replans < 3 {
+                    return .listMoved(current)
+                } else {
+                    AppLogger.cache("⟐ TOC merge planned on the main thread: the list kept changing underneath", context: [
+                        "bookId": bookId.uuidString,
+                    ])
+                    plan = Self.mergePlan(
+                        existing: current, refreshed: refreshed,
+                        originalChapterCount: originalChapterCount, originalLatestTitle: originalLatestTitle
+                    )
+                }
+                let updated = commitRefreshedList(
+                    at: idx, plan: plan, source: source, bookURL: bookURL, tocURL: finalTOCURL,
+                    runtimeVariables: finalRuntimeVariables, infoPackage: finalInfoPackage
+                )
+                return .committed(updated, plan)
+            }
+            switch outcome {
+            case .gone:
+                return snapshot
+            case .listMoved(let current):
+                replans += 1
+                prepared = await detachedPlan(existing: current)
+            case .committed(let book, let plan):
+                result = (book, plan)
+            }
+        }
+        guard let result else {
             return snapshot
         }
+        let updated = result.updated
+        let committed = result.committed
         let oldRefs = committed.existing
         let newRefs = committed.merged
         let staleIndices = committed.staleIndices
@@ -2107,6 +2087,58 @@ class BookStore: ObservableObject, BookProvider {
         )
 
         return updated
+    }
+
+    /// Writes a planned refresh into the record at `index`: one assignment, and only for a
+    /// change, because every assignment publishes the store to every view on it.
+    @MainActor
+    private func commitRefreshedList(
+        at index: Int,
+        plan: MergePlan,
+        source: BookSource,
+        bookURL: String,
+        tocURL: String,
+        runtimeVariables: [String: String]?,
+        infoPackage: BookInfoPackage?
+    ) -> ReadingBook {
+        var updated = records[index]
+        let tocChanged = normalizedOnlineValue(updated.tocURL) != tocURL
+        let runtimeChanged = (updated.runtimeVariables ?? [:]) != (runtimeVariables ?? [:])
+
+        updated.bookSourceId = source.id
+        updated.bookInfoURL = bookURL
+        updated.tocURL = tocURL
+        updated.runtimeVariables = runtimeVariables
+        updated.onlineChapters = plan.merged
+
+        if let infoPackage {
+            let resolvedName = normalizedOnlineValue(infoPackage.name)
+            let resolvedAuthor = normalizedOnlineValue(infoPackage.author)
+            if !resolvedName.isEmpty {
+                updated.title = resolvedName
+            }
+            if !resolvedAuthor.isEmpty {
+                updated.author = resolvedAuthor
+            }
+        }
+        if plan.gainedChapters {
+            updated.hasNewChapterUpdate = true
+        }
+
+        let titleChanged = updated.title != records[index].title
+        let authorChanged = updated.author != records[index].author
+        let sourceChanged = updated.bookSourceId != records[index].bookSourceId
+            || updated.bookInfoURL != records[index].bookInfoURL
+        let badgeChanged = updated.hasNewChapterUpdate != records[index].hasNewChapterUpdate
+
+        if runtimeChanged || plan.chaptersChanged || plan.listChanged || tocChanged
+            || titleChanged || authorChanged || sourceChanged || badgeChanged {
+            records[index] = updated
+        }
+        if runtimeChanged || plan.chaptersChanged || tocChanged || titleChanged || authorChanged || plan.gainedChapters {
+            saveMeta()
+        }
+        return readingBook(id: updated.id) ?? records[index]
     }
 
     private struct MergePlan {
@@ -2967,4 +2999,12 @@ class BookStore: ObservableObject, BookProvider {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
     }
+}
+
+/// A task handle set from one thread and awaited from another.
+private final class TaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    func set(_ task: Task<Void, Never>) { lock.lock(); self.task = task; lock.unlock() }
+    var value: Task<Void, Never>? { lock.lock(); defer { lock.unlock() }; return task }
 }
