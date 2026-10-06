@@ -89,8 +89,11 @@ struct BrowserMediaPronunciationParityTests {
         let engine = BrowserLayoutPageEngine(resource: resource, delegate: delegate, settings: settings, mode: .browserAuto, showDebugOverlay: false)
         await engine.start(renderSize: CGSize(width: 320, height: 640), bookId: "media-parity")
         #expect(engine.choice(for: 0)?.isBrowser == true)
-        // The delegate retains startup chapter zero; browser metadata must
-        // remain the narration owner even while this legacy entry exists.
+        // The delegate no longer lays out chapter zero at startup (ba09b8f7), so
+        // lay it out the way a fallback would: browser metadata must remain the
+        // narration owner even while this legacy entry exists.
+        #expect(engine.layouts[0] == nil)
+        await delegate.preloadChapter(at: 0)
         #expect(engine.layouts[0] != nil)
         let provider: any PageRenderingProvider = engine
         let text = try #require(provider.chapterText(forSpine: 0))
