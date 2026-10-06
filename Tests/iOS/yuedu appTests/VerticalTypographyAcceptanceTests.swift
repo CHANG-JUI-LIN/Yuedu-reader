@@ -89,6 +89,7 @@ struct VerticalTypographyAcceptanceTests {
         // The script's own Han: a Simplified book does not write 漢, and with it this
         // chapter's three sentences would not show one script.
         result.append(Case(id: "orientation") { "<p>\($0.han)字かなカナ한글Kindle 2014年ーー「本」</p>" })
+        result.append(Case(id: "quotes") { "<p>\($0.han)：“\($0.han)。”\($0.han)‘\($0.han)’\($0.han)</p>" })
         return result
     }
 
@@ -392,13 +393,11 @@ struct VerticalTypographyAcceptanceTests {
                     let drawn = try await Self.draw(engine, book: book, spine: spine, mode: mode)
                     let m = try Self.measure(drawn, vertical: mode.isVertical)
                     let label = "\(engine) \(script) \(mode.rawValue) \(a)\(b) advance=\(m.advance) overlap=\(m.overlap) route=\(drawn.route)"
-                    withKnownIssue("Task 7", isIntermittent: true) {
-                        #expect(m.overlap <= 1, "\(label)")
-                        if script.name == "japanese" && (a == "：" || a == "？") {
-                            #expect(m.advance >= 1.45 && m.advance <= 2.05, "\(label)")
-                        } else {
-                            #expect(abs(m.advance - 1.5) <= 0.06, "\(label)")
-                        }
+                    #expect(m.overlap <= 1, "\(label)")
+                    if script.name == "japanese" && (a == "：" || a == "？") {
+                        #expect(m.advance >= 1.45 && m.advance <= 2.05, "\(label)")
+                    } else {
+                        #expect(abs(m.advance - 1.5) <= 0.06, "\(label)")
                     }
                     print("⟐VT pair \(label)")
                 }
@@ -433,6 +432,26 @@ struct VerticalTypographyAcceptanceTests {
                 #expect(fact("か")?.font == "HiraginoSans-W3", "kana font: \(label)")
                 #expect(fact("한")?.font == "AppleSDGothicNeo-Regular", "Hangul font: \(label)")
                 #expect(fact("K")?.font == system, "Latin font: \(label)")
+            }
+        }
+    }
+
+    /// Quotation marks next to CJK text are drawn in its font in both engines; legacy
+    /// sets curly quotes in Georgia before the CJK pass, which then moves these.
+    @Test(arguments: Engine.allCases)
+    func quotesFollowTheirText(engine: Engine) async throws {
+        for script in Self.scripts {
+            let book = try await Self.open(script)
+            let spine = try #require(Self.cases.firstIndex { $0.id == "quotes" })
+            for mode in [ReaderWritingMode.verticalRTL, .horizontal] {
+                let drawn = try await Self.draw(engine, book: book, spine: spine, mode: mode)
+                let facts = Self.facts(of: drawn.text)
+                let label = "\(engine) \(script) \(mode.rawValue) "
+                    + facts.map { "\($0.character)\($0.upright ? "↑" : "→")\($0.font)" }.joined(separator: " ")
+                print("⟐VT quotes \(label)")
+                for quote in ["“", "”", "‘", "’"] {
+                    #expect(facts.first { $0.character == quote }?.font == script.hanFont, "\(quote): \(label)")
+                }
             }
         }
     }

@@ -224,10 +224,11 @@ struct NodeAttributedStringRenderer {
         // Before every pass that reads characters (CJK typography, regex highlight, dialogue
         // bubbles), so they all see the text the reader will.
         config.textConversion.apply(to: result)
-        // The fonts CJK text is drawn in and where its punctuation sits, before punctuation
-        // compression measures them.
-        CJKTypography.apply(to: result, style: cjkTypographyStyle, vertical: config.writingMode.isVertical)
+        // Curly quotes, set in Georgia, before the CJK pass: a quote next to CJK text then
+        // goes with that text's font, as in BrowserAuto, and the spacing between adjacent
+        // marks measures the fonts the reader will see.
         let processed = NSMutableAttributedString(attributedString: CJKTypographyProcessor.apply(to: result))
+        CJKTypography.apply(to: processed, style: cjkTypographyStyle, vertical: config.writingMode.isVertical)
         relaxParagraphsContainingRubyAnnotations(processed)
         relaxParagraphsContainingTallRuns(processed)
         // The converter flattens body children into top-level nodes, so each block's
