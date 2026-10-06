@@ -65,11 +65,6 @@ struct NodeAttributedStringRenderer {
         let dialogueBubbleStyle: ReaderDialogueBubbleStyle
         /// 繁簡轉換, applied to the rendered text before any pass that reads characters.
         let textConversion: TextConversion
-        /// The book, so `CJKTypographyStyleResolver` sets all of it one way.
-        let bookID: UUID?
-        /// The language the publication declares; it decides CJK typography only when
-        /// the text itself shows no script.
-        let declaredLanguage: String?
 
         init(
             from settings: ReaderRenderSettings,
@@ -84,8 +79,7 @@ struct NodeAttributedStringRenderer {
             mediaURLResolver: ((String) -> String?)? = nil,
             baseWritingDirection: NSWritingDirection = .natural,
             centerStandaloneImages: Bool = false,
-            textConversion: TextConversion? = nil,
-            declaredLanguage: String? = nil
+            textConversion: TextConversion? = nil
         ) {
             self.baseFontSize = baseFontSize ?? settings.fontSize
             self.lineHeightMultiple = settings.lineHeightMultiple
@@ -98,8 +92,6 @@ struct NodeAttributedStringRenderer {
             self.readerStyleAssetRevision = settings.readerStyleAssetRevision
             self.dialogueBubbleStyle = settings.dialogueBubbleStyle
             self.textConversion = textConversion ?? settings.textConversion
-            self.bookID = settings.bookID
-            self.declaredLanguage = declaredLanguage
             // EPUB <h1> path: size/spacing/visibility always apply. Font and
             // weight apply only when the user explicitly picked a title font
             // (跟隨閱讀字體 off) — otherwise the publisher's own heading CSS wins,

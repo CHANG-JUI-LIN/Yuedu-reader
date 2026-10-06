@@ -8,7 +8,6 @@ import UIKit
 /// (one data path for CSS/fonts/images — no parallel loaders).
 @MainActor
 final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
-    var declaredLanguage: String? { session.language }
 
     private let session: PublicationSession
     private let resourceAdapter: ReadiumBookResourceAdapter

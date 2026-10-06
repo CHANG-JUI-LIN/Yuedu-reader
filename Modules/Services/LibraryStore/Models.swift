@@ -856,9 +856,6 @@ struct ReaderRenderSettings: Equatable {
     /// 整章翻譯. Translations are spliced into the chapter documents, so switching it re-runs
     /// layout; a chapter's translations arriving refreshes that chapter alone.
     var translation: ReaderTranslationPresentation = .off
-    /// The book being laid out. `CJKTypographyStyleResolver` keeps one CJK typography
-    /// style per book, so its titles and chapters are set alike. Nil outside a book.
-    var bookID: UUID? = nil
 }
 
 enum TOCLayoutMode {

@@ -41,13 +41,9 @@ protocol BrowserLayoutResourceProviding: AnyObject {
     /// Resolves CSS font families (including registered @font-face families)
     /// to a concrete UIFont; nil falls back to UIFont(name:).
     func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)?
-    /// The language the publication declares. CJK typography follows the text's own
-    /// script and falls back to this only when the text shows none.
-    var declaredLanguage: String? { get }
 }
 
 extension BrowserLayoutResourceProviding {
-    var declaredLanguage: String? { nil }
     func resolveMediaAttachment(forChapter index: Int, media: EPUBMediaAttachment) -> EPUBMediaAttachment { media }
     /// Providers without embedded fonts have no asynchronous resources to prepare.
     func prepareFonts(requests: Set<BrowserFontRequest>) async {}
