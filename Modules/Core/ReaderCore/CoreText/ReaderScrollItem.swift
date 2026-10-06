@@ -90,8 +90,6 @@ final class BrowserScrollChapter {
     private enum Request {
         case layout(CGRect, anchorOffset: Int?)
         case discard
-
-        var isDiscard: Bool { if case .discard = self { true } else { false } }
     }
     /// One request at a time; while it runs, only the latest next one is kept.
     private var inFlight: Task<Void, Never>?
@@ -156,10 +154,16 @@ final class BrowserScrollChapter {
     /// frame that never lays out.
     func requestViewport(_ bounds: CGRect, anchorOffset: Int? = nil) {
         guard isViewportDriven else { return }
-        // A retirement that has not landed yet will empty the committed region.
-        let retiring = inFlightRequest?.isDiscard == true || pending?.isDiscard == true
-        if !retiring, materializedBounds.contains(bounds),
-           anchorOffset == nil || document.documentPoint(forCharOffset: anchorOffset!) != nil { return }
+        // What the chapter will hold once its requests land: the last one's region, or
+        // nothing after a retirement; the committed snapshot only when none is on its
+        // way. A layout still on its way replaces the committed region with its own, so
+        // a quick reversal into a region committed now would otherwise land blank.
+        let covered = switch pending ?? inFlightRequest {
+        case .discard?: false
+        case .layout(let region, _)?: region.contains(bounds)
+        case nil: materializedBounds.contains(bounds)
+        }
+        if covered, anchorOffset == nil || document.documentPoint(forCharOffset: anchorOffset!) != nil { return }
         submit(.layout(bounds.insetBy(dx: 0, dy: -min(900, max(300, bounds.height * 0.5))), anchorOffset: anchorOffset))
     }
 

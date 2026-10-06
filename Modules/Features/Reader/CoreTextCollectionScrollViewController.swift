@@ -1786,6 +1786,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 }
             }
         }
+        // Whatever this commit moved the offset by, keeping the anchor in place or the
+        // offset inside a resized content, is the host's doing, not the reader's: move
+        // the demand's baseline with it. Read as travel, a 0.3 pt correction turned the
+        // demand around and laid out a whole screen nobody asked for.
+        if let last = lastViewportRequestY {
+            lastViewportRequestY = last + (collectionView.contentOffset.y - before.y)
+        }
         if wasDecelerating, abs(correction) > 0.01 {
             awaitingMomentumOffset = collectionView.contentOffset.y
         }
