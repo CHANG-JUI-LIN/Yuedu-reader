@@ -61,3 +61,6 @@ Technotes/Dependencies.md. Their licences:
   DifferenceKit            — Apache License 2.0
   GCDWebServer             — BSD 3-Clause
   Lexbor (Packages/CLexbor) — see Packages/CLexbor/NOTICE
+  YueduCoreText            — this project's own engine package; it includes data
+                             from the Unicode Character Database under the Unicode
+                             License v3, reproduced in its NOTICE
