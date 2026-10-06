@@ -1,6 +1,7 @@
 import YueduCoreText
 import CoreText
 import UIKit
+import YueduCoreTextTypography
 
 /// Extracts image attachment rects (UIKit coordinates: origin top-left, y downward) from a chunk's CTFrame.
 /// chunkSize is the chunk's path size (width × height); the coordinate system matches the cell's drawView bounds.
@@ -49,7 +50,7 @@ enum CoreTextChunkAttachmentExtractor {
                 switch info.displayMode {
                 case .inline:
                     if isVertical {
-                        let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
+                        let textAdvance = GlyphBoundary.offset(line, at: runLocation)
                         let lineTypographicCenterX = lineOrigin.x + (lineAscent - lineDescent) / 2
                         let uiY = chunkSize.height - lineOrigin.y + textAdvance
                         rect = CGRect(
@@ -95,7 +96,7 @@ enum CoreTextChunkAttachmentExtractor {
                             // CoreTextPaginator.extractImages); adding a pen offset on top of it
                             // double-counted the alignment and misplaced inline images on centered
                             // or right-aligned lines — the chapter title's 章名段评 bubble.
-                            let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
+                            let textAdvance = GlyphBoundary.offset(line, at: runLocation)
                             rect = CGRect(
                                 x: lineOrigin.x + textAdvance + info.paddingLeft,
                                 y: uiY,
@@ -106,7 +107,7 @@ enum CoreTextChunkAttachmentExtractor {
                     }
                 case .block:
                     if isVertical {
-                        let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
+                        let textAdvance = GlyphBoundary.offset(line, at: runLocation)
                         let lineTypographicCenterX = lineOrigin.x + (lineAscent - lineDescent) / 2
                         let uiY = chunkSize.height - lineOrigin.y + textAdvance
                         rect = CGRect(

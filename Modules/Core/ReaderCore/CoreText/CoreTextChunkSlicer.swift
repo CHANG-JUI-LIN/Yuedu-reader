@@ -750,7 +750,7 @@ enum CoreTextChunkSlicer {
                 guard let annotation = info as? InlineAnnotationRunInfo else { continue }
 
                 let runLocation = CTRunGetStringRange(run).location
-                let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
+                let textAdvance = GlyphBoundary.offset(line, at: runLocation)
                 var lineAscent: CGFloat = 0
                 var lineDescent: CGFloat = 0
                 _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)

@@ -2,6 +2,7 @@ import YueduCoreText
 import CoreText
 import Foundation
 import UIKit
+import YueduCoreTextTypography
 
 /// A sliced CoreText content block, corresponding to one UICollectionView cell.
 /// `frame` being nil means it has been evicted and can be reconstructed from `framesetter` + `charRange`.
@@ -310,7 +311,7 @@ final class CoreTextChunk {
         }
 
         let relativeX = point.x - lineOrigin.x
-        let idx = CTLineGetStringIndexForPosition(line, CGPoint(x: relativeX, y: 0))
+        let idx = GlyphBoundary.index(line, at: relativeX)
         if idx != kCFNotFound { return max(0, idx) }
         let range = CTLineGetStringRange(line)
         guard range.length > 0 else { return nil }
@@ -354,7 +355,7 @@ final class CoreTextChunk {
             return nil
         }
 
-        let idx = CTLineGetStringIndexForPosition(line, CGPoint(x: max(0, min(lineAdvance, relativeAdvance)), y: 0))
+        let idx = GlyphBoundary.index(line, at: max(0, min(lineAdvance, relativeAdvance)))
         if idx != kCFNotFound { return max(0, idx) }
         let range = CTLineGetStringRange(line)
         guard range.length > 0 else { return nil }

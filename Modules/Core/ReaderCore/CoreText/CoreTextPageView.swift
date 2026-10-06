@@ -1797,7 +1797,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         }
 
         let relativeX = canonical.x - lineX
-        let index = CTLineGetStringIndexForPosition(line, CGPoint(x: max(0, relativeX), y: 0))
+        let index = GlyphBoundary.index(line, at: max(0, relativeX))
         if index != kCFNotFound {
             return max(0, index)
         }
@@ -1838,10 +1838,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             return nil
         }
 
-        let index = CTLineGetStringIndexForPosition(
-            line,
-            CGPoint(x: max(0, min(lineAdvance, relativeAdvance)), y: 0)
-        )
+        let index = GlyphBoundary.index(line, at: max(0, min(lineAdvance, relativeAdvance)))
         if index != kCFNotFound {
             return max(0, index)
         }

@@ -1,6 +1,7 @@
 import YueduCoreText
 import UIKit
 import CoreText
+import YueduCoreTextTypography
 
 /// The reader-wide text underline decoration as a value. Paint that runs off
 /// the main thread (the continuous-scroll raster worker) is handed this
@@ -341,8 +342,8 @@ enum CoreTextHorizontalLineDrawer {
             guard let style = value as? HTMLAttributedStringBuilder.InlineBorderBoxStyle,
                   range.length > 0 else { return }
 
-            let startOffset = CTLineGetOffsetForStringIndex(line, range.location, nil)
-            let endOffset = CTLineGetOffsetForStringIndex(line, range.location + range.length, nil)
+            let startOffset = GlyphBoundary.offset(line, at: range.location)
+            let endOffset = GlyphBoundary.offset(line, at: range.location + range.length)
             let x0 = origin.x + min(startOffset, endOffset)
             let x1 = origin.x + max(startOffset, endOffset)
             guard x1 > x0 else { return }

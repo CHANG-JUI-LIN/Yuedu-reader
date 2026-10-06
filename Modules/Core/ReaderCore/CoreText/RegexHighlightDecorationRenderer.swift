@@ -1,6 +1,7 @@
 import YueduCoreText
 import CoreText
 import UIKit
+import YueduCoreTextTypography
 
 /// Paints immutable regex-highlight decorations before CoreText draws their glyphs.
 /// Image lookup is cache-only: drawing never performs file I/O or image decoding.
@@ -79,8 +80,8 @@ enum RegexHighlightDecorationRenderer {
             )
             guard endIndex > startIndex else { return }
 
-            let startOffset = CGFloat(CTLineGetOffsetForStringIndex(line, startIndex, nil))
-            let endOffset = CGFloat(CTLineGetOffsetForStringIndex(line, endIndex, nil))
+            let startOffset = CGFloat(GlyphBoundary.offset(line, at: startIndex))
+            let endOffset = CGFloat(GlyphBoundary.offset(line, at: endIndex))
             guard startOffset.isFinite, endOffset.isFinite,
                   abs(endOffset - startOffset) > 0.25 else { return }
 

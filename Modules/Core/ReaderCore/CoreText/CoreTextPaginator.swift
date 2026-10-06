@@ -2197,7 +2197,7 @@ final class CoreTextPaginator {
                     guard attrs[HTMLAttributedStringBuilder.spacerRunAttribute] == nil else {
                         if isVertical {
                             let runRange = CTRunGetStringRange(run)
-                            let textAdvance = CTLineGetOffsetForStringIndex(line, runRange.location, nil)
+                            let textAdvance = GlyphBoundary.offset(line, at: runRange.location)
                             let ctDelegate = delegate as! CTRunDelegate
                             let ptr = CTRunDelegateGetRefCon(ctDelegate)
                             let info = Unmanaged<ImageRunInfo>.fromOpaque(ptr).takeUnretainedValue()
@@ -2242,11 +2242,7 @@ final class CoreTextPaginator {
                                 // baseline (glyph center), not left edge — subtract half
                                 // width to center the image on the baseline.
                                 let runLocation = CTRunGetStringRange(run).location
-                                let textAdvance = CTLineGetOffsetForStringIndex(
-                                    line,
-                                    runLocation,
-                                    nil
-                                )
+                                let textAdvance = GlyphBoundary.offset(line, at: runLocation)
                                 let columnBaselineX = contentPathRect.origin.x + lineOrigin.x
                                 let lineTypographicCenterX = columnBaselineX + (lineAscent - lineDescent) / 2
                                 let uiY = renderSize.height - (contentPathRect.origin.y + lineOrigin.y) + textAdvance
@@ -2306,7 +2302,7 @@ final class CoreTextPaginator {
                                     // pinned a centered chapter title's 章名段评 bubble to the right
                                     // margin and pushed it clean off the page when the title was
                                     // right-aligned.
-                                    let textAdvance = CTLineGetOffsetForStringIndex(line, runRange.location, nil)
+                                    let textAdvance = GlyphBoundary.offset(line, at: runRange.location)
                                     rect = CGRect(
                                         x: contentPathRect.origin.x + lineOrigin.x + textAdvance + info.paddingLeft,
                                         y: uiY,
@@ -2442,7 +2438,7 @@ final class CoreTextPaginator {
                     guard let annotation = info as? InlineAnnotationRunInfo else { continue }
 
                     let runLocation = CTRunGetStringRange(run).location
-                    let textAdvance = CTLineGetOffsetForStringIndex(line, runLocation, nil)
+                    let textAdvance = GlyphBoundary.offset(line, at: runLocation)
                     var lineAscent: CGFloat = 0
                     var lineDescent: CGFloat = 0
                     _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)

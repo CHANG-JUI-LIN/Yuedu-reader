@@ -1,6 +1,7 @@
 import YueduCoreText
 import CoreText
 import Foundation
+import YueduCoreTextTypography
 
 // MARK: - Annotation Renderer
 
@@ -170,8 +171,8 @@ struct CoreTextAnnotationRenderer {
             let inter = NSIntersectionRange(lineNS, range)
             guard inter.length > 0 else { continue }
 
-            let startOffset = CGFloat(CTLineGetOffsetForStringIndex(line, inter.location, nil))
-            let endOffset = CGFloat(CTLineGetOffsetForStringIndex(line, inter.location + inter.length, nil))
+            let startOffset = CGFloat(GlyphBoundary.offset(line, at: inter.location))
+            let endOffset = CGFloat(GlyphBoundary.offset(line, at: inter.location + inter.length))
 
             var ascent: CGFloat = 0, descent: CGFloat = 0
             _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
@@ -210,8 +211,8 @@ struct CoreTextAnnotationRenderer {
             let inter = NSIntersectionRange(lineNS, range)
             guard inter.length > 0 else { continue }
 
-            let startOffset = CGFloat(CTLineGetOffsetForStringIndex(line, inter.location, nil))
-            let endOffset = CGFloat(CTLineGetOffsetForStringIndex(line, inter.location + inter.length, nil))
+            let startOffset = CGFloat(GlyphBoundary.offset(line, at: inter.location))
+            let endOffset = CGFloat(GlyphBoundary.offset(line, at: inter.location + inter.length))
 
             var ascent: CGFloat = 0, descent: CGFloat = 0
             _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
