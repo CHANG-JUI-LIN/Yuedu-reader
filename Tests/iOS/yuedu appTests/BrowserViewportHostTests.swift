@@ -255,6 +255,17 @@ struct BrowserViewportHostTests {
             collection.setContentOffset(CGPoint(x: 0, y: frame.minY + 300), animated: false)
             controller.scrollViewDidScroll(collection)
             collection.layoutIfNeeded()
+            // Text comes with the jumped-to region's layout; the frame never waits
+            // for it (text may arrive a beat late rather than drop a frame). A
+            // chapter that arrived far from the viewport has its first screen
+            // retired right away — residency is the viewport ±2000pt — so whether
+            // that screen is still resident when the test jumps there is a race.
+            // Await the region's layout itself (a nested run loop cannot run it:
+            // the main queue does not drain inside this main-actor test), then
+            // flush tracking mode only, as for the arrival above.
+            await engine.browserChapter(at: spine)?.waitForViewportIdle()
+            CFRunLoopRunInMode(CFRunLoopMode(rawValue: RunLoop.Mode.tracking.rawValue as CFString), 0, true)
+            collection.layoutIfNeeded()
             let visible = collection.visibleCells.compactMap { $0 as? BrowserScrollTileCell }
             #expect(visible.contains { $0.currentTile?.chapter.spineIndex == spine
                 && $0.interactiveView.displayList.items.contains { if case .text = $0 { true } else { false } } },

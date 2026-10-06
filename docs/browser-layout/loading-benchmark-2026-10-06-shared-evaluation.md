@@ -79,7 +79,8 @@ Auto 開書時間 −54%～−72%，現在和 Legacy 開書同級：第 0 章不
 - 套件 `SharedEvaluationEquivalenceTests`（17 項）：把改前的 scanner 原碼複製成測試專用的 `ReferenceCapabilityScanner`，對五個 dump 章節×兩種書寫模式×兩種配置，以及專門打接縫的合成案例（只配到 `<head>` 的規則、只配到隱藏元素後代的規則、隱藏子樹裡的 inline style、dark media 與 `::first-letter` 規則、`!important` 與順序、authored order 下的 inline `@media`、沒有 body 的標記、直排宣告）逐一比對 `supported`／`unsupportedFeatures`（含順序）／`textIndentUsage`／`fontRequests`；再把「從 evaluation 排版」和「重新解析排版」的 display list（每個項目的 nodeID、range、rect、字號、文字）、`contentHeight`、`sourceText`、`anchorOffsets` 逐項比對。
 - 套件全套 159＋11 項通過。
 - App（本機套件 workspace）：29 個 browser-layout／閱讀器 suite 共 200 項通過；`BrowserLayoutLineBreakBaselineTests` 斷行黃金基線（`-testLanguage zh-Hant`）通過。發佈的 0.6.2 跟當時測的套件原始碼相同（之後只改了測試檔的 import 與文件）。
-- `BrowserViewportHostTests.chapterArrivalDuringTrackingDoesNotSuspendViewportUntilDefaultMode` 改前就會隨機失敗，沒動它：測試自己的 `start(initialChapter: 2)` 跟捲動控制器的相鄰章載入同時跑，第 0、2 章誰先到是競態。第 2 章先到 3/3 都過；第 0 章先到 8 次失敗 6 次——失敗的那幾次在第 0 章插入後（它還在畫面外）多一次 viewport commit，之後捲進第 0 章的當下還沒有文字（照「文字晚到不掉幀」的取捨會晚一拍出現）。改前 4 跑 1 失敗，改後 7 跑 4 失敗；差別在這個測試裡第 0 章先到的比例（改前 2/4、改後 6/7），失敗機制本身改前就有。正常 project＋遠端 0.6.2 落地時重跑：30 個 suite 206 項，只有這一項失敗（第 0 章先到）。
+- `BrowserViewportHostTests.chapterArrivalDuringTrackingDoesNotSuspendViewportUntilDefaultMode` 改前就會隨機失敗（後續已照設計改測試，見下）：測試自己的 `start(initialChapter: 2)` 跟捲動控制器的相鄰章載入同時跑，第 0、2 章誰先到是競態。第 2 章先到 3/3 都過；第 0 章先到 8 次失敗 6 次——失敗的那幾次在第 0 章插入後（它還在畫面外）多一次 viewport commit，之後捲進第 0 章的當下還沒有文字（照「文字晚到不掉幀」的取捨會晚一拍出現）。改前 4 跑 1 失敗，改後 7 跑 4 失敗；差別在這個測試裡第 0 章先到的比例（改前 2/4、改後 6/7），失敗機制本身改前就有。正常 project＋遠端 0.6.2 落地時重跑：30 個 suite 206 項，只有這一項失敗（第 0 章先到）。
+- 查清楚的原因：捲動每次解析可見範圍都會丟掉「畫面 ±2000pt 以外」的章已排好的行（只留幾何），章節一插入就跑一次；第 0 章插在畫面上方很遠，剛排好的第一屏當場被送去丟掉（非同步），測試緊接著瞬間跳回第 0 章開頭，成敗只看丟掉有沒有先完成。這是設計上的取捨（文字晚一拍、不掉幀）：正常閱讀時下一章在離底部 1.5 屏內才接上、往回讀先接上前一章底部，都在範圍內，平常捲動也會先排好前方一屏。使用者選「照設計改測試」：跳過去之後 `await` 那一章的排版落地（巢狀 run loop 不行——主佇列不會在這個 main-actor 測試裡重入），再照原本只沖 tracking mode 一次後檢查。改後 7 次有效執行全過，兩種到達順序都涵蓋。
 
 ## 可重跑
 
