@@ -17,6 +17,12 @@ struct BookDetailAction {
     var action: () -> Void
 }
 
+struct BookDetailAuthorAction: Identifiable {
+    let id: String
+    let name: String
+    let action: () -> Void
+}
+
 // MARK: - Page scaffold
 
 /// Scroll container, background and navigation chrome shared by the detail pages.
@@ -123,13 +129,16 @@ struct BookDetailHero<Cover: View>: View {
     let meta: String
     let primary: BookDetailAction
     let secondary: BookDetailAction
+    var authorActions: [BookDetailAuthorAction] = []
+    var artworkHeight: CGFloat? = nil
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var artworkSize: CGSize {
         switch artworkShape {
         case .book:
-            CGSize(width: DSLayout.bookCoverHeroWidth, height: DSLayout.bookCoverHeroHeight)
+            CGSize(width: artworkHeight.map { $0 * DSLayout.discoverCoverAspectRatio } ?? DSLayout.bookCoverHeroWidth,
+                   height: artworkHeight ?? DSLayout.bookCoverHeroHeight)
         case .square:
             CGSize(width: DSLayout.bookDetailSquareArtworkSide, height: DSLayout.bookDetailSquareArtworkSide)
         }
@@ -169,10 +178,28 @@ struct BookDetailHero<Cover: View>: View {
                 .foregroundStyle(DSColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            Text(author)
-                .font(DSFont.subheadline)
-                .foregroundStyle(DSColor.textSecondary)
-                .lineLimit(1)
+            if authorActions.isEmpty {
+                Text(author)
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .lineLimit(1)
+            } else {
+                ForEach(authorActions) { author in
+                    Button(action: author.action) {
+                        HStack(spacing: DSSpacing.xs) {
+                            Text(author.name)
+                            Image(systemName: "chevron.right")
+                                .font(DSFont.caption.weight(.semibold))
+                                .accessibilityHidden(true)
+                        }
+                        .font(DSFont.subheadline)
+                        .frame(minHeight: DSLayout.minimumTapTarget)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(DSColor.accent)
+                    .accessibilityIdentifier("publicLibrary.author.\(author.id)")
+                }
+            }
             if !meta.isEmpty {
                 Text(meta)
                     .font(DSFont.footnote)

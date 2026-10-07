@@ -35,6 +35,11 @@ struct OPDSAcquisition: Hashable {
     }
 }
 
+struct OPDSRelatedLink: Hashable {
+    let title: String
+    let url: URL
+}
+
 struct OPDSEntry: Identifiable, Hashable {
     var id: String
     var title: String
@@ -45,6 +50,8 @@ struct OPDSEntry: Identifiable, Hashable {
     var thumbnailURL: URL?
     var coverURL: URL?
     var alternateURL: URL?
+    var authorNames: [String] = []
+    var relatedLinks: [OPDSRelatedLink] = []
 
     var isBook: Bool { !acquisitions.isEmpty }
     var isNavigation: Bool { acquisitions.isEmpty && navigationURL != nil }
@@ -267,6 +274,7 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
             current = nil
             guard entry.isBook || entry.isNavigation else { return }
             entry.author = authors.isEmpty ? nil : authors.joined(separator: ", ")
+            entry.authorNames = authors
             if entry.id.isEmpty { entry.id = entry.acquisitions.first?.url.absoluteString ?? entry.navigationURL?.absoluteString ?? "" }
             feed.entries.append(entry)
         default: break
@@ -307,6 +315,9 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
             return
         }
         if current != nil {
+            if rel == "related", type.contains("application/atom+xml") {
+                current?.relatedLinks.append(OPDSRelatedLink(title: Self.plain(attributes["title"] ?? "", limit: 512), url: resolved))
+            }
             if rel.hasPrefix("http://opds-spec.org/acquisition") || rel.hasPrefix("https://opds-spec.org/acquisition") {
                 current?.acquisitions.append(OPDSAcquisition(url: resolved, type: attributes["type"] ?? "", rel: rel, size: attributes["length"].flatMap(Int64.init)))
             } else if rel.hasSuffix("/image/thumbnail") { current?.thumbnailURL = resolved }

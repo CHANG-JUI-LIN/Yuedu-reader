@@ -619,7 +619,7 @@ All of this was requested live on 2026-10-07.
 | 9 | `1d476ac1` | Local Aozora search and explicit Gutenberg search submission; 20 tests. |
 | 10 | `b7719418` | First-import detector, one-time anchored TipKit guide and reduced-motion behavior; 6 mode/availability tests. |
 | 11 | `ddecb171` | Gutenberg list-image request boundary and UI onboarding coverage; 16 unit tests and 2 UI tests. |
-| 12, remaining | This documentation commit | PublicLibraries/RemoteLibraryReading notes, opt-in measurement and live UI release checks; 1 measurement test and two separately enabled UI cases passed. |
+| 12, remaining | `078c4e6c` | PublicLibraries/RemoteLibraryReading notes, opt-in measurement and live UI release checks; 1 measurement test and two separately enabled UI cases passed. |
 
 Implementation details resolved within the plan:
 
@@ -653,3 +653,23 @@ Not done / maintainer actions:
 - Schedule activation, release/tag creation and website `_redirects` changes require the maintainer's approval. Check Xcode Cloud tag triggers before creating any tag. The prepared workflow has not run remotely.
 - No push was performed; it requires explicit approval. Existing README changes and the other agent's reading-style document were preserved and excluded from these commits.
 - Task 13 remains deferred until Gutenberg replies with the approved OPDS 2 endpoint.
+
+### What landed — Apple Books storefront follow-up
+
+2026-10-07, directly on `main`, after the maintainer approved bundled real book lists and local covers to retain Gutenberg's request limits. The interaction is a resizable bottom sheet: medium and large detents, upward expansion, downward restoration, and horizontal book paging while half-height. This implements the explicit correction to the earlier navigation-bar interpretation.
+
+- The home now has featured collections, large horizontal cover shelves, editorial classic selections and a native category page. Covers are generated locally and reused in the sheet. No live rankings or ratings are fabricated; the home makes no Gutenberg request.
+- A selected book opens the frozen list in a native sheet/carousel. Only the selected Gutenberg page loads its feed; revisiting a loaded page within that presentation reuses its model. Author names push the provider's actual author catalog into a cover grid. Aozora uses the same verified local index, with no mirror or alternate source.
+- Details reuse the existing online/audiobook scaffold, hero, information and introduction components. Existing remote-library and Aozora services still own reading, importing, shelf actions and downloads. All actions remain available without Pro; the China gate is unchanged.
+- UI regression exposed two native presentation issues: resizing and pushing in one transaction left the author page physically half-height, and initializing the paging binding did not position a nonfirst book. The final implementation completes the resize animation before pushing and uses the native initial scroll anchor for equal-width pages. The reader destination lives outside the lazy carousel. No timer, retry, second reader or fallback was added.
+- Accessibility hides offscreen pages, preserves button traits, labels icon controls and provides an explicit resize button. Titles remain inline inside the sheet and pushed pages; five localizations and previews are present.
+
+Passing evidence after the final related edits:
+
+- **42 unit tests in five suites:** `PublicLibraryStorefrontTests` (8), `OPDSParserTests` (10), `RemoteLibraryBrowsePresentationTests` (5), `BookIntroContentTests` and `IOS17SearchResultTableTests` (19 combined).
+- **Six UI cases across relevant runs:** Explore onboarding/mode persistence and empty-source home (53.509 / 12.245 s); non-Pro native gestures, paging, resize-after-paging, author height and direct nonfirst selection (41.322 s); Pro theme/resize controls (19.651 s); Pro themed Aozora fixture with visible-position assertions (21.225 s); final non-Pro actual reading and persisted shelf/download state (31.346 s). The earlier cold acquisition of Gutenberg 174 passed reading, shelving and full download (34.348 s).
+- All tests used `scripts/xctest.sh` and nonzero selectors. Failed UI assumptions were corrected and rerun; offscreen accessibility existence alone is no longer accepted as proof of selected-book visibility. Screenshots were inspected for non-Pro and `-debug-force-pro` with the supplied `.qitheme` imported through App `tmp/` and its percent-encoded file URL. Localization check: five languages, 3,303 keys. `git diff --check` passed.
+- `SourcePerfTrace` fixture parse observations, before → after: root **1 → 1 ms**, Chinese list **3 → 2 ms**, book 1342 **3 → 5 ms**. These are single observations, not a claimed speedup or first-frame measurement. The successful cold live search/book requests were **1,450 / 531 ms**, one request each.
+- Evidence is in `~/Library/Logs/YueduPublicLibraries/20261007-storefront/`, including `native-initial-passed/`, `final-regression/` and `logs/`. Own result bundles and the test catalog cache were removed after attachment export; the imported theme was retained. iOS 17 runtime visuals and the full official Aozora catalog remain unmeasured.
+
+New fallbacks: **none**. The four planned failure/compatibility paths listed above remain unchanged. No push, schedule activation, release/tag creation or website redirect change was performed. Task 13 and live official Aozora acceptance remain deferred for the previously documented upstream and maintainer actions. Other agents' README and reading-style changes remain excluded.

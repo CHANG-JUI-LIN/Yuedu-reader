@@ -10,7 +10,7 @@ enum OnlineBookDetailPresentationPolicy {
     static let maximumIntroCharacters = 4_000
 
     @inline(never)
-    static func sanitizeIntro(_ rawIntro: String) -> String {
+    static func sanitizeIntro(_ rawIntro: String, indentParagraphs: Bool = true) -> String {
         let rawPrefix = rawIntro.prefix(maximumRawIntroCharacters + 1)
         let rawWasTruncated = rawPrefix.count > maximumRawIntroCharacters
         let boundedRaw = String(rawPrefix.prefix(maximumRawIntroCharacters))
@@ -19,9 +19,15 @@ enum OnlineBookDetailPresentationPolicy {
         if BookIntroContent.usesPrefixMode(boundedRaw) {
             return boundedRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        let cleaned = LegadoHTMLFormatter.indentingEveryParagraph(
-            LegadoHTMLFormatter.format(boundedRaw)
-        )
+        let formatted = LegadoHTMLFormatter.format(boundedRaw)
+        // Rule-based novels use Legado's paragraph indentation. OPDS metadata is
+        // ordinary catalog text; it shares sanitization/bounds without that style.
+        let cleaned = indentParagraphs
+            ? LegadoHTMLFormatter.indentingEveryParagraph(formatted)
+            : formatted.split(whereSeparator: \.isNewline)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
         guard !cleaned.isEmpty else { return "" }
 
         let displayPrefix = cleaned.prefix(maximumIntroCharacters + 1)

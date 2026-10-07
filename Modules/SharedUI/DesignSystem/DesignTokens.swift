@@ -323,6 +323,17 @@ enum DSLayout {
     /// A 探索 cover that takes the width it is offered (a grid cell, a waterfall card)
     /// keeps the 2:3 of the fixed-size ones.
     static let discoverCoverAspectRatio: CGFloat = 2.0 / 3.0
+    /// Apple Books reference: 32pt outer margins, two 167pt jackets on a 414pt
+    /// phone, with the next jacket peeking past the trailing margin.
+    static let publicLibraryMargin: CGFloat = 32
+    static let publicLibraryMinimumCoverWidth: CGFloat = 148
+    static let publicLibrarySectionSpacing: CGFloat = 48
+    static let publicLibraryFeaturedAspect: CGFloat = 1.46
+    static let publicLibraryFeaturedRotation: Double = -16
+    /// The medium sheet keeps the title and actions reachable below the jacket.
+    static let publicLibraryCompactCoverHeight: CGFloat = 168
+    static let publicLibraryExpandedCoverHeight: CGFloat = 312
+    static let publicLibrarySheetChromeAllowance: CGFloat = 224
     /// Cover in a custom explore page's 推薦卡片 and 左右滑動 rows — five to a phone's card.
     static let customExploreCardCoverWidth: CGFloat = 70
     static let customExploreCardCoverHeight: CGFloat = 105

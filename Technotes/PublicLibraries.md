@@ -4,7 +4,7 @@
 
 ## Project Gutenberg
 
-內建唯讀連線為 `builtin.gutenberg`，由 `PublicLibrary` 解析，不寫入使用者的 `opds_catalogs.json`，也不能編輯或刪除。它沿用 `OPDSFeedView`、`RemoteLibraryBookDetailView`、`RemoteLibraryService`、Readium 與既有 CoreText 閱讀路徑。
+內建唯讀連線為 `builtin.gutenberg`，由 `PublicLibrary` 解析，不寫入使用者的 `opds_catalogs.json`，也不能編輯或刪除。公有書庫的封面格線與既有 `OPDSFeedView` 共用 `OPDSBrowseModel`；詳情與取書仍沿用 `RemoteLibraryBookDetailView`、`RemoteLibraryService`、Readium 與既有 CoreText 閱讀路徑。
 
 - 根目錄：`https://www.gutenberg.org/ebooks.opds/`。
 - 熱門：`https://www.gutenberg.org/ebooks/search.opds/?sort_order=downloads`。
@@ -12,11 +12,23 @@
 - 搜尋：`https://www.gutenberg.org/ebooks/search.opds/?query={percent-encoded query}`；`l.zh`、`l.ja`、`l.ko`、`l.en` 是語言篩選。
 - 書籍：feed 提供的 `/ebooks/{id}.opds`，取得網址仍以 feed 為準。
 
-公有書庫首頁的分類是固定連結，開啟首頁不請求 Gutenberg。只有開啟分類／書籍 feed、送出搜尋或按「載入更多」才請求一頁；不預抓、不背景爬取、不讀取仍指向舊 `m.` host 的 OpenSearch description。搜尋先凍結 query，再建立 route。列表只使用 feed 內嵌的 base64 縮圖；書籍詳情才讀取遠端封面。EPUB3 優先於 EPUB，並保留官網連結。
+公有書庫首頁採隨 App 附帶的真實書單與本機產生的書封，包含精選集合、多排橫向書架與經典選讀；不是即時排行，也不顯示虛構評分。開啟首頁不請求 Gutenberg。讀者選書、開啟線上分類／作者目錄、送出搜尋或按「載入更多」時才請求對應的一頁；不預抓、不背景爬取、不讀取仍指向舊 `m.` host 的 OpenSearch description。公有書庫書架、格線及詳情皆使用同一個本機書封，不另外抓封面。一般 OPDS 列表原有的內嵌縮圖及詳情封面行為不變。EPUB3 優先於 EPUB，詳情合併同一書籍 feed 的格式並保留官網連結。
 
 共享 HTTP client 的 request、session 預設 header 和重新導向均保留 `Yuedu/<version> (iOS; +https://yuedureader.com/support)`。沒有個人 email。參照 [OPDS 使用條款](https://www.gutenberg.org/policy/terms_of_use.html) 與 [機器人政策](https://www.gutenberg.org/policy/robot_access.html)，所有書籍由讀者直接從 Gutenberg 取得，保留原檔授權文字。介面註明其公有領域判斷以美國為準，其他所在地法律可能不同。
 
 [離線目錄說明](https://www.gutenberg.org/ebooks/offline_catalogs.html) 預告 2027 年停用現有 XML OPDS。維護者已規劃聯絡 Gutenberg；Task 13 等待回覆，沒有使用未獲准的 OPDS 2 測試服務。
+
+## 書店與書籍 sheet
+
+`PublicLibraryBookSelection` 在點書時凍結當前書單及選中書籍。`PublicLibraryBookSheet` 以原生 `.medium`／`.large` presentation detents 管理上拉展開與下拉還原；半螢幕內的原生橫向 ScrollView 以 view-aligned paging 切換書籍。高度調整按鈕提供 VoiceOver 與不使用拖曳的操作入口，遵循減少動態效果。沒有攔截垂直 DragGesture、固定延遲或自己模擬物理動畫。
+
+初始位置使用原生 [`defaultScrollAnchor`](https://developer.apple.com/documentation/swiftui/view/defaultscrollanchor(_:))，由等寬頁面中的選書位置決定；`scrollPosition` 追蹤後續翻頁。只初始化 binding 或在 `onAppear` 呼叫 scrollTo 都無法在這個 lazy sheet 的首次排版完成定位，因此不保留這些無效的補正。VoiceOver 不會走入目前頁面以外的書籍。
+
+只在目前選中的 Gutenberg 頁面載入該書 feed；相鄰頁只顯示本機書封快照。該次 presentation 已載入的頁面不重抓，失敗保留錯誤，只有使用者按重試才重送。OPDS parser 保留作者陣列和 `rel=related` 作者目錄，姓名裡的逗號不當作作者分隔符。點作者會展開 sheet 並推入原生 inline 雙欄書籍格線，返回後保留原本選書位置。青空作者使用同一個已驗證目錄索引。
+
+從半螢幕推入作者或閱讀器時，先完成原生 detent 的動畫交易再推入；同時改變檔位與 navigation path 會使 UIKit 留在半螢幕，但 SwiftUI binding 已回報全螢幕。使用動畫 completion 解決交易順序，沒有固定延遲。閱讀器的 destination 註冊在 sheet 根節點，避免 lazy 輪播尚未實體化的子頁註冊導覽。
+
+詳情重用線上書與有聲書的 `BookDetailScaffold`、`BookDetailHero`、資訊列與簡介區；共用元件新增的作者按鈕與封面高度參數不改變既有頁面的預設值。閱讀、加入書架、離線下載仍由既有 service 執行；不要求 Pro。書架標題、系統控制項及輔助使用文字同步五種語言。
 
 ## 青空文庫目錄與取書
 
@@ -68,10 +80,28 @@ App 每 24 小時最多自動檢查一次 manifest；讀者可手動重新整理
 | `publicLibrary.measure.catalog`，1,254-byte 合成 fixture，背景解析與索引 | 40 ms | 0 ms（整數記錄，低於 1 ms） |
 | 最終 Pro 畫面啟動的 `aozora.catalog.load`，同一 fixture | 22 ms | 未另外測量 |
 
-這是同一量測案例的冷／暖執行，沒有宣稱前後改碼的加速，也不能推算完整官方目錄的時間或畫面首幀時間。`PublicLibraryMeasurementTests` 1 個測試通過；再次執行需明確設定 `TEST_RUNNER_PUBLIC_LIBRARY_LIVE_MEASURE=1`，一般測試不會打 Gutenberg。兩個 UI opt-in 分別為 `TEST_RUNNER_PUBLIC_LIBRARY_LIVE_UI=1` 與 `TEST_RUNNER_PUBLIC_LIBRARY_THEME_UI=1`；非 Pro 案例需使用尚未將 Gutenberg 1342 加入書架／下載的測試資料，才能實際覆蓋三個動作；主題案例需先匯入主題與準備 fixture 快取。
+這是同一量測案例的冷／暖執行，沒有宣稱前後改碼的加速，也不能推算完整官方目錄的時間或畫面首幀時間。`PublicLibraryMeasurementTests` 1 個測試通過；再次執行需明確設定 `TEST_RUNNER_PUBLIC_LIBRARY_LIVE_MEASURE=1`，一般測試不會打 Gutenberg。兩個 UI opt-in 分別為 `TEST_RUNNER_PUBLIC_LIBRARY_LIVE_UI=1` 與 `TEST_RUNNER_PUBLIC_LIBRARY_THEME_UI=1`；目前非 Pro 案例使用 Gutenberg 174，記錄既有書架／下載狀態，首次取書覆蓋三個動作，重跑則驗證閱讀與已完成狀態；主題案例需先匯入主題與準備 fixture 快取。
 
 成功的非 Pro run（17:48–17:49，App PID 61925）網路紀錄只有一個搜尋 OPDS task 和一個書籍 OPDS task；`publicLibrary.opds.load` 分別為 925／300 ms。列表沒有額外封面請求，進入詳情後才取封面，按閱讀後才走既有 EPUB HEAD／Range 與下載。User-Agent 由 HTTP 測試檢查；沒有把系統 log 隱去的 header 當成已讀到的值。
 
 本機證據位於 `~/Library/Logs/YueduPublicLibraries/20261007/`：`logs/` 保留測試與網路摘要；根目錄 PNG 包含 `nonpro-shelved-and-downloaded.png`、`nonpro-remote-reader.png`、`qitheme-import.png`、`pro-qitheme-library-home.png`、`pro-qitheme-aozora-authors.png`、`pro-qitheme-aozora-detail.png` 及首次匯入提示。匯出附件後已刪除本次 `.xcresult`。
 
 仍待上游與發布條件具備後驗證：完整官方 CSV 的產出／規模量測、公開網址的 manifest 與 digest、官方 ZIP 的實際取書。Task 13 的 OPDS 2 仍等待 Gutenberg 回信；本次沒有啟用排程、建立 release/tag、修改網站 `_redirects` 或 push。
+
+### 同日書店 UI 後續驗證
+
+使用者確認首頁採內建真實書單與本機書封，並指定雙檔位 sheet 與半螢幕橫向輪播。測試先揭露缺少書店模型、官方 feed 將下載數放在沒有作者的 content、原生 accessibility button trait 遺失，以及作者頁 binding 已展開而實際仍半高等問題；實作與 UI 斷言逐項修正。作者頁使用真實畫面座標判斷高度，不只檢查 binding 或按鈕文字。
+
+`PublicLibraryStorefrontTests` 8、`OPDSParserTests` 10、`RemoteLibraryBrowsePresentationTests` 5，以及 `BookIntroContentTests`／`IOS17SearchResultTableTests` 19，合計 **42 個測試通過**。`PublicLibraryExploreUITests` 的兩個案例在首頁改版後通過（53.509／12.245 s）。詳情段落清理新增可選縮排參數；既有線上書保留原本縮排，OPDS 普通目錄文字不加全形縮排。
+
+| `gutenberg.fixture.parse`，同一組 fixture | 改版前 | 改版後 |
+|---|---:|---:|
+| root.xml | 1 ms | 1 ms |
+| chinese.xml | 3 ms | 2 ms |
+| 1342.xml | 3 ms | 5 ms |
+
+以上為 SourcePerfTrace 的單次前後觀察，包含作者 metadata 擴充，沒有宣稱加速或等同首幀效能。首次未加入書架的 Gutenberg 174 實測完成搜尋、遠端正文、加入書架與離線下載（34.348 s）；該次搜尋／書籍 OPDS span 為 **1,450／531 ms**，各一個請求。後續重跑沿用已下載書籍，不能冒充新的冷下載量測。
+
+本次新增兜底：**沒有**。動畫 completion 是 resize 與 navigation 的必要順序，沒有新增延遲、鏡像、背景抓取或第二套閱讀流程。截圖與 log 存放於 `~/Library/Logs/YueduPublicLibraries/20261007-storefront/`。
+
+最終 UI 回歸：無 Pro 的雙檔位手勢、換書後展開／還原、作者頁實際全高度、返回與直接開啟第二本 **41.322 s 通過**；Pro 主題與高度按鈕 **19.651 s 通過**；Pro 主題青空 fixture **21.225 s 通過**；非 Pro 閱讀與既有書架／下載狀態 **31.346 s 通過**。青空案例額外斷言第二本專屬譯者按鈕的實際座標位於螢幕內，避免只靠離屏 accessibility 元素誤判初始選書。截圖檢查包含 `final-regression/` 的半螢幕／全螢幕／換書／作者格線／實際閱讀，以及 `native-initial-passed/` 的 Pro 與青空畫面。測試用目錄快取與本次產生的 `.xcresult` 已移除，匯入主題保留。iOS 17 runtime 仍未實測。

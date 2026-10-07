@@ -44,10 +44,12 @@ final class PublicLibraryExploreUITests: XCTestCase {
         let app = application(reset: true)
         app.launch()
         openExplore(app)
-        XCTAssertTrue(app.staticTexts["Project Gutenberg"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10))
+        app.buttons["publicLibrary.categories"].firstMatch.tap()
         for title in ["熱門", "最新", "中文", "English"] {
             XCTAssertTrue(app.buttons[title].firstMatch.exists, title)
         }
+        app.navigationBars.buttons.firstMatch.tap()
         XCTAssertFalse(app.buttons["explore.modeMenu"].exists)
         XCTAssertFalse(app.staticTexts[tipTitle].exists)
         XCTAssertFalse(app.staticTexts["青空文庫"].exists)
@@ -59,7 +61,7 @@ final class PublicLibraryExploreUITests: XCTestCase {
         let app = application(reset: true)
         app.launch()
         openExplore(app)
-        XCTAssertTrue(app.staticTexts["Project Gutenberg"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10))
         app.tabBars.buttons["設定"].firstMatch.tap()
         let manage = app.buttons["管理書源"].firstMatch
         for _ in 0..<6 where !manage.exists { app.swipeUp() }
@@ -81,7 +83,7 @@ final class PublicLibraryExploreUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts[tipTitle].exists, "The import screen must not show the Explore tip")
         app.navigationBars["書源管理"].buttons["關閉"].tap()
         openExplore(app)
-        XCTAssertTrue(app.staticTexts["Project Gutenberg"].firstMatch.waitForExistence(timeout: 10), "Importing does not switch mode")
+        XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10), "Importing does not switch mode")
         XCTAssertTrue(app.staticTexts[tipTitle].firstMatch.waitForExistence(timeout: 10))
         attach(app, "First import guide")
         let menu = app.buttons["explore.modeMenu"].firstMatch

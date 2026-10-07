@@ -6,6 +6,7 @@ struct PublicLibrarySearchResults: View {
     let query: String
     let index: AozoraCatalogIndex?
     let submitGutenberg: () -> Void
+    var select: (PublicLibraryBookSelection) -> Void = { _ in }
 
     var body: some View {
         Section(localized("Project Gutenberg")) {
@@ -20,7 +21,11 @@ struct PublicLibrarySearchResults: View {
                     ContentUnavailableView.search(text: query)
                 } else {
                     ForEach(Array(matches.prefix(50))) { work in
-                        NavigationLink { AozoraWorkDetailView(work: work, index: index) } label: {
+                        Button {
+                            if let selection = PublicLibraryBookSelection(books: matches.map { .aozora($0, index) }, selectedID: "aozora:" + work.id) {
+                                select(selection)
+                            }
+                        } label: {
                             AozoraWorkRow(work: work, index: index)
                         }
                     }

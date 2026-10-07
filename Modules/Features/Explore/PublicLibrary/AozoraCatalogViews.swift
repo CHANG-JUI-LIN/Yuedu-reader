@@ -25,6 +25,7 @@ enum AozoraBrowseMode: String, CaseIterable, Identifiable {
 struct AozoraCatalogView: View {
     let index: AozoraCatalogIndex
     let mode: AozoraBrowseMode
+    @State private var selection: PublicLibraryBookSelection?
     private var groups: [AozoraIndexGroup] {
         switch mode {
         case .authors: index.authorGroups
@@ -38,7 +39,10 @@ struct AozoraCatalogView: View {
             if mode == .newest {
                 AozoraWorksView(index: index, works: index.newWorks, title: localized(mode.titleKey))
             } else {
-                AozoraIndexedList(groups: groups) { id in
+                AozoraIndexedList(groups: groups, select: mode == .authors ? nil : { id in
+                    let books = groups.flatMap(\.ids).compactMap { index.worksByID[$0] }.map { PublicLibraryBook.aozora($0, index) }
+                    selection = PublicLibraryBookSelection(books: books, selectedID: "aozora:" + id)
+                }) { id in
                     if mode == .authors, let person = index.personsByID[id] {
                         VStack(alignment: .leading, spacing: DSSpacing.xs) {
                             Text(person.name).foregroundStyle(DSColor.textPrimary)
@@ -62,6 +66,7 @@ struct AozoraCatalogView: View {
                 .themedAppSurface(for: .explore)
             }
         }
+        .sheet(item: $selection) { PublicLibraryBookSheet(selection: $0) }
     }
 }
 
@@ -69,15 +74,10 @@ struct AozoraWorksView: View {
     let index: AozoraCatalogIndex
     let works: [AozoraWork]
     let title: String
+    @State private var selection: PublicLibraryBookSelection?
     var body: some View {
-        List {
-            Section {
-                ForEach(works) { work in
-                    NavigationLink { AozoraWorkDetailView(work: work, index: index) } label: {
-                        AozoraWorkRow(work: work, index: index)
-                    }
-                }
-            }.interfaceSectionSurface()
+        ScrollView {
+            PublicLibraryBooksGrid(books: works.map { .aozora($0, index) }) { selection = $0 }
         }
         .overlay {
             if works.isEmpty { ContentUnavailableView(localized("此目錄沒有內容"), systemImage: "books.vertical") }
@@ -85,6 +85,7 @@ struct AozoraWorksView: View {
         .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .explore)
+        .sheet(item: $selection) { PublicLibraryBookSheet(selection: $0) }
     }
 }
 
@@ -105,73 +106,94 @@ struct AozoraWorkDetailView: View {
     let index: AozoraCatalogIndex
     @EnvironmentObject private var store: BookStore
     @Environment(\.appDependencies) private var dependencies
+    @Environment(\.publicLibrarySheet) private var sheet
     @State private var action: Task<Void, Never>?
     @State private var message: String?
     @State private var failed = false
+    @State private var opensAfterImport = false
     @State private var readerBookID: UUID?
     private var shelfBook: ReadingBook? { store.books.first { $0.aozora?.catalogWorkID == work.id } }
+    private var author: String { work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、") }
+    private var readAction: BookDetailAction {
+        BookDetailAction(title: localized(shelfBook == nil ? "開始閱讀" : "開啟"), systemImage: "book",
+            isBusy: action != nil, isEnabled: action == nil, action: {
+                if let book = shelfBook { openReader(book.id) }
+                else { addToShelf(openAfterImport: true) }
+            })
+    }
 
     var body: some View {
-        List {
-            Section {
-                Text(work.title).font(DSFont.headline).foregroundStyle(DSColor.textPrimary)
+        if sheet != nil { detailContent }
+        else {
+            detailContent.navigationDestination(item: $readerBookID) { id in
+                BookReaderView(bookId: id).environmentObject(store)
+                    .environment(\.readerNavigator, nil)
+                    .environment(\.readerUsesParentNavigationStack, true)
+                    .navigationBarBackButtonHidden(true)
+                    .reservingNavigationBackSwipe()
+            }
+        }
+    }
+
+    private var detailContent: some View {
+        BookDetailScaffold(title: work.title, compactAction: readAction) {
+            BookDetailHero(artworkShape: .book, cover: GeneratedBookCover(title: work.title, author: author),
+                title: work.title, author: author, meta: localized("青空文庫"), primary: readAction,
+                secondary: BookDetailAction(title: localized(shelfBook == nil ? "加入書架" : "已加入書架"),
+                    systemImage: shelfBook == nil ? "plus" : "checkmark", isBusy: action != nil,
+                    isEnabled: action == nil && shelfBook == nil, action: { addToShelf() }),
+                authorActions: work.credits.compactMap { credit in
+                    guard let person = index.personsByID[credit.person] else { return nil }
+                    return BookDetailAuthorAction(id: person.id + credit.role, name: person.name,
+                        action: { sheet?.openAuthor(.aozora(person, index)) })
+                }, artworkHeight: sheet?.artworkHeight)
+        } content: {
+            BookDetailInfoStrip(items: [
+                BookDetailInfoItem(id: "published", label: localized("公開日"), value: work.published),
+                BookDetailInfoItem(id: "kana", label: localized("文字遣い種別"), value: work.kanaStyle),
+            ])
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                if action != nil {
+                    ProgressView(localized("正在加入書架"))
+                    Button(localized("取消"), role: .cancel) { action?.cancel() }
+                }
+                if let message {
+                    Text(message).foregroundStyle(failed ? DSColor.destructive : DSColor.textSecondary)
+                }
+                if failed { Button(localized("重試")) { addToShelf(openAfterImport: opensAfterImport) } }
                 if !work.yomi.isEmpty { Text(work.yomi).font(DSFont.subheadline).foregroundStyle(DSColor.textSecondary) }
-                if !work.subtitle.isEmpty { Text(work.subtitle).foregroundStyle(DSColor.textSecondary) }
                 ForEach(Array(work.credits.enumerated()), id: \.offset) { _, credit in
                     if let person = index.personsByID[credit.person] {
                         ThemedLabeledContent(localized(credit.role), value: person.name)
                     }
                 }
-            }.interfaceSectionSurface()
-            Section {
-                if action != nil {
-                    ProgressView(localized("正在加入書架"))
-                    Button(localized("取消"), role: .cancel) { action?.cancel() }
-                } else {
-                    Button {
-                        if let book = shelfBook { readerBookID = book.id }
-                        else { addToShelf() }
-                    } label: {
-                        Label(localized(shelfBook == nil ? "加入書架" : "開啟"), systemImage: shelfBook == nil ? "plus" : "book")
-                    }
-                    if failed { Button(localized("重試"), action: addToShelf) }
-                }
-                if let message {
-                    Label(message, systemImage: failed ? "exclamationmark.triangle" : "checkmark.circle")
-                        .foregroundStyle(failed ? DSColor.destructive : DSColor.textSecondary)
-                }
-            }.interfaceSectionSurface()
-            Section {
+                if !work.subtitle.isEmpty { Text(work.subtitle).font(DSFont.body).foregroundStyle(DSColor.textPrimary) }
                 if !work.source.isEmpty { ThemedLabeledContent(localized("底本"), value: work.source) }
                 if !work.sourcePublisher.isEmpty { ThemedLabeledContent(localized("出版社"), value: work.sourcePublisher) }
-                ThemedLabeledContent(localized("公開日"), value: work.published)
-                ThemedLabeledContent(localized("文字遣い種別"), value: work.kanaStyle)
                 if let url = URL(string: work.card), url.scheme == "https", url.host == "www.aozora.gr.jp" {
                     Link(localized("在青空文庫網站查看"), destination: url)
                 }
-            }.interfaceSectionSurface()
-        }
-        .navigationTitle(work.title)
-        .toolbarTitleDisplayMode(.inline)
-        .themedAppSurface(for: .explore)
-        .navigationDestination(item: $readerBookID) { id in
-            BookReaderView(bookId: id).environmentObject(store)
-                .environment(\.readerNavigator, nil)
-                .environment(\.readerUsesParentNavigationStack, true)
-                .navigationBarBackButtonHidden(true)
-                .reservingNavigationBackSwipe()
+            }.padding(.horizontal, DSSpacing.lg)
         }
         .onDisappear { action?.cancel() }
     }
 
-    private func addToShelf() {
+    private func openReader(_ id: UUID) {
+        if let sheet { sheet.openReader(id) }
+        else { readerBookID = id }
+    }
+
+    private func addToShelf(openAfterImport: Bool = false) {
         guard action == nil else { return }
+        opensAfterImport = openAfterImport
         failed = false
         message = nil
         action = Task { @MainActor in
             do {
-                _ = try await dependencies.aozoraLibrary.addToShelf(work: work, store: store)
+                let book = try await dependencies.aozoraLibrary.addToShelf(work: work, store: store)
+                try Task.checkCancellation()
                 message = localized("已加入書架")
+                if openAfterImport { openReader(book.id) }
             } catch is CancellationError {
                 message = localized("已取消")
             } catch {
@@ -188,6 +210,7 @@ struct AozoraWorkDetailView: View {
 /// section index, not a gesture overlay. Remove the UIKit branch at iOS 26 minimum.
 private struct AozoraIndexedList<Row: View, Destination: View>: View {
     let groups: [AozoraIndexGroup]
+    var select: ((String) -> Void)? = nil
     @ViewBuilder let row: (String) -> Row
     @ViewBuilder let destination: (String) -> Destination
     @State private var selectedID: String?
@@ -197,7 +220,11 @@ private struct AozoraIndexedList<Row: View, Destination: View>: View {
                 ForEach(groups) { group in
                     Section {
                         ForEach(group.ids, id: \.self) { id in
-                            NavigationLink { destination(id) } label: { row(id) }
+                            if let select {
+                                Button { select(id) } label: { row(id) }
+                            } else {
+                                NavigationLink { destination(id) } label: { row(id) }
+                            }
                         }
                     } header: { Text(group.displayTitle) }
                     .interfaceSectionSurface()
@@ -205,7 +232,9 @@ private struct AozoraIndexedList<Row: View, Destination: View>: View {
                 }
             }.listSectionIndexVisibility(.visible)
         } else {
-            AozoraIndexedTable(groups: groups, row: row, select: { selectedID = $0 })
+            AozoraIndexedTable(groups: groups, row: row, select: { id in
+                if let select { select(id) } else { selectedID = id }
+            })
                 .navigationDestination(item: $selectedID, destination: destination)
         }
     }

@@ -13,7 +13,7 @@ struct RemoteLibraryBookRoute: Hashable {
             connectionID: connectionID,
             title: String(entry.title.prefix(500)),
             author: entry.author.map { String($0.prefix(500)) },
-            summary: entry.summary.map(OnlineBookDetailPresentationPolicy.sanitizeIntro),
+            summary: entry.summary.map { OnlineBookDetailPresentationPolicy.sanitizeIntro($0, indentParagraphs: false) },
             coverURL: entry.coverURL ?? entry.thumbnailURL,
             alternateURL: entry.alternateURL,
             formats: entry.acquisitions.sorted { $0.preference < $1.preference }.map {
@@ -67,6 +67,10 @@ enum RemoteLibraryBrowsePresentation {
 }
 
 struct RemoteLibraryBookDetailView: View {
+    private let storefront: Bool
+    private let authors: [GutenbergAuthor]
+    private let artworkTitle: String?
+    private let artworkAuthor: String?
     @State private var item: RemoteLibraryItem
     @State private var writeCapabilities: RemoteLibraryWriteCapabilities?
     @Environment(\.appDependencies) private var dependencies
@@ -78,8 +82,15 @@ struct RemoteLibraryBookDetailView: View {
     @State private var message: String?
     @State private var actionFailed = false
     @State private var readerBookID: UUID?
+    @State private var introExpanded = false
+    @Environment(\.publicLibrarySheet) private var sheet
 
-    init(item: RemoteLibraryItem) {
+    init(item: RemoteLibraryItem, storefront: Bool = false, authors: [GutenbergAuthor] = [],
+         artworkTitle: String? = nil, artworkAuthor: String? = nil) {
+        self.storefront = storefront
+        self.authors = authors
+        self.artworkTitle = artworkTitle
+        self.artworkAuthor = artworkAuthor
         _item = State(initialValue: item)
         _selectedFormatID = State(initialValue: RemoteLibraryBrowsePresentation.preferredFormat(in: item)?.id ?? "")
     }
@@ -96,6 +107,23 @@ struct RemoteLibraryBookDetailView: View {
     }
 
     var body: some View {
+        Group {
+            if storefront { storefrontBody }
+            else {
+                libraryList.navigationDestination(item: $readerBookID) { id in
+                    BookReaderView(bookId: id).environmentObject(store)
+                        .environment(\.readerNavigator, nil)
+                        .environment(\.readerUsesParentNavigationStack, true)
+                        .navigationBarBackButtonHidden(true)
+                        .reservingNavigationBackSwipe()
+                }
+            }
+        }
+        .onChange(of: selectedFormatID) { _, _ in message = nil }
+        .onDisappear { actionTask?.cancel() }
+    }
+
+    private var libraryList: some View {
         List {
             Section {
                 HStack(alignment: .top, spacing: DSSpacing.lg) {
@@ -206,15 +234,75 @@ struct RemoteLibraryBookDetailView: View {
         .navigationTitle(localized("書籍詳情"))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .bookshelf)
-        .navigationDestination(item: $readerBookID) { id in
-            BookReaderView(bookId: id).environmentObject(store)
-                .environment(\.readerNavigator, nil)
-                .environment(\.readerUsesParentNavigationStack, true)
-                .navigationBarBackButtonHidden(true)
-                .reservingNavigationBackSwipe()
+    }
+
+    private var readAction: BookDetailAction {
+        BookDetailAction(title: localized(book?.lastOpenedDate == nil ? "開始閱讀" : "繼續閱讀"), systemImage: "book",
+                         isBusy: action == .read, isEnabled: canAct, action: { begin(.read) })
+    }
+
+    private var storefrontBody: some View {
+        BookDetailScaffold(title: item.title, compactAction: readAction) {
+            BookDetailHero(artworkShape: .book,
+                cover: GeneratedBookCover(title: artworkTitle ?? item.title, author: artworkAuthor ?? item.author),
+                title: item.title, author: item.author ?? "", meta: localized("Project Gutenberg"),
+                primary: readAction,
+                secondary: BookDetailAction(title: localized(isOffline ? "已下載" : "下載"),
+                    systemImage: isOffline ? "checkmark.circle" : "arrow.down.circle",
+                    isBusy: action == .download, isEnabled: canAct && !isOffline, action: { begin(.download) }),
+                authorActions: authors.map { author in
+                    BookDetailAuthorAction(id: author.id, name: author.name, action: { sheet?.openAuthor(.gutenberg(author)) })
+                }, artworkHeight: sheet?.artworkHeight)
+        } content: {
+            Section {
+                BookDetailInfoStrip(items: infoItems)
+                if let action {
+                    ProgressView(action.progressTitle)
+                    Button(localized("取消"), role: .cancel) { cancelAction() }
+                }
+                if let message {
+                    Text(message).font(DSFont.subheadline)
+                        .foregroundStyle(actionFailed ? DSColor.destructive : DSColor.textSecondary)
+                }
+            } footer: {
+                Text(localized("閱讀不會自動加入書架；加入書架不會下載整本書。"))
+                    .dsSectionFooter().padding(.horizontal, DSSpacing.lg)
+            }
+            if let summary = item.summary, !summary.isEmpty {
+                BookDetailIntroSection(text: summary, isExpanded: $introExpanded)
+            }
+            if let url = item.alternateURL {
+                Link(localized("在書庫網站查看"), destination: url)
+                    .font(DSFont.subheadline).padding(.horizontal, DSSpacing.lg)
+            }
         }
-        .onChange(of: selectedFormatID) { _, _ in message = nil }
-        .onDisappear { actionTask?.cancel() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { begin(.addToShelf) } label: {
+                    Label(localized(isOnShelf ? "已加入書架" : "加入書架"), systemImage: isOnShelf ? "checkmark" : "plus")
+                        .labelStyle(.iconOnly)
+                }.disabled(!canAct || isOnShelf)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker(localized("格式"), selection: $selectedFormatID) {
+                        ForEach(item.formats) { format in Text(formatLabel(format)).tag(format.id) }
+                    }.disabled(action != nil)
+                    if let url = item.alternateURL { ShareLink(item: url) }
+                } label: {
+                    Label(localized("書庫操作"), systemImage: "ellipsis").labelStyle(.iconOnly)
+                }
+            }
+        }
+    }
+
+    private var infoItems: [BookDetailInfoItem] {
+        var result = [BookDetailInfoItem(id: "format", label: localized("格式"), value: selectedFormat?.displayName ?? "")]
+        if let size = selectedFormat?.size, size > 0 {
+            result.append(BookDetailInfoItem(id: "size", label: localized("檔案大小"),
+                value: ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))
+        }
+        return result
     }
 
     private func formatLabel(_ format: RemoteLibraryFormat) -> String {
@@ -233,7 +321,8 @@ struct RemoteLibraryBookDetailView: View {
                 case .read:
                     let result = try await dependencies.remoteLibrary.read(item: item, format: format, store: store)
                     try Task.checkCancellation()
-                    readerBookID = result.id
+                    if storefront { sheet?.openReader(result.id) }
+                    else { readerBookID = result.id }
                 case .addToShelf:
                     _ = try dependencies.remoteLibrary.addToShelf(item: item, format: format, store: store)
                     message = localized("已加入書架")

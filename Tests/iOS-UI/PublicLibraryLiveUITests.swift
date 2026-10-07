@@ -21,7 +21,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let tab = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        XCTAssertTrue(app.staticTexts["Project Gutenberg"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10))
         return app
     }
 
@@ -40,33 +40,44 @@ final class PublicLibraryLiveUITests: XCTestCase {
         screenshot(app, "nonpro-home")
         let query = app.searchFields["搜尋公有書庫"].firstMatch
         query.tap()
-        query.typeText("Pride and Prejudice\n")
-        let result = app.collectionViews.staticTexts["Pride and Prejudice"].firstMatch
+        query.typeText("The Picture of Dorian Gray\n")
+        let result = app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/174.opds"].firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 45), app.debugDescription)
         screenshot(app, "nonpro-search")
         result.tap()
-        let edition = app.collectionViews.cells.firstMatch
-        XCTAssertTrue(edition.waitForExistence(timeout: 45), app.debugDescription)
-        screenshot(app, "nonpro-editions")
-        edition.tap()
+        let resize = app.buttons["publicLibrary.resizeSheet"].firstMatch
+        XCTAssertTrue(resize.waitForExistence(timeout: 45), app.debugDescription)
+        resize.tap()
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["開始閱讀", "繼續閱讀"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(read.isEnabled)
-        XCTAssertTrue(app.buttons["加入書架"].firstMatch.isEnabled)
-        XCTAssertTrue(app.buttons["下載供離線閱讀"].firstMatch.isEnabled)
+        let alreadyShelved = app.buttons["已加入書架"].firstMatch.exists
+        let alreadyOffline = app.buttons["已下載"].firstMatch.exists
+        XCTAssertTrue(alreadyShelved || app.buttons["加入書架"].firstMatch.isEnabled)
+        XCTAssertTrue(alreadyOffline || app.buttons["下載"].firstMatch.isEnabled)
+        print("Existing state: shelved=\(alreadyShelved), offline=\(alreadyOffline)")
         screenshot(app, "nonpro-detail")
         read.tap()
-        let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Gutenberg")).firstMatch
-        XCTAssertTrue(content.waitForExistence(timeout: 90), app.debugDescription)
+        // The hero also says Project Gutenberg. Wait for the actual book text,
+        // so a still-running range request cannot be mistaken for reader readiness.
+        let footer = app.otherElements["頁腳"].firstMatch
+        XCTAssertTrue(footer.waitForExistence(timeout: 90), app.debugDescription)
+        XCTAssertTrue(app.buttons["publicLibrary.resizeSheet"].firstMatch.waitForNonExistence(timeout: 10))
+        // This edition begins with an image-only cover. Scroll into its text.
+        let content = app.collectionViews.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "(?s).{101,}")).firstMatch
+        for _ in 0..<4 where !content.exists { app.swipeUp() }
+        XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
         screenshot(app, "nonpro-remote-reader")
         let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let inward = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         edge.press(forDuration: 0.05, thenDragTo: inward)
         let add = app.buttons["加入書架"].firstMatch
-        XCTAssertTrue(add.waitForExistence(timeout: 10))
-        add.tap()
+        if !alreadyShelved {
+            XCTAssertTrue(add.waitForExistence(timeout: 10))
+            add.tap()
+        }
         XCTAssertTrue(app.buttons["已加入書架"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["下載供離線閱讀"].firstMatch.tap()
+        if !alreadyOffline { app.buttons["下載"].firstMatch.tap() }
         XCTAssertTrue(app.buttons["已下載"].firstMatch.waitForExistence(timeout: 120), app.debugDescription)
         screenshot(app, "nonpro-shelved-and-downloaded")
     }
@@ -75,8 +86,9 @@ final class PublicLibraryLiveUITests: XCTestCase {
     func testAozoraFixtureWithImportedThemeAndPro() throws {
         guard enabled("PUBLIC_LIBRARY_THEME_UI") else { throw XCTSkip("Requires the supplied qitheme and catalog fixture") }
         let app = launch(pro: true)
-        XCTAssertTrue(app.staticTexts["青空文庫"].firstMatch.waitForExistence(timeout: 10))
         screenshot(app, "pro-qitheme-library-home")
+        app.buttons["publicLibrary.categories"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["青空文庫"].firstMatch.waitForExistence(timeout: 10))
         let authors = app.buttons["依作家"].firstMatch
         XCTAssertTrue(authors.exists)
         authors.tap()
@@ -84,10 +96,16 @@ final class PublicLibraryLiveUITests: XCTestCase {
         XCTAssertTrue(author.waitForExistence(timeout: 10))
         screenshot(app, "pro-qitheme-aozora-authors")
         author.tap()
-        let work = app.collectionViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "架空の物語")).firstMatch
+        let work = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "架空の物語")).firstMatch
         XCTAssertTrue(work.waitForExistence(timeout: 10))
         work.tap()
         XCTAssertTrue(app.buttons["加入書架"].firstMatch.waitForExistence(timeout: 10))
+        // A lazy carousel can expose offscreen children to accessibility. Check
+        // the selected edition's unique credit is actually on the visible page.
+        let translator = app.buttons["publicLibrary.author.002翻訳者"].firstMatch
+        XCTAssertTrue(translator.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(translator.frame.midX, app.frame.minX)
+        XCTAssertLessThan(translator.frame.midX, app.frame.maxX)
         screenshot(app, "pro-qitheme-aozora-detail")
     }
 }

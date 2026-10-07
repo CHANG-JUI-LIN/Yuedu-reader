@@ -269,23 +269,25 @@ struct RemoteLibraryConnectionEditor: View {
 struct OPDSFeedView: View {
     let route: OPDSFeedRoute
     @ObservedObject private var catalogStore = RemoteLibraryConnectionStore.shared
-    @State private var entries: [OPDSEntry] = []
-    @State private var nextPageURL: URL?
-    @State private var search: OPDSSearch?
-    @State private var isLoading = true
-    @State private var isLoadingMore = false
-    @State private var didLoad = false
-    @State private var loadError: String?
-    @State private var failedWhileLoadingMore = false
+    @StateObject private var model: OPDSBrowseModel
     @State private var searchText = ""
     @State private var requestTask: Task<Void, Never>?
 
-    private var connection: RemoteLibraryConnection? {
-        catalogStore.connection(id: route.catalogID)
+    init(route: OPDSFeedRoute) {
+        self.route = route
+        _model = StateObject(wrappedValue: OPDSBrowseModel(route: route))
     }
 
-    private var client: OPDSClient? {
-        connection.map { RemoteLibraryConnectionStore.shared.client(for: $0) }
+    private var entries: [OPDSEntry] { model.entries }
+    private var nextPageURL: URL? { model.nextPageURL }
+    private var isLoading: Bool { model.isLoading }
+    private var isLoadingMore: Bool { model.isLoadingMore }
+    private var didLoad: Bool { model.didLoad }
+    private var loadError: String? { model.loadError }
+    private var failedWhileLoadingMore: Bool { model.failedWhileLoadingMore }
+
+    private var connection: RemoteLibraryConnection? {
+        catalogStore.connection(id: route.catalogID)
     }
 
     var body: some View {
@@ -417,61 +419,9 @@ struct OPDSFeedView: View {
         requestTask = Task { await loadInitial() }
     }
 
-    private func loadInitial() async {
-        isLoading = true
-        loadError = nil
-        failedWhileLoadingMore = false
-        guard let client, let url = URL(string: route.url) else {
-            loadError = localized("書庫連線已移除，請重新加入伺服器。")
-            isLoading = false
-            return
-        }
-        do {
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            let requestURL: URL
-            if !query.isEmpty, route.catalogID == PublicLibraryID.gutenberg.rawValue {
-                requestURL = PublicLibrary.gutenbergSearchURL(query: query)
-            } else if !query.isEmpty {
-                guard let search, let resolved = try await client.searchFeedURL(search: search, query: query) else {
-                    loadError = localized("此目錄不支援搜尋")
-                    isLoading = false
-                    return
-                }
-                requestURL = resolved
-            } else { requestURL = url }
-            let feed = try await client.fetchFeed(requestURL, isSearch: !query.isEmpty)
-            try Task.checkCancellation()
-            entries = feed.entries
-            nextPageURL = feed.nextPageURL
-            if query.isEmpty { search = feed.search }
-            didLoad = true
-        } catch {
-            guard !Task.isCancelled else { return }
-            AppLogger.network("OPDS feed failed", error: error, context: ["url": route.url])
-            loadError = error.localizedDescription
-        }
-        isLoading = false
-    }
+    private func loadInitial() async { await model.load(query: searchText) }
+    private func loadMore() async { await model.loadMore() }
 
-    private func loadMore() async {
-        guard let client, let nextPageURL, !isLoadingMore else { return }
-        isLoadingMore = true
-        loadError = nil
-        failedWhileLoadingMore = false
-        defer { isLoadingMore = false }
-        do {
-            let feed = try await client.fetchFeed(nextPageURL, isSearch: !searchText.isEmpty)
-            try Task.checkCancellation()
-            let existing = Set(entries.map(\.id))
-            entries.append(contentsOf: feed.entries.filter { !existing.contains($0.id) })
-            self.nextPageURL = feed.nextPageURL
-        } catch {
-            guard !Task.isCancelled else { return }
-            failedWhileLoadingMore = true
-            AppLogger.network("OPDS next page failed", error: error, context: ["url": nextPageURL.absoluteString])
-            loadError = error.localizedDescription
-        }
-    }
 }
 
 extension RemoteLibraryKind {
