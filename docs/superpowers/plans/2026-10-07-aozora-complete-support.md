@@ -168,7 +168,9 @@ Logical properties (`margin-inline-start`, …) say what Aozora means in both mo
 - app through the override workspace, `CoreTextWritingModeTests`, `LegacyLogicalPropertyTests`, `AozoraEngineParityTests`: 33 tests in 3 suites passed;
 - app with the normal project (released 0.7.0), `CoreTextWritingModeTests`, `LegacyLogicalPropertyTests`: passed.
 
-A new worktree lacks the ignored `GoogleService-Info.plist`, and the Widget target then fails to build: copy it from the main checkout. No converter change, so no corpus run in this phase. Task 3 stops at the release checkpoint.
+A new worktree lacks the ignored `GoogleService-Info.plist`, and the Widget target then fails to build: copy it from the main checkout. No converter change, so no corpus run in this phase.
+
+**Task 3, 2026-10-08.** YueduCoreText 0.8.0 published with the maintainer's approval: tag `0.8.0` on 783ce90 (`docs: prepare YueduCoreText 0.8.0`), fast-forwarded onto the package's `main`. The app requires 0.8.0 (c154368) and pins it in `Package.resolved`, edited as Xcode wrote the 0.7.0 pin (8be079d: revision and version only). The maintainer merged the app branch on the tests above; the four checks with the normal project against the published 0.8.0 are still to be run.
 
 Commits:
 - Package, branch `aozora-logical-properties` (from 0.7.0, 1fa83fa): 06a7a01 `feat(css): map CSS logical properties to physical sides by writing mode` (Task 1); 7c1bb8c (test fix); b4fd57f `docs: record CSS logical properties for the next minor release` (Task 3, CHANGELOG `[0.8.0] - Unreleased` and README notes; the install instructions still say 0.7.0).
@@ -186,7 +188,7 @@ Tests:
 - Package: `Tests/YueduCoreTextTests/Engine/LogicalPropertyTests.swift` (cascade per side and mode, `none`/`auto`, order, the evaluation's writing mode, admission, and paged and continuous geometry for `margin-inline-start`, `max-inline-size`, `min-inline-size` and `text-align: end`); one assertion added to `SharedEvaluationEquivalenceTests.layoutRejectsChangedCascadeInputs`.
 - App: `Tests/iOS/yuedu appTests/LegacyLogicalPropertyTests.swift`, through `EPUBAttributedStringBuilder` in both modes.
 
-Still to do for Phase 2a: Task 3 (publish 0.8.0 with the maintainer's yes, bump the app's requirement, merge). The screenshot probes and the corpus run belong to Phase 2b, where the stylesheet first uses these properties.
+Phase 2a is done. The screenshot probes and the corpus run belong to Phase 2b, where the stylesheet first uses these properties.
 
 ## Phase 2b — The CSS group
 
