@@ -41,12 +41,31 @@ The census dates from 2026-10-05. Since then, headings have become chapters and 
 3. **No new fallbacks to legacy.** `AozoraEngineParityTests` pins which engine lays out each chapter.
    - A mapping that would send chapters to legacy lands in BrowserAuto first.
    - Otherwise it is recorded as a contract exception, with the maintainer's agreement.
-4. **Engine work is done in YueduCoreText and released as a package.** Follow the branch workflow in the memory note `project_engine_package_branch_workflow` exactly:
-   - The package branch lives in a worktree whose folder is named `YueduCoreText`.
-   - The app branch lives in a worktree too.
-   - Both are built through a workspace that overrides the package.
-   - App changes that call unreleased API never reach `main`.
-   - **Publishing a package release** (tag, GitHub release) is an outward action: ask the maintainer first. Then bump the app's minimum version in `project.pbxproj`, run `xcodebuild -resolvePackageDependencies` for `Package.resolved`, verify with the normal project, and merge.
+4. **Engine work is done in YueduCoreText and released as a package.** The app depends on the *published* package: `project.pbxproj` requires `https://github.com/CHANG-JUI-LIN/YueduCoreText` from 0.7.0, up to the next minor. Other agents build and test this checkout at any time, so follow this workflow exactly.
+   - **App changes that call unreleased package API never reach `main`.** On 2026-10-06 one did, and every other agent's build failed until it was reverted (9182ebc8). `main` takes only changes that build against the released package.
+   - **The package checkout.** `~/Desktop/YueduCoreText` stays on a `main` identical to `origin/main` (on 2026-10-07: tag 0.7.0, 1fa83fa, clean). Run `git -C ~/Desktop/YueduCoreText status` before starting: someone else may have work there. Never commit unreleased work onto that `main`.
+   - **The package branch** lives in its own worktree, branched from `origin/main`:
+
+     ```bash
+     git -C ~/Desktop/YueduCoreText fetch origin
+     git -C ~/Desktop/YueduCoreText worktree add -b aozora-<topic> ~/.config/superpowers/worktrees/YueduCoreText-aozora-<topic>/YueduCoreText origin/main
+     ```
+
+     **The last folder must be named `YueduCoreText`.** A workspace overrides a remote package with a local folder of the same identity, and a local package's identity is its folder name; any other name fails with "unable to override package (identity doesn't match)".
+   - **The app branch** lives in a worktree of this repository (`.worktrees/` is ignored), branched from the local `main`, which may hold the maintainer's unpushed commits: `git worktree add -b aozora-<topic> .worktrees/aozora-<topic> main`.
+   - **Build both through a workspace** that lists the app worktree's project and the package worktree, for example `/tmp/YueduAozora.xcworkspace/contents.xcworkspacedata` (`/tmp` is cleared now and then; recreate it at the same path):
+
+     ```xml
+     <?xml version="1.0" encoding="UTF-8"?>
+     <Workspace version="1.0">
+       <FileRef location="absolute:/Users/zhangruilin/Desktop/Yuedu-reader/.worktrees/aozora-<topic>/Yuedu-Reader.xcodeproj"/>
+       <FileRef location="absolute:/Users/zhangruilin/.config/superpowers/worktrees/YueduCoreText-aozora-<topic>/YueduCoreText"/>
+     </Workspace>
+     ```
+
+     Run tests from the app worktree with `YUEDU_WORKSPACE=/tmp/YueduAozora.xcworkspace bash scripts/xctest.sh -- …`. Package tests (the package builds for iOS only, so not `swift test`): `YUEDU_PACKAGE_DIR=<package worktree> YUEDU_SCHEME=YueduCoreText-Package bash scripts/xctest.sh -- -only-testing:'<TestTarget>/<Suite>'`.
+   - **Keeping up.** Rebase the package branch onto `origin/main` and the app branch onto the local `main`. After a rebase, desktop sync can leave copies named `<file> 2.swift` (same content, older timestamp) that break the build with duplicate definitions: compare them with the originals and delete them.
+   - **Publishing a package release** (tag, GitHub release) is an outward action: **ask the maintainer first**, even though AGENTS.md describes publishing as part of a coordinated "commit". After approval: merge the package branch into the package's `main`, tag and push; in the app branch bump `minimumVersion` in `project.pbxproj`, run `xcodebuild -resolvePackageDependencies` so Xcode writes `Package.resolved`, verify with the normal project (no `YUEDU_WORKSPACE`), then merge the app branch into `main`.
 5. **Existing books catch up by themselves.** A newer `converterVersion` with the same text makes `AozoraBookRegenerator` regenerate the EPUB on the next open (Phase 1b, Task 20). Each converter task checks this with `AozoraBookRegeneratorTests`.
 6. **Stylesheet values are approximations.**
    - Aozora Bunko's own XHTML stylesheet lives on aozora.gr.jp, not in aozora2html, and the site is down as of 2026-10-07.
@@ -111,7 +130,7 @@ Logical properties (`margin-inline-start`, …) say what Aozora means in both mo
 - [ ] **Step 2: Implement.**
   - Map at declaration time, using the writing mode the builder already knows from `BrowserLayoutConfig`. Declaration order then gives CSS precedence for free.
   - Add a field only where a logical property has no physical counterpart yet, such as a minimum width.
-- [ ] **Step 3: Run** the package tests (`swift test` in the package worktree, or the workspace scheme) and commit on the package branch.
+- [ ] **Step 3: Run** the package tests (constraint 4: `YUEDU_PACKAGE_DIR=… YUEDU_SCHEME=YueduCoreText-Package bash scripts/xctest.sh`) and commit on the package branch.
 
 ### Task 2: Logical properties in legacy (app)
 

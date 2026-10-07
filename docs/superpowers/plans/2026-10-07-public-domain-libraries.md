@@ -431,7 +431,7 @@ All of this was requested live on 2026-10-07.
 - [ ] **Step 2: Implement.**
   - The store is `@MainActor ObservableObject` and publishes `state: .unavailable | .loading | .ready(AozoraCatalogIndex) | .failed(Error, cached: AozoraCatalogIndex?)`.
   - The URL is `https://yuedureader.com/catalogs/aozora/v1/manifest.json`.
-  - Decode and index in `Task.detached` with static functions: under approachable concurrency an `async` function runs on its caller's actor (see the memory note "大書架主執行緒卡").
+  - Decode and index in `Task.detached` calling static functions. **Writing it as `async` does not move it off the main thread here:** the project builds with `SWIFT_APPROACHABLE_CONCURRENCY = YES` (SE-0461), so a nonisolated `async` function runs on its caller's actor, and a chain started from a main-actor `Task {}` stays on the main thread, closures included. The project leaves the main thread through `Task.detached` with static or nonisolated functions, an actor, or GCD. A large shelf froze for exactly this reason on 2026-10-06 (fixed in ad206054).
   - Cache in `Caches/PublicLibrary/aozora/`: it can be rebuilt, so it is not backed up.
   - Measure the decode and index with `SourcePerfTrace` (`aozora.catalog.load`) and record the time for the full catalog.
 - [ ] **Step 3: Run and commit.**
@@ -460,7 +460,7 @@ All of this was requested live on 2026-10-07.
   - Every error is logged with the work ID.
   - Cancellation removes the temporary file.
 - [ ] **Step 2: The model.**
-  - Add `catalogWorkID: String?` to `AozoraBookSource`, decoded with `decodeIfPresent` and encoded only when present. A book without it must keep its sync hash; see the memory note "ReadingBook 新欄位要 Optional".
+  - Add `catalogWorkID: String?` to `AozoraBookSource`, decoded with `decodeIfPresent` and encoded only when present (`encodeIfPresent`, nil by default). **Why:** iCloud and Firestore sync compare each book's `stableHash(strippedForSync())` with the last synced copy, and a different hash counts as "edited now", which wins the merge. A new field that every book encodes changes every hash, so on the first sync after an update this device's older reading positions overwrite newer ones from the reader's other devices. The same rule applies to any field added to `ReadingBook` or another type merged by `mergeType`; `AudiobookSettingsStorageTests` (in `AudiobookChapterTransitionTests.swift`) shows the pattern.
   - Add a test that an Aozora book without it encodes exactly as before.
 - [ ] **Step 3: The views.**
   - A "青空文庫" section in `PublicLibraryHomeView` with rows 新着作品, 作家別, 作品名別 and 分類別.
