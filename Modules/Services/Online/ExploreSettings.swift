@@ -6,6 +6,7 @@ import Foundation
 enum ExploreSettings {
     // MARK: 探索頁
 
+    static let modeKey = "explore.mode"
     static let showsGridKey = "explore.showsGrid"
     static let gridColumnCountKey = "explore.gridColumnCount"
 
@@ -58,6 +59,29 @@ enum ExploreSettings {
 
     static var preloadCount: Int {
         UserDefaults.standard.object(forKey: preloadCountKey) as? Int ?? defaultPreloadCount
+    }
+}
+
+enum ExploreMode: String, CaseIterable, Sendable {
+    case publicLibraries = "libraries"
+    case bookSources = "sources"
+
+    static func initialValue(hasImportedSources: Bool) -> Self {
+        hasImportedSources ? .bookSources : .publicLibraries
+    }
+
+    static func storedValue(_ rawValue: String?, hasImportedSources: Bool) -> Self {
+        rawValue.flatMap(Self.init(rawValue:)) ?? initialValue(hasImportedSources: hasImportedSources)
+    }
+
+    static func effective(stored: Self, hasImportedSources: Bool, librariesAvailable: Bool) -> Self {
+        guard librariesAvailable else { return .bookSources }
+        return hasImportedSources ? stored : .publicLibraries
+    }
+
+    static func initializeIfNeeded(hasImportedSources: Bool, defaults: UserDefaults = .standard) {
+        guard defaults.object(forKey: ExploreSettings.modeKey) == nil else { return }
+        defaults.set(initialValue(hasImportedSources: hasImportedSources).rawValue, forKey: ExploreSettings.modeKey)
     }
 }
 

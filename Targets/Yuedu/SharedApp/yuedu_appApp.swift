@@ -72,6 +72,7 @@ struct yuedu_appApp: App {
         // `AppLogger` call from here on is captured for 設定 → 診斷與回報, and the
         // session record is what tells the next launch whether this one survived.
         DiagnosticLog.shared.beginSession()
+        ExploreMode.initializeIfNeeded(hasImportedSources: !BookSourceStore.shared.sources.isEmpty)
         // Frees the retired semantic-search model's ~258 MB on devices that had downloaded it.
         Task.detached(priority: .utility) { AIRetiredEmbeddingCleanup.run() }
         #if DEBUG
