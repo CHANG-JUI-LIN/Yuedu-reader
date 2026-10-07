@@ -698,6 +698,8 @@ bash scripts/fetch_gutenberg_opds2_fixtures.sh
 bash scripts/xctest.sh -- -only-testing:'yuedu appTests/OPDS2ParserTests' -only-testing:'yuedu appTests/GutenbergOPDS2FixtureTests' -only-testing:'yuedu appTests/RemoteLibraryHTTPTests' -only-testing:'yuedu appTests/OPDSParserTests'
 ```
 
-`OPDSParserTests` guards the Atom path after the shared-sanitizer move. If the recorded documents differ from the shape assumed here (for example images with rels, or groups without `self` links), adjust the parser against the fixtures, not the fixtures. Then commit the fixtures and tick the fixture checkbox above.
+`OPDSParserTests` guards the Atom path after the shared-sanitizer move.
+
+First local run (maintainer, 2026-10-07): the script fetched root, `search?sort=release_date&sort_order=desc` (the Recently Added group's `self`), `search?query=austen` and `publications?id=79734`. The publication is served as `application/opds-publication+json`, the rest as `application/json`. The test target did not compile: a key path passed to a rethrowing call inside `#expect` (`allSatisfy(\.isNavigation)`, `contains(where: \.isNavigation)`) expands to an unmarked throwing call. Fixed with closures. The recorded shape also showed `images` carrying the Atom image rels and acquisitions carrying `length`; the parser now uses both (rels decide cover and thumbnail, falling back to width only without rels; `length` becomes the acquisition size). If the recorded documents differ from the shape assumed here (for example images with rels, or groups without `self` links), adjust the parser against the fixtures, not the fixtures. Then commit the fixtures and tick the fixture checkbox above.
 
 Still stopped: the switch of `builtin.gutenberg` waits for Gutenberg's production URL. When it happens, list covers need a look: OPDS 2 images are remote URLs, while today's Gutenberg lists show only embedded thumbnails (decision 9).

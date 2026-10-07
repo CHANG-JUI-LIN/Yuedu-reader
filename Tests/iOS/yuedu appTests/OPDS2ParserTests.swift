@@ -92,9 +92,12 @@ struct OPDS2ParserTests {
                    "language": "en", "author": [{"name": "Austen, Jane", "sortAs": "Austen, Jane"}]},
       "links": [
         {"rel": "self", "href": "/opds/ebooks/1342", "type": "application/opds-publication+json"},
-        {"rel": "http://opds-spec.org/acquisition/open-access", "href": "https://www.gutenberg.org/ebooks/1342.epub3.images", "type": "application/epub+zip"}
+        {"rel": "http://opds-spec.org/acquisition/open-access", "href": "https://www.gutenberg.org/cache/epub/1342/pg1342-images-3.epub", "type": "application/epub+zip", "length": 24836548}
       ],
-      "images": [{"href": "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.medium.jpg", "type": "image/jpeg"}]
+      "images": [
+        {"href": "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.small.jpg", "type": "image/jpeg", "width": 66, "rel": "http://opds-spec.org/image/thumbnail"},
+        {"href": "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.medium.jpg", "type": "image/jpeg", "width": 200, "rel": "http://opds-spec.org/image"}
+      ]
     }
     """
 
@@ -119,8 +122,9 @@ struct OPDS2ParserTests {
     func rootGroups() throws {
         let feed = try parse(root)
         #expect(feed.title == "Project Gutenberg")
-        #expect(feed.entries.map(\.title) == ["Bookshelves", "Subjects", "Recently Added"])
-        #expect(feed.entries.allSatisfy(\.isNavigation))
+        let titles = feed.entries.map { $0.title }
+        #expect(titles == ["Bookshelves", "Subjects", "Recently Added"])
+        #expect(feed.entries.allSatisfy { $0.isNavigation })
         #expect(feed.entries.map { $0.navigationURL?.absoluteString } == [
             "https://opds-test.pglaf.org/opds/bookshelves",
             "https://opds-test.pglaf.org/opds/subjects",
@@ -177,7 +181,8 @@ struct OPDS2ParserTests {
         #expect(book.isBook)
         #expect(book.author == "Austen, Jane")
         #expect(book.authorNames == ["Austen, Jane"])
-        #expect(book.relatedLinks.map(\.url.absoluteString) == ["https://opds-test.pglaf.org/opds/authors/68"])
+        let related = book.relatedLinks.map { $0.url.absoluteString }
+        #expect(related == ["https://opds-test.pglaf.org/opds/authors/68"])
         #expect(book.summary == "A novel of manners.")
         #expect(book.navigationURL?.absoluteString == "https://opds-test.pglaf.org/opds/ebooks/1342")
         #expect(book.alternateURL?.absoluteString == "https://www.gutenberg.org/ebooks/1342")
@@ -204,7 +209,9 @@ struct OPDS2ParserTests {
         #expect(book.isBook)
         #expect(book.author == "Austen, Jane")
         #expect(book.coverURL?.lastPathComponent == "pg1342.cover.medium.jpg")
-        #expect(book.thumbnailURL == nil)
+        #expect(book.thumbnailURL?.lastPathComponent == "pg1342.cover.small.jpg")
+        #expect(book.bestAcquisition?.size == 24836548)
+        #expect(book.bestAcquisition?.importExtension == "epub")
     }
 
     @Test("language maps choose the preferred language, then English, then a stable key")

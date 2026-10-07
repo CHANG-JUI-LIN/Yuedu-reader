@@ -138,7 +138,7 @@ private struct Mapper {
             }
             guard let url = resolve(link.href) else { continue }
             if let rel = rels.first(where: Self.isAcquisition) {
-                entry.acquisitions.append(OPDSAcquisition(url: url, type: link.type ?? "", rel: rel))
+                entry.acquisitions.append(OPDSAcquisition(url: url, type: link.type ?? "", rel: rel, size: link.length))
             } else if rels.contains("alternate"), link.mime == "text/html" {
                 entry.alternateURL = url
             } else if entry.navigationURL == nil,
@@ -168,10 +168,18 @@ private struct Mapper {
         return entry
     }
 
-    /// `images` has no rels; the largest is the cover and, when the publication
-    /// lists more than one with sizes, the smallest is the thumbnail.
+    /// Gutenberg labels `images` with the Atom image rels; those decide when
+    /// present. Otherwise the largest is the cover and, when more than one has
+    /// a size, the smallest is the thumbnail.
     private func applyImages(_ images: [OPDS2FeedParser.Link], to entry: inout OPDSEntry) {
         guard !images.isEmpty else { return }
+        let labelledThumbnail = images.first { $0.rels.contains { $0.hasSuffix("/image/thumbnail") } }
+        let labelledCover = images.first { $0.rels.contains { $0.hasSuffix("/image") } }
+        if labelledCover != nil || labelledThumbnail != nil {
+            if let labelledCover { applyImage(labelledCover, thumbnail: false, to: &entry) }
+            if let labelledThumbnail { applyImage(labelledThumbnail, thumbnail: true, to: &entry) }
+            return
+        }
         let sized = images.filter { $0.width != nil }
         let cover = sized.max { $0.width! < $1.width! } ?? images[0]
         applyImage(cover, thumbnail: false, to: &entry)
@@ -258,9 +266,10 @@ extension OPDS2FeedParser {
         var title: String?
         var templated: Bool?
         var width: Int?
+        var length: Int64?
         var rels: [String] = []
 
-        private enum CodingKeys: String, CodingKey { case href, type, title, templated, width, rel }
+        private enum CodingKeys: String, CodingKey { case href, type, title, templated, width, length, rel }
 
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -269,6 +278,7 @@ extension OPDS2FeedParser {
             title = try values.decodeIfPresent(String.self, forKey: .title)
             templated = try values.decodeIfPresent(Bool.self, forKey: .templated)
             width = try values.decodeIfPresent(Int.self, forKey: .width)
+            length = try values.decodeIfPresent(Int64.self, forKey: .length)
             rels = (try values.decodeIfPresent(OneOrMany<String>.self, forKey: .rel)?.values ?? []).map { $0.lowercased() }
         }
 

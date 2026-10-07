@@ -31,7 +31,7 @@ struct GutenbergOPDS2FixtureTests {
         #expect(!feed.title.isEmpty)
         #expect(!feed.entries.isEmpty)
         #expect(feed.entries.allSatisfy { !$0.title.isEmpty && !$0.id.isEmpty })
-        #expect(feed.entries.contains(where: \.isNavigation))
+        #expect(feed.entries.contains { $0.isNavigation })
         let search = try #require(feed.search)
         let url = try #require(try await OPDSClient().searchFeedURL(search: search, query: "austen & co"))
         #expect(url.host == "opds-test.pglaf.org")
@@ -41,7 +41,7 @@ struct GutenbergOPDS2FixtureTests {
 
     @Test func groupPage() throws {
         let feed = try load("group.json")
-        let books = feed.entries.filter(\.isBook)
+        let books = feed.entries.filter { $0.isBook }
         #expect(!books.isEmpty)
         #expect(books.allSatisfy { !$0.title.isEmpty && !$0.id.isEmpty })
         #expect(books.contains { $0.bestAcquisition?.importExtension == "epub" })
@@ -50,7 +50,7 @@ struct GutenbergOPDS2FixtureTests {
 
     @Test func search() throws {
         let feed = try load("search.json")
-        let books = feed.entries.filter(\.isBook)
+        let books = feed.entries.filter { $0.isBook }
         #expect(!books.isEmpty)
         #expect(books.contains { $0.authorNames.contains { $0.localizedCaseInsensitiveContains("Austen") } })
     }
@@ -62,6 +62,8 @@ struct GutenbergOPDS2FixtureTests {
         #expect(!book.title.isEmpty)
         #expect(book.author != nil)
         #expect(book.bestAcquisition?.importExtension == "epub")
-        #expect(book.displayCoverURL != nil)
+        #expect(book.coverURL?.lastPathComponent == "pg79734.cover.medium.jpg")
+        #expect(book.thumbnailURL?.lastPathComponent == "pg79734.cover.small.jpg")
+        #expect(book.relatedLinks.contains { $0.url.query?.contains("author_id=") == true })
     }
 }
