@@ -3606,3 +3606,8 @@
 "搜尋公有書庫" = "Search Public Libraries";
 
 "在 Project Gutenberg 搜尋「%@」" = "Search Project Gutenberg for “%@”";
+
+// Explore first-import guide
+"可以切換探索內容" = "Switch what you explore";
+"書源已匯入，點這裡切換到書源探索。" = "Your book sources are imported. Tap here to explore them.";
+"切換到書源" = "Switch to Book Sources";

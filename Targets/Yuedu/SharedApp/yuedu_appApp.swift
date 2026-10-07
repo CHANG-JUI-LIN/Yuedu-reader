@@ -1,5 +1,6 @@
 import YueduCoreText
 import SwiftUI
+import TipKit
 import GoogleSignIn
 
 @main
@@ -72,7 +73,16 @@ struct yuedu_appApp: App {
         // `AppLogger` call from here on is captured for 設定 → 診斷與回報, and the
         // session record is what tells the next launch whether this one survived.
         DiagnosticLog.shared.beginSession()
+        do {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-reset-tips") { try Tips.resetDatastore() }
+            #endif
+            try Tips.configure([.displayFrequency(.immediate)])
+        } catch {
+            AppLogger.error("Explore TipKit configuration failed: \(error)")
+        }
         ExploreMode.initializeIfNeeded(hasImportedSources: !BookSourceStore.shared.sources.isEmpty)
+        _ = ExploreTabModel.shared
         PublicLibraryAvailability.shared.start()
         // Frees the retired semantic-search model's ~258 MB on devices that had downloaded it.
         Task.detached(priority: .utility) { AIRetiredEmbeddingCleanup.run() }

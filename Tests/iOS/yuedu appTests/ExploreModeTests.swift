@@ -4,6 +4,22 @@ import Testing
 
 @Suite("Explore modes", .serialized)
 struct ExploreModeTests {
+    @Test func importGuideOnlyDetectsTheFirstImport() {
+        var detector = ExploreImportDetector(hasImportedSources: false)
+        #expect(!detector.guidePending)
+        let transitions = [false, true, true, false, true].map { detector.receive(hasImportedSources: $0) }
+        #expect(transitions == [false, true, false, false, false])
+        #expect(detector.guidePending)
+        var upgraded = ExploreImportDetector(hasImportedSources: true)
+        #expect(!upgraded.guidePending)
+        let upgradeTransitions = [false, true].map { upgraded.receive(hasImportedSources: $0) }
+        #expect(upgradeTransitions == [false, false])
+        var previouslyImported = ExploreImportDetector(hasImportedSources: false, hasEverImportedSources: true)
+        let repeated = previouslyImported.receive(hasImportedSources: true)
+        #expect(!repeated)
+        #expect(ExploreImportDetector(hasImportedSources: true, guidePending: true).guidePending)
+    }
+
     @Test @MainActor func modeMenuAvailability() {
         #expect(!ExploreTabRoot.showsModeMenu(hasImportedSources: false, librariesAvailable: true))
         #expect(ExploreTabRoot.showsModeMenu(hasImportedSources: true, librariesAvailable: true))
