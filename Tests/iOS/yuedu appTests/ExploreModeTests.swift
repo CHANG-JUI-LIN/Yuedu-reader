@@ -4,6 +4,12 @@ import Testing
 
 @Suite("Explore modes", .serialized)
 struct ExploreModeTests {
+    @Test @MainActor func modeMenuAvailability() {
+        #expect(!ExploreTabRoot.showsModeMenu(hasImportedSources: false, librariesAvailable: true))
+        #expect(ExploreTabRoot.showsModeMenu(hasImportedSources: true, librariesAvailable: true))
+        #expect(!ExploreTabRoot.showsModeMenu(hasImportedSources: true, librariesAvailable: false))
+    }
+
     @Test func effectiveMode() {
         for stored in ExploreMode.allCases {
             for hasSources in [false, true] {

@@ -3536,3 +3536,7 @@
 "三欄卡片，往下捲會一直載入" = "Cards in three columns that keep loading as you scroll";
 
 "TXTEncodingUnsupported" = "Unable to reliably detect the TXT encoding. Save the file as UTF-8 and import it again.";
+
+"公有書庫" = "Public Libraries";
+
+"切換探索內容" = "Switch Explore Content";

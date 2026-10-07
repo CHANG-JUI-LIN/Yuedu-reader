@@ -703,7 +703,7 @@ struct BrowserView: View {
     @StateObject private var browser = BrowserState()
 
     var body: some View {
-        ExploreHomeView(browser: browser)
+        ExploreTabRoot(browser: browser)
             .environmentObject(store)
     }
 }

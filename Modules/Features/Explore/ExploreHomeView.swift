@@ -24,6 +24,7 @@ struct ExploreHomeView: View {
     @AppStorage(ExploreSettings.landingKey) private var landing = ExploreLanding.off.rawValue
     /// The browser's page and history, kept by `BrowserView` across visits.
     @ObservedObject var browser: BrowserState
+    var modeMenu: ExploreModeMenu? = nil
 
     @State private var query = ""
     @State private var exploreSources: [BookSource] = []
@@ -178,6 +179,9 @@ struct ExploreHomeView: View {
             .pageBackgroundToolbar(for: .explore)
             .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
             .toolbar {
+                if let modeMenu {
+                    ToolbarItem(placement: .topBarTrailing) { modeMenu }
+                }
                 if groups.count > 1 {
                     ToolbarItem(placement: .topBarTrailing) { groupMenu }
                 }
