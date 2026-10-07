@@ -157,7 +157,7 @@ struct OPDS2ParserTests {
     }
 
     @Test("URI template conversion covers the forms OPDS 2 search links use")
-    func uriTemplates() {
+    func uriTemplates() throws {
         #expect(OPDS2FeedParser.openSearchTemplate(fromURITemplate: "search{?query,title,author}") == "search?query={searchTerms}")
         #expect(OPDS2FeedParser.openSearchTemplate(fromURITemplate: "/s?lang=en{&title,query}") == "/s?lang=en&query={searchTerms}")
         #expect(OPDS2FeedParser.openSearchTemplate(fromURITemplate: "/s/{query}{?page}") == "/s/{searchTerms}")
