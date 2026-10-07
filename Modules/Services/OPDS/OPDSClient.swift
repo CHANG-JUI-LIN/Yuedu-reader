@@ -24,6 +24,15 @@ struct OPDSAcquisition: Hashable {
         return nil
     }
     var isSupported: Bool { importExtension != nil }
+    var preference: Int {
+        switch importExtension {
+        case "epub": url.path.contains(".epub3") ? 0 : 1
+        case "pdf": 2
+        case "txt": 3
+        case "md": 4
+        default: 9
+        }
+    }
 }
 
 struct OPDSEntry: Identifiable, Hashable {
@@ -35,12 +44,12 @@ struct OPDSEntry: Identifiable, Hashable {
     var acquisitions: [OPDSAcquisition] = []
     var thumbnailURL: URL?
     var coverURL: URL?
+    var alternateURL: URL?
 
     var isBook: Bool { !acquisitions.isEmpty }
     var isNavigation: Bool { acquisitions.isEmpty && navigationURL != nil }
     var bestAcquisition: OPDSAcquisition? {
-        let order: [String: Int] = ["epub": 0, "pdf": 1, "txt": 2, "md": 3]
-        return acquisitions.filter(\.isSupported).min { (order[$0.importExtension ?? ""] ?? 9) < (order[$1.importExtension ?? ""] ?? 9) }
+        acquisitions.filter(\.isSupported).min { $0.preference < $1.preference }
     }
     var displayCoverURL: URL? { thumbnailURL ?? coverURL }
 }
@@ -56,6 +65,7 @@ struct OPDSFeed {
     var nextPageURL: URL?
     var searchDescriptionURL: URL?
     var search: OPDSSearch?
+    var alternateURL: URL?
 }
 
 enum OPDSError: LocalizedError {
@@ -108,6 +118,8 @@ struct OPDSClient {
 
     func fetchFeed(_ url: URL, isSearch: Bool = false) async throws -> OPDSFeed {
         guard Self.url(from: url.absoluteString) != nil else { throw OPDSError.unsupportedScheme }
+        let started = SourcePerfTrace.now
+        defer { SourcePerfTrace.record("publicLibrary.opds.load", url.path, since: started, thresholdMs: 0) }
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue("application/atom+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         let (data, response) = try await transport(for: url).data(for: request)
@@ -140,7 +152,11 @@ struct OPDSClient {
         let parsed = parser.parse()
         if delegate.rootName == "html" { throw OPDSError.loginPage }
         guard parsed, delegate.rootName == "feed" else { throw OPDSError.invalidFeed }
-        return delegate.feed
+        var feed = delegate.feed
+        for index in feed.entries.indices where feed.entries[index].isBook && feed.entries[index].alternateURL == nil {
+            feed.entries[index].alternateURL = feed.alternateURL
+        }
+        return feed
     }
 
     func download(_ acquisition: OPDSAcquisition) async throws -> URL {
@@ -277,8 +293,19 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
             feed.searchDescriptionURL = URL(string: href, relativeTo: base)?.absoluteURL
             return
         }
+        // OPDS inline raster thumbnails are image data, never a navigation URL.
+        if current != nil, rel.hasSuffix("/image/thumbnail"), href.hasPrefix("data:image/"),
+           href.utf8.count <= 2 * 1024 * 1024, let inline = URL(string: href) {
+            current?.thumbnailURL = inline
+            return
+        }
         guard let resolved = URL(string: href, relativeTo: base)?.absoluteURL,
               OPDSClient.url(from: resolved.absoluteString) != nil else { return }
+        if rel == "alternate", type == "text/html" {
+            if current != nil { current?.alternateURL = resolved }
+            else { feed.alternateURL = resolved }
+            return
+        }
         if current != nil {
             if rel.hasPrefix("http://opds-spec.org/acquisition") || rel.hasPrefix("https://opds-spec.org/acquisition") {
                 current?.acquisitions.append(OPDSAcquisition(url: resolved, type: attributes["type"] ?? "", rel: rel, size: attributes["length"].flatMap(Int64.init)))

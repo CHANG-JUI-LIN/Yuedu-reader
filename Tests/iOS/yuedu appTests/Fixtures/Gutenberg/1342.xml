@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/">
+<id>http://www.gutenberg.org/ebooks/1342.opds</id>
+<updated>2026-10-07T08:44:09Z</updated>
+<title>Pride and Prejudice by Jane Austen</title>
+<subtitle>Free eBooks since 1971.</subtitle>
+<author>
+<name>Project Gutenberg</name>
+<uri>https://www.gutenberg.org</uri>
+<email>webmaster@gutenberg.org</email>
+</author>
+<icon>https://www.gutenberg.org/gutenberg/favicon.ico</icon>
+<link rel="search" type="application/opensearchdescription+xml" title="Project Gutenberg Catalog Search" href="https://www.gutenberg.org/catalog/osd-books.xml"/>
+<link rel="self" title="This Page" type="application/atom+xml;profile=opds-catalog" href="/ebooks/1342.opds"/>
+<link rel="alternate" type="text/html" title="HTML Page" href="/ebooks/1342"/>
+<link rel="start" title="Start Page" type="application/atom+xml;profile=opds-catalog" href="/ebooks.opds/"/>
+<opensearch:itemsPerPage>25</opensearch:itemsPerPage>
+<opensearch:startIndex>1</opensearch:startIndex>
+<entry>
+<updated>2026-10-07T08:44:09Z</updated>
+<title>Pride and Prejudice</title>
+<content type="xhtml">
+<div xmlns="http://www.w3.org/1999/xhtml">
+<p>This edition had all images removed.</p>
+<p>
+Title:
+Pride and Prejudice
+</p>
+<p>
+Note:
+Wikipedia page about this book: https:<a href="//en.wikipedia.org/wiki/Pride_and_Prejudice">//en.wikipedia.org/wiki/Pride_and_Prejudice</a>
+</p>
+<p>
+Note:
+This title is also available as eBook <a href="/ebooks/42671.bibrec.mobile">#42671</a>.
+</p>
+<p>
+Credits:
+Chuck Greif and the Online Distributed Proofreading Team at http:<a href="//www.pgdp.net">//www.pgdp.net</a> (This file was produced from images available at The Internet Archive)
+</p>
+<p>
+Summary:
+"Pride and Prejudice" by Jane Austen is a novel published in 1813. It follows Elizabeth Bennet, who must learn to see past first impressions and hasty judgments. With five daughters and an estate that can only pass to male heirs, the Bennet family faces financial pressure to marry well. When wealthy Mr. Darcy arrives in their countryside neighborhood, his pride and Elizabeth's prejudice set the stage for misunderstandings, hidden truths, and unexpected revelations about character and love. (This is an automatically generated summary.)
+</p>
+<p>
+Reading Level:
+Reading ease score: 69.2 (8th &amp; 9th grade). Neither easy nor difficult to read.
+</p>
+<p>Author: Austen, Jane, 1775-1817</p>
+<p>EBook No.: 1342</p>
+<p>Published: Jun 1, 1998</p>
+<p>Downloads: 189689</p>
+<p>Language: English</p>
+<p>Subject: England -- Fiction</p><p>Subject: Young women -- Fiction</p><p>Subject: Love stories</p><p>Subject: Sisters -- Fiction</p><p>Subject: Domestic fiction</p><p>Subject: Courtship -- Fiction</p><p>Subject: Social classes -- Fiction</p>
+<p>LoCC: Language and Literatures: English literature</p>
+<p>Category: Text</p>
+<p>Rights: Public domain in the USA.</p>
+</div>
+</content>
+<id>urn:gutenberg:1342:2</id>
+<published>1998-06-01T00:00:00+00:00</published>
+<rights>Public domain in the USA.</rights>
+<author>
+<name>Austen, Jane</name>
+</author>
+<category scheme="http://purl.org/dc/terms/LCSH" term="England -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Young women -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Love stories"/><category scheme="http://purl.org/dc/terms/LCSH" term="Sisters -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Domestic fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Courtship -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Social classes -- Fiction"/>
+<category scheme="http://purl.org/dc/terms/LCC" term="PR" label="Language and Literatures: English literature"/>
+<category scheme="http://purl.org/dc/terms/DCMIType" term="Text"/>
+<dcterms:language>en</dcterms:language>
+<relevance:score>1</relevance:score>
+<link type="application/epub+zip" rel="http://opds-spec.org/acquisition" title="EPUB (older e-readers, no images)" length="561102" href="https://www.gutenberg.org/ebooks/1342.epub.noimages"/>
+<link type="application/x-mobipocket-ebook" rel="http://opds-spec.org/acquisition" title="Kindle (no images)" length="540013" href="https://www.gutenberg.org/ebooks/1342.kindle.noimages"/>
+<link type="image/jpeg" rel="http://opds-spec.org/image" href="https://www.gutenberg.org/cache/epub/1342/pg1342.cover.medium.jpg"/>
+<link type="image/jpeg" rel="http://opds-spec.org/image/thumbnail" href="https://www.gutenberg.org/cache/epub/1342/pg1342.cover.small.jpg"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/author/68.opds" title="By Austen, Jane…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/1702.opds" title="On England -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2481.opds" title="On Young women -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2487.opds" title="On Love stories…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2489.opds" title="On Sisters -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2514.opds" title="On Domestic fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2578.opds" title="On Courtship -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2906.opds" title="On Social classes -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/13.opds" title="In Best Books Ever Listings…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/40.opds" title="In Harvard Classics…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/639.opds" title="In Category: Romance…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/645.opds" title="In Category: Novels…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/649.opds" title="In Category: Classics of Literature…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/653.opds" title="In Category: British Literature…"/>
+</entry>
+<entry>
+<updated>2026-10-07T08:44:09Z</updated>
+<title>Pride and Prejudice</title>
+<content type="xhtml">
+<div xmlns="http://www.w3.org/1999/xhtml">
+<p>This edition has images.</p>
+<p>
+Title:
+Pride and Prejudice
+</p>
+<p>
+Note:
+Wikipedia page about this book: https:<a href="//en.wikipedia.org/wiki/Pride_and_Prejudice">//en.wikipedia.org/wiki/Pride_and_Prejudice</a>
+</p>
+<p>
+Note:
+This title is also available as eBook <a href="/ebooks/42671.bibrec.mobile">#42671</a>.
+</p>
+<p>
+Credits:
+Chuck Greif and the Online Distributed Proofreading Team at http:<a href="//www.pgdp.net">//www.pgdp.net</a> (This file was produced from images available at The Internet Archive)
+</p>
+<p>
+Summary:
+"Pride and Prejudice" by Jane Austen is a novel published in 1813. It follows Elizabeth Bennet, who must learn to see past first impressions and hasty judgments. With five daughters and an estate that can only pass to male heirs, the Bennet family faces financial pressure to marry well. When wealthy Mr. Darcy arrives in their countryside neighborhood, his pride and Elizabeth's prejudice set the stage for misunderstandings, hidden truths, and unexpected revelations about character and love. (This is an automatically generated summary.)
+</p>
+<p>
+Reading Level:
+Reading ease score: 69.2 (8th &amp; 9th grade). Neither easy nor difficult to read.
+</p>
+<p>Author: Austen, Jane, 1775-1817</p>
+<p>EBook No.: 1342</p>
+<p>Published: Jun 1, 1998</p>
+<p>Downloads: 189689</p>
+<p>Language: English</p>
+<p>Subject: England -- Fiction</p><p>Subject: Young women -- Fiction</p><p>Subject: Love stories</p><p>Subject: Sisters -- Fiction</p><p>Subject: Domestic fiction</p><p>Subject: Courtship -- Fiction</p><p>Subject: Social classes -- Fiction</p>
+<p>LoCC: Language and Literatures: English literature</p>
+<p>Category: Text</p>
+<p>Rights: Public domain in the USA.</p>
+</div>
+</content>
+<id>urn:gutenberg:1342:3</id>
+<published>1998-06-01T00:00:00+00:00</published>
+<rights>Public domain in the USA.</rights>
+<author>
+<name>Austen, Jane</name>
+</author>
+<category scheme="http://purl.org/dc/terms/LCSH" term="England -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Young women -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Love stories"/><category scheme="http://purl.org/dc/terms/LCSH" term="Sisters -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Domestic fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Courtship -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Social classes -- Fiction"/>
+<category scheme="http://purl.org/dc/terms/LCC" term="PR" label="Language and Literatures: English literature"/>
+<category scheme="http://purl.org/dc/terms/DCMIType" term="Text"/>
+<dcterms:language>en</dcterms:language>
+<relevance:score>1</relevance:score>
+<link type="application/epub+zip" rel="http://opds-spec.org/acquisition" title="EPUB3 (E-readers incl. Send-to-Kindle)" length="24836548" href="https://www.gutenberg.org/ebooks/1342.epub3.images"/>
+<link type="application/epub+zip" rel="http://opds-spec.org/acquisition" title="EPUB (older e-readers)" length="24848783" href="https://www.gutenberg.org/ebooks/1342.epub.images"/>
+<link type="application/x-mobipocket-ebook" rel="http://opds-spec.org/acquisition" title="Kindles (kf8)" length="25333914" href="https://www.gutenberg.org/ebooks/1342.kf8.images"/>
+<link type="application/x-mobipocket-ebook" rel="http://opds-spec.org/acquisition" title="Older Kindles" length="25224289" href="https://www.gutenberg.org/ebooks/1342.kindle.images"/>
+<link type="image/jpeg" rel="http://opds-spec.org/image" href="https://www.gutenberg.org/cache/epub/1342/pg1342.cover.medium.jpg"/>
+<link type="image/jpeg" rel="http://opds-spec.org/image/thumbnail" href="https://www.gutenberg.org/cache/epub/1342/pg1342.cover.small.jpg"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/author/68.opds" title="By Austen, Jane…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/1702.opds" title="On England -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2481.opds" title="On Young women -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2487.opds" title="On Love stories…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2489.opds" title="On Sisters -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2514.opds" title="On Domestic fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2578.opds" title="On Courtship -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2906.opds" title="On Social classes -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/13.opds" title="In Best Books Ever Listings…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/40.opds" title="In Harvard Classics…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/639.opds" title="In Category: Romance…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/645.opds" title="In Category: Novels…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/649.opds" title="In Category: Classics of Literature…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/653.opds" title="In Category: British Literature…"/>
+</entry>
+</feed>

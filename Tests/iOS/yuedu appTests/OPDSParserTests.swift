@@ -133,4 +133,35 @@ struct OPDSParserTests {
         #expect(!OPDSClient.isCalibreEmptySearch(data: data, status: 401, kind: .calibre, isSearch: true))
     }
 
+    @Test func recordedGutenbergFeeds() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Gutenberg")
+        func feed(_ file: String, _ path: String) throws -> OPDSFeed {
+            try SourcePerfTrace.span("gutenberg.fixture.parse", file, thresholdMs: 0) {
+                try OPDSClient.parseFeed(data: Data(contentsOf: root.appendingPathComponent(file)),
+                    feedURL: URL(string: "https://www.gutenberg.org/" + path)!)
+            }
+        }
+        let navigation = try feed("root.xml", "ebooks.opds/")
+        #expect(navigation.entries.count == 3)
+        #expect(navigation.entries.allSatisfy { $0.isNavigation })
+        let chinese = try feed("chinese.xml", "ebooks/search.opds/?query=l.zh")
+        #expect(chinese.entries.count == 25)
+        #expect(chinese.entries.allSatisfy { $0.navigationURL?.path.hasSuffix(".opds") == true })
+        #expect(chinese.nextPageURL?.absoluteString.contains("start_index=26") == true)
+        let thumbnail = try #require(chinese.entries.first?.thumbnailURL)
+        #expect(thumbnail.scheme == "data")
+        #expect(await BookCoverLoader.loadImage(urlString: thumbnail.absoluteString, headers: [:]) != nil)
+        let book = try feed("1342.xml", "ebooks/1342.opds")
+        let illustrated = try #require(book.entries.first { $0.id.hasSuffix(":3") })
+        #expect(illustrated.bestAcquisition?.url.path.hasSuffix(".epub3.images") == true)
+        #expect(illustrated.coverURL?.path == "/cache/epub/1342/pg1342.cover.medium.jpg")
+        #expect(illustrated.alternateURL?.absoluteString == "https://www.gutenberg.org/ebooks/1342")
+        var reordered = illustrated
+        reordered.acquisitions.reverse()
+        #expect(reordered.bestAcquisition?.url.path.hasSuffix(".epub3.images") == true)
+        let item = RemoteLibraryBookRoute(entry: reordered, connectionID: "builtin.gutenberg").item
+        #expect(item.alternateURL == illustrated.alternateURL)
+        #expect(RemoteLibraryBrowsePresentation.preferredFormat(in: item)?.url.path.hasSuffix(".epub3.images") == true)
+    }
+
 }

@@ -8,6 +8,23 @@ import UIKit
 struct RemoteLibraryHTTPTests {
     private let base = URL(string: "https://library.example/proxy/opds")!
 
+    @Test func feedRequestCountAndErrors() async throws {
+        let http = fixtureClient()
+        let client = OPDSClient(httpClient: http)
+        var requests = 0
+        LibraryHTTPProtocol.handler = { _ in
+            requests += 1
+            return (200, [:], Data("<feed xmlns=\"http://www.w3.org/2005/Atom\"><link rel=\"next\" href=\"?page=2\"/></feed>".utf8))
+        }
+        let feed = try await client.fetchFeed(base)
+        #expect(feed.nextPageURL != nil)
+        #expect(requests == 1)
+        LibraryHTTPProtocol.handler = { _ in (503, [:], Data()) }
+        await #expect(throws: OPDSError.self) { try await client.fetchFeed(base) }
+        LibraryHTTPProtocol.handler = { _ in throw URLError(.cannotFindHost) }
+        await #expect(throws: URLError.self) { try await client.fetchFeed(base) }
+    }
+
     @Test func identifyingUserAgent() async throws {
         let client = fixtureClient()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"
@@ -206,16 +223,20 @@ struct RemoteLibraryHTTPTests {
 }
 
 private final class LibraryHTTPProtocol: Foundation.URLProtocol {
-    static var handler: ((URLRequest) -> (Int, [String: String], Data))?
+    static var handler: ((URLRequest) throws -> (Int, [String: String], Data))?
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         guard let handler = Self.handler else { return }
-        let (status, headers, data) = handler(request)
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        do {
+            let (status, headers, data) = try handler(request)
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
     }
     override func stopLoading() {}
 }

@@ -15,7 +15,8 @@ struct RemoteLibraryBookRoute: Hashable {
             author: entry.author.map { String($0.prefix(500)) },
             summary: entry.summary.map(OnlineBookDetailPresentationPolicy.sanitizeIntro),
             coverURL: entry.coverURL ?? entry.thumbnailURL,
-            formats: entry.acquisitions.map {
+            alternateURL: entry.alternateURL,
+            formats: entry.acquisitions.sorted { $0.preference < $1.preference }.map {
                 RemoteLibraryFormat(url: $0.url, fileExtension: $0.importExtension ?? $0.url.pathExtension,
                                     mimeType: $0.type, size: $0.size)
             }
@@ -179,6 +180,11 @@ struct RemoteLibraryBookDetailView: View {
                         .foregroundStyle(DSColor.textSecondary)
                 }
                 .interfaceSectionSurface()
+            }
+            if let url = item.alternateURL {
+                Section {
+                    Link(localized("在書庫網站查看"), destination: url)
+                }.interfaceSectionSurface()
             }
             if let summary = item.summary, !summary.isEmpty {
                 Section(localized("簡介")) {

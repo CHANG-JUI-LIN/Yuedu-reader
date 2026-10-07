@@ -97,6 +97,19 @@ enum BookCoverLoader {
 
     private static func fetchAndCache(urlString: String, headers: [String: String], session: URLSession?, cacheKey: String) async -> UIImage? {
         guard let url = URL(string: urlString) else { return nil }
+        if url.scheme == "data" {
+            guard urlString.utf8.count <= 2 * 1024 * 1024,
+                  let comma = urlString.firstIndex(of: ","),
+                  urlString[..<comma].hasPrefix("data:image/"),
+                  urlString[..<comma].hasSuffix(";base64"),
+                  let bytes = Data(base64Encoded: String(urlString[urlString.index(after: comma)...])),
+                  let image = decodedCover(from: bytes) else {
+                AppLogger.network("Invalid inline cover image")
+                return nil
+            }
+            pipeline.storeNetworkImage(image, forKey: cacheKey)
+            return image
+        }
         var request = URLRequest(url: url)
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
 

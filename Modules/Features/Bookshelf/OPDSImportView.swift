@@ -339,7 +339,7 @@ struct OPDSFeedView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if let connection {
+                if let connection, PublicLibrary.connection(id: connection.id) == nil {
                     Menu {
                         if let url = URL(string: route.url) {
                             NavigationLink(localized("管理遠端書庫")) {
@@ -373,7 +373,17 @@ struct OPDSFeedView: View {
     private func row(for entry: OPDSEntry) -> some View {
         if entry.isNavigation, let dest = entry.navigationURL {
             NavigationLink(value: OPDSFeedRoute(catalogID: route.catalogID, url: dest.absoluteString, title: entry.title)) {
-                Label(entry.title, systemImage: "folder.fill").foregroundStyle(DSColor.textPrimary)
+                if let thumbnail = entry.displayCoverURL {
+                    HStack(spacing: DSSpacing.md) {
+                        BookCoverImage(coverURL: thumbnail.absoluteString, title: entry.title, author: entry.author,
+                                       session: connection.map { catalogStore.httpClient(for: $0).session })
+                            .frame(width: DSLayout.searchResultCoverWidth, height: DSLayout.searchResultCoverHeight)
+                            .accessibilityHidden(true)
+                        Text(entry.title).foregroundStyle(DSColor.textPrimary)
+                    }
+                } else {
+                    Label(entry.title, systemImage: "folder.fill").foregroundStyle(DSColor.textPrimary)
+                }
             }
         } else {
             NavigationLink(value: RemoteLibraryBookRoute(entry: entry, connectionID: route.catalogID)) {
@@ -418,7 +428,9 @@ struct OPDSFeedView: View {
         do {
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
             let requestURL: URL
-            if !query.isEmpty {
+            if !query.isEmpty, route.catalogID == PublicLibraryID.gutenberg.rawValue {
+                requestURL = PublicLibrary.gutenbergSearchURL(query: query)
+            } else if !query.isEmpty {
                 guard let search, let resolved = try await client.searchFeedURL(search: search, query: query) else {
                     loadError = localized("此目錄不支援搜尋")
                     isLoading = false
@@ -434,6 +446,7 @@ struct OPDSFeedView: View {
             didLoad = true
         } catch {
             guard !Task.isCancelled else { return }
+            AppLogger.network("OPDS feed failed", error: error, context: ["url": route.url])
             loadError = error.localizedDescription
         }
         isLoading = false
@@ -454,6 +467,7 @@ struct OPDSFeedView: View {
         } catch {
             guard !Task.isCancelled else { return }
             failedWhileLoadingMore = true
+            AppLogger.network("OPDS next page failed", error: error, context: ["url": nextPageURL.absoluteString])
             loadError = error.localizedDescription
         }
     }
@@ -471,4 +485,11 @@ extension RemoteLibraryKind {
 
 #Preview {
     OPDSImportView().environmentObject(BookStore())
+}
+
+#Preview("Built-in Gutenberg feed") {
+    NavigationStack {
+        OPDSFeedView(route: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
+            url: PublicLibrary.gutenberg.url, title: localized("Project Gutenberg")))
+    }.environmentObject(BookStore())
 }

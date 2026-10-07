@@ -25,6 +25,7 @@ struct RemoteLibraryItem: Identifiable, Hashable, Sendable {
     var author: String? = nil
     var summary: String? = nil
     var coverURL: URL? = nil
+    var alternateURL: URL? = nil
     let formats: [RemoteLibraryFormat]
 }
 
