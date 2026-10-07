@@ -64,7 +64,9 @@ Each comes with its reason; the maintainer can overturn any of them.
 17. **The User-Agent's contact is `https://yuedureader.com/support`.** Never put a personal email address in it.
 18. **Gutenberg OPDS 2: the maintainer is writing to Gutenberg.** Gutenberg writes: "We expect to sunset the existing XML-based OPDS feeds in 2027" (https://www.gutenberg.org/ebooks/offline_catalogs.html), and access to the JSON feed means contacting them first.
     - The recipient is Eric Hellman (`eric (at) pglaf.org`), Executive Director of the Project Gutenberg Literary Archive Foundation and the catalog's technical contact (https://www.gutenberg.org/cache/epub/feeds/about.txt).
-    - Task 13 waits for his reply.
+    - **His reply (2026-10-08):** the development endpoint is `https://opds-test.pglaf.org/opds/`, and "a production preview service" is expected soon. No production URL yet.
+    - Checked 2026-10-08: it answers `200`, `Content-Type: application/json` (not `application/opds+json`), with OPDS 2 `groups` (Navigation: bookshelves, subjects; Recently Added, 78,605 items), `publications` and a templated search `search{?query,title,author}`.
+    - So Task 13 may build and test the OPDS 2 parser against fixtures saved from this endpoint now. `builtin.gutenberg` switches only once the production service exists; the development endpoint never ships.
 
 ---
 
@@ -580,10 +582,11 @@ All of this was requested live on 2026-10-07.
     - That is a maintainer decision.
 - [x] **Measure** the first open of 公有書庫 on the simulator (Gutenberg root and catalog load), with `SourcePerfTrace` spans, and record the numbers.
 
-## Task 13: Gutenberg OPDS 2 (after the maintainer has contacted Gutenberg)
+## Task 13: Gutenberg OPDS 2 (parser now; switch after Gutenberg's production service exists)
 
 - [ ] Add OPDS 2 JSON (`application/opds+json`) to `OPDSClient`, mapping to the same `OPDSFeed` / `OPDSEntry` models. It is one parser per format behind one client, not a second browser.
-- [ ] Test it against fixtures of the endpoint Gutenberg grants. Their test endpoint `https://opds-test.pglaf.org/opds/` is not to be used in production without their consent.
+- [ ] Test it against fixtures saved from the development endpoint `https://opds-test.pglaf.org/opds/` (decision 18). Accept `application/json` as well as `application/opds+json`, since the endpoint sends the former. Fetch fixtures by hand, a few requests, with the app's User-Agent; never point the app at this endpoint.
+- [ ] **Stop here** until the maintainer passes on Gutenberg's production URL.
 - [ ] Switch `builtin.gutenberg` to it before Gutenberg retires the XML feeds in 2027.
 
 ---
