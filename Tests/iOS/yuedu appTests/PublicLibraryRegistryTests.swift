@@ -4,13 +4,23 @@ import Testing
 
 @Suite("Public library registry", .serialized)
 struct PublicLibraryRegistryTests {
-    @Test func builtInListCoversNeverStartAdditionalRequests() {
+    @Test func builtInListsShowThumbnailsButNeverFullCovers() {
         let inline = URL(string: "data:image/png;base64,iVBORw0KGgo=")!
-        let remote = URL(string: "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.small.jpg")!
-        #expect(PublicLibrary.listCoverURL(inline, connectionID: "builtin.gutenberg") == inline)
-        #expect(PublicLibrary.listCoverURL(remote, connectionID: "builtin.gutenberg") == nil)
-        #expect(PublicLibrary.listCoverURL(nil, connectionID: "builtin.gutenberg") == nil)
-        #expect(PublicLibrary.listCoverURL(remote, connectionID: "saved-catalog") == remote)
+        let small = URL(string: "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.small.jpg")!
+        let medium = URL(string: "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.medium.jpg")!
+        let gutenberg = "builtin.gutenberg"
+        // XML feeds: the embedded thumbnail.
+        let embedded = OPDSEntry(id: "a", title: "A", thumbnailURL: inline)
+        #expect(PublicLibrary.listCoverURL(for: embedded, connectionID: gutenberg) == inline)
+        // OPDS 2: the small remote thumbnail, not the medium cover.
+        let remote = OPDSEntry(id: "b", title: "B", thumbnailURL: small, coverURL: medium)
+        #expect(PublicLibrary.listCoverURL(for: remote, connectionID: gutenberg) == small)
+        let coverOnly = OPDSEntry(id: "c", title: "C", coverURL: medium)
+        #expect(PublicLibrary.listCoverURL(for: coverOnly, connectionID: gutenberg) == nil)
+        #expect(PublicLibrary.listCoverURL(for: OPDSEntry(id: "d", title: "D"), connectionID: gutenberg) == nil)
+        // Other catalogs keep their thumbnail-or-cover behavior.
+        #expect(PublicLibrary.listCoverURL(for: coverOnly, connectionID: "saved-catalog") == medium)
+        #expect(PublicLibrary.listCoverURL(for: remote, connectionID: "saved-catalog") == small)
     }
 
     @Test func builtInConnection() throws {

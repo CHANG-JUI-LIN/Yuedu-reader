@@ -67,6 +67,10 @@ Each comes with its reason; the maintainer can overturn any of them.
     - **His reply (2026-10-08):** the development endpoint is `https://opds-test.pglaf.org/opds/`, and "a production preview service" is expected soon. No production URL yet.
     - Checked 2026-10-08: it answers `200`, `Content-Type: application/json` (not `application/opds+json`), with OPDS 2 `groups` (Navigation: bookshelves, subjects; Recently Added, 78,605 items), `publications` and a templated search `search{?query,title,author}`.
     - So Task 13 may build and test the OPDS 2 parser against fixtures saved from this endpoint now. `builtin.gutenberg` switches only once the production service exists; the development endpoint never ships.
+19. **Gutenberg lists load the small thumbnail.** OPDS 2 has no embedded thumbnails, only `cover.small.jpg` URLs, so keeping lists to embedded images would leave them without covers.
+    - A Gutenberg list row shows the entry's thumbnail, embedded or remote, and never its full cover. The medium cover still loads only on the book's detail.
+    - Cost: up to one small image request per visible row (25 per page), on top of the page's one feed request. Loading stays lazy, per visible row; nothing is prefetched.
+    - Worth confirming with Gutenberg in the same thread as decision 18, since the feed itself advertises these thumbnails.
 
 ---
 
@@ -704,4 +708,6 @@ First local run (maintainer, 2026-10-07): the script fetched root, `search?sort=
 
 Passing evidence (maintainer's Mac, `scripts/xctest.sh`, after the last related edit, commit `4ee8cd2`): `OPDS2ParserTests`, `GutenbergOPDS2FixtureTests`, `RemoteLibraryHTTPTests` and `OPDSParserTests` — **36 tests in 4 suites passed** (0.196 s), against the recorded fixtures. The fixtures are committed by the maintainer from that checkout. If the recorded documents differ from the shape assumed here (for example images with rels, or groups without `self` links), adjust the parser against the fixtures, not the fixtures. Then commit the fixtures and tick the fixture checkbox above.
 
-Still stopped: the switch of `builtin.gutenberg` waits for Gutenberg's production URL. When it happens, list covers need a look: OPDS 2 images are remote URLs, while today's Gutenberg lists show only embedded thumbnails (decision 9).
+Still stopped: the switch of `builtin.gutenberg` waits for Gutenberg's production URL.
+
+List covers (decision 19, after part 1): `PublicLibrary.listCoverURL(for:connectionID:)` now takes the entry and returns its thumbnail for Gutenberg (embedded or remote), never the full cover; other catalogs keep thumbnail-or-cover. Today's XML search lists are unchanged (their thumbnails are embedded); once OPDS 2 is switched on, each visible row loads `cover.small.jpg`. Test: `PublicLibraryRegistryTests`.

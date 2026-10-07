@@ -13,11 +13,12 @@ enum PublicLibrary {
         id == gutenberg.id ? gutenberg : nil
     }
 
-    /// Gutenberg lists use only the thumbnails already embedded in the feed,
-    /// keeping a user-opened page to one request. Details may load their cover.
-    static func listCoverURL(_ url: URL?, connectionID: String) -> URL? {
-        guard connectionID == PublicLibraryID.gutenberg.rawValue else { return url }
-        return url?.scheme == "data" ? url : nil
+    /// Gutenberg lists show only the entry's thumbnail, never its full cover:
+    /// embedded data in the XML feeds, the small `cover.small.jpg` in OPDS 2
+    /// (decision 19). The full cover loads only on the book's detail.
+    static func listCoverURL(for entry: OPDSEntry, connectionID: String) -> URL? {
+        guard connectionID == PublicLibraryID.gutenberg.rawValue else { return entry.displayCoverURL }
+        return entry.thumbnailURL
     }
 
     static func gutenbergSearchURL(query: String, sortByDownloads: Bool = false) -> URL {

@@ -376,7 +376,7 @@ struct OPDSFeedView: View {
     private func row(for entry: OPDSEntry) -> some View {
         if entry.isNavigation, let dest = entry.navigationURL {
             NavigationLink(value: OPDSFeedRoute(catalogID: route.catalogID, url: dest.absoluteString, title: entry.title)) {
-                if let thumbnail = PublicLibrary.listCoverURL(entry.displayCoverURL, connectionID: route.catalogID) {
+                if let thumbnail = PublicLibrary.listCoverURL(for: entry, connectionID: route.catalogID) {
                     HStack(spacing: DSSpacing.md) {
                         BookCoverImage(coverURL: thumbnail.absoluteString, title: entry.title, author: entry.author,
                                        session: connection.map { catalogStore.httpClient(for: $0).session })
@@ -392,7 +392,7 @@ struct OPDSFeedView: View {
             NavigationLink(value: RemoteLibraryBookRoute(entry: entry, connectionID: route.catalogID)) {
                 HStack(spacing: DSSpacing.md) {
                     BookCoverImage(
-                        coverURL: PublicLibrary.listCoverURL(entry.displayCoverURL, connectionID: route.catalogID)?.absoluteString ?? "",
+                        coverURL: PublicLibrary.listCoverURL(for: entry, connectionID: route.catalogID)?.absoluteString ?? "",
                         title: entry.title,
                         author: entry.author,
                         session: connection.map { RemoteLibraryConnectionStore.shared.httpClient(for: $0).session }
