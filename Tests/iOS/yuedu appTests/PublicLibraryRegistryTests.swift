@@ -4,6 +4,15 @@ import Testing
 
 @Suite("Public library registry", .serialized)
 struct PublicLibraryRegistryTests {
+    @Test func builtInListCoversNeverStartAdditionalRequests() {
+        let inline = URL(string: "data:image/png;base64,iVBORw0KGgo=")!
+        let remote = URL(string: "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.small.jpg")!
+        #expect(PublicLibrary.listCoverURL(inline, connectionID: "builtin.gutenberg") == inline)
+        #expect(PublicLibrary.listCoverURL(remote, connectionID: "builtin.gutenberg") == nil)
+        #expect(PublicLibrary.listCoverURL(nil, connectionID: "builtin.gutenberg") == nil)
+        #expect(PublicLibrary.listCoverURL(remote, connectionID: "saved-catalog") == remote)
+    }
+
     @Test func builtInConnection() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { if FileManager.default.fileExists(atPath: directory.path) { try? FileManager.default.removeItem(at: directory) } }

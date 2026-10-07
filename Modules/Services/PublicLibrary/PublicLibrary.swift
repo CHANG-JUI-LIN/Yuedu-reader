@@ -13,6 +13,13 @@ enum PublicLibrary {
         id == gutenberg.id ? gutenberg : nil
     }
 
+    /// Gutenberg lists use only the thumbnails already embedded in the feed,
+    /// keeping a user-opened page to one request. Details may load their cover.
+    static func listCoverURL(_ url: URL?, connectionID: String) -> URL? {
+        guard connectionID == PublicLibraryID.gutenberg.rawValue else { return url }
+        return url?.scheme == "data" ? url : nil
+    }
+
     static func gutenbergSearchURL(query: String, sortByDownloads: Bool = false) -> URL {
         var components = URLComponents(string: "https://www.gutenberg.org/ebooks/search.opds/")!
         let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")

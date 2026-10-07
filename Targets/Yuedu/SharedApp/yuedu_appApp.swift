@@ -81,6 +81,14 @@ struct yuedu_appApp: App {
         } catch {
             AppLogger.error("Explore TipKit configuration failed: \(error)")
         }
+        #if DEBUG
+        // Isolate first-install / upgrade UI cases without clearing the reader's books.
+        if ProcessInfo.processInfo.arguments.contains("-reset-public-library-explore") {
+            for key in [ExploreSettings.modeKey, ExploreTabModel.everImportedKey, ExploreTabModel.pendingGuideKey] {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        #endif
         ExploreMode.initializeIfNeeded(hasImportedSources: !BookSourceStore.shared.sources.isEmpty)
         _ = ExploreTabModel.shared
         PublicLibraryAvailability.shared.start()
