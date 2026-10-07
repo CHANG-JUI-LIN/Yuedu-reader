@@ -1,0 +1,50 @@
+name: Aozora Bunko catalog
+
+on:
+  workflow_dispatch:
+  # Enable only after maintainer approval, release/tag trigger review, and setup.
+  # schedule:
+  #   - cron: '0 19 * * *' # 04:00 JST
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aozora-catalog-v1
+  cancel-in-progress: false
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the builder
+        run: python3 -m unittest scripts/aozora_catalog/test_build_catalog.py
+      - name: Build from the official CSV
+        # The builder sends Yuedu-catalog/1 (+https://yuedureader.com/support).
+        # An upstream outage writes nothing and exits successfully with a notice.
+        run: python3 scripts/aozora_catalog/build_catalog.py --output out
+      - name: Compare the published revision
+        id: revision
+        if: ${{ hashFiles('out/manifest.json') != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view aozora-catalog-v1 --json assets > release.json
+          if jq -e '.assets | any(.name == "manifest.json")' release.json >/dev/null; then
+            gh release download aozora-catalog-v1 --pattern manifest.json --dir previous
+            if cmp -s previous/manifest.json out/manifest.json; then
+              echo 'changed=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Replace catalog assets
+        if: ${{ steps.revision.outputs.changed == 'true' }}
+        run: gh release upload aozora-catalog-v1 out/works.json out/manifest.json --clobber
