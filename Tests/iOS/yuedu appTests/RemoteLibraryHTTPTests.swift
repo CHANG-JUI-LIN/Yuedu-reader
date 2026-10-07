@@ -8,6 +8,22 @@ import UIKit
 struct RemoteLibraryHTTPTests {
     private let base = URL(string: "https://library.example/proxy/opds")!
 
+    @Test func identifyingUserAgent() async throws {
+        let client = fixtureClient()
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"
+        let expected = "Yuedu/\(version) (iOS; +https://yuedureader.com/support)"
+        LibraryHTTPProtocol.handler = { request in
+            #expect(request.value(forHTTPHeaderField: "User-Agent") == expected)
+            return (200, [:], Data("book".utf8))
+        }
+        _ = try await client.data(for: URLRequest(url: base))
+        #expect(client.session.configuration.httpAdditionalHeaders?["User-Agent"] as? String == expected)
+        // Covers use the shared session directly; ranges, uploads and downloads
+        // share the request sanitizer.
+        #expect(client.sanitized(URLRequest(url: base)).value(forHTTPHeaderField: "User-Agent") == expected)
+        _ = try await client.fetch(HTTPRequest(url: HTTPURL(url: base)!)).get()
+    }
+
     @Test("Basic and Digest challenges use configured credentials only on their origin")
     func authenticationScope() throws {
         let delegate = RemoteLibraryAuthenticationDelegate(baseURL: base, username: "reader", password: "secret")

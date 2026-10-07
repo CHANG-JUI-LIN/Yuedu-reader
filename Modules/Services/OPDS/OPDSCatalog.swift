@@ -45,7 +45,7 @@ final class OPDSCatalogStore: ObservableObject {
     private var clients: [String: RemoteLibraryHTTPClient] = [:]
 
     static let presets: [OPDSCatalog] = [
-        OPDSCatalog(name: "Project Gutenberg", url: "https://m.gutenberg.org/ebooks.opds/")
+        OPDSCatalog(name: "Project Gutenberg", url: "https://www.gutenberg.org/ebooks.opds/")
     ]
 
     init(storageDirectory: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!,
@@ -88,6 +88,7 @@ final class OPDSCatalogStore: ObservableObject {
     }
 
     func update(_ catalog: OPDSCatalog, password: String?) {
+        guard PublicLibrary.connection(id: catalog.id) == nil else { return }
         guard let index = catalogs.firstIndex(where: { $0.id == catalog.id }) else { return }
         var catalog = catalog
         catalog.url = OPDSCatalog.normalizedURL(catalog.url, kind: catalog.kind)?.absoluteString ?? catalog.url
@@ -104,6 +105,7 @@ final class OPDSCatalogStore: ObservableObject {
     }
 
     func remove(_ catalog: OPDSCatalog) {
+        guard PublicLibrary.connection(id: catalog.id) == nil else { return }
         KeychainHelper.delete(account: Self.keychainAccount(catalog.id))
         KeychainHelper.delete(account: Self.usernameAccount(catalog.id))
         clients.removeValue(forKey: catalog.id)
@@ -116,7 +118,7 @@ final class OPDSCatalogStore: ObservableObject {
     }
 
     func password(for catalog: OPDSCatalog) -> String? { KeychainHelper.load(account: Self.keychainAccount(catalog.id)) }
-    func catalog(id: String) -> OPDSCatalog? { catalogs.first { $0.id == id } }
+    func catalog(id: String) -> OPDSCatalog? { PublicLibrary.connection(id: id) ?? catalogs.first { $0.id == id } }
     func connection(id: String) -> OPDSCatalog? { catalog(id: id) }
 
     func httpClient(for catalog: OPDSCatalog) -> RemoteLibraryHTTPClient {

@@ -21,6 +21,11 @@ extension RemoteLibraryTransport {
 /// Credentials are challenge-based (Basic or Digest) and never offered outside the
 /// configured origin. URLSession's global credential/cookie stores are not used.
 final class RemoteLibraryHTTPClient: @unchecked Sendable, RemoteLibraryTransport {
+    static var userAgent: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"
+        return "Yuedu/\(version) (iOS; +https://yuedureader.com/support)"
+    }
+
     let baseURL: URL
     let session: URLSession
     var readiumClient: any HTTPClient { self }
@@ -30,6 +35,9 @@ final class RemoteLibraryHTTPClient: @unchecked Sendable, RemoteLibraryTransport
         self.baseURL = baseURL
         configuration.urlCredentialStorage = nil
         configuration.httpCookieStorage = nil
+        var headers = configuration.httpAdditionalHeaders ?? [:]
+        headers["User-Agent"] = Self.userAgent
+        configuration.httpAdditionalHeaders = headers
         let delegate = RemoteLibraryAuthenticationDelegate(baseURL: baseURL, username: username, password: password)
         session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         session.sessionDescription = "remote-library-\(UUID().uuidString)"
@@ -88,6 +96,7 @@ final class RemoteLibraryHTTPClient: @unchecked Sendable, RemoteLibraryTransport
     /// Keep their requests usable, while removing any caller-provided credentials.
     func sanitized(_ request: URLRequest) -> URLRequest {
         var request = request
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         if !Self.sameOrigin(request.url, baseURL) {
             request.setValue(nil, forHTTPHeaderField: "Authorization")
             request.setValue(nil, forHTTPHeaderField: "Cookie")
@@ -247,6 +256,7 @@ final class RemoteLibraryAuthenticationDelegate: NSObject, URLSessionTaskDelegat
             return
         }
         var redirected = request
+        redirected.setValue(RemoteLibraryHTTPClient.userAgent, forHTTPHeaderField: "User-Agent")
         if !RemoteLibraryHTTPClient.sameOrigin(request.url, baseURL) {
             redirected.setValue(nil, forHTTPHeaderField: "Authorization")
             redirected.setValue(nil, forHTTPHeaderField: "Cookie")
