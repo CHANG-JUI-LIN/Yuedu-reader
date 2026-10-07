@@ -56,16 +56,15 @@ Each comes with its reason; the maintainer can overturn any of them.
     - The website redirects `https://yuedureader.com/catalogs/aozora/v1/*` to those assets, so the app's URL stays on our own domain.
     - The maintainer can swap the storage later (for example Cloudflare R2) without an app update.
 
-### Open questions
+### The maintainer's, second round (2026-10-07)
 
-Ask the maintainer; do not guess.
-
-- **The China mainland storefront.**
-  - What happened elsewhere: in 2026-01, Readest hid its built-in catalogs in iOS App Store builds "to comply with App Store review policies in certain regions" (readest issue #5133; PRs #3031 and #3102).
-  - Is Yuedu on the China storefront? If so, should 公有書庫 be hidden there?
-  - Ask before the first TestFlight build that includes this plan (Task 12).
-- **The User-Agent's contact.** This plan uses `https://yuedureader.com/support`. Confirm it before shipping, and never put a personal email address in it.
-- **Gutenberg OPDS 2.** Gutenberg writes: "We expect to sunset the existing XML-based OPDS feeds in 2027" (https://www.gutenberg.org/ebooks/offline_catalogs.html). Access to the JSON feed means contacting Gutenberg first. The maintainer makes that contact; Task 13 waits for it.
+16. **The China mainland storefront hides 公有書庫.** The app is on that storefront.
+    - There, Explore keeps today's page (書源) whether or not sources exist. It offers no mode menu and shows no tip.
+    - Reason: in China, App Review may ask an app that provides book content for an Internet Publishing Service licence (developer reports, https://developer.apple.com/forums/thread/746605). Readest turned its built-in catalogs off there first, in 2026-01, "to comply with App Store review policies in certain regions" (readest issue #5133; PRs #3031 and #3102).
+17. **The User-Agent's contact is `https://yuedureader.com/support`.** Never put a personal email address in it.
+18. **Gutenberg OPDS 2: the maintainer is writing to Gutenberg.** Gutenberg writes: "We expect to sunset the existing XML-based OPDS feeds in 2027" (https://www.gutenberg.org/ebooks/offline_catalogs.html), and access to the JSON feed means contacting them first.
+    - The recipient is Eric Hellman (`eric (at) pglaf.org`), Executive Director of the Project Gutenberg Literary Archive Foundation and the catalog's technical contact (https://www.gutenberg.org/cache/epub/feeds/about.txt).
+    - Task 13 waits for his reply.
 
 ---
 
@@ -235,7 +234,10 @@ All of this was requested live on 2026-10-07.
 **Files:** `ExploreSettings.swift`; create `Tests/iOS/yuedu appTests/ExploreModeTests.swift`.
 
 - [ ] **Step 1: Write the failing tests.**
-  - `ExploreMode.effective(stored:hasImportedSources:)` returns `.publicLibraries` whenever there are no sources, whatever is stored. With sources, it returns what is stored.
+  - `ExploreMode.effective(stored:hasImportedSources:librariesAvailable:)`:
+    - returns `.bookSources` whenever the libraries are not available (the China storefront, decision 16);
+    - otherwise returns `.publicLibraries` whenever there are no sources, whatever is stored;
+    - otherwise, with sources, returns what is stored.
   - First launch of this build (`ExploreMode.initialValue(hasImportedSources:)`): `.bookSources` with sources (decision 6), `.publicLibraries` without.
   - Storage round-trip: the key is `explore.mode`, with raw values `"libraries"` and `"sources"`. An unknown raw value reads as the default for the case above.
 - [ ] **Step 2: Implement.**
@@ -274,7 +276,7 @@ All of this was requested live on 2026-10-07.
   - The `Picker` gives the native checkmark.
   - The label is an icon-only `ellipsis.circle`, with `.accessibilityLabel(localized("切換探索內容"))` and an accessibility value naming the current mode.
   - It is the leading-most `.topBarTrailing` item in both roots, so it stays in one place.
-  - It is present only when sources exist.
+  - It is present only when sources exist and the libraries are available (decision 16).
   - In 公有書庫 the toolbar holds only this menu. ＋ 新增自訂頁, ⚙︎ 探索設定 and the group menu belong to the 書源 page and stay there.
 - [ ] **Step 3: Title and search.**
   - `PublicLibraryHomeView` uses `.rootTabTitle(localized("探索"), onScroll: .minimizesBar)`, as `ExploreHomeView` does.
@@ -525,6 +527,7 @@ All of this was requested live on 2026-10-07.
   - **Detecting the first import:** one observer of `BookSourceStore.shared.$sources`, owned by `ExploreTabRoot`'s model, sets `sourcesImported = true` on the first transition from empty to non-empty.
     - A reader who already has sources at upgrade gets no tip: decision 6 already puts them in 書源.
   - **When it shows:** each time Explore appears with `sourcesImported` true, donate `exploreOpenedAfterImport`. The tip therefore shows the next time Explore opens, not on the screen where the reader imported.
+  - **Never on the China storefront:** there is no menu to point at (decision 16).
   - **Placement:** `.popoverTip(ExploreModeTip(), arrowEdge: .top)` on the mode menu.
   - **The bounce:** while `tip.shouldDisplay` (watch `statusUpdates`), the menu's symbol bounces with `.symbolEffect(.bounce, value:)`, skipped when `accessibilityReduceMotion`.
   - **Dismissal:** opening the menu, choosing a mode, or the tip's action invalidates it (`.actionPerformed`). The 「切換到書源」 action sets the mode to 書源; that is the reader's own choice, consistent with decision 3.
@@ -558,10 +561,22 @@ All of this was requested live on 2026-10-07.
   - the terms and how each is honoured;
   - the catalog pipeline, the URLs and the manual workflow run;
   - attribution;
-  - the 2027 Gutenberg OPDS sunset;
-  - the open questions and their answers.
+  - the 2027 Gutenberg OPDS sunset and the contact with Gutenberg;
+  - the China storefront rule (decision 16).
 - [ ] **`Technotes/RemoteLibraryReading.md`:** built-in connections.
-- [ ] **Ask the maintainer about the China storefront**, the open question above. If built-in libraries are to be hidden there, gate them on `Storefront.current?.countryCode == "CHN"`, with a test. Treat this as its own decision; do not do it by default.
+- [ ] **Hide 公有書庫 on the China storefront** (decision 16). Build this before the first TestFlight build that includes the libraries.
+  - **The source of truth.** `PublicLibraryAvailability` reads StoreKit 2's `Storefront.current` at launch and on `Storefront.updates`.
+    - It keeps the last known country code in `UserDefaults`, so a cold start does not flash the libraries before StoreKit answers.
+    - `CHN` makes the libraries unavailable.
+    - An unknown storefront (`nil`) leaves them available. Document this in the type.
+  - **What turns off.** `ExploreTabRoot`, the mode menu and the tip read the availability. Nothing else changes: the OPDS sheet's Gutenberg example stays as it is today.
+  - **Tests.**
+    - The availability: CHN, another storefront, nil, the cached value on cold start, and an update while running.
+    - `ExploreMode.effective` with the libraries unavailable.
+  - **Record the review risk** in `Technotes/PublicLibraries.md`.
+    - App Review usually runs on US-storefront devices, and one binary serves every storefront.
+    - If a China review still objects to the book content, the remaining option is the one Readest took: remove the built-in libraries from App Store builds.
+    - That is a maintainer decision.
 - [ ] **Measure** the first open of 公有書庫 on the simulator (Gutenberg root and catalog load), with `SourcePerfTrace` spans, and record the numbers.
 
 ## Task 13: Gutenberg OPDS 2 (after the maintainer has contacted Gutenberg)
