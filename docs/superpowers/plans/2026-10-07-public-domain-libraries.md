@@ -186,6 +186,7 @@ All of this was requested live on 2026-10-07.
 - **Localization.** Every string goes through `localized(…)` in all five languages (zh-Hant, zh-Hans, en, ja, ko). Run `ruby scripts/check_localizations.rb`.
 - **Errors.** No `try?` that discards an error in network or parsing code; log through `AppLogger`. No timing-based waits.
 - **Views don't orchestrate.** Downloading, converting and caching live in services. A view calls one use case.
+- **Never behind Pro.** Neither library, nor reading, shelving or downloading their books, may require the Pro subscription. The maintainer's email to Gutenberg states this.
 - **Outward actions need the maintainer's yes, asked in chat:**
   - enabling the scheduled workflow;
   - creating the release;
