@@ -16,7 +16,7 @@
 
 共享 HTTP client 的 request、session 預設 header 和重新導向均保留 `Yuedu/<version> (iOS; +https://yuedureader.com/support)`。沒有個人 email。參照 [OPDS 使用條款](https://www.gutenberg.org/policy/terms_of_use.html) 與 [機器人政策](https://www.gutenberg.org/policy/robot_access.html)，所有書籍由讀者直接從 Gutenberg 取得，保留原檔授權文字。介面註明其公有領域判斷以美國為準，其他所在地法律可能不同。
 
-[離線目錄說明](https://www.gutenberg.org/ebooks/offline_catalogs.html) 預告 2027 年停用現有 XML OPDS。Gutenberg 已提供開發用端點 `https://opds-test.pglaf.org/opds/`，正式網址尚未公布。Task 13 第一部分已完成：`OPDSClient` 依 Content-Type（`application/opds+json`、`application/opds-publication+json`、`application/json`）以 `OPDS2FeedParser` 解析 OPDS 2，對應同一組 `OPDSFeed`／`OPDSEntry`；fixture 由 `scripts/fetch_gutenberg_opds2_fixtures.sh` 手動自開發端點取得。App 不連線開發端點，`builtin.gutenberg` 仍是 XML feed，等正式網址再切換。
+[離線目錄說明](https://www.gutenberg.org/ebooks/offline_catalogs.html) 預告 2027 年停用現有 XML OPDS。Gutenberg 已提供開發用端點 `https://opds-test.pglaf.org/opds/`，正式網址尚未公布。Task 13 第一部分已完成：`OPDSClient` 依 Content-Type（`application/opds+json`、`application/opds-publication+json`、`application/json`）以 `OPDS2FeedParser` 解析 OPDS 2，對應同一組 `OPDSFeed`／`OPDSEntry`；fixture 由 `scripts/fetch_gutenberg_opds2_fixtures.sh` 手動自開發端點取得。Release／TestFlight 不連線開發端點，`builtin.gutenberg` 仍是 XML feed。Debug 版以 `-gutenberg-opds2-dev` 啟動時（共用 scheme 的 Run 會帶入；Test 不繼承）改用開發端點，所有 Gutenberg 網址由 `GutenbergEndpoint` 產生（計畫 decision 20）。正式網址公布後只改 `GutenbergEndpoint` 並刪除開發用 case 與參數。
 
 Gutenberg 列表只顯示書籍的縮圖，不載入完整封面（計畫 decision 19）：XML feed 是內嵌縮圖，OPDS 2 則是遠端的 `cover.small.jpg`，切換後每個可見列最多多一個小圖請求，不預抓。完整封面只在詳情頁載入。
 
