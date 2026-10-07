@@ -1,0 +1,18 @@
+{
+  "group.json": {
+    "contentType": "application/json",
+    "url": "https://opds-test.pglaf.org/opds/search?sort=release_date&sort_order=desc"
+  },
+  "publication.json": {
+    "contentType": "application/opds-publication+json",
+    "url": "https://opds-test.pglaf.org/opds/publications?id=79734"
+  },
+  "root.json": {
+    "contentType": "application/json",
+    "url": "https://opds-test.pglaf.org/opds/"
+  },
+  "search.json": {
+    "contentType": "application/json",
+    "url": "https://opds-test.pglaf.org/opds/search?query=austen"
+  }
+}
