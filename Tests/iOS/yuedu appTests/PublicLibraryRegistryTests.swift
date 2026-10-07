@@ -25,6 +25,15 @@ struct PublicLibraryRegistryTests {
         #expect(OPDSCatalogStore.presets.first?.url == catalog.url)
     }
 
+    @Test func searchEncodesQueryWithoutChangingItsMeaning() {
+        for query in ["中文 書 & 詩", "猫+犬", "a&b=c?#/", "日本語"] {
+            let url = PublicLibrary.gutenbergSearchURL(query: query)
+            #expect(url.host == "www.gutenberg.org")
+            #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "query", value: query)])
+            #expect(!url.absoluteString.contains("+"))
+        }
+    }
+
     @Test func shelvesFollowInterfaceLanguage() {
         for (language, query) in [("zh-Hant", "l.zh"), ("zh-Hans", "l.zh"), ("ja", "l.ja"), ("ko", "l.ko")] {
             let shelves = GutenbergShelf.shelves(language: language)

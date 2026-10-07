@@ -3,11 +3,44 @@ import SwiftUI
 struct PublicLibraryHomeView: View {
     var modeMenu: ExploreModeMenu? = nil
     @State private var path = NavigationPath()
+    @State private var query = ""
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     @ObservedObject private var aozora = AozoraCatalogStore.shared
 
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                if trimmedQuery.isEmpty { librarySections }
+                else {
+                    PublicLibrarySearchResults(query: trimmedQuery, index: aozora.catalog, submitGutenberg: submitSearch)
+                }
+            }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: localized("搜尋公有書庫"))
+            .onSubmit(of: .search, submitSearch)
+            .task { await aozora.load() }
+            .refreshable { await aozora.load(forceRefresh: true) }
+            .navigationDestination(for: OPDSFeedRoute.self) { OPDSFeedView(route: $0) }
+            .navigationDestination(for: RemoteLibraryBookRoute.self) { RemoteLibraryBookDetailView(item: $0.item) }
+            .listStyle(.insetGrouped)
+            .rootTabSearchScrollEdges()
+            .themedAppSurface(for: .explore)
+            .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
+            .toolbar {
+                if let modeMenu {
+                    ToolbarItem(placement: .topBarTrailing) { modeMenu }
+                }
+            }
+        }
+    }
+
+    private func submitSearch() {
+        guard !trimmedQuery.isEmpty else { return }
+        path.append(OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
+                                 url: PublicLibrary.gutenbergSearchURL(query: trimmedQuery).absoluteString,
+                                 title: String(trimmedQuery.prefix(500))))
+    }
+
+    @ViewBuilder private var librarySections: some View {
                 Section {
                     ForEach(GutenbergShelf.shelves(language: Bundle.main.preferredLocalizations.first ?? "en")) { shelf in
                         NavigationLink(value: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
@@ -44,22 +77,8 @@ struct PublicLibraryHomeView: View {
                         }.dsSectionFooter()
                     }.interfaceSectionSurface()
                 }
-            }
-            .task { await aozora.load() }
-            .refreshable { await aozora.load(forceRefresh: true) }
-            .navigationDestination(for: OPDSFeedRoute.self) { OPDSFeedView(route: $0) }
-            .navigationDestination(for: RemoteLibraryBookRoute.self) { RemoteLibraryBookDetailView(item: $0.item) }
-            .listStyle(.insetGrouped)
-            .rootTabSearchScrollEdges()
-            .themedAppSurface(for: .explore)
-            .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
-            .toolbar {
-                if let modeMenu {
-                    ToolbarItem(placement: .topBarTrailing) { modeMenu }
-                }
-            }
-        }
     }
+
 }
 
 #Preview { PublicLibraryHomeView().environmentObject(BookStore()) }

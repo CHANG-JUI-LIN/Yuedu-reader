@@ -15,8 +15,9 @@ enum PublicLibrary {
 
     static func gutenbergSearchURL(query: String, sortByDownloads: Bool = false) -> URL {
         var components = URLComponents(string: "https://www.gutenberg.org/ebooks/search.opds/")!
-        components.queryItems = [URLQueryItem(name: "query", value: query)]
-        if sortByDownloads { components.queryItems?.append(URLQueryItem(name: "sort_order", value: "downloads")) }
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: unreserved)!
+        components.percentEncodedQuery = "query=" + encoded + (sortByDownloads ? "&sort_order=downloads" : "")
         return components.url!
     }
 }

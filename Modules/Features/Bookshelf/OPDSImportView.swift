@@ -334,6 +334,7 @@ struct OPDSFeedView: View {
         .themedAppSurface(for: .bookshelf)
         .searchable(text: $searchText, prompt: localized("搜尋此目錄"))
         .onSubmit(of: .search, submitSearch)
+        .submitScope()
         .onChange(of: searchText) { oldValue, newValue in
             if !oldValue.isEmpty && newValue.isEmpty { submitSearch() }
         }

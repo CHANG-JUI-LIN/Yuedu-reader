@@ -3602,3 +3602,7 @@
 "翻訳者" = "Translator";
 
 "編者" = "Editor";
+
+"搜尋公有書庫" = "Search Public Libraries";
+
+"在 Project Gutenberg 搜尋「%@」" = "Search Project Gutenberg for “%@”";
