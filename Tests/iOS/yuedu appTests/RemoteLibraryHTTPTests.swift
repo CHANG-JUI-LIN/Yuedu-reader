@@ -25,6 +25,25 @@ struct RemoteLibraryHTTPTests {
         await #expect(throws: URLError.self) { try await client.fetchFeed(base) }
     }
 
+    @Test("OPDS 2 responses, including plain application/json, reach the JSON parser")
+    func opds2ContentTypes() async throws {
+        let client = OPDSClient(httpClient: fixtureClient())
+        for type in ["application/json", "application/opds+json; charset=utf-8"] {
+            LibraryHTTPProtocol.handler = { request in
+                #expect(request.value(forHTTPHeaderField: "Accept")?.contains("application/opds+json") == true)
+                return (200, ["Content-Type": type], Data("""
+                    {"metadata": {"title": "JSON"}, "links": [{"rel": "next", "href": "?page=2"}], "navigation": [{"href": "sub", "title": "Sub"}]}
+                    """.utf8))
+            }
+            let feed = try await client.fetchFeed(base)
+            #expect(feed.title == "JSON")
+            #expect(feed.entries.first?.navigationURL?.absoluteString == "https://library.example/proxy/sub")
+            #expect(feed.nextPageURL?.absoluteString == "https://library.example/proxy/opds?page=2")
+        }
+        LibraryHTTPProtocol.handler = { _ in (200, ["Content-Type": "application/json"], Data("{\"metadata\":".utf8)) }
+        await #expect(throws: OPDSError.self) { try await client.fetchFeed(base) }
+    }
+
     @Test func identifyingUserAgent() async throws {
         let client = fixtureClient()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"

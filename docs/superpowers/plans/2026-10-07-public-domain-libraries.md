@@ -584,7 +584,7 @@ All of this was requested live on 2026-10-07.
 
 ## Task 13: Gutenberg OPDS 2 (parser now; switch after Gutenberg's production service exists)
 
-- [ ] Add OPDS 2 JSON (`application/opds+json`) to `OPDSClient`, mapping to the same `OPDSFeed` / `OPDSEntry` models. It is one parser per format behind one client, not a second browser.
+- [x] Add OPDS 2 JSON (`application/opds+json`) to `OPDSClient`, mapping to the same `OPDSFeed` / `OPDSEntry` models. It is one parser per format behind one client, not a second browser. (Written; not yet compiled. See "Task 13, part 1".)
 - [ ] Test it against fixtures saved from the development endpoint `https://opds-test.pglaf.org/opds/` (decision 18). Accept `application/json` as well as `application/opds+json`, since the endpoint sends the former. Fetch fixtures by hand, a few requests, with the app's User-Agent; never point the app at this endpoint.
 - [ ] **Stop here** until the maintainer passes on Gutenberg's production URL.
 - [ ] Switch `builtin.gutenberg` to it before Gutenberg retires the XML feeds in 2027.
@@ -676,3 +676,28 @@ Passing evidence after the final related edits:
 - Evidence is in `~/Library/Logs/YueduPublicLibraries/20261007-storefront/`, including `native-initial-passed/`, `final-regression/` and `logs/`. Own result bundles and the test catalog cache were removed after attachment export; the imported theme was retained. iOS 17 runtime visuals and the full official Aozora catalog remain unmeasured.
 
 New fallbacks: **none**. The four planned failure/compatibility paths listed above remain unchanged. No push, schedule activation, release/tag creation or website redirect change was performed. Task 13 and live official Aozora acceptance remain deferred for the previously documented upstream and maintainer actions. Other agents' README and reading-style changes remain excluded.
+
+### Task 13, part 1: what landed
+
+2026-10-07, on branch `claude/magical-mccarthy-l9x4pt`, not `main`. Written in a Linux cloud session **without Xcode or a Swift toolchain: nothing here has been compiled or run.** `builtin.gutenberg` and every app URL are unchanged; the app never requests `opds-test.pglaf.org`.
+
+- `Modules/Services/OPDS/OPDS2FeedParser.swift`: OPDS 2 JSON mapped onto `OPDSFeed` / `OPDSEntry`. `OPDSClient.parseFeed(data:feedURL:contentType:)` chooses it when Content-Type is `application/opds+json`, `application/opds-publication+json` or `application/json`; anything else still goes to the Atom parser. `fetchFeed` passes the response's Content-Type and adds `application/opds+json;q=0.9` to `Accept`, with Atom still preferred.
+- Mapped: feed `metadata.title`; links `next` (pagination) and `alternate` text/html; `navigation`; `groups`; `publications`; a publication document (no collections) as a one-entry feed. Publication `identifier` (entry id), `title` (string or language map), `author` (string, object with `sortAs`/`links`, or array), `description` (plain text), `language` (string or array; decoded, not stored, as the Atom path stores none), `images` (largest is the cover, smallest the thumbnail), acquisition links, `self` as the entry's navigation URL, author links as related links.
+- Groups flatten, since the models are flat: navigation links become navigation entries; a publications group with a `self` link becomes one navigation entry to it; one without keeps its publications inline.
+- Search: the RFC 6570 template (`search{?query,title,author}`) becomes the OpenSearch form (`search?query={searchTerms}`), which the existing `resolveSearchTemplate` expands and encodes. Only `query` is filled; a template without `query` gives no search.
+- Errors: malformed JSON, wrong types in read members, and a document with neither collections nor metadata throw `OPDSError.invalidFeed`, logged through `AppLogger.parse`; an empty body throws `noData`. Unknown members are ignored. No `try?`, retries or delays. `plainMetadata` is shared with the Atom parser (moved, not duplicated).
+- Fixtures were **not** saved: the session's network policy refused `opds-test.pglaf.org` (proxy 403). `scripts/fetch_gutenberg_opds2_fixtures.sh` saves them: four sequential requests (root, the first publications group's `self` page, a search for `austen`, that page's first publication), User-Agent `Yuedu/dev (iOS; +https://yuedureader.com/support)`, no retries, plus `sources.json` recording each URL and Content-Type. Its link-picking was checked offline against a hand-made document only.
+- Tests: `OPDS2ParserTests` (9 tests, hand-written JSON in the endpoint's shape), `GutenbergOPDS2FixtureTests` (4 tests on the recorded files; they fail until the script has run) and `RemoteLibraryHTTPTests.opds2ContentTypes` (dispatch through the stub transport for both JSON types, `Accept`, malformed body).
+
+New fallbacks: **none**.
+
+Maintainer, locally:
+
+```bash
+bash scripts/fetch_gutenberg_opds2_fixtures.sh
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/OPDS2ParserTests' -only-testing:'yuedu appTests/GutenbergOPDS2FixtureTests' -only-testing:'yuedu appTests/RemoteLibraryHTTPTests' -only-testing:'yuedu appTests/OPDSParserTests'
+```
+
+`OPDSParserTests` guards the Atom path after the shared-sanitizer move. If the recorded documents differ from the shape assumed here (for example images with rels, or groups without `self` links), adjust the parser against the fixtures, not the fixtures. Then commit the fixtures and tick the fixture checkbox above.
+
+Still stopped: the switch of `builtin.gutenberg` waits for Gutenberg's production URL. When it happens, list covers need a look: OPDS 2 images are remote URLs, while today's Gutenberg lists show only embedded thumbnails (decision 9).

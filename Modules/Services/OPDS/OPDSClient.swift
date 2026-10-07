@@ -128,7 +128,8 @@ struct OPDSClient {
         let started = SourcePerfTrace.now
         defer { SourcePerfTrace.record("publicLibrary.opds.load", url.path, since: started, thresholdMs: 0) }
         var request = URLRequest(url: url, timeoutInterval: 30)
-        request.setValue("application/atom+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        // Atom stays preferred, so servers offering both keep answering as before.
+        request.setValue("application/atom+xml,application/xml;q=0.9,application/opds+json;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         let (data, response) = try await transport(for: url).data(for: request)
         // Calibre's OPDS search deliberately uses HTTP 404 for no matches. Only
         // that documented search response is empty; unrelated 404s remain errors.
@@ -137,7 +138,8 @@ struct OPDSClient {
             return OPDSFeed()
         }
         try RemoteLibraryHTTPClient.validate(response)
-        return try Self.parseFeed(data: data, feedURL: response.url ?? url)
+        return try Self.parseFeed(data: data, feedURL: response.url ?? url,
+                                  contentType: response.value(forHTTPHeaderField: "Content-Type"))
     }
 
     static func isCalibreEmptySearch(data: Data, status: Int, kind: RemoteLibraryKind, isSearch: Bool) -> Bool {
@@ -150,7 +152,11 @@ struct OPDSClient {
         catch { return false } // An unreadable error document is never an empty result.
     }
 
-    static func parseFeed(data: Data, feedURL: URL) throws -> OPDSFeed {
+    /// One parser per format: OPDS 2 JSON by Content-Type, Atom otherwise.
+    static func parseFeed(data: Data, feedURL: URL, contentType: String? = nil) throws -> OPDSFeed {
+        if OPDS2FeedParser.handles(contentType: contentType) {
+            return try OPDS2FeedParser.parse(data: data, feedURL: feedURL)
+        }
         guard !data.isEmpty else { throw OPDSError.noData }
         let parser = XMLParser(data: data)
         parser.shouldProcessNamespaces = true
@@ -219,6 +225,16 @@ struct OPDSClient {
         return Self.url(from: resolved.absoluteString)
     }
 
+    /// Feed metadata may carry markup; both parsers reduce it to bounded plain text.
+    static func plainMetadata(_ value: String, limit: Int) -> String {
+        let bounded = String(value.prefix(limit * 4))
+        do { return String(try SwiftSoup.parse(bounded).text().prefix(limit)) }
+        catch {
+            AppLogger.error("Unable to sanitize OPDS metadata: \(error)")
+            return String(bounded.prefix(limit))
+        }
+    }
+
     fileprivate static func decodedBraces(_ string: String) -> String {
         string.replacingOccurrences(of: "%7B", with: "{", options: .caseInsensitive)
             .replacingOccurrences(of: "%7D", with: "}", options: .caseInsensitive)
@@ -281,14 +297,7 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         }
     }
 
-    private static func plain(_ value: String, limit: Int) -> String {
-        let bounded = String(value.prefix(limit * 4))
-        do { return String(try SwiftSoup.parse(bounded).text().prefix(limit)) }
-        catch {
-            AppLogger.error("Unable to sanitize OPDS metadata: \(error)")
-            return String(bounded.prefix(limit))
-        }
-    }
+    private static func plain(_ value: String, limit: Int) -> String { OPDSClient.plainMetadata(value, limit: limit) }
 
     private func handleLink(_ attributes: [String: String], base: URL) {
         guard let href = attributes["href"], !href.isEmpty else { return }
