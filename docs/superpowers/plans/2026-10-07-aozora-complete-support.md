@@ -161,6 +161,28 @@ Logical properties (`margin-inline-start`, …) say what Aozora means in both mo
 - [ ] Run the four checks above and `CoreTextWritingModeTests` with the normal project.
 - [ ] Merge the app branch.
 
+### Phase 2a: what landed
+
+**Status, 2026-10-07: code and tests written, nothing run, nothing released.** Written in a Linux cloud session without Xcode or a simulator, so no build or test in this record has run. Task 3 stops at the release checkpoint: the maintainer has not yet been asked to publish.
+
+Commits:
+- Package, branch `aozora-logical-properties` (from 0.7.0, 1fa83fa): 06a7a01 `feat(css): map CSS logical properties to physical sides by writing mode` (Task 1); b4fd57f `docs: record CSS logical properties for the next minor release` (Task 3, CHANGELOG `[0.8.0] - Unreleased` and README notes; the install instructions still say 0.7.0).
+- App, branch `claude/zealous-bardeen-87ribn` (from main 0c3f6c7): 58783d5 `feat(reader): read CSS logical properties in the legacy engine` (Task 2). It uses no new package API, so it builds against 0.7.0.
+
+Decisions made while implementing:
+- **BrowserAuto maps at declaration time** (`LogicalGeometry.physicalProperty(forLogical:mode:)`, called from `ComputedStylePropertyApplier.apply`). The cascade's existing source order then gives CSS precedence; `max-inline-size` and `min-inline-size` are handled in the applier because their `none` / `auto` must clear the field.
+- **The writing mode became a cascade input.** `BrowserChapterDocument.evaluate(configuration:writingMode:)` used to cascade with the configuration's own writing mode, which could differ from the one it judged; it now styles for the judged mode and stores it in the evaluation's configuration, and `CascadeInputs` includes `writingMode`. A pending evaluation is no longer rebound across a 排版方向 change (`BrowserLayoutPageEngine.chapterEvaluation` logs `admissionEvaluationStale` and evaluates again), where it used to keep the other mode's verdict.
+- **`min-inline-size`** needed a field: `ComputedStyle.minWidth`, swapped with `minHeight` by `LogicalFlow.styleTree` and honoured over the maximum in `BlockLayout.resolveSides`. Physical `min-width` stays unparsed and vertical admission still refuses physical `min-height` / `min-width`, so no existing chapter changes. Legacy has no minimum line length and drops `min-inline-size`.
+- **Legacy maps without the writing mode.** Its head indent is the inline start and paragraph spacing before the block start in both modes, so `margin-inline-start` → `margin-left`, `margin-block-start` → `margin-top`, `inline-size` → `width`, and so on (`LegacyLogicalProperties`), resolved in each block's source order. Legacy already drops `margin-top` in vertical writing (`paragraphSpacingBefore = 0`) and caps paragraph spacing at 1 em there; `margin-block-start` inherits that, unchanged.
+- **Legacy `max-inline-size`** is `ResolvedStyle.maxInlineSize` → `RenderStyle.maxInlineSize` → a wider negative tail indent in `NodeAttributedStringRenderer`, measured along `renderWidth` (horizontal) or `renderHeight` (vertical). Not a positive tail indent: the horizontal line drawer and the decoration boxes read a paragraph's end only from a negative one. Not applied to right-aligned RTL paragraphs, which carry their inset in the head indent. A percentage resolves against `renderWidth` in both modes, like every other legacy percentage; the Aozora stylesheet uses `em` only.
+- **Shorthand after a longhand in one block** (`margin-inline-start: 2em; margin: 0`): BrowserAuto lets the later `margin` win, as CSS does; legacy applies longhands after the shorthand whatever their order, as it already did for `margin-left`. The Aozora stylesheet never writes both.
+
+Tests written, not run:
+- Package: `Tests/YueduCoreTextTests/Engine/LogicalPropertyTests.swift` (cascade per side and mode, `none`/`auto`, order, the evaluation's writing mode, admission, and paged and continuous geometry for `margin-inline-start`, `max-inline-size`, `min-inline-size` and `text-align: end`); one assertion added to `SharedEvaluationEquivalenceTests.layoutRejectsChangedCascadeInputs`.
+- App: `Tests/iOS/yuedu appTests/LegacyLogicalPropertyTests.swift`, through `EPUBAttributedStringBuilder` in both modes.
+
+Still to do for Phase 2a: run the tests below on the maintainer's Mac, fix what fails, then Task 3 (publish 0.8.0 with the maintainer's yes, bump the app's requirement, merge). The screenshot probes and the corpus run belong to Phase 2b, where the stylesheet first uses these properties.
+
 ## Phase 2b — The CSS group
 
 ### Task 4: The Aozora stylesheet, version 2
