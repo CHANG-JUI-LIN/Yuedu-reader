@@ -621,6 +621,28 @@ struct AozoraBookSource: Codable, Equatable, Sendable {
     var originalFilename: String
     /// `String.Encoding.rawValue` of the encoding the text was read with.
     var sourceEncoding: UInt
+    var catalogWorkID: String?
+
+    init(originalFilename: String, sourceEncoding: UInt, catalogWorkID: String? = nil) {
+        self.originalFilename = originalFilename
+        self.sourceEncoding = sourceEncoding
+        self.catalogWorkID = catalogWorkID
+    }
+
+    private enum CodingKeys: String, CodingKey { case originalFilename, sourceEncoding, catalogWorkID }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        originalFilename = try values.decode(String.self, forKey: .originalFilename)
+        sourceEncoding = try values.decode(UInt.self, forKey: .sourceEncoding)
+        catalogWorkID = try values.decodeIfPresent(String.self, forKey: .catalogWorkID)
+    }
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(originalFilename, forKey: .originalFilename)
+        try values.encode(sourceEncoding, forKey: .sourceEncoding)
+        // A missing ID must not change old books' stable hashes during sync.
+        try values.encodeIfPresent(catalogWorkID, forKey: .catalogWorkID)
+    }
 }
 
 struct EPUBTocEntry: Codable, Equatable {

@@ -353,6 +353,7 @@ struct AppDependencies {
     var onlineBookCoordinator: OnlineBookCoordinating
     var offlineDownloadManager: any OfflineDownloadManaging
     var offlineChapterStore: any OfflineChapterStoring
+    var aozoraLibrary: any AozoraLibraryDownloading = MainActor.assumeIsolated { AozoraLibraryDownloadService() }
     var remoteLibrary: any RemoteLibraryServing = MainActor.assumeIsolated { RemoteLibraryService.shared }
     var remoteLibraryWriting: any RemoteLibraryWriting = MainActor.assumeIsolated { RemoteLibraryWritingService() }
     var calibreProgress = MainActor.assumeIsolated { CalibreProgressService() }

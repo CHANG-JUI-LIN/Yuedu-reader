@@ -3552,3 +3552,53 @@
 "Project Gutenberg 的書在美國屬於公有領域；所在地區的著作權規定可能不同。" = "Project Gutenberg books are in the public domain in the United States; copyright rules may differ where you live.";
 
 "在書庫網站查看" = "View on Library Website";
+
+"青空文庫" = "Aozora Bunko";
+
+"新着作品" = "New Works";
+
+"作家別" = "Authors";
+
+"作品名別" = "Titles";
+
+"分類別" = "Categories";
+
+"無法連線到青空文庫網站" = "Unable to connect to Aozora Bunko.";
+
+"這個檔案不是青空文庫的文字" = "This file does not contain Aozora Bunko text.";
+
+"青空文庫下載網址無效" = "Invalid Aozora Bunko download URL.";
+
+"正在加入書架" = "Adding to Bookshelf";
+
+"正在更新目錄" = "Updating Catalog";
+
+"目錄更新失敗，仍顯示已儲存的目錄。" = "The catalog could not be updated. Your saved catalog is shown.";
+
+"書誌資料：青空文庫（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）" = "Bibliographic data: Aozora Bunko ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/))";
+
+"底本" = "Source Edition";
+
+"公開日" = "Published";
+
+"文字遣い種別" = "Orthography";
+
+"在青空文庫網站查看" = "View on Aozora Bunko";
+
+"拉丁字母" = "Latin Alphabet";
+
+"小説・物語" = "Fiction and Stories";
+
+"詩歌" = "Poetry";
+
+"評論・エッセイ" = "Criticism and Essays";
+
+"其他日本文學" = "Other Japanese Literature";
+
+"其他文學" = "Other Literature";
+
+"著者" = "Author";
+
+"翻訳者" = "Translator";
+
+"編者" = "Editor";
