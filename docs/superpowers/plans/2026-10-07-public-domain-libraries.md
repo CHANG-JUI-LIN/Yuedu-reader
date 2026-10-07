@@ -234,14 +234,14 @@ All of this was requested live on 2026-10-07.
 
 **Files:** `ExploreSettings.swift`; create `Tests/iOS/yuedu appTests/ExploreModeTests.swift`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `ExploreMode.effective(stored:hasImportedSources:librariesAvailable:)`:
     - returns `.bookSources` whenever the libraries are not available (the China storefront, decision 16);
     - otherwise returns `.publicLibraries` whenever there are no sources, whatever is stored;
     - otherwise, with sources, returns what is stored.
   - First launch of this build (`ExploreMode.initialValue(hasImportedSources:)`): `.bookSources` with sources (decision 6), `.publicLibraries` without.
   - Storage round-trip: the key is `explore.mode`, with raw values `"libraries"` and `"sources"`. An unknown raw value reads as the default for the case above.
-- [ ] **Step 2: Implement.**
+- [x] **Step 2: Implement.**
 
   ```swift
   enum ExploreMode: String, CaseIterable, Sendable {
@@ -252,7 +252,7 @@ All of this was requested live on 2026-10-07.
 
   - Add `ExploreSettings.modeKey = "explore.mode"`.
   - Write the initial value once, at first launch of this build, when the key is absent. App start is the one place that knows the sources before any Explore view exists.
-- [ ] **Step 3: Run and commit.**
+- [x] **Step 3: Run and commit.**
 
   ```bash
   bash scripts/xctest.sh -- -only-testing:'yuedu appTests/ExploreModeTests'
@@ -266,11 +266,11 @@ All of this was requested live on 2026-10-07.
 - Modify `BrowserView.swift` and `ExploreHomeView.swift`.
 - Update the title whitelist in `docs/design.md` and both skill copies.
 
-- [ ] **Step 1: The root.**
+- [x] **Step 1: The root.**
   - `BrowserView.body` shows `ExploreTabRoot(browser:)`.
   - `ExploreTabRoot` observes `BookSourceStore.shared.$sources` and `@AppStorage(ExploreSettings.modeKey)`, and shows `ExploreHomeView` for `.bookSources` or `PublicLibraryHomeView` for `.publicLibraries`.
   - Each root keeps its own `NavigationStack`. Switching modes resets the other mode's path; that is accepted.
-- [ ] **Step 2: The menu.**
+- [x] **Step 2: The menu.**
   - `ExploreModeMenu` is a `Menu` holding a `Picker(selection:)` with two options:
     - 公有書庫 (`books.vertical`);
     - 書源 (`antenna.radiowaves.left.and.right`).
@@ -279,13 +279,13 @@ All of this was requested live on 2026-10-07.
   - It is the leading-most `.topBarTrailing` item in both roots, so it stays in one place.
   - It is present only when sources exist and the libraries are available (decision 16).
   - In 公有書庫 the toolbar holds only this menu. ＋ 新增自訂頁, ⚙︎ 探索設定 and the group menu belong to the 書源 page and stay there.
-- [ ] **Step 3: Title and search.**
+- [x] **Step 3: Title and search.**
   - `PublicLibraryHomeView` uses `.rootTabTitle(localized("探索"), onScroll: .minimizesBar)`, as `ExploreHomeView` does.
   - Whitelist it in `docs/design.md` §Title rule and in both skill copies. Keep the copies byte-identical (`cmp` them).
-- [ ] **Step 4: Tests.**
+- [x] **Step 4: Tests.**
   - A unit test that the menu is offered only with sources: factor the condition into `ExploreTabRoot.showsModeMenu(hasImportedSources:)`.
   - `#Preview` for both modes.
-- [ ] **Step 5: Run and commit.**
+- [x] **Step 5: Run and commit.**
 
   ```bash
   bash scripts/xctest.sh -- -only-testing:'yuedu appTests/ExploreModeTests'
@@ -299,17 +299,17 @@ All of this was requested live on 2026-10-07.
 - Create `PublicLibrary.swift` and `PublicLibraryRegistryTests.swift`.
 - Modify `OPDSCatalog.swift` and `RemoteLibraryHTTPClient.swift`, and extend `RemoteLibraryHTTPTests.swift`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `OPDSCatalogStore.connection(id: "builtin.gutenberg")` resolves to `https://www.gutenberg.org/ebooks.opds/`, named "Project Gutenberg".
   - It is not in `catalogs`, not written to `opds_catalogs.json`, and `remove`/`update` refuse it.
   - The example preset's URL is the www host.
   - Every request of a `RemoteLibraryHTTPClient` carries `User-Agent: Yuedu/<CFBundleShortVersionString> (iOS; +https://yuedureader.com/support)`. The existing `RemoteLibraryHTTPTests` stub transport makes this assertable.
-- [ ] **Step 2: Implement.**
+- [x] **Step 2: Implement.**
   - `PublicLibraryID` has two cases: `gutenberg = "builtin.gutenberg"` and `aozora = "builtin.aozora"`.
   - `OPDSCatalogStore` resolves built-in connections in `catalog(id:)` / `connection(id:)` alongside the stored ones. This keeps one store: `RemoteLibraryService` and `BookCoverLoader.remoteSession` already resolve through it. A remote book read from Gutenberg keeps `connectionID == "builtin.gutenberg"`, so its identity stays stable across launches.
   - Set the User-Agent in `RemoteLibraryHTTPClient` for every remote library: OPDS, WebDAV and Calibre alike. An identifying agent is what calibre and KOReader send, and it is one code path.
   - Leave readers' saved `m.gutenberg.org` connections alone: the server redirects them.
-- [ ] **Step 3: Run and commit.**
+- [x] **Step 3: Run and commit.**
 
   ```bash
   bash scripts/xctest.sh -- -only-testing:'yuedu appTests/PublicLibraryRegistryTests' -only-testing:'yuedu appTests/RemoteLibraryHTTPTests' -only-testing:'yuedu appTests/RemoteLibraryConnectionTests'
@@ -320,7 +320,7 @@ All of this was requested live on 2026-10-07.
 
 **Files:** `PublicLibraryHomeView.swift`, `PublicLibrary.swift`; extend `OPDSParserTests.swift` with recorded Gutenberg feeds (bibliographic metadata only, no book text).
 
-- [ ] **Step 1: Record fixtures and write the failing tests.**
+- [x] **Step 1: Record fixtures and write the failing tests.**
   - Save the responses of `ebooks.opds/`, a `search.opds/?query=l.zh` page, and `/ebooks/1342.opds` into `Tests/iOS/yuedu appTests/Fixtures/Gutenberg/`.
   - Assert that `OPDSClient.parseFeed` reads, from these:
     - the navigation entries;
@@ -329,13 +329,13 @@ All of this was requested live on 2026-10-07.
     - the EPUB3 acquisition chosen first;
     - the cover links.
   - **Thumbnails:** check whether the existing cover path (`BookCoverLoader`) shows `data:` URI thumbnails. If it does not, make it decode them, with a test. Do not drop them silently.
-- [ ] **Step 2: Shelves.** `GutenbergShelf` lists the rows, each an `OPDSFeedRoute(catalogID: "builtin.gutenberg", url:, title:)`:
+- [x] **Step 2: Shelves.** `GutenbergShelf` lists the rows, each an `OPDSFeedRoute(catalogID: "builtin.gutenberg", url:, title:)`:
   - 熱門 (`sort_order=downloads`) and 最新 (`sort_order=release_date`);
   - one row for the interface language when it is not English: 中文 `l.zh`, 日本語 `l.ja`, 한국어 `l.ko`;
   - English `l.en`.
 
   Language rows sort by downloads.
-- [ ] **Step 3: The view.**
+- [x] **Step 3: The view.**
   - `PublicLibraryHomeView` is an inset-grouped `List` inside its own `NavigationStack(path:)`, with a "Project Gutenberg" section of those rows.
   - Destinations, registered on the stack:
     - `OPDSFeedRoute` → the existing `OPDSFeedView`;
@@ -343,8 +343,8 @@ All of this was requested live on 2026-10-07.
   - The section footer, with `.dsSectionFooter()`: 「Project Gutenberg 的書在美國屬於公有領域；所在地區的著作權規定可能不同。」
     - It earns its place: it states a risk the reader cannot see from the rows.
   - Every book detail links to `https://www.gutenberg.org/ebooks/{id}`. Check whether `RemoteLibraryBookDetailView` already shows the entry's alternate link; add it if not.
-- [ ] **Step 4: Errors.** An offline or blocked request shows `OPDSFeedView`'s existing error with 重試, never an empty list. Check this on the simulator with the network link conditioner, or by pointing a test at an unreachable host.
-- [ ] **Step 5: Run and commit.**
+- [x] **Step 4: Errors.** An offline or blocked request shows `OPDSFeedView`'s existing error with 重試, never an empty list. Check this on the simulator with the network link conditioner, or by pointing a test at an unreachable host.
+- [x] **Step 5: Run and commit.**
 
   ```bash
   bash scripts/xctest.sh -- -only-testing:'yuedu appTests/OPDSParserTests' -only-testing:'yuedu appTests/PublicLibraryRegistryTests'
@@ -355,14 +355,14 @@ All of this was requested live on 2026-10-07.
 
 **Files:** create `scripts/aozora_catalog/build_catalog.py` and `scripts/aozora_catalog/test_build_catalog.py`, with a synthetic fixture CSV of a few rows. Never commit real catalog data.
 
-- [ ] **Step 1: Write the failing tests** (`python3 -m unittest scripts/aozora_catalog/test_build_catalog.py`). The builder:
+- [x] **Step 1: Write the failing tests** (`python3 -m unittest scripts/aozora_catalog/test_build_catalog.py`). The builder:
   - reads the zip's CSV as UTF-8 and strips the BOM;
   - merges rows by 作品ID into one work with credits `[{person, role}]`, keeping the CSV's role text (著者, 翻訳者, 編者, …) as is;
   - keeps only works whose 作品著作権フラグ is `なし` and whose テキストファイルURL is an `https://www.aozora.gr.jp/…/*.zip` (decision 11);
   - writes `works.json` (schema v1, below) and `manifest.json` with `schemaVersion`, `generatedAt`, the CSV's `Last-Modified`, `workCount`, the SHA-256 of `works.json`, and the attribution text and licence URL;
   - is deterministic: the same CSV gives byte-identical output, with sorted keys, works by 作品ID and persons by 人物ID;
   - exits 0 without writing anything when the CSV cannot be fetched. It logs `::notice::` and leaves the published catalog in place.
-- [ ] **Step 2: Schema v1.**
+- [x] **Step 2: Schema v1.**
 
   ```json
   {
@@ -381,7 +381,7 @@ All of this was requested live on 2026-10-07.
   ```
 
   Field names are the app's contract. A breaking change bumps `schemaVersion` and the URL path (`/v2/`).
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
   ```bash
   python3 -m unittest scripts/aozora_catalog/test_build_catalog.py
@@ -394,8 +394,8 @@ All of this was requested live on 2026-10-07.
 
 **Outward actions:** enabling the workflow, creating the `aozora-catalog-v1` release, and the website's `_redirects` entry each need the maintainer's yes.
 
-- [ ] **Step 1: The workflow.**
-  - It runs daily at 19:00 UTC (04:00 JST), and on `workflow_dispatch`.
+- [x] **Step 1: The workflow file only.**
+  - Maintainer instruction for implementation: `workflow_dispatch` is prepared; daily 19:00 UTC (04:00 JST) scheduling remains commented out. No remote activation in this task.
   - Its permissions are `contents: write`.
   - It fetches the CSV zip with `User-Agent: Yuedu-catalog/1 (+https://yuedureader.com/support)`.
   - It runs the builder and the builder's tests.
@@ -413,7 +413,7 @@ All of this was requested live on 2026-10-07.
 
 **Files:** create `AozoraCatalog.swift`, `AozoraCatalogStore.swift`, `AozoraCatalogTests.swift` and `AozoraCatalogStoreTests.swift`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - **Decoding:** a fixture `works.json` decodes; unknown fields are ignored; an unknown `schemaVersion` is an error.
   - **The index:**
     - 新着 is `published` descending.
@@ -428,13 +428,13 @@ All of this was requested live on 2026-10-07.
     - a changed hash downloads `works.json`, verifies the hash, and replaces the cache atomically;
     - a hash mismatch keeps the old cache and logs;
     - 404 or no network with no cache gives `.unavailable`.
-- [ ] **Step 2: Implement.**
+- [x] **Step 2: Implement.**
   - The store is `@MainActor ObservableObject` and publishes `state: .unavailable | .loading | .ready(AozoraCatalogIndex) | .failed(Error, cached: AozoraCatalogIndex?)`.
   - The URL is `https://yuedureader.com/catalogs/aozora/v1/manifest.json`.
   - Decode and index in `Task.detached` calling static functions. **Writing it as `async` does not move it off the main thread here:** the project builds with `SWIFT_APPROACHABLE_CONCURRENCY = YES` (SE-0461), so a nonisolated `async` function runs on its caller's actor, and a chain started from a main-actor `Task {}` stays on the main thread, closures included. The project leaves the main thread through `Task.detached` with static or nonisolated functions, an actor, or GCD. A large shelf froze for exactly this reason on 2026-10-06 (fixed in ad206054).
   - Cache in `Caches/PublicLibrary/aozora/`: it can be rebuilt, so it is not backed up.
   - Measure the decode and index with `SourcePerfTrace` (`aozora.catalog.load`) and record the time for the full catalog.
-- [ ] **Step 3: Run and commit.**
+- [x] **Step 3: Run and commit.**
 
   ```bash
   bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraCatalogTests' -only-testing:'yuedu appTests/AozoraCatalogStoreTests'
@@ -447,7 +447,7 @@ All of this was requested live on 2026-10-07.
 - Create `AozoraCatalogViews.swift`, `AozoraLibraryDownloadService.swift` and `AozoraLibraryDownloadServiceTests.swift`.
 - Modify `PublicLibraryHomeView.swift` and `Models.swift`.
 
-- [ ] **Step 1: Write the failing tests** for the download service.
+- [x] **Step 1: Write the failing tests** for the download service.
   - With a stub downloader serving a zip of `Fixtures/TXTEncodings/aozora-neko-jijo.txt`, `addToShelf(work:)`:
     - downloads to a temporary file;
     - calls `AozoraBookImporter.importBook(at:title:store:)`;
@@ -459,10 +459,10 @@ All of this was requested live on 2026-10-07.
     - a zip without an Aozora text (the importer returns nil) → 「這個檔案不是青空文庫的文字」.
   - Every error is logged with the work ID.
   - Cancellation removes the temporary file.
-- [ ] **Step 2: The model.**
+- [x] **Step 2: The model.**
   - Add `catalogWorkID: String?` to `AozoraBookSource`, decoded with `decodeIfPresent` and encoded only when present (`encodeIfPresent`, nil by default). **Why:** iCloud and Firestore sync compare each book's `stableHash(strippedForSync())` with the last synced copy, and a different hash counts as "edited now", which wins the merge. A new field that every book encodes changes every hash, so on the first sync after an update this device's older reading positions overwrite newer ones from the reader's other devices. The same rule applies to any field added to `ReadingBook` or another type merged by `mergeType`; `AudiobookSettingsStorageTests` (in `AudiobookChapterTransitionTests.swift`) shows the pattern.
   - Add a test that an Aozora book without it encodes exactly as before.
-- [ ] **Step 3: The views.**
+- [x] **Step 3: The views.**
   - A "青空文庫" section in `PublicLibraryHomeView` with rows 新着作品, 作家別, 作品名別 and 分類別.
     - It shows only when the store has a catalog (`.ready`, or `.failed` with a cache). This is decision 5: no catalog means the official site has not been reachable.
     - Footer: 「書誌資料：青空文庫（CC BY 4.0）」, with the licence as a link in the footer text.
@@ -473,7 +473,7 @@ All of this was requested live on 2026-10-07.
     - It runs the service and shows progress, and can be cancelled.
     - On success it offers to open the book.
   - Every state is covered, per design.md: loading, empty (`ContentUnavailableView`), error with 重試, offline.
-- [ ] **Step 4: Run and commit.**
+- [x] **Step 4: Run and commit.**
 
   ```bash
   bash scripts/xctest.sh -- -only-testing:'yuedu appTests/AozoraLibraryDownloadServiceTests' -only-testing:'yuedu appTests/AozoraBookImportTests'
@@ -485,15 +485,15 @@ All of this was requested live on 2026-10-07.
 
 **Files:** create `PublicLibrarySearchResults.swift`; modify `PublicLibraryHomeView.swift`.
 
-- [ ] **Step 1:** In 公有書庫, Explore's search field has the prompt 「搜尋公有書庫」.
+- [x] **Step 1:** In 公有書庫, Explore's search field has the prompt 「搜尋公有書庫」.
   - **The 青空文庫 section** shows local catalog matches as the reader types, the first 50 with a 「顯示全部」 push.
   - **The Project Gutenberg section** has one row, 「在 Project Gutenberg 搜尋「…」」, made usable when the reader submits. It pushes `OPDSFeedView` on `https://www.gutenberg.org/ebooks/search.opds/?query=<encoded>`.
     - That is one request per search, and paging stays the reader's 「載入更多」 (decision 9).
     - Use this template from `PublicLibrary.swift`, never the OpenSearch description, which points at `m.`.
-- [ ] **Step 2: Tests.**
+- [x] **Step 2: Tests.**
   - The Gutenberg search URL is encoded correctly for CJK, spaces and `&`.
   - Local search across sections is ranked as in Task 7.
-- [ ] **Step 3: Run and commit.**
+- [x] **Step 3: Run and commit.**
 
   ```bash
   bash scripts/xctest.sh -- -only-testing:'yuedu appTests/PublicLibraryRegistryTests' -only-testing:'yuedu appTests/AozoraCatalogTests'
@@ -504,9 +504,9 @@ All of this was requested live on 2026-10-07.
 
 **Files:** create `ExploreModeTip.swift`; modify `ExploreTabRoot.swift` and `yuedu_appApp.swift`.
 
-- [ ] **Step 1: Configure TipKit** once at launch: `try Tips.configure([.displayFrequency(.immediate)])`, with failures logged through `AppLogger` (no `try?`).
+- [x] **Step 1: Configure TipKit** once at launch: `try Tips.configure([.displayFrequency(.immediate)])`, with failures logged through `AppLogger` (no `try?`).
   - UI tests pass `-reset-tips`, which calls `Tips.resetDatastore()` before configuring.
-- [ ] **Step 2: The tip.** A sketch; follow the SDK's exact signatures.
+- [x] **Step 2: The tip.** A sketch; follow the SDK's exact signatures.
 
   ```swift
   struct ExploreModeTip: Tip {
@@ -524,7 +524,7 @@ All of this was requested live on 2026-10-07.
   }
   ```
 
-- [ ] **Step 3: Wiring.**
+- [x] **Step 3: Wiring.**
   - **Detecting the first import:** one observer of `BookSourceStore.shared.$sources`, owned by `ExploreTabRoot`'s model, sets `sourcesImported = true` on the first transition from empty to non-empty.
     - A reader who already has sources at upgrade gets no tip: decision 6 already puts them in 書源.
   - **When it shows:** each time Explore appears with `sourcesImported` true, donate `exploreOpenedAfterImport`. The tip therefore shows the next time Explore opens, not on the screen where the reader imported.
@@ -532,10 +532,10 @@ All of this was requested live on 2026-10-07.
   - **Placement:** `.popoverTip(ExploreModeTip(), arrowEdge: .top)` on the mode menu.
   - **The bounce:** while `tip.shouldDisplay` (watch `statusUpdates`), the menu's symbol bounces with `.symbolEffect(.bounce, value:)`, skipped when `accessibilityReduceMotion`.
   - **Dismissal:** opening the menu, choosing a mode, or the tip's action invalidates it (`.actionPerformed`). The 「切換到書源」 action sets the mode to 書源; that is the reader's own choice, consistent with decision 3.
-- [ ] **Step 4: Tests.**
+- [x] **Step 4: Tests.**
   - Unit-test the import detector: empty → non-empty sets the flag once; a non-empty start does not.
   - The UI test in Task 11 covers the tip.
-- [ ] **Step 5: Run and commit.**
+- [x] **Step 5: Run and commit.**
 
   ```bash
   bash scripts/xctest.sh -- -only-testing:'yuedu appTests/ExploreModeTests'
@@ -546,17 +546,17 @@ All of this was requested live on 2026-10-07.
 
 **Files:** create `Tests/iOS-UI/PublicLibraryExploreUITests.swift`. Use the launch hooks the existing UI tests use for an empty library and for importing a book source fixture, and add one if none exists.
 
-- [ ] **Step 1:** Ask the maintainer not to touch the simulator during the run (standing rule).
-- [ ] **Step 2:** Cases:
+- [x] **Step 1:** Ask the maintainer not to touch the simulator during the run (standing rule).
+- [x] **Step 2:** Cases:
   - No sources: Explore shows the libraries, no mode menu, and the Gutenberg rows.
   - Import a source while Explore stays in 公有書庫. Reopen Explore: the tip appears once, the menu bounces, choosing 書源 shows today's page, and relaunching keeps 書源.
   - The tip never appears again.
   - VoiceOver: the menu's label and value read correctly. Use the accessibility inspector, or the `accessibilityLabel` / `accessibilityValue` of the element.
-- [ ] **Step 3: Run** the class with `xctest.sh` and the UI test target, then commit.
+- [x] **Step 3: Run** the class with `xctest.sh` and the UI test target, then commit.
 
 ## Task 12: Documentation and the release checkpoint
 
-- [ ] **`Technotes/PublicLibraries.md`:**
+- [x] **`Technotes/PublicLibraries.md`:**
   - the two libraries;
   - endpoints;
   - the terms and how each is honoured;
@@ -564,8 +564,8 @@ All of this was requested live on 2026-10-07.
   - attribution;
   - the 2027 Gutenberg OPDS sunset and the contact with Gutenberg;
   - the China storefront rule (decision 16).
-- [ ] **`Technotes/RemoteLibraryReading.md`:** built-in connections.
-- [ ] **Hide 公有書庫 on the China storefront** (decision 16). Build this before the first TestFlight build that includes the libraries.
+- [x] **`Technotes/RemoteLibraryReading.md`:** built-in connections.
+- [x] **Hide 公有書庫 on the China storefront** (decision 16). Build this before the first TestFlight build that includes the libraries.
   - **The source of truth.** `PublicLibraryAvailability` reads StoreKit 2's `Storefront.current` at launch and on `Storefront.updates`.
     - It keeps the last known country code in `UserDefaults`, so a cold start does not flash the libraries before StoreKit answers.
     - `CHN` makes the libraries unavailable.
@@ -578,7 +578,7 @@ All of this was requested live on 2026-10-07.
     - App Review usually runs on US-storefront devices, and one binary serves every storefront.
     - If a China review still objects to the book content, the remaining option is the one Readest took: remove the built-in libraries from App Store builds.
     - That is a maintainer decision.
-- [ ] **Measure** the first open of 公有書庫 on the simulator (Gutenberg root and catalog load), with `SourcePerfTrace` spans, and record the numbers.
+- [x] **Measure** the first open of 公有書庫 on the simulator (Gutenberg root and catalog load), with `SourcePerfTrace` spans, and record the numbers.
 
 ## Task 13: Gutenberg OPDS 2 (after the maintainer has contacted Gutenberg)
 
@@ -590,12 +590,66 @@ All of this was requested live on 2026-10-07.
 
 ## Acceptance
 
-- [ ] **Without book sources:** Explore shows 公有書庫 and no switch. Gutenberg can be browsed, searched, read remotely and added to the shelf.
+- [x] **Without book sources:** Explore shows 公有書庫 and no switch. Gutenberg can be browsed, searched, read remotely and added to the shelf.
 - [ ] **Aozora Bunko** stays hidden until the catalog exists. Once aozora.gr.jp is back and the workflow has published:
   - a work can be found by browsing and by search;
   - it can be added to the shelf, converted, and opened;
   - adding it a second time opens the existing book.
-- [ ] **With book sources:** the menu switches modes and the mode survives relaunch. The tip shows once, the next time Explore opens after the first import.
-- [ ] **Readers who had sources before this build** still land on 書源.
-- [ ] **Gutenberg traffic:** one request per screen the reader opens, one per submitted search, and no background requests. Verify in the simulator's network log.
-- [ ] **Hygiene:** all five localizations, VoiceOver labels, `#Preview`s and design-rule checks pass. Every task's tests pass after its last edit.
+- [x] **With book sources:** the menu switches modes and the mode survives relaunch. The tip shows once, the next time Explore opens after the first import.
+- [x] **Readers who had sources before this build** still land on 書源.
+- [x] **Gutenberg traffic:** one request per screen the reader opens, one per submitted search, and no background requests. Verify in the simulator's network log.
+- [x] **Hygiene:** all five localizations, VoiceOver labels, `#Preview`s and design-rule checks pass. Every task's tests pass after its last edit.
+
+
+## What landed
+
+2026-10-07, directly on `main`. Decisions 1–18 remain in force. Tasks 1–5 and 7–12 are implemented; Task 6 contains only the workflow file, with scheduling disabled. Task 13 is untouched pending Gutenberg's reply. The China storefront gate was implemented before the first library build; its separate commit follows Task 4.
+
+| Task | Commit | Landed behavior and passing checks |
+|---|---|---|
+| 1 | `c4af7153` | Explore mode defaults, migration and persistence; 2 mode tests. |
+| 2 | `85dd3904` | Explore root and native mode menu, independent navigation, five languages and design title whitelist; 3 mode tests in the combined 26-test run. |
+| 3 | `b9eaeeab` | Read-only built-in Gutenberg connection and identifying User-Agent; registry, HTTP, connection store, mode and availability: 26 tests in 5 suites. |
+| 4 | `2a3e0bfa` | Gutenberg shelves, recorded official fixtures, bounded embedded thumbnails, EPUB3 preference and official links; 24 tests in 3 suites. |
+| 12, China gate | `3839478c` | Cached StoreKit storefront, live updates and CHN suppression of home/menu/tip; 2 availability tests plus effective-mode coverage in the combined run. |
+| 5 | `d782d4c1` | Deterministic official CSV-to-JSON builder and synthetic 55-column fixture; 7 Python tests. |
+| 6, file only | `903ee16f` | Manual workflow, digest comparison and upload steps; schedule commented out. YAML/shell contract checks and 7 builder tests. No remote execution. |
+| 7 | `940cdf2a` | Validated catalog/cache, daily manifest check, precomputed kana/NDC/search indexes; 9 tests. |
+| 8 | `fdff5ea2` | Aozora browsing/detail and service-owned download/import/deduplication using the existing importer; 11 service/import tests. |
+| 9 | `1d476ac1` | Local Aozora search and explicit Gutenberg search submission; 20 tests. |
+| 10 | `b7719418` | First-import detector, one-time anchored TipKit guide and reduced-motion behavior; 6 mode/availability tests. |
+| 11 | `ddecb171` | Gutenberg list-image request boundary and UI onboarding coverage; 16 unit tests and 2 UI tests. |
+| 12, remaining | This documentation commit | PublicLibraries/RemoteLibraryReading notes, opt-in measurement and live UI release checks; 1 measurement test and two separately enabled UI cases passed. |
+
+Implementation details resolved within the plan:
+
+- Built-in search skips the old OpenSearch description and percent-encodes all query characters outside the unreserved set, including `+`. Only embedded feed images appear in Gutenberg lists; remote covers load on detail. No view owns download, conversion or cache orchestration.
+- Catalog timestamps derive from source Last-Modified, or the latest date in unchanged source rows, so an unchanged source does not create a new digest every day. Malformed data fails rather than publishing partial data.
+- `catalogWorkID` is optional and omitted when absent, preserving existing Aozora sync JSON. Catalog metadata explicitly supplies the imported book title. Repeated additions resolve to the same shelf book.
+- The first-import observer exists from launch. Opening Explore consumes the pending guide event without switching modes; existing-source upgrades preserve 書源.
+- UI testing found test-navigation assumptions that were corrected: dismiss source management before opening Explore, use the reader's edge-back gesture, and select the actual author row rather than its section header. Final affected cases passed after those test changes.
+
+Validation and measurements:
+
+- All iOS tests used `scripts/xctest.sh`, real struct/class selectors and the normal project. Passing Swift Testing verdicts and nonzero counts were inspected; a run selecting zero tests was not accepted. Each task's last relevant change is covered by its recorded regression; unchanged passing scopes were reused. No additional clean build was needed.
+- On iPhone 18 Pro Max / iOS 27.0 Simulator, non-Pro Gutenberg search → book detail → actual remote reader → shelf → offline download passed. Pro was then enabled with `-debug-force-pro`, and the supplied `山风 - 春水漾.qitheme` was copied into App `tmp/` and imported through its percent-encoded file URL. The themed Aozora fixture home, author index and detail passed and their screenshots were visually inspected. Runtime UI on iOS 17 remains unmeasured.
+- `PublicLibraryExploreUITests`: 2 passed. `PublicLibraryLiveUITests`: each opt-in run passed its one active case and explicitly skipped the other (non-Pro 35.507 s; Pro/theme 21.157 s). `PublicLibraryMeasurementTests`: 1 passed. Five-language localization check passed.
+- `SourcePerfTrace`: Gutenberg root, first/second request **5,566 / 295 ms**; background decode/index of the **1,254-byte fixture**, first/second **40 / <1 ms**. Final themed app catalog decode/index: **22 ms**. These are cold/warm observations, not an optimization comparison, a complete official-catalog benchmark or first-frame timing.
+- The successful non-Pro network log has one search OPDS request and one book OPDS request, taking **925 / 300 ms**. No list cover requests or background Gutenberg requests appeared; detail cover and user-triggered EPUB HEAD/Range/download traffic use the existing reading path.
+- Local evidence: `~/Library/Logs/YueduPublicLibraries/20261007/`. See [PublicLibraries.md](../../../Technotes/PublicLibraries.md) for selectors, opt-in flags and screenshot names. Test catalog cache was removed after visual validation; imported theme retained. Own `.xcresult` bundles were removed after exporting attachments.
+
+All retained failure/compatibility paths:
+
+1. Official CSV connection failure records a notice and skips publishing, retaining the previous release. Parsing failures remain failures. No mirror is used.
+2. App catalog update failure retains an already hash-verified catalog; without a valid catalog the Aozora section stays hidden. This is the planned offline behavior, with errors logged.
+3. A temporarily nil storefront retains the last known country code, including CHN; a first-ever unknown storefront follows the approved available-by-default rule.
+4. iOS 17–25 uses the native UIKit section index; iOS 26+ uses SwiftUI's native index. TipKit calls match the iOS 17/18/18.4/26 API signatures. Removal conditions are documented in code.
+
+There are no added mirrors, automatic network retries, fixed delays, alternate parsers or alternate reading pipelines.
+
+Not done / maintainer actions:
+
+- Aozora's official site remains unavailable. Fixture building, indexing, browsing and conversion are verified; full official catalog size/performance, live official ZIP download and the published manifest/digest still require the restored source and publishing setup. The corresponding live acceptance checkbox remains open.
+- Schedule activation, release/tag creation and website `_redirects` changes require the maintainer's approval. Check Xcode Cloud tag triggers before creating any tag. The prepared workflow has not run remotely.
+- No push was performed; it requires explicit approval. Existing README changes and the other agent's reading-style document were preserved and excluded from these commits.
+- Task 13 remains deferred until Gutenberg replies with the approved OPDS 2 endpoint.

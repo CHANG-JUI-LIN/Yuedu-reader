@@ -11,6 +11,12 @@ OPDS、Calibre／Calibre-Web 與 WebDAV 共用遠端書籍詳情。閱讀、加�
 - OPDS 原有連線檔繼續使用，新增來源種類；WebDAV 從同步設定複製一次，之後獨立管理。帳號與密碼存 Keychain，舊設定會遷移。
 - `OnlineChapterRef` 的舊資料若缺少 volume／VIP／付費旗標，解碼預設為 `false`；保留既有音訊與 PDF 選填欄位。
 
+## 探索頁的內建書庫
+
+`builtin.gutenberg` 由 `PublicLibrary` 解析為唯讀 OPDS 連線，不寫入使用者連線檔，也不提供編輯／刪除。探索頁沿用同一 `OPDSFeedView`、遠端詳情、`RemoteLibraryService` 和閱讀器；閱讀、加入書架、下載三個操作均不檢查 Pro。共享 client 的 request／session／重新導向使用 `Yuedu/<version> (iOS; +https://yuedureader.com/support)`。
+
+古騰堡列表只顯示 feed 內嵌縮圖，詳情才請求遠端封面；每次送出搜尋或明確載入一頁才取一頁，不預抓目錄。青空文庫採自有書誌 JSON 目錄，直接取官方 ZIP 後走既有 `AozoraBookImporter`，不建立第二條 OPDS 或閱讀管線。區域規則、目錄發布與驗收見 [PublicLibraries.md](PublicLibraries.md)。
+
 ## 文件讀取與快取
 
 EPUB 先檢查 HEAD 與有界 Range，再把共用 HTTP client 交給 Readium。OPF、目錄、圖片、字型、加密資訊、PLS 與 SMIL 都透過 `EPUBPackageResources` 讀取；CoreText 排版及 `(spineIndex, charOffset)` 定位維持原路徑。
