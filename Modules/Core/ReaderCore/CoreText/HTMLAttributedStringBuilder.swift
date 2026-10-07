@@ -266,6 +266,9 @@ final class HTMLAttributedStringBuilder {
         /// CSS `display: none` or the HTML `hidden` attribute (e.g. EPUB nav `page-list` /
         /// `landmarks` blocks, which would otherwise paginate into many blank pages).
         var isHidden: Bool = false
+        /// CSS `max-inline-size`: the longest line this block's text may set, in points,
+        /// along the inline axis of either writing mode. nil = none. Not inherited.
+        var maxInlineSize: CGFloat? = nil
     }
 
     /// Visual style for an inline border/background "chip" (stored in inlineBorderBoxAttribute).
@@ -1323,7 +1326,7 @@ final class HTMLAttributedStringBuilder {
         // essential because a normal inline value must not override an authored `!important`.
         for rule in matchedRules {
             apply(
-                declarations: rule.declarations,
+                declarations: LegacyLogicalProperties.resolved(rule.declarations, order: rule.declarationOrder),
                 to: &style,
                 parentStyle: parent,
                 rootFontSize: rootFontSize,
@@ -1333,7 +1336,7 @@ final class HTMLAttributedStringBuilder {
 
         let inlineStyle = CSSParser.parseDeclarationBlock((try? element.attr("style")) ?? "")
         apply(
-            declarations: inlineStyle.normal,
+            declarations: LegacyLogicalProperties.resolved(inlineStyle.normal, order: inlineStyle.order),
             to: &style,
             parentStyle: parent,
             rootFontSize: rootFontSize,
@@ -1341,7 +1344,7 @@ final class HTMLAttributedStringBuilder {
         )
         for rule in matchedRules {
             apply(
-                declarations: rule.importantDeclarations,
+                declarations: LegacyLogicalProperties.resolved(rule.importantDeclarations, order: rule.declarationOrder),
                 to: &style,
                 parentStyle: parent,
                 rootFontSize: rootFontSize,
@@ -1349,7 +1352,7 @@ final class HTMLAttributedStringBuilder {
             )
         }
         apply(
-            declarations: inlineStyle.important,
+            declarations: LegacyLogicalProperties.resolved(inlineStyle.important, order: inlineStyle.order),
             to: &style,
             parentStyle: parent,
             rootFontSize: rootFontSize,
@@ -1858,6 +1861,21 @@ final class HTMLAttributedStringBuilder {
                 if trimmed.hasSuffix("%"), let pct = Double(trimmed.dropLast()) {
                     style.rawWidthPercent = CGFloat(pct)
                 }
+            }
+        }
+        if let maxInlineSize = declarations["max-inline-size"] {
+            // A line length limit (`jizume`): `NodeAttributedStringRenderer` turns it into
+            // a tail indent. `none` lifts an earlier limit; an unparseable value is dropped.
+            if maxInlineSize.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "none" {
+                style.maxInlineSize = nil
+            } else if let value = resolveLength(
+                maxInlineSize,
+                currentFontSize: style.fontSize,
+                rootFontSize: rootFontSize,
+                relativeBase: style.fontSize,
+                percentageBase: percentageBase
+            ) {
+                style.maxInlineSize = max(0, value)
             }
         }
         if let height = declarations["height"] {

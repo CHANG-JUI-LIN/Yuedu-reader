@@ -1086,7 +1086,16 @@ struct NodeAttributedStringRenderer {
         } else {
             para.firstLineHeadIndent = leftInset + style.textIndent
             para.headIndent = leftInset
-            para.tailIndent = rightInset > 0 ? -rightInset : 0
+            // `max-inline-size` ends the line that far from the head indent. It is carried as
+            // a wider right inset rather than a positive tail indent, because the line drawer
+            // and the decoration boxes read the paragraph's end from a negative one. The inline
+            // extent is the page's height in vertical writing, where lines run top to bottom.
+            var tailInset = rightInset
+            if let maxInlineSize = style.maxInlineSize,
+               let inlineExtent = isVertical(style) ? config.renderHeight : config.renderWidth {
+                tailInset = max(tailInset, inlineExtent - leftInset - maxInlineSize)
+            }
+            para.tailIndent = tailInset > 0 ? -tailInset : 0
         }
 
         // Unspecified CSS text-align (.natural) now defaults to full justification, so both margins

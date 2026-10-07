@@ -121,6 +121,9 @@ public struct RenderStyle: Sendable {
     public var marginLeft: CGFloat
     /// CSS margin-right
     public var marginRight: CGFloat
+    /// CSS `max-inline-size` in points: a line length limit along the inline axis of
+    /// either writing mode (nil = none). The renderer applies it as a tail indent.
+    public var maxInlineSize: CGFloat?
     /// CSS raw width percentage (before resolution to points), used by hr dividers
     public var rawWidthPercent: CGFloat?
     /// CSS padding-top
@@ -215,6 +218,7 @@ public struct RenderStyle: Sendable {
         lineHeightMultiplier: CGFloat = 1.0,
         marginLeft: CGFloat = 0,
         marginRight: CGFloat = 0,
+        maxInlineSize: CGFloat? = nil,
         rawWidthPercent: CGFloat? = nil,
         paddingTop: CGFloat = 0,
         paddingLeft: CGFloat = 0,
@@ -279,6 +283,7 @@ public struct RenderStyle: Sendable {
         self.lineHeightMultiplier = lineHeightMultiplier
         self.marginLeft = marginLeft
         self.marginRight = marginRight
+        self.maxInlineSize = maxInlineSize
         self.rawWidthPercent = rawWidthPercent
         self.paddingTop = paddingTop
         self.paddingLeft = paddingLeft

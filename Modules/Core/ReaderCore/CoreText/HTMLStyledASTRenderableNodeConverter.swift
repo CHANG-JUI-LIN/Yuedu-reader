@@ -494,6 +494,7 @@ private extension RenderStyle {
                 : 1.0,
             marginLeft: s.marginLeft,
             marginRight: s.marginRight,
+            maxInlineSize: s.maxInlineSize,
             rawWidthPercent: s.rawWidthPercent,
             paddingTop: s.paddingTop,
             paddingLeft: s.paddingLeft,
