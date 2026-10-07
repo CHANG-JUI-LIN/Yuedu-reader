@@ -163,10 +163,15 @@ Logical properties (`margin-inline-start`, …) say what Aozora means in both mo
 
 ### Phase 2a: what landed
 
-**Status, 2026-10-07: code and tests written, nothing run, nothing released.** Written in a Linux cloud session without Xcode or a simulator, so no build or test in this record has run. Task 3 stops at the release checkpoint: the maintainer has not yet been asked to publish.
+**Status, 2026-10-08: verified on the maintainer's Mac, not released.** Written in a Linux cloud session without Xcode; the maintainer ran the tests (iOS simulator, `scripts/xctest.sh`):
+- package worktree, `LogicalPropertyTests`, `SharedEvaluationEquivalenceTests`, `VerticalLayoutTests`: 30 tests in 3 suites passed (first run: a compile error, fixed in 7c1bb8c);
+- app through the override workspace, `CoreTextWritingModeTests`, `LegacyLogicalPropertyTests`, `AozoraEngineParityTests`: 33 tests in 3 suites passed;
+- app with the normal project (released 0.7.0), `CoreTextWritingModeTests`, `LegacyLogicalPropertyTests`: passed.
+
+A new worktree lacks the ignored `GoogleService-Info.plist`, and the Widget target then fails to build: copy it from the main checkout. No converter change, so no corpus run in this phase. Task 3 stops at the release checkpoint.
 
 Commits:
-- Package, branch `aozora-logical-properties` (from 0.7.0, 1fa83fa): 06a7a01 `feat(css): map CSS logical properties to physical sides by writing mode` (Task 1); b4fd57f `docs: record CSS logical properties for the next minor release` (Task 3, CHANGELOG `[0.8.0] - Unreleased` and README notes; the install instructions still say 0.7.0).
+- Package, branch `aozora-logical-properties` (from 0.7.0, 1fa83fa): 06a7a01 `feat(css): map CSS logical properties to physical sides by writing mode` (Task 1); 7c1bb8c (test fix); b4fd57f `docs: record CSS logical properties for the next minor release` (Task 3, CHANGELOG `[0.8.0] - Unreleased` and README notes; the install instructions still say 0.7.0).
 - App, branch `claude/zealous-bardeen-87ribn` (from main 0c3f6c7): 58783d5 `feat(reader): read CSS logical properties in the legacy engine` (Task 2). It uses no new package API, so it builds against 0.7.0.
 
 Decisions made while implementing:
@@ -177,11 +182,11 @@ Decisions made while implementing:
 - **Legacy `max-inline-size`** is `ResolvedStyle.maxInlineSize` → `RenderStyle.maxInlineSize` → a wider negative tail indent in `NodeAttributedStringRenderer`, measured along `renderWidth` (horizontal) or `renderHeight` (vertical). Not a positive tail indent: the horizontal line drawer and the decoration boxes read a paragraph's end only from a negative one. Not applied to right-aligned RTL paragraphs, which carry their inset in the head indent. A percentage resolves against `renderWidth` in both modes, like every other legacy percentage; the Aozora stylesheet uses `em` only.
 - **Shorthand after a longhand in one block** (`margin-inline-start: 2em; margin: 0`): BrowserAuto lets the later `margin` win, as CSS does; legacy applies longhands after the shorthand whatever their order, as it already did for `margin-left`. The Aozora stylesheet never writes both.
 
-Tests written, not run:
+Tests:
 - Package: `Tests/YueduCoreTextTests/Engine/LogicalPropertyTests.swift` (cascade per side and mode, `none`/`auto`, order, the evaluation's writing mode, admission, and paged and continuous geometry for `margin-inline-start`, `max-inline-size`, `min-inline-size` and `text-align: end`); one assertion added to `SharedEvaluationEquivalenceTests.layoutRejectsChangedCascadeInputs`.
 - App: `Tests/iOS/yuedu appTests/LegacyLogicalPropertyTests.swift`, through `EPUBAttributedStringBuilder` in both modes.
 
-Still to do for Phase 2a: run the tests below on the maintainer's Mac, fix what fails, then Task 3 (publish 0.8.0 with the maintainer's yes, bump the app's requirement, merge). The screenshot probes and the corpus run belong to Phase 2b, where the stylesheet first uses these properties.
+Still to do for Phase 2a: Task 3 (publish 0.8.0 with the maintainer's yes, bump the app's requirement, merge). The screenshot probes and the corpus run belong to Phase 2b, where the stylesheet first uses these properties.
 
 ## Phase 2b — The CSS group
 
