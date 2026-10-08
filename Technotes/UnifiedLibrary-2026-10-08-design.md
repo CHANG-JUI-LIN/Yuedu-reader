@@ -274,6 +274,28 @@ protocol MetadataProviding: SourceProvider {
     func values(for candidate: MetadataCandidate) async throws -> [MetadataValue]
 }
 
+/// 欄目編輯第二步列出的子項目，以及第三步的參數（§13.3）。
+struct HomeSectionTemplate: Hashable, Sendable {
+    var id: String                      // 來源內穩定：發現分類 URL、feed URL、模組 functionName
+    var title: String
+    var summary: String?
+    var parameters: [SectionParameter]
+}
+
+struct SectionParameter: Hashable, Codable, Sendable {
+    enum Kind: Hashable, Codable, Sendable {
+        case enumeration([Option])       // 例如「內容類型：熱門電影」
+        case input(placeholder: String?)
+        case count(range: ClosedRange<Int>)
+        case constant(String)
+    }
+    struct Option: Hashable, Codable, Sendable { var value: String; var title: String }
+    var key: String
+    var title: String
+    var kind: Kind
+    var defaultValue: String?
+}
+
 protocol HomeSectionProviding: SourceProvider {
     func templates() -> [HomeSectionTemplate]
     /// .serialPerSource：來源配置（共用 JS 狀態）；.parallel；.onDemandOnly：Gutenberg
@@ -594,6 +616,13 @@ Jellyfin 是從 Emby 分出來的開源專案。
   - Trakt 等外部服務：未登入時只顯示公開清單；
   - Rex 官方模組：已驗證，顯示版本與作者；
   - 匯入的模組：例如以 AI 產生推薦、再對應到 TMDB 作品的模組。
+- **模組會展開成它的子功能。** 也就是 Forward `modules[]` 的每一項，例如某個模組下的「熱門影視」「高評分」「台灣上映」；目前選用的打勾。
+- **選定子功能後，進入「設定資料來源」頁：**
+  - 上方是即時預覽：用選定的呈現方式載入真實資料；
+  - 可改群組名稱與標題；
+  - 「資料來源」一列顯示模組、版本、子功能與說明，點進去可以換；
+  - 「參數」列出模組宣告的參數，例如「內容類型：熱門電影」；
+  - 最後是刪除與完成。
 - **「聚合資料」設定頁：**
   - Metadata 偏好語言。
   - 「聚合所有啟用的庫」：開啟後，作品詳情會合併所有啟用庫的可播放版本；關閉聚合的庫不參與。
@@ -648,12 +677,18 @@ Jellyfin 是從 Emby 分出來的開源專案。
 
   `explore.mode` 與舊的根 view 保留一個版本，以回退旗標切換。
 
-**新增欄目：兩步**
+**新增欄目：三步**
 
-比照 Rex。現有的自訂頁編輯器本來就是「先選版面，再選來源配置與發現項」（`docs/design.md`），只是把第二步擴大到所有來源。
+比照 Rex。現有的自訂頁編輯器本來就是「先選版面，再選來源配置與發現項」（`docs/design.md`），只是把第二步擴大到所有來源，再加上第三步。
 
 1. **選呈現方式：** 今天自訂頁的 7 種版面，加上磚塊與單列。
-2. **選內容來源：** 依種類分組。選定來源之後，再顯示那個來源自己的選項，例如哪個分類、哪個 feed。
+2. **選內容來源：** 依種類分組；每個來源展開成它的子項目，例如來源配置的發現分類、OPDS 的 feed、模組的子功能。目前選用的打勾。
+3. **設定欄目**，比照 Rex 的「設定資料來源」：
+   - 上方是即時預覽：以選定版面載入一頁真實資料。這是使用者明確的動作，所以 Gutenberg 也可以載入，但只載入這一頁。
+   - 標題：預設帶入子項目名稱。
+   - 資料來源：顯示來源、版本、子項目與說明，點進去可以換。
+   - 參數：由來源宣告（見表下說明）。
+   - 刪除。
 
 | 分組 | 內容 |
 |---|---|
@@ -662,6 +697,12 @@ Jellyfin 是從 Emby 分出來的開源專案。
 | 來源配置 | 每個來源配置，進一步選它的發現分類 |
 | 外部服務 | 書目資料庫，例如 Open Library；需要登入的服務未登入時只顯示公開資料 |
 | 官方模組、匯入的模組 | Phase 6（§14.2） |
+
+參數由各來源宣告，型別沿用 Forward 的：`enumeration`、`input`、`count`、`constant`、`page`、`offset`（§11.2）。
+
+- **來源配置：** 發現頁的篩選，也就是 `DiscoverFilter`（〈審計〉§12.2）。今天篩選值寫進書源的執行期變數，是整個來源共用的；放進欄目後要改成**每個欄目各自保存**，否則兩個欄目會互相改到對方的結果。
+- **OPDS：** feed 的 facets。這是今天沒有建模的缺口（〈審計〉§8.2）。
+- **模組：** manifest 的 `params`。
 
 **聚合設定**
 
@@ -690,6 +731,7 @@ Jellyfin 是從 Emby 分出來的開源專案。
 
 - **一個頁面模型，多個頁面。**
   - 把 `CustomExplorePage`／`CustomExploreComponent` 一般化：元件的綁定從 `[ExploreCategoryReference]` 擴充成 `HomeSectionBinding`，再加上 `isEnabled`、`schemaVersion` 與容錯解碼。
+  - 每個欄目保存自己的參數值（`parameters: [String: String]`，鍵是 `SectionParameter.key`），不寫進來源共用的狀態。
   - 探索首頁是 id 固定為 `home` 的那一頁；使用者原有的自訂頁照舊是獨立的頁。
 - **綁定種類：**
   - `.myLibrary`
