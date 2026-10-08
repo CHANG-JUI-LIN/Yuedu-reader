@@ -9,7 +9,7 @@ description: Paid Service Terms for Yuedu Reader.
 # 付費服務條款
 
 閱讀（Yuedu Reader）
-最後更新：2026 年 6 月 30 日
+最後更新：2026 年 10 月 8 日
 
 [English](#en)
 
@@ -46,7 +46,7 @@ description: Paid Service Terms for Yuedu Reader.
 
 ## 6. 服務內容與限制
 
-付費服務可能解鎖便利功能、同步容量、進階設定或其他增值能力，但不代表我們提供、授權或保證任何第三方書籍、小說、漫畫、音訊、RSS、書源或外部服務。你仍需遵守使用者協議、第三方條款與版權規定。
+付費服務可能解鎖便利功能、同步容量、進階設定或其他增值能力，但不代表我們提供、授權或保證任何第三方書籍、小說、漫畫、音訊、RSS、來源配置（原稱「書源」）或外部服務。你仍需遵守使用者協議、第三方條款與版權規定。
 
 我們可能因技術、法規、平台政策、濫用、帳號安全或營運需要調整、暫停或終止付費功能。若這影響已購買權益，我們會依適用法律、Apple 規則與本條款處理。
 
@@ -62,7 +62,7 @@ description: Paid Service Terms for Yuedu Reader.
 # Paid Service Terms
 
 Yuedu Reader
-Last updated: June 30, 2026
+Last updated: October 8, 2026
 
 These terms apply to any paid features, one-time purchases, subscriptions, memberships, or value-added services that Yuedu Reader may offer in the future. If the app does not currently offer paid features, these terms serve as advance notice. Before any actual purchase, the app will show the relevant feature, price, billing period, and purchase confirmation information.
 
@@ -97,7 +97,7 @@ If a payment is not processed through Apple or the App Store, use the payment pr
 
 ## 6. Paid Service Scope and Limits
 
-Paid services may unlock convenience features, sync capacity, advanced settings, or other value-added capabilities, but they do not mean that we provide, license, or guarantee any third-party books, novels, comics, audio, RSS, book sources, or external services. You must still comply with the User Agreement, third-party terms, and copyright rules.
+Paid services may unlock convenience features, sync capacity, advanced settings, or other value-added capabilities, but they do not mean that we provide, license, or guarantee any third-party books, novels, comics, audio, RSS, sources (formerly called book sources), or external services. You must still comply with the User Agreement, third-party terms, and copyright rules.
 
 We may adjust, suspend, or terminate paid features for technical, legal, platform-policy, abuse-prevention, account-security, or operational reasons. If this affects purchased benefits, we will handle it according to applicable law, Apple rules, and these terms.
 
