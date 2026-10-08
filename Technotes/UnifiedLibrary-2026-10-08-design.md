@@ -6,6 +6,7 @@
 > - [現況架構審計](UnifiedLibrary-2026-10-08-audit.md)，下文以〈審計〉§x 引用；
 > - 維護者〈Yuedu 下一代架構：統一探索、刮削與模組系統〉（2026-10-08），下文稱「構想文件」；
 > - §11 的外部查證。
+> 術語：2026-10-08 起，介面把「書源」改稱「來源配置」（英文 Source，日文ソース，韓文소스）；程式型別仍是 `BookSource`。本文一律使用新名稱。
 > 範圍：書庫資料模型、作品與來源的身分、Metadata 合併、來源能力協定、統一搜尋、探索首頁、作品詳情，以及從現況走到那裡的遷移步驟。閱讀器排版引擎不在範圍內（構想文件 §12）。
 
 ## 0. 一句話
@@ -25,7 +26,7 @@
    - Calibre
    - Gutenberg
    - 青空文庫
-   - 網路書源
+   - 來源配置
    - 書目資料庫
 4. 達成構想文件 §14 的最小可行驗證：同一個搜尋框搜尋書架、Calibre、OPDS 與一個網文 Metadata 來源，並把同一部作品合併成統一詳情頁（驗收條件見 §16）。
 5. 沒用過新功能的使用者，升級後的畫面與閱讀進度完全不變；同步的改變只有「不再互相蓋掉」，不會遺失資料。
@@ -48,7 +49,7 @@
 |---|---|---|
 | §7「書籍作品應成為第一級實體」 | 作品是**旁邊**的一層。`ReadingBook` 保留為副本，不被作品取代。 | 25 個以上的儲存以 `ReadingBook.id` 為鍵；iCloud 以每本書的雜湊合併（〈審計〉§1 第 2、3 點）。 |
 | §6.4「寫入統一作品資料庫」 | 拆成「可重建索引」與「使用者決定」兩個檔案 | 索引壞了就刪掉重建，不必遷移；只有使用者的決定需要妥善保存。 |
-| §6.2「起點、番茄、晉江」 | 第一個網文 Metadata 來源，用**使用者自己的書源**的詳情規則；內建網文平台解析要等條款審查完成（§17 第 4 項） | 書源詳情規則已能產出簡介、分類、字數與封面（〈審計〉§10.4），而且不必由 App 內建爬蟲。 |
+| §6.2「起點、番茄、晉江」 | 第一個網文 Metadata 來源，用**使用者自己的來源配置**的詳情規則；內建網文平台解析要等條款審查完成（§17 第 4 項） | 來源配置詳情規則已能產出簡介、分類、字數與封面（〈審計〉§10.4），而且不必由 App 內建爬蟲。 |
 | §8.2「已建立索引的 WebDAV 書籍」 | 第一版不爬 WebDAV。統一搜尋只查各來源本身支援的搜尋，加上本機已知的紀錄。 | WebDAV 沒有伺服器端搜尋，建索引等於遞迴 PROPFIND（〈審計〉§8.2）；量測前不承諾。 |
 | §11 Phase 1 → 7 依序進行 | 前面加一個 Phase 0（補描述現況的測試、修錯誤語意），並以一條橫切各階段的「MVP 切片」先打通驗證 | 審計發現：搜尋把失敗當成功、WebDAV 瀏覽寫在 view 裡、自訂頁讀檔失敗會覆寫原檔。這些不先修，新層會建在錯的訊號上。 |
 | §3.1「為你推薦」 | 首頁參照 Jellyfin：跨來源聚合的「繼續閱讀」「最新」，加上每個來源各自的列；可切換成只看單一來源。「相關」v1 只用書架上的訊號 | 維護者 2026-10-08 決定：首頁可以像 Emby 一樣聚合（§13.1）。演算法推薦仍留在 Phase 7。 |
@@ -73,7 +74,7 @@
 - 畫面的路由一律凍結快照（〈審計〉§11.5），不靠作品 id 回頭查詢。
 
 **D4　來源的鍵使用可攜的身分，不用裝置本地的 UUID。**
-- 網路書源用 `bookSourceUrl`，不用 `BookSource.id`（〈審計〉§5.2、§10.1）。
+- 來源配置用 `bookSourceUrl`，不用 `BookSource.id`（〈審計〉§5.2、§10.1）。
 - 書目與公有書庫用它們自己的編號。
 - 遠端書庫暫時用 `OPDSCatalog.id`，它是裝置本地的 UUID。作品決定在 Phase S2 開始同步之前，必須先定出可攜鍵（§17 第 3 項）。
 
@@ -96,7 +97,7 @@
 - 這符合 `CLAUDE.md` 的「One path per concern」。
 
 **D8　統一搜尋是新的協調器，加上參與者協定。**
-- `SearchAggregator` 的行為不變，被包成「網路書源」參與者。它的並行、暫停、快取、健康度與 iOS 17 路由規則都沿用。
+- `SearchAggregator` 的行為不變，被包成「來源配置」參與者。它的並行、暫停、快取、健康度與 iOS 17 路由規則都沿用。
 
 **D9　探索首頁是「一頁由欄目組成」。**
 - 把自訂探索頁的模型一般化，探索首頁就是其中一個特別的頁。
@@ -125,7 +126,7 @@ Work《三體》
 ├─ Edition：zh-Hans · 文字
 │  ├─ SourceRecord  library/local · <Copy A 的 id>      → Copy A（ReadingBook，本機檔，有進度）
 │  ├─ SourceRecord  calibre/<連線> · urn:uuid:X         → 取得：線上讀 EPUB／下載 EPUB、PDF
-│  └─ SourceRecord  bookSource/<書源 URL> · <詳情 URL>  → Copy B（ReadingBook，線上書）
+│  └─ SourceRecord  bookSource/<來源配置 URL> · <詳情 URL>  → Copy B（ReadingBook，線上書）
 ├─ Edition：zh-Hant · 文字
 │  └─ SourceRecord  opds/<連線> · <entry id>            → 取得：線上讀／下載
 └─ MetadataRecord × N（書名、作者、封面、簡介、分類 × 各來源）
@@ -148,7 +149,7 @@ enum ProviderType: String, Codable, Sendable {
     case library                       // 書架與閱讀紀錄（本機）
     case opds, webDAV, calibre         // = RemoteLibraryKind
     case gutenberg, aozora             // 內建公有書庫
-    case bookSource                    // Legado 書源
+    case bookSource                    // Legado 來源配置
     case bibliographic                 // 書目資料庫（Open Library…）
 }
 
@@ -204,7 +205,7 @@ enum AcquisitionOption: Hashable, Codable, Sendable {
     case openCopy(UUID)             // 打開既有副本
     case readRemote(format: String) // RemoteLibraryService.read
     case download(format: String)   // RemoteLibraryService.downloadOffline、AozoraLibraryDownloadService
-    case readOnline                 // 網路書源
+    case readOnline                 // 來源配置
     case viewOnly                   // 書目資料庫：只有資料
 }
 
@@ -242,7 +243,7 @@ protocol SourceProvider: AnyObject {
     var availability: ProviderAvailability { get }
 }
 
-/// WebDAV、OPDS、Calibre、Gutenberg、青空、書架分組、書源發現分類。
+/// WebDAV、OPDS、Calibre、Gutenberg、青空、書架分組、來源配置發現分類。
 protocol CollectionBrowsing: SourceProvider {
     /// Calibre 與 Calibre-Web 要等 /ajax/library-info 回來才分得出來（〈審計〉§8.4），所以能力是 async。
     func capabilities() async -> CollectionCapabilities
@@ -250,7 +251,7 @@ protocol CollectionBrowsing: SourceProvider {
 }
 
 protocol CatalogSearching: SourceProvider {
-    /// .asYouType：本機或本機索引（書架、青空）；.onSubmit：遠端（OPDS、Calibre、書源、書目資料庫）；
+    /// .asYouType：本機或本機索引（書架、青空）；.onSubmit：遠端（OPDS、Calibre、來源配置、書目資料庫）；
     /// .onExplicitRequest：每次搜尋都要使用者明確要求（Gutenberg 條款，〈審計〉§9）
     var searchPolicy: SearchPolicy { get }
     func search(_ query: SearchQuery) -> AsyncStream<SearchParticipantEvent>
@@ -275,7 +276,7 @@ protocol MetadataProviding: SourceProvider {
 
 protocol HomeSectionProviding: SourceProvider {
     func templates() -> [HomeSectionTemplate]
-    /// .serialPerSource：書源（共用 JS 狀態）；.parallel；.onDemandOnly：Gutenberg
+    /// .serialPerSource：來源配置（共用 JS 狀態）；.parallel；.onDemandOnly：Gutenberg
     var loadPolicy: SectionLoadPolicy { get }
     func load(_ binding: HomeSectionBinding, page: Int) async throws -> HomeSectionPage
 }
@@ -285,7 +286,7 @@ protocol HomeSectionProviding: SourceProvider {
 
 - 遠端書庫：`RemoteLibraryService` 的 `read`、`addToShelf`、`downloadOffline`；
 - 青空：`AozoraLibraryDownloadService`；
-- 網路書源：`OnlineBookDetailDestination`。
+- 來源配置：`OnlineBookDetailDestination`。
 
 ## 6. 與現有型別的對應
 
@@ -293,14 +294,14 @@ protocol HomeSectionProviding: SourceProvider {
 |---|---|---|
 | `ReadingBook` | 副本，加上它目前來源的 `SourceRecord` | 純函式推導；不改型別 |
 | `ReadingBook.remoteSource: RemoteBookReference` | `SourceItemKey(opds/webDAV/calibre, connectionID, entryID)`＋格式 | WebDAV 的 entryID 是絕對 URL，推導時轉成相對路徑 |
-| `ReadingBook.bookSourceId`＋`bookInfoURL` | `SourceItemKey(bookSource, bookSourceUrl, 正規化 URL)` | 由 `BookSourceStore` 查 URL。查不到時保留 `bookSourceId` 的字串，標記為「書源已不存在」 |
+| `ReadingBook.bookSourceId`＋`bookInfoURL` | `SourceItemKey(bookSource, bookSourceUrl, 正規化 URL)` | 由 `BookSourceStore` 查 URL。查不到時保留 `bookSourceId` 的字串，標記為「來源配置已不存在」 |
 | `ReadingBook.aozora.catalogWorkID` | `SourceItemKey(aozora, builtin.aozora, 作品 ID)`＋識別碼 `aozoraWork` | |
 | 本機匯入的 `ReadingBook` | `SourceItemKey(library, local, id)` | 本機檔沒有外部身分。識別碼來自 OPF（Phase 1b） |
 | `RemoteLibraryItem`、`OPDSEntry`、`WebDAVBrowseClient.Entry` | `SourceRecord`＋`WorkSummary`；導覽 entry 是 `CollectionEntry.folder` | `RemoteLibraryBookRoute.init(entry:)` 的轉換提前到瀏覽層，保留 `authorNames`、ETag |
 | `OnlineBook`、`BookOrigin` | `SourceRecord(bookSource)` | |
-| `SearchBook` | 「網路書源」參與者內部的合併結果，對外轉成 `SearchCandidate` | 不改 `SearchAggregator` 的合併規則 |
+| `SearchBook` | 「來源配置」參與者內部的合併結果，對外轉成 `SearchCandidate` | 不改 `SearchAggregator` 的合併規則 |
 | `AozoraWork`、`GutenbergBook`、`PublicLibraryBook` | `SourceRecord(aozora / gutenberg)` | |
-| `BookInfoPackage` | 多筆 `MetadataValue`，provider 是該書源 | 合併規則沿用 `merging(searchResult:canReName:)` 的精神 |
+| `BookInfoPackage` | 多筆 `MetadataValue`，provider 是該來源配置 | 合併規則沿用 `merging(searchResult:canReName:)` 的精神 |
 | `customCoverUrl`／`originalCoverImagePath` | `MetadataValue(cover, provider: user)`＋原始值 | 檔案位置不變 |
 | `CustomExploreComponent` | `HomeSection(binding: .bookSourceCategories([ExploreCategoryReference]))` | §13 |
 | `ChangeSourceCache` | 同一版本的其他來源紀錄候選 | 先唯讀引用 |
@@ -356,10 +357,10 @@ B 級比現在的搜尋合併嚴格：現在只要一方作者為空就合併（
 
 | 欄位 | 預設優先序 | 自動補齊 |
 |---|---|---|
-| 書名、作者 | 副本自己的值（檔案或該書源）→ 其他來源 | **不自動補**。書目資料庫的書名只在使用者選用時才採用 |
+| 書名、作者 | 副本自己的值（檔案或該來源配置）→ 其他來源 | **不自動補**。書目資料庫的書名只在使用者選用時才採用 |
 | 封面 | 使用者 → 副本自帶 → 書目資料庫 | 副本沒有封面，而且是 A 級相符時才補 |
 | 簡介、分類、系列、語言、出版者 | 副本自帶 → A 級書目資料庫 → B 級需使用者確認 | 原值為空時才補 |
-| 字數、連載狀態 | 該網路書源 | — |
+| 字數、連載狀態 | 該來源配置 | — |
 
 ### 8.2 `ReadingBook` 與 Metadata 儲存的分工
 
@@ -386,7 +387,7 @@ B 級比現在的搜尋合併嚴格：現在只要一方作者為空就合併（
 | WebDAV | ✓ | 只篩目前資料夾 | 無；v2 讀 EPUB 的 OPF | — | 線上讀、下載 | `WebDAVBrowseClient`（先移出 view，見 Phase 0） |
 | Gutenberg | ✓ | 使用者明確要求 | ✓ | 隨 App 附帶的精選書單，開首頁不發請求 | 線上讀、下載 | `PublicLibrary`、`PublicLibraryCollection` |
 | 青空文庫 | 目錄索引 | 邊打邊搜（移出 `body`） | ✓ | 新着 | 下載後轉檔 | `AozoraCatalogStore`、`AozoraLibraryDownloadService` |
-| 網路書源 | 發現分類 | 送出才搜 | 詳情規則 | 發現分類、自訂頁 | 線上閱讀 | `BookSourceFetcher`、`SearchAggregator`、`DiscoverViewModel` |
+| 來源配置 | 發現分類 | 送出才搜 | 詳情規則 | 發現分類、自訂頁 | 線上閱讀 | `BookSourceFetcher`、`SearchAggregator`、`DiscoverViewModel` |
 | 書目資料庫 | — | 送出才搜 | ✓ | — | 只有資料 | 新增：第一個是 Open Library（§11） |
 
 **provider 註冊表：**
@@ -395,7 +396,7 @@ B 級比現在的搜尋合併嚴格：現在只要一方作者為空就合併（
 - 依下列條件組出目前可用的實例：
   - `OPDSCatalogStore` 的連線；
   - `PublicLibraryAvailability`；
-  - `BookSourceStore` 的啟用書源；
+  - `BookSourceStore` 的啟用來源配置；
   - 設定中啟用的書目資料庫。
 - `OPDSBrowseModel` 裡兩處 Gutenberg 特判（〈審計〉§9），移到 Gutenberg 實例自己的 adapter。
 
@@ -482,7 +483,7 @@ B 級比現在的搜尋合併嚴格：現在只要一方作者為空就合併（
 - **內建 provider 不受 4.7 約束。** 它們是 App 自己的 Swift 程式碼。
 - **宣告式規則模組風險最低（推論）。** 只有資料、沒有可執行碼，由既有規則引擎解譯；但仍是「下載後改變功能」的內容，上架前要確認審核立場。
 - **可下載的 JavaScript 模組屬於 4.7 的「plug-ins」。** 推論：模組需要的 HTTP 橋接（如 Forward 的 `Widget.http`、Legado 的 `java.ajax`）很可能落在 4.7.2「expose native platform APIs or technologies」的範圍，所以要先取得 Apple 的許可；另外還要做到 4.7.1 的檢舉與過濾、4.7.4 的索引與 universal link、4.7.5 的年齡限制。
-- **既有的 Legado 書源已經有 JavaScript 橋接**（〈審計〉§10.3）。這是既有風險。本計畫不擴大它，也不讓新模組沿用它。
+- **既有的 Legado 來源配置已經有 JavaScript 橋接**（〈審計〉§10.3）。這是既有風險。本計畫不擴大它，也不讓新模組沿用它。
 - **Open Library 的請求方式：**
   - 沿用 App 已經在送的 `Yuedu/<版本> (iOS; +https://yuedureader.com/support)` User-Agent（`Technotes/PublicLibraries.md`）；
   - 只在使用者動作時查詢，不批次、不預抓；
@@ -537,7 +538,7 @@ BookSearchView（或新的統一搜尋頁）
 
 **範圍與預設：**
 
-- 搜尋範圍是現有的 `SearchSourceScope` 再加上來源種類：書架、我的書庫、公有書庫、書源、書目資料庫。
+- 搜尋範圍是現有的 `SearchSourceScope` 再加上來源種類：書架、我的書庫、公有書庫、來源配置、書目資料庫。
 - 預設不含書目資料庫，因為關鍵字會送到第三方。
 - 預設也不含 Gutenberg，它需要使用者按下「在 Project Gutenberg 搜尋」。
 
@@ -582,6 +583,25 @@ Jellyfin 是從 Emby 分出來的開源專案。
 
 結論：Emby 系的首頁不是一條混合的推薦流，而是「跨庫聚合的個人列」加上「每個庫各自的列」，兩者都標明出處，順序由使用者決定。
 
+**Rex（Forward 的後繼者）**
+
+依維護者提供的 2026-10-08 截圖。
+
+- **編輯首頁欄目分兩步：** 先選呈現方式，再選內容來源。
+- **「選擇內容來源」依種類分組：**
+  - App 資料；
+  - Libraries：每個 Emby 庫；
+  - Trakt 等外部服務：未登入時只顯示公開清單；
+  - Rex 官方模組：已驗證，顯示版本與作者；
+  - 匯入的模組：例如以 AI 產生推薦、再對應到 TMDB 作品的模組。
+- **「聚合資料」設定頁：**
+  - Metadata 偏好語言。
+  - 「聚合所有啟用的庫」：開啟後，作品詳情會合併所有啟用庫的可播放版本；關閉聚合的庫不參與。
+  - 瀏覽某個庫時，可以「只用目前的庫」或「優先目前的庫」。
+  - 每種能力各有一份資料來源清單，各自顯示啟用數，例如搜尋 7/7、觀看紀錄 6/6、媒體資訊 5/5、收藏 6/6、統計 6/6。
+  - 自訂 TMDB API：用自己的網址與金鑰，取代 Rex 的預設代理。
+  - 播放資源排序。
+
 ### 13.3 Yuedu 的首頁
 
 **範圍選單**
@@ -622,11 +642,49 @@ Jellyfin 是從 Emby 分出來的開源專案。
 
   | 使用者 | 預設欄目 |
   |---|---|
-  | 原本是書源模式 | 我的書庫（排在第一，就是他們熟悉的畫面）→ 繼續閱讀 → 最新 → 精選 |
+  | 原本是來源配置模式 | 我的書庫（排在第一，就是他們熟悉的畫面）→ 繼續閱讀 → 最新 → 精選 |
   | 原本是公有書庫模式與新安裝 | 繼續閱讀 → 我的書庫 → 精選 → 最新 |
   | 中國區 | 不產生、也不能新增任何公有書庫的欄目或範圍選項 |
 
   `explore.mode` 與舊的根 view 保留一個版本，以回退旗標切換。
+
+**新增欄目：兩步**
+
+比照 Rex。現有的自訂頁編輯器本來就是「先選版面，再選來源配置與發現項」（`docs/design.md`），只是把第二步擴大到所有來源。
+
+1. **選呈現方式：** 今天自訂頁的 7 種版面，加上磚塊與單列。
+2. **選內容來源：** 依種類分組。選定來源之後，再顯示那個來源自己的選項，例如哪個分類、哪個 feed。
+
+| 分組 | 內容 |
+|---|---|
+| App 資料 | 繼續閱讀、最近加入書架、書架分組、閱讀統計 |
+| 書庫 | 每個 Calibre／OPDS／WebDAV 連線；Gutenberg、青空 |
+| 來源配置 | 每個來源配置，進一步選它的發現分類 |
+| 外部服務 | 書目資料庫，例如 Open Library；需要登入的服務未登入時只顯示公開資料 |
+| 官方模組、匯入的模組 | Phase 6（§14.2） |
+
+**聚合設定**
+
+一頁設定，比照 Rex 的「聚合資料」：
+
+- **聚合所有啟用的來源**（預設開啟）。
+  - 作品詳情合併所有啟用來源的版本與取得方式，見 §14.1 的「可用來源」。
+  - 統一搜尋也依此歸併作品（§12）。
+  - 每個來源可以個別設為「不參與聚合」。
+- **瀏覽單一來源時：** 「只用目前來源」或「優先目前來源」。
+- **依能力的資料來源清單**，各自顯示啟用數，對應 §9 的能力協定：
+  - 搜尋來源：`CatalogSearching`；
+  - Metadata 來源：`MetadataProviding`；
+  - 閱讀紀錄來源：書架、Calibre 進度；
+  - 收藏來源：書架與各書庫的收藏；
+  - 統計來源。
+
+  Rex 的「片段標記來源」（片頭片尾）在閱讀情境沒有對應，不做。
+- **Metadata 偏好語言**（例如繁體中文（台灣））。它也決定繁簡兩個版本中預設打開哪一個（§7.2）。
+- **自備 API 金鑰：** 給需要金鑰的書目資料庫使用，例如 Google Books（§11.3）。比照 Rex 的「自訂 TMDB API」。
+- **版本排序**，對應 Rex 的播放資源排序：打開作品時預設使用哪一個副本或來源。
+  - 預設順序：本機檔 → 已下載 → 書庫線上讀 → 來源配置。
+  - 使用者可以調整。
 
 ### 13.4 實作
 
@@ -666,7 +724,7 @@ Jellyfin 是從 Emby 分出來的開源專案。
 - **結構：** 建立在 `BookDetailScaffold` 系列元件上（〈審計〉§13），新增「可用來源」區塊：版本 → 來源紀錄 → 動作。
 - **動作分開表達，不合併成一顆按鈕：** 繼續閱讀、線上閱讀、下載、加入書架、查看來源詳情（構想文件 §9）。
 - **資料來源與編輯：** Metadata 的每一列都標出來源，並提供編輯、鎖定、識別（搜尋候選）。
-- **既有詳情頁：** 原有的書源詳情、遠端書詳情、青空作品詳情保留，作為從作品頁推入的「來源詳情」，不重寫。
+- **既有詳情頁：** 原有的來源配置詳情、遠端書詳情、青空作品詳情保留，作為從作品頁推入的「來源詳情」，不重寫。
 - **書架長按：** 「書籍資訊」（`EditBookSheet`）保留。新增「作品詳情」入口，並修正「來源」列的標籤（〈審計〉§16 第 2 項）。
 
 ### 14.2 模組系統
@@ -676,9 +734,9 @@ Jellyfin 是從 Emby 分出來的開源專案。
 1. **內建 provider 的宣告（編譯期）。**
    - 每個內建 provider 宣告一份 `ProviderManifest`：`id`、`type`、顯示名稱、能力、會連線的主機、限速、可用區域、`searchPolicy`、`loadPolicy`。
    - 這就是構想文件 Phase 6 的「Capability Protocol」與「模組 Manifest」，但不涉及下載任何東西。
-2. **Legado 書源用同一份宣告描述。**
-   - 依書源實際有的規則推導能力：有搜尋規則就有 `CatalogSearching`，有發現規則就有 `HomeSectionProviding`，有詳情規則就有 `MetadataProviding`，有目錄與正文規則就能線上閱讀。
-   - 書源因此進入同一個註冊表。執行仍走 `BookSourceSession`，不另開路徑。
+2. **Legado 來源配置用同一份宣告描述。**
+   - 依來源配置實際有的規則推導能力：有搜尋規則就有 `CatalogSearching`，有發現規則就有 `HomeSectionProviding`，有詳情規則就有 `MetadataProviding`，有目錄與正文規則就能線上閱讀。
+   - 來源配置因此進入同一個註冊表。執行仍走 `BookSourceSession`，不另開路徑。
 3. **宣告式規則模組。**
    - 讓使用者匯入「只有規則、沒有 JavaScript」的模組，提供瀏覽、搜尋或 Metadata。
    - 由既有的 `ModernRuleEngine` 解譯 CSS／XPath／JSONPath／Regex。
@@ -692,6 +750,22 @@ Jellyfin 是從 Emby 分出來的開源專案。
      - 不能 `importScript` 或 `eval` 遠端程式碼。
    - 真正能中止的執行：現在的 watchdog 只放棄佇列，腳本仍在跑（〈審計〉§10.3）。
    - 4.7.4 的模組索引與 universal link；4.7.1 的檢舉與封鎖；4.7.5 的年齡分級；4.7.3 的逐次資料分享同意。
+
+**列表呈現**，比照 Rex：
+
+- 分成兩組：「官方模組」（由本專案維護，標示已驗證）與「匯入的模組」。
+- 每個模組都顯示名稱、說明、版本與作者。
+
+**格式選擇**
+
+- 維護者已經為 Forward／Rex 寫過模組，例如以 AI 產生推薦再對應 TMDB 作品的模組。
+- 所以 manifest 的欄位命名可以盡量貼近 Forward 的 `WidgetMetadata`（§11.2），降低模組作者的轉換成本。
+
+**「AI 推薦」先做成官方模組**
+
+- 做法：用 App 既有的 AI 服務（`Modules/Services/AI`）產生書單，再經書目資料庫或來源配置對應到作品。
+- 這是 App 內建的 Swift 程式，不受 4.7 約束。
+- 推薦結果要標示「AI 產生」。
 
 **安裝與更新**（第 3、4 步）：
 
@@ -714,7 +788,7 @@ Jellyfin 是從 Emby 分出來的開源專案。
 | 步驟 | 內容 | 理由 | 驗收 |
 |---|---|---|---|
 | 0a | 為下列元件補上描述現況的測試，鎖住要包起來的行為：`SearchAggregator` 的合併與排序、`BookOriginSearchService`、`OnlineCoverSearchService`、`CustomExplorePageModel`、`DiscoverViewModel.reload`、`DiscoverKindsCache` | 〈審計〉附錄 B 的測試缺口 | 新測試在未改程式時通過 |
-| 0b | 原生搜尋路徑區分「合法的空」與「失敗」：失敗要記錄，並計入 `SourceHealthStore` | 〈審計〉§11.3；`CLAUDE.md` 的「Don't swallow errors」 | **行為改變：** 被封鎖的書源會進冷卻。需維護者同意（§17 第 9 項） |
+| 0b | 原生搜尋路徑區分「合法的空」與「失敗」：失敗要記錄，並計入 `SourceHealthStore` | 〈審計〉§11.3；`CLAUDE.md` 的「Don't swallow errors」 | **行為改變：** 被封鎖的來源配置會進冷卻。需維護者同意（§17 第 9 項） |
 | 0c | 把 WebDAV 資料夾列表從 view 移到 model | 〈審計〉§8.2；「Views don't orchestrate」 | `RemoteLibraryBrowsePresentationTests`、`RemoteLibraryNavigationUITests` |
 | 0d | `CustomExplorePageStore` 讀取失敗後拒絕寫入 | 〈審計〉§16 第 4 項；之後要遷移這個檔案 | 新增：損壞檔不會被覆寫 |
 | 0e | 加上 `works.*` 的 SourcePerfTrace span | 「Measure, then optimize」 | span 出現在 Release Console |
@@ -758,7 +832,7 @@ Jellyfin 是從 Emby 分出來的開源專案。
 - 衝突以 `serverRecordChanged` 逐筆處理，套用上表的規則。
 - 需要遠端推播：另一台裝置不必重啟就收到更新。模擬器收不到推播（§11.2），所以驗收必須用真機。
 - 書檔與封面檔沿用現有的 `bookfile_*` 檔案紀錄，這一階段不搬。
-- 書源、取代規則、閱讀設定等其他同步類型，先維持 v2。
+- 來源配置、取代規則、閱讀設定等其他同步類型，先維持 v2。
 
 **本機：`ReadingBook` 變成組合出來的檢視**
 
@@ -809,7 +883,7 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
 ### Phase 3　Metadata（構想文件 Phase 3）
 
 - **3a** `MetadataProviding` 與「識別」畫面：搜尋候選、逐欄選用、預覽後套用。
-- **3b** 第一個網文 Metadata 來源：使用者自己的書源的詳情規則。不內建任何平台解析。
+- **3b** 第一個網文 Metadata 來源：使用者自己的來源配置的詳情規則。不內建任何平台解析。
 - **3c** 第一個內建書目資料庫：Open Library（條款見 §11）。另外，把 `OnlineCoverSearchService` 一般化成封面 provider，並改走 `WebFetcher`。
 - **3d** 自動補齊：只補空欄位，只採 A 級相符，只寫 sidecar（§8.2）。
 
@@ -853,15 +927,15 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
   - 《三體》EPUB＋PDF，`urn:uuid:X`，同一 ISBN；
   - 《球狀閃電》。
 - OPDS fixture：《三體》繁體（zh-Hant）。
-- 網文 Metadata：一個測試書源，詳情規則回傳《三體》的簡介、分類與字數。
+- 網文 Metadata：一個測試來源配置，詳情規則回傳《三體》的簡介、分類與字數。
 
 **搜尋「三體」必須做到**
 
-1. 第一列是一部作品「三體 · 劉慈欣」，標示四個來源：書架、Calibre、OPDS、書源。
+1. 第一列是一部作品「三體 · 劉慈欣」，標示四個來源：書架、Calibre、OPDS、來源配置。
 2. 《三體II：黑暗森林》是另一列，不被歸併。
 3. 作品頁顯示：
    - 封面：書架副本自帶的封面；
-   - 簡介：來自書源，並標示出處；
+   - 簡介：來自來源配置，並標示出處；
    - 兩個版本：
      - 簡體：書架 EPUB 已在書架、Calibre EPUB／PDF 可取得；
      - 繁體：OPDS。
@@ -894,7 +968,7 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
 3. **遠端連線的可攜鍵：** `OPDSCatalog.id` 是裝置本地的 UUID。同步決定之前，必須定出跨裝置的連線身分，例如「類型＋正規化網址＋使用者名稱」。
 4. **起點、番茄等網文平台的內建解析：**
    - 需要先審查條款，看能否取得結構化資料、能否顯示與快取封面。
-   - 在那之前，用使用者自己的書源的詳情規則（3b）。
+   - 在那之前，用使用者自己的來源配置的詳情規則（3b）。
 5. **書目資料庫：**
    - 是否以 Open Library 為第一個？
    - 預設要不要關閉？關鍵字會送到第三方，需要隱私揭露。
@@ -904,7 +978,7 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
    - 尚待確認的只有一件事：「相關」欄目 v1 只用書架上的訊號，是否足夠？
 7. **首頁預設欄目：** 兩種舊模式的使用者，以及中國區，預設欄目各是什麼（§13.3 的建議表）。
 8. **書架搜尋：** 書架要不要加搜尋欄？或者統一搜尋裡的「書架」結果就夠了？
-9. **Phase 0b 的行為改變：** 被封鎖或已失效的書源會進冷卻，之後的搜尋一段時間內不查它。
+9. **Phase 0b 的行為改變：** 被封鎖或已失效的來源配置會進冷卻，之後的搜尋一段時間內不查它。
 10. **WebDAV 索引：** 是否提供逐連線、opt-in、深度與數量有上限的建索引？
 11. **第三方 JavaScript 模組：** 是否向 Apple 申請 4.7.2 的許可（§11、§14.2）？在那之前只做宣告式模組。
 12. **上線方式：** 統一搜尋與新首頁，是否先以設定中的實驗開關上線？
@@ -918,8 +992,12 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
 15. **同步範圍：** 每本書的閱讀設定（`BookReaderSettings`）是否進 v3？
     - 現在它不同步。
     - 同步後，另一台裝置會跟著改字體與行距。
-16. **其他同步類型：** 書源、取代規則、閱讀設定是否也改成實體同步？
+16. **其他同步類型：** 來源配置、取代規則、閱讀設定是否也改成實體同步？
     - 建議這次只做書庫，其他維持 v2。
+17. **聚合設定的預設值（§13.3）：**
+    - 「聚合所有啟用的來源」預設開啟？
+    - 瀏覽單一來源時，預設「優先」還是「只用」目前來源？
+    - 版本排序的預設順序？
 
 ## 18. 風險
 
