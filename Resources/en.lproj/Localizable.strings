@@ -5,7 +5,7 @@
 "Legado 資料遷移" = "Legado Data Migration";
 "RSS 網址" = "RSS URL";
 "RSS 訂閱" = "Feed";
-"TXT、EPUB、Web、書源" = "TXT, EPUB, Web, Sources";
+"TXT、EPUB、Web、來源配置" = "TXT, EPUB, Web, Sources";
 "TXT 目錄修復未完成" = "TXT Contents Repair Incomplete";
 "為避免閱讀進度或書籤錯移，尚未套用新目錄。原有位置資料已保留。請保留原始 TXT，並匯出診斷記錄以供檢查。" = "The new contents have not been applied, to protect your reading position and bookmarks. Original location data has been retained. Keep the original TXT file and export diagnostics for investigation.";
 "URL" = "URL";
@@ -42,14 +42,14 @@
 "來源名稱" = "Source Name";
 "例如：科技新聞" = "e.g. Tech News";
 "保留本地資料" = "Keep Local Data";
-"個書源匯入失敗" = "source(s) failed to import";
+"個來源配置匯入失敗" = "source(s) failed to import";
 "停止服務" = "Stop Service";
-"書源檢測" = "Source Check";
+"來源配置檢測" = "Source Check";
 "重新檢測" = "Re-check";
 "通過" = "Pass";
 "正在檢測…" = "Checking…";
-"沒有選取的書源" = "No sources selected";
-"書源地址為空" = "Source URL is empty";
+"沒有選取的來源配置" = "No sources selected";
+"來源配置地址為空" = "Source URL is empty";
 "非 HTTP 響應" = "Non-HTTP response";
 "空響應" = "Empty response";
 "搜索 URL 格式錯誤" = "Invalid search URL format";
@@ -94,8 +94,8 @@
 "匯入中，請稍候…" = "Importing, please wait…";
 "匯入失敗：" = "Import failed: ";
 "匯入文件" = "Import File";
-"匯入書源" = "Import Source";
-"匯入書源 JSON" = "Import Source JSON";
+"匯入來源配置" = "Import Source";
+"匯入來源配置 JSON" = "Import Source JSON";
 "匯出全部" = "Export All";
 "匯出選中" = "Export Selected";
 "匹配" = "Match";
@@ -110,7 +110,7 @@
 "啟用" = "Enabled";
 "啟用網路除錯錄製" = "Enable Network Debug Recording";
 "啟用選中" = "Enable Selected";
-"嘗試換個關鍵字，或切換書源" = "Try different keywords or switch source";
+"嘗試換個關鍵字，或切換來源配置" = "Try different keywords or switch source";
 "在閱讀時點擊右上角書籤按鈕添加" = "Tap the bookmark button while reading to add one";
 "地址" = "Address";
 "執行" = "Run";
@@ -129,8 +129,8 @@
 "尚未下載任何書籍" = "No books downloaded yet";
 "移除下載內容？" = "Remove Downloaded Content?";
 "將刪除《%@》已下載的章節。書籍仍留在書架，可重新下載。" = "This deletes the downloaded chapters of “%@”. The book stays on your shelf and can be downloaded again.";
-"尚未設置書源" = "No Book Sources";
-"尚無書源" = "No Sources Yet";
+"尚未設置來源配置" = "No Sources";
+"尚無來源配置" = "No Sources Yet";
 "尚無書籤" = "No Bookmarks";
 "尚無替換規則" = "No Replacement Rules Yet";
 "局域網服務" = "LAN Service";
@@ -143,7 +143,7 @@
 "已啟用" = "Enabled";
 "已成功連線至 WebDAV 伺服器" = "Successfully connected to the WebDAV server";
 "已複製" = "Copied";
-"已複製書源 JSON" = "Source JSON copied";
+"已複製來源配置 JSON" = "Source JSON copied";
 "已解析 EPUB 結構，點擊下方按鈕匯入" = "EPUB parsed. Tap below to import.";
 "已解鎖 閱讀Pro" = "Yuedu Pro unlocked";
 "開始使用" = "Get Started";
@@ -168,10 +168,10 @@
 "搜索中…" = "Searching…";
 "暫停搜索" = "Pause search";
 "繼續搜索" = "Resume search";
-"點擊繼續搜索剩餘書源" = "Tap to resume the remaining sources";
+"點擊繼續搜索剩餘來源配置" = "Tap to resume the remaining sources";
 "搜索失敗" = "Search Failed";
 "搜索時啟用快取，避免重複搜索，預設快取 5 日" = "Cache search results to avoid duplicates. Default: 5 days";
-"搜索書源" = "Search Sources";
+"搜索來源配置" = "Search Sources";
 "搜索書籍" = "Search Books";
 "搜索結果快取天數" = "Search Cache (days)";
 "搜索結果規則" = "Search Result Rules";
@@ -194,11 +194,11 @@
 "新增" = "Add";
 "新增 RSS 訂閱" = "Add RSS Subscription";
 "新增規則" = "Add Rule";
-"新建書源" = "New Source";
+"新建來源配置" = "New Source";
 "方式" = "Method";
 "時間範圍" = "Time Range";
-"暫無其他書源" = "No other sources available";
-"其他書源" = "Other Sources";
+"暫無其他來源配置" = "No other sources available";
+"其他來源配置" = "Other Sources";
 "載入失敗" = "Failed";
 "重新搜尋" = "Refresh";
 "暫無資料" = "No Data";
@@ -208,21 +208,21 @@
 "搜尋書架" = "Search Library";
 "書架列表" = "Library List";
 "書架還是空的" = "Library is empty";
-"書源" = "Book Source";
-"書源 JSON（書源備份 / 分享檔）" = "Book Source JSON (backup / shared file)";
-"書源分組" = "Source Group";
-"書源列表" = "Source List";
-"書源名稱" = "Source Name";
-"書源地址" = "Source URL";
-"書源伺服器回應失敗" = "The source's server returned an error";
-"書源腳本錯誤" = "Book source script error";
+"來源配置" = "Source";
+"來源配置 JSON（來源配置備份 / 分享檔）" = "Source JSON (backup / shared file)";
+"來源配置分組" = "Source Group";
+"來源配置列表" = "Source List";
+"來源配置名稱" = "Source Name";
+"來源配置地址" = "Source URL";
+"來源配置伺服器回應失敗" = "The source's server returned an error";
+"來源配置腳本錯誤" = "Source script error";
 "資料已還原，書庫與替換規則已即時更新" = "Data restored. The library and replacement rules have been updated immediately.";
-"書源已被刪除" = "Source has been deleted";
-"書源未設定 loginUrl" = "The book source has no loginUrl configured";
-"書源登入" = "Book Source Login";
-"書源管理" = "Book Sources";
-"書源調試" = "Book Source Debug";
-"書源除錯大師" = "Book Source Debugger";
+"來源配置已被刪除" = "Source has been deleted";
+"來源配置未設定 loginUrl" = "The source has no loginUrl configured";
+"來源配置登入" = "Source Login";
+"來源配置管理" = "Sources";
+"來源配置調試" = "Source Debug";
+"來源配置除錯大師" = "Source Debugger";
 "默認分組" = "Default Group";
 "書籍 JSON（書架備份檔）" = "Books JSON (library backup file)";
 "書籍 URL" = "Book URL";
@@ -243,7 +243,7 @@
 "服務狀態" = "Service Status";
 "未分組" = "Ungrouped";
 "未匯入任何資料" = "No Data Imported";
-"未命名書源" = "Unnamed Source";
+"未命名來源配置" = "Unnamed Source";
 "未命名規則" = "Unnamed Rule";
 "未找到可匯入的替換規則" = "No importable replace rules found";
 "未知作者" = "Unknown";
@@ -255,15 +255,15 @@
 "本週" = "This Week";
 "正則表達式" = "Regular Expression";
 "正在抓取頁面…" = "Fetching page…";
-"正在搜尋其他書源…" = "Searching for sources…";
-"正在搜尋更多書源…" = "Searching for more sources…";
+"正在搜尋其他來源配置…" = "Searching for sources…";
+"正在搜尋更多來源配置…" = "Searching for more sources…";
 "正文" = "Content";
 "正文規則" = "Content Rules";
 "段落文字（URL 編碼）" = "Paragraph Text (URL-encoded)";
 "段落間距" = "Paragraph Spacing";
 "每搜索到N个精確結果(或5N個模糊結果)後自動暫停(0不暫停)，防止設備發燙和流量消耗過多" = "Auto-pause after N exact results (or 5N fuzzy). 0 = no pause. Saves battery & data.";
 "每日閱讀（分鐘）" = "Daily Reading (min)";
-"沒有可用的書源，請先啟用書源" = "No sources enabled. Please enable one first.";
+"沒有可用的來源配置，請先啟用來源配置" = "No sources enabled. Please enable one first.";
 "添加書籍" = "Add Book";
 "清空" = "Clear";
 "清空紀錄" = "Clear Log";
@@ -304,7 +304,7 @@
 "目錄規則" = "TOC Rules";
 "確定" = "Confirm";
 "確認" = "OK";
-"確認從外部來源匯入書源？" = "Import book source from this external source?";
+"確認從外部連結匯入來源配置？" = "Import this source from an external link?";
 "確認匯入" = "Import";
 "確認刪除" = "Confirm Delete";
 "確認書籍資訊" = "Confirm Book Info";
@@ -317,7 +317,7 @@
 "章節列表" = "Chapter List";
 "章節名" = "Chapter Title";
 "章節標題（URL 編碼）" = "Chapter Title (URL-encoded)";
-"管理書源" = "Manage Sources";
+"管理來源配置" = "Manage Sources";
 "範圍" = "Range";
 "簡↔繁轉換離線完成，永久生效" = "SC↔TC conversion is offline and permanent";
 "簡介" = "Description";
@@ -367,13 +367,13 @@
 "語音朗讀設定" = "TTS Settings";
 "說明" = "Description";
 "調試規則" = "Debug Rule";
-"請先在書源管理中新增並啟用書源" = "Please add and enable a book source first";
-"請在下方完成登入。登入成功後點「完成」，Cookie 將自動儲存供書源使用。" = "Complete the login below. After a successful login, tap Done and the cookie will be saved automatically for the book source.";
+"請先在來源配置管理中新增並啟用來源配置" = "Please add and enable a source first";
+"請在下方完成登入。登入成功後點「完成」，Cookie 將自動儲存供來源配置使用。" = "Complete the login below. After a successful login, tap Done and the cookie will be saved automatically for the source.";
 "請填入登入資訊" = "Please enter the login information";
 "請填寫伺服器網址" = "Please enter the server URL";
 "請從 Legado → 備份與恢復 中匯出對應 JSON 檔案後選擇匯入。" = "Export the corresponding JSON file from Legado -> Backup & Restore, then choose it to import.";
 "讀取中..." = "Loading...";
-"貼上 Legado 格式的書源 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。" = "Paste Legado source JSON (single {} or array []), or select a .json file.";
+"貼上 Legado 格式的來源配置 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。" = "Paste Legado source JSON (single {} or array []), or select a .json file.";
 "資料已成功備份至雲端" = "Data was successfully backed up to the cloud";
 "資料管理" = "Data Management";
 "超時" = "Timeout";
@@ -386,7 +386,7 @@
 "輸入小說網頁網址，系統抓取頁面文字。建議選用有純文字章節頁面的網站。" = "Enter a novel page URL to fetch its text. Works best with plain-text chapter pages.";
 "輸入書名或作者" = "Title or author";
 "輸入書名或作者搜索" = "Enter title or author to search";
-"輸入書源 JSON 的網路地址，支援直接返回 JSON 的 URL。" = "Enter the web address of the book source JSON. Direct JSON URLs are supported.";
+"輸入來源配置 JSON 的網路地址，支援直接返回 JSON 的 URL。" = "Enter the web address of the source JSON. Direct JSON URLs are supported.";
 "輸入網址或搜尋" = "Enter URL or search";
 "輸入資料後按「執行」開始調試" = "Enter the data below, then tap Run to start debugging";
 "轉換模式" = "Conversion Mode";
@@ -428,7 +428,7 @@
 "Telegram 群" = "Telegram Group";
 "法律與政策" = "Legal and Policies";
 "政策與協議" = "Policies and Agreements";
-"使用書源、第三方服務與未來付費功能前，請先閱讀相關條款。" = "Read these terms before using book sources, third-party services, or future paid features.";
+"使用來源配置、第三方服務與未來付費功能前，請先閱讀相關條款。" = "Read these terms before using sources, third-party services, or future paid features.";
 "隱私權政策" = "Privacy Policy";
 "本機資料、同步與第三方來源說明" = "Local data, sync, and third-party source notes";
 "使用者協議" = "User Agreement";
@@ -609,13 +609,13 @@
 "登出後此裝置會停止使用目前帳號同步。" = "This device will stop syncing with the current account after sign-out.";
 "刪除帳號" = "Delete Account";
 "永久刪除帳號" = "Permanently Delete Account";
-"刪除帳號將登出此裝置，並永久刪除已同步至 iCloud 的書庫、書源與替換規則資料。此操作無法復原。" = "Deleting your account signs you out of this device and permanently deletes the library, book sources, and replacement rules synced to iCloud. This action cannot be undone.";
+"刪除帳號將登出此裝置，並永久刪除已同步至 iCloud 的書庫、來源配置與替換規則資料。此操作無法復原。" = "Deleting your account signs you out of this device and permanently deletes the library, sources, and replacement rules synced to iCloud. This action cannot be undone.";
 "刪除帳號會移除您的登入資訊並清除已上傳至 iCloud 的同步資料，且無法復原。儲存在本機的書籍不會被刪除。" = "Deleting your account removes your sign-in information and erases the data uploaded to iCloud, and cannot be undone. Books stored on this device are not deleted.";
 "正在刪除 iCloud 同步資料…" = "Deleting iCloud sync data…";
 "已刪除 iCloud 上的同步資料" = "iCloud sync data deleted";
 "刪除 iCloud 上的資料" = "Delete Data in iCloud";
 "刪除 iCloud 上的資料？" = "Delete Data in iCloud?";
-"會刪除 iCloud 上的書庫、書源、替換規則、書檔、閱讀設定、氣泡樣式與閱讀背景，並關閉這台裝置的自動同步。這台裝置上的資料不受影響；其他裝置開著自動同步時，會再上傳它們的資料。" = "Deletes your library, sources, rules, book files, reading settings, bubble styles and reading backgrounds from iCloud, and turns off Auto Sync on this device. Data on this device is kept; other devices with Auto Sync on will upload theirs again.";
+"會刪除 iCloud 上的書庫、來源配置、替換規則、書檔、閱讀設定、氣泡樣式與閱讀背景，並關閉這台裝置的自動同步。這台裝置上的資料不受影響；其他裝置開著自動同步時，會再上傳它們的資料。" = "Deletes your library, sources, rules, book files, reading settings, bubble styles and reading backgrounds from iCloud, and turns off Auto Sync on this device. Data on this device is kept; other devices with Auto Sync on will upload theirs again.";
 "這台裝置的自動同步已關閉。" = "Auto Sync is now off on this device.";
 "帳號資訊" = "Account Info";
 "用戶名" = "UserName";
@@ -772,13 +772,13 @@
 "自動同步" = "Auto Sync";
 "立即同步" = "Sync Now";
 "同步成功" = "Sync Successful";
-"開啟後，App 啟動與切到背景時會自動與 iCloud 合併同步（書庫、書源、替換規則與書檔）。多台裝置會智慧合併，不會互相覆蓋。" = "When on, the app merges with iCloud on launch and when backgrounded (library, sources, replace rules and book files). Multiple devices merge intelligently without overwriting each other.";
-"書庫、書源與替換規則已更新" = "Library, sources and replace rules updated";
+"開啟後，App 啟動與切到背景時會自動與 iCloud 合併同步（書庫、來源配置、替換規則與書檔）。多台裝置會智慧合併，不會互相覆蓋。" = "When on, the app merges with iCloud on launch and when backgrounded (library, sources, replace rules and book files). Multiple devices merge intelligently without overwriting each other.";
+"書庫、來源配置與替換規則已更新" = "Library, sources and replace rules updated";
 "資料同步" = "Data Sync";
 "以本機重建雲端同步" = "Rebuild Cloud Sync From This Device";
 "清除雲端並重新上傳" = "Clear Cloud and Re-upload";
-"會清除雲端已同步的書庫、書源、替換規則與 RSS，改以此裝置目前的資料為準重新上傳。其他裝置下次同步時會跟著更新。" = "This clears the synced library, book sources, replace rules and RSS in the cloud, then re-uploads using this device's current data. Other devices will update on their next sync.";
-"書庫、書源與進度會透過帳號自動同步。若雲端資料異常，可用此功能以本機資料重建。" = "Your library, sources and progress sync automatically through your account. Use this to rebuild from this device if the cloud data is broken.";
+"會清除雲端已同步的書庫、來源配置、替換規則與 RSS，改以此裝置目前的資料為準重新上傳。其他裝置下次同步時會跟著更新。" = "This clears the synced library, sources, replace rules and RSS in the cloud, then re-uploads using this device's current data. Other devices will update on their next sync.";
+"書庫、來源配置與進度會透過帳號自動同步。若雲端資料異常，可用此功能以本機資料重建。" = "Your library, sources and progress sync automatically through your account. Use this to rebuild from this device if the cloud data is broken.";
 "已用本機資料重建雲端同步" = "Cloud sync rebuilt from this device";
 "iCloud 還原中…" = "Restoring from iCloud…";
 "已保留本地資料" = "Local data kept";
@@ -802,14 +802,14 @@
 
 /* Explore tab */
 "探索" = "Explore";
-"搜尋書源名稱或網址" = "Search source name or URL";
-"書源發現" = "Discover";
+"搜尋來源配置名稱或網址" = "Search source name or URL";
+"來源配置發現" = "Discover";
 "網頁瀏覽" = "Web";
-"目前書源" = "Current Source";
+"目前來源配置" = "Current Source";
 "目前發現頁" = "Current Discover Page";
-"切換書源" = "Switch Source";
+"切換來源配置" = "Switch Source";
 "切換發現頁" = "Switch Discover Page";
-"書源設定" = "Source Settings";
+"來源配置設定" = "Source Settings";
 "發現頁設定" = "Discover Page Settings";
 "搜尋發現項目" = "Search discover items";
 "篩選條件" = "Filters";
@@ -823,19 +823,19 @@
 "類型" = "Type";
 "頻道" = "Channel";
 "平台" = "Platform";
-"尚未啟用支援發現的書源" = "No discover-enabled source";
-"前往書源管理" = "Go to Source Manager";
+"尚未啟用支援發現的來源配置" = "No discover-enabled source";
+"前往來源配置管理" = "Go to Source Manager";
 "發現" = "Discover";
 "換一批" = "Refresh";
 "暫無發現內容" = "No discover content";
-"此書源未回傳發現內容，可下拉重新整理或切換書源" = "This source returned no discover content. Pull to refresh or switch source.";
+"此來源配置未回傳發現內容，可下拉重新整理或切換來源配置" = "This source returned no discover content. Pull to refresh or switch source.";
 "載入失敗，點按重試" = "Failed to load. Tap to retry.";
 "今日必讀" = "Today's Picks";
 "選擇上方分類以載入書籍" = "Select a category above to load books";
 "常用搜尋" = "Search Engines";
 "快捷入口" = "Quick Links";
 "番茄登入" = "Fanqie Login";
-"書源網站" = "Source Sites";
+"來源配置網站" = "Source Sites";
 "最近瀏覽" = "Recently Browsed";
 "查看全部" = "View All";
 "尚無瀏覽記錄" = "No browsing history";
@@ -849,7 +849,7 @@
 "女頻" = "Female";
 "剛剛" = "Just now";
 "分類篩選" = "Filters";
-"前往書源管理新增並啟用書源" = "Add and enable a source in Source Manager";
+"前往來源配置管理新增並啟用來源配置" = "Add and enable a source in Source Manager";
 "系統離線語音" = "System Offline Voice";
 "免網路，使用裝置內建語音朗讀" = "Works offline using the built-in device voice";
 "語音" = "Voice";
@@ -955,7 +955,7 @@
 "同步失敗" = "Sync Failed";
 "輸入你的郵箱" = "Enter your email";
 "登入後可跨設備同步書籍與進度" = "Sign in to sync books and progress across devices";
-"刪除帳號將登出此裝置，並永久刪除已同步的書庫、書源、替換規則、RSS 與頭像資料。此操作無法復原。" = "Deleting your account signs out this device and permanently removes synced library, source, replacement rule, RSS, and avatar data. This cannot be undone.";
+"刪除帳號將登出此裝置，並永久刪除已同步的書庫、來源配置、替換規則、RSS 與頭像資料。此操作無法復原。" = "Deleting your account signs out this device and permanently removes synced library, source, replacement rule, RSS, and avatar data. This cannot be undone.";
 "刪除帳號會移除您的登入資訊並清除已上傳的同步資料，且無法復原。儲存在本機的內容檔不會被刪除。" = "Deleting your account removes your sign-in information and clears synced data. This cannot be undone. Local content files are not deleted.";
 "還沒有帳號？立即註冊" = "No account yet? Sign up";
 "已經有帳號了？前往登入" = "Already have an account? Sign in";
@@ -979,7 +979,7 @@
 "立即閱讀" = "Read Now";
 "繼續閱讀" = "Continue Reading";
 "收合" = "Collapse";
-"未知書源" = "Unknown Source";
+"未知來源配置" = "Unknown Source";
 "頁面顯示" = "Page Display";
 "單頁" = "Single";
 "雙頁" = "Double";
@@ -1040,23 +1040,23 @@
 "已刪除" = "Deleted";
 "秒" = "s";
 "開始檢測" = "Start Check";
-"壞書源處理" = "Failed Sources";
-"停用過慢書源" = "Disable Slow Sources";
+"失效來源配置處理" = "Failed Sources";
+"停用過慢來源配置" = "Disable Slow Sources";
 "過慢閾值" = "Slow Threshold";
-"書源檢測選項" = "Check Options";
+"來源配置檢測選項" = "Check Options";
 "刪除無法復原，請謹慎選擇" = "Deletion can't be undone — choose carefully";
-"檢測失敗的書源的處理方式" = "How to handle sources that fail the check";
-"回應時間超過閾值的書源會被停用" = "Sources slower than the threshold are disabled";
+"檢測失敗的來源配置的處理方式" = "How to handle sources that fail the check";
+"回應時間超過閾值的來源配置會被停用" = "Sources slower than the threshold are disabled";
 "註釋" = "Note";
 "將「%@」加入書架？" = "Add \"%@\" to your library?";
 "不加入" = "Don't Add";
 "無法識別章節連結，請直接進入章節頁面再轉碼" = "Couldn't detect chapter links. Open a chapter page and try again.";
 "抓取到的內容太少，請嘗試進入具體章節頁面" = "Too little content fetched. Try opening a specific chapter page.";
 "儲存失敗：" = "Save failed: ";
-"無效的書源導入連結" = "Invalid book-source import link";
-"無法讀取書源資料" = "Couldn't read book-source data";
-"成功匯入 %d 個書源" = "Imported %d book source(s)";
-"書源導入" = "Import Book Source";
+"無效的來源配置導入連結" = "Invalid source import link";
+"無法讀取來源配置資料" = "Couldn't read source data";
+"成功匯入 %d 個來源配置" = "Imported %d source(s)";
+"來源配置導入" = "Import Source";
 "無法複製 EPUB 檔案：" = "Couldn't copy EPUB file: ";
 "第 %@ 頁，進度 %@，%@" = "Page %@, progress %@, %@";
 
@@ -1223,13 +1223,13 @@
 "將引號內的對話文字染成主題強調色。" = "Tint quoted dialogue in the theme accent color.";
 "段評氣泡" = "Paragraph Comment Bubbles";
 "氣泡設定" = "Bubble Settings";
-"跟隨書源 SVG" = "Follow Source SVG";
-"開啟後照書源提供的段評 SVG 顯示；關閉後使用下方氣泡設定。" = "When on, paragraph comments use the source SVG. When off, they use the bubble settings below.";
+"跟隨來源配置 SVG" = "Follow Source SVG";
+"開啟後照來源配置提供的段評 SVG 顯示；關閉後使用下方氣泡設定。" = "When on, paragraph comments use the source SVG. When off, they use the bubble settings below.";
 "氣泡樣式" = "Bubble Style";
 "匯入 SVG" = "Import SVG";
 "貼上 SVG" = "Paste SVG";
 "套用 SVG" = "Apply SVG";
-"使用內建氣泡外框，仍保留書源提供的段評數字。" = "Use the built-in bubble outline while keeping the comment count from the source.";
+"使用內建氣泡外框，仍保留來源配置提供的段評數字。" = "Use the built-in bubble outline while keeping the comment count from the source.";
 "SVG 匯入失敗" = "SVG Import Failed";
 "SVG 匯入成功" = "SVG Imported";
 "檔案不是可讀取的 SVG。" = "The file is not a readable SVG.";
@@ -1238,7 +1238,7 @@
 "氣泡" = "Bubble";
 "方泡" = "Square Bubble";
 "優先使用選取的氣泡樣式" = "Prefer Selected Bubble Style";
-"開啟後優先使用選取的氣泡樣式；關閉後依書源提供的 SVG 顯示。" = "When on, paragraph comments use the selected bubble style. When off, they use the source SVG.";
+"開啟後優先使用選取的氣泡樣式；關閉後依來源配置提供的 SVG 顯示。" = "When on, paragraph comments use the selected bubble style. When off, they use the source SVG.";
 "新建樣式" = "New Style";
 "建立新樣式？" = "Create a New Style?";
 "這會取代目前的自訂氣泡樣式。" = "This replaces the current custom bubble style.";
@@ -1293,7 +1293,7 @@
 "第 %d 頁" = "Page %d";
 "顯示偏好" = "Display";
 "管理" = "Manage";
-"開啟後照書源提供的段評 SVG 顯示；關閉後使用選取的氣泡樣式。" = "When on, paragraph comments use the source SVG. When off, they use the selected bubble style.";
+"開啟後照來源配置提供的段評 SVG 顯示；關閉後使用選取的氣泡樣式。" = "When on, paragraph comments use the source SVG. When off, they use the selected bubble style.";
 "從剪貼簿貼上 SVG" = "Paste SVG from Clipboard";
 "移除自訂氣泡" = "Remove Custom Bubble";
 "自訂氣泡 SVG" = "Custom Bubble SVG";
@@ -1524,15 +1524,15 @@
 "更多操作" = "More Actions";
 
 "使用來源配置前請確認" = "Please Confirm Before Using Source Configurations";
-"source_disclaimer_body_1" = "Only create, import, or use book sources and subscriptions that you have the right to access, parse, and use. Respect each target website's terms of service, robots.txt rules, and applicable copyright requirements.";
+"source_disclaimer_body_1" = "Only create, import, or use sources and subscriptions that you have the right to access, parse, and use. Respect each target website's terms of service, robots.txt rules, and applicable copyright requirements.";
 "source_disclaimer_body_2" = "Do not use this feature to bypass logins, paywalls, DRM, CAPTCHAs, geographic restrictions, or other access controls. It must not be used for unauthorized bulk scraping, content copying, or redistribution.";
-"source_disclaimer_body_3" = "Yuedu provides a general-purpose rule-parsing engine only. It does not bundle, provide, recommend, or maintain any third-party book sources or subscriptions. Users are solely responsible for verifying the legality and authorization scope of the configurations and content sources they use.";
+"source_disclaimer_body_3" = "Yuedu provides a general-purpose rule-parsing engine only. It does not bundle, provide, recommend, or maintain any third-party sources or subscriptions. Users are solely responsible for verifying the legality and authorization scope of the configurations and content sources they use.";
 "source_disclaimer_body_4" = "Yuedu reserves the right to restrict or disable configurations that have been clearly notified as infringing, violating terms of service, or constituting abuse.";
 "注意事項" = "Notes";
 "繼續" = "Continue";
 
-// Book source five-stage validation (Legado CheckSourceService model)
-"書源驗證" = "Source Validation";
+// Source five-stage validation (Legado CheckSourceService model)
+"來源配置驗證" = "Source Validation";
 "準備驗證" = "Ready to Validate";
 "搜索書籍" = "Search Books";
 "用測試關鍵字搜索並解析結果" = "Searches with the test keyword and parses results";
@@ -1662,7 +1662,7 @@
 "系統語音最快 %@（iOS 限制），需要更快請改用網路語音" = "System voice tops out at %@ (iOS limit); use a network voice to go faster";
 
 /* Paragraph review (段評) source-JS actions */
-"找不到這則段評所屬的書源，可能已被刪除。" = "The book source for this comment could not be found — it may have been deleted.";
+"找不到這則段評所屬的來源配置，可能已被刪除。" = "The source for this comment could not be found — it may have been deleted.";
 "申請已送出" = "Request submitted";
 "已申請過 TestFlight" = "TestFlight already requested";
 "申請已記錄" = "Request recorded";
@@ -1674,7 +1674,7 @@
 "TestFlight 名額只開放給永久會員。月會員可以在「閱讀Pro」升級為永久會員後申請。" = "TestFlight seats are open to lifetime members only. Monthly members can apply after upgrading to lifetime in Yuedu Pro.";
 "每個 Pro 帳號只能申請一次；如果尚未收到邀請，請聯絡管理員。" = "Each Pro account can request TestFlight access only once. If you have not received an invite, contact the administrator.";
 "申請已記錄，但邀請尚未完成，請聯絡管理員。" = "The request was recorded, but the invite has not completed. Contact the administrator.";
-"「%@」沒有回應這則段評，可能需要先在書源設定填寫 Token。" = "\"%@\" did not respond to this comment. You may need to enter a token in its book-source settings first.";
+"「%@」沒有回應這則段評，可能需要先在來源配置設定填寫 Token。" = "\"%@\" did not respond to this comment. You may need to enter a token in its source settings first.";
 
 /* Now-playing mini player accessibility */
 "播放" = "Play";
@@ -1697,12 +1697,12 @@
 "取消選取" = "Deselect";
 "點兩下切換啟用狀態" = "Double tap to toggle enabled";
 "點兩下設為使用中" = "Double tap to use this voice";
-"新增書源" = "Add Source";
-"點兩下切換書源" = "Double tap to switch source";
+"新增來源配置" = "Add Source";
+"點兩下切換來源配置" = "Double tap to switch source";
 "已加入" = "Added";
 "未加入" = "Not added";
 
-/* Book source list ordering (move to top/bottom) */
+/* Source list ordering (move to top/bottom) */
 "置頂" = "Move to Top";
 "置底" = "Move to Bottom";
 "置頂組" = "Pinned to Top";
@@ -1717,7 +1717,7 @@
 "開始閱讀" = "Start reading";
 "PIN 碼" = "PIN Code";
 
-/* Book source management — group actions */
+/* Source management — group actions */
 "分組操作" = "Group Actions";
 "重命名分組" = "Rename Group";
 "合併到其他分組" = "Merge Into Group";
@@ -1731,15 +1731,15 @@
 "已展開" = "Expanded";
 "已收合" = "Collapsed";
 "點兩下展開或收合分組" = "Double-tap to expand or collapse the group";
-"書源排列方式" = "Source layout";
+"來源配置排列方式" = "Source layout";
 "分組顯示" = "Grouped";
 "不分組" = "Ungrouped";
 "點兩下切換分組與不分組" = "Double-tap to switch between grouped and ungrouped";
 
-/* Book source management — source menu, details, export */
+/* Source management — source menu, details, export */
 "查看詳情" = "View Details";
-"測試書源" = "Test Source";
-"選取此書源" = "Select This Source";
+"測試來源配置" = "Test Source";
+"選取此來源配置" = "Select This Source";
 "移動到分組" = "Move to Group";
 "移動到新分組" = "Move to New Group";
 "移出分組" = "Remove from Group";
@@ -1748,21 +1748,21 @@
 "沒有符合的分組" = "No Matching Groups";
 "手動新增" = "Add Manually";
 "匯出" = "Export";
-"匯出書源檔案" = "Export Source File";
+"匯出來源配置檔案" = "Export Source File";
 "複製選中到剪貼簿" = "Copy Selected to Clipboard";
 "複製全部到剪貼簿" = "Copy All to Clipboard";
 "複製該分組到剪貼簿" = "Copy Group to Clipboard";
-"選中書源" = "selected-sources";
-"全部書源" = "All Sources";
+"選中來源配置" = "selected-sources";
+"全部來源配置" = "All Sources";
 "搜索範圍" = "Search Scope";
-"自選書源" = "Selected Sources";
-"已選 %d 個書源" = "%d Sources Selected";
+"自選來源配置" = "Selected Sources";
+"已選 %d 個來源配置" = "%d Sources Selected";
 "快速選擇" = "Quick Selection";
-"請至少選擇一個可用書源" = "Select at least one available source.";
+"請至少選擇一個可用來源配置" = "Select at least one available source.";
 "已選取" = "Selected";
 "未選取" = "Not Selected";
 "搜索範圍已更新，請再次搜索" = "Search scope updated. Search again.";
-"點擊右上角 + 手動新增\n或匯入 Legado 書源 JSON" = "Tap + at the top right to add manually\nor import Legado book-source JSON";
+"點擊右上角 + 手動新增\n或匯入 Legado 來源配置 JSON" = "Tap + at the top right to add manually\nor import Legado source JSON";
 "規則" = "Rules";
 "搜索規則" = "Search Rules";
 "發現規則" = "Discover Rules";
@@ -1779,9 +1779,9 @@
 "否" = "No";
 "正在載入目錄…" = "Loading contents…";
 "換源時載入目錄" = "Load Contents While Searching";
-"換源搜索時順便抓取每個書源的目錄，點選書源可立即切換；代價是搜索期間的網路請求加倍" = "Fetch each source's table of contents during the change-source search so tapping a source switches instantly. Costs twice as many requests while searching.";
-"找不到書源" = "Source not found";
-"此書源取不到目錄" = "This source returned no table of contents";
+"換源搜索時順便抓取每個來源配置的目錄，點選來源配置可立即切換；代價是搜索期間的網路請求加倍" = "Fetch each source's table of contents during the change-source search so tapping a source switches instantly. Costs twice as many requests while searching.";
+"找不到來源配置" = "Source not found";
+"此來源配置取不到目錄" = "This source returned no table of contents";
 "備份與同步" = "Backup & Sync";
 "iCloud、WebDAV" = "iCloud, WebDAV";
 "備份與同步方式" = "Backup and Sync Methods";
@@ -1886,8 +1886,8 @@
 "preUpdateJs：載入目錄頁後先執行此 JS 再解析。" = "preUpdateJs: runs after the TOC page loads, before parsing.";
 "規則插入" = "Rule Snippets";
 "剪貼簿為空" = "Clipboard is empty";
-"已從剪貼簿導入書源" = "Imported book source from clipboard";
-"剪貼簿內容不是有效的書源" = "Clipboard does not contain a valid book source";
+"已從剪貼簿導入來源配置" = "Imported source from clipboard";
+"剪貼簿內容不是有效的來源配置" = "Clipboard does not contain a valid source";
 "全流程" = "Full Pipeline";
 "全流程：輸入關鍵字，依序跑搜索→詳情→目錄→正文" = "Enter a keyword; runs search → detail → TOC → content";
 "按域名分組" = "Group by Domain";
@@ -2026,10 +2026,10 @@
 "已鎖定" = "Locked";
 "未鎖定" = "Unlocked";
 
-/* Book source: Android device identity opt-in */
+/* Source: Android device identity opt-in */
 "提供裝置識別碼" = "Provide device id";
-"預設開啟，書源要裝置碼時才拿得到。只有在某個書源不能被當成 Android 時才關閉。" = "On by default, so sources that ask for a device id receive one. Turn it off only for a source that must not be taken for Android.";
-"此書源要求裝置識別碼，目前沒有提供給它" = "This source asks for a device id, and none is being given to it";
+"預設開啟，來源配置要裝置碼時才拿得到。只有在某個來源配置不能被當成 Android 時才關閉。" = "On by default, so sources that ask for a device id receive one. Turn it off only for a source that must not be taken for Android.";
+"此來源配置要求裝置識別碼，目前沒有提供給它" = "This source asks for a device id, and none is being given to it";
 "提供裝置識別碼並重試" = "Provide device id and retry";
 "段評執行環境不可用" = "The paragraph review runtime is unavailable";
 "不支援的 PDF 格式" = "Unsupported PDF format";
@@ -2049,7 +2049,7 @@
 "重設封面" = "Reset Cover";
 "封面網址" = "Cover URL";
 "套用網址" = "Apply URL";
-"封面搜索會在所有啟用的書源中，尋找同書名同作者的封面。" = "Cover search looks through every enabled book source for covers of the same title and author.";
+"封面搜索會在所有啟用的來源配置中，尋找同書名同作者的封面。" = "Cover search looks through every enabled source for covers of the same title and author.";
 "貼上圖片網址後，點「套用網址」下載為封面。" = "Paste an image URL, then tap Apply URL to download it as the cover.";
 "封面設定失敗" = "Couldn't Set Cover";
 "無法下載這張封面，請換一張或檢查網路。" = "Couldn't download this cover. Try another one or check your connection.";
@@ -2149,14 +2149,14 @@
 "清除診斷紀錄" = "Clear Diagnostic Log";
 "設定 → 診斷與回報 顯示的日誌與崩潰記錄" = "The log and crash records shown in Settings → Diagnostics & Reporting";
 
-/* 書源除錯大師 */
+/* 來源配置除錯大師 */
 "包含規則比對" = "Include Rule Matches";
 "錄製" = "Recording";
 "開啟後重新搜索或開啟章節，就會記下每一次請求與回應。規則比對數量遠多於網路請求，預設不收。" = "Once on, searching again or opening a chapter records every request and response. Rule matches vastly outnumber network requests, so they are excluded by default.";
 "除錯紀錄已複製到剪貼簿。" = "Debug log copied to the clipboard.";
 "沒有紀錄" = "No entries";
-"錄製中。回到書源做一次搜索或開啟章節，請求就會出現在這裡。" = "Recording. Go back to the source and run a search or open a chapter — the requests will appear here.";
-"先打開上面的錄製開關，再回到書源操作一次。" = "Turn on recording above, then go back to the source and try again.";
+"錄製中。回到來源配置做一次搜索或開啟章節，請求就會出現在這裡。" = "Recording. Go back to the source and run a search or open a chapter — the requests will appear here.";
+"先打開上面的錄製開關，再回到來源配置操作一次。" = "Turn on recording above, then go back to the source and try again.";
 "請求" = "Request";
 "回應" = "Response";
 "規則比對" = "Rule Match";
@@ -2217,9 +2217,9 @@
 
 /* Book info — web cover search and change cover */
 "換封面" = "Change Cover";
-"封面搜索會上網找封面；換封面則在你已加入的書源裡，尋找同書名同作者的封面。" = "Search Covers looks on the web; Change Cover looks through the book sources you've added for the same title and author.";
+"封面搜索會上網找封面；換封面則在你已加入的來源配置裡，尋找同書名同作者的封面。" = "Search Covers looks on the web; Change Cover looks through the sources you've added for the same title and author.";
 "可以改用「封面搜索」上網找，或從相簿選一張圖片。" = "Try Search Covers on the web instead, or pick an image from your photo library.";
-"可以改用「換封面」在書源裡找，或從相簿選一張圖片。" = "Try Change Cover to look in your book sources, or pick an image from your photo library.";
+"可以改用「換封面」在來源配置裡找，或從相簿選一張圖片。" = "Try Change Cover to look in your sources, or pick an image from your photo library.";
 "推書君" = "Tuishujun";
 "一片書喽" = "Ypshuo";
 "模板圖層使用了父子連結，位置可能與原設計不同。" = "A template layer uses parenting, so its position may differ from the original design.";
@@ -2745,7 +2745,7 @@
 "需要同一區域網路，並允許本 App 存取本機網路。" = "Needs the same local network, and permission to access it.";
 "iOS 會列出尚未下載的語音，選了不會有聲音。標示「此裝置未安裝」的到系統設定下載。" = "iOS lists voices that are not downloaded; they stay silent. Download the ones marked not installed.";
 "授權後，你錄製的個人語音會出現在下方。" = "Once allowed, your recorded Personal Voice appears below.";
-"啟動與切背景時自動同步書庫、書源、替換規則、書檔、閱讀設定、氣泡樣式與自訂閱讀背景。多台裝置會合併，不會互相覆蓋。" = "Syncs your library, sources, rules, book files, reading settings, bubble styles and custom reading backgrounds on launch and backgrounding. Devices merge rather than overwrite.";
+"啟動與切背景時自動同步書庫、來源配置、替換規則、書檔、閱讀設定、氣泡樣式與自訂閱讀背景。多台裝置會合併，不會互相覆蓋。" = "Syncs your library, sources, rules, book files, reading settings, bubble styles and custom reading backgrounds on launch and backgrounding. Devices merge rather than overwrite.";
 "包含排版、章節標題樣式與正則高亮。匯入也接受 legado 的 readConfig.json。" = "Covers layout, chapter title styles and regex highlights. Also imports legado's readConfig.json.";
 "系統設計建議玻璃只用於浮動控制項，所以預設關閉。" = "Apple's guidance reserves glass for floating controls, so this is off by default.";
 "包含這次啟動的完整紀錄，不受下方篩選影響。" = "The full log for this launch, regardless of the filter below.";
@@ -3229,9 +3229,9 @@
 "一次付清，永久使用全部 Pro 功能" = "One payment, every Pro feature for good";
 "透過 Apple 付款，可隨時在帳號設定取消" = "Paid through Apple; cancel anytime in your account settings";
 "自訂閱讀背景" = "Custom Backgrounds";
-"%1$@ · %2$d 個書源" = "%1$@ · %2$d source(s)";
+"%1$@ · %2$d 個來源配置" = "%1$@ · %2$d source(s)";
 "%@／月" = "%@/month";
-"%d 個書源" = "%d source(s)";
+"%d 個來源配置" = "%d source(s)";
 "%d 個項目匯入失敗" = "%d item(s) failed to import";
 "%d 分鐘前" = "%d min ago";
 "%d 天前" = "%d d ago";
@@ -3239,29 +3239,29 @@
 "%d 源" = "%d sources";
 "%d 章" = "%d chapters";
 "偵測到章節目錄：%d 章，將以線上書模式導入" = "Table of contents detected: %d chapters — importing as an online book";
-"共 %1$d 個書源，通過 %2$d 個" = "%1$d source(s) total, %2$d passed";
+"共 %1$d 個來源配置，通過 %2$d 個" = "%1$d source(s) total, %2$d passed";
 "共偵測到 %d 章，選擇開始閱讀的章節" = "%d chapters detected — choose where to start reading";
 "失敗 %d" = "%d failed";
 "將套用到 %d 本書" = "Will apply to %d book(s)";
-"將對 %d 個書源進行五階段驗證" = "%d source(s) will be validated in five stages";
-"已啟用 %d 個書源" = "%d source(s) enabled";
+"將對 %d 個來源配置進行五階段驗證" = "%d source(s) will be validated in five stages";
+"已啟用 %d 個來源配置" = "%d source(s) enabled";
 "已抓取約 %d 字" = "About %d characters fetched";
-"已按域名分組 %d 個書源" = "Grouped %d source(s) by domain";
-"已複製 %d 個書源到剪貼簿" = "Copied %d source(s) to the clipboard";
-"已複製全部 %d 個書源到剪貼簿" = "Copied all %d source(s) to the clipboard";
+"已按域名分組 %d 個來源配置" = "Grouped %d source(s) by domain";
+"已複製 %d 個來源配置到剪貼簿" = "Copied %d source(s) to the clipboard";
+"已複製全部 %d 個來源配置到剪貼簿" = "Copied all %d source(s) to the clipboard";
 "從第 %d 章開始閱讀" = "Start reading from chapter %d";
 "成功匯入 %1$d 個項目，%2$d 個失敗" = "Imported %1$d item(s), %2$d failed";
 "成功匯入 %d 個項目" = "Imported %d item(s)";
 "播放 %@" = "Play %@";
 "新增分組「%@」" = "New group “%@”";
 "暫跳 %d" = "%d skipped";
-"書源：%d 個" = "Book sources: %d";
+"來源配置：%d 個" = "Sources: %d";
 "書籍：%d 本" = "Books: %d";
 "%d 本" = "%d books";
 "沒有找到「%@」" = "No results for “%@”";
 "確定要刪除 %d 本書嗎？" = "Delete %d book(s)?";
-"確定要刪除分組「%1$@」及其中的 %2$d 個書源嗎？" = "Delete the group “%1$@” and the %2$d source(s) in it?";
-"確定要刪除選中的 %d 個書源嗎？" = "Delete the %d selected source(s)?";
+"確定要刪除分組「%1$@」及其中的 %2$d 個來源配置嗎？" = "Delete the group “%1$@” and the %2$d source(s) in it?";
+"確定要刪除選中的 %d 個來源配置嗎？" = "Delete the %d selected source(s)?";
 "確定要從書架刪除《%@》嗎？" = "Remove “%@” from your library?";
 "超時 %d" = "%d timed out";
 "選擇來源（%d 個）" = "Choose Source (%d)";
@@ -3272,8 +3272,8 @@
 "加星號" = "Star";
 "媒體旁白" = "Media Overlay";
 "將刪除所有可重新下載的快取內容。書籍、設定與備份同步資料不會受影響。" = "Deletes every cache that can be downloaded again. Books, settings, and backup and sync data are not affected.";
-"搜尋書源中…" = "Searching sources…";
-"未找到其他書源" = "No other sources found";
+"搜尋來源配置中…" = "Searching sources…";
+"未找到其他來源配置" = "No other sources found";
 "書末頁" = "End of Book";
 "正文疑似包含多章內容" = "The body text appears to contain several chapters";
 "無效的媒體網址" = "Invalid media URL";
@@ -3292,9 +3292,9 @@
 "輸入驗證碼" = "Enter Verification Code";
 "驗證碼" = "Verification Code";
 "驗證碼圖片" = "Verification code image";
-"停用書源" = "Disable Source";
-"刪除書源" = "Delete Source";
-"確定要刪除書源「%@」嗎？" = "Delete the source “%@”?";
+"停用來源配置" = "Disable Source";
+"刪除來源配置" = "Delete Source";
+"確定要刪除來源配置「%@」嗎？" = "Delete the source “%@”?";
 
 
 /* MARK: - 匯入確認清單 */
@@ -3311,19 +3311,19 @@
 "來源 JSON" = "Source JSON";
 "這段 JSON 無法解析，請修正後再儲存。" = "This JSON could not be parsed. Fix it and save again.";
 "匯入選項" = "Import Options";
-"覆蓋已有書源時" = "When Overwriting Existing Sources";
+"覆蓋已有來源配置時" = "When Overwriting Existing Sources";
 "保留原名" = "Keep Name";
 "保留分組" = "Keep Group";
 "保留啟用狀態" = "Keep Enabled State";
-"書源包會帶著作者自己的名稱、分組與啟用狀態。開啟後，這幾項沿用本機的設定，只更新規則。" = "A pack carries the author’s own names, groups and enabled states. Turn these on to keep your local settings and update only the rules.";
+"來源配置包會帶著作者自己的名稱、分組與啟用狀態。開啟後，這幾項沿用本機的設定，只更新規則。" = "A pack carries the author’s own names, groups and enabled states. Turn these on to keep your local settings and update only the rules.";
 "匯入到分組" = "Import into Group";
 "不指定" = "None";
 "分組方式" = "Group Mode";
 "取代原分組" = "Replace groups";
 "附加到原分組" = "Add to groups";
 "清除分組指定" = "Clear Group";
-"已開啟「保留分組」：本機已有的書源會先還原成原本的分組，再套用這裡的指定。" = "Keep Group is on: sources you already have are restored to their original groups first, then this group is applied.";
-"選中的書源會歸到這個分組" = "Selected sources will be filed under this group";
+"已開啟「保留分組」：本機已有的來源配置會先還原成原本的分組，再套用這裡的指定。" = "Keep Group is on: sources you already have are restored to their original groups first, then this group is applied.";
+"選中的來源配置會歸到這個分組" = "Selected sources will be filed under this group";
 "匯入語音源" = "Import Voice Sources";
 "已匯入 %d 個語音源" = "Imported %d voice sources";
 "匯入狀態：新增" = "New";
@@ -3456,7 +3456,7 @@
 "要清除所有瀏覽記錄嗎？" = "Clear All Browsing History?";
 "書籍變量可在 JS 中通過 book.getVariable(\"custom\") 取得" = "Sources read the book variable in JS with book.getVariable(\"custom\").";
 "源變量可在 JS 中通過 source.getVariable() 取得" = "Sources read the source variable in JS with source.getVariable().";
-"篩選書源" = "Filter Sources";
+"篩選來源配置" = "Filter Sources";
 "直接轉碼閱讀" = "Read in Reader";
 "在網頁點「加入書籤」，網站就會出現在這裡。" = "Tap Add Bookmark on a page and the site appears here.";
 "加入書籤" = "Add Bookmark";
@@ -3476,10 +3476,10 @@
 /* 探索設定 */
 "探索設定" = "Explore Settings";
 "探索頁" = "Explore Page";
-"書源頁佈局" = "Source Page Layout";
+"來源配置頁佈局" = "Source Page Layout";
 "雜誌" = "Magazine";
 "列表是上方一排分類、下方所選分類的書；雜誌是每個分類一排書架或一欄榜單。" = "List shows the categories along the top and the chosen one's books below; Magazine shows each category as a shelf or a chart.";
-"首屏配置" = "Start Page";
+"首屏頁面" = "Start Page";
 "不啟用" = "Off";
 "設定後，打開探索時會直接進入這一頁。" = "Explore opens straight onto this page.";
 "豎排榜單關鍵詞" = "Chart Keywords";
@@ -3491,7 +3491,7 @@
 "橫滑展示數" = "On Each Shelf";
 "預加載" = "Preload";
 "預加載數量" = "Categories Ahead";
-"捲到某個分類時，順便排隊載入後面幾個分類。數字越大越少看到載入中，但排隊的書源請求也越多。" = "When a category comes into view, the next few queue up to load too. A higher number means fewer loading placeholders, but more requests queued to the source.";
+"捲到某個分類時，順便排隊載入後面幾個分類。數字越大越少看到載入中，但排隊的來源配置請求也越多。" = "When a category comes into view, the next few queue up to load too. A higher number means fewer loading placeholders, but more requests queued to the source.";
 "封面並發" = "Cover Downloads";
 "封面並發數" = "At Once";
 "不限制" = "No Limit";
@@ -3512,7 +3512,7 @@
 "這一頁已被刪除" = "This page was deleted";
 "頁面裡的元件會一起刪除。" = "Its blocks are deleted with it.";
 "還沒有元件" = "No Blocks Yet";
-"加入元件，選書源的分類和版面，組出自己的探索頁。" = "Add blocks, each a source's category in a layout you pick, to build your own explore page.";
+"加入元件，選來源配置的分類和版面，組出自己的探索頁。" = "Add blocks, each a source's category in a layout you pick, to build your own explore page.";
 "新增元件" = "Add Block";
 "編輯元件" = "Edit Blocks";
 "錯位瀑布流會一直往下載入，固定在最後。" = "The waterfall keeps loading as you scroll, so it stays last.";
@@ -3532,7 +3532,7 @@
 "兩排、每排五本的封面" = "Two rows of five covers";
 "只有封面，左右滑動" = "Covers only, swiped sideways";
 "一個榜單分成每欄四本，左右翻頁" = "One chart in columns of four, paged sideways";
-"同一書源的幾個分類，用標籤切換" = "Several categories of one source, switched with tabs";
+"同一來源配置的幾個分類，用標籤切換" = "Several categories of one source, switched with tabs";
 "三欄卡片，往下捲會一直載入" = "Cards in three columns that keep loading as you scroll";
 
 "TXTEncodingUnsupported" = "Unable to reliably detect the TXT encoding. Save the file as UTF-8 and import it again.";
@@ -3609,8 +3609,8 @@
 
 // Explore first-import guide
 "可以切換探索內容" = "Switch what you explore";
-"書源已匯入，點這裡切換到書源探索。" = "Your book sources are imported. Tap here to explore them.";
-"切換到書源" = "Switch to Book Sources";
+"來源配置已匯入，點這裡切換到來源配置探索。" = "Your sources are imported. Tap here to explore them.";
+"切換到來源配置" = "Switch to Sources";
 
 "中文書籍" = "Chinese Books";
 "小說與文學" = "Fiction & Literature";

@@ -8,7 +8,7 @@ import SwiftUI
 struct PendingShareExport<Item: Transferable>: Identifiable {
     let id = UUID()
     /// Navigation title of the handoff sheet — reuse the menu row's own label
-    /// ("匯出書源檔案", "匯出紀錄", …) so the user lands where they tapped.
+    /// ("匯出來源配置檔案", "匯出紀錄", …) so the user lands where they tapped.
     let title: String
     /// Share-sheet preview title; normally the filename.
     let name: String
@@ -87,7 +87,7 @@ struct MenuShareRow<Item: Transferable>: View {
 #Preview {
     ShareExportSheet(
         export: PendingShareExport(
-            title: localized("匯出書源檔案"),
+            title: localized("匯出來源配置檔案"),
             name: "book-sources.json",
             item: URL(fileURLWithPath: "/tmp/book-sources.json")
         )

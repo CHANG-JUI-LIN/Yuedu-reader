@@ -187,7 +187,7 @@ private struct CustomExploreComponentForm: View {
                         title = ""
                     }
                 } label: {
-                    LabeledContent(localized("書源"), value: source?.bookSourceName ?? localized("未選擇"))
+                    LabeledContent(localized("來源配置"), value: source?.bookSourceName ?? localized("未選擇"))
                 }
                 if let source {
                     NavigationLink {
@@ -313,16 +313,16 @@ private struct CustomExploreSourcePicker: View {
         .overlay {
             if exploreSources.isEmpty {
                 ContentUnavailableView {
-                    UnavailableLabel(localized("尚未啟用支援發現的書源"), systemImage: "books.vertical")
+                    UnavailableLabel(localized("尚未啟用支援發現的來源配置"), systemImage: "books.vertical")
                 }
             } else if visibleSources.isEmpty {
                 ContentUnavailableView.search(text: query)
             }
         }
         .themedAppSurface(for: .explore)
-        .navigationTitle(localized("書源"))
+        .navigationTitle(localized("來源配置"))
         .toolbarTitleDisplayMode(.inline)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: localized("搜索書源"))
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: localized("搜索來源配置"))
     }
 }
 

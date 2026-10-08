@@ -214,7 +214,7 @@ private struct ReplaceRuleRow: View {
                         .foregroundColor(rule.enabled ? .primary : .secondary)
 
                     if rule.scope != "global" {
-                        Text(localized("書源"))
+                        Text(localized("來源配置"))
                             .font(DSFont.caption2)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)

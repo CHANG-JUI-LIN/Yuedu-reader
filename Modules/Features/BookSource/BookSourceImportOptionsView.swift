@@ -70,10 +70,10 @@ struct BookSourceImportOptionsView: View {
                 Toggle(localized("保留分組"), isOn: $options.keepGroup)
                 Toggle(localized("保留啟用狀態"), isOn: $options.keepEnable)
             } header: {
-                Text(localized("覆蓋已有書源時"))
+                Text(localized("覆蓋已有來源配置時"))
                     .foregroundStyle(DSColor.textSecondary)
             } footer: {
-                Text(localized("書源包會帶著作者自己的名稱、分組與啟用狀態。開啟後，這幾項沿用本機的設定，只更新規則。"))
+                Text(localized("來源配置包會帶著作者自己的名稱、分組與啟用狀態。開啟後，這幾項沿用本機的設定，只更新規則。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()
@@ -113,7 +113,7 @@ struct BookSourceImportOptionsView: View {
                     .foregroundStyle(DSColor.textSecondary)
             } footer: {
                 if options.trimmedGroupName != nil, options.keepGroup {
-                    Text(localized("已開啟「保留分組」：本機已有的書源會先還原成原本的分組，再套用這裡的指定。"))
+                    Text(localized("已開啟「保留分組」：本機已有的來源配置會先還原成原本的分組，再套用這裡的指定。"))
                         .dsSectionFooter()
                 }
             }
@@ -128,7 +128,7 @@ struct BookSourceImportOptionsView: View {
         .sheet(isPresented: $showsGroupPicker) {
             BookSourceGroupPickerSheet(
                 title: localized("匯入到分組"),
-                subtitle: localized("選中的書源會歸到這個分組"),
+                subtitle: localized("選中的來源配置會歸到這個分組"),
                 candidates: groupCandidates,
                 excluded: "",
                 defaultGroupTitle: nil,

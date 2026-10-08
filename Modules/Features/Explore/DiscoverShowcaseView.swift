@@ -98,7 +98,7 @@ private struct DiscoverEmptyState: View {
         } description: {
             Text(
                 discover.sourceNotice
-                    ?? localized("此書源未回傳發現內容，可下拉重新整理或切換書源")
+                    ?? localized("此來源配置未回傳發現內容，可下拉重新整理或切換來源配置")
             ).foregroundStyle(DSColor.textSecondary)
         } actions: {
             // The source asked for a device id and got none. The toggle that fixes
@@ -859,7 +859,7 @@ struct DiscoverListLayoutView: View {
 
 #Preview {
     var source = BookSource()
-    source.bookSourceName = "範例書源"
+    source.bookSourceName = "範例來源配置"
     source.bookSourceUrl = "https://example.com"
     return NavigationStack {
         DiscoverShowcaseView(discover: DiscoverViewModel(source: source))

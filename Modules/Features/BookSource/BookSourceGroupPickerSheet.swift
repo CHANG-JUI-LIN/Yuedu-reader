@@ -107,7 +107,7 @@ struct BookSourceGroupPickerSheet: View {
                             }
                             .accessibilityLabel(candidate.name)
                             .accessibilityValue(
-                                String(format: localized("%d 個書源"), candidate.count))
+                                String(format: localized("%d 個來源配置"), candidate.count))
                         }
                     }
                     .interfaceSectionSurface()
@@ -170,7 +170,7 @@ struct BookSourceGroupPickerSheet: View {
 #Preview("移動到分組") {
     BookSourceGroupPickerSheet(
         title: "移動到分組",
-        subtitle: "示例書源",
+        subtitle: "示例來源配置",
         candidates: [
             BookSourceGroupCandidate(name: "言情", count: 124),
             BookSourceGroupCandidate(name: "玄幻", count: 88),
@@ -187,7 +187,7 @@ struct BookSourceGroupPickerSheet: View {
 #Preview("合併到其他分組 — 空") {
     BookSourceGroupPickerSheet(
         title: "合併到其他分組",
-        subtitle: "言情 · 124 個書源",
+        subtitle: "言情 · 124 個來源配置",
         candidates: [],
         excluded: "言情",
         defaultGroupTitle: "默認分組",

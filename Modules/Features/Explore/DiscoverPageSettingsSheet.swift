@@ -226,7 +226,7 @@ private struct SubtitleWhereAvailable: ViewModifier {
 
 #Preview {
     var source = BookSource()
-    source.bookSourceName = "範例書源"
+    source.bookSourceName = "範例來源配置"
     source.bookSourceUrl = "https://example.com"
     return DiscoverPageSettingsSheet(discover: DiscoverViewModel(source: source), onOpenPage: { _ in })
 }

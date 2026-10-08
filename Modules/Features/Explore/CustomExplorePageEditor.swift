@@ -116,6 +116,6 @@ struct CustomExplorePageEditor: View {
         let shown = component.kind.takesSeveralCategories
             ? component.categories.map(\.title).joined(separator: "、")
             : component.displayTitle
-        return "\(shown) · \(sourceName ?? localized("書源已被刪除"))"
+        return "\(shown) · \(sourceName ?? localized("來源配置已被刪除"))"
     }
 }

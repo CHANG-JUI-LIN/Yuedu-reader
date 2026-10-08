@@ -52,7 +52,7 @@ struct BookSourceDebugView: View {
                             filename: BookSourceDebugExportFile.filename(),
                             entries: debugger.logs
                         ),
-                        preview: SharePreview(localized("書源除錯大師"))
+                        preview: SharePreview(localized("來源配置除錯大師"))
                     ) {
                         Label(localized("匯出紀錄"), systemImage: "square.and.arrow.up")
                     }
@@ -78,7 +78,7 @@ struct BookSourceDebugView: View {
                 .interfaceSectionSurface()
             }
             .softScrollEdges()
-            .navigationTitle(localized("書源除錯大師"))
+            .navigationTitle(localized("來源配置除錯大師"))
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
             .toolbar {
@@ -131,8 +131,8 @@ struct BookSourceDebugView: View {
             UnavailableLabel(localized("沒有紀錄"), systemImage: "antenna.radiowaves.left.and.right.slash")
         } description: {
             Text(debugger.isRecording
-                 ? localized("錄製中。回到書源做一次搜索或開啟章節，請求就會出現在這裡。")
-                 : localized("先打開上面的錄製開關，再回到書源操作一次。")).foregroundStyle(DSColor.textSecondary)
+                 ? localized("錄製中。回到來源配置做一次搜索或開啟章節，請求就會出現在這裡。")
+                 : localized("先打開上面的錄製開關，再回到來源配置操作一次。")).foregroundStyle(DSColor.textSecondary)
         }
     }
 

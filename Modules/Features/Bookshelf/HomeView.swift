@@ -1474,7 +1474,7 @@ struct EditBookSheet: View {
             Text(localized("封面"))
                 .foregroundStyle(DSColor.textSecondary)
         } footer: {
-            Text(localized("封面搜索會上網找封面；換封面則在你已加入的書源裡，尋找同書名同作者的封面。"))
+            Text(localized("封面搜索會上網找封面；換封面則在你已加入的來源配置裡，尋找同書名同作者的封面。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()

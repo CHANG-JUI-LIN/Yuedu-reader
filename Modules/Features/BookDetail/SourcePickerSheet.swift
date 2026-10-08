@@ -118,7 +118,7 @@ struct SourceSheetCloseButton: View {
 
 #Preview("選擇來源") {
     let sourceId = UUID()
-    let origins = ["示範書源", "另一個書源"].enumerated().map { index, name in
+    let origins = ["示範來源配置", "另一個來源配置"].enumerated().map { index, name in
         BookOrigin(
             sourceId: index == 0 ? sourceId : UUID(), sourceName: name,
             bookUrl: "https://example.com/\(index)", tocUrl: "", coverUrl: "",

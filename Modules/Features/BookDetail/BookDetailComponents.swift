@@ -329,7 +329,7 @@ struct BookDetailInfoItem: Identifiable {
             value: name,
             detail: localized("換源"),
             action: action,
-            accessibilityHint: localized("點兩下切換書源"),
+            accessibilityHint: localized("點兩下切換來源配置"),
             accessibilityInputLabels: [localized("換源")]
         )
     }
@@ -796,7 +796,7 @@ extension View {
             BookDetailInfoStrip(items: [
                 BookDetailInfoItem(id: "wordCount", label: "字數", value: "298萬字"),
                 BookDetailInfoItem(id: "chapters", label: "章節", value: "1,450"),
-                .source(name: "示範書源") {},
+                .source(name: "示範來源配置") {},
             ])
             BookDetailIntroSection(
                 text: "唐門外門弟子唐三，因偷學內門絕學為唐門所不容，跳崖明志卻來到了另一個世界——斗羅大陸。這裡沒有魔法，沒有鬥氣，沒有武術，卻有神奇的武魂。",

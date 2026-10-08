@@ -13,7 +13,7 @@ struct BookSourceImportReviewSheet: View {
     var body: some View {
         if let pending = coordinator.pending {
             SourceImportConfirmList(
-                title: localized("匯入書源"),
+                title: localized("匯入來源配置"),
                 plan: pending.plan,
                 existingClock: { coordinator.existingClock(for: $0) },
                 showsComments: $coordinator.showsComments,

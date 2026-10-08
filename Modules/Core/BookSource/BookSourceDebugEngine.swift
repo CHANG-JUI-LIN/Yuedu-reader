@@ -78,7 +78,7 @@ final class BookSourceDebugEngine: ObservableObject {
                 appendLog(.success, step: "搜索結果",
                           summary: "共 \(books.count) 本書（\(elapsed)）",
                           detail: books.prefix(5).map {
-                              "📖 \($0.name) — \($0.author)\n    書源URL: \($0.bookUrl)"
+                              "📖 \($0.name) — \($0.author)\n    詳情URL: \($0.bookUrl)"
                           }.joined(separator: "\n"))
                 for book in books.prefix(10) {
                     appendLog(.info, step: "  書目",

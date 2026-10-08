@@ -30,7 +30,7 @@ extension SourceWebLogin {
             fallback: source.bookSourceUrl
         ) else { return nil }
         self.init(
-            name: source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName,
+            name: source.bookSourceName.isEmpty ? localized("來源配置登入") : source.bookSourceName,
             url: url,
             storageKey: source.bookSourceUrl
         )

@@ -6,14 +6,14 @@ struct ExploreModeTip: Tip {
     @Parameter static var sourcesImported: Bool = false
     static let exploreOpenedAfterImport = Tips.Event(id: "explore.openedAfterImport")
     var title: Text { Text(localized("可以切換探索內容")) }
-    var message: Text? { Text(localized("書源已匯入，點這裡切換到書源探索。")) }
+    var message: Text? { Text(localized("來源配置已匯入，點這裡切換到來源配置探索。")) }
     var image: Image? { Image(systemName: "arrow.left.arrow.right") }
     var rules: [Rule] {
         #Rule(Self.$sourcesImported) { $0 }
         #Rule(Self.exploreOpenedAfterImport) { $0.donations.count >= 1 }
     }
     var options: [any TipOption] { MaxDisplayCount(1) }
-    var actions: [Action] { Action(id: "switch", title: localized("切換到書源")) }
+    var actions: [Action] { Action(id: "switch", title: localized("切換到來源配置")) }
 }
 
 struct ExploreImportDetector {

@@ -74,7 +74,7 @@ struct CustomExplorePageView: View {
         ContentUnavailableView {
             UnavailableLabel(localized("還沒有元件"), systemImage: "rectangle.3.group")
         } description: {
-            Text(localized("加入元件，選書源的分類和版面，組出自己的探索頁。"))
+            Text(localized("加入元件，選來源配置的分類和版面，組出自己的探索頁。"))
                 .foregroundStyle(DSColor.textSecondary)
         } actions: {
             Button(localized("新增元件")) { isAddingComponent = true }

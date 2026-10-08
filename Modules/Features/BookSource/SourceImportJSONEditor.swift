@@ -90,10 +90,10 @@ struct SourceImportJSONEditor: View {
 
 #Preview {
     SourceImportJSONEditor(
-        title: "示例書源",
+        title: "示例來源配置",
         initialJSON: """
         {
-          "bookSourceName" : "示例書源",
+          "bookSourceName" : "示例來源配置",
           "bookSourceUrl" : "https://example.com"
         }
         """,

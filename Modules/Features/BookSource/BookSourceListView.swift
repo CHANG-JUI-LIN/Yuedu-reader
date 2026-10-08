@@ -182,13 +182,13 @@ struct BookSourceListView: View {
                 }
             }
             .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
-            .navigationTitle(localized("書源管理"))
+            .navigationTitle(localized("來源配置管理"))
             .toolbarTitleDisplayMode(.inline)
             .pageBackgroundToolbar(for: .settings)
             .searchable(
                 text: $model.searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: localized("搜索書源")
+                prompt: localized("搜索來源配置")
             )
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -217,7 +217,7 @@ struct BookSourceListView: View {
                             if !model.selectedIDs.isEmpty {
                                 BookSourceExportShareLink(
                                     label: localized("匯出選中"),
-                                    filenameLabel: localized("選中書源"),
+                                    filenameLabel: localized("選中來源配置"),
                                     sources: { [model, store] in
                                         let selected = model.selectedIDs
                                         return store.sources.filter { selected.contains($0.id) }
@@ -227,7 +227,7 @@ struct BookSourceListView: View {
                             }
                             BookSourceExportShareLink(
                                 label: localized("匯出全部"),
-                                filenameLabel: localized("全部書源"),
+                                filenameLabel: localized("全部來源配置"),
                                 sources: { [store] in store.sources },
                                 onHandoff: { pendingExport = $0 }
                             )
@@ -250,7 +250,7 @@ struct BookSourceListView: View {
                         Button {
                             presentCheckOptions()
                         } label: {
-                            Label(localized("書源驗證"), systemImage: "stethoscope")
+                            Label(localized("來源配置驗證"), systemImage: "stethoscope")
                         }
                         Divider()
                         Button {
@@ -275,7 +275,7 @@ struct BookSourceListView: View {
             ) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
                     DismissalSequencedActionChooser(
-                        title: localized("新增書源"),
+                        title: localized("新增來源配置"),
                         actions: [
                             DismissalSequencedAction(
                                 route: .add,
@@ -402,7 +402,7 @@ struct BookSourceListView: View {
                 Button(localized("確定")) {
                     let changed = store.groupByDomain()
                     importSuccess =
-                        String(format: localized("已按域名分組 %d 個書源"), changed)
+                        String(format: localized("已按域名分組 %d 個來源配置"), changed)
                 }
             } message: {
                 Text(localized("按域名分組將覆蓋現有分組，確定繼續？"))
@@ -415,7 +415,7 @@ struct BookSourceListView: View {
             } message: {
                 Text(
                     String(
-                        format: localized("確定要刪除選中的 %d 個書源嗎？"),
+                        format: localized("確定要刪除選中的 %d 個來源配置嗎？"),
                         model.selectedIDs.count))
             }
             .alert(
@@ -449,7 +449,7 @@ struct BookSourceListView: View {
                 if let pending = deletingGroup {
                     Text(
                         String(
-                            format: localized("確定要刪除分組「%1$@」及其中的 %2$d 個書源嗎？"),
+                            format: localized("確定要刪除分組「%1$@」及其中的 %2$d 個來源配置嗎？"),
                             pending.name, pending.sourceIds.count))
                 }
             }
@@ -522,7 +522,7 @@ struct BookSourceListView: View {
             } label: {
                 Image(systemName: "plus")
             }
-            .accessibilityLabel(localized("新增書源"))
+            .accessibilityLabel(localized("新增來源配置"))
         } else {
             Menu {
                 Button {
@@ -544,7 +544,7 @@ struct BookSourceListView: View {
             } label: {
                 Image(systemName: "plus")
             }
-            .accessibilityLabel(localized("新增書源"))
+            .accessibilityLabel(localized("新增來源配置"))
         }
     }
 
@@ -673,7 +673,7 @@ struct BookSourceListView: View {
             id: group.id,
             title: localized("重命名分組"),
             subtitle: String(
-                format: localized("%1$@ · %2$d 個書源"), group.name, group.sourceIDs.count),
+                format: localized("%1$@ · %2$d 個來源配置"), group.name, group.sourceIDs.count),
             sourceIds: group.sourceIds,
             currentName: group.name
         )
@@ -687,7 +687,7 @@ struct BookSourceListView: View {
             id: source.id.uuidString,
             title: localized("移動到新分組"),
             subtitle: source.bookSourceName.isEmpty
-                ? localized("未命名書源") : source.bookSourceName,
+                ? localized("未命名來源配置") : source.bookSourceName,
             sourceIds: [source.id],
             currentName: source.bookSourceGroup
         )
@@ -708,7 +708,7 @@ struct BookSourceListView: View {
             id: source.id.uuidString,
             title: localized("移動到分組"),
             subtitle: source.bookSourceName.isEmpty
-                ? localized("未命名書源") : source.bookSourceName,
+                ? localized("未命名來源配置") : source.bookSourceName,
             sourceIds: [source.id],
             candidates: groupCandidates(excluding: current),
             excluded: current,
@@ -725,7 +725,7 @@ struct BookSourceListView: View {
             id: group.id,
             title: localized("合併到其他分組"),
             subtitle: String(
-                format: localized("%1$@ · %2$d 個書源"), group.name, group.sourceIDs.count),
+                format: localized("%1$@ · %2$d 個來源配置"), group.name, group.sourceIDs.count),
             sourceIds: group.sourceIds,
             candidates: groupCandidates(excluding: group.name),
             excluded: group.name,
@@ -751,7 +751,7 @@ struct BookSourceListView: View {
         let json = store.exportToJSON(ids: group.sourceIDs)
         UIPasteboard.general.string = json
         importSuccess = String(
-            format: localized("已複製 %d 個書源到剪貼簿"), group.sourceIDs.count)
+            format: localized("已複製 %d 個來源配置到剪貼簿"), group.sourceIDs.count)
     }
 
     private func deleteGroup(_ pending: PendingGroupAction) {
@@ -843,7 +843,7 @@ struct BookSourceListView: View {
                 Button {
                     presentCheckOptions()
                 } label: {
-                    Label(localized("書源驗證"), systemImage: "stethoscope")
+                    Label(localized("來源配置驗證"), systemImage: "stethoscope")
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -870,7 +870,7 @@ struct BookSourceListView: View {
               let str = String(data: data, encoding: .utf8)
         else { return }
         UIPasteboard.general.string = str
-        importSuccess = localized("已複製書源 JSON")
+        importSuccess = localized("已複製來源配置 JSON")
     }
 
     // MARK: - Pinning
@@ -971,14 +971,14 @@ struct BookSourceListView: View {
         let json = store.exportToJSON(ids: Array(model.selectedIDs))
         UIPasteboard.general.string = json
         importSuccess = String(
-            format: localized("已複製 %d 個書源到剪貼簿"), model.selectedIDs.count)
+            format: localized("已複製 %d 個來源配置到剪貼簿"), model.selectedIDs.count)
     }
 
     private func copyAllToPasteboard() {
         let json = store.exportToJSON()
         UIPasteboard.general.string = json
         importSuccess = String(
-            format: localized("已複製全部 %d 個書源到剪貼簿"), store.sources.count)
+            format: localized("已複製全部 %d 個來源配置到剪貼簿"), store.sources.count)
     }
 
     // MARK: - Empty State
@@ -988,16 +988,16 @@ struct BookSourceListView: View {
             Image(systemName: "books.vertical.circle")
                 .font(DSFont.fixed(size: 64))
                 .foregroundStyle(DSColor.textSecondary.opacity(0.35))
-            Text(localized("尚無書源"))
+            Text(localized("尚無來源配置"))
                 .font(DSFont.title2.weight(.semibold))
                 .foregroundStyle(DSColor.textPrimary)
-            Text(localized("點擊右上角 + 手動新增\n或匯入 Legado 書源 JSON"))
+            Text(localized("點擊右上角 + 手動新增\n或匯入 Legado 來源配置 JSON"))
                 .font(DSFont.subheadline).foregroundColor(DSColor.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
                 showImport = true
             } label: {
-                Label(localized("匯入書源 JSON"), systemImage: "square.and.arrow.down")
+                Label(localized("匯入來源配置 JSON"), systemImage: "square.and.arrow.down")
                     .font(DSFont.headline).foregroundColor(.white)
                     .padding(.horizontal, 28).padding(.vertical, 13)
                     .background(DSColor.accent).clipShape(Capsule())
@@ -1013,7 +1013,7 @@ struct BookSourceListView: View {
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "info.circle").foregroundColor(DSColor.accent)
-                    Text(localized("貼上 Legado 格式的書源 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。"))
+                    Text(localized("貼上 Legado 格式的來源配置 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。"))
                         .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                 }
                 .padding()
@@ -1043,7 +1043,7 @@ struct BookSourceListView: View {
 
                 Spacer()
             }
-            .navigationTitle(localized("匯入書源"))
+            .navigationTitle(localized("匯入來源配置"))
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
             .toolbar {
@@ -1169,7 +1169,7 @@ struct BookSourceListView: View {
     private func commitImportReview() {
         do {
             let count = try importCoordinator.confirmImport()
-            importSuccess = String(format: localized("成功匯入 %d 個書源"), count)
+            importSuccess = String(format: localized("成功匯入 %d 個來源配置"), count)
         } catch {
             importError = error.localizedDescription
         }
@@ -1182,7 +1182,7 @@ struct BookSourceListView: View {
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "network").foregroundColor(DSColor.accent)
-                    Text(localized("輸入書源 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
+                    Text(localized("輸入來源配置 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
                         .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
                 }
                 .padding()
@@ -1280,7 +1280,7 @@ struct BookSourceListView: View {
     // MARK: - Utilities
     private var messageAlertTitle: String {
         if importError != nil { return localized("操作失敗") }
-        if checkToast != nil { return localized("書源驗證") }
+        if checkToast != nil { return localized("來源配置驗證") }
         return localized("完成")
     }
 }

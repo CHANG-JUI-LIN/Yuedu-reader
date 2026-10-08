@@ -63,11 +63,11 @@ final class PublicLibraryExploreUITests: XCTestCase {
         openExplore(app)
         XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10))
         app.tabBars.buttons["設定"].firstMatch.tap()
-        let manage = app.buttons["管理書源"].firstMatch
+        let manage = app.buttons["管理來源配置"].firstMatch
         for _ in 0..<6 where !manage.exists { app.swipeUp() }
         XCTAssertTrue(manage.waitForExistence(timeout: 5))
         manage.tap()
-        let add = app.buttons["新增書源"].firstMatch
+        let add = app.buttons["新增來源配置"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 10))
         add.tap()
         app.buttons["本地導入"].firstMatch.tap()
@@ -75,13 +75,13 @@ final class PublicLibraryExploreUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
         editor.tap()
         editor.typeText("[{\"bookSourceName\":\"Public library UI fixture\",\"bookSourceUrl\":\"https://public-library-ui.example\",\"enabled\":true}]")
-        app.navigationBars["匯入書源"].buttons["checkmark"].tap()
+        app.navigationBars["匯入來源配置"].buttons["checkmark"].tap()
         let confirm = app.buttons["匯入"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 10))
         confirm.tap()
         XCTAssertTrue(app.staticTexts["Public library UI fixture"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts[tipTitle].exists, "The import screen must not show the Explore tip")
-        app.navigationBars["書源管理"].buttons["關閉"].tap()
+        app.navigationBars["來源配置管理"].buttons["關閉"].tap()
         openExplore(app)
         XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10), "Importing does not switch mode")
         XCTAssertTrue(app.staticTexts[tipTitle].firstMatch.waitForExistence(timeout: 10))
@@ -90,18 +90,18 @@ final class PublicLibraryExploreUITests: XCTestCase {
         XCTAssertTrue(menu.exists)
         XCTAssertEqual(menu.label, "切換探索內容")
         XCTAssertEqual(menu.value as? String, "公有書庫")
-        app.buttons["切換到書源"].firstMatch.tap()
-        XCTAssertTrue(app.searchFields["搜索書源"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertEqual(menu.value as? String, "書源")
+        app.buttons["切換到來源配置"].firstMatch.tap()
+        XCTAssertTrue(app.searchFields["搜索來源配置"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(menu.value as? String, "來源配置")
         attach(app, "Book sources after the guide action")
         app.terminate()
         let relaunched = application(reset: false)
         relaunched.launch()
         openExplore(relaunched)
-        XCTAssertTrue(relaunched.searchFields["搜索書源"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(relaunched.searchFields["搜索來源配置"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(relaunched.staticTexts[tipTitle].exists)
         let savedMenu = relaunched.buttons["explore.modeMenu"].firstMatch
-        XCTAssertEqual(savedMenu.value as? String, "書源")
+        XCTAssertEqual(savedMenu.value as? String, "來源配置")
         savedMenu.tap()
         relaunched.buttons["公有書庫"].firstMatch.tap()
         XCTAssertTrue(relaunched.staticTexts["Project Gutenberg"].firstMatch.waitForExistence(timeout: 10))

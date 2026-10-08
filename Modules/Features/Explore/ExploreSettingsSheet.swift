@@ -93,7 +93,7 @@ struct ExploreSettingsSheet: View {
                         .tag(layout)
                 }
             } label: {
-                SettingsRowLabel(localized("書源頁佈局"), systemImage: "rectangle.split.2x1")
+                SettingsRowLabel(localized("來源配置頁佈局"), systemImage: "rectangle.split.2x1")
             }
             .pickerStyle(.menu)
         } header: {
@@ -118,7 +118,7 @@ struct ExploreSettingsSheet: View {
                     }
                 }
                 if !sources.isEmpty {
-                    Section(localized("書源")) {
+                    Section(localized("來源配置")) {
                         ForEach(sources) { source in
                             Text(source.bookSourceName)
                                 .tag(ExploreLanding.source(url: source.bookSourceUrl).rawValue)
@@ -126,11 +126,11 @@ struct ExploreSettingsSheet: View {
                     }
                 }
             } label: {
-                SettingsRowLabel(localized("首屏配置"), systemImage: "arrow.right.circle")
+                SettingsRowLabel(localized("首屏頁面"), systemImage: "arrow.right.circle")
             }
             .pickerStyle(.navigationLink)
         } header: {
-            sectionHeader(localized("首屏配置"))
+            sectionHeader(localized("首屏頁面"))
         } footer: {
             Text(localized("設定後，打開探索時會直接進入這一頁。"))
                 .dsSectionFooter()
@@ -218,7 +218,7 @@ struct ExploreSettingsSheet: View {
         } header: {
             sectionHeader(localized("預加載"))
         } footer: {
-            Text(localized("捲到某個分類時，順便排隊載入後面幾個分類。數字越大越少看到載入中，但排隊的書源請求也越多。"))
+            Text(localized("捲到某個分類時，順便排隊載入後面幾個分類。數字越大越少看到載入中，但排隊的來源配置請求也越多。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()

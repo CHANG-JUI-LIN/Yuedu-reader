@@ -206,7 +206,7 @@ struct ExploreHomeView: View {
             .searchable(
                 text: $query,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: localized("搜索書源")
+                prompt: localized("搜索來源配置")
             )
             .sheet(isPresented: $showsSettings) {
                 ExploreSettingsSheet(sources: exploreSources)
@@ -300,16 +300,16 @@ struct ExploreHomeView: View {
     private var sourcesBlock: some View {
         if exploreSources.isEmpty || !visibleSources.isEmpty {
             VStack(alignment: .leading, spacing: DSSpacing.md) {
-                Text(group ?? localized("書源"))
+                Text(group ?? localized("來源配置"))
                     .font(DSFont.title2.weight(.bold))
                     .foregroundStyle(DSColor.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 if exploreSources.isEmpty {
                     VStack(alignment: .leading, spacing: DSSpacing.md) {
-                        Text(localized("尚未啟用支援發現的書源"))
+                        Text(localized("尚未啟用支援發現的來源配置"))
                             .font(DSFont.subheadline)
                             .foregroundStyle(DSColor.textSecondary)
-                        Button(localized("前往書源管理"), action: openSourceManager)
+                        Button(localized("前往來源配置管理"), action: openSourceManager)
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
@@ -435,7 +435,7 @@ struct ExploreHomeView: View {
 
     private var deletedSourceState: some View {
         ContentUnavailableView {
-            UnavailableLabel(localized("書源已被刪除"), systemImage: "books.vertical")
+            UnavailableLabel(localized("來源配置已被刪除"), systemImage: "books.vertical")
         }
     }
 

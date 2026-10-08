@@ -823,7 +823,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
 
         private func handleImportURL(_ url: URL, webView: WKWebView) {
             guard let sourceURL = Self.onlineImportSourceURL(from: url) else {
-                presentImportResult(localized("無效的書源導入連結"), in: webView)
+                presentImportResult(localized("無效的來源配置導入連結"), in: webView)
                 return
             }
 
@@ -834,7 +834,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
                         return
                     }
                     guard let data else {
-                        self.presentImportResult(localized("無法讀取書源資料"), in: webView)
+                        self.presentImportResult(localized("無法讀取來源配置資料"), in: webView)
                         return
                     }
                     do {
@@ -854,7 +854,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
 
         private func presentImportResult(_ message: String, in webView: WKWebView) {
             guard let top = Self.topPresenter(in: webView) else { return }
-            let alert = UIAlertController(title: localized("書源導入"), message: message, preferredStyle: .alert)
+            let alert = UIAlertController(title: localized("來源配置導入"), message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: localized("完成"), style: .default))
             top.present(alert, animated: true)
         }
@@ -876,7 +876,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
                     onFinish: { [weak self] count in
                         box.controller?.dismiss(animated: true) {
                             self?.presentImportResult(
-                                String(format: localized("成功匯入 %d 個書源"), count),
+                                String(format: localized("成功匯入 %d 個來源配置"), count),
                                 in: webView
                             )
                         }

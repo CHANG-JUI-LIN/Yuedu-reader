@@ -49,7 +49,7 @@ struct CustomExploreBlockView: View {
                     Text(block.component.displayTitle)
                         .font(DSFont.title3.weight(.bold))
                         .foregroundStyle(DSColor.textPrimary)
-                    Label(localized("書源已被刪除"), systemImage: "exclamationmark.triangle")
+                    Label(localized("來源配置已被刪除"), systemImage: "exclamationmark.triangle")
                         .font(DSFont.footnote)
                         .foregroundStyle(DSColor.textSecondary)
                 }

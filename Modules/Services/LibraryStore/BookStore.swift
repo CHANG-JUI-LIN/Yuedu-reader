@@ -1774,7 +1774,7 @@ class BookStore: ObservableObject, BookProvider {
         guard let source = BookSourceStore.shared.sources.first(where: { $0.id == origin.sourceId })
         else {
             throw NSError(
-                domain: "BookStore", code: -1, userInfo: [NSLocalizedDescriptionKey: "找不到書源"])
+                domain: "BookStore", code: -1, userInfo: [NSLocalizedDescriptionKey: "找不到來源配置"])
         }
         let tocPackage: TOCPackage
         if let preparedTOC {
@@ -1791,7 +1791,7 @@ class BookStore: ObservableObject, BookProvider {
         guard !tocPackage.chapters.isEmpty else {
             throw NSError(
                 domain: "BookStore", code: -5,
-                userInfo: [NSLocalizedDescriptionKey: localized("此書源取不到目錄")])
+                userInfo: [NSLocalizedDescriptionKey: localized("此來源配置取不到目錄")])
         }
         let oldRefs = await MainActor.run {
             chapterStore.chapters(for: bookId) ?? []
@@ -1866,7 +1866,7 @@ class BookStore: ObservableObject, BookProvider {
             BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
         }) else {
             throw NSError(
-                domain: "BookStore", code: -3, userInfo: [NSLocalizedDescriptionKey: "找不到書源"])
+                domain: "BookStore", code: -3, userInfo: [NSLocalizedDescriptionKey: "找不到來源配置"])
         }
 
         let bookURL = normalizedOnlineValue(snapshot.bookInfoURL ?? snapshot.source)

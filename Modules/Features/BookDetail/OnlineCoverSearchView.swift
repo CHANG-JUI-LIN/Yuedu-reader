@@ -59,7 +59,7 @@ struct OnlineCoverSearchView: View {
                 candidates: model.candidates,
                 isSearching: model.isSearching,
                 hasSearched: model.hasSearched,
-                emptyHint: localized("可以改用「換封面」在書源裡找，或從相簿選一張圖片。")
+                emptyHint: localized("可以改用「換封面」在來源配置裡找，或從相簿選一張圖片。")
             ) { candidate in
                 model.stop()
                 onSelect(candidate)

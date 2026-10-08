@@ -396,7 +396,7 @@ actor ChapterFetchManager {
                 else {
                     throw NSError(
                         domain: "OnlineReadingPipeline", code: -2,
-                        userInfo: [NSLocalizedDescriptionKey: "找不到書源"])
+                        userInfo: [NSLocalizedDescriptionKey: "找不到來源配置"])
                 }
                 return try await bookSourceFetcher.fetchChapterPackage(
                     ref: ref,

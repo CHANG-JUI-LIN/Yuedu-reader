@@ -178,7 +178,7 @@ struct OnlineBookView: View {
         let name = currentBook.sourceName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { return name }
         if let s = source?.bookSourceName, !s.isEmpty { return s }
-        return localized("未知書源")
+        return localized("未知來源配置")
     }
 
     /// Category string split into individual genre tags, junk filtered out.
@@ -512,7 +512,7 @@ struct OnlineBookView: View {
 
     private func loadTOC(forceRefresh: Bool = false) async {
         guard let source else {
-            tocError = localized("書源已被刪除")
+            tocError = localized("來源配置已被刪除")
             return
         }
 

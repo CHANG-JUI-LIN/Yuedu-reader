@@ -251,7 +251,7 @@ private struct BookIntroActionHost: ViewModifier {
                     .presentationDetents([.medium, .large])
             }
             .alert(
-                localized("書源腳本錯誤"),
+                localized("來源配置腳本錯誤"),
                 isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } }),
                 presenting: failure
             ) { _ in

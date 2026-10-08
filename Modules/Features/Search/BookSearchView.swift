@@ -271,7 +271,7 @@ struct BookSearchView: View {
         ContentUnavailableView {
             UnavailableLabel(localized("已暫停"), systemImage: "pause.circle")
         } description: {
-            Text(localized("點擊繼續搜索剩餘書源"))
+            Text(localized("點擊繼續搜索剩餘來源配置"))
                 .foregroundStyle(DSColor.textSecondary)
         }
     }
@@ -313,10 +313,10 @@ struct BookSearchView: View {
     private var sourceScopeSummary: String {
         switch activeScope.mode {
         case .all:
-            return localized("全部書源")
+            return localized("全部來源配置")
         case .custom:
             return String(
-                format: localized("已選 %d 個書源"),
+                format: localized("已選 %d 個來源配置"),
                 activeScope.resolvedSources(from: enabledSources).count
             )
         }
@@ -427,7 +427,7 @@ struct BookSearchView: View {
                 systemImage: "magnifyingglass"
             )
         } description: {
-            Text(localized("嘗試換個關鍵字，或切換書源"))
+            Text(localized("嘗試換個關鍵字，或切換來源配置"))
                 .foregroundStyle(DSColor.textSecondary)
         }
     }
@@ -436,9 +436,9 @@ struct BookSearchView: View {
     private var hintView: some View {
         if enabledSources.isEmpty {
             ContentUnavailableView {
-                UnavailableLabel(localized("尚未設置書源"), systemImage: "exclamationmark.triangle")
+                UnavailableLabel(localized("尚未設置來源配置"), systemImage: "exclamationmark.triangle")
             } description: {
-                Text(localized("請先在書源管理中新增並啟用書源"))
+                Text(localized("請先在來源配置管理中新增並啟用來源配置"))
                     .foregroundStyle(DSColor.textSecondary)
             }
         } else {
@@ -450,7 +450,7 @@ struct BookSearchView: View {
                     systemImage: "text.magnifyingglass"
                 )
             } description: {
-                Text(String(format: localized("已啟用 %d 個書源"), enabledSources.count))
+                Text(String(format: localized("已啟用 %d 個來源配置"), enabledSources.count))
                     .foregroundStyle(DSColor.textSecondary)
             }
         }
@@ -475,8 +475,8 @@ struct BookSearchView: View {
         let sources = activeScope.resolvedSources(from: enabledSources)
         guard !sources.isEmpty else {
             errorMsg = activeScope.mode == .custom
-                ? localized("請至少選擇一個可用書源")
-                : localized("沒有可用的書源，請先啟用書源")
+                ? localized("請至少選擇一個可用來源配置")
+                : localized("沒有可用的來源配置，請先啟用來源配置")
             return
         }
 

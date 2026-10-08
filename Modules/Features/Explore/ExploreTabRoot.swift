@@ -48,7 +48,7 @@ struct ExploreModeMenu: View {
         Menu {
             Picker(localized("切換探索內容"), selection: Binding(get: { mode }, set: { mode = $0; tip.invalidate(reason: .actionPerformed) })) {
                 Label(localized("公有書庫"), systemImage: "books.vertical").tag(ExploreMode.publicLibraries)
-                Label(localized("書源"), systemImage: "antenna.radiowaves.left.and.right").tag(ExploreMode.bookSources)
+                Label(localized("來源配置"), systemImage: "antenna.radiowaves.left.and.right").tag(ExploreMode.bookSources)
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -57,7 +57,7 @@ struct ExploreModeMenu: View {
                 .accessibilityHidden(true)
         }
         .accessibilityLabel(localized("切換探索內容"))
-        .accessibilityValue(localized(mode == .publicLibraries ? "公有書庫" : "書源"))
+        .accessibilityValue(localized(mode == .publicLibraries ? "公有書庫" : "來源配置"))
         .accessibilityIdentifier("explore.modeMenu")
         .exploreModePopoverTip(tipEnabled ? tip : nil) { action in
             if action.id == "switch" { mode = .bookSources }

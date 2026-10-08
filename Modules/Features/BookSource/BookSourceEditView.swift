@@ -58,7 +58,7 @@ struct BookSourceEditView: View {
 
                 tabContent
             }
-            .navigationTitle(source.bookSourceName.isEmpty ? localized("新建書源") : source.bookSourceName)
+            .navigationTitle(source.bookSourceName.isEmpty ? localized("新建來源配置") : source.bookSourceName)
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
             .interactiveDismissDisabled(isDirty)
@@ -204,7 +204,7 @@ struct BookSourceEditView: View {
                     VStack(alignment: .leading, spacing: DSSpacing.xs) {
                         Text(localized("提供裝置識別碼"))
                             .foregroundStyle(DSColor.textPrimary)
-                        Text(localized("預設開啟，書源要裝置碼時才拿得到。只有在某個書源不能被當成 Android 時才關閉。"))
+                        Text(localized("預設開啟，來源配置要裝置碼時才拿得到。只有在某個來源配置不能被當成 Android 時才關閉。"))
                             .font(DSFont.caption)
                             .foregroundStyle(DSColor.textSecondary)
                     }
@@ -333,9 +333,9 @@ struct BookSourceEditView: View {
         }
         if let parsed = BookSourceStore.parseSources(trimmed), let first = parsed.first {
             source = first
-            pasteFeedback = localized("已從剪貼簿導入書源")
+            pasteFeedback = localized("已從剪貼簿導入來源配置")
         } else {
-            pasteFeedback = localized("剪貼簿內容不是有效的書源")
+            pasteFeedback = localized("剪貼簿內容不是有效的來源配置")
         }
     }
 
@@ -353,7 +353,7 @@ struct BookSourceEditView: View {
                 return
             }
             source = first
-            pasteFeedback = localized("已從剪貼簿導入書源")
+            pasteFeedback = localized("已從剪貼簿導入來源配置")
         } catch {
             pasteFeedback = error.localizedDescription
         }
@@ -363,7 +363,7 @@ struct BookSourceEditView: View {
         guard let data = try? JSONEncoder().encode(source),
               let str = String(data: data, encoding: .utf8) else { return }
         UIPasteboard.general.string = str
-        pasteFeedback = localized("已複製書源 JSON")
+        pasteFeedback = localized("已複製來源配置 JSON")
     }
 }
 
@@ -402,9 +402,9 @@ struct BookSourceFieldSpec: Identifiable {
 private enum FieldCatalog {
     // MARK: 基本 — Legado `sourceEntities`
     static let base: [BookSourceFieldSpec] = [
-        BookSourceFieldSpec("書源名稱", placeholder: "如：某某小說網", keyPath: \.bookSourceName),
-        BookSourceFieldSpec("書源地址", placeholder: "https://example.com", keyPath: \.bookSourceUrl),
-        BookSourceFieldSpec("書源分組", placeholder: "如：玄幻、言情", keyPath: \.bookSourceGroup),
+        BookSourceFieldSpec("來源配置名稱", placeholder: "如：某某小說網", keyPath: \.bookSourceName),
+        BookSourceFieldSpec("來源配置地址", placeholder: "https://example.com", keyPath: \.bookSourceUrl),
+        BookSourceFieldSpec("來源配置分組", placeholder: "如：玄幻、言情", keyPath: \.bookSourceGroup),
         BookSourceFieldSpec("源註釋", keyPath: \.bookSourceComment),
         BookSourceFieldSpec("登入頁 URL", placeholder: "https://...", keyPath: \.loginUrl),
         BookSourceFieldSpec("登入 UI", placeholder: "JSON", keyPath: \.loginUi),

@@ -264,7 +264,7 @@ private struct HostedListCellSurface: View {
         showsSeparator: { _ in true },
         drawsCellSurface: { $0 % 10 != 0 }
     ) { index in
-        Text(index % 10 == 0 ? "分組 \(index / 10)" : "書源 \(index)")
+        Text(index % 10 == 0 ? "分組 \(index / 10)" : "來源配置 \(index)")
             .font(index % 10 == 0 ? DSFont.headline : DSFont.body)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(DSSpacing.md)
