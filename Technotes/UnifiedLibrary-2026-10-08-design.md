@@ -860,7 +860,7 @@ Jellyfin 是從 Emby 分出來的開源專案。
 | 0b | 原生搜尋路徑區分「合法的空」與「失敗」：失敗要記錄，並計入 `SourceHealthStore` | 〈審計〉§11.3；`CLAUDE.md` 的「Don't swallow errors」 | **行為改變：** 被封鎖的來源配置會進冷卻。需維護者同意（§17 第 9 項） |
 | 0c | 把 WebDAV 資料夾列表從 view 移到 model | 〈審計〉§8.2；「Views don't orchestrate」 | `RemoteLibraryBrowsePresentationTests`、`RemoteLibraryNavigationUITests` |
 | 0d | `CustomExplorePageStore` 讀取失敗後拒絕寫入 | 〈審計〉§16 第 4 項；之後要遷移這個檔案 | 新增：損壞檔不會被覆寫 |
-| 0e | 加上 `works.*` 的 SourcePerfTrace span | 「Measure, then optimize」 | span 出現在 Release Console |
+| 0e | 在現有搜尋加上 `search.firstResult` span：從送出查詢到第一批遠端結果合併完成。三個 `works.*` span 要等作品索引存在，隨 1c 加上 | 「Measure, then optimize」；§16 第 8 項要前後兩組毫秒數，「前」只能在 Phase 4 改動搜尋之前量 | span 出現在 Release Console；記下目前的毫秒數作為基準 |
 
 ### Phase 1　資料模型（構想文件 Phase 1）
 
@@ -868,7 +868,7 @@ Jellyfin 是從 Emby 分出來的開源專案。
 |---|---|---|---|
 | 1a | 新增 `ProviderType`、`SourceInstanceKey`、`SourceItemKey`、`ExternalIdentifier`、`ContentKind` 與純函式推導：`ReadingBook`、`RemoteLibraryItem`、`OnlineBook`、`AozoraWork`、`OPDSEntry` → `SourceRecord`。用推導結果修正「書籍資訊」的「來源」列。 | `HomeView.swift`（只改來源列） | 每種入口的推導都有表格驅動測試 |
 | 1b | 匯入時多讀原始 metadata，只存進 sidecar：EPUB OPF 的 identifier、language、description、subject；OPDS 的 summary、`authorNames`、language、identifier；Calibre 無線傳書的 uuid 與 isbn；青空目錄欄位。既有的書在打開作品頁時才補讀，不在背景掃描整個書架。 | `BookStore.importEpub` 等只多呼叫一次 sidecar 寫入；`ReadingBook` 不變 | 匯入測試確認 `ReadingBook` 的編碼不變（雜湊相同） |
-| 1c | `WorkIndex`：§7.3 的演算法、`index.json`、重建與增量更新 | 無 | 固定案例：《三體》簡繁、《三體》與《三體II》、同名不同作者、漫畫改編、譯本、Calibre 多格式、使用者拆開後不再歸併 |
+| 1c | `WorkIndex`：§7.3 的演算法、`index.json`、重建與增量更新；§10.4 的三個 `works.*` span | 無 | 固定案例：《三體》簡繁、《三體》與《三體II》、同名不同作者、漫畫改編、譯本、Calibre 多格式、使用者拆開後不再歸併 |
 | 1d | `WorkDecisionsStore`＋`MetadataResolver`；在三條覆寫路徑檢查鎖定 | `BookStore`（線上刷新）、`RemoteLibraryWritingService` | 鎖定後刷新不改書名；沒有鎖定時，行為與現況相同 |
 
 **Phase 1 的回退：** 關閉旗標，刪除 `Works/`。`ReadingBook` 與同步內容完全沒有變動。
@@ -982,6 +982,42 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
 - 3b；
 - 4a–4c；
 - §14.1 作品詳情的唯讀版。
+
+### 交接
+
+這份文件寫的是「做什麼、怎麼驗收」，不是逐檔的施工步驟。交給別人（人或 agent）之前：
+
+- **在有 Xcode 的 Mac 上實作。** 驗收要跑測試與模擬器；統一搜尋還要 iOS 17 runtime（§16 第 6 項）。本文件與「書源」改名是在沒有 Xcode 的雲端環境寫的，提交時沒有編譯。
+- **每個 Phase 先寫實作計畫。**
+  - 放在 `docs/superpowers/plans/`，格式比照 `2026-10-07-public-domain-libraries.md`：逐步列出要改的檔案、要加的測試、驗收指令。
+  - 維護者看過計畫，才動程式碼。
+- **一步一個分支。** 每一步都要符合本節開頭的三個條件。
+
+| 步驟 | 現在能交出去嗎 | 前置步驟 | 等 §17 的哪一項 |
+|---|---|---|---|
+| 0a、0c、0d、0e | 可以 | — | — |
+| 0b | 只能交「區分並記錄 `empty` 與 `failed`」 | — | 計入 `SourceHealthStore`、進冷卻：第 9 項 |
+| 1a | 可以 | — | — |
+| 1b、1d | 可以 | 1a | — |
+| 1c | 只能交 A 級（共同識別碼） | 1a | B 級自動歸併：第 1 項。MVP 要把《三體》的四個來源歸成一列，需要 B 級 |
+| 2a | 可以 | 1a | — |
+| 2b、2c | 可以 | 2a | WebDAV 建索引：第 10 項 |
+| 3a、3b | 可以 | 1d、2a | — |
+| 3c、3d | 不行 | 3a | 第 5 項 |
+| 4a–4c | 可以 | 0a、1c、2a | 上線方式：第 12 項，只影響上線，不影響實作 |
+| 4d | 可以 | 4c | — |
+| 5 | 首頁引擎可以 | 0a、0d | 預設欄目：第 7 項；上線方式：第 12 項 |
+| 6 | 只能交宣告式模組（§14.2 第 1–3 步） | 2a、5 | JavaScript 模組：第 11 項 |
+| 7 | 不行 | — | 第 6 項尚待確認的部分 |
+| S | 不建議交給不熟這個專案的人 | — | 第 2、3、13–16 項 |
+
+**Phase S 另外需要：**
+
+- 兩台真機，因為模擬器收不到推播（§11.2）；
+- Apple Developer 帳號裡的 CloudKit 與推播設定；
+- 一份經本人同意取得的真實 `books_meta.json`，作為遷移 fixture。
+
+它改的是使用者的書架資料，出錯時進度與書籤會消失。實作者要能和維護者一起在兩台裝置上看結果。
 
 ## 16. MVP 驗收
 
