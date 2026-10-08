@@ -9,11 +9,13 @@ struct GutenbergBook: Identifiable, Hashable {
     let feedURL: URL?
     let entry: OPDSEntry?
 
-    init(id: Int, title: String, author: String) {
+    /// The id stays the XML feed's URL whatever the endpoint, so a bundled
+    /// book keeps one identity; only the feed it loads follows the endpoint.
+    init(id: Int, title: String, author: String, endpoint: GutenbergEndpoint = .current) {
         self.id = "https://www.gutenberg.org/ebooks/\(id).opds"
         self.title = title
         self.author = author
-        feedURL = URL(string: self.id)
+        feedURL = endpoint.bookFeedURL(id: id)
         entry = nil
     }
 
@@ -32,8 +34,12 @@ struct GutenbergBook: Identifiable, Hashable {
         // A navigation entry without a credited creator uses its download count
         // as content (official Chinese fixture, work 52323). That is not a name.
         author = creator.range(of: "^[0-9,]+ downloads?$", options: .regularExpression) == nil ? creator : ""
-        feedURL = entry.isBook ? nil : url
-        self.entry = entry.isBook ? entry : nil
+        // OPDS 2 list entries are complete books but omit the description and
+        // author links; their `self` link is the full publication, loaded once
+        // the book is selected, as an XML book feed is.
+        let publication = entry.isBook ? entry.navigationURL.flatMap { GutenbergEndpoint.current.isPublication($0) ? $0 : nil } : nil
+        feedURL = publication ?? (entry.isBook ? nil : url)
+        self.entry = entry.isBook && publication == nil ? entry : nil
     }
 }
 
@@ -99,7 +105,7 @@ struct GutenbergBookDetail {
     let item: RemoteLibraryItem
     let authors: [GutenbergAuthor]
 
-    init(feed: OPDSFeed) throws {
+    init(feed: OPDSFeed, endpoint: GutenbergEndpoint = .current) throws {
         let editions = feed.entries.filter(\.isBook)
         guard let preferred = editions.min(by: {
             ($0.bestAcquisition?.preference ?? 99) < ($1.bestAcquisition?.preference ?? 99)
@@ -109,18 +115,24 @@ struct GutenbergBookDetail {
         combined.acquisitions = editions.flatMap(\.acquisitions)
             .filter { seenFormats.insert($0.url).inserted }
             .sorted { $0.preference < $1.preference }
-        combined.alternateURL = preferred.alternateURL ?? feed.alternateURL
+        // OPDS 2 publications carry no text/html link; their identifier is the
+        // book's page on gutenberg.org.
+        combined.alternateURL = preferred.alternateURL ?? feed.alternateURL ?? Self.officialPage(preferred.id)
         item = RemoteLibraryBookRoute(entry: combined, connectionID: PublicLibraryID.gutenberg.rawValue).item
         var seenAuthors = Set<URL>()
         authors = editions.flatMap(\.relatedLinks).compactMap { link in
-            guard link.url.host == "www.gutenberg.org",
-                  link.url.path.hasPrefix("/ebooks/author/"),
-                  seenAuthors.insert(link.url).inserted else { return nil }
+            guard endpoint.isAuthorCatalog(link.url), seenAuthors.insert(link.url).inserted else { return nil }
             let name = preferred.authorNames.first { link.title.contains($0) }
                 ?? link.title.replacingOccurrences(of: "By ", with: "", options: .anchored)
                     .trimmingCharacters(in: CharacterSet(charactersIn: ".…"))
             return GutenbergAuthor(name: name, url: link.url)
         }
+    }
+
+    private static func officialPage(_ identifier: String) -> URL? {
+        guard let url = URL(string: identifier), url.scheme == "https", url.host == "www.gutenberg.org",
+              url.pathComponents.dropLast().last == "ebooks", url.lastPathComponent.allSatisfy(\.isNumber) else { return nil }
+        return url
     }
 }
 

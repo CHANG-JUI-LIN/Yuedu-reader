@@ -66,4 +66,12 @@ struct GutenbergOPDS2FixtureTests {
         #expect(book.thumbnailURL?.lastPathComponent == "pg79734.cover.small.jpg")
         #expect(book.relatedLinks.contains { $0.url.query?.contains("author_id=") == true })
     }
+
+    @Test func publicationDetailForTheStorefront() throws {
+        let detail = try GutenbergBookDetail(feed: load("publication.json"), endpoint: .opds2Development)
+        #expect(detail.authors.map { $0.name } == ["Makino, Yoshio"])
+        #expect(detail.authors.first?.url.absoluteString == "https://opds-test.pglaf.org/opds/search?author_id=43293")
+        #expect(detail.item.alternateURL?.absoluteString == "https://www.gutenberg.org/ebooks/79734")
+        #expect(RemoteLibraryBrowsePresentation.preferredFormat(in: detail.item)?.url.lastPathComponent == "pg79734-images-3.epub")
+    }
 }

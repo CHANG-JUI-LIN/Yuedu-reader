@@ -67,6 +67,14 @@ Each comes with its reason; the maintainer can overturn any of them.
     - **His reply (2026-10-08):** the development endpoint is `https://opds-test.pglaf.org/opds/`, and "a production preview service" is expected soon. No production URL yet.
     - Checked 2026-10-08: it answers `200`, `Content-Type: application/json` (not `application/opds+json`), with OPDS 2 `groups` (Navigation: bookshelves, subjects; Recently Added, 78,605 items), `publications` and a templated search `search{?query,title,author}`.
     - So Task 13 may build and test the OPDS 2 parser against fixtures saved from this endpoint now. `builtin.gutenberg` switches only once the production service exists; the development endpoint never ships.
+19. **Gutenberg lists load the small thumbnail.** OPDS 2 has no embedded thumbnails, only `cover.small.jpg` URLs, so keeping lists to embedded images would leave them without covers.
+    - A Gutenberg list row shows the entry's thumbnail, embedded or remote, and never its full cover. The medium cover still loads only on the book's detail.
+    - Cost: up to one small image request per visible row (25 per page), on top of the page's one feed request. Loading stays lazy, per visible row; nothing is prefetched.
+    - Worth confirming with Gutenberg in the same thread as decision 18, since the feed itself advertises these thumbnails.
+20. **Debug builds use the OPDS 2 development service now; shipped builds do not** (maintainer, 2026-10-07, revising decision 18's "the development endpoint never ships" only for Debug).
+    - `GutenbergEndpoint` owns every Gutenberg URL the app builds: root, search, popular, latest, language shelves, a book's feed, author and publication links.
+    - Debug builds launched with `-gutenberg-opds2-dev` use `opds-test.pglaf.org`; the shared scheme's Run action passes it, and its Test action no longer inherits Run's arguments, so tests stay on the XML feeds. Release and TestFlight builds never read the argument (`#if DEBUG`).
+    - Switching to the production service later is one value in `GutenbergEndpoint`; then the argument and the development case are deleted.
 
 ---
 
@@ -586,8 +594,9 @@ All of this was requested live on 2026-10-07.
 
 - [x] Add OPDS 2 JSON (`application/opds+json`) to `OPDSClient`, mapping to the same `OPDSFeed` / `OPDSEntry` models. It is one parser per format behind one client, not a second browser. (Written; not yet compiled. See "Task 13, part 1".)
 - [x] Test it against fixtures saved from the development endpoint `https://opds-test.pglaf.org/opds/` (decision 18). Accept `application/json` as well as `application/opds+json`, since the endpoint sends the former. Fetch fixtures by hand, a few requests, with the app's User-Agent; never point the app at this endpoint.
-- [ ] **Stop here** until the maintainer passes on Gutenberg's production URL.
-- [ ] Switch `builtin.gutenberg` to it before Gutenberg retires the XML feeds in 2027.
+- [x] **Stop here** until the maintainer passes on Gutenberg's production URL. (Superseded for Debug by decision 20.)
+- [x] Debug builds switch to the development service (decision 20).
+- [ ] Switch `builtin.gutenberg` to the production URL for every build before Gutenberg retires the XML feeds in 2027.
 
 ---
 
@@ -704,4 +713,24 @@ First local run (maintainer, 2026-10-07): the script fetched root, `search?sort=
 
 Passing evidence (maintainer's Mac, `scripts/xctest.sh`, after the last related edit, commit `4ee8cd2`): `OPDS2ParserTests`, `GutenbergOPDS2FixtureTests`, `RemoteLibraryHTTPTests` and `OPDSParserTests` — **36 tests in 4 suites passed** (0.196 s), against the recorded fixtures. The fixtures are committed by the maintainer from that checkout. If the recorded documents differ from the shape assumed here (for example images with rels, or groups without `self` links), adjust the parser against the fixtures, not the fixtures. Then commit the fixtures and tick the fixture checkbox above.
 
-Still stopped: the switch of `builtin.gutenberg` waits for Gutenberg's production URL. When it happens, list covers need a look: OPDS 2 images are remote URLs, while today's Gutenberg lists show only embedded thumbnails (decision 9).
+Still stopped: the switch of `builtin.gutenberg` waits for Gutenberg's production URL.
+
+List covers (decision 19, after part 1): `PublicLibrary.listCoverURL(for:connectionID:)` now takes the entry and returns its thumbnail for Gutenberg (embedded or remote), never the full cover; other catalogs keep thumbnail-or-cover. Today's XML search lists are unchanged (their thumbnails are embedded); once OPDS 2 is switched on, each visible row loads `cover.small.jpg`. Test: `PublicLibraryRegistryTests`.
+
+### Task 13, part 2: what landed (decision 20)
+
+On branch `claude/magical-mccarthy-l9x4pt`. Written in the Linux cloud session without Xcode: **not compiled or run** when committed.
+
+- `GutenbergEndpoint` (`PublicLibrary.swift`): `.xml` and `.opds2Development`, chosen once at launch (`current`). The development URLs are the ones the service itself links: `search?sort=downloads&sort_order=desc`, `search?sort=release_date&sort_order=desc`, `search?lang=<code>&sort=downloads&sort_order=desc`, `search?query=…`, `publications?id=<n>`; author catalogs are `search?author_id=<n>`.
+- `PublicLibrary.gutenberg`, `gutenbergSearchURL`, `GutenbergShelf.shelves` and `GutenbergBook(id:…)` follow the endpoint. A bundled book keeps its XML-URL id; only the feed it loads changes. `GutenbergBookDetail` recognises the endpoint's author links and, for OPDS 2, takes the gutenberg.org book page from the publication identifier.
+- An OPDS 2 list entry is a complete book but lacks the description and author links, so selecting it loads its `self` publication: one request per selected book, as an XML book feed.
+- Scheme: Run passes `-gutenberg-opds2-dev`; Test sets `shouldUseLaunchSchemeArgsEnv = NO` (Run had no other arguments or variables; UI tests start their own `SKTestSession`).
+- New fallbacks: none. The XML endpoint is not a fallback: no automatic switching between endpoints.
+
+Maintainer, locally:
+
+```bash
+bash scripts/xctest.sh -- -only-testing:'yuedu appTests/PublicLibraryRegistryTests' -only-testing:'yuedu appTests/GutenbergOPDS2FixtureTests' -only-testing:'yuedu appTests/OPDS2ParserTests' -only-testing:'yuedu appTests/PublicLibraryStorefrontTests'
+```
+
+Then Run (⌘R) a Debug build and check: the home shelves and search load from `opds-test.pglaf.org`; a bundled book's detail, its author page, reading and adding to the shelf work; list rows show `cover.small.jpg`.
