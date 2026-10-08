@@ -1,6 +1,6 @@
-# Book Source Guide (书源指南 · 書源指南)
+# Source Guide (来源配置指南 · 來源配置指南)
 
-How to import, validate, debug, and fix **Legado-format book sources** in Yuedu. If a source works in Legado but fails here, start with the differences page — most breakages come from the rule-engine differences.
+How to import, validate, debug, and fix **Legado-format sources** in Yuedu. Legado calls them 书源 ("book sources"); Yuedu's interface calls them sources (来源配置 · 來源配置). The JSON is the same. If a source works in Legado but fails here, start with the differences page — most breakages come from the rule-engine differences.
 
 ## Pages
 
@@ -13,4 +13,4 @@ How to import, validate, debug, and fix **Legado-format book sources** in Yuedu.
 
 ## Scope
 
-This guide covers **book sources** (text / audiobook / manga, `bookSourceType` 0/1/2) and their five pipeline stages: search, discover (explore), detail, TOC, content. TTS engine sources, RSS feeds, OPDS catalogs, WebDAV, and replacement rules are separate systems with their own formats and UIs.
+This guide covers **sources** (text / audiobook / manga, `bookSourceType` 0/1/2) and their five pipeline stages: search, discover (explore), detail, TOC, content. TTS engine sources, RSS feeds, OPDS catalogs, WebDAV, and replacement rules are separate systems with their own formats and UIs.

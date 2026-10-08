@@ -1,9 +1,9 @@
-# 與 Legado 的差異（書源為什麼壞掉）
+# 與 Legado 的差異（來源配置為什麼壞掉）
 
 > 其他章節：[快速開始](quickstart.zh-Hant.md) · [規則語法速查](rule-syntax.zh-Hant.md) · [常見症狀對照表](troubleshooting.zh-Hant.md)
 > 简体中文：[与 Legado 的差异](legado-differences.zh-Hans.md)
 
-Yuedu 可直接匯入 Legado 3.0 的書源 JSON 資料模型，但**不代表所有運行時 API 都已相容**。多數書源可以直接用，依賴 Android／Java 特有 API 或不同語法語意的書源仍可能失效；實際能力以本頁清單為準。
+Yuedu 可直接匯入 Legado 3.0 的來源配置 JSON 資料模型，但**不代表所有運行時 API 都已相容**。多數來源配置可以直接用，依賴 Android／Java 特有 API 或不同語法語意的來源配置仍可能失效；實際能力以本頁清單為準。
 
 ## 0. 一句話總結
 
@@ -15,7 +15,7 @@ Yuedu 可直接匯入 Legado 3.0 的書源 JSON 資料模型，但**不代表所
 | Jayway JSONPath | 自實作 JSONPath |
 | JsoupXpath | libxml2 XPath 1.0 |
 
-**最大風險是 JS**：Legado 書源會呼叫 Android／Java API，Yuedu 用一個 `java.*` 相容層承接，**有一個白名單**——白名單外的呼叫會直接報 `ERROR`。書源在兩端行為不同，九成是 JS 用了白名單外的東西。
+**最大風險是 JS**：Legado 來源配置會呼叫 Android／Java API，Yuedu 用一個 `java.*` 相容層承接，**有一個白名單**——白名單外的呼叫會直接報 `ERROR`。來源配置在兩端行為不同，九成是 JS 用了白名單外的東西。
 
 ## 1. `java.*` API 對照
 
@@ -42,7 +42,7 @@ Yuedu 可直接匯入 Legado 3.0 的書源 JSON 資料模型，但**不代表所
 | `java.randomUUID()`、`java.toNumChapter(title)`、`java.urlParts(url, baseUrl)` | UUID、中文章序號正規化、URL 結構解析 |
 | `java.getCookie(url)`、`java.getCookie(url, key)` | 讀 cookie（寫入請用 `cookie.set`，見下） |
 | `java.androidId()`、`java.deviceID()` | 裝置識別碼。注意：**不是真 ANDROID_ID**，是一串 16 位小寫 hex（SHA256 派生），細節見[快速開始](quickstart.zh-Hant.md)的「提供裝置識別碼」與下方說明 |
-| `java.startBrowser(url)`、`java.startBrowserAwait(url)`、`java.showBrowser(baseUrl, html, preloadJS, configJSON)` | 開內建瀏覽器；四參數 `showBrowser` 支援高度、摺疊、可下拉關閉與圓角設定，其頁面內同步 `java.ajax/get/post/head/connect` 會沿用同一書源 session |
+| `java.startBrowser(url)`、`java.startBrowserAwait(url)`、`java.showBrowser(baseUrl, html, preloadJS, configJSON)` | 開內建瀏覽器；四參數 `showBrowser` 支援高度、摺疊、可下拉關閉與圓角設定，其頁面內同步 `java.ajax/get/post/head/connect` 會沿用同一來源配置 session |
 | `java.webView(...)`、`java.webViewGetSource(...)`、`java.webViewGetOverrideUrl(...)` | 無頭 WebView 執行頁面 JS，或依完整正則取得資源 URL／導向 URL |
 | `java.log(msg)`、`java.toast(msg)`、`java.longToast(msg)` | 除錯輸出／提示（`log` 會進「網路日誌」） |
 | `java.importScript(url)` | 引入遠端 JS |
@@ -50,10 +50,10 @@ Yuedu 可直接匯入 Legado 3.0 的書源 JSON 資料模型，但**不代表所
 | `java.setResponseBase64(b64)` | 設定響應內容（TTS 登入檢查用） |
 | `java.upLoginData(url)`、`java.reLoginView()` | 登入流程 |
 | `java.axja(code)` | aaencode 混淆解碼 |
-| `java.copyText(text)` | 複製到系統剪貼簿；登入／書源瀏覽器內的 `navigator.clipboard.writeText`、`document.execCommand('copy')` 也會轉接到系統剪貼簿 |
+| `java.copyText(text)` | 複製到系統剪貼簿；登入／來源配置瀏覽器內的 `navigator.clipboard.writeText`、`document.execCommand('copy')` 也會轉接到系統剪貼簿 |
 | `java.utf8ToGbk` — **沒有**（見下方清單） | — |
 
-### 不存在／缺損（書源報 `ERROR` 的來源）
+### 不存在／缺損（來源配置報 `ERROR` 的來源）
 
 以下 Legado API **沒有對應實作**，呼叫即失敗：
 
@@ -63,7 +63,7 @@ Yuedu 可直接匯入 Legado 3.0 的書源 JSON 資料模型，但**不代表所
 | `java.appVersion` | 不存在 | 自己寫死版本字串 |
 | `java.sha1`、`java.sha256`（單獨函式） | 名稱不同 | 用 `java.digestHex(x, "SHA1|SHA256")`；HMAC 必須用 `HMacHex`／`HMacBase64`，兩者不可互換 |
 | `java.md5` | 不存在 | 用 `java.md5Encode`（名稱不同！） |
-| `java.rsa…`／RSA 加解密 | 整個 RSA 不存在 | 無替代，此類書源無法使用 |
+| `java.rsa…`／RSA 加解密 | 整個 RSA 不存在 | 無替代，此類來源配置無法使用 |
 | `java.gzipDecode` | 不存在 | 目前支援壓縮：`java.gzipBytes(value)` 或 `Packages.cn.hutool.core.util.ZipUtil.gzip(value)`；不支援解壓 |
 | `java.downloadFile` | 不存在 | 無替代 |
 | `java.queryTTF`／`queryBase64TTF`／`replaceFont` | 不存在 | 無替代 |
@@ -71,7 +71,7 @@ Yuedu 可直接匯入 Legado 3.0 的書源 JSON 資料模型，但**不代表所
 | `java.utf8ToGbk` | 不存在 | 需要 GBK 時在 URL 選項設 `"charset":"gbk"` |
 | `java.getFile`／`readFile`／`readTxtFile`／`unzipFile`／`getTxtInFolder` | 不存在 | 無替代（本地檔案 API） |
 | `java.aesDecodeToByteArray`／`aesDecodeToString`／`aesEncodeToBase64…` | 名稱不同 | 用 `java.aesDecryptHex`／`aesEncryptHex`／`aesBase64Decode` |
-| `java.qread()` | **刻意 no-op** | 回傳空、不報錯。依賴它的書源會靜默失敗而非報 ERROR |
+| `java.qread()` | **刻意 no-op** | 回傳空、不報錯。依賴它的來源配置會靜默失敗而非報 ERROR |
 | `java.refreshExplore`／`refreshBookInfo`／`refreshBookToc`／`refreshContent` | no-op | — |
 | `java.openVideoPlayer` | 退化成開瀏覽器 | — |
 
@@ -79,7 +79,7 @@ Yuedu 可直接匯入 Legado 3.0 的書源 JSON 資料模型，但**不代表所
 
 ## 2. `Packages.*` 與 Java 類別白名單
 
-書源 JS 常直接 import Java 類別（`importClass(Packages.java.security.MessageDigest)` 等）。Yuedu **只註冊了以下類別**，白名單外的 `new`／呼叫會拋 `UnsupportedLegadoAPIError`（調試日誌會看到 `ERROR:`）：
+來源配置 JS 常直接 import Java 類別（`importClass(Packages.java.security.MessageDigest)` 等）。Yuedu **只註冊了以下類別**，白名單外的 `new`／呼叫會拋 `UnsupportedLegadoAPIError`（調試日誌會看到 `ERROR:`）：
 
 ```
 java.lang.String（含 getBytes）、java.lang.System（nanoTime/currentTimeMillis）
@@ -92,7 +92,7 @@ cn.hutool：DigestUtil.md5Hex、StrUtil.reverse、Base64.encode/decode
 okhttp3：MediaType.parse、RequestBody.create、Request.Builder、OkHttpClient
 ```
 
-`org.jsoup.*` 也有 polyfill，但**有損**：`Element.first()/last()` 回 null、`Connection.Response.headers()` 回 null、`statusCode()` 恆為 200。依賴 jsoup 物件導向操作的書源請改用規則引擎本身的功能。
+`org.jsoup.*` 也有 polyfill，但**有損**：`Element.first()/last()` 回 null、`Connection.Response.headers()` 回 null、`statusCode()` 恆為 200。依賴 jsoup 物件導向操作的來源配置請改用規則引擎本身的功能。
 
 ## 3. 模板變數的語意差異（最容易踩）
 
@@ -110,12 +110,12 @@ okhttp3：MediaType.parse、RequestBody.create、Request.Builder、OkHttpClient
 - 讀：`java.getCookie(url[,key])`、`cookie.get(url)`、`cookie.getKey(url,key)`
 - 寫：`cookie.set(url, "k=v; k2=v2")`、`cookie.setCookie(...)`、`cookie.replaceCookie(...)`（合併語意）
 - 刪：`cookie.remove(url)`、`java.removeCookie(url)`
-- **Cookie 罐永遠啟用**：書源的 `enabledCookieJar` 開關只是「承載並透明化」欄位，沒有實際作用——所有書源的 cookie 都會自動保存、自動帶上。請求沒帶 Cookkie 時，引擎會自動附上該域已存的 cookie。
+- **Cookie 罐永遠啟用**：來源配置的 `enabledCookieJar` 開關只是「承載並透明化」欄位，沒有實際作用——所有來源配置的 cookie 都會自動保存、自動帶上。請求沒帶 Cookkie 時，引擎會自動附上該域已存的 cookie。
 - `loginCheckJs`：每次頂層網路響應後執行，`result` 是 Legado `StrResponse`，可讀 body／狀態／標頭／cookie，也可呼叫 `source.putLoginHeader()` 更新登入標頭。儲存後，同一次 JS 執行中的下一個 `java.*`／`okhttp3` 請求就會帶上新標頭。
 
 ## 5. 正則差異（ICU ≠ Java）
 
-規則裡的 `##正則##` 用 **ICU 正則**執行。Legado 書源常見的 Java-only 語法會自動做近似轉換：
+規則裡的 `##正則##` 用 **ICU 正則**執行。Legado 來源配置常見的 Java-only 語法會自動做近似轉換：
 
 | Java 語法 | ICU | Yuedu 處理 |
 | --- | --- | --- |
@@ -128,7 +128,7 @@ okhttp3：MediaType.parse、RequestBody.create、Request.Builder、OkHttpClient
 使用注意：
 
 - 每次正則執行有 **2 秒超時**：災難性回溯的規則會直接回傳原值（不會卡死，但等於沒處理）
-- 依賴 possesive／atomic 精確語義的書源可能出現「結果跟 Legado 差一點」的情況，屬預期
+- 依賴 possesive／atomic 精確語義的來源配置可能出現「結果跟 Legado 差一點」的情況，屬預期
 
 ## 6. JSONPath 差異
 
@@ -155,20 +155,20 @@ okhttp3：MediaType.parse、RequestBody.create、Request.Builder、OkHttpClient
 | HTML 大小上限 | 超過 **4 MB** 的網頁會被截斷再解析（防記憶體爆掉） |
 | JS 執行 | JavaScriptCore；單次求值 30 秒超時，超時重置引擎（停在 `java.startBrowserAwait` 等使用者看網頁時不算）；`eval()` 保留開啟（Legado 混淆 jsLib 需要）；每段 JS 結果會自動處理 `result` 包裝 |
 | `setContent` | `java.setContent(content, baseUrl)` 可用，主路徑照樣執行 |
-| Cloudflare 挑戰 | 與 Legado 相同：網路請求不會自己跳驗證頁，回應照原樣交給書源。書源 JS 呼叫 `java.startBrowserAwait(url, title[, refetchAfterSuccess])` 時開網頁（帶書源標頭與 UA）；頁面上的 Cloudflare 挑戰一通過就自動完成，`refetchAfterSuccess` 預設 `true`＝帶著新 cookie 重抓原網址回傳，`false`＝回傳網頁 HTML。閱讀選單「開啟網頁」可手動開本章網頁過驗證 |
+| Cloudflare 挑戰 | 與 Legado 相同：網路請求不會自己跳驗證頁，回應照原樣交給來源配置。來源配置 JS 呼叫 `java.startBrowserAwait(url, title[, refetchAfterSuccess])` 時開網頁（帶來源配置標頭與 UA）；頁面上的 Cloudflare 挑戰一通過就自動完成，`refetchAfterSuccess` 預設 `true`＝帶著新 cookie 重抓原網址回傳，`false`＝回傳網頁 HTML。閱讀選單「開啟網頁」可手動開本章網頁過驗證 |
 | 段落縮排 | Legado 在 `replaceRegex` 後會自動每行補全形空格縮排，Yuedu **刻意不做**（可自行在替換規則加 `　　`） |
 | `respondTime`／`concurrentRate` | `respondTime` 作為 JS 網路請求（`java.ajax` 等）的超時（毫秒，下限 8 秒）；`concurrentRate` 做每源請求節流（SourceRateLimiter） |
-| 書源類型 | `bookSourceType` 0=文字、1=聽書、2=漫畫，決定內容路由，不會因此改用 WebView 傳輸 |
+| 來源配置類型 | `bookSourceType` 0=文字、1=聽書、2=漫畫，決定內容路由，不會因此改用 WebView 傳輸 |
 | 章節 URL 帶選項 | `tag.a@href##$##,{"webView":true}` 這類「URL+選項」寫法支援（`chapterUrl`、`nextContentUrl`、`nextTocUrl`、`ruleContent.content` 為 URL 時） |
 
-## 9. 書源壞掉的最常見 4 大原因
+## 9. 來源配置壞掉的最常見 4 大原因
 
 1. **JS 呼叫了白名單外的 API**（RSA／`java2js`／`gzipDecode`／檔案 API…）→ 調試日誌出現 `ERROR: UnsupportedLegadoAPIError` 或 `ERROR:`
 2. **規則字串裡用了 `{{key}}` 等 URL 專用變數** → 得到空字串或 `undefined`
 3. **用了 `{{js:…}}` 前綴** → JS 語法錯誤
 4. **正則／JSONPath 用了 Java-only 語法** → 結果與 Legado 不同或為空
 
-調試方法：把書源開進「調試規則」，逐段看日誌，`ERROR` 或「（空）」的那一段就是兇手。流程見[快速開始](quickstart.zh-Hant.md)。
+調試方法：把來源配置開進「調試規則」，逐段看日誌，`ERROR` 或「（空）」的那一段就是兇手。流程見[快速開始](quickstart.zh-Hant.md)。
 
 ## 下一步
 
