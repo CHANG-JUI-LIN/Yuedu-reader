@@ -10,7 +10,7 @@
 
 ## 0. 一句話
 
-作品是新加的一層，存在 `ReadingBook` 旁邊的獨立檔案裡，分成「可整個刪掉重建的索引」與「使用者的決定」兩份。`ReadingBook` 不改名、不換 id、不批次補欄位，成為作品底下的「閱讀副本」。所有來源只透過能力協定提供資料，既有的網路、認證、下載與閱讀管線全部沿用。
+作品是新加的一層，存在 `ReadingBook` 旁邊的獨立檔案裡，分成「可整個刪掉重建的索引」與「使用者的決定」兩份。`ReadingBook` 不改名、不換 id、不批次補欄位，成為作品底下的「閱讀副本」。所有來源只透過能力協定提供資料，既有的網路、認證、下載與閱讀管線全部沿用。iCloud 同步則改成以「實體」為合併單位（§15 的 Phase S）：書籍資料、閱讀狀態、每一筆書籤與使用者決定分開合併，裝置本地的狀態不再同步。
 
 ## 1. 目標與非目標
 
@@ -28,12 +28,13 @@
    - 網路書源
    - 書目資料庫
 4. 達成構想文件 §14 的最小可行驗證：同一個搜尋框搜尋書架、Calibre、OPDS 與一個網文 Metadata 來源，並把同一部作品合併成統一詳情頁（驗收條件見 §16）。
-5. 沒用過新功能的使用者，升級後的畫面、同步內容與閱讀進度完全不變。
+5. 沒用過新功能的使用者，升級後的畫面與閱讀進度完全不變；同步的改變只有「不再互相蓋掉」，不會遺失資料。
+6. iCloud 同步改以實體為單位：不同欄位、不同書籤的修改不再互相覆蓋；裝置本地狀態不再同步；另一台裝置不必重啟就能收到更新（§15 的 Phase S）。
 
 **非目標**
 
 - 不重新編號 `ReadingBook.id`，不改 `books_meta.json` 的格式。
-- 不做跨裝置的精確閱讀位置同步。現況本來就不同步（〈審計〉§6），這應該另案處理。
+- 精確閱讀位置現在完全不同步（〈審計〉§6）。它放在 Phase S3，前提是位置先帶上座標版本；在那之前不承諾。
 - 不做段評、付費章節、帳號池或段落比對（構想文件 §6.5）。
 - 第一版不開放下載第三方 JavaScript 模組（§14）。
 - 不做跨來源的個人化推薦。這需要先修改 `docs/design.md` 的規範（§17 第 6 項）。
@@ -51,18 +52,20 @@
 | §8.2「已建立索引的 WebDAV 書籍」 | 第一版不爬 WebDAV。統一搜尋只查各來源本身支援的搜尋，加上本機已知的紀錄。 | WebDAV 沒有伺服器端搜尋，建索引等於遞迴 PROPFIND（〈審計〉§8.2）；量測前不承諾。 |
 | §11 Phase 1 → 7 依序進行 | 前面加一個 Phase 0（補描述現況的測試、修錯誤語意），並以一條橫切各階段的「MVP 切片」先打通驗證 | 審計發現：搜尋把失敗當成功、WebDAV 瀏覽寫在 view 裡、自訂頁讀檔失敗會覆寫原檔。這些不先修，新層會建在錯的訊號上。 |
 | §3.1「為你推薦」 | v1 只用書架上的訊號：繼續閱讀、同作者、同系列 | `docs/design.md` 規定發現頁「不擅自重組成平台推薦流」（〈審計〉§12.4）。 |
+| §12「不丟失閱讀進度和使用者設定」，沒有提到同步 | 新增 Phase S：把 iCloud 同步改成以實體為單位（維護者 2026-10-08 提議納入本次改版） | 現在的同步以「整本書」為合併單位，不同欄位的修改會互相蓋掉，裝置本地狀態也被同步（〈審計〉§6.1）。作品層的決定也需要一個可靠的同步通道。 |
 
 ## 3. 決定
 
 **D1　`ReadingBook` 是閱讀副本（Copy）。**
-- 不換 id。
-- 不新增非 optional 欄位，也不為所有書批次寫入新欄位。
+- 不換 id。換 id 要改寫 25 個以上的儲存，卻解決不了任何問題；問題出在合併單位，不在 id。
+- `ReadingBook` 型別暫時保留，Phase S1 之後改成由各實體組合出來的檢視（§15 的 Phase S）。
+- 只要 `books_meta_v2` 還在同步，就不新增非 optional 欄位，也不為所有書批次寫入新欄位（〈審計〉§4.3）。
 - 進度、書籤、快取、離線下載、每本書設定，繼續掛在副本上。
 - 理由：位置 `(spineIndex, charOffset)` 只在同一個檔案或同一份線上目錄裡才有意義（〈審計〉§6）。
 
 **D2　作品層存在獨立檔案，分成「索引」與「決定」。**
 - 索引（Work、Edition、SourceRecord、識別碼與比對證據）完全由既有資料推導，可以隨時刪除重建，不同步。
-- 決定（手動合併、拆開、欄位覆寫、鎖定、選用的候選）是唯一的權威資料，量小，以後可以單獨同步。
+- 決定（手動合併、拆開、欄位覆寫、鎖定、選用的候選）是唯一的權威資料，量小。Phase S2 起以 v3 同步的 `WorkDecision` 實體同步（§15 的 Phase S）。
 
 **D3　決定綁在來源項目的鍵上，不綁在作品 id 上。**
 - 決定引用 `SourceItemKey`，例如「這兩個項目是同一部」「這兩個項目不是同一部」「這個項目的書名改成 X」。
@@ -72,7 +75,7 @@
 **D4　來源的鍵使用可攜的身分，不用裝置本地的 UUID。**
 - 網路書源用 `bookSourceUrl`，不用 `BookSource.id`（〈審計〉§5.2、§10.1）。
 - 書目與公有書庫用它們自己的編號。
-- 遠端書庫暫時用 `OPDSCatalog.id`，因為 v1 不同步；可攜鍵的規則見 §17 第 3 項。
+- 遠端書庫暫時用 `OPDSCatalog.id`，它是裝置本地的 UUID。作品決定在 Phase S2 開始同步之前，必須先定出可攜鍵（§17 第 3 項）。
 
 **D5　保守去重。**
 - 只有共同的外部識別碼，或同一個來源項目，才算確定是同一部作品。
@@ -403,7 +406,7 @@ B 級比現在的搜尋合併嚴格：現在只要一方作者為空就合併（
 | 位置 | 內容 | 性質 | 同步 |
 |---|---|---|---|
 | `Application Support/Works/index.json` | 作品、版本、來源紀錄、識別碼、比對證據 | 衍生，可重建 | 否 |
-| `Application Support/Works/decisions.json` | `WorkDecision` | **權威** | v1 否；v2 另議（§17 第 2 項） |
+| `Application Support/Works/decisions.json` | `WorkDecision` | **權威** | Phase S2 起經 v3 同步（§15 的 Phase S） |
 | `Application Support/Works/metadata/` | `MetadataValue`，依 `SourceItemKey` 分片 | 衍生，可重新抓取 | 否 |
 | `Caches/Works/` | 書目資料庫回應、封面候選 | 可丟棄 | 否 |
 
@@ -441,7 +444,54 @@ B 級比現在的搜尋合併嚴格：現在只要一方作者為空就合併（
 
 ## 11. 外部依據
 
-（2026-10-08 查證，待補。）
+2026-10-08 查證。這個環境的網路代理擋下 openlibrary.org、developers.google.com、jellyfin.org 與 manual.calibre-ebook.com；能直接讀到的是 Apple 審核指南，以及 GitHub 上的原始碼與文件。沒能讀到原文的項目已標明，實作前要再核對一次。
+
+### 11.1 App Store 審核指南
+
+來源：<https://developer.apple.com/app-store/review/guidelines/>（頁面沒有顯示更新日期）。
+
+| 條文 | 原文重點 |
+|---|---|
+| 2.5.2 | Apps「may not download, install, or execute code which introduces or changes features or functionality of the app, including other apps.」 |
+| 4.7 | 允許不在 binary 裡的「HTML5 and JavaScript mini apps and mini games, streaming games, chatbots, and plug-ins」，但 App 要為這些軟體負責，而且要遵守 4.7.1–4.7.5。 |
+| 4.7.1 | 遵守隱私規範（5.1）；提供過濾不當內容、檢舉與及時回應、封鎖濫用者的機制；販售數位商品要遵守 3.1。 |
+| 4.7.2 | 「Your app may not extend or expose native platform APIs or technologies to the software without prior permission from Apple.」 |
+| 4.7.3 | 未經使用者每一次的明確同意，不得把資料或隱私權限分享給個別軟體。 |
+| 4.7.4 | 必須提供軟體與 metadata 的索引，並以 universal link 連到每一個軟體。 |
+| 4.7.5 | 必須讓使用者辨識超出 App 年齡分級的軟體，並以驗證或申報的年齡限制未成年者存取。 |
+
+### 11.2 參考產品與做法
+
+| 對象 | 查到的事實 | 來源 |
+|---|---|---|
+| Forward 模組 | 每個模組是一個 JS 檔，開頭是 `WidgetMetadata`：<br>- 頂層：`id`、`title`、`description`、`author`、`site`、`version`、`requiredVersion`、`detailCacheDuration`、`modules[]`、選填的 `search`。<br>- 每個 module：`functionName`、`type`、`params`、`cacheDuration`、`requiresWebView`。<br>- 參數型別：`input`、`count`、`constant`、`enumeration`、`page`、`offset`。<br>- 執行環境提供 `Widget.http.get/post`、`Widget.html.load`（cheerio）、`Widget.storage`、`Widget.sharedCache`。 | <https://github.com/InchStudio/ForwardWidgets> |
+| Calibre 下載 metadata | 「calibre uses Google Books and Amazon. The metadata download can fill in Title, author, series, tags, rating, description and ISBN」。<br>有 ISBN 時，ISBN 優先於書名與作者。<br>批次下載可選只下載 metadata、只下載封面，或兩者都下載。 | calibre 原始碼 `manual/metadata.rst`（GitHub） |
+| Jellyfin | 每個項目有 `ProviderIds: Dictionary<string, string>`、`IsLocked`、`LockedFields: MetadataField[]`；`MetadataField` 包含 Name、Overview、Genres、Tags 等。 | jellyfin/jellyfin 的 `BaseItem.cs`、`MetadataField.cs` |
+| CKSyncEngine | 對應 WWDC23 第 10188 場〈Sync to iCloud with CKSyncEngine〉。<br>Apple 官方範例要求 iOS 17（beta 4）以上。<br>它依賴遠端推播，所以**模擬器無法正常同步，必須用真機或 Mac**。<br>範例附有模擬多台裝置的測試。 | <https://developer.apple.com/videos/play/wwdc2023/10188/>、<https://github.com/apple/sample-cloudkit-sync-engine> |
+
+### 11.3 書目資料庫
+
+| 來源 | 查到的事實 | 狀態 |
+|---|---|---|
+| Open Library | 以下來自第三方整理，未能讀到官方頁：<br>- 匿名約每秒 1 次；帶可識別的 User-Agent（App 名稱與聯絡方式）可提高額度。<br>- 不希望被當成服務的後端；大量需求請用每月資料傾印。<br>- 封面另有「每個 IP 每 5 分鐘 100 次」的舊限制，出自 2011 年的部落格。 | **實作前須讀 <https://openlibrary.org/developers/api> 原文** |
+| Google Books | 未能讀取條款原文。 | 實作前須確認 API key、配額、快取與顯示規定 |
+| 起點、番茄、晉江 | 本次沒有查證。構想文件 §6.3 已指出：能從公開網頁取得資料，不代表擁有重用、批量採集與封面再分發的權利。 | 條款審查前不內建（§17 第 4 項） |
+
+### 11.4 對設計的影響
+
+- **內建 provider 不受 4.7 約束。** 它們是 App 自己的 Swift 程式碼。
+- **宣告式規則模組風險最低（推論）。** 只有資料、沒有可執行碼，由既有規則引擎解譯；但仍是「下載後改變功能」的內容，上架前要確認審核立場。
+- **可下載的 JavaScript 模組屬於 4.7 的「plug-ins」。** 推論：模組需要的 HTTP 橋接（如 Forward 的 `Widget.http`、Legado 的 `java.ajax`）很可能落在 4.7.2「expose native platform APIs or technologies」的範圍，所以要先取得 Apple 的許可；另外還要做到 4.7.1 的檢舉與過濾、4.7.4 的索引與 universal link、4.7.5 的年齡限制。
+- **既有的 Legado 書源已經有 JavaScript 橋接**（〈審計〉§10.3）。這是既有風險。本計畫不擴大它，也不讓新模組沿用它。
+- **Open Library 的請求方式：**
+  - 沿用 App 已經在送的 `Yuedu/<版本> (iOS; +https://yuedureader.com/support)` User-Agent（`Technotes/PublicLibraries.md`）；
+  - 只在使用者動作時查詢，不批次、不預抓；
+  - 封面請求另外限速。
+- **Calibre 與 Jellyfin 的做法對應到本計畫：**
+  - `ProviderIds` 對應 `ExternalIdentifier`；
+  - `LockedFields` 對應 `lock` 決定；
+  - Calibre 的「ISBN 優先」對應 §7.2 的 A 級。
+- **CKSyncEngine 要求真機驗收。** 本專案近期的驗證多半只用模擬器（例如 `Technotes/RemoteLibraryReading.md`），所以 Phase S 的驗收要另外安排兩台真機（§15 的 Phase S）。
 
 ## 12. 統一搜尋
 
@@ -546,7 +596,33 @@ BookSearchView（或新的統一搜尋頁）
 
 ### 14.2 模組系統
 
-（依 §11 的查證補完。）
+依 §11 的條文，分四步。每一步都可以單獨停下，不影響前一步。
+
+1. **內建 provider 的宣告（編譯期）。**
+   - 每個內建 provider 宣告一份 `ProviderManifest`：`id`、`type`、顯示名稱、能力、會連線的主機、限速、可用區域、`searchPolicy`、`loadPolicy`。
+   - 這就是構想文件 Phase 6 的「Capability Protocol」與「模組 Manifest」，但不涉及下載任何東西。
+2. **Legado 書源用同一份宣告描述。**
+   - 依書源實際有的規則推導能力：有搜尋規則就有 `CatalogSearching`，有發現規則就有 `HomeSectionProviding`，有詳情規則就有 `MetadataProviding`，有目錄與正文規則就能線上閱讀。
+   - 書源因此進入同一個註冊表。執行仍走 `BookSourceSession`，不另開路徑。
+3. **宣告式規則模組。**
+   - 讓使用者匯入「只有規則、沒有 JavaScript」的模組，提供瀏覽、搜尋或 Metadata。
+   - 由既有的 `ModernRuleEngine` 解譯 CSS／XPath／JSONPath／Regex。
+   - 網路一律走 `WebFetcher`，因此套用 `safeURL`、限速與 User-Agent。
+   - 使用者自己加的 OPDS 連線，本質上就是這一類。
+4. **JavaScript 模組（v1 不做）。** 開工前必須先具備下列全部條件：
+   - Apple 依 4.7.2 給予的許可。
+   - 全新的最小橋接：
+     - 只有經 `WebFetcher` 的 HTTP，並以模組為單位設定主機白名單；
+     - 沒有共用 cookie、沒有 `deviceID`、沒有 WebView；
+     - 不能 `importScript` 或 `eval` 遠端程式碼。
+   - 真正能中止的執行：現在的 watchdog 只放棄佇列，腳本仍在跑（〈審計〉§10.3）。
+   - 4.7.4 的模組索引與 universal link；4.7.1 的檢舉與封鎖；4.7.5 的年齡分級；4.7.3 的逐次資料分享同意。
+
+**安裝與更新**（第 3、4 步）：
+
+- 以訂閱網址安裝，比照 Legado 的網路導入與 Forward 的 `.fwd`。
+- manifest 帶 `requiredVersion`，版本不符就拒絕安裝。
+- 每個模組有自己獨立的儲存，比照 Forward 的 `Widget.storage`；移除模組時一併清除。
 
 ## 15. 遷移步驟
 
@@ -578,6 +654,74 @@ BookSearchView（或新的統一搜尋頁）
 | 1d | `WorkDecisionsStore`＋`MetadataResolver`；在三條覆寫路徑檢查鎖定 | `BookStore`（線上刷新）、`RemoteLibraryWritingService` | 鎖定後刷新不改書名；沒有鎖定時，行為與現況相同 |
 
 **Phase 1 的回退：** 關閉旗標，刪除 `Works/`。`ReadingBook` 與同步內容完全沒有變動。
+
+### Phase S　同步 v3（與 Phase 1–4 平行；維護者 2026-10-08 提議納入本次改版）
+
+**為什麼要改**（〈審計〉§6.1）
+
+- **合併單位太大。** 整本書是一個合併單位，A 讀了幾頁、B 加了書籤，同步後一邊的修改會消失。
+- **裝置本地狀態也被同步。** 離線下載狀態與任務、相容性降級都在同一筆裡，而且會讓整本書被當成「現在修改」。
+- **偵測修改靠雜湊。** 編碼穩定性因此成了正確性的前提，已經出過一次事故。這也是 D1「不能批次補欄位」的根源。
+- **精確位置不同步；書籤整批覆蓋。**
+- **每次都整檔上傳，也沒有推播。** 另一台裝置要等下一次啟動或進背景。
+
+**實體切分**
+
+| 實體 | 內容 | 同步 | 衝突規則 |
+|---|---|---|---|
+| `LibraryItem` | id、書名、作者、分組、是否在書架、加入時間、來源描述（§5 的 `SourceItemKey` 與取得所需欄位）、封面參照 | 是 | 每個欄位各自「較新者勝」 |
+| `ReadingState` | 進度比例、最後閱讀時間、精確位置＋座標版本、漫畫與有聲書的位置 | 是 | 閱讀時間較新者勝；座標版本不符時只採用比例 |
+| `Annotation` | 每一筆書籤、劃線、筆記 | 是 | 每筆獨立；刪除留墓碑 |
+| `BookSettings` | 有聲書播放設定、渲染器偏好；`BookReaderSettings` 是否納入待決（§17 第 15 項） | 是 | 每個欄位各自較新者勝 |
+| `WorkDecision` | §5 的決定 | 是 | 每筆獨立；「不同作品」優先於「同一作品」 |
+| 裝置本地 | 離線下載狀態與任務、相容性降級、快取檔名、目錄與它的摘要、內容檔在本機的路徑 | **否** | — |
+
+**傳輸：CKSyncEngine**
+
+- 用自訂的 record zone，一個實體一筆 `CKRecord`。
+- 以 change token 增量抓取，不再每次下載、上傳整個書架。
+- 衝突以 `serverRecordChanged` 逐筆處理，套用上表的規則。
+- 需要遠端推播：另一台裝置不必重啟就收到更新。模擬器收不到推播（§11.2），所以驗收必須用真機。
+- 書檔與封面檔沿用現有的 `bookfile_*` 檔案紀錄，這一階段不搬。
+- 書源、取代規則、閱讀設定等其他同步類型，先維持 v2。
+
+**本機：`ReadingBook` 變成組合出來的檢視**
+
+- **分檔存放。** 本機也依實體分檔存放；每個實體帶自己的修改時鐘，裝置本地欄位另存。
+- **型別暫時保留。** `ReadingBook` 由 `BookStore` 從各實體組合出來，100 多個呼叫點不必同時改，之後逐步換成較窄的型別。
+- **`ReadingBook.id` 不變**（D1）。
+- **`books_meta.json` 繼續產生。** 它是投影，供三種用途：iCloud 手動備份、WebDAV 備份、回退。舊備份的還原永遠支援。
+
+**過渡**
+
+| 階段 | 內容 | 舊版本裝置 |
+|---|---|---|
+| S1 | 本機依實體拆分，`ReadingBook` 改成組合出來的檢視；同步仍是 v2 | 不受影響 |
+| S2 | 啟用 v3（CKSyncEngine），同時把 v3 的結果投影寫回 `books_meta_v2`；作品決定開始同步 | 照常同步，但仍以整本書為單位 |
+| S3 | 精確位置帶上座標版本後開始同步。青空設計已要求「同步的閱讀位置要先帶上座標版本，才能上線任何座標遷移」（`docs/superpowers/specs/2026-10-05-aozora-bunko-support-design.md`） | 不受影響 |
+| S4 | 停寫 `books_meta_v2` | 不再收到更新 |
+
+S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊版本裝置。停寫前，App 內提示「請更新其他裝置」。
+
+- **第一次啟用 v3：** 以本機資料加上當下 v2 的合併結果作為種子。只做一次，並以 journal 記錄，中斷可以續跑；做法比照 TXT 位置遷移（〈審計〉§6）。
+- **回退：** S2 期間 v2 一直在寫，所以關閉 v3 旗標就回到 v2。
+
+**驗收**
+
+- **單元測試：** 比照 Apple 範例，模擬多台裝置交錯修改。
+  - A 改進度、B 加書籤：兩邊的修改都保留。
+  - A 刪書籤、B 改同一筆的筆記：依墓碑規則處理。
+  - 裝置本地欄位不出現在任何上傳的 record 裡。
+- **兩台真機：**
+  - 推播後，另一台不重啟就看到更新。
+  - S2 期間，舊版本裝置照常收到書架的變動。
+- **舊資料：** 以實際的 `books_meta.json` 做遷移 fixture，包含舊鍵與舊書籤格式；遷移前後逐本比對。取得使用者資料須經本人同意。
+
+**與其他階段的關係**
+
+- **不必等 Phase S 的部分：** Phase 1 的作品索引只存本機、可以重建；MVP 切片也全在本機。
+- **要等 Phase S 的部分：** 作品決定的同步，以及以後的精確位置同步。
+- **Phase 1d 的鎖定在 S2 之前只在本機有效：** 欄位時鐘解決的是兩台裝置的衝突，不能取代鎖定，因為來源的刷新總是比較新。所以鎖定仍需要，S2 起跟著作品決定一起同步。
 
 ### Phase 2　來源協定（構想文件 Phase 2）
 
@@ -612,7 +756,7 @@ BookSearchView（或新的統一搜尋頁）
 
 ### MVP 切片
 
-構想文件 §14 的驗證不必等七個階段全部完成。最小的切片是：
+構想文件 §14 的驗證不必等七個階段全部完成，也不必等 Phase S，因為驗證全部在本機進行。最小的切片是：
 
 - 0a、0b、0e；
 - 1a–1d；
@@ -669,9 +813,9 @@ BookSearchView（或新的統一搜尋頁）
 1. **B 級自動歸併：** 書名＋作者完全相符時要不要自動歸併？
    - 建議：要，但標示依據，並可以拆開。
    - 只用在新的作品層與統一搜尋。
-2. **`decisions.json` 是否同步、何時同步：**
-   - 建議 v1 不同步。
-   - v2 用 iCloud 獨立 record，不放進 `books_meta`，以免影響書籍雜湊。
+2. **`decisions.json` 何時同步：**
+   - 建議在 Phase S2 起，以 v3 同步的 `WorkDecision` 實體同步。
+   - 不放進 `books_meta_v2`，以免影響書籍雜湊。
 3. **遠端連線的可攜鍵：** `OPDSCatalog.id` 是裝置本地的 UUID。同步決定之前，必須定出跨裝置的連線身分，例如「類型＋正規化網址＋使用者名稱」。
 4. **起點、番茄等網文平台的內建解析：**
    - 需要先審查條款，看能否取得結構化資料、能否顯示與快取封面。
@@ -688,6 +832,18 @@ BookSearchView（或新的統一搜尋頁）
 10. **WebDAV 索引：** 是否提供逐連線、opt-in、深度與數量有上限的建索引？
 11. **第三方 JavaScript 模組：** 是否向 Apple 申請 4.7.2 的許可（§11、§14.2）？在那之前只做宣告式模組。
 12. **上線方式：** 統一搜尋與新首頁，是否先以設定中的實驗開關上線？
+13. **同步 v3 的傳輸：**
+    - 是否採用 CKSyncEngine？
+    - 它需要遠端推播權限，而且驗收必須用兩台真機（§11.2）。
+14. **過渡期：**
+    - `books_meta_v2` 要雙寫幾個版本？
+    - 停寫的條件是什麼？
+    - 是否需要 App 內的「請更新其他裝置」提示？
+15. **同步範圍：** 每本書的閱讀設定（`BookReaderSettings`）是否進 v3？
+    - 現在它不同步。
+    - 同步後，另一台裝置會跟著改字體與行距。
+16. **其他同步類型：** 書源、取代規則、閱讀設定是否也改成實體同步？
+    - 建議這次只做書庫，其他維持 v2。
 
 ## 18. 風險
 
@@ -702,6 +858,9 @@ BookSearchView（或新的統一搜尋頁）
 | 私人書庫的書名外流 | 索引只在本機；書目查詢需要明確開啟；日誌依 privacy 標記處理 |
 | 範圍蔓延到排版引擎 | 本計畫不碰 `Modules/Core/ReaderCore/` |
 | 自訂探索頁遷移失敗、使用者的頁消失 | 0d 先修；遷移前備份原檔；解碼失敗時保留舊檔，不寫新檔 |
+| 同步重做時遺失資料：這是整個計畫中風險最高的改動 | S1 不改同步；S2 雙寫並可關旗標回退；種子遷移有 journal；以實際資料做 fixture 逐本比對 |
+| 新舊版本裝置並存時，資料互相覆蓋 | S2 把 v3 的結果投影回 `books_meta_v2`；S4 的停寫要有明確條件與提示 |
+| 只用模擬器驗證不到推播與多裝置 | Phase S 的驗收另外安排兩台真機（§11.2） |
 
 ## 19. 每一步的回歸測試
 
@@ -715,6 +874,7 @@ BookSearchView（或新的統一搜尋頁）
 | Phase 2 | 遠端書庫與 OPDS 全部類別；`RemoteLibraryNavigationUITests` |
 | Phase 4 | `IOS17SearchResultTableTests`、`ChangeSourceMatchTests`、`SearchRecentsTests` |
 | Phase 5 | `ExploreModeTests`、`PublicLibraryAvailabilityTests`、`CustomExplorePageTests`、`ExploreNavigationAndMetadataTests`、`PublicLibraryExploreUITests` |
+| Phase S（同步 v3） | `BookStoreMetadataWriteBudgetTests`、`RemoteReadingRecordTests`、`BookmarkStablePositionTests`、`ICloudAudioSyncExclusionTests`，加上新的多裝置模擬測試與兩台真機驗收 |
 | 任何新字串 | `ruby scripts/check_localizations.rb`（五種語言） |
 
 照 `CLAUDE.md`：

@@ -23,6 +23,7 @@ App 裡真正的實體只有一個，就是 `ReadingBook`。它同時扮演作�
    - iCloud 以每本書的雜湊偵測修改（`Modules/Services/iCloud/ICloudSyncManager.swift:500-506`）。雜湊一變，該筆就被記為「現在修改」（`ICloudSyncManager.swift:870-903`），在合併時勝出。
    - 對每本書補寫一個欄位，等於讓這台裝置的舊進度蓋掉其他裝置的新進度。
    - 模型註解已寫明這條規則（`Models.swift:284-290`、`Models.swift:643-644`）。所以作品層必須存在 `ReadingBook` 以外的獨立儲存。
+   - 同步本身以「整本書」為合併單位，詳見 §6.1。
 4. **Metadata 沒有來源紀錄。**
    - 書名與作者只有一份，下列寫入者都直接覆寫它：
      - 使用者編輯（`BookStore.swift:1228-1234`）；
@@ -205,6 +206,29 @@ App 裡真正的實體只有一個，就是 `ReadingBook`。它同時扮演作�
 | iCloud 書檔 | `"bookfile_" + SHA256(檔名)`（`ICloudSyncManager.swift:1240`） | 本機內容檔、青空原檔、`coverImagePath` |
 | iCloud 手動備份 | 整個 `books_meta.json` | 覆寫後 `reloadFromDisk` |
 | WebDAV 備份 | 整個 `/yuedu/books.json`（`Modules/Services/WebDAV/WebDAVManager.swift:176-221`） | 不合併、不含檔案與位置 |
+
+### 6.1 iCloud 同步的結構
+
+| 部分 | 現況 |
+|---|---|
+| 傳輸 | CloudKit 私有資料庫（`ICloudSyncManager.swift:223-235`）。每一種資料（書架、書源、取代規則、閱讀設定等）各是**一筆** `CKRecord`，內容是一個 JSON 檔（CKAsset）（`ICloudSyncManager.swift:163-175`、`ICloudSyncManager.swift:843`）。 |
+| 合併單位 | 檔內每個項目是 `CloudSyncRecord { id, value, updatedAt, deleted }`（`ICloudSyncManager.swift:20-25`）。一本書就是一個項目：書名、分組、進度、書籤、封面、離線下載狀態全在同一個 `value` 裡。 |
+| 偵測修改 | 本機保留一份 shadow，記錄每個 id 的雜湊與時間。雜湊與上次同步不同，就視為本機修改，時間記為「現在」（`ICloudSyncManager.swift:870-903`）。 |
+| 雜湊的脆弱處 | 雜湊來自 `.sortedKeys` 的 JSON 編碼。註解記錄了 2026-09-23 的事故：鍵的順序不穩定，每次同步都把每本書當成修改，蓋掉了其他裝置較新的內容（`ICloudSyncManager.swift:847-855`）。 |
+| 合併方式 | 每次同步都下載整個檔、逐項「較新者勝」、再上傳整個檔（`ICloudSyncManager.swift:554-597`）。 |
+| 套用到本機 | 以遠端那一筆**整筆取代**本機紀錄，只保留本機的目錄（`BookStore.swift:2348-2405`）。 |
+| 時機 | 開啟自動同步時，只在啟動與進入背景時同步，另外加上使用者手動（`yuedu_appApp.swift:226-228`、`263-265`）。沒有 CloudKit 訂閱或推播，所以另一台裝置要等下一次啟動或進入背景才會收到。 |
+| 舊版本 | 2026-10-05 才把舊的 `books_meta`（整個陣列）拆成 `books_meta_v2`。新版本會收養舊版本裝置新增的書（`BookStore.swift:2413-2433`）。 |
+
+由合併規則推得的後果（推論）：
+
+- **不同欄位的修改會互相蓋掉。** A 讀了幾頁、B 加了一個書籤，同步後只留下較晚被標記修改的那一整筆，另一邊的修改消失。
+- **裝置本地狀態也在同一筆裡。** 離線下載狀態與任務、相容性降級都會同步：
+  - A 的下載進度一變，整本書就成了「現在修改」，可能在合併時蓋掉 B 較新的書籤或進度。
+  - B 也會收到 A 的下載狀態；實際是否已下載，以磁碟為準（`Technotes/OfflineDownloadContract.md` 的不變量 3）。
+- **打開一本書也會改變合併時鐘。** 合併時鐘是 `lastOpenedDate`，所以打開書本身就會讓這一整筆在合併時勝出。
+- **精確位置不同步**（見上表）。
+- **成本隨書架成長。** 每次同步都下載並上傳整個書架檔。
 
 對新模型的意義有三點：
 
