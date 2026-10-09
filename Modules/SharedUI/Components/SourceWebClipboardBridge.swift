@@ -69,10 +69,13 @@ final class SourceWebClipboardBridge: NSObject, WKScriptMessageHandlerWithReply 
         )
     }
 
+    // Matches the SDK requirement exactly (`WK_SWIFT_UI_ACTOR` on the protocol and the reply
+    // block). Without the annotations, complete concurrency checking rejects the conformance.
+    @MainActor
     func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage,
-        replyHandler: @escaping (Any?, String?) -> Void
+        replyHandler: @escaping @MainActor (Any?, String?) -> Void
     ) {
         guard message.name == Self.messageName else {
             replyHandler(false, nil)
