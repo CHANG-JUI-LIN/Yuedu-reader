@@ -181,6 +181,9 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
         // Crash/diagnostics context must come up right after Firebase is configured,
         // so launch-time crashes and MetricKit payloads carry breadcrumbs.
         MetricKitDiagnosticReporter.shared.start()
+        CrashContext.identifyInstall()
+        // After Firebase: it reports a stall the previous run died in through Crashlytics.
+        MainThreadMonitor.shared.start()
         CrashContext.breadcrumb("app launch (build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
         UNUserNotificationCenter.current().delegate = self
         RSSNotificationManager.shared.start()

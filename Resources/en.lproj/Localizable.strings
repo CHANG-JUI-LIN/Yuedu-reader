@@ -3626,3 +3626,18 @@
 "瀏覽所有分類" = "Browse All Categories";
 "無法載入書庫" = "Unable to Load Library";
 "出版社" = "Publisher";
+
+/* Diagnostics: send report to developer */
+"傳送給開發者" = "Send to Developer";
+"傳送中…" = "Sending…";
+"傳送診斷紀錄給開發者？" = "Send Diagnostic Log to the Developer?";
+"會傳送這次啟動的完整紀錄（含書名與書源網址；帳號、密碼與網址參數已移除）、裝置型號、系統與 App 版本，以及書架、書源的數量。不包含書的內容。" = "This sends the full log of this launch (including book titles and book source addresses; accounts, passwords and URL parameters are removed), your device model, system and app version, and how many books and book sources you have. No book content is included.";
+"簡單描述發生了什麼（選填）" = "What happened? (optional)";
+"傳送" = "Send";
+"已傳送" = "Sent";
+"回報編號：%@。把這個編號告訴開發者，就能找到你的紀錄。" = "Report number: %@. Give this number to the developer so they can find your log.";
+"複製編號" = "Copy Number";
+"傳送失敗" = "Couldn’t Send";
+"%@\n可以改用「匯出紀錄」把檔案分享給開發者。" = "%@\nYou can use Export Log to share the file with the developer instead.";
+"回報服務目前無法使用。" = "The report service isn’t available right now.";
+"紀錄無法壓縮。" = "The log couldn’t be compressed.";

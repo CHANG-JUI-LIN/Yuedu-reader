@@ -194,6 +194,7 @@ struct yuedu_appApp: App {
                     ICloudSyncManager.shared.bind(bookStore: bookStore)
                     SharedImportQueueDrainer.shared.bind(bookStore: bookStore)
                     WebDAVManager.shared.bind(bookStore: bookStore)
+                    DiagnosticScale.publish(bookStore: bookStore, reason: "launch")
                     _ = FirebaseAuthManager.shared
                     Task {
                         await AppDependencies.live.offlineDownloadManager
@@ -229,6 +230,7 @@ struct yuedu_appApp: App {
                     }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
+                    MainThreadMonitor.shared.notePhase(String(describing: newPhase))
                     // Diagnostics session bookkeeping: reaching the background is
                     // this app's definition of "survived", and is also the last
                     // reliable moment to get buffered log lines onto disk.
@@ -236,6 +238,7 @@ struct yuedu_appApp: App {
                     case .background:
                         DiagnosticLog.shared.noteEnteredBackground()
                         BookSourceStore.shared.flushPendingWrites()
+                        DiagnosticScale.publish(bookStore: bookStore, reason: "background")
                     case .active: DiagnosticLog.shared.noteBecameActive()
                     default: break
                     }
@@ -313,6 +316,15 @@ enum ChapterUpdater {
 
         let onlineBooks = await MainActor.run { bookStore.books.filter { $0.isOnline } }
         guard !onlineBooks.isEmpty else { return }
+        // Bracketed in the Crashlytics log: a hang, CPU or disk-write report that arrives
+        // during or after it shows the refresh was running and how big it was.
+        let started = SourcePerfTrace.now
+        CrashContext.breadcrumb("refresh.all start books=\(onlineBooks.count) auto=\(auto)")
+        defer {
+            CrashContext.breadcrumb(
+                "refresh.all end books=\(onlineBooks.count) ms=\(Int((SourcePerfTrace.now - started) * 1000))"
+            )
+        }
 
         let maxConcurrentTasks = AppConfig.startupRefreshMaxConcurrentTasks
         await withTaskGroup(of: Void.self) { group in

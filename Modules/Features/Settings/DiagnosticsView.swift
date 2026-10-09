@@ -26,6 +26,8 @@ struct DiagnosticsView: View {
     /// inside `body` would hand SwiftUI a different value on every render and make
     /// the export control point at a different filename after state updates.
     @State private var exportFilename = DiagnosticReportBundle.filename()
+    @State private var showSendConfirmation = false
+    @State private var sendNote = ""
 
     enum SeverityFilter: String, CaseIterable, Identifiable {
         case all
@@ -119,6 +121,20 @@ struct DiagnosticsView: View {
                     reportableCount > 0 ? localized("匯出並回報") : localized("匯出紀錄")
                 )
                 .accessibilityIdentifier("diagnostics_export_button")
+
+                Button {
+                    sendNote = ""
+                    showSendConfirmation = true
+                } label: {
+                    Label(
+                        model.isSending ? localized("傳送中…") : localized("傳送給開發者"),
+                        systemImage: "paperplane"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .disabled(model.isSending || model.isLoading)
+                .accessibilityIdentifier("diagnostics_send_button")
             } footer: {
                 Text(localized("包含這次啟動的完整紀錄，不受下方篩選影響。"))
                     .dsSectionFooter()
@@ -256,6 +272,25 @@ struct DiagnosticsView: View {
             Text(localized("清除後無法復原。如果要回報問題，請先匯出。"))
         }
         .sheet(item: $pendingShare) { ShareExportSheet(export: $0) }
+        .alert(localized("傳送診斷紀錄給開發者？"), isPresented: $showSendConfirmation) {
+            TextField(localized("簡單描述發生了什麼（選填）"), text: $sendNote)
+            Button(localized("傳送")) { model.sendReport(exportBundle, note: sendNote) }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(localized("會傳送這次啟動的完整紀錄（含書名與書源網址；帳號、密碼與網址參數已移除）、裝置型號、系統與 App 版本，以及書架、書源的數量。不包含書的內容。"))
+        }
+        .alert(
+            model.sendOutcome?.title ?? "",
+            isPresented: $model.isShowingSendOutcome,
+            presenting: model.sendOutcome
+        ) { outcome in
+            if case .sent(let receipt) = outcome {
+                Button(localized("複製編號")) { UIPasteboard.general.string = receipt.reportID }
+            }
+            Button(localized("好"), role: .cancel) {}
+        } message: { outcome in
+            Text(outcome.message)
+        }
         .alert(localized("已複製"), isPresented: $showCopiedAlert) {
             Button(localized("好"), role: .cancel) {}
         } message: {
@@ -289,6 +324,32 @@ final class DiagnosticsViewModel: ObservableObject {
     /// Bumped when the log is exported or copied. Nothing reads the value — publishing
     /// it is what makes `reportableCount` recompute against the new watermark.
     @Published private(set) var acknowledgementRevision = 0
+    @Published private(set) var isSending = false
+    @Published private(set) var sendOutcome: SendOutcome?
+    @Published var isShowingSendOutcome = false
+
+    enum SendOutcome: Equatable {
+        case sent(DiagnosticReportUploader.Receipt)
+        case failed(String)
+
+        var title: String {
+            switch self {
+            case .sent: localized("已傳送")
+            case .failed: localized("傳送失敗")
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .sent(let receipt):
+                String(format: localized("回報編號：%@。把這個編號告訴開發者，就能找到你的紀錄。"), receipt.reportID)
+            case .failed(let reason):
+                // Sending needs Google's servers, which some networks cannot reach; the
+                // file export does not, so it is offered as the way round.
+                String(format: localized("%@\n可以改用「匯出紀錄」把檔案分享給開發者。"), reason)
+            }
+        }
+    }
 
     private var acknowledgementObserver: NSObjectProtocol?
 
@@ -338,6 +399,24 @@ final class DiagnosticsViewModel: ObservableObject {
                 self?.uncleanSessions = unclean
                 self?.isLoading = false
             }
+        }
+    }
+
+    /// The view's one call: rendering, compressing and uploading belong to the uploader.
+    func sendReport(_ bundle: DiagnosticReportBundle, note: String) {
+        guard !isSending else { return }
+        isSending = true
+        Task {
+            let outcome: SendOutcome
+            do {
+                outcome = .sent(try await DiagnosticReportUploader.upload(bundle, note: note))
+            } catch {
+                AppLogger.network("Diagnostic report upload failed", error: error)
+                outcome = .failed(error.localizedDescription)
+            }
+            isSending = false
+            sendOutcome = outcome
+            isShowingSendOutcome = true
         }
     }
 

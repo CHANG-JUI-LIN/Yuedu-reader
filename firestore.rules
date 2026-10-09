@@ -66,5 +66,27 @@ service cloud.firestore {
       ]);
       allow read, update, delete: if false;
     }
+
+    // Diagnostic logs a user chooses to send from 設定 → 診斷與回報
+    // (`DiagnosticReportUploader`). Anonymous create-only, whitelisted fields, bounded
+    // sizes; the document id is the report number the user quotes. Nothing is readable
+    // from a client — the developer reads them with admin credentials
+    // (scripts/decode_diagnostic_report.py).
+    match /diagnosticReports/{reportId} {
+      allow create: if reportId.matches('YD-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}')
+        && request.resource.data.keys().hasOnly([
+          "reportId", "createdAt", "appVersion", "build", "osVersion", "device", "locale",
+          "installId", "scale", "note", "payload", "payloadBytes", "payloadEncoding",
+          "keptEntries", "totalEntries"
+        ])
+        && request.resource.data.reportId == reportId
+        && request.resource.data.payload is bytes
+        && request.resource.data.payload.size() <= 900000
+        && request.resource.data.note is string
+        && request.resource.data.note.size() <= 2000
+        && request.resource.data.scale is string
+        && request.resource.data.scale.size() <= 1000;
+      allow read, update, delete: if false;
+    }
   }
 }

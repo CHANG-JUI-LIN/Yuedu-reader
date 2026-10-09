@@ -93,32 +93,41 @@ final class MetricKitDiagnosticReporter: NSObject, MXMetricManagerSubscriber, @u
     }
 
     private func report(kind: String, summary: String, callStack: MXCallStackTree, meta: MXMetaData) {
-        let stackJSON = String(data: callStack.jsonRepresentation(), encoding: .utf8) ?? "<unavailable>"
+        let treeData = callStack.jsonRepresentation()
+        let stackJSON = String(data: treeData, encoding: .utf8) ?? "<unavailable>"
         let metaJSON = String(data: meta.jsonRepresentation(), encoding: .utf8) ?? "{}"
+        let buildNote = "build=\(meta.applicationBuildVersion)"
+
+        let path: MetricKitCallStack?
+        do {
+            path = try MetricKitCallStack.heaviestPath(fromJSON: treeData)
+        } catch {
+            path = nil
+            log.error("⟐ MetricKit \(kind, privacy: .public): call stack tree unreadable: \(error.localizedDescription, privacy: .public)")
+        }
+        let readablePath = path?.summary() ?? "<no call stack>"
 
         // Full detail to the device log (Console / sysdiagnose).
-        log.error("⟐ MetricKit \(kind, privacy: .public): \(summary, privacy: .public)\nmeta=\(metaJSON, privacy: .public)\ncallStack=\(stackJSON, privacy: .public)")
+        log.error("⟐ MetricKit \(kind, privacy: .public): \(summary, privacy: .public)\nmeta=\(metaJSON, privacy: .public)\nheaviest=\(readablePath, privacy: .public)\ncallStack=\(stackJSON, privacy: .public)")
 
-        // And to Crashlytics as a non-fatal so it surfaces in the dashboard with the
-        // call stack attached. (Truncate the stack: Crashlytics value limits.)
-        // The user-visible copy. `detail` carries the whole payload: the call stack is
-        // the entire value of a crash report, and truncating it here would leave the
-        // in-app report strictly worse than the dashboard's.
+        // The user-visible copy keeps the whole tree: it is the entire value of the report.
         DiagnosticLog.shared.record(
             severity: .fault,
             category: .crash,
             message: "\(kind): \(summary)",
-            detail: "meta=\(metaJSON)\ncallStack=\(stackJSON)"
+            detail: "meta=\(metaJSON)\nheaviest path (leaf first):\n\(readablePath)\ncallStack=\(stackJSON)"
         )
 
         CrashContext.breadcrumb("MetricKit \(kind): \(summary)")
-        CrashContext.recordNonFatal(
-            domain: "MetricKitDiagnostic.\(kind)",
-            message: "\(kind): \(summary)",
-            extra: [
-                "meta": String(metaJSON.prefix(900)),
-                "callStackTree": String(stackJSON.prefix(7000)),
-            ]
+        // Recorded as an exception model with the heaviest path as its stack: Crashlytics
+        // symbolicates the addresses against the uploaded dSYM and groups each culprit into
+        // its own issue. (As one `NSError` domain, all 49 hangs of a month were one issue
+        // whose stack was the reporter itself.)
+        CrashContext.recordMetricKitDiagnostic(
+            kind: kind,
+            reason: "\(summary) \(buildNote)",
+            frames: path?.frames ?? [],
+            extra: ["meta": String(metaJSON.prefix(900)), "heaviestPath": String(readablePath.prefix(1000))]
         )
     }
 }

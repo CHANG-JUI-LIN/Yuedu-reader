@@ -38,7 +38,14 @@ enum SourcePerfTrace {
         _ body: () throws -> T
     ) rethrows -> T {
         let t0 = ProcessInfo.processInfo.systemUptime
-        defer { record(stage, detail(), since: t0, thresholdMs: thresholdMs) }
+        // A synchronous span on the main thread is, while it runs, what the main thread is
+        // doing: `MainThreadMonitor` names it when the main thread stops answering.
+        let onMain = Thread.isMainThread
+        if onMain { MainThreadActivity.push(stage) }
+        defer {
+            if onMain { MainThreadActivity.pop() }
+            record(stage, detail(), since: t0, thresholdMs: thresholdMs)
+        }
         return try body()
     }
 
@@ -64,8 +71,15 @@ enum SourcePerfTrace {
     ) {
         let ms = (ProcessInfo.processInfo.systemUptime - t0) * 1000
         guard ms >= thresholdMs else { return }
-        AppLogger.parse(
-            "⏱ \(stage) \(String(format: "%.0f", ms))ms\(detail.isEmpty ? "" : " \(detail)")"
-        )
+        let line = "⏱ \(stage) \(String(format: "%.0f", ms))ms\(detail.isEmpty ? "" : " \(detail)")"
+        AppLogger.parse(line)
+        // Long enough to be felt on the main thread: also into the Crashlytics log, so the
+        // next hang, watchdog or crash report from this session carries it.
+        if ms >= mainThreadBreadcrumbMs, Thread.isMainThread {
+            CrashContext.breadcrumb("main \(line)")
+        }
     }
+
+    /// A main-thread span this long is a visible stall.
+    static let mainThreadBreadcrumbMs: Double = 100
 }
