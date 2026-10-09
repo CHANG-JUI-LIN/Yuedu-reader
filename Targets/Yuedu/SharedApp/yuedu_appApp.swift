@@ -271,21 +271,34 @@ struct yuedu_appApp: App {
 
 // MARK: - Auto-Update Latest Chapters
 
-enum ChapterUpdater {
-    /// Timestamp of the last automatic refresh, used to throttle launch /
-    /// foreground refreshes. Manual pull-to-refresh bypasses it. Main-actor
-    /// isolated for Swift 6 concurrency safety.
-    @MainActor private static var lastAutoRefresh: Date?
+/// When the last automatic "check for new chapters" ran, kept across launches.
+///
+/// It used to be a static in memory, so every cold launch re-walked every online book's
+/// table of contents however recently the last launch had — the field timeline showed two
+/// full refreshes (and two 90 s CPU exceptions) seven minutes apart, one per launch.
+struct AutoRefreshThrottle {
+    static let defaultsKey = "yd_last_auto_chapter_refresh"
+    let defaults: UserDefaults
+    let minimumInterval: TimeInterval
 
-    /// Returns true (and records the time) when an automatic refresh is allowed
-    /// under the throttle window; false when one ran too recently.
-    @MainActor private static func consumeAutoRefreshAllowance() -> Bool {
-        let now = Date()
-        if let last = lastAutoRefresh, now.timeIntervalSince(last) < AppConfig.autoRefreshMinInterval {
+    /// True, and records `now`, when the last refresh is older than the interval. A stored
+    /// time in the future (the clock was moved back) does not block refreshing forever.
+    func consume(now: Date = Date()) -> Bool {
+        if let last = defaults.object(forKey: Self.defaultsKey) as? Date,
+           last <= now, now.timeIntervalSince(last) < minimumInterval {
             return false
         }
-        lastAutoRefresh = now
+        defaults.set(now, forKey: Self.defaultsKey)
         return true
+    }
+}
+
+enum ChapterUpdater {
+    /// Returns true (and records the time) when an automatic refresh is allowed
+    /// under the throttle window; false when one ran too recently. Manual
+    /// pull-to-refresh bypasses it.
+    @MainActor private static func consumeAutoRefreshAllowance() -> Bool {
+        AutoRefreshThrottle(defaults: .standard, minimumInterval: AppConfig.autoRefreshMinInterval).consume()
     }
 
     /// Scans all online books on the bookshelf and refreshes their table of contents (adds new chapters).

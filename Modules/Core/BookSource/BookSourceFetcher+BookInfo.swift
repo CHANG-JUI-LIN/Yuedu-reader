@@ -64,8 +64,7 @@ extension BookSourceFetcher {
             }
             return saveBookInfoPackage(
                 info: info,
-                source: source,
-                rawHTML: html
+                source: source
             ).merging(searchResult: knownBook, canReName: canReName)
         }
 
@@ -97,8 +96,7 @@ extension BookSourceFetcher {
         }
         let package = saveBookInfoPackage(
             info: info,
-            source: source,
-            rawHTML: html
+            source: source
         ).merging(searchResult: knownBook, canReName: canReName)
         // #region agent log
         _dbgLog(

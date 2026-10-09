@@ -142,8 +142,7 @@ extension BookSourceFetcher {
                 tocUrl: tocUrl,
                 source: source,
                 runtimeVariables: parsed.1 ?? effectiveRuntimeVariables,
-                chapters: normalized,
-                rawHTML: html
+                chapters: normalized
             )
         }
 
@@ -219,13 +218,6 @@ extension BookSourceFetcher {
             onFirstPageReady(firstPageNormalized)
         }
 
-        // Multi-page TOC — write to disk page by page to avoid accumulating all rawHTMLPages in memory
-        let rawHTMLPath = tocRawHTMLPath(tocUrl: tocUrl, source: source)
-        let dir = tocCacheDir()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        // Write first page
-        let pageBreak = "\n<!-- toc-page-break -->\n"
-        try? htmlForNext.write(to: rawHTMLPath, atomically: false, encoding: .utf8)
         var nextURL = await SourceScriptThread.run {
             self.pipeline.extractNextTocURL(
                 html: htmlForNext,
@@ -249,14 +241,6 @@ extension BookSourceFetcher {
                     url: nextPageURL, method: "GET", body: nil,
                     headers: source.parsedHeaders, baseURL: nextBase,
                     source: source)
-            }
-            // Append to disk instead of keeping in memory
-            if let handle = try? FileHandle(forWritingTo: rawHTMLPath) {
-                handle.seekToEndOfFile()
-                if let data = (pageBreak + nextHTML).data(using: .utf8) {
-                    handle.write(data)
-                }
-                handle.closeFile()
             }
             // One session-serialized call parses chapters AND the next-page URL
             // from a single DOM (autoreleasepool drains SwiftSoup per page).
@@ -284,13 +268,11 @@ extension BookSourceFetcher {
             )
         }
         let normalized = normalizedChaptersWithNextURL(chapters)
-        // rawHTML was already written to disk page by page in the multi-page loop
         let package = saveTOCPackage(
             tocUrl: tocUrl,
             source: source,
             runtimeVariables: tocRuntimeVariables,
-            chapters: normalized,
-            rawHTML: nil
+            chapters: normalized
         )
         return package
     }
