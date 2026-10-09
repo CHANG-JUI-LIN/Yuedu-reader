@@ -52,6 +52,7 @@ struct BookStoreSyncEncodingTests {
             // Deterministically interleave an edit between snapshot and completion.
             // No timing sleeps or race-dependent assertions.
             store.updatePosition(bookId: book.id, position: 0.6, forceSave: force, notifyLibraryViews: false)
+            store.waitForQueuedWrites()
             let diskBeforeCompletion = try Data(contentsOf: url)
             let prepared = try await BookStore.encodeSyncSnapshot(snapshot)
             #expect(!store.applySyncSnapshot(prepared))

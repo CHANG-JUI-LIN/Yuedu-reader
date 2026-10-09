@@ -23,7 +23,7 @@ struct LocalReaderScenarioTests {
             let path = try #require(scenario.sourcePath)
             let count = try BookSourceStore.shared.importFromData(Data(contentsOf: URL(fileURLWithPath: path)), fileExtension: "json")
             #expect(count > 0)
-            BookSourceStore.shared.flushPendingWrites()
+            BookSourceStore.shared.waitForQueuedWrites()
             GlobalSettings.shared.pageTurnStyle = .curl
             try "sourceImported=\(count) pageTurnStyle=curl".write(to: directory.appendingPathComponent("scenario-result.txt"), atomically: true, encoding: .utf8)
         case "theme":

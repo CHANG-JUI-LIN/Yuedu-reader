@@ -38,6 +38,7 @@ struct BookChapterStorageTests {
         let before = try [first.id, second.id].map { try fileNumber(of: chapterFile(for: $0, metadataURL: metadataURL)) }
 
         store.updatePosition(bookId: first.id, position: 0.5, forceSave: true)
+        store.waitForQueuedWrites()
 
         let after = try [first.id, second.id].map { try fileNumber(of: chapterFile(for: $0, metadataURL: metadataURL)) }
         #expect(after == before)
@@ -60,6 +61,7 @@ struct BookChapterStorageTests {
         // 聽書每念完一章就會標記快取；離開前景時寫下。
         store.updateCachedChapter(bookId: read.id, chapterIndex: 7, filename: "chapter-7.html")
         store.flushPendingMetadataSave()
+        store.waitForQueuedWrites()
 
         #expect(try fileNumber(of: chapterFile(for: read.id, metadataURL: metadataURL)) != readBefore)
         #expect(try fileNumber(of: chapterFile(for: other.id, metadataURL: metadataURL)) == otherBefore)
@@ -79,6 +81,7 @@ struct BookChapterStorageTests {
         try writeInlineShelf([(book, chapters)], to: metadataURL)
 
         let store = BookStore(metadataFileURL: metadataURL)
+        store.waitForQueuedWrites()
 
         #expect(describe(store.readingBook(id: book.id)?.onlineChapters) == describe(chapters))
         #expect(try shelfObjects(at: metadataURL).first?["onlineChapters"] == nil)
@@ -116,6 +119,7 @@ struct BookChapterStorageTests {
 
         store.delete(bookId: book.id)
         store.flushPendingMetadataSave()
+        store.waitForQueuedWrites()
 
         #expect(!FileManager.default.fileExists(atPath: file.path))
     }
@@ -159,6 +163,7 @@ struct BookChapterStorageTests {
         var unlisted = onlineBook(title: "沒加書架", chapterCount: 20)
         unlisted.isInBookshelf = false
         store.saveReadingBook(unlisted)
+        store.waitForQueuedWrites()
 
         let readingFile = metadataURL.deletingPathExtension().appendingPathExtension("reading.json")
         #expect(try shelfObjects(at: readingFile).first?["onlineChapters"] == nil)

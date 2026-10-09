@@ -1140,6 +1140,9 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     private func uploadFileIfExists(_ file: ICloudSyncPayloadFile) async throws {
+        // The shelf file is written on `BookStore`'s queue; a save that returned may still be
+        // queued.
+        await BookStore.queuedWritesLanded()
         guard FileManager.default.fileExists(atPath: file.localURL.path) else { return }
 
         let data = try Data(contentsOf: file.localURL)

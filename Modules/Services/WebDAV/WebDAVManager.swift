@@ -185,7 +185,9 @@ final class WebDAVManager: ObservableObject {
         //    out of Documents (see StorageLocations).
         try await backupFileIfExists(at: StorageLocations.bookSourcesFile, to: "/yuedu/book_sources.json")
 
-        // 2. books.json — read from the file-based store (mirrors BookStore.booksMetaFileURL)
+        // 2. books.json — read from the file-based store (mirrors BookStore.booksMetaFileURL),
+        //    after the saves already queued for it have landed.
+        await BookStore.queuedWritesLanded()
         if FileManager.default.fileExists(atPath: StorageLocations.booksMetadataFile.path) {
             let data = try Data(contentsOf: StorageLocations.booksMetadataFile)
             try await put(data: Self.bookshelfBackupData(from: data), path: "/yuedu/books.json")

@@ -29,6 +29,7 @@ struct BookStoreMetadataWriteBudgetTests {
         #expect(try Data(contentsOf: metadataURL) == initialData)
 
         store.updatePosition(bookId: book.id, position: 0.0001, forceSave: true)
+        store.waitForQueuedWrites()
 
         let saved = try JSONDecoder().decode([ReadingBook].self, from: Data(contentsOf: metadataURL))
         #expect(saved.first?.currentPosition == 0.0001)

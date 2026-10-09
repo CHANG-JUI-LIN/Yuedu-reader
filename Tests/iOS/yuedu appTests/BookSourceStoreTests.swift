@@ -379,7 +379,7 @@ struct BookSourceStoreTests {
             .appendingPathComponent("BookSourceStoreBulk-\(UUID().uuidString)")
         let store = BookSourceStore(directory: directory)
         defer {
-            store.flushPendingWrites()
+            store.waitForQueuedWrites()
             try? FileManager.default.removeItem(at: directory)
         }
         store.replaceSourcesFromSync((0..<2_000).map(makeSource))
@@ -417,11 +417,11 @@ struct BookSourceStoreTests {
             .appendingPathComponent("BookSourceStoreLinear-\(UUID().uuidString)")
         let store = BookSourceStore(directory: directory)
         defer {
-            store.flushPendingWrites()
+            store.waitForQueuedWrites()
             try? FileManager.default.removeItem(at: directory)
         }
         store.replaceSourcesFromSync((0..<20_000).map(makeSource))
-        store.flushPendingWrites()
+        store.waitForQueuedWrites()
         let ids = store.sources.map(\.id)
 
         let startedAt = ProcessInfo.processInfo.systemUptime
@@ -446,7 +446,7 @@ struct BookSourceStoreTests {
             store.toggle(id: store.sources[index].id)
         }
         store.pinToTop(id: store.sources[40].id)
-        store.flushPendingWrites()
+        store.waitForQueuedWrites()
 
         let reloaded = BookSourceStore(directory: directory)
         #expect(reloaded.sources.map(\.id) == store.sources.map(\.id))
@@ -489,7 +489,7 @@ struct BookSourceStoreTests {
         let store = BookSourceStore(directory: directory)
         defer { try? FileManager.default.removeItem(at: directory) }
         store.replaceSourcesFromSync((0..<300).map(makeSource))
-        store.flushPendingWrites()
+        store.waitForQueuedWrites()
 
         let reloaded = BookSourceStore(directory: directory)
         #expect(try sortedJSON(reloaded.sources) == sortedJSON(store.sources))

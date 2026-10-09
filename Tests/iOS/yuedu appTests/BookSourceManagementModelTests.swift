@@ -200,7 +200,7 @@ struct BookSourceManagementModelTests {
         }
 
         func remove() {
-            store.flushPendingWrites()
+            store.waitForQueuedWrites()
             try? FileManager.default.removeItem(at: directory)
             UserDefaults().removePersistentDomain(forName: defaultsSuite)
         }

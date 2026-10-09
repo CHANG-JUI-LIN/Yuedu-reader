@@ -204,6 +204,10 @@ class BookStore: ObservableObject, BookProvider {
         chapterStore = BookChapterStore(
             directoryURL: metadataFileURL.deletingPathExtension().appendingPathExtension("chapters")
         )
+        // A store reads the files only after writes already queued to them have landed
+        // (the queue is shared by every instance). At launch it is empty; it matters for a
+        // store opened on files another instance has just saved.
+        Self.persistQueue.sync {}
         let shelfLoaded = loadMeta()
         let readingRecordsLoaded = loadReadingRecords()
         finishLoadingChapterLists(complete: shelfLoaded && readingRecordsLoaded)
@@ -959,6 +963,14 @@ class BookStore: ObservableObject, BookProvider {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
         let previousRequestedIndices = records[idx].offlineDownloadTask?.requestedIndices
         let state = task.derivedState(isRunning: isRunning)
+        // Every table-of-contents refresh reconciles each downloaded book's task, almost
+        // always to what it already is. That used to publish the store and write the whole
+        // shelf at once, per downloaded book, on every launch.
+        if records[idx].offlineDownloadTask == task,
+           records[idx].offlineDownloadState == state,
+           records[idx].downloadedChapterCount == task.completedChapterCount {
+            return
+        }
         // One assignment: each one publishes the store to every view on it.
         var updated = records[idx]
         updated.offlineDownloadTask = task
@@ -2449,21 +2461,54 @@ class BookStore: ObservableObject, BookProvider {
         firstPendingSaveRequestedAt = nil
     }
 
+    /// Starts the write now instead of after the debounce, on `persistQueue` like every other
+    /// write, and keeps the app running in the background until it has landed.
+    ///
+    /// It used to wait for the write on the calling (main) thread. The write first flushes
+    /// every changed table of contents, so on a large shelf the main thread stood still for
+    /// seconds — on the way into the background long enough for the 10 s scene-update
+    /// watchdog to kill the app ("聽書息屏秒崩"; MetricKit `scene-update watchdog`, 169 users
+    /// in 30 days up to build 2.0.7 (127)).
     private func saveMetaImmediately() {
         cancelPendingMetadataSave()
-        persistMetadataIfChanged(inBackground: false)
+        holdAppUntilQueuedWritesLand()
+        persistMetadataIfChanged(inBackground: true)
     }
 
     /// Writes a debounced save now. The scene calls this on its way out of the
     /// foreground: an app killed from the app switcher, or while suspended, never ran
     /// the pending write, and a book added to the shelf just before was gone.
+    /// Never waits: the write runs on `persistQueue` under a background task.
     func flushPendingMetadataSave() {
         guard saveWorkItem != nil else {
-            // A background write already in flight finishes before the scene is gone.
-            Self.persistQueue.sync {}
+            // A background write already in flight finishes before the app is suspended.
+            holdAppUntilQueuedWritesLand()
             return
         }
         saveMetaImmediately()
+    }
+
+    /// Keeps the app from being suspended until everything queued on `persistQueue` so far
+    /// has run. Without it, a write handed to the queue as the app leaves the foreground can
+    /// be frozen half-way.
+    private func holdAppUntilQueuedWritesLand() {
+        let hold = BackgroundTaskHold(name: "library.persist")
+        Self.persistQueue.async { hold.release() }
+    }
+
+    /// Lets tests and file-replacing callers see what was handed to the write queue. Waits on
+    /// the calling thread; never call it from UI code.
+    func waitForQueuedWrites() {
+        Self.persistQueue.sync {}
+    }
+
+    /// Resumes once every write queued so far has landed, without blocking any thread. For
+    /// code that reads the shelf files themselves (WebDAV backup, iCloud file upload): a save
+    /// is queued, not finished, when it returns.
+    static func queuedWritesLanded() async {
+        await withCheckedContinuation { continuation in
+            persistQueue.async { continuation.resume() }
+        }
     }
 
     /// Reindexing changes the meaning of chapter numbers. Publish bookmark changes
@@ -2483,15 +2528,17 @@ class BookStore: ObservableObject, BookProvider {
         let data = try encoder.encode(output.filter { $0.isInBookshelf == updated.isInBookshelf })
         // Changed lists become durable with this write, as when they rode inside the shelf.
         // On `persistQueue`, after any background write in flight.
+        let files = persistedFiles
         try Self.persistQueue.sync {
             chapterStore.flush()
             try data.write(to: updated.isInBookshelf ? metadataFileURL : readingMetadataFileURL, options: .atomic)
+            if updated.isInBookshelf { files.shelfData = data } else { files.readingData = data }
         }
         records[index] = updated
         persistSequence &+= 1
         lastAppliedPersistSequence = persistSequence
-        if updated.isInBookshelf { markMetadataPersisted(data, records: output); syncWidgetData() }
-        else { notePersistedReadingData(data) }
+        if updated.isInBookshelf { markMetadataPersisted(data, records: output, queueKnows: true); syncWidgetData() }
+        else { notePersistedReadingData(data, queueKnows: true) }
 
     }
 
@@ -2633,7 +2680,9 @@ class BookStore: ObservableObject, BookProvider {
         var written = MetadataWritten()
         let files = persistedFiles
         SourcePerfTrace.span(
-            "library.shelf.save", "books=\(input.records.count) main=\(Thread.isMainThread)", thresholdMs: 5
+            "library.shelf.save",
+            "books=\(input.records.count) bytes=\((written.shelfData?.count ?? 0) + (written.readingData?.count ?? 0)) main=\(Thread.isMainThread)",
+            thresholdMs: 5
         ) {
             do {
                 // Write the shelf first: a crash while promoting a reading record must
@@ -2682,7 +2731,7 @@ class BookStore: ObservableObject, BookProvider {
         guard sequence > lastAppliedPersistSequence else { return }
         lastAppliedPersistSequence = sequence
         if let shelfData = written.shelfData {
-            markMetadataPersisted(shelfData, records: input.records)
+            markMetadataPersisted(shelfData, records: input.records, queueKnows: true)
             syncWidgetData()
         }
         if let readingData = written.readingData {
@@ -2690,9 +2739,14 @@ class BookStore: ObservableObject, BookProvider {
         }
     }
 
-    private func notePersistedReadingData(_ data: Data) {
+    /// - Parameter queueKnows: the write happened on `persistQueue`, which recorded it there.
+    ///   Otherwise the queue is told asynchronously: it is serial, so every write handed to it
+    ///   later sees this, and the main thread never waits for one in flight.
+    private func notePersistedReadingData(_ data: Data, queueKnows: Bool = false) {
         lastPersistedReadingData = data
-        Self.persistQueue.sync { persistedFiles.readingData = data }
+        guard !queueKnows else { return }
+        let files = persistedFiles
+        Self.persistQueue.async { files.readingData = data }
     }
 
     private static func encodeShelf(_ books: [ReadingBook]) -> Data? {
@@ -2709,9 +2763,16 @@ class BookStore: ObservableObject, BookProvider {
 
     /// - Parameter records: the records `data` was encoded from — on a background write,
     ///   the store may have moved on by the time this runs.
-    private func markMetadataPersisted(_ data: Data, records: [ReadingBook]) {
+    ///   `queueKnows`: see `notePersistedReadingData`. A background write's bookkeeping must
+    ///   not tell the queue again: by the time it runs here a later write may already have
+    ///   landed, and telling the queue the older bytes made the next write believe the file
+    ///   had been replaced from outside, and skip it.
+    private func markMetadataPersisted(_ data: Data, records: [ReadingBook], queueKnows: Bool = false) {
         lastPersistedMetadataData = data
-        Self.persistQueue.sync { persistedFiles.shelfData = data }
+        if !queueKnows {
+            let files = persistedFiles
+            Self.persistQueue.async { files.shelfData = data }
+        }
         let now = ProcessInfo.processInfo.systemUptime
         lastPersistedPositionSnapshots = Dictionary(
             uniqueKeysWithValues: records.map { ($0.id, PersistedPositionSnapshot(book: $0)) }
@@ -2814,7 +2875,8 @@ class BookStore: ObservableObject, BookProvider {
                     if !metadataWritesBlocked {
                         // The bytes are safe in their copy, so the file may be written over:
                         // the write queue is told what it holds now.
-                        Self.persistQueue.sync { persistedFiles.shelfData = data }
+                        let files = persistedFiles
+                        Self.persistQueue.async { files.shelfData = data }
                     }
                 }
             } catch {
@@ -2907,10 +2969,12 @@ class BookStore: ObservableObject, BookProvider {
 
     private func persistEncodedReadingRecords(_ data: Data) throws {
         guard data != lastPersistedReadingData else { return }
+        let files = persistedFiles
         try Self.persistQueue.sync {
             try data.write(to: readingMetadataFileURL, options: .atomic)
+            files.readingData = data
         }
-        notePersistedReadingData(data)
+        notePersistedReadingData(data, queueKnows: true)
     }
 
     /// Cleans the chapter URLs of lists read from inside a shelf file: replaces URLs

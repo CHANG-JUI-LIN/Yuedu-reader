@@ -135,11 +135,14 @@ final class BookChapterStore {
             state.entries.filter { $0.value.isDirty }
         }
         guard !pending.isEmpty else { return }
-        SourcePerfTrace.span("library.chapters.write", "books=\(pending.count)", thresholdMs: 5) {
+        // Bytes are part of the line: the field's disk-write exceptions (≈1 GB within a minute
+        // of launch) were this flush rewriting every list, which time alone did not show.
+        var bytes = 0
+        SourcePerfTrace.span("library.chapters.write", "books=\(pending.count) bytes=\(bytes) main=\(Thread.isMainThread)", thresholdMs: 5) {
             var written: [UUID: Int] = [:]
             for (bookID, entry) in pending {
                 do {
-                    try write(entry.chapters, for: bookID)
+                    bytes += try write(entry.chapters, for: bookID)
                     written[bookID] = entry.revision
                 } catch {
                     AppLogger.error(
@@ -182,16 +185,19 @@ final class BookChapterStore {
         }
     }
 
-    private func write(_ chapters: [OnlineChapterRef]?, for bookID: UUID) throws {
+    /// Returns the bytes written.
+    private func write(_ chapters: [OnlineChapterRef]?, for bookID: UUID) throws -> Int {
         let url = fileURL(for: bookID)
         guard let chapters else {
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
             }
-            return
+            return 0
         }
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        try JSONEncoder().encode(chapters).write(to: url, options: .atomic)
+        let data = try JSONEncoder().encode(chapters)
+        try data.write(to: url, options: .atomic)
+        return data.count
     }
 
     // MARK: - Cache

@@ -921,13 +921,20 @@ class BookSourceStore: ObservableObject {
         try handle.write(contentsOf: chunk)
     }
 
-    /// Blocks until every queued write has landed.
+    /// Keeps the app running until every queued write has landed.
     ///
-    /// Call before the app can be suspended or killed. Persistence became asynchronous to keep
-    /// it off the main thread, which means a save issued moments before the app goes away is
-    /// still in flight — and book sources are user data, not a cache that can be refetched.
-    /// Normally a no-op: the queue is empty and this returns immediately.
+    /// Call before the app can be suspended. Persistence became asynchronous to keep it off
+    /// the main thread, which means a save issued moments before the app goes away is still
+    /// in flight — and book sources are user data, not a cache that can be refetched. It used
+    /// to wait on the main thread; a 50 000-source save in flight then held the scene
+    /// transition past the background watchdog. A background task holds the app instead.
     func flushPendingWrites() {
+        let hold = BackgroundTaskHold(name: "bookSources.persist")
+        Self.persistQueue.async { hold.release() }
+    }
+
+    /// Waits on the calling thread for queued writes. Tests only; never from UI code.
+    func waitForQueuedWrites() {
         Self.persistQueue.sync {}
     }
 

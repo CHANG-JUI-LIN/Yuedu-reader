@@ -137,10 +137,10 @@ struct BookSourceManagementScaleTests {
             var times: [UUID: Int64] = [:]
             for (offset, id) in ids.enumerated() { times[id] = Int64(1_000 + offset) }
             let respond = measureMs { store.setRespondTimes(times) }
-            store.flushPendingWrites()
+            store.waitForQueuedWrites()
 
             let disable = measureMs { store.setEnabledByUser(ids: Set(ids), enabled: false) }
-            store.flushPendingWrites()
+            store.waitForQueuedWrites()
 
             print("SCALE store sources=\(count) setRespondTimesMs=\(respond) setEnabledByUserMs=\(disable)")
         }
@@ -165,7 +165,7 @@ struct BookSourceManagementScaleTests {
             for index in 0..<5 {
                 fixture.store.toggle(id: fixture.store.sources[index].id)
             }
-            fixture.store.flushPendingWrites()
+            fixture.store.waitForQueuedWrites()
         }
         let peak = sampler.stop()
         let bytes = (try? FileManager.default.attributesOfItem(
@@ -270,12 +270,12 @@ struct ScaleFixture {
         store.replaceSourcesFromSync(try Self.sources(count: count))
         // The replace queued a full write; let it land so it doesn't compete with what
         // the probe measures.
-        store.flushPendingWrites()
+        store.waitForQueuedWrites()
         bookStore = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
     }
 
     func remove() {
-        store.flushPendingWrites()
+        store.waitForQueuedWrites()
         try? FileManager.default.removeItem(at: directory)
     }
 

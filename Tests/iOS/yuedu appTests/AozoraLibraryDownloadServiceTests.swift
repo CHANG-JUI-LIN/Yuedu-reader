@@ -14,6 +14,8 @@ struct AozoraLibraryDownloadServiceTests {
     }
     private func clean(_ store: BookStore, _ root: URL) {
         for book in store.books { store.delete(bookId: book.id) }
+        // Deletes are saved on the store's queue; remove the folder only after they land.
+        store.waitForQueuedWrites()
         do { try FileManager.default.removeItem(at: root) } catch { Issue.record(error) }
     }
     private func fixtureZip(_ root: URL, plainText: Bool = false) async throws -> URL {
