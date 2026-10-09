@@ -2972,6 +2972,10 @@ class BookStore: ObservableObject, BookProvider {
             guard let current = existingByIndex[chapter.index] else {
                 return merged
             }
+            // A parser gives every ref a fresh `id`, and the synthesized `==` compares it:
+            // without carrying the stored one over, an unchanged list never compared equal,
+            // so every launch refresh replaced every record and rewrote every list on disk.
+            merged.id = current.id
             if normalizedOnlineValue(current.url) == normalizedOnlineValue(chapter.url) {
                 merged.cachedFilename = current.cachedFilename
             }

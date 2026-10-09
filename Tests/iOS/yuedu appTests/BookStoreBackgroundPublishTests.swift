@@ -87,6 +87,46 @@ struct BookStoreBackgroundPublishTests {
         #expect(refreshed.hasNewChapterUpdate == true)
         #expect(publications.withLock { $0 } == 1)
     }
+
+    /// A parser builds every `OnlineChapterRef` afresh, each with a new `id`. An unchanged
+    /// table of contents must still count as unchanged: when the merge dropped the stored
+    /// ids, every launch refresh replaced every record and rewrote every list on disk —
+    /// about 1 GB of writes within a minute of launch on a large shelf.
+    @Test("an unchanged table of contents parsed afresh publishes nothing and keeps chapter ids")
+    func reparsedUnchangedListIsNoChange() async throws {
+        let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "測試書源")
+        let previousSources = await MainActor.run { BookSourceStore.shared.sources }
+        await MainActor.run { BookSourceStore.shared.sources = [source] }
+        defer { Task { @MainActor in BookSourceStore.shared.sources = previousSources } }
+
+        let (store, directory) = makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let book = await MainActor.run {
+            store.addOnlineBook(
+                name: "測試書", author: "作者", sourceId: source.id, bookInfoURL: "https://example.com/book",
+                tocURL: "https://example.com/toc", runtimeVariables: ["token": "final"], chapters: chapters(3)
+            )
+        }
+        let storedIDs = await MainActor.run { store.chapters(for: book.id)?.map(\.id) }
+        let publications = OSAllocatedUnfairLock(initialState: 0)
+        let subscription = await MainActor.run {
+            store.objectWillChange.sink { publications.withLock { $0 += 1 } }
+        }
+        defer { subscription.cancel() }
+
+        let reparsed = chapters(3)
+        #expect(reparsed.map(\.id) != storedIDs)
+        _ = try await store.refreshOnlineBookMetadata(
+            bookId: book.id,
+            bookSourceFetcher: ImmediateTOCFetcher(package: TOCPackage(
+                sourceId: source.id, sourceName: source.bookSourceName, tocURL: "https://example.com/toc",
+                runtimeVariables: ["token": "final"], chapters: reparsed, rawHTMLFilename: nil, savedAt: Date()
+            ))
+        )
+
+        #expect(publications.withLock { $0 } == 0)
+        #expect(await MainActor.run { store.chapters(for: book.id)?.map(\.id) } == storedIDs)
+    }
 }
 
 /// Answers a table-of-contents refresh with a fixed package in one go, as a single-page
