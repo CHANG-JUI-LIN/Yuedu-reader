@@ -10,6 +10,10 @@ final class BookSourceProvider: HomeSectionProviding {
     let source: BookSource
     private let pageLoader: SectionPageLoader
     private let primeCookies: @Sendable (BookSource) async -> Void
+    /// Priming drops the site's token and fetches the search page again
+    /// (`primeDiscoverCookiesIfNeeded`), so it runs once per provider, that is once per home
+    /// sync, as the source's own page primes once per load, not once per row.
+    private var priming: Task<Void, Never>?
 
     init(
         source: BookSource,
@@ -31,7 +35,11 @@ final class BookSourceProvider: HomeSectionProviding {
 
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         guard let category = category(for: section), let item = category.cardItem else { return [] }
-        await primeCookies(source)
+        if priming == nil {
+            let prime = primeCookies, source = source
+            priming = Task { await prime(source) }
+        }
+        await priming?.value
         let section = DiscoverShowcaseSection(item: item, coverBaseURL: source.bookSourceUrl, coverHeaders: source.parsedHeaders)
         do {
             let displays = try await pageLoader.books(page: 1, of: section, in: source, after: [])

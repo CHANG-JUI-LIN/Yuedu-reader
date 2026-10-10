@@ -361,7 +361,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   - **Gutenberg:** bundled lists `.local` with no request; feeds and 「最新」 (`latestURL`) `.onDemandOnly`; nothing in China.
   - **Aozora:** 新着 and 「最新」 from the catalog, and an index as its groups. Nothing until the catalog is read.
   - **WebDAV:** 「最新」 is the 2d records, newest `getlastmodified` first, undated last, with 2e's cover when read. A connection without a record store serves nothing.
-  - **Book sources:** `BookSourceProvider` primes the discover cookies (`primeDiscoverCookies`, the same call `DiscoverViewModel.reload` makes) and loads page 1 through `SectionPageLoader`. 「最新」 uses the category stored in the 「最新」 section's `parameters` under `latest.category:<bookSourceUrl>` (settled decision 8).
+  - **Book sources:** `BookSourceProvider` primes the discover cookies once per provider, so once per home sync, as `DiscoverViewModel.reload` primes once per load. It then loads page 1 through `SectionPageLoader`. 「最新」 uses the category stored in the 「最新」 section's `parameters` under `latest.category:<bookSourceUrl>` (settled decision 8).
 - **`SourceProviderRegistry.homeProviders(shelf:)`:** the shelf, connections (WebDAV with `shelf.remoteRecords`), Gutenberg, Aozora, then the explore sources in 探索's order.
 - **`HomeModel`** (`HomeModel.swift`):
   - Rows are built only after `waitForSources`, which is `BookSourceStore.waitUntilLoaded` when wired in 5c, so a cold launch never reads as deleted sources.
@@ -380,4 +380,15 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   - Each book source never had more than one load in flight; OPDS had 4.
 - **Tests:** `HomeModelTests` (9), `HomeModelSchedulingTests` (1), `BookSourceProviderTests` (3), `LocalHomeRowTests` (2). With the 2a suites (`SourceFailureTests`, `OPDSProviderTests`, `WebDAVProviderTests`, `AozoraProviderTests`, `ShelfProviderTests`, `SourceProviderRegistryTests`) and `OPDSBrowseModelBehaviorTests`, 34 tests in 10 suites passed; the scheduling run passed 10 in 2.
 - **Left as it was:** `discover.categorySelection.<source UUID>` (follow-up 3) still keys by the device-local UUID. Re-keying it changes stored reader state, so it waits for its own step with a migration.
+
+### 5b fixes (2026-10-11), before 5c wires anything
+
+- **WebDAV 「最新」 at 20,000 books** (`LocalHomeRowTests.webDAVLatestAtScale`, Debug, simulator):
+  - **Before:** 2.99 s, all of it on the main actor. The row read the whole index there, and made a `DateFormatter` for every file.
+  - **Split:** 274 ms reading the index; 1,444 ms parsing dates and sorting, even with one formatter.
+  - **After:** 340 ms in total, off the main actor (`newestFiles` is `nonisolated`). The longest main-actor stall while it loaded was 0.9 ms.
+  - The fixed RFC 1123 form is read by position. Other forms (RFC 850, asctime) still go to `DateFormatter`; `serverDates` checks the two agree.
+- **Cookie priming once per sync.** `primeDiscoverCookiesIfNeeded` drops 起点's `_csrfToken` and fetches the search page again on every call. Before this fix, four rows of one source sent four extra requests per home load; now they share one priming task (`primesOnce`).
+- **No second load of a row.** A row that is queued or loading is not started again by 重試, 載入 or pull to refresh (`noDuplicateLoads`).
+- **Tests:** `HomeModelTests` (10), `BookSourceProviderTests` (4), `LocalHomeRowTests` (4), `HomeModelSchedulingTests` (1): 19 tests in 4 suites passed.
 

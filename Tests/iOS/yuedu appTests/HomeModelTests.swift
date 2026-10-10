@@ -177,6 +177,29 @@ struct HomeModelTests {
         #expect(a.loads.count == 2)
     }
 
+    @Test("重試, 載入 and pull to refresh never start a second load of a queued or loading row")
+    func noDuplicateLoads() async throws {
+        let a = FakeProvider("a") { _ in .serialPerSource }
+        let first = Gate(), second = Gate()
+        a.gates = [first, second]
+        let home = model([a])
+        await home.sync(with: HomePage(sections: [
+            HomeSection(layout: .row, binding: .sourceCategories([category])),
+            HomeSection(layout: .row, binding: .sourceCategories([ExploreCategoryReference(sourceURL: "a", title: "完本", url: "/end")])),
+        ]))
+        let ids = rows(home).map(\.id)
+        ids.forEach(home.load)
+        await until(home) { $0[0].state == .loading }
+
+        home.request(ids[1])   // queued, still idle
+        home.request(ids[0])   // loading
+        home.reload()
+        first.open()
+        second.open()
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
+        #expect(a.loads.count == 2)
+    }
+
     @Test("an on-demand row sends nothing until the reader asks")
     func onDemand() async throws {
         let g = FakeProvider("g", type: .gutenberg) { _ in .onDemandOnly }
@@ -398,6 +421,20 @@ struct BookSourceProviderTests {
         #expect(summary.blurb?.contains("<p>") == false)
     }
 
+    @Test("two rows of one source prime the cookies once")
+    func primesOnce() async throws {
+        let calls = Calls()
+        let source = source()
+        let provider = BookSourceProvider(source: source, pageLoader: SectionPageLoader { _, _, _ in [onlineBook("甲")] },
+                                          primeCookies: { _ in await calls.add("prime") })
+        for title in ["熱門", "完本"] {
+            _ = try await provider.load(HomeSection(layout: .row, binding: .sourceCategories([
+                ExploreCategoryReference(sourceURL: source.bookSourceUrl, title: title, url: "/\(title)"),
+            ])))
+        }
+        #expect(await calls.log == ["prime"])
+    }
+
     @Test("「最新」 is served only with a picked category, and not when excluded")
     func latest() {
         let source = source()
@@ -482,5 +519,75 @@ struct LocalHomeRowTests {
         #expect(names == ["新.epub", "舊.epub", "無日期.epub"])
         #expect(WebDAVProvider(connection: connection) { WebDAVBrowseClient(serverUrl: "", username: "", password: "") }
             .loadPolicy(for: section) == nil)
+    }
+
+    @Test("an HTTP date reads the same by position as through DateFormatter")
+    func serverDates() {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        for text in ["Tue, 01 Oct 2024 08:00:00 GMT", "Thu, 29 Feb 2024 23:59:59 GMT", "Sat, 01 Jan 2000 00:00:00 GMT",
+                     "Fri, 31 Dec 1999 12:34:56 GMT", "Sun, 06 Nov 1994 08:49:37 GMT"] {
+            #expect(WebDAVProvider.serverDate(text) == formatter.date(from: text), "\(text)")
+        }
+        // RFC 850, which some servers still send, goes to the formatter's own rules.
+        #expect(WebDAVProvider.serverDate("Sunday, 06-Nov-94 08:49:37 GMT") == formatter.date(from: "Sunday, 06-Nov-94 08:49:37 GMT"))
+        #expect(WebDAVProvider.serverDate("Tue, 01 Foo 2024 08:00:00 GMT") == nil)
+        #expect(WebDAVProvider.serverDate("") == nil)
+    }
+
+    /// Phase 2's measured size: 20,470 books. A row of 20 must not cost the whole index on the
+    /// main actor.
+    @Test("「最新」 over a 20,000-book index")
+    func webDAVLatestAtScale() async throws {
+        let (folder, cleanup) = try folder()
+        defer { cleanup() }
+        let records = RemoteRecordStore(directory: folder)
+        let root = URL(string: "https://dav.test/books/")!
+        let connection = OPDSCatalog(name: "DAV", url: root.absoluteString, kind: .webDAV)
+        var state = WebDAVIndexState(connectionID: connection.id, root: root)
+        let base = Date(timeIntervalSinceReferenceDate: 700_000_000)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        state.records = (0..<20_000).map { index in
+            IndexedFile(record: SourceRecord(key: SourceItemKey(instance: SourceInstanceKey(type: .webDAV, id: connection.id), item: "d\(index / 10)/b\(index).epub"),
+                                             title: "b\(index)", authors: [], language: nil, contentKind: .text, identifiers: [],
+                                             copyID: nil, acquisitions: [.download(format: "epub")]),
+                        etag: "\"\(index)\"", lastModified: formatter.string(from: base.addingTimeInterval(Double((index * 7919) % 20_000) * 60)), size: 1)
+        }
+        records.save(state)
+        records.waitForPendingWritesForTesting()
+
+        let provider = WebDAVProvider(connection: connection, records: records) { WebDAVBrowseClient(serverUrl: root.absoluteString, username: "", password: "") }
+        let clock = ContinuousClock()
+        let start = clock.now
+        // The main actor keeps turning while the row loads: the longest gap between two turns
+        // is how long the load held it.
+        var longestGap = Duration.zero
+        let ticking = Task { @MainActor in
+            var last = clock.now
+            while !Task.isCancelled {
+                await Task.yield()
+                let now = clock.now
+                longestGap = max(longestGap, now - last)
+                last = now
+            }
+        }
+        let entries = try await provider.load(HomeSection(layout: .row, binding: .latest(excluded: [])))
+        let elapsed = clock.now - start
+        ticking.cancel()
+        print("⏱ home.webdav.latest files=20000 elapsed=\(elapsed) mainActorLongestGap=\(longestGap)")
+        #expect(longestGap < .milliseconds(100))
+        #expect(entries.count == HomeRow.limit)
+        let first = entries.first.flatMap { entry -> String? in
+            if case .item(let record, _, _) = entry { return record.title }
+            return nil
+        }
+        // The newest is the index whose (index * 7919) % 20000 is 19999.
+        let newest = (0..<20_000).max { ($0 * 7919) % 20_000 < ($1 * 7919) % 20_000 }!
+        #expect(first == "b\(newest)")
     }
 }
