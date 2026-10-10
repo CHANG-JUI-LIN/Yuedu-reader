@@ -19,7 +19,10 @@ struct RemoteLibraryBookRoute: Hashable {
             formats: entry.acquisitions.sorted { $0.preference < $1.preference }.map {
                 RemoteLibraryFormat(url: $0.url, fileExtension: $0.importExtension ?? $0.url.pathExtension,
                                     mimeType: $0.type, size: $0.size)
-            }
+            },
+            authorNames: entry.authorNames.prefix(20).map { String($0.prefix(500)) },
+            language: entry.language,
+            identifiers: Array(entry.identifiers.prefix(10))
         )
     }
 

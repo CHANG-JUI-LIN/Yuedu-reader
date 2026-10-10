@@ -161,6 +161,8 @@ private struct Mapper {
         if let description = metadata.description, !description.isEmpty {
             entry.summary = Self.plain(description, limit: 8_000)
         }
+        entry.language = metadata.language.first.map { Self.plain($0, limit: 64) }
+        entry.identifiers = metadata.identifier.map { [Self.plain($0, limit: 512)] } ?? []
         guard entry.isBook || entry.isNavigation else { return nil }
         if entry.alternateURL == nil, entry.isBook { entry.alternateURL = feedAlternateURL }
         entry.id = metadata.identifier ?? entry.navigationURL?.absoluteString

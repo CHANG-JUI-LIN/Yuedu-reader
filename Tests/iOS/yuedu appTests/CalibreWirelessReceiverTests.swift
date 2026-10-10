@@ -83,7 +83,7 @@ struct CalibreWirelessReceiverTests {
         try await desktop.connect()
         try await handshake(desktop)
         let text = Data("第一章 測試\n這是從 Calibre 傳來的文字。[0,{}] 必須保留。\n".utf8)
-        let metadata: [String: CalibreJSON] = ["title": .string("無線傳書測試"), "authors": .array([.string("Calibre Author")]), "uuid": .string("calibre-test-book"), "lpath": .string("calibre-test-book.txt")]
+        let metadata: [String: CalibreJSON] = ["title": .string("無線傳書測試"), "authors": .array([.string("Calibre Author")]), "uuid": .string("calibre-test-book"), "lpath": .string("calibre-test-book.txt"), "tags": .array([.string("測試")])]
         let header = CalibreFrame(8, ["lpath": .string("calibre-test-book.txt"), "length": .number(Double(text.count)), "willStreamBinary": .bool(true), "metadata": .object(metadata)])
         try await desktop.send(header)
         let accepted = try await desktop.readFrame()
@@ -102,6 +102,11 @@ struct CalibreWirelessReceiverTests {
         #expect(store.books.count == 1)
         #expect(try Data(contentsOf: StorageLocations.bookFile(imported.contentFilename)) == text)
         #expect(service.transfers.last?.phase == .completed)
+        // Unified library 1b: Calibre's metadata beside the copy, attributed to the library.
+        store.importedMetadata.waitForPendingWritesForTesting()
+        let sidecar = try #require(store.importedMetadata.read(copyID: imported.id))
+        #expect(sidecar.sourceItem == .copy(imported.id))
+        #expect(sidecar.values.contains { $0.field == .tags && $0.value == .texts(["測試"]) && $0.provider.type == .calibre && $0.sourceItem?.item == "calibre-test-book" })
         let bookmark = Bookmark(chapterIndex: 0, chapterTitle: "第一章", position: CoreTextReadingPosition(spineIndex: 0, charOffset: 5), excerpt: "測試")
         store.addBookmark(bookId: imported.id, bookmark: bookmark)
         store.updatePosition(bookId: imported.id, position: 0.5, forceSave: true)

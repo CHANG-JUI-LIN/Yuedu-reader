@@ -69,6 +69,10 @@ final class AozoraLibraryDownloadService: AozoraLibraryDownloading {
             book.title = work.title
             book.aozora?.catalogWorkID = work.id
             store.saveReadingBook(book)
+            // Unified library 1b: the catalog's work id and fields, merged with what the
+            // EPUB importer already recorded from the generated OPF.
+            let sourceItem = SourceRecord.derived(from: work).key
+            store.importedMetadata.write(ImportedMetadataCapture.aozora(work: work, copy: book, sourceItem: sourceItem))
             return book
         } catch {
             AppLogger.network("Aozora work download/import failed", error: error, context: ["workID": work.id])

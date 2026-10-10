@@ -447,7 +447,7 @@ Phase 1 adds:
 ## Acceptance (Phase 1)
 
 - [x] 1a: source records for every entry type; the 「來源」 row fixed; one URL normalizer.
-- [ ] 1b: sidecar metadata for every import; `ReadingBook` keys and hashes unchanged.
+- [x] 1b: sidecar metadata for every import; `ReadingBook` keys and hashes unchanged.
 - [ ] 1c: deterministic index, A-level and B-level, with the design's fixtures; benchmark numbers recorded.
 - [ ] 1d: decisions store, resolver, locks on three paths, unlocked behavior unchanged.
 - [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 1 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
@@ -482,4 +482,37 @@ Branch `unified-library/1a-source-records`, on `f394ab40`. Two commits: `2879165
     LocalBookImportServiceTests, BookStoreMetadataWriteBudgetTests; on 28791650)
 ✔ Test run with 17 tests in 1 suite passed after 0.018 seconds.   (SourceRecordDerivationTests, on 233f02ca)
 check_localizations: OK, 3329 keys
+```
+
+### 1b (2026-10-10)
+
+Branch `unified-library/1b-imported-metadata`, on `346327dd`. Not merged, not pushed.
+
+- **Types:** `MetadataField`, `MetadataPayload` (text, texts, number, date), `MetadataValue` and `ImportedMetadata` (`schemaVersion`, copy id, source item, identifiers, values), in `Modules/Services/Works/MetadataValue.swift`.
+- **`ImportedMetadataStore`** keeps `<shelf folder>/Works/metadata/<copy id>.json` (production: `Application Support/Works/metadata`). It writes on one serial queue with atomic replace.
+  - **Writes merge:** identifiers are unioned, and a value replaces one of the same field from the same place. An Aozora book first records its generated OPF, then its catalog work, and both survive.
+  - **Damaged files:** an undecodable file is kept aside (`<id>.corrupt-<mtime>.json`); an unreadable one is never written over.
+  - **Removal:** `BookStore.delete` removes the copy's sidecar. `remove(notIn:)` runs only after a complete load and after a sync is applied, beside `removeChapters(notIn:)`. Corrupt backups are kept.
+- **OPF identifiers:** Readium drops every `dc:identifier` except the unique one (its `otherMetadata` excludes them all), so `PublicationSession.opfIdentifiers` reads them from the OPF with their `opf:scheme`. Languages, description, subjects, publishers and date come from Readium `Metadata`.
+  - Classification: ISBN by scheme, `urn:isbn:`, or a valid ISBN shape; Calibre's `opf:scheme="calibre"` as `calibreUUID`; anything else as `epubUniqueIdentifier`.
+- **OPDS:** `OPDSEntry` gained `language` and `identifiers`, read from `dc:language` and `dc:identifier` in OPDS 1 (local names, since the parser processes namespaces) and from `metadata.language` and `identifier` in OPDS 2. `RemoteLibraryItem` keeps `authorNames`, `language` and `identifiers`, which `RemoteLibraryBookRoute.init(entry:)` passes on.
+- **Capture points:**
+  - `importEpub`, after the copy is persisted;
+  - `RemoteLibraryService.record`, both for a new copy and when an existing one is opened again. That is a reader's action, not a scan;
+  - Calibre wireless `receiveBook`, after the registry is saved (uuid, ISBN, languages, tags, comments, series, series index, publisher, date). The copy stays a local copy, but its values are attributed to the sending library, `calibre/wireless:<library id>`. They sit beside the OPF values from the EPUB import rather than replacing them, so 1c can tell which source said what;
+  - Aozora `importWork`, merged with the OPF.
+- **Deviation from the plan:** TXT, PDF, comic, audiobook and book-source copies get no sidecar. They have nothing beyond what `SourceRecord` already derives, and an empty file would only be noise.
+- **On demand:** `ImportedMetadataCapture.captureIfMissing(copy:store:)` reads a local EPUB copy's OPF. Nothing calls it in Phase 1.
+- **One shape per field:** `language` is always `.texts`. The remote capture first wrote `.text`, and this was fixed before merge.
+- **Removal is gated like chapter lists:** a shelf file that exists but does not decode removes no sidecar (tested). No production path deletes the shelf file.
+- **`ReadingBook` is unchanged.** `ImportedMetadataImportTests` checks that the imported book's encoded keys are a subset of `CodingKeys` as of `346327dd`, and that its `stableHash(strippedForSync())` equals the hash of the copy reloaded from disk.
+
+```
+✔ Test run with 119 tests in 15 suites passed after 1.561 seconds.
+   (ImportedMetadataCaptureTests, ImportedMetadataStoreTests, ImportedMetadataImportTests,
+    ICloudSyncChangeDetectionTests, BookStoreMetadataWriteBudgetTests, RemoteReadingRecordTests,
+    RemoteLibraryServiceTests,
+    LocalBookImportServiceTests, ICloudAudioSyncExclusionTests, AozoraLibraryDownloadServiceTests,
+    OPDSParserTests, OPDS2ParserTests, GutenbergOPDS2FixtureTests, CalibreWirelessReceiverTests,
+    SourceRecordDerivationTests)
 ```
