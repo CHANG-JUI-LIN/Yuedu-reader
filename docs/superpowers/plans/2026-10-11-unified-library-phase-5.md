@@ -69,6 +69,11 @@
 7. **精選 is Gutenberg's bundled lists, sending no request** (§13.3, line 686).
 8. **A book source's 「最新」 is the discover category the reader picks for it** (§13.3, line 691). Until one is picked the source has no 最新 row; nothing guesses a category.
 9. **The old Explore roots stay one version behind a fallback flag** (§13.3, line 707). Whether the flag is visible is open decision 2.
+10. **Answered 2026-10-11** (maintainer, by option):
+    - **Open decision 2:** the flag is a 探索設定 switch, 「使用舊版探索頁」, for that one version.
+    - **Open decision 4:** the card is Apple Books style. A 2:3 cover, then the title in at most two lines and the author in one; the row's header names its source.
+    - **Open decision 5:** 相關 ships in v1 **including the same work across sources**, not only same author and series. 5b's `ShelfProvider` serves no 相關 yet. It needs the work index kept fresh by one owner (decision 6) before 5c can show it; this is now part of 5c.
+    - **Open decision 6:** RSS is a 「訂閱」 tile in 我的書庫 that pushes today's RSS content, with its unread count. An optional 「訂閱的最新文章」 row may follow. The RSS tab stays until open decision 1.
 
 ### Open, for the maintainer (each with a recommendation)
 
@@ -76,16 +81,16 @@ These change what is built, so no step that depends on one starts until it is an
 
 1. **Tab order and who gets it** (gates 5h). Plan A is 書架、探索、搜尋、統計、設定, and §13.7 adds "Explore first".
    - Recommend: decide after 5c, on a build, as settled. Then choose between new installs only and everyone with a one-time notice.
-2. **Whether the reader sees the fallback flag** (5c; the flag itself is settled decision 9).
+2. *(Answered 2026-10-11; see settled decision 10.)* **Whether the reader sees the fallback flag** (5c; the flag itself is settled decision 9).
    - Recommend: a 探索設定 switch 「使用舊版探索頁」 (one new string) for that one version.
    - Alternative: an internal flag only.
 3. *(Answered by the design; see settled decision 8.)*
-4. **The card** (5c).
+4. *(Answered 2026-10-11; see settled decision 10.)* **The card** (5c).
    - Recommend: Apple Books style. A 2:3 cover with title and author below, at most two lines and one line, and the row's source in its header.
    - Alternative: title over the cover, Emby style.
-5. **A 「相關」 row in v1** (5b, 5c): same author and series from the shelf, and the same work across sources from the index.
+5. *(Answered 2026-10-11 against the recommendation: cross-source too; see settled decision 10.)* **A 「相關」 row in v1** (5b, 5c): same author and series from the shelf, and the same work across sources from the index.
    - Recommend: yes for same author and series. The cross-source part waits until the index has a caller that keeps it fresh (5f).
-6. **Where RSS lives inside Explore** (5g).
+6. *(Answered 2026-10-11; see settled decision 10.)* **Where RSS lives inside Explore** (5g).
    - Recommend: a 「訂閱」 tile in 我的書庫 that pushes today's `RSSListView` content, plus an optional 「訂閱的最新文章」 row. The RSS tab stays visible until decision 1.
 7. **New strings.** Each step lists its proposals in five languages before code, as 2d did. Expected: 我的書庫, 精選, 相關, %@・最新, 新增來源, 編輯首頁, 新增欄目, 選擇內容來源, 呈現方式, 資料來源, 參數, 作品詳情, 可用來源, 目前沒有可閱讀的來源, 載入, 訂閱. Existing ones are reused: 繼續閱讀, 最新, 全部, 範圍.
 
