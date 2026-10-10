@@ -23,6 +23,65 @@ private enum ShelfPage: Hashable {
 }
 
 /// What a page lists. 全部 folds each group into one folder; every other page lists books.
+/// `HomeView.entries(onPage:)`'s results, kept until anything they are computed from changes.
+///
+/// A page's entries are the shelf filtered to the page and sorted — by title or author with
+/// `localizedCompare` — and the body asks for them for every page the pager lays out plus the
+/// toolbar's selection state, on every store publish and settings change. The key holds
+/// everything the computation reads (the records' revision, the sort order, the page), so a
+/// stale result cannot be returned; a new revision empties the memo. Held in `@State` and
+/// not observed: storing a result must not invalidate the view.
+private final class ShelfEntriesMemo {
+    struct Key: Hashable {
+        let sortOrder: String
+        let page: ShelfPage
+    }
+    private var revision: UInt64?
+    private var entries: [Key: [ShelfEntry]] = [:]
+
+    func entries(revision: UInt64, key: Key, compute: () -> [ShelfEntry]) -> [ShelfEntry] {
+        if revision != self.revision {
+            self.revision = revision
+            entries.removeAll(keepingCapacity: true)
+        }
+        if let cached = entries[key] { return cached }
+        let computed = compute()
+        entries[key] = computed
+        return computed
+    }
+
+    /// The order a sort produced, reused while the fields it sorts by are unchanged.
+    ///
+    /// Every store publish is a new revision, so the memo above recomputes — and re-sorting
+    /// by title or author is `localizedCompare` over the whole shelf, the largest part of the
+    /// shelf's own work per publish when sampled. A reading-position write (the commonest
+    /// publish) cannot move a book under any sort order but 最近閱讀, and that one sorts by
+    /// when a book was opened, not by its position. `signature` covers each book's id and
+    /// sort field; while it matches, the stored order is applied to the current books.
+    private var orders: [OrderKey: (signature: Int, ids: [UUID])] = [:]
+
+    struct OrderKey: Hashable {
+        let group: String?
+        let sortOrder: String
+    }
+
+    func sorted(
+        _ books: [ReadingBook],
+        key: OrderKey,
+        signature: Int,
+        sort: ([ReadingBook]) -> [ReadingBook]
+    ) -> [ReadingBook] {
+        if let cached = orders[key], cached.signature == signature, cached.ids.count == books.count {
+            let byID = Dictionary(books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let reordered = cached.ids.compactMap { byID[$0] }
+            if reordered.count == books.count { return reordered }
+        }
+        let result = sort(books)
+        orders[key] = (signature, result.map(\.id))
+        return result
+    }
+}
+
 private enum ShelfEntry: Identifiable {
     case book(ReadingBook)
     /// A group, with its books in the shelf's order.
@@ -146,6 +205,7 @@ struct HomeView: View {
     @AppStorage("bookSortOrder") private var sortOrder = BookSortOrder.manual.rawValue
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Namespace private var bookTransition
+    @State private var entriesMemo = ShelfEntriesMemo()
 
     private var hInset: CGFloat { sizeClass == .regular ? 32 : 20 }
     private var isCompactFiveColumnGrid: Bool { gs.bookshelfGridColumnCount >= 5 }
@@ -375,6 +435,13 @@ struct HomeView: View {
     /// its first book would be — the one read last, under 最近閱讀 — except under 書名,
     /// which sorts a folder by its group's name among the titles.
     private func entries(onPage page: ShelfPage) -> [ShelfEntry] {
+        entriesMemo.entries(
+            revision: store.mutationRevision,
+            key: ShelfEntriesMemo.Key(sortOrder: sortOrder, page: page)
+        ) { computeEntries(onPage: page) }
+    }
+
+    private func computeEntries(onPage page: ShelfPage) -> [ShelfEntry] {
         switch page {
         case .group(let group), .folder(let group):
             return sortedBooks(inGroup: group).map(ShelfEntry.book)
@@ -400,13 +467,29 @@ struct HomeView: View {
     /// A group's books, or with `nil` every book, in the shelf's order.
     private func sortedBooks(inGroup group: String?) -> [ReadingBook] {
         let base = group.map { group in store.books.filter { $0.group == group } } ?? store.books
-        switch BookSortOrder(rawValue: sortOrder) ?? .manual {
-        case .manual:       return base
-        case .recentlyRead: return base.sorted {
-            ($0.lastOpenedDate ?? $0.addedDate) > ($1.lastOpenedDate ?? $1.addedDate)
+        let order = BookSortOrder(rawValue: sortOrder) ?? .manual
+        guard order != .manual else { return base }
+        var hasher = Hasher()
+        for book in base {
+            hasher.combine(book.id)
+            switch order {
+            case .manual: break
+            case .recentlyRead: hasher.combine(book.lastOpenedDate ?? book.addedDate)
+            case .title: hasher.combine(book.title)
+            case .author: hasher.combine(book.author)
+            }
         }
-        case .title:        return base.sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
-        case .author:       return base.sorted { $0.author.localizedCompare($1.author) == .orderedAscending }
+        return entriesMemo.sorted(
+            base, key: ShelfEntriesMemo.OrderKey(group: group, sortOrder: sortOrder), signature: hasher.finalize()
+        ) { books in
+            switch order {
+            case .manual:       return books
+            case .recentlyRead: return books.sorted {
+                ($0.lastOpenedDate ?? $0.addedDate) > ($1.lastOpenedDate ?? $1.addedDate)
+            }
+            case .title:        return books.sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
+            case .author:       return books.sorted { $0.author.localizedCompare($1.author) == .orderedAscending }
+            }
         }
     }
 
@@ -1021,11 +1104,13 @@ struct HomeView: View {
                                 ? { showOnlineBookDetail(for: book) }
                                 : nil
                         )
+                        .equatable()
                         .tag(book.id)
                     case .folder(let name, let books):
                         BookshelfFolderRow(name: name, books: books, isSelecting: isSelecting) {
                             openedFolder = name
                         }
+                        .equatable()
                         .moveDisabled(true)
                     }
                 }
@@ -1137,6 +1222,7 @@ struct HomeView: View {
                                 ? { showOnlineBookDetail(for: book) }
                                 : nil
                         )
+                        .equatable()
                     case .folder(let name, let books):
                         BookshelfFolderGridCell(
                             name: name,
@@ -1147,6 +1233,7 @@ struct HomeView: View {
                         ) {
                             openedFolder = name
                         }
+                        .equatable()
                     }
                 }
             }
@@ -2473,3 +2560,52 @@ private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
         .environmentObject(BookStore())
 }
 #endif
+
+
+// MARK: - Skipping unchanged cells
+
+// A cell takes its book plus closures. Closures cannot be compared, so without these SwiftUI
+// re-ran every visible cell's body — and re-resolved all its text — on every store publish:
+// one book's reading position changing cost all of them (sampled with
+// `ShelfRenderScaleTests`, 300 books). The closures only route actions back to the shelf, so
+// equality is the book and the cell's value inputs, plus whether 詳情 is offered.
+
+extension BookGridCell: Equatable {
+    static func == (lhs: BookGridCell, rhs: BookGridCell) -> Bool {
+        lhs.book == rhs.book
+            && lhs.isCompactLayout == rhs.isCompactLayout
+            && lhs.coverDisplaySize == rhs.coverDisplaySize
+            && lhs.isEditing == rhs.isEditing
+            && lhs.isSelected == rhs.isSelected
+            && lhs.selectedCoverScale == rhs.selectedCoverScale
+            && lhs.transitionNamespace == rhs.transitionNamespace
+            && (lhs.onShowDetail == nil) == (rhs.onShowDetail == nil)
+            && (lhs.onCoverFrameChange == nil) == (rhs.onCoverFrameChange == nil)
+    }
+}
+
+extension BookRow: Equatable {
+    static func == (lhs: BookRow, rhs: BookRow) -> Bool {
+        lhs.book == rhs.book
+            && lhs.isEditing == rhs.isEditing
+            && lhs.transitionNamespace == rhs.transitionNamespace
+            && (lhs.onShowDetail == nil) == (rhs.onShowDetail == nil)
+            && (lhs.onCoverFrameChange == nil) == (rhs.onCoverFrameChange == nil)
+    }
+}
+
+extension BookshelfFolderGridCell: Equatable {
+    static func == (lhs: BookshelfFolderGridCell, rhs: BookshelfFolderGridCell) -> Bool {
+        lhs.name == rhs.name
+            && lhs.books == rhs.books
+            && lhs.isCompactLayout == rhs.isCompactLayout
+            && lhs.coverDisplaySize == rhs.coverDisplaySize
+            && lhs.isSelecting == rhs.isSelecting
+    }
+}
+
+extension BookshelfFolderRow: Equatable {
+    static func == (lhs: BookshelfFolderRow, rhs: BookshelfFolderRow) -> Bool {
+        lhs.name == rhs.name && lhs.books == rhs.books && lhs.isSelecting == rhs.isSelecting
+    }
+}

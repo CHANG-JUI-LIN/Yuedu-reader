@@ -200,6 +200,11 @@ extension ReadingBook {
 
 // MARK: - Book Model
 
+/// Every stored field compared, synthesized: a bookshelf cell skips its body when the book it
+/// shows is unchanged (`BookGridCell`, `BookRow`). Synthesized rather than hand-picked so a
+/// field the cell starts showing later cannot be missed.
+extension ReadingBook: Equatable {}
+
 struct ReadingBook: Identifiable, Codable {
     let id: UUID
     var title: String

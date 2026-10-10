@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import OSLog
+import os
 import SwiftSoup
 import SwiftUI
 import UIKit
@@ -85,9 +86,32 @@ class BookStore: ObservableObject, BookProvider {
     /// A result may replace the shelf only while its input snapshot is current.
     private(set) var mutationRevision: UInt64 = 0
 
+    /// The shelf and its groups as derived from `records` at `revision`. `books` used to be a
+    /// `records.filter` on every access and `allGroups` a filter + Set + sort, both read many
+    /// times per bookshelf body (and by sync, the widget, search): with 300 books one store
+    /// publish cost the shelf ~13 ms on the main thread (Debug simulator). Derived once per
+    /// change of `records`, whose only write point bumps `mutationRevision` — a memo of a
+    /// value, not a second store.
+    private struct ShelfDerivation {
+        let revision: UInt64
+        let books: [ReadingBook]
+        var groups: [String]?
+    }
+    /// Locked: `books` is also read off the main thread (sync encoding, downloads), and a
+    /// getter that fills a memo must not race itself.
+    private let shelfDerivation = OSAllocatedUnfairLock<ShelfDerivation?>(initialState: nil)
+
+    private var derivedShelf: ShelfDerivation {
+        let revision = mutationRevision
+        if let derived = shelfDerivation.withLock({ $0 }), derived.revision == revision { return derived }
+        let derived = ShelfDerivation(revision: revision, books: records.filter(\.isInBookshelf))
+        shelfDerivation.withLock { $0 = derived }
+        return derived
+    }
+
     /// Only explicit shelf members are exposed to shelf, widget and sync clients.
     var books: [ReadingBook] {
-        get { records.filter(\.isInBookshelf) }
+        get { derivedShelf.books }
         set {
             let ids = Set(newValue.map(\.id))
             records = newValue.map { book in
@@ -1256,8 +1280,12 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Bookshelf Grouping
 
     var allGroups: [String] {
-        let groups = books.compactMap { $0.group.isEmpty ? nil : $0.group }
-        return Array(Set(groups)).sorted()
+        var derived = derivedShelf
+        if let groups = derived.groups { return groups }
+        let groups = Array(Set(derived.books.compactMap { $0.group.isEmpty ? nil : $0.group })).sorted()
+        derived.groups = groups
+        shelfDerivation.withLock { if $0?.revision == derived.revision { $0 = derived } }
+        return groups
     }
 
     func setGroup(_ group: String, for bookId: UUID) {
