@@ -273,6 +273,7 @@ struct RemoteLibraryConnectionEditor: View {
 struct OPDSFeedView: View {
     let route: OPDSFeedRoute
     @ObservedObject private var catalogStore = RemoteLibraryConnectionStore.shared
+    @EnvironmentObject private var store: BookStore
     @StateObject private var model: OPDSBrowseModel
     @State private var searchText = ""
     @State private var requestTask: Task<Void, Never>?
@@ -412,10 +413,19 @@ struct OPDSFeedView: View {
                         if entry.bestAcquisition == nil {
                             Text(localized("此格式暫不支援閱讀")).font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
                         }
+                        if let status = shelfStatus(of: entry) {
+                            Text(status.title).font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// 已加入書架 or 已下載, from `CopyLookup` (unified library 2c).
+    private func shelfStatus(of entry: OPDSEntry) -> CopyLookup.Status? {
+        let key = SourceRecord.derived(from: entry, connectionID: route.catalogID, connectionKind: connection?.kind ?? .opds).key
+        return store.copyLookup(connections: catalogStore).status(for: key)
     }
 
     private func submitSearch() {

@@ -109,6 +109,25 @@ class BookStore: ObservableObject, BookProvider {
         return derived
     }
 
+    /// `CopyLookup` (unified library 2c), memoized like `derivedShelf`: per `mutationRevision`
+    /// and the remote library connections it was keyed with.
+    private struct CopyLookupDerivation {
+        let revision: UInt64
+        let connections: [String]
+        let lookup: CopyLookup
+    }
+    private let copyLookupDerivation = OSAllocatedUnfairLock<CopyLookupDerivation?>(initialState: nil)
+
+    func copyLookupMemo(fingerprint connections: [String], build: () -> CopyLookup) -> CopyLookup {
+        let revision = mutationRevision
+        if let derived = copyLookupDerivation.withLock({ $0 }), derived.revision == revision, derived.connections == connections {
+            return derived.lookup
+        }
+        let lookup = build()
+        copyLookupDerivation.withLock { $0 = CopyLookupDerivation(revision: revision, connections: connections, lookup: lookup) }
+        return lookup
+    }
+
     /// Only explicit shelf members are exposed to shelf, widget and sync clients.
     var books: [ReadingBook] {
         get { derivedShelf.books }

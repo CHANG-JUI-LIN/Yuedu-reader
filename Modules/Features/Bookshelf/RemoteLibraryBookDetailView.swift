@@ -86,6 +86,9 @@ struct RemoteLibraryBookDetailView: View {
     @State private var actionFailed = false
     @State private var readerBookID: UUID?
     @State private var introExpanded = false
+    /// Whether the copy's offline file exists, checked when the copy or its file changes
+    /// rather than on every body evaluation (unified library 2c).
+    @State private var offlineFileExists = false
     @Environment(\.publicLibrarySheet) private var sheet
 
     init(item: RemoteLibraryItem, storefront: Bool = false, authors: [GutenbergAuthor] = [],
@@ -102,8 +105,10 @@ struct RemoteLibraryBookDetailView: View {
     private var book: ReadingBook? {
         selectedFormat.flatMap { dependencies.remoteLibrary.book(for: item, format: $0, store: store) }
     }
-    private var isOnShelf: Bool { book.map { book in store.books.contains { $0.id == book.id } } ?? false }
-    private var isOffline: Bool { book.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false }
+    /// The copy comes from `CopyLookup`, so whether it is on the shelf is its own field.
+    private var isOnShelf: Bool { book?.isInBookshelf ?? false }
+    private var isOffline: Bool { book != nil && offlineFileExists }
+    private var offlineProbe: String { "\(book?.id.uuidString ?? "")|\(book?.remoteSource?.offlineFilename ?? "")" }
     private var canAct: Bool { selectedFormat?.isSupported == true && action == nil }
     private var connection: RemoteLibraryConnection? {
         catalogStore.connection(id: item.connectionID)
@@ -123,6 +128,9 @@ struct RemoteLibraryBookDetailView: View {
             }
         }
         .onChange(of: selectedFormatID) { _, _ in message = nil }
+        .task(id: offlineProbe) {
+            offlineFileExists = book.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false
+        }
         .onDisappear { actionTask?.cancel() }
     }
 
