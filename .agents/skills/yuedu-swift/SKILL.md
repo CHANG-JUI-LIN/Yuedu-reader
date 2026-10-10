@@ -78,8 +78,11 @@ Details: [references/persistence.md](references/persistence.md).
     `BookStore.books`, `allGroups`, `BookSourceStore.enabledSources`, `RSSStore.unreadCount`
     are O(N) per access — never call them repeatedly in `body`. Disclose any new derived
     index to the user (it is not a new cache layer, but say so).
-13. Look sources up by id through an index (`source(id:)`), never `sources.first { $0.id == … }`
-    in UI code.
+13. Look sources up by id with `BookSourceStore.source(id:)` (an index), never
+    `sources.first { $0.id == … }`. The library is read off the main thread at launch:
+    `sources` waits for that read if touched first, so launch-time code on main uses
+    `whenLoaded { }` / `await waitUntilLoaded()` instead, and subscribers use
+    `sourcesPublisher` knowing it starts with an unloaded `[]`.
 14. Per-frame values (scroll offset, geometry, drag, slider drag, playback ticks) never go
     into `@State` that re-renders a big body, nor into the environment. Use
     `onGeometryChange(for: Bool.self)` threshold crossings, `scrollTransition`/`visualEffect`,

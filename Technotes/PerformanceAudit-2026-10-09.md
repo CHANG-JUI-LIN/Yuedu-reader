@@ -41,7 +41,9 @@ tree. See `.agents/skills/yuedu-swift/references/diagnosing-hangs.md`.
 | MetricKit stacks unusable | **Fixed**: heaviest path, rebased to loaded images, sent as `ExceptionModel` frames (Crashlytics symbolicates + groups per culprit) |
 | P0-2 launch refresh rewrites TOC caches | **Fixed**: TOC / book-info raw HTML no longer written (never read); TOC package rewritten only when its fingerprint (ids excluded) changes; auto-refresh throttle persisted. Test `TOCCacheWriteBudgetTests` |
 | Swift 6 readiness (measured) | Swift 5 + `-strict-concurrency=complete`, after fixing the two `WKScriptMessageHandlerWithReply` conformances: **0 errors, 178 warnings in 83 files**, nearly all "an error in Swift 6": 73 mutable statics, 39 region-isolation `sending`, 27 non-Sendable captures, 9 WKWebView delegate methods that only "nearly match" (they would silently stop being called) |
-| P0-4, P1-5 (reconcile reads), P1-6 … | Open |
+| P0-4 source library decoded on main in `App.init` | **Fixed** (10-10): `BookSourceStore` reads the file on its own queue from creation; `sources` waits for the read if touched first (a main-thread wait is a `bookSources.waitOnMain` span); `whenLoaded` / `waitUntilLoaded()` for launch readers (Explore mode, `ExploreTabModel`, scale keys, Firestore push, launch refresh, download reconcile). 50 000 sources: main thread 1334 → 0 ms (read 1190 ms in background), Debug simulator |
+| P1-6 shelf covers scan all sources + sync JS in init | **Fixed** (10-10): `BookSourceStore.source(id:)` index rebuilt at the single write point; `BookCoverImage` resolves source and header rule in `load()` on `SourceScriptThread`, only when not cached; 25 `sources.first { $0.id == }` sites use the index (`ReaderView.swift` left: another session was editing it). 200 covers × 50 000 sources: 3059 → 0 ms |
+| P1-5 (reconcile reads), P1-7 … | Open |
 
 Feedback system added the same day: see `.agents/skills/yuedu-swift/references/diagnosing-hangs.md` §1.
 
