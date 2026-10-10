@@ -21,6 +21,31 @@ struct RemoteLibraryServiceTests {
         #expect(!FileManager.default.fileExists(atPath: StorageLocations.bookFile(added.contentFilename).path))
     }
 
+    @Test("a new remote copy and a reopened one both record what the feed said")
+    func recordWritesTheSidecar() throws {
+        let context = try Context(extension: "txt", data: Data("第一章\n正文。".utf8))
+        defer { context.cleanup() }
+        var item = context.item
+        item.summary = "地球往事"
+        item.language = "zh"
+        item.identifiers = ["urn:isbn:9787536692930"]
+
+        let added = try context.service.addToShelf(item: item, format: context.format, store: context.store)
+        context.store.importedMetadata.waitForPendingWritesForTesting()
+        let first = try #require(context.store.importedMetadata.read(copyID: added.id))
+        #expect(first.identifiers == [.normalized(.isbn13, "9787536692930")!])
+        #expect(first.values.contains { $0.field == .intro && $0.value == .text("地球往事") })
+        #expect(first.values.contains { $0.field == .language && $0.value == .texts(["zh"]) })
+        #expect(first.sourceItem.instance == SourceInstanceKey(type: .webDAV, id: item.connectionID))
+
+        item.summary = "三體"
+        let reopened = try context.service.addToShelf(item: item, format: context.format, store: context.store)
+        context.store.importedMetadata.waitForPendingWritesForTesting()
+        #expect(reopened.id == added.id)
+        let second = try #require(context.store.importedMetadata.read(copyID: added.id))
+        #expect(second.values.filter { $0.field == .intro }.map(\.value) == [.text("三體")])
+    }
+
     @Test("reading TXT uses automatic cache while keeping shelf and offline download independent")
     func readingTXTDoesNotAddOrDownloadOffline() async throws {
         let text = "第一章 測試\n遠端書庫線上閱讀正文。\n第二章\n繼續閱讀。"

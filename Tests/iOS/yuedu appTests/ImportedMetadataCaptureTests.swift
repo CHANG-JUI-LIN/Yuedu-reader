@@ -93,7 +93,7 @@ struct ImportedMetadataCaptureTests {
         ])
         #expect(value(.intro, in: metadata) == .text("地球往事"))
         #expect(value(.authors, in: metadata) == .texts(["劉慈欣", "Ken Liu"]))
-        #expect(value(.language, in: metadata) == .text("zh"))
+        #expect(value(.language, in: metadata) == .texts(["zh"]), "the same shape as every other capture")
     }
 
     @Test("OPDS 1 entries keep dc:language and dc:identifier")
@@ -145,7 +145,7 @@ struct ImportedMetadataCaptureTests {
             "publisher": .string("重慶出版社"),
             "pubdate": .string("2008-01-01T00:00:00+00:00"),
         ]
-        let captured = ImportedMetadataCapture.calibre(metadata: metadata, copy: copy, sourceItem: .copy(copy.id), now: fixed)
+        let captured = ImportedMetadataCapture.calibre(metadata: metadata, copy: copy, libraryID: "lib-1", now: fixed)
 
         #expect(captured.identifiers == [
             .normalized(.calibreUUID, "6ba7b810-9dad-11d1-80b4-00c04fd430c8")!,
@@ -158,6 +158,29 @@ struct ImportedMetadataCaptureTests {
         #expect(value(.seriesIndex, in: captured) == .number(1))
         #expect(value(.publisher, in: captured) == .text("重慶出版社"))
         #expect(value(.publishedDate, in: captured) == .date(Date(timeIntervalSince1970: 1_199_145_600)))
+        #expect(captured.sourceItem == .copy(copy.id), "the copy is still a local copy")
+        let calibre = ImportedMetadataCapture.calibreWirelessInstance(libraryID: "lib-1")
+        #expect(captured.values.allSatisfy { $0.provider == calibre && $0.sourceItem?.item == "6ba7b810-9dad-11d1-80b4-00c04fd430c8" })
+    }
+
+    @Test("Calibre's values sit beside the OPF's instead of replacing them")
+    func calibreKeepsTheOPFValues() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("calibre-merge-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ImportedMetadataStore(directory: directory)
+        store.write(ImportedMetadataCapture.epub(
+            copy: copy, sourceItem: .copy(copy.id), identifiers: [], languages: ["zh"], description: nil,
+            subjects: ["小說"], publishers: [], published: nil, now: fixed
+        ))
+        store.write(ImportedMetadataCapture.calibre(
+            metadata: ["uuid": .string("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "languages": .array([.string("zho")])],
+            copy: copy, libraryID: "lib-1", now: fixed
+        ))
+        store.waitForPendingWritesForTesting()
+
+        let merged = try #require(store.read(copyID: copy.id))
+        #expect(Set(merged.values.filter { $0.field == .language }.map(\.value)) == [.texts(["zh"]), .texts(["zho"])])
+        #expect(merged.values.contains { $0.field == .tags && $0.value == .texts(["小說"]) })
     }
 
     @Test("an Aozora work gives its work id, Japanese, and its classification as tags")

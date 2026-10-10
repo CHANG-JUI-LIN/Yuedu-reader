@@ -79,7 +79,8 @@ enum ImportedMetadataCapture {
         }
         add(.intro, text(item.summary))
         if item.authorNames.count > 1 { add(.authors, texts(item.authorNames)) }
-        add(.language, text(item.language))
+        // `.texts`, as every other capture writes it: one field has one shape.
+        add(.language, texts([item.language].compactMap { $0 }))
         let kind = connectionKind ?? .opds
         let identifiers = item.identifiers.flatMap { SourceRecord.identifiers(inEntryID: $0, connectionKind: kind) }
             + SourceRecord.identifiers(inEntryID: item.id, connectionKind: kind)
@@ -91,16 +92,22 @@ enum ImportedMetadataCapture {
     /// From the metadata dictionary Calibre sends with a book: `uuid`, `isbn`,
     /// `identifiers`, `languages`, `tags`, `comments`, `series`, `series_index`, `publisher`
     /// and `pubdate`.
+    ///
+    /// The copy itself stays a local copy (`sourceItem` is `.copy`), but its values are
+    /// Calibre's: they are attributed to the sending library, so they sit beside the OPF's
+    /// values from the EPUB import instead of replacing them.
     static func calibre(
         metadata: [String: CalibreJSON],
         copy: ReadingBook,
-        sourceItem: SourceItemKey,
+        libraryID: String,
         now: Date = Date()
     ) -> ImportedMetadata {
+        let provider = calibreWirelessInstance(libraryID: libraryID)
+        let calibreItem = SourceItemKey(instance: provider, item: metadata["uuid"]?.string?.lowercased() ?? copy.id.uuidString.lowercased())
         var values: [MetadataValue] = []
         func add(_ field: MetadataField, _ payload: MetadataPayload?) {
             guard let payload else { return }
-            values.append(MetadataValue(field: field, value: payload, provider: sourceItem.instance, sourceItem: sourceItem, fetchedAt: now))
+            values.append(MetadataValue(field: field, value: payload, provider: provider, sourceItem: calibreItem, fetchedAt: now))
         }
         var identifiers: [ExternalIdentifier] = []
         if let uuid = metadata["uuid"]?.string, let identifier = ExternalIdentifier.normalized(.calibreUUID, uuid) {
@@ -118,7 +125,13 @@ enum ImportedMetadataCapture {
         }
         add(.publisher, text(metadata["publisher"]?.string))
         add(.publishedDate, metadata["pubdate"]?.string.flatMap(isoDate).map(MetadataPayload.date))
-        return ImportedMetadata(copyID: copy.id, sourceItem: sourceItem, identifiers: unique(identifiers), values: values)
+        return ImportedMetadata(copyID: copy.id, sourceItem: .copy(copy.id), identifiers: unique(identifiers), values: values)
+    }
+
+    /// A Calibre library that sends books over the wireless connection. It has no
+    /// `RemoteLibraryConnection`, so its id is Calibre's own library id, marked as wireless.
+    static func calibreWirelessInstance(libraryID: String) -> SourceInstanceKey {
+        SourceInstanceKey(type: .calibre, id: "wireless:\(libraryID)")
     }
 
     // MARK: - Aozora Bunko

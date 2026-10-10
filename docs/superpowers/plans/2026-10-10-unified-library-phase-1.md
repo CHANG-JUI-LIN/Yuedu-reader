@@ -499,16 +499,19 @@ Branch `unified-library/1b-imported-metadata`, on `346327dd`. Not merged, not pu
 - **Capture points:**
   - `importEpub`, after the copy is persisted;
   - `RemoteLibraryService.record`, both for a new copy and when an existing one is opened again. That is a reader's action, not a scan;
-  - Calibre wireless `receiveBook`, after the registry is saved (uuid, ISBN, languages, tags, comments, series, series index, publisher, date);
+  - Calibre wireless `receiveBook`, after the registry is saved (uuid, ISBN, languages, tags, comments, series, series index, publisher, date). The copy stays a local copy, but its values are attributed to the sending library, `calibre/wireless:<library id>`. They sit beside the OPF values from the EPUB import rather than replacing them, so 1c can tell which source said what;
   - Aozora `importWork`, merged with the OPF.
 - **Deviation from the plan:** TXT, PDF, comic, audiobook and book-source copies get no sidecar. They have nothing beyond what `SourceRecord` already derives, and an empty file would only be noise.
 - **On demand:** `ImportedMetadataCapture.captureIfMissing(copy:store:)` reads a local EPUB copy's OPF. Nothing calls it in Phase 1.
+- **One shape per field:** `language` is always `.texts`. The remote capture first wrote `.text`, and this was fixed before merge.
+- **Removal is gated like chapter lists:** a shelf file that exists but does not decode removes no sidecar (tested). No production path deletes the shelf file.
 - **`ReadingBook` is unchanged.** `ImportedMetadataImportTests` checks that the imported book's encoded keys are a subset of `CodingKeys` as of `346327dd`, and that its `stableHash(strippedForSync())` equals the hash of the copy reloaded from disk.
 
 ```
-✔ Test run with 95 tests in 14 suites passed after 0.804 seconds.
+✔ Test run with 119 tests in 15 suites passed after 1.561 seconds.
    (ImportedMetadataCaptureTests, ImportedMetadataStoreTests, ImportedMetadataImportTests,
     ICloudSyncChangeDetectionTests, BookStoreMetadataWriteBudgetTests, RemoteReadingRecordTests,
+    RemoteLibraryServiceTests,
     LocalBookImportServiceTests, ICloudAudioSyncExclusionTests, AozoraLibraryDownloadServiceTests,
     OPDSParserTests, OPDS2ParserTests, GutenbergOPDS2FixtureTests, CalibreWirelessReceiverTests,
     SourceRecordDerivationTests)

@@ -49,6 +49,13 @@ struct AozoraLibraryDownloadServiceTests {
         #expect(book.title == work.title)
         #expect(store.books.count == 1)
         #expect(book.aozora?.sourceEncoding == String.Encoding.shiftJIS.rawValue)
+        // Unified library 1b: the generated OPF and the catalog work both stay in the sidecar.
+        store.importedMetadata.waitForPendingWritesForTesting()
+        let sidecar = try #require(store.importedMetadata.read(copyID: book.id))
+        #expect(sidecar.identifiers.contains(.normalized(.aozoraWork, work.id)!))
+        #expect(sidecar.identifiers.contains { $0.scheme == .epubUniqueIdentifier }, "the OPF's identifier survives the catalog write")
+        #expect(Set(sidecar.values.filter { $0.field == .language }.map(\.provider.type)) == [.library, .aozora])
+        #expect(sidecar.sourceItem == SourceRecord.derived(from: work).key)
         #expect(try await service.addToShelf(work: work, store: store).id == book.id)
         #expect(downloads == 1)
         #expect(!FileManager.default.fileExists(atPath: try #require(temporary).path))

@@ -322,7 +322,7 @@ final class CalibreWirelessService: ObservableObject {
         // Unified library 1b: Calibre's uuid, ISBN and metadata beside the copy, which keeps
         // only title and author.
         store.importedMetadata.write(ImportedMetadataCapture.calibre(
-            metadata: metadata, copy: imported, sourceItem: .copy(imported.id)
+            metadata: metadata, copy: imported, libraryID: sourceLibraryID
         ))
         updateTransfer(statusID, phase: .completed)
         AppLogger.info("[CalibreWireless] receive imported bookID=\(imported.id) bytes=\(incoming.length)")

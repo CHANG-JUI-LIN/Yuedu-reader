@@ -88,6 +88,24 @@ struct ImportedMetadataImportTests {
         #expect(store.importedMetadata.read(copyID: orphan) == nil)
     }
 
+    @Test("a shelf file that does not decode removes no sidecar")
+    func undecodableShelfKeepsSidecars() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let shelf = directory.appendingPathComponent("books_meta.json")
+        try Data("{ not a shelf".utf8).write(to: shelf)
+        let copy = UUID()
+        let sidecars = ImportedMetadataStore(besideShelfFile: shelf)
+        sidecars.write(ImportedMetadata(copyID: copy, sourceItem: .copy(copy), identifiers: [.normalized(.isbn13, "9787536692930")!], values: []))
+        sidecars.waitForPendingWritesForTesting()
+
+        let store = BookStore(metadataFileURL: shelf)
+        store.importedMetadata.waitForPendingWritesForTesting()
+
+        #expect(store.readingBooks.isEmpty)
+        #expect(store.importedMetadata.read(copyID: copy) != nil, "an empty shelf that failed to load is not a shelf without books")
+    }
+
     @Test("an existing EPUB copy gets its sidecar only when asked")
     func captureIfMissing() async throws {
         let directory = try temporaryDirectory()
