@@ -138,13 +138,12 @@ private final class BookshelfReaderGeometryStore: ObservableObject {
     }
 }
 
-private struct BookshelfCoverFramePreferenceKey: PreferenceKey {
-    static let defaultValue: CGRect = .zero
-
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        let next = nextValue()
-        if !next.isEmpty { value = next }
-    }
+/// The last on-screen frame of a shelf cover, held by reference so recording it does not
+/// invalidate the cell. It used to be `@State`, written through a preference: the global
+/// frame changes every scroll frame, so every visible cell re-ran its body on every frame
+/// of a scroll. The frame is read when the book opens; the geometry store gets each value.
+final class BookshelfCoverFrameBox {
+    var frame: CGRect = .zero
 }
 
 private enum BookshelfImportPresentationRoute: Hashable {
@@ -155,17 +154,15 @@ private enum BookshelfImportPresentationRoute: Hashable {
 }
 
 private extension View {
-    func reportBookshelfCoverFrame(_ frame: Binding<CGRect>) -> some View {
-        background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: BookshelfCoverFramePreferenceKey.self,
-                    value: proxy.frame(in: .global)
-                )
-            }
-        }
-        .onPreferenceChange(BookshelfCoverFramePreferenceKey.self) { newFrame in
-            if !newFrame.isEmpty { frame.wrappedValue = newFrame }
+    /// Same frames, at the same moments, as the `GeometryReader` + preference it replaces —
+    /// in window coordinates, empty ones ignored — written to `box` instead of to state.
+    func reportBookshelfCoverFrame(into box: BookshelfCoverFrameBox, onChange: ((CGRect) -> Void)?) -> some View {
+        onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            guard !frame.isEmpty else { return }
+            box.frame = frame
+            onChange?(frame)
         }
     }
 }
@@ -1775,7 +1772,7 @@ struct BookRow: View {
     static let coverSize = CGSize(width: 45, height: 65)
     private let coverW: CGFloat = BookRow.coverSize.width
     private let coverH: CGFloat = BookRow.coverSize.height
-    @State private var liveCoverFrame: CGRect = .zero
+    @State private var coverFrame = BookshelfCoverFrameBox()
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -1799,8 +1796,8 @@ struct BookRow: View {
     }
 
     private func openBook() {
-        onTap(liveCoverFrame.isEmpty ? nil : ReaderCardGeometry(
-            frame: liveCoverFrame, cornerRadius: BookshelfCoverStyle.cornerRadius
+        onTap(coverFrame.frame.isEmpty ? nil : ReaderCardGeometry(
+            frame: coverFrame.frame, cornerRadius: BookshelfCoverStyle.cornerRadius
         ))
     }
 
@@ -1837,9 +1834,6 @@ struct BookRow: View {
                 .fill(Color(uiColor: .separator))
                 .frame(height: 0.5)
         }
-        .onChange(of: liveCoverFrame) { _, frame in
-            if !frame.isEmpty { onCoverFrameChange?(frame) }
-        }
     }
 
     private var rowContent: some View {
@@ -1851,7 +1845,7 @@ struct BookRow: View {
                     bookCover
                 }
             }
-            .reportBookshelfCoverFrame($liveCoverFrame)
+            .reportBookshelfCoverFrame(into: coverFrame, onChange: onCoverFrameChange)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(book.title)
@@ -1997,7 +1991,7 @@ struct BookGridCell: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
     var onShowDetail: (() -> Void)? = nil
-    @State private var liveCoverFrame: CGRect = .zero
+    @State private var coverFrame = BookshelfCoverFrameBox()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -2005,9 +1999,9 @@ struct BookGridCell: View {
     /// has reported a frame. The radius has to match what the cell actually
     /// clipped with, or the card visibly re-rounds as it lifts off the shelf.
     private var readerCardGeometry: ReaderCardGeometry? {
-        liveCoverFrame.isEmpty
+        coverFrame.frame.isEmpty
             ? nil
-            : ReaderCardGeometry(frame: liveCoverFrame, cornerRadius: BookshelfCoverStyle.cornerRadius)
+            : ReaderCardGeometry(frame: coverFrame.frame, cornerRadius: BookshelfCoverStyle.cornerRadius)
     }
 
     var body: some View {
@@ -2021,7 +2015,7 @@ struct BookGridCell: View {
                             coverView
                         }
                     }
-                    .reportBookshelfCoverFrame($liveCoverFrame)
+                    .reportBookshelfCoverFrame(into: coverFrame, onChange: onCoverFrameChange)
                     if book.currentPosition > 0.01 && book.currentPosition < 0.99 {
                         Text("\(Int(book.currentPosition * 100))%")
                             .font(DSFont.fixed(size: 10, weight: .semibold))
@@ -2096,9 +2090,6 @@ struct BookGridCell: View {
             .gesture(TapGesture().onEnded(onToggleSelection), including: isEditing ? .all : .subviews)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onChange(of: liveCoverFrame) { _, frame in
-            if !frame.isEmpty { onCoverFrameChange?(frame) }
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(BookshelfAccessibility.description(for: book))
         .accessibilityAddTraits(isEditing && isSelected ? [.isButton, .isSelected] : .isButton)

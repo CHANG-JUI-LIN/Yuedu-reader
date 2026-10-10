@@ -592,10 +592,9 @@ private struct PublicLibraryExpandingCard<Content: View>: View {
     let onScrolledChange: (Bool) -> Void
     @ViewBuilder var content: Content
 
-    /// The scroll view's top content inset: status bar plus margin.
-    @State private var inset: CGFloat = 0
-    /// How far the card has scrolled up from rest; negative while pulled down.
-    @State private var offset: CGFloat = 0
+    /// The card's scroll — top inset (status bar plus margin) and how far it has scrolled up
+    /// from rest, negative while pulled down — shared with the header through the environment.
+    @State private var chrome = BookDetailCardChrome()
     /// The scroll view's height inside its insets. The content is at least this plus
     /// the top inset tall, so the card can always scroll its whole inset away and stay
     /// expanded, however short the page.
@@ -603,12 +602,14 @@ private struct PublicLibraryExpandingCard<Content: View>: View {
 
     private static var space: String { "publicLibrary.card" }
 
-    private var progress: CGFloat { inset > 0 ? min(max(offset / inset, 0), 1) : 0 }
+    private var offset: CGFloat { chrome.offset }
+    private var inset: CGFloat { chrome.inset }
+    private var progress: CGFloat { chrome.progress }
 
     var body: some View {
         ScrollView(.vertical) {
             content
-                .environment(\.bookDetailCardChrome, BookDetailCardChrome(offset: offset, inset: inset, margin: margin, close: close))
+                .environment(\.bookDetailCardChrome, chrome)
                 .frame(minHeight: height + inset, alignment: .top)
                 // Clipped to the card's rounded top before it widens: clipping after the
                 // negative padding cut the widened card back to its resting width.
@@ -617,11 +618,13 @@ private struct PublicLibraryExpandingCard<Content: View>: View {
                 // The content's top in the scroll view's own space sits at 0 at rest.
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.frame(in: .named(Self.space)).minY
-                } action: { offset = -$0 }
+                } action: { chrome.offset = -$0 }
                 .background { ScrollPanReleaseObserver(onRelease: released) }
         }
         .coordinateSpace(.named(Self.space))
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { inset = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { chrome.inset = $0 }
+        .onChange(of: margin, initial: true) { _, margin in chrome.margin = margin }
+        .onAppear { chrome.close = close }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         // The widened card has to draw past the scroll view's own frame.
         .scrollClipDisabled()

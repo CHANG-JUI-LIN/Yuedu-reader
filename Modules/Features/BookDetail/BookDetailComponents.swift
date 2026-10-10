@@ -62,11 +62,17 @@ private struct BookDetailEmbeddingKey: EnvironmentKey {
 /// Scroll state of the card around an embedded page, for its header: how far the card
 /// has scrolled up from rest, the scroll view's top inset (the card's resting
 /// distance from the top of the screen) and the margin the card widens across.
-struct BookDetailCardChrome {
-    var offset: CGFloat
-    var inset: CGFloat
-    var margin: CGFloat
-    var close: () -> Void
+///
+/// One object per card, put in the environment once. It used to be a struct rebuilt on
+/// every frame of the card's scroll — a new `offset`, and a closure that never compares
+/// equal — so every frame changed the environment of the whole detail page under it. Now
+/// only the views that read `offset` (the card, its header) follow the scroll.
+@Observable
+final class BookDetailCardChrome {
+    var offset: CGFloat = 0
+    var inset: CGFloat = 0
+    var margin: CGFloat = 0
+    @ObservationIgnored var close: () -> Void = {}
 
     /// 0 at rest, 1 once the card's top has reached the top of the screen.
     var progress: CGFloat { inset > 0 ? min(max(offset / inset, 0), 1) : 0 }
@@ -105,8 +111,10 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.bookDetailEmbedding) private var embedding
-    /// Bottom edge of the hero, in global coordinates.
-    @State private var heroBottom = CGFloat.greatestFiniteMagnitude
+    /// Whether the hero has scrolled up under the navigation bar. Stored as the crossing
+    /// itself: it used to be the hero's bottom edge, written on every frame of a scroll, and
+    /// each write re-ran this scaffold and its toolbar though only the crossing is read.
+    @State private var heroScrolledAway = false
     /// Top edge of the visible scroll area (below the navigation bar), in global coordinates.
     @State private var visibleTop: CGFloat = 0
 
@@ -120,8 +128,6 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
         self.content = content()
         self.actions = actions()
     }
-
-    private var heroScrolledAway: Bool { heroBottom < visibleTop }
 
     var body: some View {
         if embedding != nil {
@@ -182,9 +188,9 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
                 hero
                     // Only the navigation bar's title uses it; a card has no bar, and
                     // tracking it there re-rendered the page on every frame of a scroll.
-                    .onGeometryChange(for: CGFloat.self) { proxy in
-                        embedding == nil ? proxy.frame(in: .global).maxY : 0
-                    } action: { heroBottom = $0 }
+                    .onGeometryChange(for: Bool.self) { [visibleTop, isCard = embedding != nil] proxy in
+                        !isCard && proxy.frame(in: .global).maxY < visibleTop
+                    } action: { heroScrolledAway = $0 }
             }
             content
                 .frame(maxWidth: embedding?.contentWidth ?? .infinity)
@@ -217,7 +223,9 @@ struct BookDetailCardHeader<Actions: View>: View {
         if let chrome, let embedding {
             HStack(spacing: DSSpacing.md) {
                 BookDetailCardButtonGroup(tone: embedding.tone) {
-                    Button(action: chrome.close) {
+                    // Looked up on tap: the card sets `close` when it appears, after this
+                    // header's first body.
+                    Button { chrome.close() } label: {
                         BookDetailCardIcon(title: localized("關閉"), systemImage: "xmark")
                     }
                     .accessibilityIdentifier("publicLibrary.closeSheet")
