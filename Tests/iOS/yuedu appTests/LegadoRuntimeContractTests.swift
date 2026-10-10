@@ -542,7 +542,7 @@ struct LegadoFullSourceFixtureTests {
         )
         let page = try #require(browserPage)
         #expect(page.baseURL == "https://api-cmnt.wtzw.com/")
-        #expect(page.html.contains("qmCommentPageData"))
+        #expect((page.html ?? "").contains("qmCommentPageData"))
         #expect(page.injectedJavaScript.contains("window.qmRun=run"))
         #expect(page.configurationJSON.contains("heightPercentage"))
         #expect(bridge.lastSourceScriptError == nil)
@@ -565,7 +565,7 @@ struct LegadoFullSourceFixtureTests {
         let page = try #require(browserPage)
         #expect(bridge.lastSourceScriptError == nil)
         #expect(page.injectedJavaScript.contains("window.java=java"))
-        #expect(page.html.contains("当前阅读 WebView 不支持 java.ajax/java.get"))
+        #expect((page.html ?? "").contains("当前阅读 WebView 不支持 java.ajax/java.get"))
 
         let context = try #require(JSContext())
         let prompt: @convention(block) (String, String) -> String = { name, _ in

@@ -36,6 +36,7 @@ struct OnlineBookView: View {
     @State private var addingToShelf = false
     @State private var openingReader = false
     @State private var addedBookId: UUID? = nil
+    @State private var sourceCallBackTap: SourceCallBackTapRequest?
     @State private var showReader = false
     @State private var alreadyInShelf = false
     @State private var temporaryReaderBookId: UUID? = nil
@@ -211,7 +212,8 @@ struct OnlineBookView: View {
                 author: displayAuthor,
                 meta: tags.joined(separator: " · "),
                 primary: readAction,
-                secondary: shelfAction
+                secondary: shelfAction,
+                sourceGestures: sourceCallBacks?.gestures
             )
         } content: {
             BookDetailInfoStrip(items: infoItems)
@@ -247,15 +249,18 @@ struct OnlineBookView: View {
                     hasSource: source != nil,
                     onSetSourceVariable: { showsSourceVariableEditor = true },
                     onSetBookVariable: { showsBookVariableEditor = true },
-                    onOpenChooser: { showsMoreChooser = true }
+                    onOpenChooser: { showsMoreChooser = true },
+                    sourceActions: sourceCallBacks?.menuActions
                 )
             }
         }
         .bookDetailMoreChooser(
             isPresented: $showsMoreChooser,
             onSetSourceVariable: { showsSourceVariableEditor = true },
-            onSetBookVariable: { showsBookVariableEditor = true }
+            onSetBookVariable: { showsBookVariableEditor = true },
+            sourceActions: sourceCallBacks?.menuActions
         )
+        .sourceCallBackTaps($sourceCallBackTap)
         .bookIntroActions($introActionRequest) { await loadTOC(forceRefresh: true) }
         .bookVariableEditors(
             source: source,
@@ -395,22 +400,39 @@ struct OnlineBookView: View {
     }
 
     /// A 簡介 button or image: its script runs against this page's book.
+    /// `book` as this page's source scripts see it (簡介 buttons, `callBackJs`).
+    private var sourceScriptBook: ReaderHTMLUtilities.LegadoSourceActionContext.BookSnapshot {
+        .detailPage(
+            name: displayName,
+            author: displayAuthor,
+            coverURL: displayCoverUrl,
+            bookURL: currentBook.bookUrl,
+            tocURL: resolvedTOCURL ?? currentBook.bookUrl,
+            intro: displayIntro,
+            runtimeVariables: effectiveRuntimeVariables ?? [:]
+        )
+    }
+
+    /// The taps and menu items a source that listens for events takes (legado `SourceCallBack`).
+    private var sourceCallBacks: BookDetailSourceCallBacks? {
+        BookDetailSourceCallBacks(
+            source: source,
+            book: sourceScriptBook,
+            runtimeVariables: effectiveRuntimeVariables ?? [:],
+            labels: tags,
+            shelfBookId: addedBookId,
+            bookStore: bookStore,
+            send: { sourceCallBackTap = $0 }
+        )
+    }
+
     private func requestIntroAction(_ action: BookIntroAction) {
         guard let source else { return }
-        let variables = effectiveRuntimeVariables ?? [:]
         introActionRequest = BookIntroActionRequest(
             action: action,
             source: source,
-            book: .detailPage(
-                name: displayName,
-                author: displayAuthor,
-                coverURL: displayCoverUrl,
-                bookURL: currentBook.bookUrl,
-                tocURL: resolvedTOCURL ?? currentBook.bookUrl,
-                intro: displayIntro,
-                runtimeVariables: variables
-            ),
-            runtimeVariables: variables
+            book: sourceScriptBook,
+            runtimeVariables: effectiveRuntimeVariables ?? [:]
         )
     }
 
@@ -726,6 +748,9 @@ struct OnlineBookView: View {
         } else {
             presentationMode.wrappedValue.dismiss()
         }
+        if let shelved = bookStore.readingBook(id: bookId) {
+            SourceCallBackService.notify(.delBookShelf, book: shelved)
+        }
         bookStore.delete(bookId: bookId)
         addedBookId = nil
         alreadyInShelf = false
@@ -750,6 +775,7 @@ struct OnlineBookView: View {
         addedBookId = newBook.id
         addingToShelf = false
         alreadyInShelf = true
+        SourceCallBackService.notify(.addBookShelf, book: newBook)
     }
 
     /// Kept once it is on the shelf: its download put it there

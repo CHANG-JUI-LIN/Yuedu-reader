@@ -312,6 +312,40 @@ private struct BookDetailRefreshModifier: ViewModifier {
 // MARK: - Hero
 
 /// Artwork, title, author and the two actions at the top of a detail page.
+/// The detail page's book name, author and labels, when the book's source takes their taps
+/// (`SourceCallBackService`: clickBookName, longClickBookName, clickAuthor, longClickAuthor,
+/// clickBookLabel, longClickBookLabel).
+struct BookDetailSourceGestures {
+    var labels: [String]
+    var tapName: () -> Void
+    var longPressName: () -> Void
+    var tapAuthor: () -> Void
+    var longPressAuthor: () -> Void
+    var tapLabel: (String) -> Void
+    var longPressLabel: (String) -> Void
+}
+
+private extension View {
+    /// A tap and a long press on a piece of text, with the long press reachable from
+    /// VoiceOver as a named action (a tap is the element's own activation).
+    @ViewBuilder
+    func sourceGesture(
+        tap: (() -> Void)?, longPress: (() -> Void)?, longPressName: String
+    ) -> some View {
+        if let tap, let longPress {
+            self
+                .contentShape(Rectangle())
+                .onTapGesture(perform: tap)
+                .onLongPressGesture(perform: longPress)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(.default, tap)
+                .accessibilityAction(named: Text(longPressName), longPress)
+        } else {
+            self
+        }
+    }
+}
+
 struct BookDetailHero<Cover: View>: View {
     enum ArtworkShape {
         /// A book jacket, 2:3 like the shelf grid.
@@ -329,6 +363,9 @@ struct BookDetailHero<Cover: View>: View {
     let secondary: BookDetailAction
     var authorActions: [BookDetailAuthorAction] = []
     var artworkHeight: CGFloat? = nil
+    /// Taps a book source handles through its `callBackJs` (legado `SourceCallBack`); nil
+    /// for every book whose source does not listen, which keeps the title block as it was.
+    var sourceGestures: BookDetailSourceGestures? = nil
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.bookDetailEmbedding) private var embedding
@@ -405,7 +442,20 @@ struct BookDetailHero<Cover: View>: View {
                 .foregroundStyle(primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            if authorActions.isEmpty {
+                .sourceGesture(
+                    tap: sourceGestures?.tapName, longPress: sourceGestures?.longPressName,
+                    longPressName: localized("長按書名")
+                )
+            if let gestures = sourceGestures, authorActions.isEmpty {
+                Text(author)
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(secondaryText)
+                    .lineLimit(1)
+                    .sourceGesture(
+                        tap: gestures.tapAuthor, longPress: gestures.longPressAuthor,
+                        longPressName: localized("長按作者")
+                    )
+            } else if authorActions.isEmpty {
                 Text(author)
                     .font(DSFont.subheadline)
                     .foregroundStyle(secondaryText)
@@ -430,7 +480,22 @@ struct BookDetailHero<Cover: View>: View {
                     .accessibilityIdentifier("publicLibrary.author.\(author.id)")
                 }
             }
-            if !meta.isEmpty {
+            if let gestures = sourceGestures, !gestures.labels.isEmpty {
+                // One tappable label each, so the source learns which one (legado `clickBookLabel`).
+                WrappingFlowLayout(spacing: DSSpacing.sm) {
+                    ForEach(gestures.labels, id: \.self) { label in
+                        Text(label)
+                            .font(DSFont.footnote)
+                            .foregroundStyle(secondaryText)
+                            .sourceGesture(
+                                tap: { gestures.tapLabel(label) },
+                                longPress: { gestures.longPressLabel(label) },
+                                longPressName: localized("長按標籤")
+                            )
+                    }
+                }
+                .padding(.top, isCard ? DSSpacing.md : 0)
+            } else if !meta.isEmpty {
                 Text(meta)
                     .font(DSFont.footnote)
                     .foregroundStyle(secondaryText)
@@ -1070,6 +1135,32 @@ extension View {
                 text: "唐門外門弟子唐三，因偷學內門絕學為唐門所不容，跳崖明志卻來到了另一個世界——斗羅大陸。這裡沒有魔法，沒有鬥氣，沒有武術，卻有神奇的武魂。",
                 isExpanded: .constant(false)
             )
+        }
+    }
+}
+
+#Preview("詳情頁・書源接手點擊") {
+    NavigationStack {
+        BookDetailScaffold(
+            title: "沒錢修什麼仙",
+            compactAction: BookDetailAction(title: "立即閱讀", systemImage: "book.fill", action: {})
+        ) {
+            BookDetailHero(
+                artworkShape: .book,
+                cover: BookCoverImage(coverURL: "", title: "沒錢修什麼仙", author: "熊狼狗"),
+                title: "沒錢修什麼仙",
+                author: "熊狼狗",
+                meta: "仙俠 · 修真文明",
+                primary: BookDetailAction(title: "立即閱讀", systemImage: "book.fill", action: {}),
+                secondary: BookDetailAction(title: "加入書架", systemImage: "plus", action: {}),
+                sourceGestures: BookDetailSourceGestures(
+                    labels: ["仙俠", "修真文明"],
+                    tapName: {}, longPressName: {}, tapAuthor: {}, longPressAuthor: {},
+                    tapLabel: { _ in }, longPressLabel: { _ in }
+                )
+            )
+        } content: {
+            EmptyView()
         }
     }
 }

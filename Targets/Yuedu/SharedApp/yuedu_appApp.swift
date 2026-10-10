@@ -334,6 +334,10 @@ enum ChapterUpdater {
             )
         }
 
+        // legado-E / MD3: each listening source among the refreshed books hears the refresh start
+        // and end (`SourceCallBack.START_SHELF_REFRESH` / `END_SHELF_REFRESH`).
+        await MainActor.run { SourceCallBackService.notifyShelfRefresh(.startShelfRefresh, books: onlineBooks) }
+
         let maxConcurrentTasks = AppConfig.startupRefreshMaxConcurrentTasks
         await withTaskGroup(of: Void.self) { group in
             for i in 0..<min(maxConcurrentTasks, onlineBooks.count) {
@@ -353,6 +357,7 @@ enum ChapterUpdater {
                 }
             }
         }
+        await MainActor.run { SourceCallBackService.notifyShelfRefresh(.endShelfRefresh, books: onlineBooks) }
     }
 
     private static func refreshBook(book: ReadingBook, bookStore: BookStore) async {

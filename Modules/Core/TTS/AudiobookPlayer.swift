@@ -120,6 +120,9 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     @Published private(set) var bookTitle: String = ""
     @Published private(set) var coverImage: UIImage?
     @Published private(set) var chapters: [OnlineChapterRef] = []
+    /// The URL the current chapter is playing from — legado's 複製播放 URL, and what a source's
+    /// `clickCopyPlayUrl` receives as `result`.
+    @Published private(set) var currentAudioURL: URL?
     @Published private(set) var chapterIndex: Int = 0
     @Published private(set) var currentChapterTitle: String = ""
 
@@ -808,6 +811,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     }
 
     private func play(audio: ChapterAudio, chapterIndex index: Int, autoPlay: Bool) {
+        currentAudioURL = audio.url
         let startSeconds = max(0, audio.chapterStartSeconds ?? 0)
         let durationOverride = Self.durationOverride(of: audio)
         let resumeTime = max(0, pendingResumeTime)
@@ -1376,6 +1380,14 @@ final class AudiobookPlayer: NSObject, ObservableObject {
             totalChapters: chapters.count,
             forceSave: force
         )
+        // legado `AudioPlay` sends the source `saveRead` from its own progress save.
+        if let book = store?.readingBook(id: id) {
+            SourceCallBackService.noteSaveRead(
+                book: book,
+                chapter: chapters.indices.contains(chapterIndex) ? chapters[chapterIndex] : nil,
+                isPageTurn: !force
+            )
+        }
     }
 
     // MARK: - Duration

@@ -184,7 +184,8 @@ enum ReaderChromeActionItem: String, CaseIterable, Codable, Hashable, Identifiab
         }
     }
 
-    init(_ id: ReaderSecondaryAction.ID) {
+    /// nil for an action that is not a customization item (the source's own button).
+    init?(_ id: ReaderSecondaryAction.ID) {
         switch id {
         case .refresh: self = .refresh
         case .changeSource: self = .changeSource
@@ -193,6 +194,7 @@ enum ReaderChromeActionItem: String, CaseIterable, Codable, Hashable, Identifiab
         case .aiAssistant: self = .aiAssistant
         case .translation: self = .translation
         case .openWebPage: self = .openWebPage
+        case .sourceCustomButton: return nil
         }
     }
 }
@@ -496,7 +498,10 @@ extension GlobalSettings {
     /// actions *apply* to this book, this decides which of those the reader wants
     /// to see.
     func visibleReaderSecondaryActions(_ actions: [ReaderSecondaryAction]) -> [ReaderSecondaryAction] {
-        actions.filter { isReaderChromeItemVisible(ReaderChromeActionItem($0.id)) }
+        actions.filter { action in
+            // An action that is not a customization item cannot be hidden from here.
+            ReaderChromeActionItem(action.id).map(isReaderChromeItemVisible) ?? true
+        }
     }
 
     // MARK: Icons

@@ -123,6 +123,10 @@ final class ReaderNavigationCoordinator: ObservableObject {
     private var detailReturnCompletion: (() -> Void)?
     private var afterDetailReturn: (() -> Void)?
     private var readerClosedCompletion: (() -> Void)?
+    /// The reader's own goodbye (its source's `endRead`), registered by the reader on screen.
+    /// Run from `notifyReaderClosed`, which every way out — the close button, a swipe back,
+    /// UIKit removing the controller — passes through, unlike the reader's close button.
+    var readerClosingHandler: (() -> Void)?
 
     private var pendingCloseAfterPush = false
     private var isProgrammaticPopPending = false
@@ -529,6 +533,9 @@ final class ReaderNavigationCoordinator: ObservableObject {
     private func notifyReaderClosed() {
         // Release the callbacks before invoking them: temporary-book cleanup can
         // publish shelf changes and synchronously re-enter navigation code.
+        let closing = readerClosingHandler
+        readerClosingHandler = nil
+        closing?()
         let completion = readerClosedCompletion
         readerClosedCompletion = nil
         presentedDetailController = nil

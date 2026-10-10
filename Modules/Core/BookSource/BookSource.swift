@@ -173,6 +173,10 @@ struct ContentRule: Codable {
     var imageStyle: String = ""
     var imageDecode: String = ""   // Legado: image decode rule
     var payAction: String = ""
+    /// legado-E / MD3 `ruleContent.callBackJs`: the script the app runs on book and UI events
+    /// (`SourceCallBack`) when the source sets `eventListener`. Optional so a source without one
+    /// encodes exactly as before.
+    var callBackJs: String?
 
     init() {}
     init(from decoder: Decoder) throws {
@@ -186,6 +190,8 @@ struct ContentRule: Codable {
         imageStyle     = c.safeString(forKey: .imageStyle)
         imageDecode    = c.safeString(forKey: .imageDecode)
         payAction      = c.safeString(forKey: .payAction)
+        let callBack   = c.safeString(forKey: .callBackJs)
+        callBackJs     = callBack.isEmpty ? nil : callBack
     }
 }
 
@@ -267,6 +273,12 @@ struct BookSource: Identifiable, Codable {
     /// chapter HTML (`ReaderViewModel.recordParagraphReviewsIfPresent`), which no flag
     /// gates. Kept for round-tripping and for `source.enabledReview` in rule JS.
     var enabledReview: Bool = false
+    /// legado-E / MD3 `eventListener`: run `ruleContent.callBackJs` on book and UI events
+    /// (`SourceCallBackService`). Optional so a source that never set it encodes as before.
+    var eventListener: Bool?
+    /// legado-E / MD3 `customButton`: show the source-controlled button (book detail, reader
+    /// menu, audiobook player) whose taps reach `callBackJs` as `clickCustomButton`.
+    var customButton: Bool?
     /// Whether `java.androidId()` hands this source a device identifier.
     ///
     /// **On by default**, matching upstream: Legado's `androidId()` returns
@@ -327,6 +339,7 @@ struct BookSource: Identifiable, Codable {
         case bookSourceName, bookSourceUrl, bookSourceGroup, bookSourceComment
         case bookSourceType, bookUrlPattern, customOrder
         case enabled, enabledExplore, enabledCookieJar, enabledReview
+        case eventListener, customButton
         case searchUrl, exploreUrl, concurrentRate
         case header, loginUrl, loginUi, loginCheckJs
         case presentsAndroidIdentity
@@ -366,6 +379,8 @@ struct BookSource: Identifiable, Codable {
         enabledCookieJar = c.safeBool(forKey: .enabledCookieJar, defaultValue: false)
         presentsAndroidIdentity = c.safeBool(forKey: .presentsAndroidIdentity, defaultValue: true)
         enabledReview    = c.safeBool(forKey: .enabledReview, defaultValue: false)
+        eventListener    = c.contains(.eventListener) ? c.safeBool(forKey: .eventListener, defaultValue: false) : nil
+        customButton     = c.contains(.customButton) ? c.safeBool(forKey: .customButton, defaultValue: false) : nil
         // Rule structures: Legado may use objects or JSON strings (double-encoded during backup)
         ruleSearch   = c.decodeRule(SearchRule.self,   forKey: .ruleSearch)   ?? SearchRule()
         ruleExplore  = c.decodeRule(ExploreRule.self,  forKey: .ruleExplore)  ?? ExploreRule()

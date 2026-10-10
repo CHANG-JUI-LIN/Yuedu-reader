@@ -655,7 +655,10 @@ struct HomeView: View {
                 )
             ) {
                 Button(localized("刪除"), role: .destructive) {
-                    if let b = bookToDelete { store.delete(bookId: b.id) }
+                    if let b = bookToDelete {
+                        SourceCallBackService.notify(.delBookShelf, book: b)
+                        store.delete(bookId: b.id)
+                    }
                 }
                 Button(localized("取消"), role: .cancel) {}
             } message: {
@@ -667,7 +670,12 @@ struct HomeView: View {
                 Button(localized("刪除"), role: .destructive) {
                     let ids = selectedBookIds
                     withAnimation(reduceMotion ? nil : DSAnimation.standard) {
-                        ids.forEach { store.delete(bookId: $0) }
+                        ids.forEach { id in
+                            if let book = store.readingBook(id: id) {
+                                SourceCallBackService.notify(.delBookShelf, book: book)
+                            }
+                            store.delete(bookId: id)
+                        }
                         selectedBookIds = []
                     }
                 }

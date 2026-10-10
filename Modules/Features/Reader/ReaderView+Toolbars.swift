@@ -91,7 +91,7 @@ extension ReaderView {
             onToggleBookmark: {
                 toggleCurrentPageBookmark()
             },
-            menuActions: readerSecondaryActions.filter { !ReaderChromeActionItem($0.id).isClassicCircle },
+            menuActions: readerSecondaryActions.filter { !(ReaderChromeActionItem($0.id)?.isClassicCircle ?? false) },
             onOpenBookDetail: onlineBookDetail == nil ? nil : {
                 openOnlineBookDetail()
             }
@@ -469,6 +469,17 @@ extension ReaderView {
             )
         }
 
+        if SourceCallBackService.showsCustomButton(readerSource) {
+            actions.append(
+                ReaderSecondaryAction(
+                    id: .sourceCustomButton,
+                    icon: "hand.tap",
+                    label: localized("自訂按鈕"),
+                    action: { runSourceCustomButton() }
+                )
+            )
+        }
+
         if !(book?.onlineChapters?.isEmpty ?? true) {
             actions.append(
                 ReaderSecondaryAction(
@@ -483,7 +494,7 @@ extension ReaderView {
         return actions
     }
 
-    private var currentOnlineChapter: OnlineChapterRef? {
+    var currentOnlineChapter: OnlineChapterRef? {
         guard let book, book.isOnline, let chapters = book.onlineChapters,
               chapters.indices.contains(currentChapterIndex) else { return nil }
         return chapters[currentChapterIndex]
@@ -554,8 +565,11 @@ extension ReaderView {
         // Only the chapter on screen was worth translating; what finished is kept.
         AIChapterTranslationService.shared.cancel(book: bookId)
         if let navigator = readerNavigator {
+            // endRead goes out from the coordinator's close (`readerClosingHandler`), which a
+            // swipe back reaches too.
             navigator.close()
         } else {
+            notifySourceEndRead()
             presentationMode.wrappedValue.dismiss()
         }
     }

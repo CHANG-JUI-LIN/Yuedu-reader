@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreImage
 import SwiftUI
+import UIKit
 
 // MARK: - Audiobook Reader (dedicated full-screen player page)
 //
@@ -24,6 +25,7 @@ struct AudiobookReaderView: View {
     @State private var showSleepTimer = false
     @State private var showSkipCredits = false
     @State private var baseColor: Color = DSColor.coverGradients[0][0]
+    @State private var sourcePage: ReaderHTMLUtilities.ReviewTarget?
 
     var body: some View {
         ZStack {
@@ -58,14 +60,25 @@ struct AudiobookReaderView: View {
         .onAppear {
             if let book = store.readingBook(id: bookId) {
                 player.start(book: book, store: store)
+                SourceCallBackService.notify(.startRead, book: book, chapter: currentCallBackChapter)
             } else if !player.isActive(bookId: bookId) {
                 dismiss()
             }
             updateBaseColor()
         }
+        // legado `AudioPlayActivity` sends endRead when its player screen goes away.
+        .onDisappear {
+            if let book = store.readingBook(id: bookId) {
+                SourceCallBackService.notify(.endRead, book: book, chapter: currentCallBackChapter)
+            }
+        }
         .onChanged(of: player.bookId) { _ in updateBaseColor() }
         .onChanged(of: player.currentTime) { t in
             if !isDraggingSlider { sliderValue = t }
+        }
+        .sheet(item: $sourcePage) { target in
+            LegadoReviewBrowserView(target: target) { _ in sourcePage = nil }
+                .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showChapterList) {
             AudiobookChapterListView(player: player)
@@ -109,11 +122,79 @@ struct AudiobookReaderView: View {
                 .font(DSFont.fixed(size: 13, weight: .medium))
                 .foregroundColor(.white.opacity(0.85))
             Spacer()
-            // Symmetry spacer matching the close button width.
-            Color.clear.frame(width: 44, height: 44)
+            if let source = callBackSource {
+                sourceMenu(source)
+            } else {
+                // Symmetry spacer matching the close button width.
+                Color.clear.frame(width: 44, height: 44)
+            }
         }
         .padding(.horizontal, DSSpacing.sm)
         .padding(.top, DSSpacing.sm)
+    }
+
+    // MARK: Source events (legado `AudioPlayActivity` custom button / 複製播放 URL)
+
+    /// The book's source when it listens for events or asks for its own button.
+    private var callBackSource: BookSource? {
+        guard let id = store.readingBook(id: bookId)?.bookSourceId,
+              let source = BookSourceStore.shared.source(id: id),
+              SourceCallBackService.isListening(source) || SourceCallBackService.showsCustomButton(source)
+        else { return nil }
+        return source
+    }
+
+    private var currentCallBackChapter: ReaderHTMLUtilities.LegadoSourceActionContext.ChapterSnapshot? {
+        player.chapters.indices.contains(player.chapterIndex)
+            ? SourceCallBackService.chapterSnapshot(player.chapters[player.chapterIndex]) : nil
+    }
+
+    private func sourceMenu(_ source: BookSource) -> some View {
+        Menu {
+            if SourceCallBackService.showsCustomButton(source) {
+                Button { runSourceTap(.clickCustomButton, source: source, result: nil, fallback: nil) } label: {
+                    Label(localized("自訂按鈕"), systemImage: "hand.tap")
+                }
+            }
+            if let url = player.currentAudioURL?.absoluteString {
+                Button {
+                    runSourceTap(.clickCopyPlayUrl, source: source, result: url) {
+                        UIPasteboard.general.string = url
+                        BookSourceFormLoginView.presentToastAlert(message: localized("已複製"))
+                    }
+                } label: {
+                    Label(localized("複製播放網址"), systemImage: "link")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(DSFont.fixed(size: 18, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel(localized("更多"))
+    }
+
+    private func runSourceTap(
+        _ event: SourceCallBackEvent, source: BookSource, result: String?,
+        fallback: (@MainActor () -> Void)?
+    ) {
+        guard let book = store.readingBook(id: bookId) else { return }
+        let chapter = currentCallBackChapter
+        Task { @MainActor in
+            let outcome = await SourceCallBackService.tap(
+                event, source: source,
+                book: SourceCallBackService.snapshot(of: book, chapter: chapter),
+                runtimeVariables: book.runtimeVariables ?? [:], chapter: chapter, result: result
+            )
+            if let page = outcome.page {
+                // The script ran for seconds; the menu that started it is long gone.
+                sourcePage = page
+            }
+            if SourceCallBackService.shouldFallBack(outcome) {
+                fallback?()
+            }
+        }
     }
 
     // MARK: Cover

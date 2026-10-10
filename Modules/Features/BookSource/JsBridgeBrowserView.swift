@@ -273,6 +273,7 @@ struct LegadoReviewBrowserView: View {
                 title: target.title,
                 hidesToolbar: ParagraphReviewBrowserPresentationPolicy.hidesToolbar,
                 initialHTML: page.html,
+                initialRequest: target.browserRequest,
                 injectedJavaScript: page.injectedJavaScript,
                 sourceRunHandler: { script in
                     try await LegadoReviewActionRunner.shared.runSourcePageScript(

@@ -434,7 +434,8 @@ enum ReaderHTMLUtilities {
     struct ReviewTarget: Identifiable, Hashable {
         struct SourceBrowserPage: Hashable {
             let baseURL: String
-            let html: String
+            /// nil: open `baseURL` itself (see `LegadoBrowserPageRequest.html`).
+            let html: String?
             let injectedJavaScript: String
             let configurationJSON: String
             let sourceURL: String

@@ -27,6 +27,9 @@ struct ContentView: View {
     struct SourceSearchRequest: Identifiable {
         let id = UUID()
         let keyword: String
+        /// Search only this source (a book label tapped on its detail page, as legado's
+        /// `SearchActivity.start(source, kind)`); nil searches every enabled source.
+        var sourceURL: String? = nil
     }
 
     private var rssUnreadCount: Int {
@@ -249,11 +252,19 @@ struct ContentView: View {
             guard let keyword = note.userInfo?["keyword"] as? String,
                   !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else { return }
-            sourceSearchRequest = SourceSearchRequest(keyword: keyword)
+            sourceSearchRequest = SourceSearchRequest(
+                keyword: keyword,
+                sourceURL: note.userInfo?["sourceURL"] as? String
+            )
         }
         .sheet(item: $sourceSearchRequest) { request in
             NavigationStack {
-                SearchView(initialQuery: request.keyword)
+                SearchView(
+                    initialQuery: request.keyword,
+                    sessionScope: request.sourceURL.map {
+                        SearchSourceScope(mode: .custom, selectedSourceURLs: [$0])
+                    }
+                )
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button { sourceSearchRequest = nil } label: {

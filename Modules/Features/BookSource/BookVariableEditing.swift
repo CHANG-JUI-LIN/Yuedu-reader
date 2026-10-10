@@ -116,6 +116,8 @@ struct BookDetailMoreMenu: View {
     let onSetBookVariable: () -> Void
     /// Before iOS 18: shows the screen's `bookDetailMoreChooser`.
     let onOpenChooser: () -> Void
+    /// The items a source that listens for events adds (legado `SourceCallBack`).
+    var sourceActions: BookDetailSourceMenuActions? = nil
 
     var body: some View {
         Group {
@@ -123,6 +125,13 @@ struct BookDetailMoreMenu: View {
                 Button(action: onOpenChooser) { label }
             } else {
                 Menu {
+                    if let sourceActions {
+                        ForEach(sourceActions.items) { item in
+                            Button(action: item.perform) {
+                                Label(item.title, systemImage: item.systemImage)
+                            }
+                        }
+                    }
                     Button(action: onSetSourceVariable) {
                         Label(localized("設置源變量"), systemImage: "curlybraces")
                     }
@@ -144,9 +153,49 @@ struct BookDetailMoreMenu: View {
     }
 }
 
+/// What legado's book page menu offers a source that listens for events: its custom button
+/// (only with `customButton`), share, copy the book and TOC URLs, clear the cache. Each goes
+/// to the source's `callBackJs` first and falls back to the action itself.
+struct BookDetailSourceMenuActions {
+    struct Item: Identifiable {
+        let route: BookDetailMoreRoute
+        let title: String
+        let systemImage: String
+        let perform: () -> Void
+        var id: BookDetailMoreRoute { route }
+    }
+
+    var showsCustomButton: Bool
+    var onCustomButton: () -> Void
+    var onShare: () -> Void
+    var onCopyBookURL: () -> Void
+    var onCopyTOCURL: () -> Void
+    var onClearCache: () -> Void
+
+    var items: [Item] {
+        var items: [Item] = []
+        if showsCustomButton {
+            items.append(Item(route: .customButton, title: localized("自訂按鈕"),
+                              systemImage: "hand.tap", perform: onCustomButton))
+        }
+        items += [
+            Item(route: .share, title: localized("分享"), systemImage: "square.and.arrow.up", perform: onShare),
+            Item(route: .copyBookURL, title: localized("複製書籍網址"), systemImage: "link", perform: onCopyBookURL),
+            Item(route: .copyTOCURL, title: localized("複製目錄網址"), systemImage: "list.bullet", perform: onCopyTOCURL),
+            Item(route: .clearCache, title: localized("清除快取"), systemImage: "trash", perform: onClearCache),
+        ]
+        return items
+    }
+}
+
 enum BookDetailMoreRoute: Hashable {
     case sourceVariable
     case bookVariable
+    case customButton
+    case share
+    case copyBookURL
+    case copyTOCURL
+    case clearCache
 }
 
 extension View {
@@ -155,12 +204,14 @@ extension View {
     func bookDetailMoreChooser(
         isPresented: Binding<Bool>,
         onSetSourceVariable: @escaping () -> Void,
-        onSetBookVariable: @escaping () -> Void
+        onSetBookVariable: @escaping () -> Void,
+        sourceActions: BookDetailSourceMenuActions? = nil
     ) -> some View {
         modifier(BookDetailMoreChooser(
             isPresented: isPresented,
             onSetSourceVariable: onSetSourceVariable,
-            onSetBookVariable: onSetBookVariable
+            onSetBookVariable: onSetBookVariable,
+            sourceActions: sourceActions
         ))
     }
 }
@@ -169,6 +220,7 @@ private struct BookDetailMoreChooser: ViewModifier {
     @Binding var isPresented: Bool
     let onSetSourceVariable: () -> Void
     let onSetBookVariable: () -> Void
+    let sourceActions: BookDetailSourceMenuActions?
 
     @State private var sequence = DismissalSequencedPresentation<BookDetailMoreRoute>()
 
@@ -177,7 +229,9 @@ private struct BookDetailMoreChooser: ViewModifier {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
                 DismissalSequencedActionChooser(
                     title: localized("更多"),
-                    actions: [
+                    actions: (sourceActions?.items ?? []).map {
+                        DismissalSequencedAction(route: $0.route, title: $0.title, systemImage: $0.systemImage)
+                    } + [
                         DismissalSequencedAction(
                             route: .sourceVariable,
                             title: localized("設置源變量"),
@@ -199,6 +253,8 @@ private struct BookDetailMoreChooser: ViewModifier {
         switch sequence.consumeAfterDismissal() {
         case .sourceVariable: onSetSourceVariable()
         case .bookVariable: onSetBookVariable()
+        case let route?:
+            sourceActions?.items.first { $0.route == route }?.perform()
         case nil: break
         }
     }

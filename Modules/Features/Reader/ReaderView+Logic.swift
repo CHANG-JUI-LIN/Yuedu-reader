@@ -390,6 +390,7 @@ extension ReaderView {
                 session.synchronizeLibraryProgress(to: store, bookId: bookId, forceSave: force) { position in
                     engine.totalProgress(forSpine: position.spineIndex, charOffset: position.charOffset)
                 }
+                notifySourceSaveRead(isPageTurn: !force)
                 return
             }
             AppLogger.render("autoSave scroll visibleChapter=\(scrollVisibleChapter)")
@@ -398,6 +399,7 @@ extension ReaderView {
                 position: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1)),
                 forceSave: force
             )
+            notifySourceSaveRead(isPageTurn: !force)
             return
         }
 
@@ -423,6 +425,7 @@ extension ReaderView {
                 "autoSave coreText page=\(candidatePage) spine=\(spineIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", normalized))"
             )
             store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
+            notifySourceSaveRead(isPageTurn: !force)
         } else if !effectiveScrollMode && !allPages.isEmpty {
             let page = allPages[min(currentPage, allPages.count - 1)]
             currentChapterIndex = page.chapterIndex
@@ -433,6 +436,7 @@ extension ReaderView {
                 "autoSave paged currentPage=\(currentPage) chapter=\(page.chapterIndex) pageInChapter=\(page.pageInChapter) pct=\(String(format: "%.6f", normalized))"
             )
             store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
+            notifySourceSaveRead(isPageTurn: !force)
         } else {
             let progress = Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
             let normalized = min(1.0, max(0.0, progress))
@@ -440,6 +444,7 @@ extension ReaderView {
                 "autoSave scroll visibleChapter=\(scrollVisibleChapter) pct=\(String(format: "%.6f", normalized))"
             )
             store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
+            notifySourceSaveRead(isPageTurn: !force)
         }
     }
 

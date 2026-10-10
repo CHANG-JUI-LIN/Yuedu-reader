@@ -3646,3 +3646,11 @@
 "播放影片：%@" = "Play Video: %@";
 "內嵌網頁" = "Embedded Page";
 "載入內嵌網頁：%@" = "Load Embedded Page: %@";
+"長按書名" = "Long-Press Book Title";
+"長按作者" = "Long-Press Author";
+"長按標籤" = "Long-Press Tag";
+"自訂按鈕" = "Custom Button";
+"複製書籍網址" = "Copy Book URL";
+"複製目錄網址" = "Copy Contents URL";
+"清除快取" = "Clear Cache";
+"複製播放網址" = "Copy Playback URL";

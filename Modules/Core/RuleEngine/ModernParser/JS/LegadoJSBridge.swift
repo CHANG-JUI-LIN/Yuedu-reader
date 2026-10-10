@@ -9,7 +9,11 @@ import zlib
 /// `java.showBrowser(url, html, injectedJS, configuration)` contract.
 struct LegadoBrowserPageRequest: Equatable, Sendable {
     let baseURL: String
-    let html: String
+    /// The page the source built, or nil when it passed none (`showBrowser(url, null, js,
+    /// config)`): then `baseURL` itself is the page to open, as legado's
+    /// `BottomWebViewDialog` fetches it. Showing "" with `baseURL` as its base instead was the
+    /// 段評 white screen (知秋 起点段评, 聚合段评; 2026-10-10).
+    let html: String?
     let injectedJavaScript: String
     let configurationJSON: String
 }

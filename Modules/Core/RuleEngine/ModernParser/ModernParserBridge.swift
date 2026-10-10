@@ -941,8 +941,11 @@ class ModernParserBridge {
     /// produced it. Source sessions are intentionally shared, so restoring these
     /// bindings is required before every tap to prevent a later chapter parse from
     /// changing `book`, `chapter`, `result`, or `src` underneath an older page.
+    /// `extraBindings` adds names the script reads besides `src`/`baseUrl` — `event` for a
+    /// source's `callBackJs` (`SourceCallBackService`).
     func evaluateSourceAction(
-        _ action: ReaderHTMLUtilities.LegadoSourceActionContext
+        _ action: ReaderHTMLUtilities.LegadoSourceActionContext,
+        extraBindings: [String: String] = [:]
     ) -> String? {
         guard action.version == ReaderHTMLUtilities.LegadoSourceActionContext.currentVersion,
               action.sourceURL == sourceRuleData.source.bookSourceUrl else { return nil }
@@ -976,7 +979,7 @@ class ModernParserBridge {
                     "src": action.result,
                     "baseUrl": action.baseURL,
                     "baseURL": action.baseURL,
-                ]
+                ].merging(extraBindings) { _, extra in extra }
             )
         }
     }

@@ -2061,7 +2061,7 @@ struct ReaderView: View {
         .alert(String(format: localized("將「%@」加入書架？"), snapshotBook?.title ?? ""), isPresented: $showAddToShelfAlert) {
             Button(localized("加入書架")) {
                 if let snap = snapshotBook {
-                    store.addOnlineBook(
+                    let shelved = store.addOnlineBook(
                         name: snap.title,
                         author: snap.author,
                         sourceId: snap.bookSourceId ?? UUID(),
@@ -2071,6 +2071,7 @@ struct ReaderView: View {
                         runtimeVariables: snap.runtimeVariables,
                         chapters: snap.onlineChapters ?? []
                     )
+                    SourceCallBackService.notify(.addBookShelf, book: shelved)
                 }
                 dismissReaderPresentation()
             }
@@ -2991,6 +2992,7 @@ struct ReaderView: View {
 
     private func performInitialLoad() {
         refreshInitialRestoreState()
+        notifySourceStartRead()
         guard let currentBook = book, currentBook.isOnline else {
             loadContent()
             return

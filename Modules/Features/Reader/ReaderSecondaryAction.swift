@@ -16,6 +16,10 @@ struct ReaderSecondaryAction: Identifiable {
         case aiAssistant
         case translation
         case openWebPage
+        /// The book source's own button (legado `customButton`), whose tap goes to its
+        /// `callBackJs` as `clickCustomButton`. Not a chrome customization item: it exists
+        /// only for a source that asks for it.
+        case sourceCustomButton
     }
 
     let id: ID

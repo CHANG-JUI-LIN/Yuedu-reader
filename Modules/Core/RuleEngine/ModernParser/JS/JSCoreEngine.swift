@@ -794,7 +794,8 @@ class JSCoreEngine {
             bridge?.browserPagePresentHandler?(
                 LegadoBrowserPageRequest(
                     baseURL: url,
-                    html: html,
+                    // JavaScript null crosses as "" (the shim's `String(x == null ? '' : x)`).
+                    html: html.isEmpty ? nil : html,
                     injectedJavaScript: injectedJavaScript,
                     configurationJSON: configurationJSON
                 )

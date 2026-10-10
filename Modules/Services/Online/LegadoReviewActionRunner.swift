@@ -88,7 +88,9 @@ actor LegadoReviewActionRunner {
                 _ = bridge.evaluateSourceScript(js)
             }
             guard var captured = sink.first else { return nil }
-            if captured.page == nil {
+            // A plain URL, or a source page that names its URL without HTML, is loaded from the
+            // network: with the source's headers and cookies, as legado's `AnalyzeUrl` does.
+            if captured.page == nil || captured.page?.html == nil {
                 captured.request = bridge.sourceBrowserRequest(urlString: captured.url)
             }
             return captured
@@ -247,16 +249,111 @@ extension LegadoReviewActionRunner {
         source: BookSource,
         presentToast: @escaping @MainActor (String) -> Void
     ) async -> BookIntroActionOutcome {
+        let run = await runBookScript(
+            action.script,
+            displayName: action.displayName,
+            result: "",
+            extraBindings: [:],
+            book: book,
+            chapter: nil,
+            runtimeVariables: runtimeVariables,
+            source: source,
+            presentToast: presentToast
+        )
+        let outcome = run.outcome
+        AppLogger.parse("⟐ introAction", context: [
+            "source": source.bookSourceName,
+            "kind": action.kind == .button ? "button" : "image",
+            "actionHash": Self.actionHash(action.script),
+            "page": outcome.page == nil ? "no" : "yes",
+            "refresh": outcome.refreshesBook ? "yes" : "no",
+            "error": outcome.errorMessage ?? "none"
+        ])
+        return outcome
+    }
+
+    /// legado-E / MD3 `SourceCallBack`: runs the source's `ruleContent.callBackJs` with `event`,
+    /// `result`, `book` and `chapter` bound, under the same extensions a 簡介 script gets
+    /// (toasts, browser pages) — legado hands button events its login-page `java`.
+    ///
+    /// `handled` follows legado's `String.isTrue()`: anything but blank, `null`, `false`, `no`,
+    /// `not`, `0` or `0.0` means the script took the tap over. legado's Rhino unwraps a script
+    /// that returns nothing (`undefined`) to `null`, which `toString()`s to "null" — not handled,
+    /// so the app's own action runs; our engine reports `undefined` and `null` alike as nil,
+    /// read the same way. A script that throws is logged and, as in legado, neither counts as
+    /// handled nor triggers the fallback.
+    func runCallBack(
+        _ event: SourceCallBackEvent,
+        source: BookSource,
+        book: ReaderHTMLUtilities.LegadoSourceActionContext.BookSnapshot,
+        chapter: ReaderHTMLUtilities.LegadoSourceActionContext.ChapterSnapshot?,
+        result: String?,
+        runtimeVariables: [String: String],
+        presentToast: @escaping @MainActor (String) -> Void
+    ) async -> SourceCallBackOutcome {
+        guard let script = source.ruleContent.callBackJs, !script.isEmpty else {
+            return SourceCallBackOutcome(handled: false, failed: false, page: nil, value: nil)
+        }
+        let run = await runBookScript(
+            script,
+            displayName: source.bookSourceName,
+            result: result ?? "",
+            extraBindings: ["event": event.rawValue],
+            book: book,
+            chapter: chapter,
+            runtimeVariables: runtimeVariables,
+            source: source,
+            presentToast: presentToast
+        )
+        let failed = run.outcome.errorMessage != nil
+        let handled = !failed && Self.legadoIsTrue(run.value, nilIsTrue: false)
+        AppLogger.parse("⟐ callBackJs", context: [
+            "source": source.bookSourceName,
+            "event": event.rawValue,
+            "value": String((run.value ?? "<undefined>").prefix(40)),
+            "handled": handled ? "yes" : "no",
+            "error": run.outcome.errorMessage ?? "none"
+        ])
+        if let error = run.outcome.errorMessage {
+            AppLogger.error("Source callBackJs failed", context: [
+                "source": source.bookSourceName, "event": event.rawValue, "error": error,
+            ])
+        }
+        return SourceCallBackOutcome(handled: handled, failed: failed, page: run.outcome.page, value: run.value)
+    }
+
+    /// legado `String?.isTrue(nullIsTrue)`.
+    static func legadoIsTrue(_ value: String?, nilIsTrue: Bool) -> Bool {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value != "null" else {
+            return nilIsTrue
+        }
+        let falsy: Set<String> = ["false", "no", "not", "0", "0.0"]
+        return !falsy.contains(value.trimmingCharacters(in: .whitespaces).lowercased())
+    }
+
+    /// One book-scoped source script (簡介 button or image, `callBackJs`), on the source's
+    /// shared session with the 簡介 extensions installed for its duration.
+    private func runBookScript(
+        _ script: String,
+        displayName: String,
+        result: String,
+        extraBindings: [String: String],
+        book: ReaderHTMLUtilities.LegadoSourceActionContext.BookSnapshot,
+        chapter: ReaderHTMLUtilities.LegadoSourceActionContext.ChapterSnapshot?,
+        runtimeVariables: [String: String],
+        source: BookSource,
+        presentToast: @escaping @MainActor (String) -> Void
+    ) async -> (outcome: BookIntroActionOutcome, value: String?) {
         let context = ReaderHTMLUtilities.LegadoSourceActionContext(
             version: ReaderHTMLUtilities.LegadoSourceActionContext.currentVersion,
             sourceURL: source.bookSourceUrl,
-            script: action.script,
-            result: "",
+            script: script,
+            result: result,
             // Legado's `BaseSource.evalJS` binds `baseUrl` to the source's key.
             baseURL: source.bookSourceUrl,
             runtimeVariables: runtimeVariables,
             book: book,
-            chapter: .init(
+            chapter: chapter ?? .init(
                 index: book.durChapterIndex,
                 title: book.durChapterTitle,
                 order: book.order,
@@ -264,7 +361,7 @@ extension LegadoReviewActionRunner {
                 isVip: false
             )
         )
-        let outcome = await SourceScriptThread.run { () -> BookIntroActionOutcome in
+        return await SourceScriptThread.run { () -> (outcome: BookIntroActionOutcome, value: String?) in
             let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
             let sink = IntroActionSink()
             let previousBrowser = bridge.browserPresentHandler
@@ -275,10 +372,10 @@ extension LegadoReviewActionRunner {
             // `startBrowser` reaches the shared presenter on its own; the two-argument
             // `showBrowser` shows a page only where the host installs a presenter.
             bridge.browserPresentHandler = LegadoJSBridge.sharedBrowserPresenter
-            bridge.browserPagePresentHandler = { request in
+            bridge.browserPagePresentHandler = { [weak bridge] request in
                 sink.record(page: ReaderHTMLUtilities.ReviewTarget(
                     url: request.baseURL,
-                    title: action.displayName,
+                    title: displayName,
                     sourceURL: source.bookSourceUrl,
                     sourceBrowserPage: .init(
                         baseURL: request.baseURL,
@@ -287,7 +384,10 @@ extension LegadoReviewActionRunner {
                         configurationJSON: request.configurationJSON,
                         sourceURL: source.bookSourceUrl,
                         actionContext: context
-                    )
+                    ),
+                    // No HTML: the page is the URL, requested with the source's headers.
+                    browserRequest: request.html == nil
+                        ? bridge?.sourceBrowserRequest(urlString: request.baseURL) : nil
                 ))
             }
             // The bridge delivers toasts on the main queue.
@@ -303,23 +403,29 @@ extension LegadoReviewActionRunner {
                 bridge.refreshBookInfoHandler = previousRefreshInfo
                 bridge.refreshBookTocHandler = previousRefreshToc
             }
-            _ = bridge.evaluateSourceAction(context)
-            return BookIntroActionOutcome(
-                page: sink.page,
-                refreshesBook: sink.refreshes,
-                errorMessage: bridge.lastSourceScriptError
+            let value = bridge.evaluateSourceAction(context, extraBindings: extraBindings)
+            return (
+                BookIntroActionOutcome(
+                    page: sink.page,
+                    refreshesBook: sink.refreshes,
+                    errorMessage: bridge.lastSourceScriptError
+                ),
+                value
             )
         }
-        AppLogger.parse("⟐ introAction", context: [
-            "source": source.bookSourceName,
-            "kind": action.kind == .button ? "button" : "image",
-            "actionHash": Self.actionHash(action.script),
-            "page": outcome.page == nil ? "no" : "yes",
-            "refresh": outcome.refreshesBook ? "yes" : "no",
-            "error": outcome.errorMessage ?? "none"
-        ])
-        return outcome
     }
+}
+
+/// What a source's `callBackJs` did with one event.
+struct SourceCallBackOutcome: Sendable {
+    /// The script took the tap over (legado `isTrue`); the app skips its own action.
+    var handled: Bool
+    /// The script threw; logged. legado neither treats this as handled nor falls back.
+    var failed: Bool
+    /// A page the script built with the four-argument `java.showBrowser`.
+    var page: ReaderHTMLUtilities.ReviewTarget?
+    /// What the script returned, for the log and tests; nil for `undefined`/`null`.
+    var value: String? = nil
 }
 
 /// Collects what one 簡介 script asked of the detail page. The bridge calls in from the
