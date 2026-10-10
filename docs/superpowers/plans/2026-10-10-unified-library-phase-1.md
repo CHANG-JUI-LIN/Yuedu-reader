@@ -449,9 +449,9 @@ Phase 1 adds:
 - [x] 1a: source records for every entry type; the 「來源」 row fixed; one URL normalizer.
 - [x] 1b: sidecar metadata for every import; `ReadingBook` keys and hashes unchanged.
 - [x] 1c: deterministic index, A-level and B-level, with the design's fixtures; benchmark numbers recorded.
-- [ ] 1d: decisions store, resolver, locks on three paths, unlocked behavior unchanged.
-- [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 1 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
-- [ ] Rollback: revert the step's merge and delete `Application Support/Works/`. No `ReadingBook` or sync content changed (design §15).
+- [x] 1d: decisions store, resolver, locks on three paths, unlocked behavior unchanged.
+- [x] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 1 regression pass after its last edit; nothing pushed or merged without the maintainer's yes. (The full regression, in "1d" below, ran on the last step's branch.)
+- [x] Rollback: revert the step's merge and delete `Application Support/Works/`. No `ReadingBook` or sync content changed (design §15). Since 1d that folder also holds `decisions.json`, the one authoritative file, so a rollback also deletes the reader's locks, overrides and splits along with the derived data.
 
 ## Follow-ups found while planning
 
@@ -519,7 +519,7 @@ Branch `unified-library/1b-imported-metadata`, on `346327dd`. Merged into `main`
 
 ### 1c (2026-10-10)
 
-Branch `unified-library/1c-work-index`, on `3accf360`. Not merged, not pushed.
+Branch `unified-library/1c-work-index`, on `3accf360`. Merged into `main` at `f5f03212`; not pushed.
 
 - **`WorkMatchKey`** (`WorkMatchKey.swift`):
   - Folding: NFKC, lowercase, Traditional → Simplified, katakana → hiragana, then without Z\*, P\* and S\* characters and controls. Digits and bracketed text stay.
@@ -579,3 +579,63 @@ Benchmark, iPhone 18 Pro simulator, 2,000 copies (1,400 titles, 40% with a sidec
 | Pure search, 7,000 entries | 2.7 ms | 2.1 ms |
 
 `-O` is `SWIFT_OPTIMIZATION_LEVEL=-O` on the Debug configuration (Release would upload dSYMs). Folding barely changes with `-O`, since its cost is inside ICU. Against §10.4's suggested thresholds (load 200 ms, search 16 ms), both are well under, so no SQLite. That decision stays with the maintainer.
+
+### 1d (2026-10-10)
+
+Branch `unified-library/1d-decisions-and-locks`, on `f5f03212`. Not merged, not pushed.
+
+- **Characterized first.** `TitleOverwriteLockTests` recorded the three paths without a lock (forced online refresh with a fake fetcher, Calibre write-back to EPUB and PDF copies, WebDAV rename) and passed on the unchanged code before any lock check was written. They pass unchanged after it.
+- **`WorkDecisionsStore`** (`Works/decisions.json`, owned by `BookStore` as `workDecisions`) is authoritative:
+  - It is read once at init, and queries answer from memory. Writes are serial and atomic.
+  - **Corrupt at the current version:** the file is kept aside (`decisions.corrupt-<mtime>.json`) and the store starts empty. The locks it held are lost until the copy is restored, and the next refresh can overwrite those titles. That is the 0d rule.
+  - **Unreadable:** never written over; decisions recorded meanwhile hold in memory until the app quits.
+  - **Newer `schemaVersion`:** read decision by decision, skipping unknown kinds (counted in the log), and never written over.
+  - **Slots:** a later decision replaces the one in its slot. For a pair that is the same two keys in either order, so a merge after a split replaces the split. For a field it is the same anchor, field and kind.
+  - **A deleted copy's decisions stay, inactive** (design §10.2); only 重設作品資料 will clear them. `BookStore.delete` does not touch them.
+- **`MetadataResolver`** is pure. The precedence is override > lock > chosen candidate > field priority > the copy, and each result carries its provenance.
+  - Title and authors never fill in from elsewhere.
+  - A cover takes the copy's own before any bibliographic one.
+  - Field priority is the copy's file (`.localLibrary`), then its source, then other places, then bibliographic databases (only at A-level), the newest within a place.
+  - A chosen candidate whose value is gone falls through.
+- **`WorkDecision.lock` gained `value: MetadataPayload?`**, a deviation from design §5 and a change to the type merged in 1c (nothing had persisted it):
+  - 1b's sidecar keeps only the newest value per field and place, so a locked value would not survive there. The lock keeps it for fields `ReadingBook` does not hold.
+  - For title and authors it is nil. The lock stops the automatic paths, so the copy's own value is the frozen one, and a manual edit (`updateBook`) still shows (tested: lock, edit, refresh, the edit stays).
+  - Once `decisions.json` exists on devices, its shape needs a migration to change (Phase S2 syncs it).
+- **Lock checks** anchor to the copy key, so they survive 換源. Each skipped write logs one `⟐` notice line with the copy id and the path (`onlineRefresh`, `calibreWriteBack`, `webDAVRename`), never the title (tested by id difference).
+  - **Online refresh:** in `commitRefreshedList`. The first-page commit and the final commit of a refresh both go through it (`BookStore.swift`, the `onFirstPageReady` and final merge). TOC, runtime variables and chapters still land.
+  - **Calibre write-back:** the server edit goes through; only a locked copy's title or author is skipped.
+  - **WebDAV rename:** `remoteSource` follows the new path, and a locked title stays.
+- **Every other writer of a title or author** (checked by grep):
+  - `updateBook` (the reader's own edit), `LocalBookImportService` and Aozora's `book.title = work.title` (a new copy at import): not overwrites, not guarded.
+  - `updateOnlineBookSource` (換源) and `RemoteLibraryService.record`'s reopen branch: write no title.
+  - **Known gap, iCloud sync apply:** it replaces records with another device's. A device without the lock can refresh a title and sync it back over a locked copy. This cannot be guarded until decisions sync (Phase S2).
+- **`WorkIndexService`** now reads `store.workDecisions` by default, so a split reaches the index without wiring at each caller. It reads only `sameWork` and `differentWorks`: field decisions would force a rebuild on every lock and copy the reader's override text into the derived `index.json`.
+- **The plan's `refreshOnlineBookMetadataRepairsLegacyShelfEntry()`** returns at once here: it needs a book source fixture and a live network, and passed in 0.001 s. It proves nothing. The online refresh coverage is `TitleOverwriteLockTests`' fake fetcher.
+- **Rules 1d chose itself, for the maintainer to overturn:**
+  - A later decision on the same pair replaces the earlier one.
+  - A corrupt file starts empty after being kept aside.
+  - Lock lines are notices, not errors.
+
+```
+✔ Test run with 72 tests in 11 suites passed after 0.952 seconds.
+   (TitleOverwriteLockTests, WorkDecisionsStoreTests, MetadataResolverTests,
+    RemoteLibraryWritingTests, BookStoreBackgroundPublishTests, LibraryRefreshScaleTests,
+    BookStoreMetadataWriteBudgetTests, ICloudSyncChangeDetectionTests, WorkIndexTests,
+    WorkIndexServiceTests, yuedu_appTests/refreshOnlineBookMetadataPersistsFirstTOCPageBeforeFullFetchCompletes())
+```
+
+Phase 1 regression (design §19: the Phase 1 and Phase 1d rows, plus every 1a–1d suite), on `unified-library/1d-decisions-and-locks` after its last edit; `ruby scripts/check_localizations.rb` OK:
+
+```
+✔ Test run with 181 tests in 24 suites passed after 1.769 seconds.
+   (BookStoreMetadataWriteBudgetTests, RemoteReadingRecordTests, LocalBookImportServiceTests,
+    ICloudAudioSyncExclusionTests, AozoraLibraryDownloadServiceTests, RemoteLibraryWritingTests,
+    RemoteLibraryServiceTests, TitleOverwriteLockTests, WorkDecisionsStoreTests, MetadataResolverTests,
+    WorkMatchKeyTests, WorkIndexTests, WorkIndexServiceTests, ImportedMetadataCaptureTests,
+    ImportedMetadataStoreTests, ImportedMetadataImportTests, SourceRecordDerivationTests,
+    ICloudSyncChangeDetectionTests, BookStoreBackgroundPublishTests, LibraryRefreshScaleTests,
+    OPDSParserTests, OPDS2ParserTests, CalibreWirelessReceiverTests,
+    yuedu_appTests/refreshOnlineBookMetadataPersistsFirstTOCPageBeforeFullFetchCompletes())
+```
+
+Not run as evidence: `yuedu_appTests/refreshOnlineBookMetadataRepairsLegacyShelfEntry()` returns early without its book source fixture and needs a live network.

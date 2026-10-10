@@ -212,6 +212,9 @@ class BookStore: ObservableObject, BookProvider {
     /// Identifiers and metadata each import read beyond title and author, one sidecar per
     /// copy beside the shelf file (unified library 1b). Never part of a `ReadingBook`.
     let importedMetadata: ImportedMetadataStore
+    /// Unified library 1d: the reader's decisions, `Works/decisions.json`. Its title and
+    /// author locks are checked before the online refresh writes either.
+    let workDecisions: WorkDecisionsStore
     /// Whether the last load read both the shelf and the reading records. Only then may a
     /// book missing from `records` be taken as gone, and its list removed.
     private var recordsLoadedCompletely = false
@@ -240,6 +243,7 @@ class BookStore: ObservableObject, BookProvider {
             directoryURL: metadataFileURL.deletingPathExtension().appendingPathExtension("chapters")
         )
         importedMetadata = ImportedMetadataStore(besideShelfFile: metadataFileURL)
+        workDecisions = WorkDecisionsStore(besideShelfFile: metadataFileURL)
         // A store reads the files only after writes already queued to them have landed
         // (the queue is shared by every instance). At launch it is empty; it matters for a
         // store opened on files another instance has just saved.
@@ -2189,11 +2193,22 @@ class BookStore: ObservableObject, BookProvider {
         if let infoPackage {
             let resolvedName = normalizedOnlineValue(infoPackage.name)
             let resolvedAuthor = normalizedOnlineValue(infoPackage.author)
-            if !resolvedName.isEmpty {
-                updated.title = resolvedName
+            // Unified library 1d: a title or author the reader locked stays; the chapters, TOC
+            // and runtime variables of this refresh still land. Both commits of a refresh (the
+            // first page and the final list) come through here.
+            if !resolvedName.isEmpty, resolvedName != updated.title {
+                if workDecisions.isLocked(.title, anchor: .copy(updated.id)) {
+                    AppLogger.cache("⟐ locked title kept", context: ["copy": updated.id.uuidString, "path": "onlineRefresh"])
+                } else {
+                    updated.title = resolvedName
+                }
             }
-            if !resolvedAuthor.isEmpty {
-                updated.author = resolvedAuthor
+            if !resolvedAuthor.isEmpty, resolvedAuthor != updated.author {
+                if workDecisions.isLocked(.authors, anchor: .copy(updated.id)) {
+                    AppLogger.cache("⟐ locked author kept", context: ["copy": updated.id.uuidString, "path": "onlineRefresh"])
+                } else {
+                    updated.author = resolvedAuthor
+                }
             }
         }
         if plan.gainedChapters {

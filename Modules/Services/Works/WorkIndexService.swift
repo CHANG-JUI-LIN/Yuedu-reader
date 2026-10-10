@@ -34,12 +34,21 @@ final class WorkIndexService {
         store: BookStore,
         directory: URL,
         makeContext: @escaping @MainActor ([ReadingBook]) -> SourceRecordContext = WorkIndexService.liveContext,
-        decisions: @escaping @MainActor () -> [WorkDecision] = { [] }
+        decisions: (@MainActor () -> [WorkDecision])? = nil
     ) {
         self.store = store
         self.fileURL = directory.appendingPathComponent("index.json")
         self.makeContext = makeContext
-        self.decisions = decisions
+        // Only merges and splits shape the index. Field decisions would force a rebuild on every
+        // lock and copy the reader's override text into a derived file.
+        self.decisions = decisions ?? { [store] in
+            store.workDecisions.decisions.filter {
+                switch $0 {
+                case .sameWork, .differentWorks: true
+                case .override, .lock, .chooseCandidate: false
+                }
+            }
+        }
     }
 
     #if DEBUG
