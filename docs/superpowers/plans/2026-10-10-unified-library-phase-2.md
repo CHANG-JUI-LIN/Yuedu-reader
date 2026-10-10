@@ -182,6 +182,13 @@ Phase 0's and Phase 1's guardrails apply in full:
 - no `try?` that discards a parse or network error;
 - every fallback is disclosed.
 
+**The §19 Phase 2 regression, by the names `-only-testing` needs** (checked against the suite count in 2a):
+
+- Swift Testing structs: `OPDSParserTests`, `OPDS2ParserTests`, `GutenbergOPDS2FixtureTests`, `PublicLibraryStorefrontTests`, `PublicLibraryRegistryTests`, `PublicLibraryAvailabilityTests`, `RemoteLibraryBrowsePresentationTests`, `RemoteLibraryConnectionTests`, `RemoteLibraryHTTPTests`, `RemoteLibraryServiceTests`, `RemoteLibraryWritingTests`, `RemoteLibraryReadFailureTests`, `RemoteReadingRecordTests`, `RemoteEPUBPublicationTests`, `WebDAVBrowseModelTests`, `CalibreCFIMapperTests`, `CalibreProgressServiceTests` (both in `CalibreProgressTests.swift`), `AozoraCatalogStoreTests`, `AozoraCatalogTests`.
+- XCTest classes: `RemotePDFReaderTests`.
+- UI (`yuedu appUITests/…`): `RemoteLibraryNavigationUITests`, `PublicLibraryStorefrontUITests`, `PublicLibraryExploreUITests`.
+- From 2a on, also `SourceFailureTests`, `OPDSProviderTests`, `WebDAVProviderTests`, `AozoraProviderTests`, `ShelfProviderTests`, `SourceProviderRegistryTests`, `OPDSBrowseModelBehaviorTests`.
+
 Phase 2 adds:
 
 - **UI** (2b, 2c, 2d):
@@ -454,7 +461,7 @@ Phase 2 adds:
 
 ## Acceptance (Phase 2)
 
-- [ ] 2a: one browse path through providers; typed failures; Gutenberg special cases gone.
+- [x] 2a: one browse path through providers; typed failures; Gutenberg special cases gone.
 - [ ] 2b: 設定 → 遠端書庫 manages every connection; book-source management pushed everywhere; bookshelf ＋ unchanged.
 - [ ] 2c: row status from a `SourceItemKey` lookup; no per-row scan.
 - [ ] 2d: WebDAV indexed per the maintainer's rules, with measured limits and visible status.
@@ -476,4 +483,60 @@ Phase 2 adds:
 
 ## What landed
 
-Nothing yet.
+### 2a (2026-10-10)
+
+Branch `unified-library/2a-registry`, on `6ad3b788`. Not merged, not pushed.
+
+- **Pinned first.** `OPDSBrowseModelBehaviorTests` records what the model showed and requested before the change, and passed on the unchanged code:
+  - a removed connection's message;
+  - each failure's own text (OPDS 401, 500 and login page; `URLError`s);
+  - Gutenberg's search URL;
+  - 「此目錄不支援搜尋」 for a root without search, and a templated search;
+  - a failed next page.
+
+  These pins pass unchanged after the change. `WebDAVBrowseModelTests` (0c) already pinned the WebDAV model.
+- **Types** (`SourceProvider.swift`): `SourceProvider`, `ProviderAvailability`, `CollectionBrowsing`, `CollectionCapabilities` (with `CollectionSearchSupport`), `CollectionLocation`, `CollectionCursor`, `CollectionPage`, `CollectionEntry`, `CoverReference`, and `WorkSummary`, which bounds its fields at init.
+- **`SourceFailure`** carries the underlying error:
+  - Its text is that error's own, so nothing on screen changes, and the models log the underlying error, so diagnostics keep domain and code.
+  - Kinds: authentication, network, timeout, parse, rejected (with status), invalidAddress, connectionRemoved, unavailable, other.
+  - Cancellation, `CancellationError` or `URLError.cancelled`, is rethrown unclassified.
+- **Providers** (`Modules/Services/Works/Providers/`):
+  - `OPDSProvider` (OPDS and Calibre) and `GutenbergProvider` conform to `OPDSFeedProviding`: `feed(_:isSearch:)`, `searchURL(query:search:)` and `makeRecord`. `browse` is built on `feed`, and its mapping (with `plainMetadata`) runs off the main actor.
+  - Gutenberg's transport and search URL moved out of `OPDSBrowseModel`. Its navigation links to a book are items, keyed by ebook number.
+  - `WebDAVProvider`: `list(_:)`, with `browse` built on it.
+  - `AozoraProvider` and `ShelfProvider` have no caller in Phase 2. The Aozora one projects the same `AozoraCatalogStore` index the Aozora screens read; it is not a second loader.
+- **`SourceProviderRegistry`** (`@MainActor`, `.shared`, also `AppDependencies.sourceProviders`):
+  - Lookups resolve from the connection store at each call; nothing is cached, so a removed connection is gone at once.
+  - Availability shapes only `browsableProviders(shelf:)`. A lookup still answers for Gutenberg in the China region.
+  - The shelf is listed only when a store is passed.
+- **One browse path:**
+  - `OPDSBrowseModel` and `WebDAVBrowseModel` fetch through the providers. `GutenbergBookPageModel`'s default fetch goes through `GutenbergProvider` too.
+  - Other client calls are not browses: `OPDSCatalogStore.testConnection` (a connection check), and the acquisition paths (`RemoteLibraryService` read and download, `CalibreProgressService`, `RemoteLibraryWritingService`).
+- **Decisions made in the step:**
+  - An OPDS entry with neither a navigation link nor an acquisition is left out of `browse`, as the feed views already leave it untappable.
+  - `OPDSProvider.capabilities()` answers `search: .unknown`, since a feed advertises its search only once fetched, and `capabilities()` sends no request. It does not tell Calibre from Calibre-Web either; `libraryInfo()` would be a request. The model's own search decision is unchanged.
+- **Follow-up fixes in the step:**
+  - The registry resolves through `OPDSCatalogStore.connection(id:)`, the lookup the models made before. That lookup answers only `builtin.gutenberg` beyond the stored connections, so nothing changed.
+  - `OPDSProvider` and `WebDAVProvider` build their client on first use. `browsableProviders()` therefore reads no keychain.
+  - The provider tests' HTTP stub answers by host, so the OPDS and WebDAV suites cannot answer each other's requests if they run concurrently.
+- **Constraint on Phase 5's caller:** `ShelfProvider.browse` calls `WorkIndexService.liveContext`, so it inherits 1c's constraint. `BookSourceStore.source(id:)` waits on the main thread until the source library is read. Browse the shelf only once that store has loaded.
+- **Nothing on screen differs.** The UI tests below include the Gutenberg storefront with fixtures and the three remote library entries. There is no live OPDS or WebDAV server here, so those two were not browsed by hand.
+
+```
+✔ Test run with 93 tests in 17 suites passed after 0.737 seconds.
+   (SourceFailureTests, OPDSProviderTests, WebDAVProviderTests, AozoraProviderTests, ShelfProviderTests,
+    SourceProviderRegistryTests, OPDSBrowseModelBehaviorTests, WebDAVBrowseModelTests,
+    PublicLibraryStorefrontTests, OPDSParserTests, OPDS2ParserTests, GutenbergOPDS2FixtureTests,
+    PublicLibraryRegistryTests, PublicLibraryAvailabilityTests, RemoteLibraryBrowsePresentationTests,
+    RemoteLibraryConnectionTests, RemoteLibraryHTTPTests)
+§19 Phase 2 row, the remaining remote library suites:
+✔ Test run with 58 tests in 7 suites passed (RemoteLibraryServiceTests, RemoteLibraryWritingTests,
+   RemoteLibraryReadFailureTests, RemoteReadingRecordTests, RemoteEPUBPublicationTests,
+   AozoraCatalogStoreTests, AozoraCatalogTests), plus XCTest RemotePDFReaderTests
+✔ Test run with 14 tests in 2 suites passed (CalibreCFIMapperTests, CalibreProgressServiceTests)
+UI: RemoteLibraryNavigationUITests (1), PublicLibraryStorefrontUITests (3),
+    PublicLibraryExploreUITests (2): Executed 6 tests, with 0 failures
+After the follow-up fixes:
+✔ Test run with 43 tests in 10 suites passed (the six 2a suites, OPDSBrowseModelBehaviorTests,
+   WebDAVBrowseModelTests, PublicLibraryStorefrontTests, RemoteLibraryConnectionTests)
+```

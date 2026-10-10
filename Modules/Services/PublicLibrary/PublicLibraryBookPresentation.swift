@@ -163,7 +163,9 @@ final class GutenbergBookPageModel: ObservableObject {
     private let book: GutenbergBook
     private let fetch: (URL) async throws -> OPDSFeed
 
-    init(book: GutenbergBook, fetch: @escaping (URL) async throws -> OPDSFeed = PublicLibraryFeedTransport.fetch) {
+    /// The default fetch goes through `GutenbergProvider`, the storefront's one fetch path
+    /// (unified library 2a).
+    init(book: GutenbergBook, fetch: @escaping (URL) async throws -> OPDSFeed = { try await SourceProviderRegistry.shared.gutenberg.feed($0, isSearch: false) }) {
         self.book = book
         self.fetch = fetch
     }
@@ -183,7 +185,7 @@ final class GutenbergBookPageModel: ObservableObject {
             detail = try GutenbergBookDetail(feed: feed)
         } catch {
             if Task.isCancelled { attempted = false; return }
-            AppLogger.network("Gutenberg book detail failed", error: error, context: ["book": book.id])
+            AppLogger.network("Gutenberg book detail failed", error: SourceFailure.loggable(error), context: ["book": book.id])
             errorMessage = error.localizedDescription
         }
     }
