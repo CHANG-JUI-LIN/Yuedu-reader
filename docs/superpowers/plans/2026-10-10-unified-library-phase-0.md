@@ -748,6 +748,32 @@ RemoteLibraryNavigationUITests: Executed 1 test, with 0 failures (0 unexpected) 
 
 `RemoteLibraryNavigationUITests` only opens the WebDAV screen; the model tests are the evidence for listing.
 
+### 0e (2026-10-10)
+
+Branch `unified-library/0e-search-first-result-span`, one commit on `772b0c95`: `b9c83ce1`. Not merged, not pushed. The baseline (Step 4) is still the maintainer's to take.
+
+- **`SearchAggregator`:**
+  - `SearchOrigin { searchTab, changeSource }`, and `search(query:sources:origin: = .searchTab)`;
+  - `searchGeneration`, plus `firstResultTrace` set in `search(…)` with `origin= sources= cacheDays=`;
+  - `runSearch` passes its generation to both `mergeBatch` calls, and `loadMore` passes nil;
+  - the span is recorded once, after the first merge that added a book: `⏱ search.firstResult <ms> origin=… sources=… cacheDays=… books=…`, `thresholdMs: 0`;
+  - `pause()`, `cancel()` and `cancelAndClear()` clear it.
+- **`SourceSearchSheet`** passes `.changeSource`. The `SourcePerfTrace` header lists the new stage.
+- **`SearchFirstResultSpanTests`** (five tests) uses 0a's cache seam, with verbose on and restored afterwards:
+  - one line per search, tagged with origin, sources, cache setting and books;
+  - each new search adds its own line;
+  - 換源 is tagged `changeSource`;
+  - a search cleared before anything merged adds nothing beyond the next search's line. This is weak evidence: the cleared search never ran.
+  - a paused and resumed search adds nothing. This is the test that proves pause clears the trace.
+- **Two wrong turns in the test before it was right.** Counting span lines across the whole snapshot failed, because the snapshot holds only the latest 6,000 entries. Filtering by timestamp failed, because the log stores timestamps to the second. Telling new lines from old by entry id works.
+- **A production issue surfaced on the way:** `DiagnosticLog`'s `sequence` restarts at 0 every launch, but `snapshot()` sorts several launches by it, and the persisted "acknowledged" sequence is compared with it. It was flagged as a separate task and is not part of Phase 0.
+
+```
+✔ Test run with 33 tests in 5 suites passed after 0.827 seconds.
+   (SearchFirstResultSpanTests 5, NetworkSettingsSearchTests, SearchSourceScopeTests,
+    SearchResultPublicationGateTests, IOS17SearchResultTableTests)
+```
+
 ## Baseline: `search.firstResult` (before Phase 4)
 
 | Date | Build | Network | Query | `sources=` | Runs (ms) | Median (ms) |
