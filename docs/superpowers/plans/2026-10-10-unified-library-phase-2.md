@@ -463,7 +463,7 @@ Phase 2 adds:
 
 - [x] 2a: one browse path through providers; typed failures; Gutenberg special cases gone.
 - [x] 2b: 設定 → 遠端書庫 manages every connection; book-source management pushed everywhere; bookshelf ＋ unchanged.
-- [ ] 2c: row status from a `SourceItemKey` lookup; no per-row scan.
+- [x] 2c: row status from a `SourceItemKey` lookup; no per-row scan.
 - [ ] 2d: WebDAV indexed per the maintainer's rules, with measured limits and visible status.
 - [ ] 2e: OPF and covers for indexed EPUBs, most incomplete first.
 - [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 2 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
@@ -543,7 +543,7 @@ After the follow-up fixes:
 
 ### 2b (2026-10-11)
 
-Branch `unified-library/2b-remote-library-settings`, on `e2234bdd`. Not merged, not pushed.
+Branch `unified-library/2b-remote-library-settings`, on `e2234bdd`. Merged into `main` at `70300b3e`; not pushed.
 
 - **設定 → 遠端書庫** (`RemoteLibrarySettingsView`, commit `2d6ffee6`):
   - A `DSSettingsRow` in 「來源配置管理」 pushes it through `navigationDestination(isPresented:)`, as that section's other pushed page does.
@@ -572,4 +572,37 @@ UI: RemoteLibrarySettingsUITests (add rows for each kind, add, list, swipe-delet
     The skip is BookSourceManagementUITests.testLargeLibraryOpensScrollsAndSwitchesPages, opt-in through
     BOOK_SOURCE_UI_LIBRARY (a Legado source pack).
 ruby scripts/check_localizations.rb: OK
+```
+
+### 2c (2026-10-11)
+
+Branch `unified-library/2c-shelf-status`, on `70300b3e`. Not merged, not pushed.
+
+- **`CopyLookup`** (`Modules/Services/LibraryStore/CopyLookup.swift`):
+  - Maps `SourceItemKey` → copies, built from `readingBooks` with 1a's derivation and plain maps of the connections (no keychain).
+  - Each copy's own key is included.
+  - A second index by `(connection, entry id)` serves the per-format match.
+  - `status(for:)` answers `.onShelf` or `.downloaded`, shown with the existing 已加入書架 and 已下載.
+- **Memoized in `BookStore`** (`copyLookup(connections:)`, `copyLookupMemo`) on `mutationRevision` plus a fingerprint of the connections (id, kind, URL). It is rebuilt on the next read after either changes, never per row.
+- **Book-source copies are left out of the key index.** Their key needs `BookSourceStore`, which waits on the main thread until the source library is read (1c's constraint), and nothing browses them through this lookup. Phase 4 or 5 adds them when a caller needs them, with that constraint in mind.
+- **Callers:**
+  - `RemoteLibraryService.book(for:format:store:)` goes through the entry index; its format-specific match is unchanged.
+  - The remote detail page reads `isInBookshelf` from the copy. Its offline-file existence check runs in `.task(id:)` when the copy or its offline filename changes, instead of in every `body`.
+  - Aozora's detail page and `AozoraLibraryDownloadService.addToShelf` find the copy by the work's key instead of scanning `store.books` by `catalogWorkID`.
+- **Rows:**
+  - OPDS feed rows and WebDAV folder rows add the status as a caption line.
+  - Gutenberg and Aozora grid cards show it in place of 免費 (the price line), and it joins their VoiceOver value.
+  - **Beyond the plan:** Aozora's list rows (`AozoraWorkRow`) also show it. They are Aozora's browse rows, as the grid cards are Gutenberg's.
+- **已下載 means the copy records an offline file** (plan decision 5). Whether the file exists is checked on the detail page.
+- **Measured:** 10,000 copies build in 29 ms (Debug `-Onone`, simulator); a memoized read takes 12 µs. Span: `library.copyLookup.build`.
+
+```
+✔ Test run with 53 tests in 6 suites passed (CopyLookupTests, RemoteLibraryServiceTests,
+   RemoteReadingRecordTests, AozoraLibraryDownloadServiceTests, RemoteLibraryWritingTests,
+   PublicLibraryStorefrontTests)
+§19 Phase 2 regression (every name in Guardrails), plus 2a's suites, CopyLookupTests and
+AozoraLibraryDownloadServiceTests:
+✔ Test run with 173 tests in 28 suites passed after 1.805 seconds; XCTest RemotePDFReaderTests passed
+UI: RemoteLibraryNavigationUITests, PublicLibraryStorefrontUITests (3), PublicLibraryExploreUITests (2),
+    RemoteLibrarySettingsUITests: Executed 7 tests, with 0 failures
 ```

@@ -19,6 +19,8 @@ struct PublicLibraryCover: View {
 struct PublicLibraryBookCard: View {
     let book: PublicLibraryBook
     var showsMetadata = true
+    /// 已加入書架 or 已下載 (unified library 2c), shown where the price line would be.
+    var status: CopyLookup.Status? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xs) {
@@ -30,7 +32,7 @@ struct PublicLibraryBookCard: View {
                     .lineLimit(2, reservesSpace: true)
                 Text(book.author).font(DSFont.subheadline).foregroundStyle(DSColor.textSecondary)
                     .lineLimit(1, reservesSpace: true)
-                Text(localized("免費"))
+                Text(status?.title ?? localized("免費"))
                     .font(DSFont.caption.weight(.semibold)).foregroundStyle(DSColor.textPrimary)
             }
         }
@@ -43,6 +45,7 @@ struct PublicLibraryBooksGrid: View {
     @Environment(\.dynamicTypeSize) private var textSize
     @ScaledMetric(relativeTo: .body) private var minimumWidth = DSLayout.publicLibraryMinimumCoverWidth
     @Environment(\.publicLibraryCoverFrames) private var coverFrames
+    @EnvironmentObject private var store: BookStore
     private static let scope = "grid"
 
     private var columns: [GridItem] {
@@ -53,15 +56,16 @@ struct PublicLibraryBooksGrid: View {
     var body: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: DSSpacing.xl) {
             ForEach(books) { book in
+                let status = store.copyLookup().status(for: book.sourceItemKey)
                 Button {
                     coverFrames?.activeScope = Self.scope
                     if let selection = PublicLibraryBookSelection(books: books, selectedID: book.id) { select(selection) }
-                } label: { PublicLibraryBookCard(book: book) }
+                } label: { PublicLibraryBookCard(book: book, status: status) }
                 .buttonStyle(ExploreTileButtonStyle())
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isButton)
                 .accessibilityLabel(book.title)
-                .accessibilityValue(book.author)
+                .accessibilityValue([book.author, status?.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
                 .accessibilityIdentifier("publicLibrary.book.\(book.id)")
             }
         }
@@ -160,4 +164,15 @@ struct PublicLibraryFeedView: View {
         PublicLibraryFeedView(route: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
             url: PublicLibrary.gutenbergSearchURL(query: "l.zh").absoluteString, title: localized("中文書籍")))
     }.environmentObject(BookStore())
+}
+
+#Preview("書卡狀態") {
+    HStack(alignment: .top, spacing: DSSpacing.lg) {
+        ForEach([nil, CopyLookup.Status.onShelf, .downloaded], id: \.self) { status in
+            PublicLibraryBookCard(book: .gutenberg(GutenbergBook(id: 1342, title: "Pride and Prejudice", author: "Jane Austen")),
+                                  status: status)
+                .frame(width: 120)
+        }
+    }
+    .padding()
 }

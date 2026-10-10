@@ -90,11 +90,15 @@ struct AozoraWorksView: View {
 struct AozoraWorkRow: View {
     let work: AozoraWork
     let index: AozoraCatalogIndex
+    @EnvironmentObject private var store: BookStore
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xs) {
             Text(work.title).foregroundStyle(DSColor.textPrimary)
             Text(work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、"))
                 .font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
+            if let status = store.copyLookup().status(for: SourceRecord.derived(from: work).key) {
+                Text(status.title).font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
+            }
         }.accessibilityElement(children: .combine)
     }
 }
@@ -110,7 +114,9 @@ struct AozoraWorkDetailView: View {
     @State private var failed = false
     @State private var opensAfterImport = false
     @State private var readerBookID: UUID?
-    private var shelfBook: ReadingBook? { store.books.first { $0.aozora?.catalogWorkID == work.id } }
+    private var shelfBook: ReadingBook? {
+        store.copyLookup().copies(for: SourceRecord.derived(from: work).key).first(where: \.isInBookshelf)
+    }
     private var author: String { work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、") }
     private var readAction: BookDetailAction {
         BookDetailAction(title: localized(shelfBook == nil ? "開始閱讀" : "開啟"), systemImage: "book",
@@ -296,7 +302,7 @@ extension AozoraCatalogIndex {
 #Preview("Aozora authors") { NavigationStack { AozoraCatalogView(index: .preview, mode: .authors) }.environmentObject(BookStore()) }
 #Preview("Aozora works") { NavigationStack { AozoraWorksView(index: .preview, works: AozoraCatalogIndex.preview.newWorks, title: localized("新着作品")) }.environmentObject(BookStore()) }
 #Preview("Aozora work") { NavigationStack { AozoraWorkDetailView(work: AozoraCatalogIndex.preview.newWorks[0], index: .preview) }.environmentObject(BookStore()) }
-#Preview("Aozora row") { List { AozoraWorkRow(work: AozoraCatalogIndex.preview.newWorks[0], index: .preview) } }
+#Preview("Aozora row") { List { AozoraWorkRow(work: AozoraCatalogIndex.preview.newWorks[0], index: .preview) }.environmentObject(BookStore()) }
 #Preview("Aozora legacy index") {
     AozoraIndexedTable(groups: AozoraCatalogIndex.preview.titleGroups, row: { id in
         Text(AozoraCatalogIndex.preview.worksByID[id]?.title ?? "")

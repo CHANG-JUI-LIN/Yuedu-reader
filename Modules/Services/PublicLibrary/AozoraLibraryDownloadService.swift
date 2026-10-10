@@ -32,7 +32,7 @@ final class AozoraLibraryDownloadService: AozoraLibraryDownloading {
     }
 
     func addToShelf(work: AozoraWork, store: BookStore) async throws -> ReadingBook {
-        if let book = store.books.first(where: { $0.aozora?.catalogWorkID == work.id }) { return book }
+        if let book = store.copyLookup().copies(for: SourceRecord.derived(from: work).key).first(where: \.isInBookshelf) { return book }
         if let operation = operations[work.id] { return try await operation.value }
         let operation = Task { try await importWork(work, store: store) }
         operations[work.id] = operation

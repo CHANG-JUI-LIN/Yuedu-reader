@@ -66,6 +66,13 @@ enum PublicLibraryBook: Identifiable {
             work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、")
         }
     }
+    /// The key a copy of this book is found by (unified library 1a, 2c).
+    var sourceItemKey: SourceItemKey {
+        switch self {
+        case .gutenberg(let book): SourceRecord.derived(from: book).key
+        case .aozora(let work, _): SourceRecord.derived(from: work).key
+        }
+    }
 }
 
 struct PublicLibraryBookSelection: Identifiable {

@@ -13,6 +13,7 @@ struct WebDAVDirectoryRoute: Hashable {
 struct WebDAVDirectoryView: View {
     let route: WebDAVDirectoryRoute
     @ObservedObject private var catalogStore = RemoteLibraryConnectionStore.shared
+    @EnvironmentObject private var store: BookStore
     @StateObject private var model: WebDAVBrowseModel
     @State private var searchText = ""
 
@@ -116,6 +117,9 @@ struct WebDAVDirectoryView: View {
                             Text(localized("此格式暫不支援閱讀"))
                                 .font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
                         }
+                        if let status = shelfStatus(of: entry) {
+                            Text(status.title).font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
+                        }
                     }
                 }
             }
@@ -124,6 +128,14 @@ struct WebDAVDirectoryView: View {
 
     private func load() async {
         await model.load()
+    }
+
+    /// 已加入書架 or 已下載, from `CopyLookup` (unified library 2c). The key is the path below
+    /// the connection's root, as 1a derives it for the copy.
+    private func shelfStatus(of entry: WebDAVBrowseClient.Entry) -> CopyLookup.Status? {
+        guard let root = connection.flatMap({ RemoteLibraryConnection.normalizedURL($0.url, kind: .webDAV) }),
+              let record = SourceRecord.derived(from: entry, connectionID: route.connectionID, root: root) else { return nil }
+        return store.copyLookup(connections: catalogStore).status(for: record.key)
     }
 }
 

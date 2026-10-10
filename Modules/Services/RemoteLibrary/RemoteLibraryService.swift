@@ -38,8 +38,11 @@ final class RemoteLibraryService: RemoteLibraryServing {
         self.connections = connections; self.cache = cache; self.transportFactory = transportFactory
     }
 
+    /// Through `CopyLookup` (unified library 2c): the entry's copies, then the one of this format.
     func book(for item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) -> ReadingBook? {
-        store.readingBooks.first { $0.remoteSource?.matches(item: item, format: format) == true }
+        store.copyLookup(connections: connections)
+            .copies(connectionID: item.connectionID, entryID: item.id)
+            .first { $0.remoteSource?.matches(item: item, format: format) == true }
     }
 
     private func record(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) throws -> ReadingBook {
