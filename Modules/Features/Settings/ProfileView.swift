@@ -244,7 +244,9 @@ struct SettingsView: View {
             .navigationDestination(isPresented: $showRemoteLibraries) {
                 RemoteLibrarySettingsView()
             }
-            .navigationDestination(isPresented: pushedSourceListBinding) {
+            // Pushed on every version (2026-10-10): its importers then always have a
+            // first-level presenter, and it is configuration like 遠端書庫 beside it.
+            .navigationDestination(isPresented: $showSourceList) {
                 BookSourceListView(embedsNavigationStack: false)
                     .environmentObject(store)
             }
@@ -262,10 +264,6 @@ struct SettingsView: View {
                 }
             }
             #endif
-            .sheet(isPresented: sheetSourceListBinding) {
-                BookSourceListView()
-                    .environmentObject(store)
-            }
             .sheet(isPresented: $showDownloadManager) {
                 DownloadManagementView()
                     .environmentObject(store)
@@ -299,26 +297,6 @@ struct SettingsView: View {
                 TTSSettingsView()
             }
         }
-    }
-
-    private var pushedSourceListBinding: Binding<Bool> {
-        Binding(
-            get: {
-                showSourceList
-                    && BookSourceManagementPresentationPolicy.prefersNavigationDestination
-            },
-            set: { if !$0 { showSourceList = false } }
-        )
-    }
-
-    private var sheetSourceListBinding: Binding<Bool> {
-        Binding(
-            get: {
-                showSourceList
-                    && !BookSourceManagementPresentationPolicy.prefersNavigationDestination
-            },
-            set: { if !$0 { showSourceList = false } }
-        )
     }
 
     private var downloadedBooksCount: Int {

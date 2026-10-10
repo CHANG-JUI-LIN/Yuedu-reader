@@ -22,20 +22,6 @@ struct DismissalSequencedPresentationTests {
         #expect(!MenuShareLinkPresentationPolicy.requiresFirstLevelShareSheet(osMajorVersion: 26))
     }
 
-    @Test("iOS 17 pushes book-source management to avoid a nested sheet")
-    func iOS17PushesBookSourceManagement() {
-        #expect(
-            BookSourceManagementPresentationPolicy.prefersNavigationDestination(
-                osMajorVersion: 17
-            )
-        )
-        #expect(
-            !BookSourceManagementPresentationPolicy.prefersNavigationDestination(
-                osMajorVersion: 18
-            )
-        )
-    }
-
     @Test("iOS 17 dismisses book-source import before opening the document picker")
     func iOS17UsesFirstLevelBookSourceImporter() {
         #expect(
