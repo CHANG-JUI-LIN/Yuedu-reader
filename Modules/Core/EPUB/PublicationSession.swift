@@ -623,6 +623,46 @@ final class PublicationSession {
         return try await makeSession(sourceURL: remoteURL, opened: opened, cacheURL: cacheURL)
     }
 
+    /// What a remote EPUB says about itself (unified library 2e).
+    struct RemotePackageMetadata: @unchecked Sendable {
+        let metadata: Metadata
+        let identifiers: [OPFIdentifier]
+        let cover: Data?
+        let coverMediaType: String?
+    }
+
+    /// Reads a remote EPUB's package over range requests: its metadata and identifiers, and its
+    /// cover when that fits `coverByteLimit`. It builds no session and writes no spine cache, so
+    /// it costs the ZIP's tail, the container, the OPF, the navigation document and the cover.
+    static func remotePackageMetadata(
+        remoteURL: URL,
+        httpClient: any HTTPClient,
+        coverByteLimit: UInt64
+    ) async throws -> RemotePackageMetadata {
+        guard HTTPURL(url: remoteURL) != nil else {
+            throw PublicationSessionError.parsingFailed("Invalid remote EPUB URL")
+        }
+        let opened = try await openPackage(sourceURL: remoteURL, httpClient: httpClient)
+        let publication = opened.publication
+        defer { publication.close() }
+        var cover: Data?
+        var coverMediaType: String?
+        if let link = publication.linkWithRel(.cover), let resource = publication.get(link) {
+            // A ZIP entry knows its size; reading past it is an error, so the size decides. An
+            // entry of unknown size is read and then measured.
+            let length = try await resource.estimatedLength().get()
+            if length.map({ $0 <= coverByteLimit }) ?? true {
+                let data = try await resource.read().get()
+                if data.count <= Int(coverByteLimit) {
+                    cover = data
+                    coverMediaType = link.mediaType?.string
+                }
+            }
+        }
+        return RemotePackageMetadata(metadata: publication.metadata, identifiers: opfIdentifiers(in: opened.resources.opfXML),
+                                     cover: cover, coverMediaType: coverMediaType)
+    }
+
     private static func makeSession(
         sourceURL: URL,
         opened: (publication: Publication, resources: EPUBPackageResources),

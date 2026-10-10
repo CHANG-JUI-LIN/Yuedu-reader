@@ -211,7 +211,16 @@ final class WorkIndexService {
                 entries.append(entry)
             } else {
                 reread += 1
-                entries.append(WorkIndexEntry(record: file.record, language: LanguageTag(file.record.language)))
+                // What 2e read from the package: its identifiers merge works at A-level.
+                let language = (file.values ?? []).lazy.filter { $0.field == .language }.compactMap { value -> LanguageTag? in
+                    switch value.value {
+                    case .text(let text): LanguageTag(text)
+                    case .texts(let texts): texts.lazy.compactMap(LanguageTag.init).first
+                    case .number, .date: nil
+                    }
+                }.first
+                entries.append(WorkIndexEntry(record: file.record, extraIdentifiers: file.identifiers ?? [],
+                                              language: language ?? LanguageTag(file.record.language)))
             }
         }
 

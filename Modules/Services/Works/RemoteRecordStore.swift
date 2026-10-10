@@ -9,6 +9,34 @@ struct IndexedFile: Codable, Hashable, Sendable {
     var etag: String?
     var lastModified: String?
     var size: Int64
+    /// What the EPUB's package said (2e), nil until read.
+    var identifiers: [ExternalIdentifier]? = nil
+    var values: [MetadataValue]? = nil
+    /// The cover's file name in `Caches/Works/covers` (2e).
+    var cover: String? = nil
+    var filled: FillOutcome? = nil
+
+    enum FillOutcome: Codable, Hashable, Sendable {
+        case read
+        /// The package could not be read (`SourceFailure.Kind`); not retried until the file changes.
+        case failed(SourceFailure.Kind)
+    }
+
+    /// Whether this is the same file a previous crawl found, so what was read from it still holds.
+    func isSameFile(as other: IndexedFile) -> Bool {
+        record.key == other.record.key && etag == other.etag && lastModified == other.lastModified && size == other.size
+    }
+
+    /// The fields design §8.3 scores: cover, summary, authors, tags, language, series. Constant
+    /// weights; the fewest are filled first.
+    var completeness: Int {
+        let fields = Set((values ?? []).map(\.field))
+        return [cover != nil, fields.contains(.intro), !record.authors.isEmpty || fields.contains(.authors),
+                fields.contains(.tags), fields.contains(.language), fields.contains(.series)].filter { $0 }.count
+    }
+
+    /// An EPUB whose package has not been read yet.
+    var needsFill: Bool { filled == nil && record.key.item.lowercased().hasSuffix(".epub") }
 }
 
 /// A folder still to list, and how deep it is below the root.

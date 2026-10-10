@@ -231,10 +231,10 @@ struct yuedu_appApp: App {
                     #endif
                     // Unified library 2d: WebDAV libraries index in the foreground, on Wi-Fi.
                     NetworkPathMonitor.shared.start()
-                    Task {
-                        await WebDAVIndexCoordinator.shared.attach(store: bookStore.remoteRecords)
-                        WebDAVIndexCoordinator.shared.setActive(scenePhase == .active)
-                    }
+                    // The phase is set here, now, and by every change below; never after the
+                    // attach below, which awaits and would overwrite a newer phase with this one.
+                    WebDAVIndexCoordinator.shared.setActive(scenePhase == .active)
+                    Task { await WebDAVIndexCoordinator.shared.attach(store: bookStore.remoteRecords) }
                     // Seamless iCloud: merge with the cloud on launch.
                     if GlobalSettings.shared.iCloudAutoSync {
                         Task { try? await ICloudSyncManager.shared.sync(reason: "launch") }

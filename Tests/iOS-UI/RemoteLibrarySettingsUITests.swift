@@ -91,11 +91,12 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
         app.navigationBars["Add Server"].buttons["Save"].tap()
 
         let indexed = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Indexed (1000 books)")).firstMatch
-        XCTAssertTrue(indexed.waitForExistence(timeout: 120), "the library indexes itself and the row says so")
+        let found = indexed.waitForExistence(timeout: 120)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "webdav-indexed"
         attachment.lifetime = .keepAlways
         add(attachment)
+        XCTAssertTrue(found, "the library indexes itself and the row says so")
 
         indexed.swipeLeft()
         app.buttons["Delete"].firstMatch.tap()

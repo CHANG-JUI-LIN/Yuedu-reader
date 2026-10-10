@@ -375,7 +375,7 @@ private final class FixedRangeResponseClient: HTTPClient {
     }
 }
 
-private final class EPUBRangeHTTPClient: HTTPClient {
+final class EPUBRangeHTTPClient: HTTPClient {
     let data: Data
     private let failure: HTTPError?
     private let lock = NSLock()
