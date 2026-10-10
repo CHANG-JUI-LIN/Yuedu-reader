@@ -194,6 +194,10 @@ final class CustomExplorePageStore: ObservableObject {
     @Published private(set) var pages: [CustomExplorePage] = []
 
     private let fileURL: URL
+    /// Set when the file on disk could not be read, or did not decode and could not be kept
+    /// aside. Writing would replace pages nobody has seen, so edits stay in memory until a
+    /// later launch reads the file.
+    private var writesBlocked = false
 
     init(fileURL: URL = StorageLocations.applicationSupportRoot.appendingPathComponent("custom_explore_pages.json")) {
         self.fileURL = fileURL
@@ -271,15 +275,52 @@ final class CustomExplorePageStore: ObservableObject {
 
     private func load() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        let data: Data
         do {
-            let data = try Data(contentsOf: fileURL)
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            writesBlocked = true
+            AppLogger.cache("⟐ custom explore pages could not be read; this launch will not write them", error: error)
+            return
+        }
+        do {
             pages = try JSONDecoder().decode([CustomExplorePage].self, from: data)
         } catch {
             AppLogger.cache("⟐ custom explore pages could not be read", error: error)
+            keepUnreadableFile(data)
+        }
+    }
+
+    /// Copies a file that did not decode next to itself before anything writes over it, as
+    /// the shelf does with its own metadata. Named after the file's modification time, so a
+    /// second open before any write finds the copy it already made instead of adding one.
+    private func keepUnreadableFile(_ data: Data) {
+        let modified = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let stamp = Int((modified ?? Date()).timeIntervalSince1970)
+        let backupURL = fileURL.deletingPathExtension().appendingPathExtension("corrupt-\(stamp).json")
+        do {
+            try data.write(to: backupURL, options: .withoutOverwriting)
+            AppLogger.cache("⟐ custom explore pages kept aside as \(backupURL.lastPathComponent)")
+        } catch {
+            if let existing = try? Data(contentsOf: backupURL), existing == data {
+                // An earlier open already kept exactly these bytes.
+                return
+            }
+            writesBlocked = true
+            AppLogger.cache(
+                "⟐ custom explore pages could not be kept aside; this launch will not write them",
+                error: error
+            )
         }
     }
 
     private func save() {
+        guard !writesBlocked else {
+            AppLogger.cache(
+                "⟐ custom explore pages not saved: \(fileURL.lastPathComponent) could not be read at launch"
+            )
+            return
+        }
         do {
             let data = try JSONEncoder().encode(pages)
             try data.write(to: fileURL, options: .atomic)
