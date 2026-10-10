@@ -641,11 +641,10 @@ struct DiscoverCategoryBookList: View {
     /// Pull to refresh, where the page around the list offers it.
     var onRefresh: (() -> Void)?
 
+    var pageLoader: SectionPageLoader = .live
+
     @State private var books: [DiscoverBookDisplay]
-    @State private var nextPage: Int
-    @State private var hasMorePages = true
-    @State private var isLoadingMore = false
-    @State private var loadMoreErrorReason: String?
+    @State private var paging: SectionPaging
 
     init(
         section: DiscoverShowcaseSection,
@@ -656,7 +655,7 @@ struct DiscoverCategoryBookList: View {
         self.source = source
         self.onRefresh = onRefresh
         _books = State(initialValue: section.books)
-        _nextPage = State(initialValue: section.books.isEmpty ? 1 : 2)
+        _paging = State(initialValue: SectionPaging(firstPageLoaded: !section.books.isEmpty))
     }
 
     var body: some View {
@@ -689,7 +688,7 @@ struct DiscoverCategoryBookList: View {
             .padding(.vertical, DSSpacing.sm)
         }
         .overlay {
-            if books.isEmpty, !hasMorePages, !isLoadingMore, loadMoreErrorReason == nil {
+            if books.isEmpty, !paging.hasMore, !paging.isLoading, paging.errorReason == nil {
                 ContentUnavailableView {
                     UnavailableLabel(localized("暫無發現內容"), systemImage: "books.vertical")
                 }
@@ -707,11 +706,11 @@ struct DiscoverCategoryBookList: View {
 
     @ViewBuilder
     private var loadMoreFooter: some View {
-        if isLoadingMore {
+        if paging.isLoading {
             ProgressView()
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, DSSpacing.md)
-        } else if loadMoreErrorReason != nil {
+        } else if paging.errorReason != nil {
             Button {
                 loadMoreIfNeeded()
             } label: {
@@ -720,7 +719,7 @@ struct DiscoverCategoryBookList: View {
                         .font(DSFont.subheadline)
                         .foregroundStyle(DSColor.accent)
 
-                    if let reason = loadMoreErrorReason, !reason.isEmpty {
+                    if let reason = paging.errorReason, !reason.isEmpty {
                         Text(reason)
                             .font(DSFont.caption)
                             .foregroundStyle(DSColor.textSecondary)
@@ -732,7 +731,7 @@ struct DiscoverCategoryBookList: View {
                 .padding(.vertical, DSSpacing.md)
             }
             .buttonStyle(.plain)
-        } else if hasMorePages {
+        } else if paging.hasMore {
             Color.clear
                 .frame(height: 1)
                 .onAppear(perform: loadMoreIfNeeded)
@@ -740,44 +739,17 @@ struct DiscoverCategoryBookList: View {
     }
 
     private func loadMoreIfNeeded() {
-        guard hasMorePages, !isLoadingMore else { return }
-        isLoadingMore = true
-        loadMoreErrorReason = nil
-        let page = nextPage
+        guard let page = paging.start() else { return }
         let existing = books.map(\.book)
-
-        Task {
+        Task { @MainActor in
             do {
-                let loaded = try await BookSourceFetcher.shared.discoverBooks(
-                    from: section.item.raw,
-                    page: page,
-                    in: source
-                )
-                let additional = DiscoverViewModel.uniqueAdditionalBooks(loaded, existing: existing)
-                let displays = await DiscoverViewModel.makeDisplays(additional, source: source)
-                applyLoadedPage(displays, page: page)
+                let additional = try await pageLoader.books(page: page, of: section, in: source, after: existing)
+                books.append(contentsOf: additional)
+                paging.receive(newBooks: additional.count, page: page)
             } catch {
-                applyLoadMoreError((error as NSError).localizedDescription)
+                paging.fail((error as NSError).localizedDescription)
             }
         }
-    }
-
-    @MainActor
-    private func applyLoadedPage(_ additional: [DiscoverBookDisplay], page: Int) {
-        if additional.isEmpty {
-            hasMorePages = false
-        } else {
-            books.append(contentsOf: additional)
-            nextPage = page + 1
-            hasMorePages = true
-        }
-        isLoadingMore = false
-    }
-
-    @MainActor
-    private func applyLoadMoreError(_ reason: String) {
-        loadMoreErrorReason = reason
-        isLoadingMore = false
     }
 }
 
