@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 /// *surface* each list appears on differs: the tools sit in the bottom bar of both,
 /// while the actions are 經典's floating circles and 現代's book card.
 struct ReaderChromeIconSettingsView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @State private var importError: ReaderChromeIconImportError?
 
     var body: some View {

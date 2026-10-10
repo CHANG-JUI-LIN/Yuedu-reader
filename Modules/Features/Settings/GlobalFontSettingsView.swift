@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct GlobalFontSettingsView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @ObservedObject private var subscription = SubscriptionStore.shared
     @State private var showingImporter = false
     @State private var showsPaywall = false

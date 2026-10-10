@@ -5,7 +5,7 @@ import Combine
 
 struct ReadingStatsView: View {
     @ObservedObject private var store = ReadingStatsStore.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedPeriod: Period = .today

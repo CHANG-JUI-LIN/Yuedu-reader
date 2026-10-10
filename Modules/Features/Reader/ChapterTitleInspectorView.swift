@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ChapterTitleInspectorView: View {
     @ObservedObject var model: ChapterTitleDesignerModel
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @State private var showingAssetLibrary = false
     @State private var contrastAcknowledged = false
 

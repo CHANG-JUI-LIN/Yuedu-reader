@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ICloudSyncView: View {
     @StateObject private var manager = ICloudSyncManager.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     @State private var showAlert = false
     @State private var alertTitle = ""

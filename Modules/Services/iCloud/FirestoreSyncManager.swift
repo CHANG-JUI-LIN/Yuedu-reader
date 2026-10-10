@@ -289,11 +289,29 @@ final class FirestoreSyncManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        GlobalSettings.shared.objectWillChange
-            .sink { [weak self] _ in
-                self?.schedulePush("profile") { try await self?.upsertCurrentProfile() }
+        observeProfileSettings()
+    }
+
+    /// Schedules a profile push when a setting the profile carries changes. It used to
+    /// listen to `GlobalSettings.objectWillChange` — every setting, the brightness slider's
+    /// every tick included. `withObservationTracking` reports the first change to what the
+    /// closure reads, once; the handler re-arms after hopping to the main actor, where the
+    /// new values are in place (the callback itself runs before the change lands).
+    private func observeProfileSettings() {
+        withObservationTracking {
+            let settings = GlobalSettings.shared
+            _ = settings.accountPhotoURL
+            _ = settings.accountProvider
+            _ = settings.accountDisplayName
+            _ = settings.accountEmail
+            _ = ReaderPreferences.current(settings: settings)
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.schedulePush("profile") { try await self.upsertCurrentProfile() }
+                self.observeProfileSettings()
             }
-            .store(in: &cancellables)
+        }
     }
 
     private func schedulePush(_ key: String, operation: @escaping @MainActor () async throws -> Void) {

@@ -4,7 +4,7 @@ import Combine
 struct WebDAVSyncView: View {
 
     @StateObject private var manager = WebDAVManager.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     @State private var showAlert = false
     @State private var alertTitle = ""

@@ -26,7 +26,7 @@ private enum RSSOPMLDeferredImport {
 
 struct RSSListView: View {
     @StateObject private var store = RSSStore.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     @AppStorage("rss_main_feed_hide_read_feeds") private var hideReadFeeds = false
     @AppStorage("rss_main_feed_smart_feeds_expanded") private var smartFeedsExpanded = true
@@ -1413,7 +1413,7 @@ private struct AddRSSSourceSheet: View {
 
     @Binding var isPresented: Bool
     @ObservedObject var store: RSSStore
-    @ObservedObject var gs: GlobalSettings
+    @Bindable var gs: GlobalSettings
     let folders: [RSSFolder]
 
     @State private var name = ""

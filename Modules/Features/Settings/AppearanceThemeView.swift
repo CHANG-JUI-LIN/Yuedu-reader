@@ -11,7 +11,7 @@ struct ThemeScreenAlert: Identifiable {
 }
 
 struct AppearanceThemeView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -860,7 +860,7 @@ private struct ThemePreviewTile: View {
 }
 
 private struct AppearanceReaderInterfaceView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
 
     /// The reading background the reader is currently painting with, so the preview
     /// shows the chrome against the surface it will actually sit on. Read once per

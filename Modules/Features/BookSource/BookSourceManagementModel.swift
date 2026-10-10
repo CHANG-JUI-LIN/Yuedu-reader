@@ -120,11 +120,23 @@ final class BookSourceManagementModel: ObservableObject {
         self.healthChecker.didPublish
             .sink { [weak self] in self?.healthDidChange() }
             .store(in: &cancellables)
-        settings.$bookSourceListGrouped
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] grouped in self?.rebuildRows(grouped: grouped) }
-            .store(in: &cancellables)
+        observeGrouping(current: settings.bookSourceListGrouped)
+    }
+
+    /// Rebuilds the rows when 分組 is switched. `withObservationTracking` reports the change
+    /// before it lands and only once: the handler reads the new value after hopping to the
+    /// main actor, skips an unchanged one, and re-arms.
+    private func observeGrouping(current: Bool) {
+        withObservationTracking {
+            _ = settings.bookSourceListGrouped
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let grouped = self.settings.bookSourceListGrouped
+                if grouped != current { self.rebuildRows(grouped: grouped) }
+                self.observeGrouping(current: grouped)
+            }
+        }
     }
 
     // MARK: Reads for rows and actions

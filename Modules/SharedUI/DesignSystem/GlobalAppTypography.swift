@@ -10,6 +10,14 @@ enum GlobalAppTypography {
     /// A single-weight font has no heavier face and SwiftUI synthesizes none, so
     /// `effectivePostScriptName(_:boldText:)` sets it aside for the system font meanwhile.
     nonisolated(unsafe) static var isBoldTextActive = false
+
+    /// Registers the calling view's body as depending on the global font and Bold Text.
+    /// The fonts are drawn from the statics above, which nothing observes; `ContentView`
+    /// bumps `GlobalSettings.typographyRevision` when either changes, and every builder here
+    /// reads it so a view that sets its own font redraws with the new face or weight.
+    private static func observeTypography() {
+        _ = GlobalSettings.shared.typographyRevision
+    }
     nonisolated(unsafe) private static var bolderFaceCache: [String: Bool] = [:]
 
     enum Style {
@@ -164,7 +172,8 @@ enum GlobalAppTypography {
         weight: Font.Weight? = nil,
         systemDesign: Font.Design = .default
     ) -> Font {
-        font(style, postScriptName: activePostScriptName, weight: weight, systemDesign: systemDesign)
+        observeTypography()
+        return font(style, postScriptName: activePostScriptName, weight: weight, systemDesign: systemDesign)
     }
 
     static func font(
@@ -173,6 +182,7 @@ enum GlobalAppTypography {
         weight: Font.Weight? = nil,
         systemDesign: Font.Design = .default
     ) -> Font {
+        observeTypography()
         guard let postScriptName,
               UIFont(name: postScriptName, size: style.basePointSize) != nil else {
             let system = systemDesign == .default
@@ -198,6 +208,7 @@ enum GlobalAppTypography {
         weight: Font.Weight = .regular,
         systemDesign: Font.Design = .default
     ) -> Font {
+        observeTypography()
         if case .monospaced = systemDesign {
             return .system(size: size, weight: weight, design: systemDesign)
         }
@@ -230,6 +241,7 @@ enum GlobalAppTypography {
         maximumPointSize: CGFloat? = nil,
         compatibleWith traits: UITraitCollection? = nil
     ) -> UIFont {
+        observeTypography()
         let baseFont = baseUIFont(style, postScriptName: postScriptName, weight: weight)
 
         let metrics = UIFontMetrics(forTextStyle: style.uiKitStyle)
@@ -250,7 +262,8 @@ enum GlobalAppTypography {
         postScriptName: String?,
         weight: UIFont.Weight? = nil
     ) -> UIFont {
-        baseUIFont(style, postScriptName: postScriptName, weight: weight)
+        observeTypography()
+        return baseUIFont(style, postScriptName: postScriptName, weight: weight)
     }
 
     private static func baseUIFont(

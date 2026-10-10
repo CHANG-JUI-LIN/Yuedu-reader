@@ -500,7 +500,17 @@ enum AppearanceColorScheme: String, Equatable {
 
 // MARK: - Global Settings
 
-class GlobalSettings: ObservableObject {
+/// Every global setting. `@Observable` (it was an `ObservableObject` with 156 `@Published`
+/// properties): a view now updates for the settings it reads, not for any setting. Before,
+/// dragging the reader's brightness re-ran every view observing the settings — about 600,
+/// the bookshelf behind the reader among them (~17 ms a tick at 300 books, Debug simulator).
+///
+/// What relied on "any change redraws every observer" now has a property to read:
+/// `typographyRevision` (the global font and Bold Text, which `GlobalAppTypography` draws from
+/// statics) and `readerBackgroundPicturesRevision` (pictures that arrive after the setting
+/// naming them). Themes reach views through the `appThemes` environment value.
+@Observable
+class GlobalSettings {
     static let shared = GlobalSettings()
     static let defaultReaderFontSize = 18.0
     static let defaultReaderLineHeightMultiple = 1.65
@@ -576,7 +586,7 @@ class GlobalSettings: ObservableObject {
     private static let readerDialogueBoxStyleKey = "yd_reader_dialogue_box_style"
     private static let regexHighlightConfigurationKey = "yd_regex_highlight_configuration_v1"
     private static let dialogueBubbleStyleKey = "yd_reader_dialogue_bubble_v1"
-    private var readerStyleAssetRevisionCancellable: AnyCancellable?
+    @ObservationIgnored private var readerStyleAssetRevisionCancellable: AnyCancellable?
     // TTS playback highlight — independent from the reader dialogue decoration.
     private static let ttsHighlightEnabledKey = "yd_tts_highlight_enabled"
     private static let ttsHighlightColorHexKey = "yd_tts_highlight_color_hex"
@@ -656,22 +666,22 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - Account State
 
-    @Published var isLoggedIn: Bool {
+    var isLoggedIn: Bool {
         didSet { UserDefaults.standard.set(isLoggedIn, forKey: "yd_account_logged_in") }
     }
-    @Published var accountDisplayName: String {
+    var accountDisplayName: String {
         didSet { UserDefaults.standard.set(accountDisplayName, forKey: "yd_account_display_name") }
     }
-    @Published var accountEmail: String {
+    var accountEmail: String {
         didSet { UserDefaults.standard.set(accountEmail, forKey: "yd_account_email") }
     }
-    @Published var accountProvider: String {
+    var accountProvider: String {
         didSet { UserDefaults.standard.set(accountProvider, forKey: "yd_account_provider") }
     }
-    @Published var accountUserIdentifier: String {
+    var accountUserIdentifier: String {
         didSet { UserDefaults.standard.set(accountUserIdentifier, forKey: "yd_account_user_identifier") }
     }
-    @Published var accountPhotoURL: String {
+    var accountPhotoURL: String {
         didSet { UserDefaults.standard.set(accountPhotoURL, forKey: "yd_account_photo_url") }
     }
 
@@ -686,7 +696,7 @@ class GlobalSettings: ObservableObject {
         default: return localized("已登入")
         }
     }
-    @Published var accountAvatarData: Data? {
+    var accountAvatarData: Data? {
         didSet {
             if let accountAvatarData {
                 UserDefaults.standard.set(accountAvatarData, forKey: "yd_account_avatar_data")
@@ -696,60 +706,60 @@ class GlobalSettings: ObservableObject {
         }
     }
 
-    @Published var textConversion: TextConversion {
+    var textConversion: TextConversion {
         didSet { UserDefaults.standard.set(textConversion.rawValue, forKey: "yd_text_conv") }
     }
-    @Published var lineHeightMultiple: Double {
+    var lineHeightMultiple: Double {
         didSet {
             UserDefaults.standard.set(lineHeightMultiple, forKey: "yd_line_height_multiple")
             recordReadingSettingEdit { $0.lineHeightMultiple = lineHeightMultiple }
         }
     }
-    @Published var scrollMode: Bool {
+    var scrollMode: Bool {
         didSet {
             UserDefaults.standard.set(scrollMode, forKey: "yd_scroll_mode")
             recordReadingSettingEdit { $0.scrollMode = scrollMode }
         }
     }
-    @Published var readerBrightness: Double {
+    var readerBrightness: Double {
         didSet { UserDefaults.standard.set(readerBrightness, forKey: "yd_reader_brightness") }
     }
-    @Published var followSystemBrightness: Bool {
+    var followSystemBrightness: Bool {
         didSet {
             UserDefaults.standard.set(followSystemBrightness, forKey: "yd_follow_sys_brightness")
         }
     }
-    @Published var letterSpacing: Double {
+    var letterSpacing: Double {
         didSet {
             UserDefaults.standard.set(letterSpacing, forKey: "yd_letter_spacing")
             recordReadingSettingEdit { $0.letterSpacing = letterSpacing }
         }
     }
-    @Published var paragraphSpacingMultiplier: Double {
+    var paragraphSpacingMultiplier: Double {
         didSet {
             UserDefaults.standard.set(paragraphSpacingMultiplier, forKey: "yd_paragraph_spacing_mult")
             recordReadingSettingEdit { $0.paragraphSpacingMultiplier = paragraphSpacingMultiplier }
         }
     }
-    @Published var pageMarginH: Double {
+    var pageMarginH: Double {
         didSet {
             UserDefaults.standard.set(pageMarginH, forKey: "yd_page_margin_h")
             recordReadingSettingEdit { $0.pageMarginH = pageMarginH }
         }
     }
-    @Published var pageMarginTop: Double {
+    var pageMarginTop: Double {
         didSet {
             UserDefaults.standard.set(pageMarginTop, forKey: "yd_page_margin_top")
             recordReadingSettingEdit { $0.pageMarginTop = pageMarginTop }
         }
     }
-    @Published var pageMarginBottom: Double {
+    var pageMarginBottom: Double {
         didSet {
             UserDefaults.standard.set(pageMarginBottom, forKey: "yd_page_margin_bottom")
             recordReadingSettingEdit { $0.pageMarginBottom = pageMarginBottom }
         }
     }
-    @Published var pageMarginV: Double {
+    var pageMarginV: Double {
         didSet {
             UserDefaults.standard.set(pageMarginV, forKey: "yd_page_margin_v")
             recordReadingSettingEdit { $0.pageMarginV = pageMarginV }
@@ -760,7 +770,7 @@ class GlobalSettings: ObservableObject {
     /// color it (or the bound appearance palette) already defines. Keyed per
     /// background rather than global so a color chosen for 白天 can't follow the
     /// reader into 黑色 and leave black text on a black page.
-    @Published var readerTextColorOverrides: [String: UInt32] {
+    var readerTextColorOverrides: [String: UInt32] {
         didSet {
             UserDefaults.standard.set(
                 readerTextColorOverrides.mapValues { Int($0) },
@@ -769,13 +779,13 @@ class GlobalSettings: ObservableObject {
             recordReadingSettingEdit { $0.textColorOverrides = readerTextColorOverrides }
         }
     }
-    @Published var footerBottomPadding: Double {
+    var footerBottomPadding: Double {
         didSet {
             UserDefaults.standard.set(footerBottomPadding, forKey: "yd_footer_bottom_padding")
             recordReadingSettingEdit { $0.footerBottomPadding = footerBottomPadding }
         }
     }
-    @Published var footerTextGap: Double {
+    var footerTextGap: Double {
         didSet {
             UserDefaults.standard.set(footerTextGap, forKey: "yd_footer_text_gap")
             recordReadingSettingEdit { $0.footerTextGap = footerTextGap }
@@ -786,63 +796,63 @@ class GlobalSettings: ObservableObject {
     // only as a one-time migration source (see `loadChapterTitleStyle`) and for
     // reading older layout presets. Do not treat them as authoritative for
     // rendering — nothing mirrors them into the renderer anymore.
-    @Published var readerTitleVisible: Bool {
+    var readerTitleVisible: Bool {
         didSet { UserDefaults.standard.set(readerTitleVisible, forKey: "yd_reader_title_visible") }
     }
-    @Published var readerTitleSize: Double {
+    var readerTitleSize: Double {
         didSet { UserDefaults.standard.set(readerTitleSize, forKey: "yd_reader_title_size") }
     }
-    @Published var readerTitleTopSpacing: Double {
+    var readerTitleTopSpacing: Double {
         didSet { UserDefaults.standard.set(readerTitleTopSpacing, forKey: "yd_reader_title_top_spacing") }
     }
-    @Published var readerTitleBottomSpacing: Double {
+    var readerTitleBottomSpacing: Double {
         didSet { UserDefaults.standard.set(readerTitleBottomSpacing, forKey: "yd_reader_title_bottom_spacing") }
     }
     /// Full chapter-title style (size/spacing/weight/alignment/split/fonts) — the
     /// authoritative in-content title description consumed by the renderer.
-    @Published var chapterTitleStyle: ChapterTitleStyle {
+    var chapterTitleStyle: ChapterTitleStyle {
         didSet {
             Self.saveChapterTitleStyle(chapterTitleStyle)
             recordReadingSettingEdit { $0.chapterTitleStyle = chapterTitleStyle }
         }
     }
     /// User-saved chapter-title presets ("我的預設"). Built-ins live in code.
-    @Published private(set) var chapterTitleCustomPresets: [ChapterTitleStylePreset] {
+    private(set) var chapterTitleCustomPresets: [ChapterTitleStylePreset] {
         didSet { Self.saveChapterTitleCustomPresets(chapterTitleCustomPresets) }
     }
     /// Reader header (頁眉): the info band above the text in paged mode.
-    @Published var readerHeaderVisible: Bool {
+    var readerHeaderVisible: Bool {
         didSet {
             UserDefaults.standard.set(readerHeaderVisible, forKey: "yd_reader_header_visible")
             recordReadingSettingEdit { $0.headerVisible = readerHeaderVisible }
         }
     }
-    @Published var readerHeaderTopPadding: Double {
+    var readerHeaderTopPadding: Double {
         didSet {
             UserDefaults.standard.set(readerHeaderTopPadding, forKey: "yd_reader_header_top_padding")
             recordReadingSettingEdit { $0.headerTopPadding = readerHeaderTopPadding }
         }
     }
-    @Published var readerHeaderTextGap: Double {
+    var readerHeaderTextGap: Double {
         didSet {
             UserDefaults.standard.set(readerHeaderTextGap, forKey: "yd_reader_header_text_gap")
             recordReadingSettingEdit { $0.headerTextGap = readerHeaderTextGap }
         }
     }
-    @Published var readerHeaderHorizontalPadding: Double {
+    var readerHeaderHorizontalPadding: Double {
         didSet {
             UserDefaults.standard.set(readerHeaderHorizontalPadding, forKey: "yd_reader_header_h_padding")
             recordReadingSettingEdit { $0.headerHorizontalPadding = readerHeaderHorizontalPadding }
         }
     }
     /// Reader footer (頁腳): the page/progress/clock band below the text in paged mode.
-    @Published var readerFooterVisible: Bool {
+    var readerFooterVisible: Bool {
         didSet {
             UserDefaults.standard.set(readerFooterVisible, forKey: "yd_reader_footer_visible")
             recordReadingSettingEdit { $0.footerVisible = readerFooterVisible }
         }
     }
-    @Published var readerFooterHorizontalPadding: Double {
+    var readerFooterHorizontalPadding: Double {
         didSet {
             UserDefaults.standard.set(readerFooterHorizontalPadding, forKey: "yd_reader_footer_h_padding")
             recordReadingSettingEdit { $0.footerHorizontalPadding = readerFooterHorizontalPadding }
@@ -851,15 +861,15 @@ class GlobalSettings: ObservableObject {
     /// Placement of each header field, keyed by `ReaderHeaderField.rawValue`
     /// with `ReaderHeaderFieldPosition.rawValue` values. Fields without an
     /// entry are hidden. Display-only — changing it never repaginates.
-    @Published var readerHeaderFieldPositions: [String: String] {
+    var readerHeaderFieldPositions: [String: String] {
         didSet { UserDefaults.standard.set(readerHeaderFieldPositions, forKey: "yd_reader_header_positions") }
     }
-    @Published private(set) var readerOverlayLayout: ReaderOverlayLayout
+    private(set) var readerOverlayLayout: ReaderOverlayLayout
     /// Merge clock for the iCloud-synced header/footer layout. Advances only
     /// when *this device's user* edits the layout, never when a sync applies a
     /// remote one — otherwise every sync would re-stamp the record as newest and
     /// the two devices would fight forever. See `ReaderOverlayLayoutSyncRecord`.
-    @Published private(set) var readerOverlayLayoutSyncClock: Date? {
+    private(set) var readerOverlayLayoutSyncClock: Date? {
         didSet {
             if let readerOverlayLayoutSyncClock {
                 UserDefaults.standard.set(
@@ -877,14 +887,14 @@ class GlobalSettings: ObservableObject {
     /// That one survives only as the format `.qitheme` packs and exported presets
     /// arrive in — free coordinates get snapped onto slots on the way in, and are
     /// never rendered.
-    @Published private(set) var readerBarLayout: ReaderBarLayout {
+    private(set) var readerBarLayout: ReaderBarLayout {
         didSet { recordReadingSettingEdit { $0.barLayout = readerBarLayout } }
     }
     /// Merge clock for the iCloud-synced bar layout. Advances only when *this
     /// device's user* edits the layout, never when a sync applies a remote one —
     /// otherwise every sync would re-stamp the record as newest and the two
     /// devices would fight forever. See `ReaderBarLayoutSyncRecord`.
-    @Published private(set) var readerBarLayoutSyncClock: Date? {
+    private(set) var readerBarLayoutSyncClock: Date? {
         didSet {
             if let readerBarLayoutSyncClock {
                 UserDefaults.standard.set(
@@ -896,16 +906,16 @@ class GlobalSettings: ObservableObject {
             }
         }
     }
-    @Published var pageTurnStyle: PageTurnStyle {
+    var pageTurnStyle: PageTurnStyle {
         didSet {
             UserDefaults.standard.set(pageTurnStyle.rawValue, forKey: "yd_page_turn_style")
             recordReadingSettingEdit { $0.pageTurnStyle = pageTurnStyle.rawValue }
         }
     }
-    @Published var readerSpreadMode: ReaderSpreadMode {
+    var readerSpreadMode: ReaderSpreadMode {
         didSet { UserDefaults.standard.set(readerSpreadMode.rawValue, forKey: "yd_reader_spread_mode") }
     }
-    @Published var readerWritingMode: ReaderWritingMode {
+    var readerWritingMode: ReaderWritingMode {
         didSet {
             UserDefaults.standard.set(readerWritingMode.rawValue, forKey: "yd_reader_writing_mode")
             recordReadingSettingEdit { $0.writingMode = readerWritingMode.rawValue }
@@ -914,24 +924,24 @@ class GlobalSettings: ObservableObject {
     /// When on, tapping EITHER side edge of a paged reader turns to the next page
     /// (instead of left = previous / right = next). The center zone still toggles the menu.
     /// Read at tap time by `CoreTextPageEngineView`'s gesture handler — no relayout needed.
-    @Published var readerTapBothSidesNextPage: Bool {
+    var readerTapBothSidesNextPage: Bool {
         didSet { UserDefaults.standard.set(readerTapBothSidesNextPage, forKey: "yd_reader_tap_both_next") }
     }
     /// Fixed-page reader (manga, PDF, fixed-layout EPUB): a double tap zooms in and back
     /// out. Defaults ON. Off, a single tap turns the page or brings up the controls without
     /// first waiting to see whether a second tap follows; pinch zoom stays. One setting for
     /// every book. Read per touch by `FixedPageDoubleTapZoomGate` — no reload needed.
-    @Published var fixedPageDoubleTapToZoom: Bool {
+    var fixedPageDoubleTapToZoom: Bool {
         didSet { UserDefaults.standard.set(fixedPageDoubleTapToZoom, forKey: "yd_fixed_page_double_tap_zoom") }
     }
     /// Webtoon layout of the fixed-page reader: a floating button that starts and pauses
     /// auto-scroll. Off by default, as in Aidoku — most reading never uses it, and it
     /// would otherwise sit over the page the whole time. One setting for every book.
-    @Published var fixedPageAutoScrollButton: Bool {
+    var fixedPageAutoScrollButton: Bool {
         didSet { UserDefaults.standard.set(fixedPageAutoScrollButton, forKey: "yd_fixed_page_auto_scroll_button") }
     }
     /// Which bottom corner that button sits in. Right by default, as in Aidoku.
-    @Published var fixedPageAutoScrollButtonPosition: FixedPageAutoScrollButtonPosition {
+    var fixedPageAutoScrollButtonPosition: FixedPageAutoScrollButtonPosition {
         didSet {
             UserDefaults.standard.set(
                 fixedPageAutoScrollButtonPosition.rawValue,
@@ -942,7 +952,7 @@ class GlobalSettings: ObservableObject {
     /// Paged mode only: swiping up shows a growing ✕ chip and releasing closes
     /// the reader. Defaults ON; scroll mode never installs the gesture. Read at
     /// gesture-begin time by `CoreTextPageEngineView` — no relayout needed.
-    @Published var readerSwipeUpToExit: Bool {
+    var readerSwipeUpToExit: Bool {
         didSet { UserDefaults.standard.set(readerSwipeUpToExit, forKey: "yd_reader_swipe_up_exit") }
     }
     /// Paged mode only: pulling down shows a bookmark pill and releasing past the
@@ -950,7 +960,7 @@ class GlobalSettings: ObservableObject {
     /// already has one. Defaults ON; scroll mode never installs the gesture, where
     /// a downward drag is the scroll itself. Read at gesture-begin time by
     /// `CoreTextPageEngineView` — no relayout needed.
-    @Published var readerPullDownToBookmark: Bool {
+    var readerPullDownToBookmark: Bool {
         didSet { UserDefaults.standard.set(readerPullDownToBookmark, forKey: "yd_reader_pull_down_bookmark") }
     }
     /// 跟隨裝置深淺色: the reader's dark mode (`readerDarkMode`) keeps to the device's
@@ -958,7 +968,7 @@ class GlobalSettings: ObservableObject {
     /// with. Without the binding no switch shows and the reader follows the device by
     /// itself: a mode set against the device holds until the device comes round to it
     /// (`ReaderBackgroundResolution.swift`; the user's call, 2026-09-30).
-    @Published var readerFollowSystemTheme: Bool {
+    var readerFollowSystemTheme: Bool {
         didSet {
             UserDefaults.standard.set(readerFollowSystemTheme, forKey: "yd_reader_follow_system_theme")
             recordReadingSettingEdit { $0.followsSystemTheme = readerFollowSystemTheme }
@@ -973,34 +983,34 @@ class GlobalSettings: ObservableObject {
     /// Until 2026-09-30 the mode was read off `ReaderTheme.night`, which a dark saved
     /// background also sits on — so making one put the reader in dark mode — and under
     /// 綁定閱讀主題 off the device's appearance alone, so the button did nothing there.
-    @Published var readerDarkMode: Bool {
+    var readerDarkMode: Bool {
         didSet { UserDefaults.standard.set(readerDarkMode, forKey: Self.readerDarkModeKey) }
     }
-    @Published var readerTextUnderlineDecorationEnabled: Bool {
+    var readerTextUnderlineDecorationEnabled: Bool {
         didSet {
             UserDefaults.standard.set(readerTextUnderlineDecorationEnabled, forKey: Self.readerTextUnderlineDecorationKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
         }
     }
-    @Published var readerTextUnderlineDecorationColorHex: UInt32 {
+    var readerTextUnderlineDecorationColorHex: UInt32 {
         didSet {
             UserDefaults.standard.set(Int(readerTextUnderlineDecorationColorHex), forKey: Self.readerTextUnderlineDecorationColorHexKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
         }
     }
-    @Published var readerTextUnderlineStyle: ReaderTextUnderlineStyle {
+    var readerTextUnderlineStyle: ReaderTextUnderlineStyle {
         didSet {
             UserDefaults.standard.set(readerTextUnderlineStyle.rawValue, forKey: Self.readerTextUnderlineStyleKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
         }
     }
-    @Published var readerTextUnderlineThickness: Double {
+    var readerTextUnderlineThickness: Double {
         didSet {
             UserDefaults.standard.set(readerTextUnderlineThickness, forKey: Self.readerTextUnderlineThicknessKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
         }
     }
-    @Published var readerTextUnderlineOffset: Double {
+    var readerTextUnderlineOffset: Double {
         didSet {
             UserDefaults.standard.set(readerTextUnderlineOffset, forKey: Self.readerTextUnderlineOffsetKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
@@ -1009,29 +1019,29 @@ class GlobalSettings: ObservableObject {
     /// Tint quoted dialogue (「」『』"" '') in the theme accent color. Applied as a
     /// `.foregroundColor` override when the chapter attributed string is built, so it
     /// colors justified glyphs natively and works in both horizontal and vertical modes.
-    @Published var readerDialogueHighlightEnabled: Bool {
+    var readerDialogueHighlightEnabled: Bool {
         didSet {
             UserDefaults.standard.set(readerDialogueHighlightEnabled, forKey: Self.readerDialogueHighlightKey)
         }
     }
-    @Published var readerDialogueHighlightColorHex: UInt32 {
+    var readerDialogueHighlightColorHex: UInt32 {
         didSet {
             UserDefaults.standard.set(Int(readerDialogueHighlightColorHex), forKey: Self.readerDialogueHighlightColorHexKey)
         }
     }
     /// Draws a `.backgroundColor` box behind quoted dialogue (nested under 對話文字高亮).
-    @Published var readerDialogueBoxEnabled: Bool {
+    var readerDialogueBoxEnabled: Bool {
         didSet {
             UserDefaults.standard.set(readerDialogueBoxEnabled, forKey: Self.readerDialogueBoxKey)
         }
     }
-    @Published var readerDialogueBoxColorHex: UInt32 {
+    var readerDialogueBoxColorHex: UInt32 {
         didSet {
             UserDefaults.standard.set(Int(readerDialogueBoxColorHex), forKey: Self.readerDialogueBoxColorHexKey)
         }
     }
     /// 0 = solid block, 1 = gradient pill. See `CoreTextDialogueBox.Style`.
-    @Published var readerDialogueBoxStyleRaw: Int {
+    var readerDialogueBoxStyleRaw: Int {
         didSet {
             UserDefaults.standard.set(readerDialogueBoxStyleRaw, forKey: Self.readerDialogueBoxStyleKey)
         }
@@ -1039,7 +1049,7 @@ class GlobalSettings: ObservableObject {
     /// Versioned regex rules replacing the legacy single dialogue-highlight style.
     /// The legacy properties above remain persisted for old appearance payloads,
     /// while this configuration is the source of truth for the new rule editor.
-    @Published var regexHighlightConfiguration: RegexHighlightConfiguration {
+    var regexHighlightConfiguration: RegexHighlightConfiguration {
         didSet {
             let sanitized = regexHighlightConfiguration.sanitized()
             if sanitized != regexHighlightConfiguration {
@@ -1052,7 +1062,7 @@ class GlobalSettings: ObservableObject {
     }
     /// 對話氣泡 — the block-level dialogue treatment. Off by default; the inline
     /// 對話文字高亮 / 對話底色框 above stay the default look.
-    @Published var dialogueBubbleStyle: ReaderDialogueBubbleStyle {
+    var dialogueBubbleStyle: ReaderDialogueBubbleStyle {
         didSet {
             let sanitized = dialogueBubbleStyle.sanitized()
             if sanitized != dialogueBubbleStyle {
@@ -1063,44 +1073,44 @@ class GlobalSettings: ObservableObject {
             recordReadingSettingEdit { $0.dialogueBubbleStyle = sanitized }
         }
     }
-    @Published private(set) var readerStyleAssetRevision: UInt64 = 0
+    private(set) var readerStyleAssetRevision: UInt64 = 0
 
     // MARK: - TTS playback highlight (independent from reader dialogue decoration)
-    @Published var ttsHighlightEnabled: Bool {
+    var ttsHighlightEnabled: Bool {
         didSet { UserDefaults.standard.set(ttsHighlightEnabled, forKey: Self.ttsHighlightEnabledKey) }
     }
-    @Published var ttsHighlightColorHex: UInt32 {
+    var ttsHighlightColorHex: UInt32 {
         didSet { UserDefaults.standard.set(Int(ttsHighlightColorHex), forKey: Self.ttsHighlightColorHexKey) }
     }
-    @Published var ttsHighlightBoxEnabled: Bool {
+    var ttsHighlightBoxEnabled: Bool {
         didSet { UserDefaults.standard.set(ttsHighlightBoxEnabled, forKey: Self.ttsHighlightBoxEnabledKey) }
     }
-    @Published var ttsHighlightBoxColorHex: UInt32 {
+    var ttsHighlightBoxColorHex: UInt32 {
         didSet { UserDefaults.standard.set(Int(ttsHighlightBoxColorHex), forKey: Self.ttsHighlightBoxColorHexKey) }
     }
     /// 0 = solid block, 1 = gradient pill. See `CoreTextDialogueBox.Style`.
-    @Published var ttsHighlightBoxStyleRaw: Int {
+    var ttsHighlightBoxStyleRaw: Int {
         didSet { UserDefaults.standard.set(ttsHighlightBoxStyleRaw, forKey: Self.ttsHighlightBoxStyleKey) }
     }
 
-    @Published var commentBubbleFollowsSourceSVG: Bool {
+    var commentBubbleFollowsSourceSVG: Bool {
         didSet {
             UserDefaults.standard.set(commentBubbleFollowsSourceSVG, forKey: Self.commentBubbleFollowsSourceSVGKey)
             recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
         }
     }
-    @Published var commentBubblePresetMode: ReaderCommentBubblePresetMode {
+    var commentBubblePresetMode: ReaderCommentBubblePresetMode {
         didSet {
             UserDefaults.standard.set(commentBubblePresetMode.rawValue, forKey: Self.commentBubblePresetModeKey)
             recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
         }
     }
-    @Published private(set) var commentBubbleCustomStyles: [ReaderCommentBubbleCustomStyle] {
+    private(set) var commentBubbleCustomStyles: [ReaderCommentBubbleCustomStyle] {
         didSet {
             Self.saveCommentBubbleCustomStyles(commentBubbleCustomStyles)
         }
     }
-    @Published private(set) var commentBubbleSelectedCustomStyleID: UUID? {
+    private(set) var commentBubbleSelectedCustomStyleID: UUID? {
         didSet {
             Self.saveCommentBubbleSelectedCustomStyleID(commentBubbleSelectedCustomStyleID)
             recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
@@ -1133,7 +1143,7 @@ class GlobalSettings: ObservableObject {
     var commentBubbleCustomStyleName: String {
         commentBubbleSelectedCustomStyle?.name ?? ""
     }
-    @Published var commentBubbleScale: Double {
+    var commentBubbleScale: Double {
         didSet {
             let sanitized = Self.sanitizedCommentBubbleScale(commentBubbleScale)
             if commentBubbleScale != sanitized {
@@ -1149,7 +1159,7 @@ class GlobalSettings: ObservableObject {
     /// stored because themes and synced reading settings carry it as a non-optional
     /// `AppearanceThemeReadingSettings.CommentBubble.textScale`, which builds before this one
     /// still decode. Remove it together with that field once no such build syncs.
-    @Published var commentBubbleTextScale: Double {
+    var commentBubbleTextScale: Double {
         didSet {
             let sanitized = Self.sanitizedCommentBubbleTextScale(commentBubbleTextScale)
             if commentBubbleTextScale != sanitized {
@@ -1163,14 +1173,14 @@ class GlobalSettings: ObservableObject {
     /// The saved reading backgrounds, in the order they were made — see
     /// `ReaderCustomBackground`. Synced through iCloud like the bubble styles, with the
     /// pictures riding as files. Written through `ReaderCustomBackgroundStore.swift`.
-    @Published var readerCustomBackgrounds: [ReaderCustomBackground] {
+    var readerCustomBackgrounds: [ReaderCustomBackground] {
         didSet { Self.saveReaderCustomBackgrounds(readerCustomBackgrounds) }
     }
     /// The saved background the reader's light mode wears in place of the built-in light
     /// one, whatever its tone; nil for the built-in one alone. Dark mode is 黑色. Under
     /// 綁定閱讀主題 the two picks decide instead, and only 跟隨外觀主題 reads this — as the
     /// theme's own reading picture.
-    @Published var readerCustomBackgroundID: UUID? {
+    var readerCustomBackgroundID: UUID? {
         didSet {
             if let readerCustomBackgroundID {
                 UserDefaults.standard.set(readerCustomBackgroundID.uuidString, forKey: Self.readerCustomBackgroundIDKey)
@@ -1183,13 +1193,13 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - App Appearance Themes
 
-    @Published var appearanceFollowsSystem: Bool {
+    var appearanceFollowsSystem: Bool {
         didSet {
             UserDefaults.standard.set(appearanceFollowsSystem, forKey: Self.appearanceFollowsSystemKey)
         }
     }
 
-    @Published var appearancePinnedColorScheme: AppearanceColorScheme {
+    var appearancePinnedColorScheme: AppearanceColorScheme {
         didSet {
             UserDefaults.standard.set(
                 appearancePinnedColorScheme.rawValue,
@@ -1207,14 +1217,14 @@ class GlobalSettings: ObservableObject {
     /// recorded like edits, but none of them is a setting made here.
     var isApplyingReadingSettingsSync = false
 
-    @Published var appearanceThemeID: String {
+    var appearanceThemeID: String {
         didSet {
             UserDefaults.standard.set(appearanceThemeID, forKey: Self.appearanceThemeIDKey)
             guard appearanceThemeID != oldValue else { return }
             synchronizeAppearanceThemeExtras()
         }
     }
-    @Published var appearanceDarkThemeID: String {
+    var appearanceDarkThemeID: String {
         didSet {
             UserDefaults.standard.set(appearanceDarkThemeID, forKey: Self.appearanceDarkThemeIDKey)
             guard appearanceDarkThemeID != oldValue else { return }
@@ -1223,7 +1233,7 @@ class GlobalSettings: ObservableObject {
     }
     /// Card artwork in force — set by the selected theme's extras, nil for a plain
     /// theme. Read by `interfaceCardSurface` / `interfaceSectionSurface`.
-    @Published var appearanceCardBackground: AppearanceCardBackground? {
+    var appearanceCardBackground: AppearanceCardBackground? {
         didSet {
             updateActiveThemeExtras { $0.cardBackground = appearanceCardBackground }
             guard let appearanceCardBackground,
@@ -1234,7 +1244,7 @@ class GlobalSettings: ObservableObject {
             UserDefaults.standard.set(data, forKey: Self.appearanceCardBackgroundKey)
         }
     }
-    @Published var appearanceUsesSeparateDarkTheme: Bool {
+    var appearanceUsesSeparateDarkTheme: Bool {
         didSet {
             UserDefaults.standard.set(appearanceUsesSeparateDarkTheme, forKey: Self.appearanceSeparateDarkThemeKey)
             // Which slot's theme is worn can change with it.
@@ -1244,7 +1254,7 @@ class GlobalSettings: ObservableObject {
     /// The appearance on screen. While 單獨設定深色主題 is on it picks whose theme is worn —
     /// the light slot's or the dark slot's — so `ContentView` keeps it current. Stored,
     /// so a launch starts from the last one rather than guessing.
-    @Published var appearanceOnScreen: AppearanceColorScheme {
+    var appearanceOnScreen: AppearanceColorScheme {
         didSet {
             guard appearanceOnScreen != oldValue else { return }
             UserDefaults.standard.set(appearanceOnScreen.rawValue, forKey: Self.appearanceOnScreenKey)
@@ -1259,8 +1269,8 @@ class GlobalSettings: ObservableObject {
     /// which the status bar and the navigation bar never read, and `ContentView`'s
     /// `.preferredColorScheme` overrode the page's own. Previewing 淺色 in a dark app left
     /// the time, the battery and the page title white on white (2026-10-05).
-    @Published var appearanceSlotPreview: AppearanceColorScheme?
-    @Published var appearanceBindReaderTheme: Bool {
+    var appearanceSlotPreview: AppearanceColorScheme?
+    var appearanceBindReaderTheme: Bool {
         didSet {
             UserDefaults.standard.set(appearanceBindReaderTheme, forKey: Self.appearanceBindReaderThemeKey)
             // The binding is what shows 跟隨裝置深淺色 in the reader, and it shows off:
@@ -1272,7 +1282,7 @@ class GlobalSettings: ObservableObject {
     }
     /// Reading theme applied while 綁定閱讀主題 is on and the reader is in light mode.
     /// Stored as `ReaderBoundTheme.storageValue`.
-    @Published var appearanceBoundLightReaderTheme: String {
+    var appearanceBoundLightReaderTheme: String {
         didSet {
             UserDefaults.standard.set(
                 appearanceBoundLightReaderTheme,
@@ -1283,7 +1293,7 @@ class GlobalSettings: ObservableObject {
     }
     /// Reading theme applied while 綁定閱讀主題 is on and the reader is in dark mode.
     /// Stored as `ReaderBoundTheme.storageValue`.
-    @Published var appearanceBoundDarkReaderTheme: String {
+    var appearanceBoundDarkReaderTheme: String {
         didSet {
             UserDefaults.standard.set(
                 appearanceBoundDarkReaderTheme,
@@ -1297,13 +1307,13 @@ class GlobalSettings: ObservableObject {
 
     /// Master switch for the custom launch splash. Defaults off; gated on Pro at
     /// the UI entry point and again when the overlay decides whether to present.
-    @Published var launchImageEnabled: Bool {
+    var launchImageEnabled: Bool {
         didSet {
             UserDefaults.standard.set(launchImageEnabled, forKey: Self.launchImageEnabledKey)
             updateActiveThemeExtras { $0.launchImageEnabled = launchImageEnabled }
         }
     }
-    @Published var launchImageLightFileName: String? {
+    var launchImageLightFileName: String? {
         didSet {
             if let launchImageLightFileName, !launchImageLightFileName.isEmpty {
                 UserDefaults.standard.set(launchImageLightFileName, forKey: Self.launchImageLightFileNameKey)
@@ -1313,7 +1323,7 @@ class GlobalSettings: ObservableObject {
             updateActiveThemeExtras { $0.launchImageLightFileName = launchImageLightFileName ?? "" }
         }
     }
-    @Published var launchImageDarkFileName: String? {
+    var launchImageDarkFileName: String? {
         didSet {
             if let launchImageDarkFileName, !launchImageDarkFileName.isEmpty {
                 UserDefaults.standard.set(launchImageDarkFileName, forKey: Self.launchImageDarkFileNameKey)
@@ -1323,7 +1333,7 @@ class GlobalSettings: ObservableObject {
             updateActiveThemeExtras { $0.launchImageDarkFileName = launchImageDarkFileName ?? "" }
         }
     }
-    @Published var appearanceReaderInterface: AppearanceReaderInterface {
+    var appearanceReaderInterface: AppearanceReaderInterface {
         didSet {
             UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey)
             updateActiveThemeExtras { $0.readerInterface = appearanceReaderInterface.rawValue }
@@ -1335,7 +1345,7 @@ class GlobalSettings: ObservableObject {
     /// Hand-picked chrome colours, keyed "<interface>.<slot>" — see
     /// `ReaderChromePalette`. An absent key means "follow the reading theme",
     /// which is why clearing a slot must remove it rather than store a sentinel.
-    @Published var readerChromeColors: [String: UInt32] {
+    var readerChromeColors: [String: UInt32] {
         didSet {
             Self.saveReaderChromeColors(readerChromeColors)
             updateActiveThemeExtras { $0.readerChromeColors = readerChromeColors }
@@ -1344,7 +1354,7 @@ class GlobalSettings: ObservableObject {
 
     /// `storageID`s of buttons the reader switched off. Absent = visible, so a new
     /// button added in a later version shows up by default.
-    @Published var readerChromeHiddenIDs: [String] {
+    var readerChromeHiddenIDs: [String] {
         didSet {
             UserDefaults.standard.set(readerChromeHiddenIDs, forKey: Self.readerChromeHiddenIDsKey)
             updateActiveThemeExtras { $0.readerChromeHiddenIDs = readerChromeHiddenIDs }
@@ -1352,7 +1362,7 @@ class GlobalSettings: ObservableObject {
     }
 
     /// User-imported replacements for those buttons' symbols.
-    @Published var readerChromeIcons: [ReaderChromeIconAsset] {
+    var readerChromeIcons: [ReaderChromeIconAsset] {
         didSet {
             Self.saveReaderChromeIcons(readerChromeIcons)
             updateActiveThemeExtras {
@@ -1367,7 +1377,7 @@ class GlobalSettings: ObservableObject {
     // MARK: - 界面效果 (Interface Effects)
 
     /// Strength of the glow bleeding out of every floating element's edge, 0...1.
-    @Published var interfaceGlowIntensity: Double {
+    var interfaceGlowIntensity: Double {
         didSet {
             let sanitized = Self.sanitizedInterfaceGlowIntensity(interfaceGlowIntensity)
             if sanitized != interfaceGlowIntensity {
@@ -1379,14 +1389,14 @@ class GlobalSettings: ObservableObject {
         }
     }
     /// Whether floating elements blur what is behind them. Off = the solid fill.
-    @Published var interfaceFrostedGlass: Bool {
+    var interfaceFrostedGlass: Bool {
         didSet {
             UserDefaults.standard.set(interfaceFrostedGlass, forKey: Self.interfaceFrostedGlassKey)
             updateActiveThemeExtras { $0.frostedGlass = interfaceFrostedGlass }
         }
     }
     /// How much of the blur shows through, 0...1. 1 = untouched material.
-    @Published var interfaceGlassTransparency: Double {
+    var interfaceGlassTransparency: Double {
         didSet {
             let sanitized = Self.sanitizedInterfaceGlassTransparency(interfaceGlassTransparency)
             if sanitized != interfaceGlassTransparency {
@@ -1400,25 +1410,25 @@ class GlobalSettings: ObservableObject {
     /// Whether content-layer cards — Form/List sections and the hand-drawn cards on
     /// 外觀主題, 統計, 書籍詳情 — wear the same glass as floating elements. Rides
     /// `interfaceFrostedGlass` and 透明度 rather than owning its own material.
-    @Published var interfaceGlassCards: Bool {
+    var interfaceGlassCards: Bool {
         didSet {
             UserDefaults.standard.set(interfaceGlassCards, forKey: Self.interfaceGlassCardsKey)
             updateActiveThemeExtras { $0.glassCards = interfaceGlassCards }
         }
     }
-    @Published var customAppearanceThemes: [AppearanceCustomTheme] {
+    var customAppearanceThemes: [AppearanceCustomTheme] {
         didSet { Self.saveCustomAppearanceThemes(customAppearanceThemes) }
     }
     /// Colours the user edited on the built-in themes in 配色, by theme id — only the
     /// colour fields of each are read (`AppearanceThemePreset.withEditedColors`).
     /// 重置為默認 clears them (2026-09-29).
-    @Published var appearanceBuiltInThemeColors: [String: AppearanceCustomTheme] {
+    var appearanceBuiltInThemeColors: [String: AppearanceCustomTheme] {
         didSet { Self.saveAppearanceBuiltInThemeColors(appearanceBuiltInThemeColors) }
     }
     /// Live per-scope page backgrounds (keyed by `AppearancePageBackgroundScope`
     /// raw value). This is what tabs render; saved themes only feed it through
     /// 保存為新主題 / theme selection / 導入主題.
-    @Published var appearancePageBackgrounds: [String: AppearancePageBackgroundConfig] {
+    var appearancePageBackgrounds: [String: AppearancePageBackgroundConfig] {
         didSet {
             Self.savePageBackgrounds(appearancePageBackgrounds)
             updateActiveThemeExtras { $0.pageBackgrounds = appearancePageBackgrounds }
@@ -1431,7 +1441,7 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - Root Tab Customization
 
-    @Published var rootTabVisibleIDs: [String] {
+    var rootTabVisibleIDs: [String] {
         didSet {
             let sanitized = Self.sanitizedRootTabVisibleIDs(rootTabVisibleIDs)
             if rootTabVisibleIDs != sanitized {
@@ -1442,13 +1452,13 @@ class GlobalSettings: ObservableObject {
             }
         }
     }
-    @Published var rootTabHidesLabels: Bool {
+    var rootTabHidesLabels: Bool {
         didSet {
             UserDefaults.standard.set(rootTabHidesLabels, forKey: Self.rootTabHidesLabelsKey)
             updateActiveThemeExtras { $0.hidesTabLabels = rootTabHidesLabels }
         }
     }
-    @Published var rootTabIconSize: Double {
+    var rootTabIconSize: Double {
         didSet {
             let sanitized = Self.sanitizedRootTabIconSize(rootTabIconSize)
             if abs(rootTabIconSize - sanitized) > 0.001 {
@@ -1459,7 +1469,7 @@ class GlobalSettings: ObservableObject {
             }
         }
     }
-    @Published var rootTabIconAssets: [RootTabIconAsset] {
+    var rootTabIconAssets: [RootTabIconAsset] {
         didSet {
             Self.saveRootTabIconAssets(rootTabIconAssets)
             updateActiveThemeExtras {
@@ -1471,7 +1481,7 @@ class GlobalSettings: ObservableObject {
         }
     }
 
-    @Published var selectedGlobalFontPostScript: String? {
+    var selectedGlobalFontPostScript: String? {
         didSet {
             if let selectedGlobalFontPostScript, !selectedGlobalFontPostScript.isEmpty {
                 UserDefaults.standard.set(
@@ -1484,7 +1494,7 @@ class GlobalSettings: ObservableObject {
             updateActiveThemeExtras { $0.globalFontPostScript = selectedGlobalFontPostScript ?? "" }
         }
     }
-    @Published var selectedReaderFontPostScript: String? {
+    var selectedReaderFontPostScript: String? {
         didSet {
             if let selectedReaderFontPostScript, !selectedReaderFontPostScript.isEmpty {
                 UserDefaults.standard.set(selectedReaderFontPostScript, forKey: "yd_reader_font_postscript")
@@ -1495,11 +1505,24 @@ class GlobalSettings: ObservableObject {
         }
     }
 
-    /// Bold Text changed (`GlobalAppTypography.isBoldTextActive`): every screen observing
-    /// the settings redraws, so a font it sets itself picks up the new weight — the way a
-    /// change of the global font reaches them. Nothing here is stored.
+    /// Bumped when the global font or Bold Text changes. `GlobalAppTypography` draws from
+    /// statics `ContentView` sets, so a view that sets a font of its own has nothing of these
+    /// settings to observe; every font builder there reads this instead, and redraws with the
+    /// new face or weight. (Under `ObservableObject` any change redrew every observer, which
+    /// is what this used to rely on.)
+    private(set) var typographyRevision = 0
+
     func typographyDidChange() {
-        objectWillChange.send()
+        typographyRevision &+= 1
+    }
+
+    /// Bumped when iCloud brings a reading-background picture whose setting was already in
+    /// place: nothing a view reads changed, but the picture can be drawn now.
+    /// `readerBackgroundImageURL(for:)` reads it.
+    private(set) var readerBackgroundPicturesRevision = 0
+
+    func readerBackgroundPicturesDidArrive() {
+        readerBackgroundPicturesRevision &+= 1
     }
 
     var resolvedGlobalFontPostScript: String? {
@@ -1518,7 +1541,7 @@ class GlobalSettings: ObservableObject {
             return
         }
     }
-    @Published var userFonts: [UserFontInfo] {
+    var userFonts: [UserFontInfo] {
         didSet {
             if let data = try? JSONEncoder().encode(userFonts) {
                 UserDefaults.standard.set(data, forKey: "yd_user_fonts")
@@ -1528,14 +1551,14 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - Reader Font (persisted across sessions)
 
-    @Published var readerFontBold: Bool {
+    var readerFontBold: Bool {
         didSet {
             UserDefaults.standard.set(readerFontBold, forKey: "yd_reader_font_bold")
             recordReadingSettingEdit { $0.isBold = readerFontBold }
         }
     }
 
-    @Published var readerFontSize: Double {
+    var readerFontSize: Double {
         didSet {
             UserDefaults.standard.set(readerFontSize, forKey: "yd_reader_font_size")
             recordReadingSettingEdit { $0.fontSize = readerFontSize }
@@ -1572,7 +1595,7 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - Bookshelf Settings
 
-    @Published var bookshelfGridColumnCount: Int {
+    var bookshelfGridColumnCount: Int {
         didSet {
             let sanitized = Self.sanitizedBookshelfGridColumnCount(bookshelfGridColumnCount)
             if bookshelfGridColumnCount != sanitized {
@@ -1596,7 +1619,7 @@ class GlobalSettings: ObservableObject {
 
     /// Every book shows a default cover, ignoring the one it came with. Legado's
     /// `useDefaultCover`; the shelf, search results and detail pages all honor it.
-    @Published var useDefaultCoverForAllBooks: Bool {
+    var useDefaultCoverForAllBooks: Bool {
         didSet {
             UserDefaults.standard.set(useDefaultCoverForAllBooks, forKey: Self.useDefaultCoverForAllBooksKey)
             updateActiveThemeExtras { $0.forceDefaultCover = useDefaultCoverForAllBooks }
@@ -1605,7 +1628,7 @@ class GlobalSettings: ObservableObject {
 
     /// Corner radius applied to the cover artwork on bookshelf cards. It clips the
     /// image only — the card's own background keeps the design system's radius.
-    @Published var bookshelfCoverCornerRadius: Double {
+    var bookshelfCoverCornerRadius: Double {
         didSet {
             let clamped = Self.clampedBookshelfCoverCornerRadius(bookshelfCoverCornerRadius)
             if bookshelfCoverCornerRadius != clamped {
@@ -1618,13 +1641,13 @@ class GlobalSettings: ObservableObject {
     }
 
     /// 探索頁 book cards fall back to a default cover instead of the title card.
-    @Published var exploreUsesDefaultCover: Bool {
+    var exploreUsesDefaultCover: Bool {
         didSet {
             UserDefaults.standard.set(exploreUsesDefaultCover, forKey: Self.exploreUsesDefaultCoverKey)
         }
     }
 
-    @Published var defaultCoverLightFileNames: [String] {
+    var defaultCoverLightFileNames: [String] {
         didSet {
             UserDefaults.standard.set(defaultCoverLightFileNames, forKey: Self.defaultCoverLightFileNamesKey)
             DefaultCoverLibrary.invalidateCache()
@@ -1632,7 +1655,7 @@ class GlobalSettings: ObservableObject {
         }
     }
 
-    @Published var defaultCoverDarkFileNames: [String] {
+    var defaultCoverDarkFileNames: [String] {
         didSet {
             UserDefaults.standard.set(defaultCoverDarkFileNames, forKey: Self.defaultCoverDarkFileNamesKey)
             DefaultCoverLibrary.invalidateCache()
@@ -1643,7 +1666,7 @@ class GlobalSettings: ObservableObject {
     /// Draw the book's name down the generated cover. Legado's `coverShowName`,
     /// which gates the same vertical title. Only affects `GeneratedBookCover` —
     /// a cover the user imported into the library is shown as authored.
-    @Published var defaultCoverDrawsBookName: Bool {
+    var defaultCoverDrawsBookName: Bool {
         didSet {
             UserDefaults.standard.set(defaultCoverDrawsBookName, forKey: Self.defaultCoverDrawsBookNameKey)
             GeneratedBookCoverRenderer.invalidateCache()
@@ -1652,7 +1675,7 @@ class GlobalSettings: ObservableObject {
 
     /// Draw the author down the generated cover's right edge. Legado's
     /// `coverShowAuthor`.
-    @Published var defaultCoverDrawsBookAuthor: Bool {
+    var defaultCoverDrawsBookAuthor: Bool {
         didSet {
             UserDefaults.standard.set(defaultCoverDrawsBookAuthor, forKey: Self.defaultCoverDrawsBookAuthorKey)
             GeneratedBookCoverRenderer.invalidateCache()
@@ -1705,26 +1728,26 @@ class GlobalSettings: ObservableObject {
 
     // MARK: - Network Settings
 
-    @Published var searchConcurrency: Int {
+    var searchConcurrency: Int {
         didSet { UserDefaults.standard.set(searchConcurrency, forKey: "yd_search_concurrency") }
     }
-    @Published var searchAutoPauseCount: Int {
+    var searchAutoPauseCount: Int {
         didSet {
             UserDefaults.standard.set(searchAutoPauseCount, forKey: "yd_search_auto_pause_count")
         }
     }
-    @Published var searchCacheDays: Int {
+    var searchCacheDays: Int {
         didSet { UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days") }
     }
     /// 換源搜索時順便抓每個候選源的目錄（Legado `changeSourceLoadToc`）。Tapping a source
     /// whose TOC was captured this way switches without a network round trip. Off by default
     /// — same as Legado — because it turns one request per source into two.
-    @Published var changeSourceLoadToc: Bool {
+    var changeSourceLoadToc: Bool {
         didSet { UserDefaults.standard.set(changeSourceLoadToc, forKey: "yd_change_source_load_toc") }
     }
 
     /// Auto iCloud sync: merge with iCloud on launch and when backgrounding.
-    @Published var iCloudAutoSync: Bool {
+    var iCloudAutoSync: Bool {
         didSet { UserDefaults.standard.set(iCloudAutoSync, forKey: "yd_icloud_auto_sync") }
     }
 
@@ -1732,11 +1755,11 @@ class GlobalSettings: ObservableObject {
 
     static let ttsPreSynthesisConcurrencyRange = 1...8
     private static let ttsPreSynthesisConcurrencyKey = "yd_tts_pre_synthesis_concurrency"
-    @Published var ttsPreSynthesisConcurrency: Int {
+    var ttsPreSynthesisConcurrency: Int {
         didSet {
             let range = Self.ttsPreSynthesisConcurrencyRange
             let bounded = min(range.upperBound, max(range.lowerBound, ttsPreSynthesisConcurrency))
-            // Assigning an unchanged @Published value re-enters this observer too.
+            // Assigning an unchanged value re-enters this observer too.
             if ttsPreSynthesisConcurrency != bounded {
                 ttsPreSynthesisConcurrency = bounded
             } else {
@@ -1745,7 +1768,7 @@ class GlobalSettings: ObservableObject {
         }
     }
 
-    @Published var edgeTtsVoiceID: String {
+    var edgeTtsVoiceID: String {
         didSet { UserDefaults.standard.set(edgeTtsVoiceID, forKey: "yd_edge_tts_voice_id") }
     }
 
@@ -1764,29 +1787,29 @@ class GlobalSettings: ObservableObject {
         ttsUseSystemVoice = false
     }
 
-    @Published var httpTtsUrlTemplate: String {
+    var httpTtsUrlTemplate: String {
         didSet { UserDefaults.standard.set(httpTtsUrlTemplate, forKey: "yd_http_tts_url_template") }
     }
-    @Published var httpTtsHeaders: [String: String] {
+    var httpTtsHeaders: [String: String] {
         didSet { Self.saveTTSHeaders(httpTtsHeaders) }
     }
-    @Published var importedTTSSources: [ImportedTTSSource] {
+    var importedTTSSources: [ImportedTTSSource] {
         didSet { Self.saveImportedTTSSources(importedTTSSources) }
     }
     /// Force the offline, on-device `AVSpeechSynthesizer` voice even when an HTTP source exists.
-    @Published var ttsUseSystemVoice: Bool {
+    var ttsUseSystemVoice: Bool {
         didSet { UserDefaults.standard.set(ttsUseSystemVoice, forKey: "yd_tts_use_system_voice") }
     }
     /// Prevents automatic screen dimming while TTS is actively reading. Pressing the
     /// hardware lock button still locks the device and does not stop background audio.
-    @Published var ttsKeepsScreenAwake: Bool {
+    var ttsKeepsScreenAwake: Bool {
         didSet { UserDefaults.standard.set(ttsKeepsScreenAwake, forKey: Self.ttsKeepsScreenAwakeKey) }
     }
     /// The user's system-voice choice per language (BCP-47 code → voice identifier),
     /// set in 語音朗讀設定 → 系統語音音色. Empty means "let the system pick the
     /// default voice for the language", which was the only behavior before.
     /// Stored per language because the engine chooses the language from the text.
-    @Published var ttsSystemVoiceIdentifiers: [String: String] {
+    var ttsSystemVoiceIdentifiers: [String: String] {
         didSet {
             UserDefaults.standard.set(ttsSystemVoiceIdentifiers, forKey: Self.ttsSystemVoiceIdentifiersKey)
         }
@@ -1795,7 +1818,7 @@ class GlobalSettings: ObservableObject {
     /// 多角色朗讀: give each character its own voice instead of reading the whole
     /// chapter in one. Off by default — it splits the chapter at every quote, which
     /// means more, shorter utterances, and on a network voice that is more requests.
-    @Published var ttsMultiRoleEnabled: Bool {
+    var ttsMultiRoleEnabled: Bool {
         didSet { UserDefaults.standard.set(ttsMultiRoleEnabled, forKey: Self.ttsMultiRoleEnabledKey) }
     }
 
@@ -1805,7 +1828,7 @@ class GlobalSettings: ObservableObject {
     /// rather than nested so it stores as a plain UserDefaults dictionary — the same
     /// shape `ttsSystemVoiceIdentifiers` already uses. A speaker with no entry reads in
     /// the narrator's voice, which is what an unattributed line gets too.
-    @Published var ttsRoleVoices: [String: String] {
+    var ttsRoleVoices: [String: String] {
         didSet { UserDefaults.standard.set(ttsRoleVoices, forKey: Self.ttsRoleVoicesKey) }
     }
 
@@ -1814,21 +1837,21 @@ class GlobalSettings: ObservableObject {
     /// On by default, off by choice. A reader who has just opened a book has almost no
     /// progress, so the limit answers every question with "nothing in range" — correct and
     /// useless. The toggle sits next to the question box because it is a per-question call.
-    @Published var aiSpoilerSafe: Bool {
+    var aiSpoilerSafe: Bool {
         didSet { UserDefaults.standard.set(aiSpoilerSafe, forKey: "yd_ai_spoiler_safe") }
     }
-    @Published var sourceDisclaimerAccepted: Bool {
+    var sourceDisclaimerAccepted: Bool {
         didSet { UserDefaults.standard.set(sourceDisclaimerAccepted, forKey: "yd_source_disclaimer_accepted") }
     }
     /// 書源管理列表是否按分組摺疊顯示。Off flattens every source into one plain list,
     /// which is what a user with a handful of sources wants; on is the default because
     /// imported source packs arrive pre-grouped.
-    @Published var bookSourceListGrouped: Bool {
+    var bookSourceListGrouped: Bool {
         didSet { UserDefaults.standard.set(bookSourceListGrouped, forKey: "yd_booksource_list_grouped") }
     }
     /// 儲存書源時是否自動補全簡寫規則（Legado 的「自動補全」選單項）。Off by default,
     /// matching Legado: only authors who opt in get `a` completed to `a@text` etc.
-    @Published var bookSourceAutoComplete: Bool {
+    var bookSourceAutoComplete: Bool {
         didSet { UserDefaults.standard.set(bookSourceAutoComplete, forKey: "yd_booksource_auto_complete") }
     }
 

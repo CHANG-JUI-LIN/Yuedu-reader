@@ -50,8 +50,11 @@ extension GlobalSettings {
 
     // MARK: - 排版生效範圍
 
+    /// Stored in UserDefaults, so it tells Observation itself when it is read and changed
+    /// (`access` / `withMutation`); it used to send `objectWillChange` on every change.
     var readingSettingsScope: ReadingSettingsScopeConfiguration {
         get {
+            access(keyPath: \.readingSettingsScope)
             guard let data = UserDefaults.standard.data(forKey: Self.readingScopeKey) else {
                 return migratedLegacyReadingScope()
             }
@@ -64,14 +67,16 @@ extension GlobalSettings {
         }
         set {
             guard newValue != readingSettingsScope else { return }
-            objectWillChange.send()
-            do {
-                UserDefaults.standard.set(try JSONEncoder().encode(newValue), forKey: Self.readingScopeKey)
-            } catch {
-                AppLogger.error("⟐ reading scope not stored", error: error)
-                return
+            let stored: Bool = withMutation(keyPath: \.readingSettingsScope) {
+                do {
+                    UserDefaults.standard.set(try JSONEncoder().encode(newValue), forKey: Self.readingScopeKey)
+                    return true
+                } catch {
+                    AppLogger.error("⟐ reading scope not stored", error: error)
+                    return false
+                }
             }
-            synchronizeReadingSettings()
+            if stored { synchronizeReadingSettings() }
         }
     }
 

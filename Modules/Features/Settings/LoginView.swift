@@ -9,7 +9,7 @@ struct LoginView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @Environment(\.dismiss) var dismiss
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     let onSignedIn: () -> Void
 
     init(onSignedIn: @escaping () -> Void = {}) {

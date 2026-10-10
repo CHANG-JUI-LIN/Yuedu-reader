@@ -102,7 +102,7 @@ private struct InterfaceSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
     /// cards pass 分組卡片, which is opt-in.
     let glassAllowed: Bool
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var colorScheme
 
@@ -222,7 +222,7 @@ private struct InterfaceCardSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
     let shape: SurfaceShape
     let fill: Color
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
 
     func body(content: Content) -> some View {
         content.modifier(
@@ -247,7 +247,7 @@ private struct InterfaceCardSurfaceModifier<SurfaceShape: Shape>: ViewModifier {
 private struct InterfaceSectionSurfaceModifier: ViewModifier {
     let fill: Color
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
 
     func body(content: Content) -> some View {
         content.listRowBackground(
@@ -303,7 +303,10 @@ private struct InterfaceGlowModifier<SurfaceShape: Shape>: ViewModifier {
     let shape: SurfaceShape
     let tint: Color?
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
+    /// From the environment, not `AppearanceThemePreset.activeAppThemes`: a global gives
+    /// SwiftUI nothing to observe, and this modifier no longer redraws for every setting.
+    @Environment(\.appThemes) private var appThemes
 
     private var intensity: Double {
         settings.interfaceGlowIntensity
@@ -313,7 +316,7 @@ private struct InterfaceGlowModifier<SurfaceShape: Shape>: ViewModifier {
     /// time instead of whatever palette was current when the global was last written.
     private var resolvedTint: Color {
         if let tint { return tint }
-        let themes = AppearanceThemePreset.activeAppThemes
+        let themes = appThemes
         guard themes.isActive else { return DSColor.accent }
         return Color(uiColor: UIColor { traits in
             themes.theme(for: traits.userInterfaceStyle)?.accent ?? .tintColor

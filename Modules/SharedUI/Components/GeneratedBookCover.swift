@@ -651,7 +651,7 @@ struct GeneratedBookCover: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
 
     var body: some View {
         GeometryReader { proxy in

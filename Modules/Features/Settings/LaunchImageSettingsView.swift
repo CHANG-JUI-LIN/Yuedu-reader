@@ -5,7 +5,7 @@ import UIKit
 /// light / dark image slot. Reached from 外觀主題 (gated at that entry point), so
 /// this page itself assumes access and only manages the images.
 struct LaunchImageSettingsView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @State private var importAlert: LaunchImageImportAlert?
 
     private var hasAnyLaunchImage: Bool {

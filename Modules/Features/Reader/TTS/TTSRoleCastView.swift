@@ -18,7 +18,7 @@ struct TTSRoleCastView: View {
     /// actually appeared rather than spoiling the rest of the book.
     let progress: Double
 
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @ObservedObject private var cards = AICharacterCardStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showAISettings = false
@@ -270,7 +270,7 @@ struct TTSRoleVoicePickerView: View {
     let bookID: UUID
     let speaker: String
 
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @Environment(\.dismiss) private var dismiss
 
     private var family: TTSVoiceFamily { .active() }

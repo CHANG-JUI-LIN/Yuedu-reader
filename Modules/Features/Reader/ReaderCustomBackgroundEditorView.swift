@@ -16,7 +16,7 @@ struct ReaderCustomBackgroundEditorView: View {
     let onDelete: () -> Void
     let onRequestPaywall: (PremiumFeature) -> Void
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @State private var name: String
     @State private var kind: Kind

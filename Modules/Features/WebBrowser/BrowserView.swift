@@ -729,7 +729,7 @@ struct BrowserPage: View {
     @ObservedObject var browser: BrowserState
     let entry: BrowserEntry
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @FocusState private var addressFocused: Bool
 
@@ -1197,7 +1197,7 @@ struct WebTOCSheet: View {
     var onConfirm: ([OnlineChapterRef], Int) -> Void
 
     @State private var selectedIndex = 0
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     var body: some View {
         NavigationStack {

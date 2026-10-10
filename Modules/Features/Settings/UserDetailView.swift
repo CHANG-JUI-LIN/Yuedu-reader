@@ -4,7 +4,7 @@ import UIKit
 
 struct UserDetailView: View {
     @Environment(\.dismiss) var dismiss
-    @ObservedObject var gs = GlobalSettings.shared
+    @Bindable var gs = GlobalSettings.shared
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @StateObject private var firestoreSync = FirestoreSyncManager.shared
     @State private var showLogin = false
@@ -571,7 +571,7 @@ struct UserDetailView: View {
 }
 
 struct AccountAvatarView: View {
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @ObservedObject private var auth = FirebaseAuthManager.shared
     let size: CGFloat
 

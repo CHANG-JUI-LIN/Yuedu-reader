@@ -6,7 +6,7 @@ import UIKit
 /// user handed over: one section of settings, the preview under it. The rows are the
 /// ones 外觀主題 used to carry inline, unchanged in what they do.
 struct AppearancePageBackgroundView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var pageBackgroundScope: AppearancePageBackgroundScope = .global
     @State private var importFailure: String?

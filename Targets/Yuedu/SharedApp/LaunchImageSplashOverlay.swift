@@ -5,7 +5,7 @@ import SwiftUI
 /// moment on the first appearance, then fades out. Presents only when the
 /// feature is enabled, Pro is active, and a matching image exists.
 struct LaunchImageSplashOverlay: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var visible = true

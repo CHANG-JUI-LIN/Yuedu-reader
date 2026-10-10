@@ -19,7 +19,7 @@ struct ChapterTitleStyleSettingsView: View {
     /// own the document picker — see `Technotes/iOS17MenuModalPresentation.md`.
     var onOpenImporter: (() -> Void)?
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @StateObject private var readerConfig = ReaderConfig.shared
 
     @State private var previewIsDark = false

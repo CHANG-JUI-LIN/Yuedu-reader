@@ -8,7 +8,7 @@ private enum TTSImportPresentationRoute: Hashable {
 }
 
 struct TTSSettingsView: View {
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.presentationMode) private var presentationMode
     @StateObject private var testCoordinator = TTSCoordinator()

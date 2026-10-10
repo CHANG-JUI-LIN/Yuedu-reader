@@ -4,7 +4,7 @@ import SwiftUI
 /// live sample of what they do. Every floating element in the app reads the same
 /// values, so the preview here is the real modifier rather than a mock-up.
 struct AppearanceInterfaceEffectsView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {

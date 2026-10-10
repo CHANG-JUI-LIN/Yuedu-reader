@@ -38,7 +38,7 @@ struct RegexHighlightRuleEditorView: View {
     }
 
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @StateObject private var model: RegexHighlightRuleEditorModel
     @State private var selectedTab = Tab.basic
     @State private var appearance = ReaderStyleAppearance.light

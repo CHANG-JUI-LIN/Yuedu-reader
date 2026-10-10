@@ -3,7 +3,7 @@ import Combine
 
 struct LanServerView: View {
     @StateObject private var server = LanWebServer.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: BookStore
 

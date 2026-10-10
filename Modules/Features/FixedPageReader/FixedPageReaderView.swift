@@ -69,7 +69,7 @@ struct FixedPageReaderView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appDependencies) private var dependencies
     @StateObject private var state = FixedPageReaderState()
-    @ObservedObject private var globalSettings = GlobalSettings.shared
+    @Bindable private var globalSettings = GlobalSettings.shared
     @State private var readingStatsTracker: ReadingStatsSessionTracker?
     @State private var showTouchZoneEditor = false
 
@@ -436,7 +436,7 @@ struct FixedPageReaderSettingsView: View {
     var onOpenPaywall: ((PremiumFeature) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
-    @ObservedObject private var globalSettings = GlobalSettings.shared
+    @Bindable private var globalSettings = GlobalSettings.shared
     @State private var paywallFeature: PremiumFeature?
 
     private var configuration: FixedPageReaderConfiguration { state.fixedPageReaderConfiguration }

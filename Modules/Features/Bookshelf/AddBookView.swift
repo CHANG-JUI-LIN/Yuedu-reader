@@ -7,7 +7,7 @@ struct AddBookView: View {
     @Environment(\.presentationMode) var presentationMode
     @State private var selectedTab = 0
 
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     var body: some View {
         NavigationStack {
@@ -183,7 +183,7 @@ struct URLImportTab: View {
     @State private var detectedTOCRefs: [OnlineChapterRef] = []
     @State private var isLoading = false
     @State private var errorMsg: String? = nil
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     var body: some View {
         ScrollView {

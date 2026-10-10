@@ -161,14 +161,12 @@ struct TestFlightCrashRegressionTests {
             builtInThemeColors: [AppearanceThemePreset.classicID: colors]
         ))
         let data = try JSONEncoder().encode(bundle)
-        try await confirmation("main-thread appearance publication", expectedCount: 1...) { published in
-            let observation = settings.$appearanceBuiltInThemeColors.dropFirst().sink { _ in
-                #expect(Thread.isMainThread)
-                published()
-            }
-            defer { observation.cancel() }
-            try await importAppearanceFromBackground(data)
-        }
+        // The change is reported on the thread that makes it.
+        let recorder = ObservationRecorder { settings.appearanceBuiltInThemeColors }
+        defer { recorder.cancel() }
+        try await importAppearanceFromBackground(data)
+        #expect(recorder.changeCount >= 1)
+        #expect(!recorder.changedOffMain)
         #expect(settings.appearanceBuiltInThemeColors[AppearanceThemePreset.classicID]?.accentHex == 0x123456)
     }
 

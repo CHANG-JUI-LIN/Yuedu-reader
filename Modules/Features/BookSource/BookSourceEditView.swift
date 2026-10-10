@@ -15,7 +15,7 @@ struct BookSourceEditView: View {
     let onSave: (BookSource) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     @State private var selectedTab: EditTab = .base
     @State private var editingField: BookSourceFieldSpec? = nil

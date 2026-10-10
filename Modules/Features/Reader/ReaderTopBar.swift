@@ -20,7 +20,7 @@ struct ReaderTopBar: View {
     /// 書籍詳情, the menu's last row — online books only.
     let onOpenBookDetail: (() -> Void)?
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     /// iOS 17 only: the menu is a chooser sheet, and its choice runs from the sheet's real
     /// `onDismiss` (Technotes/iOS17MenuModalPresentation.md) — every row opens a sheet.
     @State private var showsLegacyMenu = false

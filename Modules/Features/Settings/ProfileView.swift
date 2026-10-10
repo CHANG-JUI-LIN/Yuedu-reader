@@ -6,7 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @State private var showSourceList = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
@@ -348,7 +348,7 @@ struct SettingsView: View {
 private struct AboutSupportView: View {
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.openURL) private var openURL
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @State private var showCopiedQQGroup = false
     let appVersion: String
     let feedbackEmail: String

@@ -8,7 +8,7 @@ import UIKit
 /// of coverless books doesn't turn into the same picture repeated. With the
 /// library empty the book falls through to `GeneratedBookCover`.
 struct DefaultCoverSettingsView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @State private var importErrorMessage: String?
 
     private var cornerRadiusText: String {

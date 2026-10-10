@@ -421,7 +421,7 @@ final class ICloudSyncManager: ObservableObject {
             if try await downloadMissingFiles(backgroundPictures) > 0 {
                 // A background already worn gets its picture only now; nothing it names
                 // changed, so the reader has to be told to look again.
-                await MainActor.run { GlobalSettings.shared.objectWillChange.send() }
+                await MainActor.run { GlobalSettings.shared.readerBackgroundPicturesDidArrive() }
             }
 
             // 3c. The reading setup: one item per 排版生效範圍 row, last-write-wins on

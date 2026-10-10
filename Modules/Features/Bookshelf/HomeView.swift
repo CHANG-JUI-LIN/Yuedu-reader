@@ -171,7 +171,7 @@ struct HomeView: View {
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) private var appDependencies
     @Environment(\.rootTabBarVisibility) private var rootTabBarVisibility
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

@@ -14,7 +14,7 @@ struct BookSourceRuleDebugView: View {
     @State private var inputURL: String = ""
     @State private var page: Int = 1
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     enum DebugTab: String, CaseIterable, Identifiable {
         case search  = "搜索"

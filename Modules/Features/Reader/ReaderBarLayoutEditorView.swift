@@ -10,7 +10,7 @@ import UIKit
 /// from inside a sheet — the iOS 17 trap `Technotes/iOS17MenuModalPresentation.md`
 /// documents.
 struct ReaderBarLayoutEditorView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @StateObject private var readerConfig = ReaderConfig.shared
     @StateObject private var clock = ClockBatteryModel()
     /// The preview is drawn by the same renderer the reading page bakes in, so

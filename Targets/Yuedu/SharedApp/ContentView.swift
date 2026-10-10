@@ -10,7 +10,7 @@ struct ContentView: View {
     /// Bold Text: `.bold` while it is on. The global font needs telling; the system font
     /// follows it by itself.
     @Environment(\.legibilityWeight) private var legibilityWeight
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @StateObject private var rssStore = RSSStore.shared
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
     /// Whether any screen is hiding the tab bar — answered from every tab, not only the
@@ -212,6 +212,12 @@ struct ContentView: View {
         // Screens that set a font of their own redraw with the new weight, as they do
         // when the global font changes; the root `.font` above reaches the rest.
         .onChange(of: isBoldTextOn) { _, _ in
+            gs.typographyDidChange()
+        }
+        // The same for the global font: `GlobalAppTypography` already draws the new face
+        // (activated in this body), and the views that set a font of their own redraw on
+        // `typographyRevision`.
+        .onChange(of: drawnGlobalFont) { _, _ in
             gs.typographyDidChange()
         }
         .task(id: typographyRefreshID) {
@@ -459,7 +465,7 @@ private struct AudiobookPlayerPresentation: ViewModifier {
 private struct ThemedSurfaceBackground: ViewModifier {
     let scope: AppearancePageBackgroundScope
     let isProActive: Bool
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @Environment(\.colorScheme) private var colorScheme
 
     /// Custom page background for this tab, with global fallback. Inactive when

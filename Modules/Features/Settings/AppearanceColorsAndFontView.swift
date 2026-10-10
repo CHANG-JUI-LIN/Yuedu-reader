@@ -15,7 +15,7 @@ import UIKit
 /// the same theme unless 單獨設定深色主題 is on. A built-in theme's edits are kept
 /// apart (`appearanceBuiltInThemeColors`) and 重置為默認 puts them back.
 struct AppearanceColorsAndFontView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @State private var paywallFeature: PremiumFeature?
 

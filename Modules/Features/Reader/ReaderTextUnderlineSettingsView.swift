@@ -5,7 +5,7 @@ import SwiftUI
 /// four controls between 正則高亮 and the rest of the page whenever it was on.
 struct ReaderTextUnderlineSettingsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
 
     var body: some View {
         Form {

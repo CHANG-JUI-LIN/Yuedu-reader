@@ -5,7 +5,7 @@ struct LegadoMigrationView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @StateObject private var manager = LegadoMigrationManager.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var bookStore: BookStore
 

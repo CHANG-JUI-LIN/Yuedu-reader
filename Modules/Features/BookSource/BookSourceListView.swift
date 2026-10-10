@@ -24,7 +24,7 @@ struct BookSourceListView: View {
     /// rebuilds once per library change instead of once per render.
     private let store: BookSourceStore
     @StateObject private var model: BookSourceManagementModel
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @State private var showAdd = false
     @State private var editingSource: BookSource? = nil
     @State private var showImport = false

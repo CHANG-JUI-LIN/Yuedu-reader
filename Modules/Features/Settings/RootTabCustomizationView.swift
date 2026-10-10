@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct RootTabCustomizationView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @State private var showPaywall = false
     @State private var iconImportError: RootTabIconImportError?

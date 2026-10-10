@@ -55,6 +55,8 @@ extension GlobalSettings {
     }
 
     func readerBackgroundImageURL(for background: ReaderCustomBackground) -> URL? {
+        // Read so a view drawing the picture redraws when iCloud brings it later.
+        _ = readerBackgroundPicturesRevision
         guard let fileName = background.imageFileName, !fileName.isEmpty else { return nil }
         do {
             return try ReaderCustomBackgroundStorageManager.shared.fileURL(fileName: fileName)

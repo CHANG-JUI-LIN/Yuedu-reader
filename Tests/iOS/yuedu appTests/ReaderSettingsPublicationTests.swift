@@ -25,14 +25,15 @@ final class ReaderSettingsPublicationTests: XCTestCase {
         let settings = GlobalSettings.shared
         let preferences = ReaderPreferences.current()
         preferences.apply()
-        var settingsPublications = 0, configPublications = 0
-        let settingsToken = settings.objectWillChange.sink { settingsPublications += 1 }
+        var configPublications = 0
+        let settingsRecorder = ObservationRecorder { ReaderPreferences.current(settings: settings) }
         let configToken = ReaderConfig.shared.objectWillChange.sink { configPublications += 1 }
         preferences.apply()
         ReaderConfig.shared.syncFromGlobalSettings()
-        XCTAssertEqual(settingsPublications, 0)
+        XCTAssertEqual(settingsRecorder.changeCount, 0)
         XCTAssertEqual(configPublications, 0)
-        withExtendedLifetime((settingsToken, configToken)) {}
+        settingsRecorder.cancel()
+        withExtendedLifetime(configToken) {}
     }
 
     func testIdenticalProfileAndBubbleSyncPublishNothing() {
@@ -44,12 +45,15 @@ final class ReaderSettingsPublicationTests: XCTestCase {
             provider: settings.accountProvider, photoURL: settings.accountPhotoURL)
         settings.applyFirebaseProfile(profile)
         settings.applyCommentBubbleSync(styles: settings.commentBubbleCustomStyles)
-        var publications = 0
-        let token = settings.objectWillChange.sink { publications += 1 }
+        let recorder = ObservationRecorder {
+            (settings.isLoggedIn, settings.accountUserIdentifier, settings.accountDisplayName,
+             settings.accountEmail, settings.accountProvider, settings.accountPhotoURL,
+             settings.commentBubbleCustomStyles)
+        }
         settings.applyFirebaseProfile(profile)
         settings.applyCommentBubbleSync(styles: settings.commentBubbleCustomStyles)
-        XCTAssertEqual(publications, 0)
-        withExtendedLifetime(token) {}
+        XCTAssertEqual(recorder.changeCount, 0)
+        recorder.cancel()
     }
 
     func testRemoteChangeSupersedesPendingLocalWritebackWithoutEcho() {
@@ -62,19 +66,19 @@ final class ReaderSettingsPublicationTests: XCTestCase {
         var remote = original
         remote.readerFontSize += 2
         remote.readerHeaderTopPadding = (original.readerHeaderTopPadding ?? 0) + 5
-        var fontValues: [Double] = []
-        let token = settings.$readerFontSize.dropFirst().sink { fontValues.append($0) }
+        let fontValues = ObservationRecorder { settings.readerFontSize }
         remote.apply()
-        XCTAssertEqual(fontValues, [remote.readerFontSize])
+        RunLoop.main.run(until: Date())
+        XCTAssertEqual(fontValues.values, [remote.readerFontSize])
         XCTAssertEqual(ReaderConfig.shared.fontSize, CGFloat(remote.readerFontSize))
         XCTAssertEqual(settings.readerHeaderTopPadding, remote.readerHeaderTopPadding)
-        let noEcho = expectation(description: "remote sync must not echo after the slider debounce")
-        noEcho.isInverted = true
-        let echoToken = settings.objectWillChange.sink { noEcho.fulfill() }
-        // An inverted expectation observes a known 120 ms debounce, not app readiness.
-        wait(for: [noEcho], timeout: 0.3)
-        XCTAssertEqual(fontValues, [remote.readerFontSize])
-        withExtendedLifetime((token, echoToken)) {}
+        let echo = ObservationRecorder { ReaderPreferences.current(settings: settings) }
+        // Runs past a known 120 ms debounce, not waiting for app readiness.
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+        XCTAssertEqual(echo.changeCount, 0, "remote sync must not echo after the slider debounce")
+        XCTAssertEqual(fontValues.values, [remote.readerFontSize])
+        echo.cancel()
+        fontValues.cancel()
     }
 
     func testUserEditStillWritesBackAfterRemoteSync() {
@@ -83,13 +87,13 @@ final class ReaderSettingsPublicationTests: XCTestCase {
         defer { original.apply() }
         original.apply()
         let expected = original.readerFontSize + 1
-        let written = expectation(description: "local font edit persists")
-        let token = settings.$readerFontSize.dropFirst().filter { $0 == expected }
-            .sink { _ in written.fulfill() }
         ReaderConfig.shared.fontSize = CGFloat(expected)
-        wait(for: [written], timeout: 2)
+        // The write-back is debounced; run the main loop until it lands, up to 2 s.
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while settings.readerFontSize != expected, Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
         XCTAssertEqual(settings.readerFontSize, expected)
-        withExtendedLifetime(token) {}
     }
 
     func testBubbleDeletionRepairsSelectionAndPreservesSyncClock() {
@@ -106,14 +110,16 @@ final class ReaderSettingsPublicationTests: XCTestCase {
         let style = ReaderCommentBubbleCustomStyle(name: "Publication test", svg: "<svg/>")
         settings.applyCommentBubbleSync(styles: styles + [style])
         settings.applyCommentBubbleSync(selection: style.id)
-        var publications = 0
-        let token = settings.objectWillChange.sink { publications += 1 }
+        let recorder = ObservationRecorder {
+            (settings.commentBubbleSelectedCustomStyleID, settings.commentBubblePresetMode,
+             settings.commentBubbleSelectionSyncClock, settings.commentBubbleCustomStyles)
+        }
         settings.applyCommentBubbleSync(selection: style.id)
-        XCTAssertEqual(publications, 0)
+        XCTAssertEqual(recorder.changeCount, 0)
+        recorder.cancel()
         settings.applyCommentBubbleSync(styles: styles)
         XCTAssertNil(settings.commentBubbleSelectedCustomStyleID)
         XCTAssertEqual(settings.commentBubblePresetMode, .builtin)
         XCTAssertEqual(settings.commentBubbleSelectionSyncClock, clock)
-        withExtendedLifetime(token) {}
     }
 }

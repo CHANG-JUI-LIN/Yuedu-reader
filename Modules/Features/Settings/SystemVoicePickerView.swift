@@ -91,7 +91,7 @@ extension SystemVoicePreviewPlayer: AVSpeechSynthesizerDelegate {
 /// i.e. one system-chosen voice per language, so every 增強/優質 voice the user
 /// had downloaded went unused.
 struct SystemVoicePickerView: View {
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @StateObject private var preview = SystemVoicePreviewPlayer()
     @State private var groups: [SystemTTSVoiceCatalog.VoiceGroup] = []
     @State private var personalVoiceStatus = SystemTTSVoiceCatalog.personalVoiceStatus

@@ -13,7 +13,7 @@ private enum ReplaceRulePresentationRoute: Hashable {
 struct ReplaceRuleListView: View {
 
     @ObservedObject private var store = ReplaceRuleStore.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @State private var showingAdd = false
     @State private var showingImportFile = false
     @State private var showLegacyActionChooser = false
@@ -202,7 +202,7 @@ private struct ReplaceRuleRow: View {
     let rule: ReplaceRule
     let onTap: () -> Void
     @ObservedObject private var store = ReplaceRuleStore.shared
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     var body: some View {
         HStack {
@@ -262,7 +262,7 @@ struct ReplaceRuleEditView: View {
     @State private var rule: ReplaceRule
     let onSave: (ReplaceRule) -> Void
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
 
     init(rule: ReplaceRule?, onSave: @escaping (ReplaceRule) -> Void) {
         _rule = State(initialValue: rule ?? ReplaceRule(name: "", pattern: ""))

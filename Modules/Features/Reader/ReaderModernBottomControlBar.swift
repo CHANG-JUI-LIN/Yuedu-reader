@@ -29,7 +29,7 @@ struct ReaderModernBottomControlBar: View {
     let onToggleDarkMode: () -> Void
     let onOpenSettings: () -> Void
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
 
     @State private var chapterSliderDraft: Double? = nil
 

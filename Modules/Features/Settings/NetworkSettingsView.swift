@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NetworkSettingsView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

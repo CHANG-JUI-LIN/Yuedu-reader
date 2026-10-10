@@ -39,7 +39,7 @@ struct ReaderModernBookCard: View {
 
     let onOpenDetail: (() -> Void)?
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
 
     var body: some View {
         VStack(spacing: DSSpacing.md) {

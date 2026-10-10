@@ -104,7 +104,7 @@ struct IconConsistentLabelStyle: LabelStyle {
 /// show the page background — tabs, sheets, and standalone views alike.
 struct PageBackgroundView: View {
     let scope: AppearancePageBackgroundScope
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -121,7 +121,7 @@ struct PageBackgroundView: View {
 
 private struct ThemedAppSurfaceModifier: ViewModifier {
     let scope: AppearancePageBackgroundScope
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -157,9 +157,12 @@ private struct ThemedAppSurfaceModifier: ViewModifier {
 /// nav-bar region (behind the title and toolbar buttons).
 private struct PageBackgroundToolbarModifier: ViewModifier {
     let scope: AppearancePageBackgroundScope
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.colorScheme) private var colorScheme
+    /// The themes from the environment rather than `AppearanceThemePreset.activeAppThemes`,
+    /// which SwiftUI cannot observe: this modifier redraws only for what it reads.
+    @Environment(\.appThemes) private var appThemes
 
     private var hasBackground: Bool {
         if subscriptionStore.hasAccess(.readerThemePacks),
@@ -167,7 +170,7 @@ private struct PageBackgroundToolbarModifier: ViewModifier {
             return true
         }
         // 默認 with its 背景 as shipped keeps the system's page, and the bar that goes with it.
-        guard let theme = AppearanceThemePreset.activeAppThemes.theme(for: colorScheme) else { return false }
+        guard let theme = appThemes.theme(for: colorScheme) else { return false }
         return !theme.keepsSystemBackgrounds
     }
 

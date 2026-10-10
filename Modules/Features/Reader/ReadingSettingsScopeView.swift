@@ -6,7 +6,7 @@ import SwiftUI
 /// Laid out in 閱讀設定's own sections and order, with the same names and symbols, so a
 /// row here is always the control the reader just saw there.
 struct ReadingSettingsScopeView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
 
     private struct Group: Identifiable {
         let titleKey: String

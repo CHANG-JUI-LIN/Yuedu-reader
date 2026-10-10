@@ -41,7 +41,7 @@ struct ReaderView: View {
     /// during body evaluation, and reaching into UIKit from there is what froze
     /// the shelf entry once already (see `effectiveReaderSafeTop`).
     @Environment(\.displayScale) var readerDisplayScale
-    @ObservedObject var settings = GlobalSettings.shared
+    @Bindable var settings = GlobalSettings.shared
     @ObservedObject var subscriptionStore = SubscriptionStore.shared
     @StateObject var readerConfig = ReaderConfig.shared
     /// The clock/battery readings the bars draw — read, never observed.

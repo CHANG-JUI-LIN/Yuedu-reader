@@ -30,7 +30,7 @@ struct ReaderSettingsView: View {
     var onOpenPaywall: ((PremiumFeature) -> Void)?
 
     @StateObject private var readerConfig = ReaderConfig.shared
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showingFontImporter = false

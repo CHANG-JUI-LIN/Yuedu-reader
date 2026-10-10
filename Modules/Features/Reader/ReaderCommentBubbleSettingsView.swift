@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 import UIKit
 
 struct ReaderCommentBubbleSettingsView: View {
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @StateObject private var readerConfig = ReaderConfig.shared
     @State private var showingSVGImporter = false
     @State private var showingSVGExporter = false

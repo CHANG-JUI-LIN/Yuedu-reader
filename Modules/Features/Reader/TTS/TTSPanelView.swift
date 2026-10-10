@@ -40,7 +40,7 @@ struct TTSPanelView: View {
     /// actually appeared.
     let aiProgress: Double
     @Environment(\.dismiss) var dismiss
-    @ObservedObject private var gs = GlobalSettings.shared
+    @Bindable private var gs = GlobalSettings.shared
     @State private var isScrubbing = false
     @State private var scrubProgress = 0.0
     @State private var showChapterPicker = false

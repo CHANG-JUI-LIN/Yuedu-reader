@@ -56,7 +56,7 @@ struct ReaderQuickThemePanelView: View {
     /// it from its own `onDismiss`, as it does for 自訂 — never a sheet on top of this one.
     var onOpenPaywall: ((PremiumFeature) -> Void)? = nil
 
-    @ObservedObject private var settings = GlobalSettings.shared
+    @Bindable private var settings = GlobalSettings.shared
     @Environment(\.colorScheme) private var colorScheme
     /// The saved-background page pushed in this panel's own navigation.
     @State private var backgroundEditor: ReaderBackgroundEditorRoute?
