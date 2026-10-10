@@ -8,11 +8,17 @@ observes an object re-runs `body` on **any** `@Published` change in it. With
 changes; reading a computed property subscribes to every stored property its getter
 touches, and reading a stored struct subscribes to the whole struct.
 
-Today the app has 0 `@Observable` types, 90 `ObservableObject`s and ~480 `@Published`.
-`GlobalSettings` alone has ~140 `@Published` and is observed directly or through shared
-modifiers (`interfaceSectionSurface`, `themedAppSurface`, `PageBackgroundView`,
-`GeneratedBookCover`, …) in ~600 places — so a brightness-slider tick re-renders the root,
-the reader, and the bookshelf behind it.
+`GlobalSettings` is `@Observable` (since 2026-10-10; it had 137 `@Published` observed in
+~600 places, and a brightness tick re-rendered the root, the reader and the shelf). Views
+hold it as `@Bindable private var gs = GlobalSettings.shared`. Things views draw that are
+not stored settings need an explicit dependency: fonts come from `GlobalAppTypography`
+statics, so its builders read `GlobalSettings.typographyRevision`; themes come from the
+`appThemes` environment value, never the `AppearanceThemePreset.activeAppThemes` global;
+a setting stored outside the class (UserDefaults-backed computed property) calls
+`access(keyPath:)` / `withMutation(keyPath:)`. There is no `objectWillChange` and no
+`$property` publisher: non-view observers use `withObservationTracking`, reading the new
+value after hopping to the main actor (the callback fires before the change lands, once).
+Tests use `ObservationRecorder`. Most other stores are still `ObservableObject`.
 
 ## Rules with project examples
 
