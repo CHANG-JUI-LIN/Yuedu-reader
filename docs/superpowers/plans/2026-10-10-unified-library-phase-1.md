@@ -450,8 +450,8 @@ Phase 1 adds:
 - [x] 1b: sidecar metadata for every import; `ReadingBook` keys and hashes unchanged.
 - [x] 1c: deterministic index, A-level and B-level, with the design's fixtures; benchmark numbers recorded.
 - [x] 1d: decisions store, resolver, locks on three paths, unlocked behavior unchanged.
-- [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 1 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
-- [ ] Rollback: revert the step's merge and delete `Application Support/Works/`. No `ReadingBook` or sync content changed (design §15).
+- [x] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 1 regression pass after its last edit; nothing pushed or merged without the maintainer's yes. (The full regression, in "1d" below, ran on the last step's branch.)
+- [x] Rollback: revert the step's merge and delete `Application Support/Works/`. No `ReadingBook` or sync content changed (design §15). Since 1d that folder also holds `decisions.json`, the one authoritative file, so a rollback also deletes the reader's locks, overrides and splits along with the derived data.
 
 ## Follow-ups found while planning
 
@@ -609,7 +609,7 @@ Branch `unified-library/1d-decisions-and-locks`, on `f5f03212`. Not merged, not 
   - `updateBook` (the reader's own edit), `LocalBookImportService` and Aozora's `book.title = work.title` (a new copy at import): not overwrites, not guarded.
   - `updateOnlineBookSource` (換源) and `RemoteLibraryService.record`'s reopen branch: write no title.
   - **Known gap, iCloud sync apply:** it replaces records with another device's. A device without the lock can refresh a title and sync it back over a locked copy. This cannot be guarded until decisions sync (Phase S2).
-- **`WorkIndexService`** now reads `store.workDecisions` by default, so a split reaches the index without wiring at each caller.
+- **`WorkIndexService`** now reads `store.workDecisions` by default, so a split reaches the index without wiring at each caller. It reads only `sameWork` and `differentWorks`: field decisions would force a rebuild on every lock and copy the reader's override text into the derived `index.json`.
 - **The plan's `refreshOnlineBookMetadataRepairsLegacyShelfEntry()`** returns at once here: it needs a book source fixture and a live network, and passed in 0.001 s. It proves nothing. The online refresh coverage is `TitleOverwriteLockTests`' fake fetcher.
 - **Rules 1d chose itself, for the maintainer to overturn:**
   - A later decision on the same pair replaces the earlier one.
@@ -623,3 +623,19 @@ Branch `unified-library/1d-decisions-and-locks`, on `f5f03212`. Not merged, not 
     BookStoreMetadataWriteBudgetTests, ICloudSyncChangeDetectionTests, WorkIndexTests,
     WorkIndexServiceTests, yuedu_appTests/refreshOnlineBookMetadataPersistsFirstTOCPageBeforeFullFetchCompletes())
 ```
+
+Phase 1 regression (design §19: the Phase 1 and Phase 1d rows, plus every 1a–1d suite), on `unified-library/1d-decisions-and-locks` after its last edit; `ruby scripts/check_localizations.rb` OK:
+
+```
+✔ Test run with 181 tests in 24 suites passed after 1.769 seconds.
+   (BookStoreMetadataWriteBudgetTests, RemoteReadingRecordTests, LocalBookImportServiceTests,
+    ICloudAudioSyncExclusionTests, AozoraLibraryDownloadServiceTests, RemoteLibraryWritingTests,
+    RemoteLibraryServiceTests, TitleOverwriteLockTests, WorkDecisionsStoreTests, MetadataResolverTests,
+    WorkMatchKeyTests, WorkIndexTests, WorkIndexServiceTests, ImportedMetadataCaptureTests,
+    ImportedMetadataStoreTests, ImportedMetadataImportTests, SourceRecordDerivationTests,
+    ICloudSyncChangeDetectionTests, BookStoreBackgroundPublishTests, LibraryRefreshScaleTests,
+    OPDSParserTests, OPDS2ParserTests, CalibreWirelessReceiverTests,
+    yuedu_appTests/refreshOnlineBookMetadataPersistsFirstTOCPageBeforeFullFetchCompletes())
+```
+
+Not run as evidence: `yuedu_appTests/refreshOnlineBookMetadataRepairsLegacyShelfEntry()` returns early without its book source fixture and needs a live network.
