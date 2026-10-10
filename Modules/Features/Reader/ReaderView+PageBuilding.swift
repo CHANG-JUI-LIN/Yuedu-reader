@@ -226,7 +226,7 @@ extension ReaderView {
         // only sources declaring the rule pay anything; the closure runs the
         // source's JS over downloaded image bytes.
         let bookSource = book.bookSourceId.flatMap { sourceId in
-            BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+            BookSourceStore.shared.source(id: sourceId)
         }
         var imageDecode: (@Sendable (Data, String) -> Data?)? = nil
         if let source = bookSource,

@@ -149,7 +149,7 @@ extension ReaderView {
     /// The source the book is currently reading from (for 設置源變量 in-reader).
     var currentChangeSourceBookSource: BookSource? {
         guard let sourceId = book?.bookSourceId else { return nil }
-        return BookSourceStore.shared.sources.first { $0.id == sourceId }
+        return BookSourceStore.shared.source(id: sourceId)
     }
 
     /// A single switchable-origin row; flags origins that previously failed to switch.

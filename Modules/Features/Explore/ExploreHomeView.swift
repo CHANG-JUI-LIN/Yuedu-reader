@@ -212,7 +212,7 @@ struct ExploreHomeView: View {
                 ExploreSettingsSheet(sources: exploreSources)
             }
             .onAppear(perform: applyLandingIfNeeded)
-            .onReceive(sourceStore.$sources) { _ in
+            .onReceive(sourceStore.sourcesPublisher) { _ in
                 exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
                 if let group, !groups.contains(group) { self.group = nil }
                 applyLandingIfNeeded()

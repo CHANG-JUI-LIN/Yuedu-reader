@@ -256,12 +256,17 @@ final class FirestoreSyncManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        BookSourceStore.shared.$sources
-            .dropFirst()
-            .sink { [weak self] _ in
-                self?.schedulePush("bookSources") { try await self?.pushBookSources() }
-            }
-            .store(in: &cancellables)
+        // After the library is read: the read is applied as a change of the published array,
+        // and must not count as an edit to push.
+        BookSourceStore.shared.whenLoaded { [weak self] _ in
+            guard let self else { return }
+            BookSourceStore.shared.sourcesPublisher
+                .dropFirst()
+                .sink { [weak self] _ in
+                    self?.schedulePush("bookSources") { try await self?.pushBookSources() }
+                }
+                .store(in: &self.cancellables)
+        }
 
         ReplaceRuleStore.shared.$rules
             .dropFirst()

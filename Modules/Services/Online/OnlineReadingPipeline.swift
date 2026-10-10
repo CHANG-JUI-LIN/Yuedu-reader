@@ -391,7 +391,7 @@ actor ChapterFetchManager {
             if let sourceId = book.bookSourceId {
                 guard
                     let source = await MainActor.run(body: {
-                        BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+                        BookSourceStore.shared.source(id: sourceId)
                     })
                 else {
                     throw NSError(

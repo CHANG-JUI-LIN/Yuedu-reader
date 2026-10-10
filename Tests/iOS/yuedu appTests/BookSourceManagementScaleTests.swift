@@ -241,6 +241,52 @@ struct BookSourceManagementScaleTests {
         )
     }
 
+    // MARK: - Launch and the bookshelf
+
+    @Test(
+        "opening a large library at launch, and the main thread's share of it",
+        .enabled(if: enabled, "Set BOOK_SOURCE_SCALE_TESTS=1"),
+        .timeLimit(.minutes(30))
+    )
+    func openLibraryAtLaunch() async throws {
+        for count in Self.counts {
+            let fixture = try ScaleFixture(count: count)
+            defer { fixture.remove() }
+            let startedAt = ProcessInfo.processInfo.systemUptime
+            let reopened = BookSourceStore(directory: fixture.directory)
+            let initMs = Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000)
+            await reopened.waitUntilLoaded()
+            let loadedMs = Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1000)
+            #expect(reopened.sources.count == count)
+            print("SCALE launchLoad sources=\(count) mainThreadInitMs=\(initMs) loadedMs=\(loadedMs)")
+        }
+    }
+
+    @Test(
+        "building bookshelf covers with a large library",
+        .enabled(if: enabled, "Set BOOK_SOURCE_SCALE_TESTS=1"),
+        .timeLimit(.minutes(30))
+    )
+    func buildShelfCovers() async throws {
+        let count = Self.counts.max() ?? 50_000
+        let fixture = try ScaleFixture(count: count)
+        defer { fixture.remove() }
+        let previous = BookSourceStore.shared.sources
+        BookSourceStore.shared.sources = fixture.store.sources
+        defer { BookSourceStore.shared.sources = previous }
+        // Books whose sources sit at the end of the list: the worst case of a linear scan.
+        let books: [ReadingBook] = fixture.store.sources.suffix(200).map { source in
+            var book = ReadingBook(title: "書", author: "作者", contentFilename: "")
+            book.bookSourceId = source.id
+            book.coverUrl = "https://example.com/cover.jpg"
+            return book
+        }
+        let ms = measureMs {
+            for book in books { _ = BookCoverImage(readingBook: book) }
+        }
+        print("SCALE shelfCovers sources=\(count) covers=\(books.count) initMs=\(ms)")
+    }
+
     // MARK: - Helpers
 
     private func measureMs(_ body: () -> Void) -> Int {

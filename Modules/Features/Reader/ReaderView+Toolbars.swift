@@ -496,7 +496,7 @@ extension ReaderView {
     func openCurrentChapterWebPage() {
         guard let book, let chapter = currentOnlineChapter else { return }
         let source = book.bookSourceId.flatMap { id in
-            BookSourceStore.shared.sources.first { $0.id == id }
+            BookSourceStore.shared.source(id: id)
         }
         // Resolving the source's headers can run its JS (`@js:` header rules).
         Task {

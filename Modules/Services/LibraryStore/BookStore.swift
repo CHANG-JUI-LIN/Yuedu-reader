@@ -1395,7 +1395,7 @@ class BookStore: ObservableObject, BookProvider {
             title: name, author: author, source: bookInfoURL, contentFilename: "")
         book.isOnline = true
         book.isInBookshelf = isInBookshelf
-        let source = BookSourceStore.shared.sources.first { $0.id == sourceId }
+        let source = BookSourceStore.shared.source(id: sourceId)
         let inferredKind = contentKind ?? OnlineBookContentInference.infer(
             sourceType: source?.bookSourceType,
             runtimeVariables: runtimeVariables,
@@ -1478,7 +1478,7 @@ class BookStore: ObservableObject, BookProvider {
               let book = records.first(where: { $0.id == bookId }),
               book.coverImagePath == nil else { return }
 
-        let source = sourceId.flatMap { id in BookSourceStore.shared.sources.first { $0.id == id } }
+        let source = sourceId.flatMap { id in BookSourceStore.shared.source(id: id) }
         let headers = BookCoverLoader.headers(
             sourceBaseURL: source?.bookSourceUrl,
             sourceHeaders: source?.parsedHeaders ?? [:]
@@ -1517,7 +1517,7 @@ class BookStore: ObservableObject, BookProvider {
         let trimmed = coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, records.contains(where: { $0.id == bookId }) else { return false }
 
-        let source = sourceId.flatMap { id in BookSourceStore.shared.sources.first { $0.id == id } }
+        let source = sourceId.flatMap { id in BookSourceStore.shared.source(id: id) }
         let headers = BookCoverLoader.headers(
             sourceBaseURL: source?.bookSourceUrl,
             sourceHeaders: source?.parsedHeaders ?? [:]
@@ -1707,7 +1707,7 @@ class BookStore: ObservableObject, BookProvider {
         // replaying unchanged — it is keyed by `(sourceId, url)` and outlives the book — is
         // what turned 移除下載 into "the whole book fails and only 換源 fixes it".
         if let sourceId = removing.bookSourceId,
-           let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId }) {
+           let source = BookSourceStore.shared.source(id: sourceId) {
             BookSourceFetcher.shared.clearTOCAndBookInfoCache(
                 tocUrl: removing.tocURL,
                 bookURL: removing.bookInfoURL,
@@ -1783,7 +1783,7 @@ class BookStore: ObservableObject, BookProvider {
         bookSourceFetcher: any BookSourceFetching = LiveBookSourceFetcher(bookSourceFetcher: BookSourceFetcher.shared),
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore()
     ) async throws {
-        guard let source = BookSourceStore.shared.sources.first(where: { $0.id == origin.sourceId })
+        guard let source = BookSourceStore.shared.source(id: origin.sourceId)
         else {
             throw NSError(
                 domain: "BookStore", code: -1, userInfo: [NSLocalizedDescriptionKey: "找不到書源"])
@@ -1875,7 +1875,7 @@ class BookStore: ObservableObject, BookProvider {
             return snapshot
         }
         guard let source = await MainActor.run(body: {
-            BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+            BookSourceStore.shared.source(id: sourceId)
         }) else {
             throw NSError(
                 domain: "BookStore", code: -3, userInfo: [NSLocalizedDescriptionKey: "找不到書源"])

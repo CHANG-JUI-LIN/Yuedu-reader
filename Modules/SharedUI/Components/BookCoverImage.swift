@@ -20,6 +20,10 @@ struct BookCoverImage: View {
     var author: String?
     var sourceBaseURL: String?
     var sourceHeaders: [String: String]
+    /// Set by the shelf and discover initializers instead of `sourceBaseURL`/`sourceHeaders`:
+    /// the source is looked up, and its header rule (possibly JavaScript) evaluated, only when
+    /// the cover actually has to be fetched, off the main thread. See `init(readingBook:)`.
+    var sourceID: UUID?
     var session: URLSession?
     /// Stable key identifying the book, when this slot may fall back to the
     /// user's 預設封面 library. `nil` goes straight to `GeneratedBookCover` — only
@@ -38,13 +42,15 @@ struct BookCoverImage: View {
         sourceBaseURL: String? = nil,
         sourceHeaders: [String: String] = [:],
         defaultCoverSeed: String? = nil,
-        session: URLSession? = nil
+        session: URLSession? = nil,
+        sourceID: UUID? = nil
     ) {
         self.coverURL = coverURL
         self.title = title
         self.author = author
         self.sourceBaseURL = sourceBaseURL
         self.sourceHeaders = sourceHeaders
+        self.sourceID = sourceID
         self.defaultCoverSeed = defaultCoverSeed
         self.session = session
         // Cache hits paint on the first layout pass — no placeholder flash and
@@ -131,7 +137,14 @@ struct BookCoverImage: View {
         // fallback when it fails. It is a local file, so it is ready first.
         await loadDefaultCover()
         guard !Task.isCancelled else { return }
-        let headers = BookCoverLoader.headers(sourceBaseURL: sourceBaseURL, sourceHeaders: sourceHeaders)
+        var baseURL = sourceBaseURL
+        var sourceHeaders = sourceHeaders
+        if let sourceID, let resolved = await Self.resolveSource(sourceID) {
+            guard !Task.isCancelled else { return }
+            baseURL = resolved.baseURL
+            sourceHeaders = resolved.headers
+        }
+        let headers = BookCoverLoader.headers(sourceBaseURL: baseURL, sourceHeaders: sourceHeaders)
         let loaded = await BookCoverLoader.loadImage(urlString: coverURL, headers: headers, session: session)
         if !Task.isCancelled { image = loaded }
     }
@@ -157,26 +170,34 @@ struct BookCoverImage: View {
 extension BookCoverImage {
     /// Saved remote books use the same authenticated catalog transport as browsing.
     /// Local/custom cover selection stays with the caller's existing artwork route.
-    @MainActor
+    ///
+    /// Cheap on purpose: it runs for every shelf cover on every render of the shelf. It used
+    /// to scan the whole source library for the book's source and evaluate its header rule
+    /// here — 15 ms a cover at 50 000 sources, and a `@js` rule waited synchronously on the
+    /// source's JavaScript queue, on the main thread. Both now happen in `load()`, only when
+    /// the cover is not cached.
     init(readingBook book: ReadingBook, defaultCoverSeed: String? = nil) {
-        let source = book.bookSourceId.flatMap { id in BookSourceStore.shared.sources.first { $0.id == id } }
         self.init(coverURL: book.coverUrl ?? "", title: book.title, author: book.author,
-                  sourceBaseURL: source?.bookSourceUrl, sourceHeaders: source?.parsedHeaders ?? [:],
-                  defaultCoverSeed: defaultCoverSeed, session: BookCoverLoader.remoteSession(for: book))
+                  defaultCoverSeed: defaultCoverSeed, session: BookCoverLoader.remoteSession(for: book),
+                  sourceID: book.bookSourceId)
     }
 
-    /// Convenience for online/discover books — resolves the source's base URL and
-    /// header rule from `BookSourceStore` so covers carry the right Referer/UA.
-    @MainActor
+    /// Convenience for online/discover books; the source's base URL and header rule are
+    /// resolved the same way, when the cover is fetched.
     init(onlineBook: OnlineBook) {
-        let source = BookSourceStore.shared.sources.first { $0.id == onlineBook.sourceId }
-        self.init(
-            coverURL: onlineBook.coverUrl,
-            title: onlineBook.name,
-            author: onlineBook.author,
-            sourceBaseURL: source?.bookSourceUrl,
-            sourceHeaders: source?.parsedHeaders ?? [:]
-        )
+        self.init(coverURL: onlineBook.coverUrl, title: onlineBook.name, author: onlineBook.author,
+                  sourceID: onlineBook.sourceId)
+    }
+
+    /// The source's base URL and evaluated header rule. Waits for the library read, looks the
+    /// source up by id, and evaluates the rule on `SourceScriptThread` — the thread meant for
+    /// work that may block on a source's JavaScript.
+    static func resolveSource(_ id: UUID) async -> (baseURL: String, headers: [String: String])? {
+        let store = BookSourceStore.shared
+        await store.waitUntilLoaded()
+        guard let source = store.source(id: id) else { return nil }
+        let headers = await SourceScriptThread.run { source.parsedHeaders }
+        return (source.bookSourceUrl, headers)
     }
 }
 

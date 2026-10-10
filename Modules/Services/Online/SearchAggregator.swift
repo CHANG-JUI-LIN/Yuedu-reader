@@ -26,7 +26,7 @@ struct BookOrigin: Identifiable, Codable, Sendable {
 
 extension BookOrigin {
     func inferredContentKind(sourceStore: BookSourceStore = .shared) -> OnlineBookContentKind {
-        let source = sourceStore.sources.first { $0.id == sourceId }
+        let source = sourceStore.source(id: sourceId)
         return OnlineBookContentInference.infer(
             sourceType: source?.bookSourceType,
             runtimeVariables: runtimeVariables,

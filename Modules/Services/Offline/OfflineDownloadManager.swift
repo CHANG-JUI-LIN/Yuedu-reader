@@ -233,6 +233,9 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         guard !isReconciling else { return }
         isReconciling = true
         defer { isReconciling = false }
+        // Resumed downloads look their sources up on the main thread; wait for the library
+        // read here instead (it runs off the main thread from launch).
+        await BookSourceStore.shared.waitUntilLoaded()
         // Shelf records carry no table of contents; each downloading book's is read here.
         let books = await MainActor.run {
             store.books
@@ -801,7 +804,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     private func sourceImageHeaders(for book: ReadingBook) async -> [String: String] {
         await MainActor.run { () -> [String: String] in
             let source = book.bookSourceId.flatMap { id in
-                BookSourceStore.shared.sources.first { $0.id == id }
+                BookSourceStore.shared.source(id: id)
             }
             return BookCoverLoader.headers(
                 sourceBaseURL: source?.bookSourceUrl,

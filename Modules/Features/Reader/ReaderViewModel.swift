@@ -417,7 +417,7 @@ final class ReaderViewModel: ObservableObject {
         if let cached = searchTOCCache[key] {
             return cached
         }
-        guard let source = BookSourceStore.shared.sources.first(where: { $0.id == origin.sourceId })
+        guard let source = BookSourceStore.shared.source(id: origin.sourceId)
         else {
             throw NSError(
                 domain: "ReaderViewModel", code: -1,

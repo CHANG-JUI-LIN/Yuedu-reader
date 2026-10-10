@@ -574,7 +574,7 @@ extension ReaderView {
     /// Display name of the source the book is currently being read from.
     var currentSourceName: String {
         guard let id = book?.bookSourceId,
-              let source = BookSourceStore.shared.sources.first(where: { $0.id == id }),
+              let source = BookSourceStore.shared.source(id: id),
               !source.bookSourceName.isEmpty else { return localized("未知書源") }
         return source.bookSourceName
     }

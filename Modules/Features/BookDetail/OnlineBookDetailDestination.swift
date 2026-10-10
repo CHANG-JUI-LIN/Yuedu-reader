@@ -129,7 +129,7 @@ enum DetailSourceKind {
            let kind = searchBook.contentKind(for: origin) {
             return kind
         }
-        let source = BookSourceStore.shared.sources.first { $0.id == book.sourceId }
+        let source = BookSourceStore.shared.source(id: book.sourceId)
         return book.inferredContentKind(source: source)
     }
 }

@@ -236,7 +236,7 @@ enum SearchResultPresentationBuilder {
         sourceStore: BookSourceStore
     ) -> [PreparedSearchOrigin] {
         origins.map { origin in
-            let source = sourceStore.sources.first { $0.id == origin.sourceId }
+            let source = sourceStore.source(id: origin.sourceId)
             let kind = SearchResultIPSDiagnostics.inferContentKind(
                 origin,
                 sourceType: source?.bookSourceType,

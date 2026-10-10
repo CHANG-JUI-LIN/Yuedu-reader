@@ -55,7 +55,7 @@ final class CoverDecodeService {
     func decodedIfRegistered(coverUrl: String, data: Data) -> Data? {
         let sourceId = queue.sync { urlToSourceId[coverUrl] }
         guard let sourceId,
-              let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+              let source = BookSourceStore.shared.source(id: sourceId)
         else { return nil }
         let ruleJs = source.coverDecodeJs
         guard !ruleJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }

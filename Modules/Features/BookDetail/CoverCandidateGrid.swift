@@ -98,7 +98,7 @@ struct CoverCandidateGrid: View {
 
     private func coverCell(_ candidate: CoverCandidate) -> some View {
         let source = candidate.sourceId.flatMap { id in
-            BookSourceStore.shared.sources.first { $0.id == id }
+            BookSourceStore.shared.source(id: id)
         }
 
         return Button {

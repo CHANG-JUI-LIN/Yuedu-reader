@@ -50,7 +50,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         self.state = state
         self.chapterFetcher = chapterFetcher
         let resolvedSource = book.bookSourceId.flatMap { id in
-            BookSourceStore.shared.sources.first { $0.id == id }
+            BookSourceStore.shared.source(id: id)
         }
         self.source = resolvedSource
         self.headers = BookCoverLoader.headers(

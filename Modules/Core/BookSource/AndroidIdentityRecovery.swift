@@ -70,7 +70,7 @@ enum AndroidIdentityRecovery {
     /// The book source a book is currently reading through, if it still exists.
     static func source(withId id: UUID?) -> BookSource? {
         guard let id else { return nil }
-        return BookSourceStore.shared.sources.first { $0.id == id }
+        return BookSourceStore.shared.source(id: id)
     }
 
     // MARK: - Does this source ask for a device id at all?

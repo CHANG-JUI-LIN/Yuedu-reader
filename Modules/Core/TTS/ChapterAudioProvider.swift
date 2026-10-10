@@ -94,7 +94,7 @@ final class OnlineChapterAudioProvider: ChapterAudioProvider {
 
     private func sourceHeaders(for book: ReadingBook) -> [String: String] {
         let source = book.bookSourceId.flatMap { id in
-            BookSourceStore.shared.sources.first { $0.id == id }
+            BookSourceStore.shared.source(id: id)
         }
         return BookCoverLoader.headers(
             sourceBaseURL: source?.bookSourceUrl,

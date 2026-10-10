@@ -28,7 +28,7 @@ struct OnlineBookView: View {
     @State private var pendingChapterSelection: Int?
 
     private var gs: GlobalSettings { GlobalSettings.shared }
-    private var source: BookSource? { BookSourceStore.shared.sources.first(where: { $0.id == currentBook.sourceId }) }
+    private var source: BookSource? { BookSourceStore.shared.source(id: currentBook.sourceId) }
 
     @State private var chapters: [OnlineChapterRef] = []
     @State private var loadingTOC = false

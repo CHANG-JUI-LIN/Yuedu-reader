@@ -28,13 +28,21 @@ enum DiagnosticScale {
     /// directory sizes are measured off it.
     @MainActor
     static func publish(bookStore: BookStore, reason: String) {
+        // The source count waits for the library read instead of making the main thread wait.
+        BookSourceStore.shared.whenLoaded { library in
+            publish(bookStore: bookStore, bookSources: library.count, reason: reason)
+        }
+    }
+
+    @MainActor
+    private static func publish(bookStore: BookStore, bookSources: Int, reason: String) {
         let shelf = bookStore.books
         let counts = Counts(
             shelfBooks: shelf.count,
             onlineBooks: shelf.reduce(0) { $0 + ($1.isOnline ? 1 : 0) },
             downloadedBooks: shelf.reduce(0) { $0 + ($1.offlineDownloadTask != nil ? 1 : 0) },
             readingRecords: bookStore.readingBooks.count - shelf.count,
-            bookSources: BookSourceStore.shared.sources.count,
+            bookSources: bookSources,
             rssSources: RSSStore.shared.sources.count,
             iCloudAutoSync: GlobalSettings.shared.iCloudAutoSync
         )

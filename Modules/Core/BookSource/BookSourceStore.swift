@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os
 
 // MARK: - Pin State
 
@@ -67,8 +68,156 @@ class BookSourceStore: ObservableObject {
     /// request was running.
     private(set) var mutationRevision = 0
 
-    @Published var sources: [BookSource] = [] {
-        didSet { mutationRevision += 1 }
+    /// The library itself. Read through `sources`, which guarantees it has been loaded.
+    @Published private var library: [BookSource] = [] {
+        didSet {
+            mutationRevision += 1
+            rebuildIndex()
+        }
+    }
+
+    /// Position of each source in `library`, rebuilt at its single write point (`didSet`).
+    /// Lookups by id used to scan the array — `sources.first { $0.id == id }` — in 40 places,
+    /// some of them per bookshelf cover per render: 200 covers took 3.06 s against 50 000
+    /// sources (Debug simulator). A derived index, not a second copy of the library.
+    private let index = OSAllocatedUnfairLock(initialState: [UUID: Int]())
+
+    private func rebuildIndex() {
+        var positions: [UUID: Int] = [:]
+        positions.reserveCapacity(library.count)
+        for (position, source) in library.enumerated() where positions[source.id] == nil {
+            positions[source.id] = position
+        }
+        index.withLock { $0 = positions }
+    }
+
+    /// The source with this id, without scanning the library.
+    func source(id: UUID) -> BookSource? {
+        ensureLoaded()
+        if let snapshot = loadedSnapshot {
+            // A background caller between the read and its apply on the main thread.
+            return snapshot.first { $0.id == id }
+        }
+        let current = library
+        guard let position = index.withLock({ $0[id] }), current.indices.contains(position),
+              current[position].id == id else { return nil }
+        return current[position]
+    }
+
+    /// Every source, in display order.
+    ///
+    /// The file is read on `loadQueue` as soon as the store exists: at 50 000 sources it is
+    /// ~290 MB of JSON, and reading it inline in `App.init` held the main thread 1.3 s
+    /// (Debug simulator) on every launch. Reading this property before that read finishes
+    /// waits for it — never longer than what is left of the read, and never returning the
+    /// empty placeholder, so no caller can mistake "not read yet" for "no sources". A wait on
+    /// the main thread is a `bookSources.waitOnMain` span, which `MainThreadMonitor` names:
+    /// it shows which reader still runs before the read is done. Writing always waits.
+    var sources: [BookSource] {
+        get {
+            ensureLoaded()
+            return loadedSnapshot ?? library
+        }
+        set {
+            ensureLoaded()
+            library = newValue
+        }
+    }
+
+    /// `$sources`, for subscribers. Emits the placeholder `[]` until the library is read;
+    /// use `whenLoaded` for anything that must not treat that as "no sources".
+    var sourcesPublisher: Published<[BookSource]>.Publisher { $library }
+
+    // MARK: Loading
+
+    private let loadQueue = DispatchQueue(label: "com.yuedu.bookSourceStore.load", qos: .userInitiated)
+    private let readDone = DispatchGroup()
+    private struct LoadState {
+        var read: [BookSource]?
+        /// Set once the read result has been assigned to `library` on the main thread.
+        var applied = false
+    }
+    private let loadState = OSAllocatedUnfairLock(initialState: LoadState())
+    /// Main thread only.
+    private var loadWaiters: [([BookSource]) -> Void] = []
+
+    /// What a background reader gets between the read finishing and the main thread
+    /// applying it: the read result itself. Nil once applied.
+    private var loadedSnapshot: [BookSource]? {
+        loadState.withLock { $0.applied ? nil : $0.read }
+    }
+
+    var isLoaded: Bool { loadState.withLock { $0.applied } }
+
+    private func startLoading() {
+        readDone.enter()
+        let url = fileURL
+        loadQueue.async { [weak self] in
+            let read = Self.readLibrary(at: url)
+            self?.loadState.withLock { $0.read = read }
+            self?.readDone.leave()
+            DispatchQueue.main.async { self?.applyLoadedLibrary() }
+        }
+    }
+
+    /// Waits for the read when it has not finished. On the main thread it also applies it,
+    /// so the `@Published` assignment happens there.
+    private func ensureLoaded() {
+        if loadState.withLock({ $0.applied }) { return }
+        if Thread.isMainThread {
+            SourcePerfTrace.span("bookSources.waitOnMain", thresholdMs: 1) { readDone.wait() }
+            applyLoadedLibrary()
+        } else {
+            readDone.wait()
+        }
+    }
+
+    /// Main thread.
+    private func applyLoadedLibrary() {
+        let read: [BookSource]? = loadState.withLock { state in
+            guard !state.applied else { return nil }
+            state.applied = true
+            return state.read ?? []
+        }
+        guard let read else { return }
+        library = read
+        prunePins()
+        let waiters = loadWaiters
+        loadWaiters.removeAll()
+        for waiter in waiters { waiter(read) }
+    }
+
+    /// Calls `body` on the main thread with the library once it is read — immediately when it
+    /// already is. For decisions that must not run on the "not read yet" placeholder.
+    func whenLoaded(_ body: @escaping ([BookSource]) -> Void) {
+        DispatchQueue.main.async { [self] in
+            if isLoaded { body(library) } else { loadWaiters.append(body) }
+        }
+    }
+
+    /// Returns once the library file has been read and applied.
+    func waitUntilLoaded() async {
+        await withCheckedContinuation { continuation in
+            whenLoaded { _ in continuation.resume() }
+        }
+    }
+
+    /// Reads and dedupes the file; off the main thread. A missing file is an empty library;
+    /// an unreadable one is logged and also empty, as before (the next save would replace
+    /// it, which is the existing behaviour this change does not alter).
+    private static func readLibrary(at url: URL) -> [BookSource] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return SourcePerfTrace.span("bookSources.load", "main=\(Thread.isMainThread)", thresholdMs: 1) {
+            do {
+                let data = try Data(contentsOf: url)
+                let decoded = try JSONDecoder().decode([BookSource].self, from: data)
+                // Clean up any duplicates a previous buggy sync may have persisted to disk.
+                return dedupedByURL(decoded)
+            } catch {
+                AppLogger.cache("Book sources could not be read", error: error, context: ["file": url.lastPathComponent])
+                return []
+            }
+        }
     }
 
     /// Persisted 置頂／置底 pin state, keyed by source id. Kept OUT of `BookSource` (and thus
@@ -100,7 +249,7 @@ class BookSourceStore: ObservableObject {
         self.fileURL = fileURL
         self.pinsFileURL = pinsFileURL
         loadPins()
-        load()
+        startLoading()
     }
 
     // MARK: CRUD
@@ -815,7 +964,9 @@ class BookSourceStore: ObservableObject {
     /// Re-reads the on-disk store into memory. Used after an iCloud restore
     /// overwrites `book_sources.json` so the live UI reflects it without a relaunch.
     func reloadFromDisk() {
-        load()
+        ensureLoaded()
+        sources = Self.readLibrary(at: fileURL)
+        prunePins()
     }
 
     // MARK: Persistence
@@ -938,14 +1089,6 @@ class BookSourceStore: ObservableObject {
         Self.persistQueue.sync {}
     }
 
-    private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([BookSource].self, from: data)
-        else { return }
-        // Clean up any duplicates a previous buggy sync may have persisted to disk.
-        sources = Self.dedupedByURL(decoded)
-        prunePins()
-    }
 
     // MARK: Errors
 

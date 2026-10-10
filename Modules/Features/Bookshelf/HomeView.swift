@@ -1218,7 +1218,7 @@ struct HomeView: View {
 
     private func onlineBookDetail(for book: ReadingBook) -> OnlineBook? {
         guard book.isOnline, let sourceId = book.bookSourceId else { return nil }
-        let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+        let source = BookSourceStore.shared.source(id: sourceId)
         return OnlineBook(
             name: book.title,
             author: book.author,

@@ -27,9 +27,16 @@ struct ExploreTabRoot: View {
 
     var body: some View {
         Group {
-            switch mode {
-            case .bookSources: ExploreHomeView(browser: browser, modeMenu: menu)
-            case .publicLibraries: PublicLibraryHomeView(modeMenu: menu)
+            if !model.isLoaded {
+                // The source library is still being read (about a second at 50 000 sources);
+                // which mode applies depends on whether it holds any.
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                switch mode {
+                case .bookSources: ExploreHomeView(browser: browser, modeMenu: menu)
+                case .publicLibraries: PublicLibraryHomeView(modeMenu: menu)
+                }
             }
         }
         .onAppear { model.appeared(librariesAvailable: availability.isAvailable) }

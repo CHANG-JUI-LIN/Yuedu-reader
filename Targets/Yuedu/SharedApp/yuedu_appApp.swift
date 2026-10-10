@@ -89,7 +89,12 @@ struct yuedu_appApp: App {
             }
         }
         #endif
-        ExploreMode.initializeIfNeeded(hasImportedSources: !BookSourceStore.shared.sources.isEmpty)
+        // First launch only, and only once the library is read: the read runs off the main
+        // thread now, and evaluating `sources` here used to read the whole file inline on
+        // every launch just to pass an argument that is ignored after the first.
+        BookSourceStore.shared.whenLoaded { library in
+            ExploreMode.initializeIfNeeded(hasImportedSources: !library.isEmpty)
+        }
         _ = ExploreTabModel.shared
         PublicLibraryAvailability.shared.start()
         // Frees the retired semantic-search model's ~258 MB on devices that had downloaded it.
@@ -314,6 +319,9 @@ enum ChapterUpdater {
             guard allowed else { return }
         }
 
+        // Every refreshed book looks its source up on the main thread; wait for the library
+        // read here, off it, rather than there.
+        await BookSourceStore.shared.waitUntilLoaded()
         let onlineBooks = await MainActor.run { bookStore.books.filter { $0.isOnline } }
         guard !onlineBooks.isEmpty else { return }
         // Bracketed in the Crashlytics log: a hang, CPU or disk-write report that arrives

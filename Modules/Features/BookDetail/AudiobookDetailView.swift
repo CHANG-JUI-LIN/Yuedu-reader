@@ -25,7 +25,7 @@ struct AudiobookDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appDependencies) private var dependencies
     private var gs: GlobalSettings { GlobalSettings.shared }
-    private var source: BookSource? { BookSourceStore.shared.sources.first(where: { $0.id == currentBook.sourceId }) }
+    private var source: BookSource? { BookSourceStore.shared.source(id: currentBook.sourceId) }
 
     @State private var chapters: [OnlineChapterRef] = []
     @State private var loading = false
