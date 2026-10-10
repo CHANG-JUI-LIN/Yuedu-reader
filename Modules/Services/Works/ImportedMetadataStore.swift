@@ -47,6 +47,36 @@ final class ImportedMetadataStore: @unchecked Sendable {
         }
     }
 
+    /// Every sidecar's modification date and size, from one listing of the folder. The work
+    /// index keeps each copy's stamp beside its entry: a sidecar lands after its copy is saved
+    /// and changes no shelf revision, so this is how a refresh notices it.
+    func stamps() -> [UUID: SidecarStamp] {
+        queue.sync {
+            let urls: [URL]
+            do {
+                urls = try FileManager.default.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+                )
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                return [:]
+            } catch {
+                AppLogger.cache("⟐ imported metadata folder could not be listed", error: error)
+                return [:]
+            }
+            var stamps: [UUID: SidecarStamp] = [:]
+            for url in urls where url.pathExtension == "json" {
+                guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent) else { continue }
+                do {
+                    let values = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+                    stamps[id] = SidecarStamp(modified: values.contentModificationDate ?? .distantPast, size: values.fileSize ?? -1)
+                } catch {
+                    AppLogger.cache("⟐ imported metadata could not be inspected", error: error, context: ["copy": id.uuidString])
+                }
+            }
+            return stamps
+        }
+    }
+
     func remove(copyID: UUID) {
         queue.async { [self] in
             removeFile(fileURL(for: copyID))
@@ -167,4 +197,10 @@ private extension JSONDecoder {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }
+}
+
+/// When a sidecar was last written, as the file system reports it.
+struct SidecarStamp: Hashable, Codable, Sendable {
+    var modified: Date
+    var size: Int
 }
