@@ -111,7 +111,7 @@ protocol CollectionBrowsing: SourceProvider {
 /// be told apart. The text is the underlying error's own, so nothing on screen changes, and
 /// the underlying error is what gets logged.
 struct SourceFailure: Error, LocalizedError {
-    enum Kind: String, Hashable, Sendable {
+    enum Kind: String, Codable, Hashable, Sendable {
         case authentication, network, timeout, parse, rejected, invalidAddress, connectionRemoved, unavailable, other
     }
 

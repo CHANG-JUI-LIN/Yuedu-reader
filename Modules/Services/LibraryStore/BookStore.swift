@@ -234,6 +234,8 @@ class BookStore: ObservableObject, BookProvider {
     /// Unified library 1d: the reader's decisions, `Works/decisions.json`. Its title and
     /// author locks are checked before the online refresh writes either.
     let workDecisions: WorkDecisionsStore
+    /// Unified library 2d: what WebDAV indexing found, `Works/remote/<connection id>.json`.
+    let remoteRecords: RemoteRecordStore
     /// Whether the last load read both the shelf and the reading records. Only then may a
     /// book missing from `records` be taken as gone, and its list removed.
     private var recordsLoadedCompletely = false
@@ -263,6 +265,7 @@ class BookStore: ObservableObject, BookProvider {
         )
         importedMetadata = ImportedMetadataStore(besideShelfFile: metadataFileURL)
         workDecisions = WorkDecisionsStore(besideShelfFile: metadataFileURL)
+        remoteRecords = RemoteRecordStore(besideShelfFile: metadataFileURL)
         // A store reads the files only after writes already queued to them have landed
         // (the queue is shared by every instance). At launch it is empty; it matters for a
         // store opened on files another instance has just saved.

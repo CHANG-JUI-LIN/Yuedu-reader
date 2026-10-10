@@ -62,6 +62,9 @@ final class WorkIndexService {
     @discardableResult
     func refresh() async -> Bool {
         let revision = store.mutationRevision
+        // WebDAV indexing (2d) changes no shelf revision; its store has one of its own.
+        let remoteRecords = store.remoteRecords
+        let remoteRevision = remoteRecords.revision
         let books = store.readingBooks
         let records = SourcePerfTrace.span("works.index.snapshot", "copies=\(books.count)", thresholdMs: 5) {
             let context = makeContext(books)
@@ -77,7 +80,8 @@ final class WorkIndexService {
             let load = needsLoad ? Self.load(fileURL) : .unchanged
             var base = previous
             if case .loaded(let file) = load { base = file }
-            let computed = Self.compute(records: records, decisions: decisions, previous: base, sidecars: sidecars)
+            let computed = Self.compute(records: records, remoteFiles: remoteRecords.allVisibleFiles(),
+                                        decisions: decisions, previous: base, sidecars: sidecars)
             return (load, base, computed)
         }.value
         let (load, base, computed) = result
@@ -90,8 +94,8 @@ final class WorkIndexService {
         #if DEBUG
         willApplyForTesting?()
         #endif
-        guard store.mutationRevision == revision else {
-            AppLogger.cache("⟐ works index dropped: the shelf changed while it was built",
+        guard store.mutationRevision == revision, remoteRecords.revision == remoteRevision else {
+            AppLogger.cache("⟐ works index dropped: the shelf or a WebDAV index changed while it was built",
                             context: ["copies": "\(records.count)"])
             return false
         }
@@ -172,6 +176,7 @@ final class WorkIndexService {
 
     nonisolated static func compute(
         records: [SourceRecord],
+        remoteFiles: [IndexedFile] = [],
         decisions: [WorkDecision],
         previous: WorkIndexFile?,
         sidecars: ImportedMetadataStore
@@ -195,14 +200,30 @@ final class WorkIndexService {
             }
         }
         inputs.sort { $0.record.copyID?.uuidString ?? "" < $1.record.copyID?.uuidString ?? "" }
-        if let previous, reread == 0, inputs == previous.inputs, decisions == previous.decisions {
+
+        // Records WebDAV indexing found (2d), keyed by their source item. One whose file is
+        // unchanged (ETag, date, size) keeps its entry, folded keys included. A record and the
+        // shelf copy of the same file join by `sameSourceItem`.
+        let previousRemote = Dictionary((previous?.remoteInputs ?? []).map { ($0.record.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let remoteInputs = remoteFiles.sorted { $0.record.key.sortKey < $1.record.key.sortKey }
+        for file in remoteInputs {
+            if previousRemote[file.record.key] == file, let entry = previousEntries[file.record.key] {
+                entries.append(entry)
+            } else {
+                reread += 1
+                entries.append(WorkIndexEntry(record: file.record, language: LanguageTag(file.record.language)))
+            }
+        }
+
+        if let previous, reread == 0, inputs == previous.inputs, remoteInputs == previous.remoteInputs, decisions == previous.decisions {
             return Computed(file: previous, changed: false)
         }
         let index = SourcePerfTrace.span("works.index.build", "entries=\(entries.count) reread=\(reread)", thresholdMs: 1) {
             WorkIndex.build(entries: entries, decisions: decisions)
         }
         return Computed(
-            file: WorkIndexFile(schemaVersion: WorkIndexFile.currentSchemaVersion, inputs: inputs, decisions: decisions, index: index),
+            file: WorkIndexFile(schemaVersion: WorkIndexFile.currentSchemaVersion, inputs: inputs, remoteInputs: remoteInputs,
+                                decisions: decisions, index: index),
             changed: true
         )
     }
@@ -268,7 +289,8 @@ final class WorkIndexService {
 
 /// `Works/index.json`.
 struct WorkIndexFile: Codable, Hashable, Sendable {
-    static let currentSchemaVersion = 1
+    /// 2: `remoteInputs` (2d). A version-1 file is discarded and rebuilt; the index is derived.
+    static let currentSchemaVersion = 2
 
     /// What each copy's entry was built from. A copy whose record and sidecar stamp are the
     /// same next time keeps its entry.
@@ -280,6 +302,8 @@ struct WorkIndexFile: Codable, Hashable, Sendable {
     var schemaVersion: Int
     /// Sorted by copy id.
     var inputs: [Input]
+    /// What WebDAV indexing found, sorted by key.
+    var remoteInputs: [IndexedFile]
     var decisions: [WorkDecision]
     var index: WorkIndex
 }

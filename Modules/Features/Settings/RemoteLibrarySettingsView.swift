@@ -9,6 +9,7 @@ import SwiftUI
 /// this stack.
 struct RemoteLibrarySettingsView: View {
     @ObservedObject private var catalogStore = RemoteLibraryConnectionStore.shared
+    @ObservedObject private var indexing = WebDAVIndexCoordinator.shared
 
     /// The order of the bookshelf ＋ menu.
     static let kinds: [RemoteLibraryKind] = [.webDAV, .opds, .calibre]
@@ -21,7 +22,7 @@ struct RemoteLibrarySettingsView: View {
                         NavigationLink {
                             RemoteLibraryConnectionEditor(kind: kind, connection: connection, surface: .settings)
                         } label: {
-                            RemoteLibraryConnectionRow(connection: connection)
+                            RemoteLibraryConnectionRow(connection: connection, status: indexing.statuses[connection.id])
                         }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { catalogStore.remove(connection) } label: {
@@ -48,9 +49,11 @@ struct RemoteLibrarySettingsView: View {
     }
 }
 
-/// A connection's name and server, read by VoiceOver as one element.
+/// A connection's name, server and indexing status, read by VoiceOver as one element.
 private struct RemoteLibraryConnectionRow: View {
     let connection: RemoteLibraryConnection
+    /// WebDAV indexing (2d): read with the row, as one element.
+    var status: WebDAVIndexStatus?
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xs) {
@@ -58,6 +61,9 @@ private struct RemoteLibraryConnectionRow: View {
             // The full address, as the bookshelf's library list shows it: an unnamed connection
             // is named after its host, so the host alone would repeat the name.
             Text(connection.url).font(DSFont.caption).foregroundStyle(DSColor.textSecondary).lineLimit(1)
+            if let status {
+                Text(status.title).font(DSFont.caption).foregroundStyle(DSColor.textSecondary)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -70,4 +76,12 @@ private struct RemoteLibraryConnectionRow: View {
 #Preview("Large text") {
     NavigationStack { RemoteLibrarySettingsView() }
         .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Row states") {
+    List {
+        ForEach([WebDAVIndexStatus.indexing(128), .indexed(2_431), .pausedNotOnWiFi, .limitReached(20_000), .failed("認證失敗，請確認帳號和密碼")], id: \.self) { status in
+            RemoteLibraryConnectionRow(connection: OPDSCatalog(name: "NAS", url: "https://nas.local/books/", kind: .webDAV), status: status)
+        }
+    }
 }
