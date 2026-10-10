@@ -691,7 +691,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             to: styledTitle
         )
 
-        let hasResources = resourceProvider != nil
         let renderer = NodeAttributedStringRenderer(
             config: NodeAttributedStringRenderer.Config(
                 from: settings,
@@ -714,11 +713,15 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                         bodyPointSize: settings.fontSize
                     )
                 },
-                mediaURLResolver: !hasResources ? nil : { [weak self] src in
-                    guard let self, let resourceProvider = self.resourceProvider else { return nil }
-                    let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
-                    return resourceProvider.resourceURL(for: resolved).absoluteString
+                mediaURLResolver: { [weak self] src in
+                    guard let self else { return nil }
+                    if let resourceProvider = self.resourceProvider {
+                        let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
+                        return resourceProvider.resourceURL(for: resolved).absoluteString
+                    }
+                    return Self.mediaSourceCarryingHeaders(src, sourceHeaders: self.imageHeaders)
                 },
+                webEmbedReferer: payload.sourceHref,
                 centerStandaloneImages: true
             )
         )
@@ -756,6 +759,15 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             anchorOffsets: builder.anchorOffsets(in: attributedString)
         )
         return (result, titleBlockLength)
+    }
+
+    /// A `<video>`/`<audio>` URL with the headers its request needs: the book source's own
+    /// header map, overridden by the media's `,{headers}` option — legado's `AnalyzeUrl` order.
+    /// The playback manager decodes them back out (`OnlineImageRequestOptions`).
+    static func mediaSourceCarryingHeaders(_ src: String, sourceHeaders: [String: String]) -> String {
+        let decoded = OnlineImageRequestOptions.decode(src)
+        let headers = sourceHeaders.merging(decoded.headers) { _, own in own }
+        return OnlineImageRequestOptions.encoding(src: decoded.src, headers: headers)
     }
 
     /// Moves a source title's inline review attachment onto the last visible line of the

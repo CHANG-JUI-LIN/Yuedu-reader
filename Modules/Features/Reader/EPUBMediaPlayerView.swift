@@ -124,9 +124,9 @@ struct EPUBMediaPlayerView: View {
     private func load() async {
         guard player == nil else { return }
 
-        let playableURL: URL
+        let request: (url: URL, headers: [String: String])
         do {
-            playableURL = try await EPUBMediaURLResolver.playableURL(for: media)
+            request = try await EPUBMediaURLResolver.playableRequest(for: media)
         } catch EPUBMediaURLError.invalidURL {
             errorMessage = localized("無效的媒體網址")
             return
@@ -135,7 +135,7 @@ struct EPUBMediaPlayerView: View {
             return
         }
 
-        let item = AVPlayerItem(url: playableURL)
+        let item = AVPlayerItem(asset: HeaderedMediaAsset.make(url: request.url, headers: request.headers))
         observeFailure(of: item)
         let nextPlayer = AVPlayer(playerItem: item)
         player = nextPlayer
@@ -192,6 +192,7 @@ final class EPUBVideoPlaybackManager {
     static let shared = EPUBVideoPlaybackManager()
 
     private var players: [String: AVPlayer] = [:]
+    private var statusObservations: [String: NSKeyValueObservation] = [:]
     private var audioSessionActivated = false
 
     private init() {}
@@ -210,9 +211,30 @@ final class EPUBVideoPlaybackManager {
     /// on first use. Activates a `.playback` audio session so sound keeps going across page turns.
     func player(for media: EPUBMediaAttachment) async -> AVPlayer? {
         if let existing = players[media.sourceHref] { return existing }
-        guard let url = try? await EPUBMediaURLResolver.playableURL(for: media) else { return nil }
+        let request: (url: URL, headers: [String: String])
+        do {
+            request = try await EPUBMediaURLResolver.playableRequest(for: media)
+        } catch {
+            AppLogger.error("Inline video URL could not be resolved", context: [
+                "source": String(media.sourceHref.prefix(160)),
+                "error": String(describing: error),
+            ])
+            return nil
+        }
         activateAudioSessionIfNeeded()
-        let player = AVPlayer(url: url)
+        let item = AVPlayerItem(asset: HeaderedMediaAsset.make(url: request.url, headers: request.headers))
+        // A source's video URL can be signed and short-lived (起点 彩蛋 links carry an expiry
+        // and answer 403 once it passes), so a failed item is logged with its reason; on
+        // screen the player shows its own failure state.
+        let host = request.url.host ?? ""
+        statusObservations[media.sourceHref] = item.observe(\.status) { item, _ in
+            guard item.status == .failed else { return }
+            AppLogger.error("Inline video failed to load", context: [
+                "host": host,
+                "error": String(describing: item.error),
+            ])
+        }
+        let player = AVPlayer(playerItem: item)
         players[media.sourceHref] = player
         return player
     }
@@ -220,6 +242,7 @@ final class EPUBVideoPlaybackManager {
     func stop(_ media: EPUBMediaAttachment) {
         players[media.sourceHref]?.pause()
         players[media.sourceHref] = nil
+        statusObservations[media.sourceHref] = nil
     }
 
     /// Stops and releases every inline video. Call when the reader closes so nothing keeps playing after
@@ -227,6 +250,7 @@ final class EPUBVideoPlaybackManager {
     func stopAll() {
         for player in players.values { player.pause() }
         players.removeAll()
+        statusObservations.removeAll()
     }
 
     private func activateAudioSessionIfNeeded() {
@@ -241,15 +265,19 @@ final class EPUBVideoPlaybackManager {
 /// used directly; resources served over the reader's custom `reader-book://<bookId>/<path>` scheme are
 /// extracted out of the EPUB archive into a cached temp file (AVPlayer can't read the custom scheme).
 enum EPUBMediaURLResolver {
-    static func playableURL(for media: EPUBMediaAttachment) async throws -> URL {
-        guard let url = URL(string: media.sourceHref) else {
+    /// The URL to open and the headers to open it with. Online chapters carry a source's media
+    /// headers on the href as an `OnlineImageRequestOptions` fragment; EPUB media carries none.
+    static func playableRequest(for media: EPUBMediaAttachment) async throws -> (url: URL, headers: [String: String]) {
+        let decoded = OnlineImageRequestOptions.decode(media.sourceHref)
+        guard let url = URL(string: decoded.src) else {
             throw EPUBMediaURLError.invalidURL
         }
         if url.isFileURL || url.scheme == "http" || url.scheme == "https" {
-            return url
+            return (url, decoded.headers)
         }
-        return try await localPlaybackURL(for: url)
+        return (try await localPlaybackURL(for: url), [:])
     }
+
 
     private static func localPlaybackURL(for url: URL) async throws -> URL {
         guard let bookId = url.host,

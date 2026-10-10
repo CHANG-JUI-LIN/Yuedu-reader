@@ -256,6 +256,9 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     /// Without it a VoiceOver user cannot reach the toolbar in scroll mode: the tap
     /// recognizer never fires because VoiceOver consumes the touch.
     var onAccessibilityMenu: (() -> Void)?
+    /// Starts a video or `<iframe>` page in this chunk — the VoiceOver path to what a sighted
+    /// reader taps, since the chunk is one drawn element.
+    var onStartLiveContent: ((InlineLiveContent) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -354,13 +357,21 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         drawView.accessibilityLabel = Self.plainText(of: chunk)
         drawView.accessibilityHint = localized("點兩下展開閱讀工具")
         drawView.onAccessibilityActivate = { [weak self] in self?.onAccessibilityMenu?() }
+        let live = (chunk.attachments + chunk.blockRenderables.compactMap(\.imageAttachment))
+            .compactMap(InlineLiveContent.init)
         drawView.accessibilityCustomActions = [
             UIAccessibilityCustomAction(name: localized("選單")) { [weak self] _ in
                 guard let handler = self?.onAccessibilityMenu else { return false }
                 handler()
                 return true
             }
-        ]
+        ] + live.map { content in
+            UIAccessibilityCustomAction(name: content.accessibilityActionName) { [weak self] _ in
+                guard let start = self?.onStartLiveContent else { return false }
+                start(content)
+                return true
+            }
+        }
     }
 
     private static func plainText(of chunk: CoreTextChunk) -> String {

@@ -185,7 +185,10 @@ struct ChapterFetcher {
             else {
                 return ("", nil, ParagraphReviewStructureRepair(), 0)
             }
-            _ = try? body.select("script,noscript,iframe,object,embed").remove()
+            // `<iframe>` stays: the reader shows it as an inline video (a media file) or a
+            // tap-to-load page (user's choice, 2026-10-10). Stripping it here, in the render
+            // path, used to delete embedded players from web chapters outright.
+            _ = try? body.select("script,noscript,object,embed").remove()
             let titleBubble = Self.detachLeadingTitleReviewImage(from: body)
             Self.detachLeadingDuplicateTitle(from: body, title: trimmedTitle)
             // `<br>`-separated prose becomes real paragraphs here, on the parsed tree, so the

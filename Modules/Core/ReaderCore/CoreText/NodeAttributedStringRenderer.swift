@@ -52,6 +52,9 @@ struct NodeAttributedStringRenderer {
         let resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
         let imageLoader: ((String) async -> UIImage?)?
         let mediaURLResolver: ((String) -> String?)?
+        /// The chapter's own URL, sent as the `Referer` of an `<iframe>` page the reader loads
+        /// (embed players check it, as they do in a browser). nil for EPUB.
+        let webEmbedReferer: String?
         let writingMode: ReaderWritingMode
         let baseWritingDirection: NSWritingDirection
         let isBold: Bool
@@ -82,6 +85,7 @@ struct NodeAttributedStringRenderer {
             resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
             imageLoader: ((String) async -> UIImage?)? = nil,
             mediaURLResolver: ((String) -> String?)? = nil,
+            webEmbedReferer: String? = nil,
             baseWritingDirection: NSWritingDirection = .natural,
             centerStandaloneImages: Bool = false,
             textConversion: TextConversion? = nil,
@@ -119,6 +123,7 @@ struct NodeAttributedStringRenderer {
             self.resolvedFont = resolvedFont
             self.imageLoader = imageLoader
             self.mediaURLResolver = mediaURLResolver
+            self.webEmbedReferer = webEmbedReferer
             self.writingMode = settings.writingMode
             self.baseWritingDirection = baseWritingDirection
             self.isBold = settings.isBold
@@ -409,6 +414,9 @@ struct NodeAttributedStringRenderer {
 
         case .media(let media, let style):
             return await renderMedia(media, style: style, ctx: ctx)
+
+        case .webEmbed(let embed, let style):
+            return await renderWebEmbed(embed, style: style, ctx: ctx)
 
         case .unsupportedInteractive(let type, let title, let children, let style):
             return await renderUnsupportedInteractive(
@@ -1805,11 +1813,25 @@ struct NodeAttributedStringRenderer {
             if let h = style.height, h > 0 { return CGSize(width: w, height: h) }
             return CGSize(width: w, height: w * 9.0 / 16.0)
         }()
+        // The poster loads through the same image path as an <img> in this chapter, from the
+        // href as authored: relative to the chapter for EPUB, carrying the source's request
+        // headers for online chapters.
+        var poster: UIImage?
+        if media.kind == .video, let posterHref = media.posterHref, !posterHref.isEmpty,
+           let imageLoader = config.imageLoader {
+            poster = await imageLoader(posterHref)
+            if poster == nil {
+                AppLogger.render("video poster did not load; drawing the plain placeholder", context: [
+                    "poster": String(posterHref.prefix(160)),
+                ])
+            }
+        }
         let image = await MainActor.run {
             EPUBMediaPlaceholderRenderer.image(
                 for: resolvedMedia,
                 maxWidth: maxWidth,
                 intrinsicSize: intrinsicSize,
+                poster: poster,
                 font: blockCtx.font,
                 textColor: blockCtx.textColor,
                 backgroundColor: config.backgroundColor
@@ -1843,6 +1865,67 @@ struct NodeAttributedStringRenderer {
         let range = NSRange(location: 0, length: placeholder.length)
         placeholder.addAttribute(HTMLAttributedStringBuilder.mediaAttachmentAttribute, value: resolvedMedia, range: range)
         placeholder.addAttribute(HTMLAttributedStringBuilder.semanticTagAttribute, value: media.kind.rawValue, range: range)
+        placeholder.addAttribute(
+            .paragraphStyle,
+            value: imageBlockParagraphStyle(base: blockCtx.paragraphStyle, metrics: metrics),
+            range: range
+        )
+        let output = NSMutableAttributedString(attributedString: placeholder)
+        output.append(NSAttributedString(string: "\n", attributes: blockCtx.baseAttributes))
+        return output
+    }
+
+    /// An `<iframe>` page as a card the size the iframe asked for. Nothing loads until the
+    /// reader taps it — iframes in web chapters are as often adverts and trackers as players.
+    private func renderWebEmbed(
+        _ embed: ReaderWebEmbed,
+        style: RenderStyle,
+        ctx: RenderContext
+    ) async -> NSAttributedString {
+        let embed = ReaderWebEmbed(
+            src: embed.src, title: embed.title,
+            referer: embed.referer ?? config.webEmbedReferer, aspectRatio: embed.aspectRatio
+        )
+        let blockCtx = applyBlockStyle(style, to: ctx, isHeading: false)
+        let maxWidth: CGFloat
+        if let renderWidth = config.renderWidth {
+            maxWidth = renderWidth
+        } else {
+            maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
+        }
+        let image = await MainActor.run {
+            EPUBMediaPlaceholderRenderer.webEmbedImage(
+                for: embed,
+                maxWidth: maxWidth,
+                font: blockCtx.font
+            )
+        }
+        var cardStyle = style
+        cardStyle.width = image.size.width
+        cardStyle.height = image.size.height
+        let metrics = await resolvedImageMetrics(
+            image: image,
+            style: cardStyle,
+            font: blockCtx.font,
+            displayMode: .block,
+            availableWidthOverride: availableImageWidth(in: blockCtx)
+        )
+        cardStyle.width = metrics.drawWidth
+        cardStyle.height = metrics.drawHeight
+        let placeholder = NSMutableAttributedString(
+            attributedString: await makeImagePlaceholder(
+                image: image,
+                style: cardStyle,
+                ctx: blockCtx,
+                imageSource: "",
+                imageAlt: embed.title ?? localized("內嵌網頁"),
+                displayMode: .block,
+                precomputedMetrics: metrics
+            )
+        )
+        let range = NSRange(location: 0, length: placeholder.length)
+        placeholder.addAttribute(HTMLAttributedStringBuilder.webEmbedAttribute, value: embed, range: range)
+        placeholder.addAttribute(HTMLAttributedStringBuilder.semanticTagAttribute, value: "iframe", range: range)
         placeholder.addAttribute(
             .paragraphStyle,
             value: imageBlockParagraphStyle(base: blockCtx.paragraphStyle, metrics: metrics),

@@ -74,6 +74,9 @@ public indirect enum RenderableNode: Sendable {
     /// EPUB audio/video attachment rendered as a tappable placeholder.
     case media(EPUBMediaAttachment, style: RenderStyle = .none)
 
+    /// `<iframe>` web page, rendered as a card that loads the page in place when tapped.
+    case webEmbed(ReaderWebEmbed, style: RenderStyle = .none)
+
     /// Unsupported EPUB interactive object, rendered as a static placeholder plus fallback content.
     case unsupportedInteractive(type: String, title: String, children: [RenderableNode], style: RenderStyle = .none)
 

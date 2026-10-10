@@ -2187,6 +2187,7 @@ struct ReaderView: View {
             applyAutoReadIdleTimer()
             mediaOverlayCoordinator.stop()
             EPUBVideoPlaybackManager.shared.stopAll()
+            ReaderWebEmbedManager.shared.stopAll()
             backgroundAudioCoordinator.stop()
             setTTSFloatingOverlayVisible(false)
         }

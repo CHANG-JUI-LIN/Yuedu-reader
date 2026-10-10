@@ -84,7 +84,7 @@ final class CJKTypographyStyleResolver: @unchecked Sendable {
                 append(textSample(fromHTML: html))
             case .lineBreak:
                 append("\n")
-            case .horizontalRule, .image, .mathML, .table, .media, .commentBadge, .pageBreak:
+            case .horizontalRule, .image, .mathML, .table, .media, .webEmbed, .commentBadge, .pageBreak:
                 break
             }
         }

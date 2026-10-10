@@ -152,6 +152,7 @@ enum CoreTextChunkAttachmentExtractor {
                     alt: info.alt,
                     linkHref: linkHref,
                     mediaAttachment: mediaAttachment,
+                    webEmbed: attrs[HTMLAttributedStringBuilder.webEmbedAttribute] as? ReaderWebEmbed,
                     originalSize: img.size,
                     linkRegions: info.linkRegions,
                     allowsPreview: info.allowsPreview

@@ -871,9 +871,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
            let loaderAsset = AudioStreamResourceLoader.makeAsset(url: audio.url, headers: audio.headers) {
             asset = loaderAsset
         } else {
-            let options: [String: Any] = audio.headers.isEmpty
-                ? [:] : ["AVURLAssetHTTPHeaderFieldsKey": audio.headers]
-            asset = AVURLAsset(url: audio.url, options: options)
+            asset = HeaderedMediaAsset.make(url: audio.url, headers: audio.headers)
         }
         return QueueEntry(
             chapterIndex: index,

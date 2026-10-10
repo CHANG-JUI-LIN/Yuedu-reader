@@ -235,6 +235,26 @@ private extension HTMLAttributedStringBuilder.ElementNode {
                 node = .text("")
             }
 
+        case "iframe":
+            let src = (attributes["src"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = attributes["title"] ?? attributes["aria-label"]
+            if !src.isEmpty, ReaderWebEmbed.isDirectMedia(src) {
+                // The iframe points straight at a video file: it is a video, and plays inline
+                // through the same player as `<video>`.
+                node = .media(EPUBMediaAttachment(kind: .video, sourceHref: src, title: title), style: style)
+            } else if ReaderWebEmbed.isEmbeddablePage(src), !isInvisibleIframe(style: style) {
+                node = .webEmbed(
+                    ReaderWebEmbed(src: src, title: title, referer: nil, aspectRatio: iframeAspectRatio),
+                    style: style
+                )
+            } else if resolvedStyle.isBlock {
+                // Relative / custom-scheme pages (EPUB-internal) and `data:` pages are not loaded
+                // into a web view; they keep the fallback content they always had.
+                node = .block(tag: tag, children: mappedChildren, style: style)
+            } else {
+                node = .inline(tag: tag, children: mappedChildren, style: style)
+            }
+
         case "object":
             let type = attributes["type"] ?? ""
             if !type.lowercased().hasPrefix("image/") {
@@ -432,6 +452,31 @@ private extension HTMLAttributedStringBuilder.ElementNode {
             title: attributes["title"] ?? attributes["aria-label"] ?? attributes["alt"],
             posterHref: attributes["poster"]
         )
+    }
+
+    /// A 0×0 or 1×1 iframe is a tracker, not content: it keeps the fallback it always had
+    /// instead of becoming a full-width card. (`display:none` ones never reach here — the styled
+    /// AST drops hidden elements.)
+    private func isInvisibleIframe(style: RenderStyle) -> Bool {
+        func attribute(_ key: String) -> Double? {
+            guard let raw = attributes[key]?.lowercased().replacingOccurrences(of: "px", with: "") else { return nil }
+            return Double(raw.trimmingCharacters(in: .whitespaces))
+        }
+        let widths = [attribute("width"), style.width.map(Double.init)].compactMap { $0 }
+        let heights = [attribute("height"), style.height.map(Double.init)].compactMap { $0 }
+        return widths.contains { $0 <= 1 } || heights.contains { $0 <= 1 }
+    }
+
+    /// height / width from an iframe's `width`/`height` attributes (plain numbers or `px`).
+    private var iframeAspectRatio: CGFloat? {
+        func number(_ key: String) -> CGFloat? {
+            guard let raw = attributes[key]?.lowercased().replacingOccurrences(of: "px", with: ""),
+                  let value = Double(raw.trimmingCharacters(in: .whitespaces)), value > 0
+            else { return nil }
+            return CGFloat(value)
+        }
+        guard let width = number("width"), let height = number("height") else { return nil }
+        return height / width
     }
 
     private var mediaSource: String {

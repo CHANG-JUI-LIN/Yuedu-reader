@@ -263,6 +263,8 @@ enum MarkdownRenderableNodeConverter {
             return table.accessibilityText
         case .media(let media, _):
             return media.title ?? media.sourceHref
+        case .webEmbed(let embed, _):
+            return embed.title ?? embed.host
         case .unsupportedInteractive(_, _, let children, _):
             return flatten(children)
         case .commentBadge:

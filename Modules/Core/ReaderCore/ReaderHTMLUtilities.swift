@@ -892,6 +892,7 @@ enum ReaderHTMLUtilities {
         reviewContext: LegadoReviewContext? = nil
     ) -> String {
         var result = rewriteLegadoImageClickConfigs(html, reviewContext: reviewContext)
+        result = carryingMediaRequestHeaders(result)
 
         // Strip `,{…}` click-config suffixes that sit at the very end of an attribute value
         // (immediately followed by a closing quote / tag-end / whitespace). Anchoring on the
@@ -1601,6 +1602,61 @@ enum ReaderHTMLUtilities {
         let encoded = OnlineImageRequestOptions.encoding(src: source, headers: headers)
         guard encoded != source else { return tag }
         return ns.replacingCharacters(in: match.range(at: 2), with: encoded)
+    }
+
+    private static let mediaTagRegex = try! NSRegularExpression(
+        pattern: #"<(?:video|audio|source)\b[^>]*>"#, options: [.caseInsensitive]
+    )
+    private static let mediaURLAttributeTailRegex = try! NSRegularExpression(
+        pattern: #"\b(?:src|poster)\s*=\s*["']([^"']*)$"#, options: [.caseInsensitive]
+    )
+
+    /// Moves each `,{json}` option block on a `<video>`/`<audio>`/`<source>` `src` or `poster`
+    /// onto that URL as an `OnlineImageRequestOptions` fragment, before the generic suffix strip
+    /// below would delete it. A media tag can carry two blocks (`src` and `poster`), so every
+    /// block is handled, not just the first one the image path looks at.
+    static func carryingMediaRequestHeaders(_ html: String) -> String {
+        guard html.containsMarker(",{"),
+              html.containsMarker("<video", ignoringCase: true)
+                || html.containsMarker("<audio", ignoringCase: true)
+        else { return html }
+        let ns = html as NSString
+        let matches = mediaTagRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return html }
+        var result = ""
+        var cursor = 0
+        for match in matches {
+            result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            result += carryingMediaRequestHeaders(inTag: ns.substring(with: match.range))
+            cursor = NSMaxRange(match.range)
+        }
+        result += ns.substring(from: cursor)
+        return result
+    }
+
+    private static func carryingMediaRequestHeaders(inTag original: String) -> String {
+        var tag = original
+        while let config = legadoClickConfigMatch(in: tag) {
+            let ns = tag as NSString
+            let suffix = ns.substring(with: config.range)
+            let before = ns.substring(to: config.range.location)
+            let after = ns.substring(from: NSMaxRange(config.range))
+            let headers = OnlineImageRequestOptions.headers(fromOptionSuffix: suffix)
+            let beforeNS = before as NSString
+            guard !headers.isEmpty,
+                  let value = mediaURLAttributeTailRegex.firstMatch(
+                    in: before, range: NSRange(location: 0, length: beforeNS.length)
+                  )
+            else {
+                tag = before + after
+                continue
+            }
+            let urlRange = value.range(at: 1)
+            let url = beforeNS.substring(with: urlRange)
+            let encoded = OnlineImageRequestOptions.encoding(src: url, headers: headers)
+            tag = beforeNS.replacingCharacters(in: urlRange, with: encoded) + after
+        }
+        return tag
     }
 
     private static func legadoClickConfigMatch(in text: String) -> NSTextCheckingResult? {

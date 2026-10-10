@@ -51,6 +51,8 @@ final class CoreTextPaginator {
         let alt: String?
         let linkHref: String?
         let mediaAttachment: EPUBMediaAttachment?
+        /// An `<iframe>` page's card: tapping it loads the page in place.
+        let webEmbed: ReaderWebEmbed?
         let originalSize: CGSize
         let linkRegions: [ImageLinkRegion]
         let allowsPreview: Bool
@@ -63,6 +65,7 @@ final class CoreTextPaginator {
             alt: String? = nil,
             linkHref: String? = nil,
             mediaAttachment: EPUBMediaAttachment? = nil,
+            webEmbed: ReaderWebEmbed? = nil,
             originalSize: CGSize? = nil,
             linkRegions: [ImageLinkRegion] = [],
             allowsPreview: Bool = true
@@ -74,6 +77,7 @@ final class CoreTextPaginator {
             self.alt = alt
             self.linkHref = linkHref
             self.mediaAttachment = mediaAttachment
+            self.webEmbed = webEmbed
             self.originalSize = originalSize ?? image.size
             self.linkRegions = linkRegions
             self.allowsPreview = allowsPreview
@@ -117,6 +121,7 @@ final class CoreTextPaginator {
                 alt: alt,
                 linkHref: href,
                 mediaAttachment: mediaAttachment,
+                webEmbed: webEmbed,
                 originalSize: originalSize,
                 linkRegions: linkRegions,
                 allowsPreview: allowsPreview
@@ -2454,6 +2459,7 @@ final class CoreTextPaginator {
                             alt: info.alt,
                             linkHref: linkHref?.isEmpty == false ? linkHref : nil,
                             mediaAttachment: mediaAttachment,
+                            webEmbed: attrs[HTMLAttributedStringBuilder.webEmbedAttribute] as? ReaderWebEmbed,
                             originalSize: img.size,
                             linkRegions: info.linkRegions,
                             allowsPreview: info.allowsPreview
@@ -3267,6 +3273,7 @@ final class CoreTextPaginator {
         var alt: String?
         var linkHref: String?
         var mediaAttachment: EPUBMediaAttachment?
+        var webEmbed: ReaderWebEmbed?
         var linkRegions: [ImageLinkRegion] = []
         var allowsPreview = true
         let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
@@ -3302,10 +3309,15 @@ final class CoreTextPaginator {
                     at: effectiveRange.location,
                     effectiveRange: nil
                 ) as? EPUBMediaAttachment
+                webEmbed = attrStr.attribute(
+                    HTMLAttributedStringBuilder.webEmbedAttribute,
+                    at: effectiveRange.location,
+                    effectiveRange: nil
+                ) as? ReaderWebEmbed
                 stop.pointee = true
             }
             if sourceHref != nil || alt != nil || linkHref != nil || mediaAttachment != nil
-                || !linkRegions.isEmpty || !allowsPreview {
+                || webEmbed != nil || !linkRegions.isEmpty || !allowsPreview {
                 break
             }
         }
@@ -3319,6 +3331,7 @@ final class CoreTextPaginator {
             alt: alt,
             linkHref: linkHref,
             mediaAttachment: mediaAttachment,
+            webEmbed: webEmbed,
             originalSize: image.size,
             linkRegions: linkRegions,
             allowsPreview: allowsPreview

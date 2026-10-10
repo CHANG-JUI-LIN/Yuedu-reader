@@ -350,6 +350,26 @@ struct LegadoHTTPResult {
     }
     nonisolated(unsafe) private static var _sharedCaptchaPresenter: CaptchaPresenter?
 
+    /// Plays a source's video in the native full-screen player — legado-E
+    /// `java.openVideoPlayer(url, title)`. The request already carries the URL's `,{headers}`
+    /// option, the source's header map and its cookies (`sourceBrowserRequest`), which is what
+    /// the video CDN checks. Installed at launch next to `sharedBrowserPresenter`.
+    typealias VideoPresenter = (URLRequest, String) -> Void
+
+    static var sharedVideoPresenter: VideoPresenter? {
+        get {
+            sharedBrowserPresenterLock.lock()
+            defer { sharedBrowserPresenterLock.unlock() }
+            return _sharedVideoPresenter
+        }
+        set {
+            sharedBrowserPresenterLock.lock()
+            defer { sharedBrowserPresenterLock.unlock() }
+            _sharedVideoPresenter = newValue
+        }
+    }
+    nonisolated(unsafe) private static var _sharedVideoPresenter: VideoPresenter?
+
     /// The attached source's name and URL, for the captcha sheet (which can 停用 or 刪除 it).
     var sourceIdentityProvider: (() -> (name: String, url: String))?
 
@@ -1862,9 +1882,19 @@ struct LegadoHTTPResult {
             && UUID(uuidString: value) != nil
     }
 
-    /// Opens a video player (stub — falls back to browser).
+    /// legado-E `java.openVideoPlayer(url, title[, isFloat])`: the native full-screen player.
+    /// legado-E's floating-window variant (`isFloat`) has no counterpart here; a third argument
+    /// is ignored and the video opens full screen.
     func openVideoPlayer(_ url: String, _ title: String) {
-        startBrowser(url, title)
+        guard let request = sourceBrowserRequest(urlString: url) else {
+            AppLogger.parse("⟐ openVideoPlayer: not an http(s) video URL", context: ["url": String(url.prefix(160))])
+            return
+        }
+        guard let presenter = Self.sharedVideoPresenter else {
+            AppLogger.parse("⟐ openVideoPlayer: no video presenter installed", context: [:])
+            return
+        }
+        presenter(request, title)
     }
 
     /// Legado `java.upLoginData(map)` — merge the given map into the source's stored login data

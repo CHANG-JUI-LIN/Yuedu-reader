@@ -56,6 +56,8 @@ final class HTMLAttributedStringBuilder {
     static let unsupportedInteractiveAttribute = NSAttributedString.Key("ReaderUnsupportedInteractive")
     /// Marker attribute for tappable EPUB audio/video placeholders.
     static let mediaAttachmentAttribute = NSAttributedString.Key("ReaderEPUBMediaAttachment")
+    /// Marker attribute for a tap-to-load web embed card (`ReaderWebEmbed`, from an `<iframe>`).
+    static let webEmbedAttribute = NSAttributedString.Key("ReaderWebEmbed")
     /// Marker attribute for a CSS-floated element (e.g. `img.left { float:left; width:50% }`). Value is a
     /// `FloatPlaceholder`. The marker itself is a zero-width character placed at the float's anchor point in
     /// the text flow; the paginator carves a notch out of the page so following text wraps beside the float.

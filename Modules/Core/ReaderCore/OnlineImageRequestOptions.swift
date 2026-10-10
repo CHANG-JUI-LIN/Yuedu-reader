@@ -15,8 +15,12 @@ import Foundation
 /// attribute parsing, and — unlike a marker attribute — travels with the src through the render IR,
 /// the offline manifest and the disk cache without any of them having to know about it.
 ///
-/// One encode point (`ReaderHTMLUtilities.rewriteLegadoImageTag`), one decode point
-/// (`OnlineImageLoader`); everything in between just sees a slightly longer URL.
+/// The same holds for `<video>`/`<audio>`/`<source>` `src` and `poster`: 起点's 彩蛋 videos
+/// answer 403 without the `Referer` their source declares this way.
+///
+/// Encode points: `ReaderHTMLUtilities.rewriteLegadoImageTag` and `carryingMediaRequestHeaders`.
+/// Decode points: `OnlineImageLoader` (images, posters) and `EPUBVideoPlaybackManager` (playback);
+/// everything in between just sees a slightly longer URL.
 enum OnlineImageRequestOptions {
 
     /// Fragment marker. `#` + this + base64url(JSON object of headers).
@@ -28,10 +32,10 @@ enum OnlineImageRequestOptions {
         guard suffix.range(of: "\"headers\"") != nil || suffix.range(of: "'headers'") != nil else {
             return [:]
         }
-        // The suffix starts at the `,` Legado appends; the object itself is what follows.
-        let json = suffix.hasPrefix(",") ? String(suffix.dropFirst()) : suffix
-        guard let data = json.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        // Legado reads the option block leniently (GSON), so `{'headers':{…}}` works there as
+        // well as strict JSON; the shared click-config parser accepts both forms. Strict-only
+        // parsing here returned no headers for single-quoted blocks without a word in the log.
+        guard let object = ReaderHTMLUtilities.legadoClickConfigObject(fromConfigSuffix: suffix),
               let raw = object["headers"] as? [String: Any]
         else { return [:] }
         return raw.compactMapValues { $0 as? String }

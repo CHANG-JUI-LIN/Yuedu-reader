@@ -178,20 +178,15 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     /// mistaken for the user manually scrolling away from the narration.
     private var isAutoScrollingPlayback = false
     private var textAnnotations: [CoreTextTextAnnotation] = []
-    private var inlineVideoControllers: [String: AVPlayerViewController] = [:]
-    var inlineVideoControllerCountForTesting: Int { inlineVideoControllers.count }
+    /// Live views (video players, `<iframe>` pages) over the visible chunks' placeholders.
+    private lazy var liveViews = InlineLiveViewHost(owner: self)
+    var inlineVideoControllerCountForTesting: Int { liveViews.count }
     private lazy var tapGesture: UITapGestureRecognizer = {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tap.cancelsTouchesInView = false
         tap.delegate = self
         return tap
     }()
-
-    deinit {
-        for (key, controller) in Array(inlineVideoControllers) {
-            detachInlineVideoController(key: key, controller: controller)
-        }
-    }
 
     init(
         engine: CoreTextScrollEngine,
@@ -632,7 +627,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         applyReadingPositionIfPossible(cause: .initialLayout)
         resolveVisibleViewport()
         verifyForegroundRestoreIfNeeded()
-        reconcileInlineVideos()
+        reconcileInlineLiveViews()
     }
 
     /// The first layout pass after returning to the foreground, compared against where the
@@ -729,7 +724,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             displayedCount = engine.chunks.count
             warmChunks(around: visibleProgressRow(), force: true)
             collectionView.reloadData()
-            reconcileInlineVideos()
+            reconcileInlineLiveViews()
         }
     }
 
@@ -1065,7 +1060,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             applyChunkInsertion(range)
         }
 
-        reconcileInlineVideos()
+        reconcileInlineLiveViews()
     }
 
     /// Commit new items and the live anchor correction together, for both paint
@@ -1299,8 +1294,12 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             onInternalLinkTap?(href)
             return
         }
-        if let media = mediaAttachment(at: point) {
-            handleMediaTap(media)
+        if let attachment = liveOrMediaAttachment(at: point) {
+            if let content = InlineLiveContent(attachment) {
+                startInline(content)
+            } else if let media = attachment.mediaAttachment {
+                presentEPUBMedia(media)
+            }
             return
         }
 
@@ -1324,13 +1323,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         onTap?()
     }
 
-    private func mediaAttachment(at point: CGPoint) -> EPUBMediaAttachment? {
+    private func liveOrMediaAttachment(at point: CGPoint) -> CoreTextPaginator.RenderedAttachment? {
         guard let (_, chunk, localPoint) = hitTestChunk(at: point) else { return nil }
         let attachments = chunk.attachments + chunk.blockRenderables.compactMap(\.imageAttachment)
         return attachments.first { attachment in
-            attachment.mediaAttachment != nil
+            (attachment.mediaAttachment != nil || attachment.webEmbed != nil)
                 && attachment.rect.insetBy(dx: -8, dy: -8).contains(localPoint)
-        }?.mediaAttachment
+        }
     }
 
     private func attachmentLinkTarget(
@@ -1366,94 +1365,47 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
 
     func handleMediaTap(_ media: EPUBMediaAttachment) {
         if media.kind == .video {
-            startInlineVideo(media)
+            startInline(.video(media))
         } else {
             presentEPUBMedia(media)
         }
     }
 
-    private func startInlineVideo(_ media: EPUBMediaAttachment) {
-        guard let visible = visibleVideoAttachments().first(where: { $0.media.sourceHref == media.sourceHref }) else {
-            presentEPUBMedia(media)
+    private func startInline(_ content: InlineLiveContent) {
+        guard let visible = visibleLiveAttachments().first(where: { $0.content.key == content.key }) else {
+            if case InlineLiveContent.video(let media) = content { presentEPUBMedia(media) }
             return
         }
-        embedInlineVideo(media: visible.media, frame: visible.frame)
+        liveViews.start(content, frame: visible.frame)
     }
 
-    private func reconcileInlineVideos() {
-        let visibleVideos = visibleVideoAttachments()
-        let visibleKeys = Set(visibleVideos.map(\.media.sourceHref))
-        for (key, controller) in Array(inlineVideoControllers) where !visibleKeys.contains(key) {
-            detachInlineVideoController(key: key, controller: controller)
-        }
-        for video in visibleVideos where EPUBVideoPlaybackManager.shared.isActive(video.media) {
-            embedInlineVideo(media: video.media, frame: video.frame)
-        }
+    private func reconcileInlineLiveViews() {
+        liveViews.reconcile(visibleLiveAttachments())
     }
 
-    private func embedInlineVideo(media: EPUBMediaAttachment, frame: CGRect) {
-        let controller: AVPlayerViewController
-        if let existing = inlineVideoControllers[media.sourceHref] {
-            controller = existing
-        } else {
-            controller = AVPlayerViewController()
-            controller.view.backgroundColor = .black
-            controller.videoGravity = .resizeAspect
-            controller.allowsPictureInPicturePlayback = true
-            addChild(controller)
-            controller.didMove(toParent: self)
-            inlineVideoControllers[media.sourceHref] = controller
-        }
-
-        if controller.view.superview !== view {
-            view.addSubview(controller.view)
-        }
-        controller.view.frame = frame
-
-        let startedFresh = !EPUBVideoPlaybackManager.shared.isActive(media)
-        Task { @MainActor [weak self, weak controller] in
-            guard let player = await EPUBVideoPlaybackManager.shared.player(for: media) else {
-                if let self, let controller {
-                    self.detachInlineVideoController(key: media.sourceHref, controller: controller)
-                }
-                return
-            }
-            controller?.player = player
-            if startedFresh { player.play() }
-        }
-    }
-
-    private func visibleVideoAttachments() -> [(media: EPUBMediaAttachment, frame: CGRect)] {
+    private func visibleLiveAttachments() -> [(content: InlineLiveContent, frame: CGRect)] {
         let browserVideos = collectionView.visibleCells.compactMap { $0 as? BrowserScrollTileCell }
-            .flatMap { cell -> [(media: EPUBMediaAttachment, frame: CGRect)] in
+            .flatMap { cell -> [(content: InlineLiveContent, frame: CGRect)] in
                 guard let tile = cell.currentTile else { return [] }
-                return cell.interactiveView.displayList.items.compactMap { item in
+                return cell.interactiveView.displayList.items.compactMap { item -> (content: InlineLiveContent, frame: CGRect)? in
                     guard case .image(let image) = item,
                           let media = tile.chapter.mediaAttachments[image.nodeID], media.kind == .video else { return nil }
                     let frame = cell.interactiveView.convert(image.rect.rawValue, to: view)
                     guard frame.intersects(view.bounds.insetBy(dx: -32, dy: -32)) else { return nil }
-                    return (media, frame)
+                    return (content: InlineLiveContent.video(media), frame: frame)
                 }
             }
         return browserVideos + collectionView.visibleCells.compactMap { $0 as? CoreTextChunkCollectionCell }
-            .flatMap { cell -> [(media: EPUBMediaAttachment, frame: CGRect)] in
+            .flatMap { cell -> [(content: InlineLiveContent, frame: CGRect)] in
                 guard let chunk = cell.currentChunk else { return [] }
                 let attachments = chunk.attachments + chunk.blockRenderables.compactMap(\.imageAttachment)
-                return attachments.compactMap { attachment in
-                    guard let media = attachment.mediaAttachment, media.kind == .video else { return nil }
+                return attachments.compactMap { attachment -> (content: InlineLiveContent, frame: CGRect)? in
+                    guard let content = InlineLiveContent(attachment) else { return nil }
                     let frame = cell.drawView.convert(attachment.rect, to: view)
                     guard frame.intersects(view.bounds.insetBy(dx: -32, dy: -32)) else { return nil }
-                    return (media, frame)
+                    return (content: content, frame: frame)
                 }
             }
-    }
-
-    private func detachInlineVideoController(key: String, controller: AVPlayerViewController) {
-        controller.willMove(toParent: nil)
-        controller.view.removeFromSuperview()
-        controller.removeFromParent()
-        controller.player = nil
-        inlineVideoControllers[key] = nil
     }
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
@@ -2018,6 +1970,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
            let chunk = engine.chunks[indexPath.item].legacyChunk {
             // Same sink as the centre tap, so VoiceOver reaches the reader toolbar.
             chunkCell.onAccessibilityMenu = { [weak self] in self?.onTap?() }
+            chunkCell.onStartLiveContent = { [weak self] content in self?.startInline(content) }
             chunkCell.rendersContentExternally = scrollAxis == .vertical && !chunk.writingMode.isVertical
             chunkCell.bind(
                 chunk: chunk,
@@ -2058,7 +2011,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             }
             chunkCell.applyPlaybackHighlight(playbackHighlight)
             chunkCell.applyAnnotations(textAnnotations)
-            reconcileInlineVideos()
+            reconcileInlineLiveViews()
         } else if let tileCell = cell as? BrowserScrollTileCell {
             // UIKit can prefetch this cell before a viewport commit changes
             // measured heights or restores drawing resources. Offscreen cells
@@ -2119,7 +2072,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             engine.ensureChapterBehind(of: chunks[visible.item].chapterIndex)
         }
 
-        reconcileInlineVideos()
+        reconcileInlineLiveViews()
 
         guard let path = visibleProgressIndexPath(), path.item < chunks.count else { return }
 

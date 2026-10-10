@@ -38,9 +38,16 @@ final class EPUBBackgroundAudioCoordinator {
         // Already playing this exact track — keep it going across the page turn.
         if urlString == currentSource, queuePlayer != nil { return }
 
-        guard let url = try? await EPUBMediaURLResolver.playableURL(
-            for: EPUBMediaAttachment(kind: .audio, sourceHref: urlString)
-        ) else {
+        let url: URL
+        do {
+            url = try await EPUBMediaURLResolver.playableRequest(
+                for: EPUBMediaAttachment(kind: .audio, sourceHref: urlString)
+            ).url
+        } catch {
+            AppLogger.error("EPUB background audio could not be resolved", context: [
+                "source": String(urlString.prefix(160)),
+                "error": String(describing: error),
+            ])
             stop()
             return
         }
