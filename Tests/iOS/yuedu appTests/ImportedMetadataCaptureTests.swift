@@ -46,6 +46,13 @@ struct ImportedMetadataCaptureTests {
             == .normalized(.calibreUUID, "6ba7b810-9dad-11d1-80b4-00c04fd430c8"))
         #expect(ImportedMetadataCapture.classify(OPF(value: "6BA7B810-9DAD-11D1-80B4-00C04FD430C8", scheme: "UUID"))
             == .normalized(.epubUniqueIdentifier, "6BA7B810-9DAD-11D1-80B4-00C04FD430C8"))
+        // OPF 3 has no opf:scheme; calibre's opf3.py writes the scheme into the text.
+        let calibre3 = [OPF(value: "calibre:42", scheme: nil), OPF(value: "uuid:6BA7B810-9DAD-11D1-80B4-00C04FD430C8", scheme: nil)]
+        #expect(ImportedMetadataCapture.classify(calibre3[0], in: calibre3) == nil)
+        #expect(ImportedMetadataCapture.classify(calibre3[1], in: calibre3)
+            == .normalized(.calibreUUID, "6ba7b810-9dad-11d1-80b4-00c04fd430c8"))
+        #expect(ImportedMetadataCapture.classify(calibre3[1]) == .normalized(.epubUniqueIdentifier, "uuid:6BA7B810-9DAD-11D1-80B4-00C04FD430C8"),
+                "without calibre's own identifier, a uuid: text is only a package id")
         #expect(ImportedMetadataCapture.classify(OPF(value: "urn:uuid:ABC-1", scheme: nil)) == .normalized(.epubUniqueIdentifier, "abc-1"))
         #expect(ImportedMetadataCapture.classify(OPF(value: "1234567890123", scheme: nil)) == .normalized(.epubUniqueIdentifier, "1234567890123"),
                 "13 digits with a wrong check digit are not an ISBN")

@@ -494,7 +494,7 @@ Branch `unified-library/1b-imported-metadata`, on `346327dd`. Merged into `main`
   - **Damaged files:** an undecodable file is kept aside (`<id>.corrupt-<mtime>.json`); an unreadable one is never written over.
   - **Removal:** `BookStore.delete` removes the copy's sidecar. `remove(notIn:)` runs only after a complete load and after a sync is applied, beside `removeChapters(notIn:)`. Corrupt backups are kept.
 - **OPF identifiers:** Readium drops every `dc:identifier` except the unique one (its `otherMetadata` excludes them all), so `PublicationSession.opfIdentifiers` reads them from the OPF with their `opf:scheme`. Languages, description, subjects, publishers and date come from Readium `Metadata`.
-  - Classification: ISBN by scheme, `urn:isbn:`, or a valid ISBN shape; anything else as `epubUniqueIdentifier`. 1b read Calibre's `opf:scheme="calibre"` as the Calibre uuid. That identifier is Calibre's application id, so 1c corrected it (`7a52d0a5`): the uuid is the `opf:scheme="uuid"` identifier of a package that also carries Calibre's own.
+  - Classification: ISBN by scheme, `urn:isbn:`, or a valid ISBN shape; anything else as `epubUniqueIdentifier`. 1b read Calibre's `opf:scheme="calibre"` as the Calibre uuid. That identifier is Calibre's application id, so 1c corrected it (`7a52d0a5`, and for OPF 3 in the commit after `dcc8584d`). The uuid is the `opf:scheme="uuid"` identifier (OPF 2) or the `uuid:` text (OPF 3, which has no `opf:scheme`) of a package that also carries Calibre's own `calibre` identifier.
 - **OPDS:** `OPDSEntry` gained `language` and `identifiers`, read from `dc:language` and `dc:identifier` in OPDS 1 (local names, since the parser processes namespaces) and from `metadata.language` and `identifier` in OPDS 2. `RemoteLibraryItem` keeps `authorNames`, `language` and `identifiers`, which `RemoteLibraryBookRoute.init(entry:)` passes on.
 - **Capture points:**
   - `importEpub`, after the copy is persisted;
@@ -545,6 +545,12 @@ Branch `unified-library/1c-work-index`, on `3accf360`. Not merged, not pushed.
   - **Spans:** `works.index.snapshot`, `works.index.build`, `works.index.load` and `works.search.local`, with counts only.
   - **File rules:** another `schemaVersion`, or a file that does not decode, is discarded and rebuilt. A file that cannot be read is never written over, and the index then lives in memory. Dates use the default `Double` encoding, because ISO 8601 drops the sub-second part of a stamp and every copy would look changed on the next launch.
 - **Each entry stores its folded title and author keys.** The first benchmark showed folding costs about 52 µs a string, nearly all of it in ICU's Traditional-Simplified transform, and the build folded the same strings several times. Caching the keys took the 7,000-entry pure build from 2,099 to 152 ms (Debug `-Onone`). Listing the sidecar folder once took a warm refresh from 209 to 77 ms.
+- **Constraint on the first caller (Phase 2 or the work page):** the main-actor half of `refresh()` calls `BookSourceStore.source(id:)`, and its `ensureLoaded()` waits on the main thread until the source library has been read. On a 50k-source library that can be seconds. Refresh only once the source store has loaded, or move that lookup off main. The benchmark passes no context, so it does not measure this. `works.index.snapshot` stayed under its 5 ms reporting threshold there and never logged.
+- **Rules 1c chose itself, for the maintainer to overturn:**
+  - `sameWork` overrides the content-kind and language rejections, while `differentWorks` always wins.
+  - A copy with no script, or no language, joins the only edition there is.
+  - `epubUniqueIdentifier` never merges.
+  - `7a52d0a5` and its OPF 3 follow-up change how the already-merged 1b code classifies identifiers.
 - **Deviations from the plan and design:**
   - The only input in Phase 1 is copies. Design §7.3 also lists remote records the reader acted on, but nothing stores those yet. Acting on one (reading, adding) already makes it a copy.
   - The benchmark's 5,000 remote records go to the pure builder for the same reason.
@@ -553,7 +559,7 @@ Branch `unified-library/1c-work-index`, on `3accf360`. Not merged, not pushed.
 ```
 ✔ Test run with 33 tests in 4 suites passed after 2.440 seconds.
    (WorkMatchKeyTests, WorkIndexTests, WorkIndexServiceTests, WorkIndexBenchmarkTests)
-✔ Test run with 110 tests in 12 suites passed after 0.825 seconds, after the last edit.
+✔ Test run with 110 tests in 12 suites passed after 0.977 seconds, after the last edit.
    (WorkMatchKeyTests, WorkIndexTests, WorkIndexServiceTests, ImportedMetadataCaptureTests,
     ImportedMetadataStoreTests, ImportedMetadataImportTests, SourceRecordDerivationTests,
     BookStoreMetadataWriteBudgetTests, ICloudSyncChangeDetectionTests, RemoteLibraryServiceTests,
