@@ -18,6 +18,23 @@ enum ImportedMetadataCapture {
         published: Date?,
         now: Date = Date()
     ) -> ImportedMetadata {
+        let read = epubFields(sourceItem: sourceItem, identifiers: identifiers, languages: languages, description: description,
+                              subjects: subjects, publishers: publishers, published: published, now: now)
+        return ImportedMetadata(copyID: copy.id, sourceItem: sourceItem, identifiers: read.identifiers, values: read.values)
+    }
+
+    /// What an EPUB's package says, for a copy (1b) or for a record WebDAV indexing found (2e):
+    /// one reading of the OPF either way.
+    static func epubFields(
+        sourceItem: SourceItemKey,
+        identifiers: [PublicationSession.OPFIdentifier],
+        languages: [String],
+        description: String?,
+        subjects: [String],
+        publishers: [String],
+        published: Date?,
+        now: Date = Date()
+    ) -> (identifiers: [ExternalIdentifier], values: [MetadataValue]) {
         var values: [MetadataValue] = []
         func add(_ field: MetadataField, _ payload: MetadataPayload?) {
             guard let payload else { return }
@@ -28,12 +45,7 @@ enum ImportedMetadataCapture {
         add(.tags, texts(subjects))
         add(.publisher, text(publishers.first))
         add(.publishedDate, published.map(MetadataPayload.date))
-        return ImportedMetadata(
-            copyID: copy.id,
-            sourceItem: sourceItem,
-            identifiers: unique(identifiers.compactMap { classify($0, in: identifiers) }),
-            values: values
-        )
+        return (unique(identifiers.compactMap { classify($0, in: identifiers) }), values)
     }
 
     /// An OPF identifier as an `ExternalIdentifier`: ISBNs as `isbn13`, a Calibre book's uuid

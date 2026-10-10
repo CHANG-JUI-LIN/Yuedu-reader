@@ -277,6 +277,18 @@ struct WebDAVIndexCoordinatorTests {
         #expect(context.coordinator.statuses[connection.id] == .indexed(6))
     }
 
+    @Test("becoming active before the store is attached still starts indexing once attached")
+    func activeBeforeAttach() async throws {
+        let context = try Context()
+        defer { context.cleanup() }
+        let connection = context.addWebDAV()
+        context.coordinator.setActive(true)
+        await context.coordinator.attach(store: context.records)
+        await context.coordinator.waitForIdleForTesting()
+        context.records.waitForPendingWritesForTesting()
+        #expect(context.records.state(connectionID: connection.id)?.records.count == 6)
+    }
+
     @Test("nothing runs off Wi-Fi, and the row says why")
     func offWiFi() async throws {
         let context = try Context(onWiFi: false)

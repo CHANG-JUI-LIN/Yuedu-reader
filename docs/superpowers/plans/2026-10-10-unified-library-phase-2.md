@@ -465,9 +465,9 @@ Phase 2 adds:
 - [x] 2b: 設定 → 遠端書庫 manages every connection; book-source management pushed everywhere; bookshelf ＋ unchanged.
 - [x] 2c: row status from a `SourceItemKey` lookup; no per-row scan.
 - [x] 2d: WebDAV indexed per the maintainer's rules, with measured limits and visible status.
-- [ ] 2e: OPF and covers for indexed EPUBs, most incomplete first.
-- [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 2 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
-- [ ] Rollback:
+- [x] 2e: OPF and covers for indexed EPUBs, most incomplete first.
+- [x] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 2 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
+- [x] Rollback:
   - 2a and 2c are code only.
   - Reverting 2b restores the iOS 18 sheet.
   - 2d and 2e: revert, then delete `Works/remote/` and `Caches/Works/covers/`. The `indexesBooks` field is ignored by older builds.
@@ -609,7 +609,7 @@ UI: RemoteLibraryNavigationUITests, PublicLibraryStorefrontUITests (3), PublicLi
 
 ### 2d (2026-10-11)
 
-Branch `unified-library/2d-webdav-index`, on `9466ab8f`. Merged by the maintainer's standing instruction of 2026-10-11 (merge each step that passes, do not push).
+Branch `unified-library/2d-webdav-index`, on `9466ab8f`. Merged into `main` at `682289db` by the maintainer's standing instruction of 2026-10-11 (merge each step that passes, do not push).
 
 - **Strings:** the seven reviewed strings, in five languages. The maintainer kept 「在背景建立書籍索引」 and the proposed status wording.
 - **`OPDSCatalog.indexesBooks: Bool?`** (decoded with `decodeIfPresent`). `OPDSCatalogStore.indexesBooks(_:)` resolves it:
@@ -687,3 +687,50 @@ After the review fixes:
    WebDAVIndexLifecycleTests, BackupAccountCopyTests, RemoteRecordStoreTests, WorkIndexRemoteRecordsTests,
    RemoteLibraryConnectionTests)
 ```
+
+### 2e (2026-10-11)
+
+Branch `unified-library/2e-webdav-metadata`, on `682289db`. Merged by the maintainer's standing instruction of 2026-10-11.
+
+- **`PublicationSession.remotePackageMetadata(remoteURL:httpClient:coverByteLimit:)`:**
+  - It opens the package over range requests (`openPackage`, the same Readium opener reading uses) and returns its `Metadata`, its OPF identifiers, and the cover.
+  - The cover is read only when its ZIP entry's size fits the limit. Reading past an entry's size raises `rangeOutOfBounds`, as the first tests showed, so the size decides.
+  - No session is built, no spine cache is written, and the publication is closed.
+- **One reading of an EPUB:** `ImportedMetadataCapture.epubFields` builds identifiers and values for 1b's copies and for 2e's records alike. The Calibre package rules from 1c apply to both.
+  - 2e also keeps the package's authors and first series. A WebDAV record has neither from its file name, and §8.3 scores both.
+- **`IndexedFile`** gains `identifiers`, `values`, `cover` (a file in `Caches/Works/covers`, named by a hash of the key) and `filled` (`.read` or `.failed(kind)`).
+  - `completeness` scores cover, summary, authors, tags, language and series with constant weights.
+  - **A recrawl keeps what was read from a file whose ETag, date and size are unchanged.** A changed file is read again.
+- **`WebDAVMetadataFiller`:**
+  - It reads a connection's unread EPUBs, fewest fields first, then by key.
+  - **A book's own failure** (parse, rejected) is recorded and not retried until the file changes.
+  - **Authentication, network or timeout** stops the run and saves.
+  - It checks the stop flag after every book and saves on every stop, plus every 500 books (`WebDAVFillLimits.saveEvery`), so an app kill loses at most that many.
+- **Coordinator:**
+  - A connection's EPUBs are read after its crawl completes or reaches the limit, on the same client rules (Wi-Fi, foreground, own client) and the same stops.
+  - A fill that stops on a failure that is not a book's own is held until the app returns to the foreground or the connections change, so a failing server is not asked again at once.
+  - Status rows do not change while reading; it is quiet work behind 已建立索引.
+- **Work index:** remote entries carry the read identifiers and language. A WebDAV EPUB's ISBN joins the same book on the shelf at A-level (`WebDAVFillIntegrationTests`).
+- **Deviations from the plan:**
+  - **No per-book byte budget:** measurement showed a fixed small cost instead. The cover limit (1 MB) is the only size limit.
+  - **No completeness tie-break by newness:** records have no date beyond the server's. Ties go by key.
+  - **Covers of a removed connection stay in `Caches`** until the system clears it (discardable).
+- **Measured against the local Apache** (50 uploaded EPUBs of about 1 MB each, with a cover and an ISBN; Debug):
+  - All 50 were read in 520 ms, about 10 ms a book on localhost.
+  - **3 requests and about 143 KB a book** (the ZIP tail and read-ahead), of a 981 KB file.
+  - A NAS adds three round trips a book.
+- **A bug found while verifying:** the end-to-end UI test failed once with no request reaching the server. App launch set the coordinator's phase after an `await` (`attach`), so a launch that became active during that await was overwritten with the earlier "inactive" and never indexed. The phase is now set synchronously and by every change, never after the attach. A unit test pins that ordering (`activeBeforeAttach`), and the end-to-end test passed again with the full regression.
+
+```
+✔ Test run with 52 tests in 12 suites passed (RemoteEPUBMetadataReaderTests, WebDAVMetadataFillerTests,
+   WebDAVFillIntegrationTests, the 2d suites, WorkIndexServiceTests, ImportedMetadataCaptureTests,
+   ImportedMetadataImportTests, RemoteEPUBPublicationTests)
+Final: §19 Phase 2 regression plus every 2a–2e suite, WorkIndex*, ImportedMetadata*,
+BookStoreMetadataWriteBudgetTests, ICloudSyncChangeDetectionTests:
+✔ Test run with 250 tests in 43 suites passed after 1.973 seconds; XCTest RemotePDFReaderTests passed
+UI (with TEST_RUNNER_YUEDU_WEBDAV_BENCHMARK_URL): RemoteLibrarySettingsUITests (2, end to end included) passed
+```
+
+### Phase 2 (2026-10-11)
+
+All five steps are merged into `main`; nothing is pushed. The local Apache server used for 2d and 2e was stopped and its scratch tree removed afterwards.

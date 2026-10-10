@@ -35,6 +35,7 @@ final class WebDAVIndexCoordinator: ObservableObject {
     static let shared = WebDAVIndexCoordinator()
 
     typealias Lister = @Sendable (URL) async throws -> [WebDAVBrowseClient.Entry]
+    typealias PackageReader = @Sendable (URL) async throws -> PublicationSession.RemotePackageMetadata
 
     @Published private(set) var statuses: [String: WebDAVIndexStatus] = [:]
 
@@ -43,6 +44,13 @@ final class WebDAVIndexCoordinator: ObservableObject {
     private let limits: WebDAVIndexLimits
     private let now: @Sendable () -> Date
     private let makeLister: @MainActor (OPDSCatalog, OPDSCatalogStore) -> Lister
+    private let makeReader: @MainActor (OPDSCatalog, OPDSCatalogStore) -> PackageReader
+    private let fillLimits: WebDAVFillLimits
+    private let coverDirectory: URL
+    /// Connections whose last fill stopped on a failure that is not a book's own (network,
+    /// authentication): not refilled until the app returns to the foreground or the
+    /// connections change, so a failing server is not asked again at once.
+    private var fillHeld: Set<String> = []
 
     private var store: RemoteRecordStore?
     private var isActive = false
@@ -60,6 +68,8 @@ final class WebDAVIndexCoordinator: ObservableObject {
         var isCrawling: Bool
         var lastCompletedAt: Date?
         var outcome: WebDAVIndexOutcome?
+        /// EPUBs whose package is not read yet (2e).
+        var unfilledCount: Int
 
         init(_ state: WebDAVIndexState) {
             root = state.root
@@ -68,11 +78,14 @@ final class WebDAVIndexCoordinator: ObservableObject {
             isCrawling = state.isCrawling
             lastCompletedAt = state.lastCompletedAt
             outcome = state.outcome
+            unfilledCount = state.records.filter(\.needsFill).count
         }
     }
 
     private final class Running {
+        enum Kind { case crawl, fill }
         let connectionID: String
+        var kind: Kind = .crawl
         let stopFlag = StopFlag()
         var task: Task<Void, Never>?
         var stopReason: WebDAVIndexPauseReason?
@@ -91,14 +104,26 @@ final class WebDAVIndexCoordinator: ObservableObject {
         connections: OPDSCatalogStore = .shared,
         network: NetworkPathProviding = NetworkPathMonitor.shared,
         limits: WebDAVIndexLimits = .standard,
+        fillLimits: WebDAVFillLimits = .standard,
+        coverDirectory: URL = WebDAVIndexCoordinator.defaultCoverDirectory,
         now: @escaping @Sendable () -> Date = { Date() },
-        makeLister: @escaping @MainActor (OPDSCatalog, OPDSCatalogStore) -> Lister = WebDAVIndexCoordinator.liveLister
+        makeLister: @escaping @MainActor (OPDSCatalog, OPDSCatalogStore) -> Lister = WebDAVIndexCoordinator.liveLister,
+        makeReader: @escaping @MainActor (OPDSCatalog, OPDSCatalogStore) -> PackageReader = WebDAVIndexCoordinator.liveReader
     ) {
         self.connections = connections
         self.network = network
         self.limits = limits
+        self.fillLimits = fillLimits
+        self.coverDirectory = coverDirectory
         self.now = now
         self.makeLister = makeLister
+        self.makeReader = makeReader
+    }
+
+    /// `Caches/Works/covers`: discardable (design §10.1).
+    nonisolated static var defaultCoverDirectory: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Works", isDirectory: true).appendingPathComponent("covers", isDirectory: true)
     }
 
     /// Starts watching the connections and the network. Called once with the app's store.
@@ -127,8 +152,10 @@ final class WebDAVIndexCoordinator: ObservableObject {
         evaluate()
     }
 
-    /// From the scene phase: active, or not.
+    /// From the scene phase: active, or not. It may come before `attach`; the coordinator keeps
+    /// it and acts on it once attached.
     func setActive(_ active: Bool) {
+        if active, !isActive { fillHeld.removeAll() }
         isActive = active
         evaluate()
     }
@@ -155,6 +182,7 @@ final class WebDAVIndexCoordinator: ObservableObject {
         knownConnectionIDs = current
         // An edit is the only way credentials change.
         authStopped.removeAll()
+        fillHeld.removeAll()
         evaluate()
     }
 
@@ -176,9 +204,12 @@ final class WebDAVIndexCoordinator: ObservableObject {
             }
         }
 
-        if running == nil, isActive, onWiFi,
-           let next = webDAV.first(where: { connections.indexesBooks($0) && needsWork($0) }) {
-            start(next, store: store)
+        if running == nil, isActive, onWiFi {
+            if let next = webDAV.first(where: { connections.indexesBooks($0) && needsWork($0) }) {
+                start(next, store: store)
+            } else if let next = webDAV.first(where: { connections.indexesBooks($0) && needsFill($0) }) {
+                startFill(next, store: store)
+            }
         }
         refreshStatuses(webDAV, onWiFi: onWiFi)
     }
@@ -191,6 +222,57 @@ final class WebDAVIndexCoordinator: ObservableObject {
         if summary.isCrawling { return true }
         guard let completed = summary.lastCompletedAt else { return true }
         return now().timeIntervalSince(completed) >= limits.recrawlInterval
+    }
+
+    /// 2e: a connection whose crawl is complete and whose EPUBs are not all read.
+    private func needsFill(_ connection: OPDSCatalog) -> Bool {
+        guard !authStopped.contains(connection.id), !fillHeld.contains(connection.id),
+              let summary = summaries[connection.id], !summary.isCrawling, summary.unfilledCount > 0 else { return false }
+        switch summary.outcome {
+        case .completed, .limitReached, .empty, nil: return true
+        case .paused, .failed: return false
+        }
+    }
+
+    private func startFill(_ connection: OPDSCatalog, store: RemoteRecordStore) {
+        let running = Running(connectionID: connection.id)
+        running.kind = .fill
+        self.running = running
+        let filler = WebDAVMetadataFiller(
+            connectionID: connection.id, limits: fillLimits, read: makeReader(connection, connections),
+            coverDirectory: coverDirectory,
+            save: { [weak self] state in
+                store.save(state)
+                let summary = Summary(state)
+                Task { @MainActor in self?.noteProgress(state.connectionID, summary) }
+            },
+            now: now
+        )
+        let flag = running.stopFlag
+        running.task = Task { [weak self] in
+            guard let state = await Task.detached(priority: .utility, operation: { store.state(connectionID: connection.id) }).value else {
+                self?.finishedFill(running, result: nil)
+                return
+            }
+            let result = await filler.run(from: state, stopAfterBatch: { flag.isSet })
+            self?.finishedFill(running, result: result)
+        }
+        AppLogger.cache("⟐ WebDAV metadata read started", context: ["connection": connection.id])
+    }
+
+    private func finishedFill(_ running: Running, result: WebDAVIndexState?) {
+        if let result, knownConnectionIDs.contains(running.connectionID) {
+            summaries[running.connectionID] = Summary(result)
+            // Stopped with books left and nobody asked it to: a failure that is not a book's own.
+            if running.stopReason == nil, !running.stopFlag.isSet, result.records.contains(where: \.needsFill) {
+                fillHeld.insert(running.connectionID)
+            }
+        } else if result == nil {
+            fillHeld.insert(running.connectionID)
+        }
+        running.hold?.release()
+        if self.running === running { self.running = nil }
+        evaluate()
     }
 
     private func start(_ connection: OPDSCatalog, store: RemoteRecordStore) {
@@ -260,7 +342,7 @@ final class WebDAVIndexCoordinator: ObservableObject {
         for connection in webDAV where connections.indexesBooks(connection) {
             let summary = summaries[connection.id]
             let count = summary?.visibleCount ?? 0
-            if running?.connectionID == connection.id {
+            if running?.connectionID == connection.id, running?.kind == .crawl {
                 statuses[connection.id] = .indexing(count)
                 continue
             }
@@ -290,13 +372,26 @@ final class WebDAVIndexCoordinator: ObservableObject {
     /// networks, which the shared client must not, and it never touches the store's unlocked
     /// client cache from off the main actor. The password is read here, on the main actor.
     static func liveLister(_ connection: OPDSCatalog, _ store: OPDSCatalogStore) -> Lister {
+        let password = store.password(for: connection)
+        let http = indexingClient(connection, password: password)
+        let client = WebDAVBrowseClient(serverUrl: connection.url, username: connection.username ?? "", password: password ?? "", httpClient: http)
+        return { try await client.list($0) }
+    }
+
+    /// 2e: one book's package over range requests, on the same kind of client.
+    static func liveReader(_ connection: OPDSCatalog, _ store: OPDSCatalogStore) -> PackageReader {
+        let http = indexingClient(connection, password: store.password(for: connection))
+        let limit = WebDAVFillLimits.standard.coverByteLimit
+        return { url in
+            try await PublicationSession.remotePackageMetadata(remoteURL: url, httpClient: http, coverByteLimit: limit)
+        }
+    }
+
+    private static func indexingClient(_ connection: OPDSCatalog, password: String?) -> RemoteLibraryHTTPClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.allowsExpensiveNetworkAccess = false
         configuration.allowsConstrainedNetworkAccess = false
-        let password = store.password(for: connection)
         let base = RemoteLibraryConnection.normalizedURL(connection.url, kind: .webDAV) ?? URL(string: "https://invalid.invalid")!
-        let http = RemoteLibraryHTTPClient(baseURL: base, username: connection.username, password: password, configuration: configuration)
-        let client = WebDAVBrowseClient(serverUrl: connection.url, username: connection.username ?? "", password: password ?? "", httpClient: http)
-        return { try await client.list($0) }
+        return RemoteLibraryHTTPClient(baseURL: base, username: connection.username, password: password, configuration: configuration)
     }
 }

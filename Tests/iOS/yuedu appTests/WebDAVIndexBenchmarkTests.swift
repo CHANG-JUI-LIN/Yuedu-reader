@@ -1,4 +1,5 @@
 import Foundation
+import ReadiumShared
 import Testing
 @testable import yuedu_app
 
@@ -72,6 +73,42 @@ struct WebDAVIndexBenchmarkTests {
         print("⏱ WebDAV benchmark against \(base.absoluteString)\n  " + lines.joined(separator: "\n  "))
     }
 
+    @Test("reading the OPF and cover of real EPUBs over ranges (2e)")
+    func fillBenchmark() async throws {
+        // Upload 50 EPUBs of about 1 MB each (a cover, an ISBN, 1 MB of stored padding).
+        let folder = base.appendingPathComponent("fill-\(UUID().uuidString.prefix(8))/")
+        var mkcol = URLRequest(url: folder)
+        mkcol.httpMethod = "MKCOL"
+        _ = try await URLSession.shared.data(for: mkcol)
+        for index in 0..<50 {
+            var put = URLRequest(url: folder.appendingPathComponent("book-\(index).epub"))
+            put.httpMethod = "PUT"
+            _ = try await URLSession.shared.upload(for: put, from: try await FillFixtures.epub(padding: 1_000_000))
+        }
+        let files = try await client(root: folder).list(folder).filter(\.isImportableBook)
+        let counting = CountingHTTPClient(RemoteLibraryHTTPClient(baseURL: folder))
+        var state = WebDAVIndexState(connectionID: "bench", root: folder)
+        state.records = files.compactMap { entry in
+            SourceRecord.derived(from: entry, connectionID: "bench", root: folder).map {
+                IndexedFile(record: $0, etag: entry.etag, lastModified: entry.lastModified, size: entry.size)
+            }
+        }
+        let covers = FileManager.default.temporaryDirectory.appendingPathComponent("BenchCovers-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: covers) }
+        let filler = WebDAVMetadataFiller(connectionID: "bench", limits: .standard, read: { url in
+            try await PublicationSession.remotePackageMetadata(remoteURL: url, httpClient: counting, coverByteLimit: WebDAVFillLimits.standard.coverByteLimit)
+        }, coverDirectory: covers, save: { _ in }, now: { Date() })
+        let start = clock.now
+        let result = await filler.run(from: state, stopAfterBatch: { false })
+        let elapsed = clock.now - start
+        let read = result.records.filter { $0.filled == .read }.count
+        let withISBN = result.records.filter { $0.identifiers?.contains { $0.scheme == .isbn13 } == true }.count
+        print("⏱ WebDAV fill against \(folder.absoluteString)\n  \(read) of \(files.count) EPUBs read (\(withISBN) with ISBN, "
+            + "\(result.records.filter { $0.cover != nil }.count) covers) in \(ms(elapsed)) ms, \(ms(elapsed / max(read, 1))) ms a book; "
+            + "\(counting.requests / max(read, 1)) requests and \(counting.bytes / max(read, 1) / 1024) KB a book, file ~\(files.first.map { $0.size / 1024 } ?? 0) KB")
+        #expect(read == files.count)
+    }
+
     private func client(root: URL) -> WebDAVBrowseClient {
         WebDAVBrowseClient(serverUrl: root.absoluteString, username: "", password: "",
                            httpClient: RemoteLibraryHTTPClient(baseURL: root))
@@ -87,4 +124,23 @@ private final class FolderCounter: @unchecked Sendable {
     private var value = 0
     func increment() { lock.withLock { value += 1 } }
     var count: Int { lock.withLock { value } }
+}
+
+/// Counts requests and bytes on their way to a real client.
+private final class CountingHTTPClient: HTTPClient, @unchecked Sendable {
+    private let base: any HTTPClient
+    private let lock = NSLock()
+    private var requestCount = 0
+    private var byteCount = 0
+    init(_ base: any HTTPClient) { self.base = base }
+    var requests: Int { lock.withLock { requestCount } }
+    var bytes: Int { lock.withLock { byteCount } }
+
+    func stream(request: any HTTPRequestConvertible, consume: @escaping (Data, Double?) -> HTTPResult<Void>) async -> HTTPResult<HTTPResponse> {
+        lock.withLock { requestCount += 1 }
+        return await base.stream(request: request) { [weak self] chunk, progress in
+            self?.lock.withLock { self?.byteCount += chunk.count }
+            return consume(chunk, progress)
+        }
+    }
 }

@@ -48,6 +48,8 @@ struct WebDAVIndexer: Sendable {
             state.inProgress = []
             state.crawlStartedAt = now()
         }
+        // What 2e read from a file stays with it while the file is unchanged.
+        let previous = Dictionary(state.records.map { ($0.record.key, $0) }, uniquingKeysWith: { first, _ in first })
         var skippedFolders = 0
         let started = SourcePerfTrace.now
         defer {
@@ -78,7 +80,14 @@ struct WebDAVIndexer: Sendable {
                         }
                     } else if entry.isImportableBook,
                               let record = SourceRecord.derived(from: entry, connectionID: connectionID, root: root) {
-                        state.inProgress.append(IndexedFile(record: record, etag: entry.etag, lastModified: entry.lastModified, size: entry.size))
+                        var file = IndexedFile(record: record, etag: entry.etag, lastModified: entry.lastModified, size: entry.size)
+                        if let old = previous[record.key], old.isSameFile(as: file) {
+                            file.identifiers = old.identifiers
+                            file.values = old.values
+                            file.cover = old.cover
+                            file.filled = old.filled
+                        }
+                        state.inProgress.append(file)
                         if state.inProgress.count >= limits.maxFiles {
                             return finish(state, outcome: .limitReached(state.inProgress.count))
                         }
