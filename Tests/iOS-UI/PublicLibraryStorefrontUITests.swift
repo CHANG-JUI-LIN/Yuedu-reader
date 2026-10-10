@@ -2,6 +2,9 @@ import XCTest
 
 /// Deterministic UI coverage: scroll-driven card expansion and paging, fixture-only OPDS.
 /// The test changes no book-source data outside its own temporary directory.
+///
+/// Since unified library 5c-3 the cards open from the Explore home's 精選 rows, as a new install
+/// sees them (`-reset-explore-home`), and the store's own pages from its 我的書庫 tile.
 final class PublicLibraryStorefrontUITests: XCTestCase {
     private var fixtureDirectory: URL!
 
@@ -38,10 +41,19 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
             "-yd_source_disclaimer_accepted", "YES", "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path,
-            "-reset-public-library-explore"]
+            "-reset-public-library-explore", "-reset-explore-home"]
         if pro { app.launchArguments.append("-debug-force-pro") }
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path
         return app
+    }
+
+    /// A 精選 card on the home, scrolled to.
+    @MainActor
+    private func homeCard(_ app: XCUIApplication, _ number: Int) -> XCUIElement {
+        let card = app.buttons["home.card.gutenberg.\(number)"].firstMatch
+        for _ in 0..<4 where !card.waitForExistence(timeout: 3) { app.swipeUp() }
+        XCTAssertTrue(card.exists, app.debugDescription)
+        return card
     }
 
     @MainActor
@@ -51,9 +63,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         XCTAssertTrue(explore.waitForExistence(timeout: 30))
         explore.tap()
         screenshot(app, "storefront-home")
-        let book = app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/24264.opds"].firstMatch
-        XCTAssertTrue(book.waitForExistence(timeout: 10))
-        book.tap()
+        homeCard(app, 24264).tap()
         let close = app.buttons["publicLibrary.closeSheet"].firstMatch
         XCTAssertTrue(close.waitForExistence(timeout: 10))
         let author = app.buttons["publicLibrary.author.https://www.gutenberg.org/ebooks/author/10001.opds"].firstMatch
@@ -103,8 +113,8 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(close.waitForExistence(timeout: 10))
         close.tap()
-        XCTAssertTrue(app.buttons["publicLibrary.categories"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/23962.opds"].firstMatch.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+        homeCard(app, 23962).tap()
         XCTAssertTrue(secondAuthor.waitForExistence(timeout: 10), "Opening a nonfirst shelf book preserves the selection")
         XCTAssertGreaterThan(secondAuthor.frame.midX, app.frame.minX)
         XCTAssertLessThan(secondAuthor.frame.midX, app.frame.maxX)
@@ -120,6 +130,9 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         let explore = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(explore.waitForExistence(timeout: 30))
         explore.tap()
+        let gutenberg = app.buttons["home.tile.gutenberg.builtin.gutenberg"].firstMatch
+        XCTAssertTrue(gutenberg.waitForExistence(timeout: 10), app.debugDescription)
+        gutenberg.tap()
         let categories = app.buttons["publicLibrary.categories"].firstMatch
         XCTAssertTrue(categories.waitForExistence(timeout: 10))
         categories.tap()
@@ -143,6 +156,8 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["分類"].waitForExistence(timeout: 10))
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(categories.waitForExistence(timeout: 10))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(gutenberg.waitForExistence(timeout: 10), "Back from the store's page returns to the home")
     }
 
     @MainActor

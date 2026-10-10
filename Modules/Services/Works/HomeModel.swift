@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 /// Unified library 5b: the Explore home's rows, loaded by each section's policy (design
-/// §13.3–§13.4; Phase 5 plan, 5b step 5). Not wired to a view until 5c.
+/// §13.3–§13.4; Phase 5 plan, 5b step 5). Drawn by `ExploreHome` (5c-3).
 ///
 /// - Rows are built only after the book-source library is read, so a cold launch never shows
 ///   a source as deleted.
@@ -31,13 +31,25 @@ final class HomeModel: ObservableObject {
         var state: RowState
     }
 
-    struct Tile: Hashable {
-        let source: SourceInstanceKey
-        let name: String
+    /// A place in 我的書庫. The browser and the custom pages lead, as on 探索 before the home:
+    /// a reader with thousands of book sources would otherwise find them below every source.
+    enum Tile: Hashable {
+        case browser
+        case customPage(id: UUID, name: String)
+        /// A library connection, a public library or a book source. Never the shelf itself:
+        /// nothing in Explore shows the shelf's own page.
+        case source(SourceInstanceKey, name: String)
+
+        var name: String {
+            switch self {
+            case .browser: localized("瀏覽器")
+            case .customPage(_, let name), .source(_, let name): name
+            }
+        }
     }
 
     enum Item: Identifiable, Equatable {
-        /// 我的書庫: a tile for every source.
+        /// 我的書庫: the browser, the custom pages, then a tile for every source.
         case tiles(sectionID: UUID, [Tile])
         case row(Row)
 
@@ -54,6 +66,7 @@ final class HomeModel: ObservableObject {
     @Published private(set) var isReady = false
 
     private let makeProviders: () -> [any HomeSectionProviding]
+    private let customPages: () -> [CustomExplorePage]
     private let waitForSources: () async -> Void
     private var providers: [String: any HomeSectionProviding] = [:]
     private var requested: Set<String> = []
@@ -64,10 +77,13 @@ final class HomeModel: ObservableObject {
     /// - Parameters:
     ///   - providers: the sources now, asked again at each `sync`
     ///     (`SourceProviderRegistry.homeProviders(shelf:)`).
+    ///   - customPages: the reader's custom pages now, for 我的書庫.
     ///   - waitForSources: returns once the book-source library is read
     ///     (`BookSourceStore.waitUntilLoaded`).
-    init(providers: @escaping () -> [any HomeSectionProviding], waitForSources: @escaping () async -> Void) {
+    init(providers: @escaping () -> [any HomeSectionProviding], customPages: @escaping () -> [CustomExplorePage] = { [] },
+         waitForSources: @escaping () async -> Void) {
         makeProviders = providers
+        self.customPages = customPages
         self.waitForSources = waitForSources
     }
 
@@ -86,7 +102,9 @@ final class HomeModel: ObservableObject {
         var servedBy: [String: any HomeSectionProviding] = [:]
         for section in page.sections where section.isEnabled {
             if case .myLibrary = section.binding {
-                built.append(.tiles(sectionID: section.id, available.map { Tile(source: $0.instance, name: $0.displayName) }))
+                let pages = customPages().map { Tile.customPage(id: $0.id, name: $0.name) }
+                let sources = available.filter { $0.instance.type != .library }.map { Tile.source($0.instance, name: $0.displayName) }
+                built.append(.tiles(sectionID: section.id, [.browser] + pages + sources))
                 continue
             }
             let serving: [any HomeSectionProviding]
@@ -160,6 +178,16 @@ final class HomeModel: ObservableObject {
             } else {
                 start(row)
             }
+        }
+    }
+
+    /// The rows read from this device load again, when the home comes back into view: a book
+    /// read meanwhile moves in 繼續閱讀. Not on every shelf change, which a page turn makes.
+    func reloadLocal() {
+        for item in items {
+            guard case .row(let row) = item, row.policy == .local, requested.contains(row.id),
+                  !active.contains(row.id) else { continue }
+            start(row)
         }
     }
 

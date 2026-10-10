@@ -250,17 +250,21 @@ struct HomeRowView: View {
 
 // MARK: - 我的書庫
 
-/// A tile per source, laid out as 探索's entries are today (the reader's grid, or the list at
-/// accessibility text sizes).
-struct HomeLibraryTiles: View {
+/// The browser, the custom pages and a tile per source, laid out as 探索's entries always were
+/// (the reader's grid, or the list when 格狀 is off or at accessibility text sizes).
+struct HomeLibraryTiles<MenuItems: View>: View {
     let tiles: [HomeModel.Tile]
     let open: (HomeModel.Tile) -> Void
+    /// A tile's long-press actions: a custom page's or a book source's, as on 探索 before.
+    @ViewBuilder let menu: (HomeModel.Tile) -> MenuItems
 
+    @AppStorage(ExploreSettings.showsGridKey) private var showsGrid = true
     @AppStorage(ExploreSettings.gridColumnCountKey) private var gridColumnCount = ExploreGridDensity.default.rawValue
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var layout: ExploreEntryLabel.Layout {
-        dynamicTypeSize.isAccessibilitySize ? .list : .grid(.fitting(gridColumnCount, dynamicTypeSize: dynamicTypeSize))
+        guard showsGrid, !dynamicTypeSize.isAccessibilitySize else { return .list }
+        return .grid(.fitting(gridColumnCount, dynamicTypeSize: dynamicTypeSize))
     }
 
     var body: some View {
@@ -276,7 +280,8 @@ struct HomeLibraryTiles: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityAddTraits(.isButton)
                         .accessibilityLabel(tile.name)
-                        .accessibilityIdentifier("home.tile.\(tile.source.type.rawValue).\(tile.source.id)")
+                        .accessibilityIdentifier(Self.identifier(for: tile))
+                        .contextMenu { menu(tile) }
                 }
             }
         }
@@ -297,10 +302,35 @@ struct HomeLibraryTiles: View {
     /// A book source keeps its emoji or first character, as on 探索 today; every other
     /// place has a symbol for its kind.
     private func label(for tile: HomeModel.Tile) -> ExploreEntryLabel {
-        guard let symbol = Self.symbol(for: tile.source.type) else { return ExploreEntryLabel(name: tile.name, layout: layout) }
-        return ExploreEntryLabel(title: tile.name, artwork: .symbol(symbol), layout: layout)
+        switch tile {
+        case .browser:
+            return ExploreEntryLabel(title: tile.name, artwork: .symbol("safari"), layout: layout)
+        case .customPage:
+            return ExploreEntryLabel(name: tile.name, layout: layout)
+        case .source(let source, _):
+            guard let symbol = HomeLibraryTileSymbol.symbol(for: source.type) else {
+                return ExploreEntryLabel(name: tile.name, layout: layout)
+            }
+            return ExploreEntryLabel(title: tile.name, artwork: .symbol(symbol), layout: layout)
+        }
     }
 
+    static func identifier(for tile: HomeModel.Tile) -> String {
+        switch tile {
+        case .browser: "home.tile.browser"
+        case .customPage(let id, _): "home.tile.page.\(id.uuidString)"
+        case .source(let source, _): "home.tile.\(source.type.rawValue).\(source.id)"
+        }
+    }
+}
+
+extension HomeLibraryTiles where MenuItems == EmptyView {
+    init(tiles: [HomeModel.Tile], open: @escaping (HomeModel.Tile) -> Void) {
+        self.init(tiles: tiles, open: open) { _ in EmptyView() }
+    }
+}
+
+enum HomeLibraryTileSymbol {
     static func symbol(for type: ProviderType) -> String? {
         switch type {
         case .library: "books.vertical"

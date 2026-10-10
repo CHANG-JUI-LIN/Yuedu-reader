@@ -100,11 +100,14 @@ enum ExploreItemTarget {
     }
 }
 
-/// A page pushed from a home item, each registered on Explore's stack.
+/// A page pushed from the home, each registered on Explore's stack.
 enum ExplorePush: Hashable {
     case reader(PublicLibraryReaderRoute)
     case remoteBook(RemoteLibraryBookRoute)
     case explore(ExploreNavigationRoute)
+    case feed(OPDSFeedRoute)
+    case folder(WebDAVDirectoryRoute)
+    case publicLibrary(PublicLibraryRoute)
 
     /// Appends the route itself, so it reaches the destination registered for its type.
     func append(to path: inout NavigationPath) {
@@ -112,6 +115,108 @@ enum ExplorePush: Hashable {
         case .reader(let route): path.append(route)
         case .remoteBook(let route): path.append(route)
         case .explore(let route): path.append(route)
+        case .feed(let route): path.append(route)
+        case .folder(let route): path.append(route)
+        case .publicLibrary(let route): path.append(route)
+        }
+    }
+}
+
+/// The pages the home's tiles, row headers and chips push: each the page its source already
+/// shows from its own screens (unified library 5c-3). Nil where the source has no such page.
+enum ExplorePlace {
+    /// A source's own page: its discover page, its root feed or folder, or a public library's
+    /// front page. The scope menu shows the same page in place.
+    static func page(of source: SourceInstanceKey, name: String,
+                     connections: RemoteLibraryConnectionStore = .shared) -> ExplorePush? {
+        switch source.type {
+        case .bookSource:
+            return .explore(.source(sourceURL: source.id))
+        case .opds, .calibre:
+            guard let connection = connections.connection(id: source.id) else { return nil }
+            return .feed(OPDSFeedRoute(catalogID: connection.id, url: connection.url, title: name))
+        case .webDAV:
+            guard let connection = connections.connection(id: source.id),
+                  let root = connections.webDAVClient(for: connection).rootURL else { return nil }
+            return .folder(WebDAVDirectoryRoute(connectionID: connection.id, url: root, title: name))
+        case .gutenberg:
+            return .publicLibrary(.gutenbergHome)
+        case .aozora:
+            return .publicLibrary(.aozoraHome)
+        case .library, .bibliographic:
+            return nil
+        }
+    }
+
+    /// 查看全部: the whole of what a row shows the start of.
+    static func showAll(_ row: HomeModel.Row, aozoraIndex: AozoraCatalogIndex?,
+                        connections: RemoteLibraryConnectionStore = .shared) -> ExplorePush? {
+        let gutenbergID = PublicLibraryID.gutenberg.rawValue
+        switch row.section.binding {
+        case .latest:
+            switch row.source.type {
+            case .bookSource:
+                return row.section.latestCategory(forSourceURL: row.source.id).map { .explore(.sourceCategory($0)) }
+            case .opds, .calibre:
+                // 「最新」 is the root's books, or its first feed's: the root is the whole.
+                return page(of: row.source, name: row.sourceName, connections: connections)
+            case .gutenberg:
+                return .feed(OPDSFeedRoute(catalogID: gutenbergID, url: GutenbergEndpoint.current.latestURL.absoluteString,
+                                           title: row.title, presentation: .storefront))
+            case .aozora:
+                return aozoraIndex.map { .publicLibrary(.aozoraCatalog(.newest, $0)) }
+            case .webDAV, .library, .bibliographic:
+                // A WebDAV library's newest files are gathered from every folder; no page lists them.
+                return nil
+            }
+        case .sourceCategories(let references):
+            return references.first { $0.sourceURL == row.source.id }.map { .explore(.sourceCategory($0)) }
+        case .opdsFeed(let connectionID, let url):
+            return .feed(OPDSFeedRoute(catalogID: connectionID, url: url, title: row.title))
+        case .gutenbergCollection(let id):
+            return .publicLibrary(.collection(id: id))
+        case .gutenbergFeed(let url):
+            return .feed(OPDSFeedRoute(catalogID: gutenbergID, url: url, title: row.title, presentation: .storefront))
+        case .aozoraNew:
+            return aozoraIndex.map { .publicLibrary(.aozoraCatalog(.newest, $0)) }
+        case .aozoraIndex(let kind):
+            guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
+            return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
+        case .myLibrary, .continueReading, .related, .unknown:
+            return nil
+        }
+    }
+
+    /// A chip in a row: a feed or folder inside the source, or one of Aozora's index groups.
+    static func page(of location: CollectionLocation, in row: HomeModel.Row,
+                     aozoraIndex: AozoraCatalogIndex?) -> ExplorePush? {
+        switch row.source.type {
+        case .opds, .calibre:
+            return .feed(OPDSFeedRoute(catalogID: row.source.id, url: location.id, title: location.title))
+        case .webDAV:
+            guard let url = URL(string: location.id) else { return nil }
+            return .folder(WebDAVDirectoryRoute(connectionID: row.source.id, url: url, title: location.title))
+        case .aozora:
+            guard let aozoraIndex else { return nil }
+            let parts = location.id.split(separator: "/", maxSplits: 1).map(String.init)
+            switch (parts.first, parts.count) {
+            case ("new", 1): return .publicLibrary(.aozoraCatalog(.newest, aozoraIndex))
+            case ("authors", _): return .publicLibrary(.aozoraCatalog(.authors, aozoraIndex))
+            case ("titles", 1): return .publicLibrary(.aozoraCatalog(.titles, aozoraIndex))
+            case ("categories", 1): return .publicLibrary(.aozoraCatalog(.categories, aozoraIndex))
+            case ("titles", 2), ("categories", 2):
+                let groups = parts[0] == "titles" ? aozoraIndex.titleGroups : aozoraIndex.classificationGroups
+                guard let group = groups.first(where: { $0.id == parts[1] }) else { return nil }
+                return .publicLibrary(.aozoraWorks(title: location.title,
+                                                   works: group.ids.compactMap { aozoraIndex.worksByID[$0] }, index: aozoraIndex))
+            case ("person", 2):
+                return .publicLibrary(.aozoraWorks(title: location.title, works: aozoraIndex.works(forPerson: parts[1]),
+                                                   index: aozoraIndex))
+            default: return nil
+            }
+        case .bookSource, .gutenberg, .library, .bibliographic:
+            // The shelf's groups have no page outside the shelf yet.
+            return nil
         }
     }
 }

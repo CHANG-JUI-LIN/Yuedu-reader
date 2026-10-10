@@ -1,5 +1,8 @@
 import XCTest
 
+/// The old roots' 公有書庫／來源配置 switch and its first-import tip. Since unified library 5c-3
+/// they show only behind 使用舊版探索頁 (`-explore.classicRoot YES`); `ExploreHomeUITests`
+/// covers the home that replaced them.
 final class PublicLibraryExploreUITests: XCTestCase {
     private var sourceDirectory: URL!
     private let tipTitle = "可以切換探索內容"
@@ -19,7 +22,8 @@ final class PublicLibraryExploreUITests: XCTestCase {
     private func application(reset: Bool) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
-            "-yd_source_disclaimer_accepted", "YES", "-book-source-store-dir", sourceDirectory.path]
+            "-yd_source_disclaimer_accepted", "YES", "-book-source-store-dir", sourceDirectory.path,
+            "-explore.classicRoot", "YES"]
         if reset { app.launchArguments += ["-reset-tips", "-reset-public-library-explore"] }
         return app
     }

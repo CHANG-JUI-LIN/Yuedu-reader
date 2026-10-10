@@ -126,11 +126,13 @@ struct HomeModelTests {
         #expect(rows(home).map(\.source.id) == ["a"])
     }
 
-    @Test("我的書庫 is a tile per source; a hidden section and one nothing serves have no row")
+    @Test("我的書庫 is the browser, the custom pages, then a tile per source but the shelf; a hidden section and one nothing serves have no row")
     func tilesAndUnserved() async {
+        let shelf = FakeProvider("local", type: .library) { _ in nil }
         let a = FakeProvider("a") { _ in nil }
         let b = FakeProvider("b", type: .webDAV) { _ in nil }
-        let home = model([a, b])
+        let page = CustomExplorePage(name: "我的頁")
+        let home = HomeModel(providers: { [shelf, a, b] }, customPages: { [page] }, waitForSources: {})
         let tiles = HomeSection(layout: .tiles, binding: .myLibrary)
         await home.sync(with: HomePage(sections: [
             tiles,
@@ -139,7 +141,8 @@ struct HomeModelTests {
             HomeSection(layout: .row, binding: .unknown(.object(["type": .string("later")]))),
         ]))
         #expect(home.items == [.tiles(sectionID: tiles.id, [
-            HomeModel.Tile(source: a.instance, name: "a"), HomeModel.Tile(source: b.instance, name: "b"),
+            .browser, .customPage(id: page.id, name: "我的頁"),
+            .source(a.instance, name: "a"), .source(b.instance, name: "b"),
         ])])
     }
 
@@ -218,6 +221,30 @@ struct HomeModelTests {
         home.reload()
         #expect(home.row(row.id)?.state == .awaitingRequest)
         #expect(g.loads.count == 1)
+    }
+
+    @Test("coming back into view loads again only the rows read from this device, and only those already loaded")
+    func reloadLocal() async throws {
+        let shelf = FakeProvider("local", type: .library) { section in
+            if case .continueReading = section.binding { return .local }
+            return nil
+        }
+        let feed = FakeProvider("f", type: .opds) { _ in .parallel }
+        let home = model([shelf, feed])
+        await home.sync(with: HomePage(sections: [
+            HomeSection(layout: .row, binding: .continueReading),
+            HomeSection(layout: .row, binding: .latest(excluded: [])),
+        ]))
+        home.reloadLocal()
+        #expect(shelf.loads.isEmpty, "a row never shown is not loaded")
+
+        rows(home).map(\.id).forEach(home.load)
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
+        home.reloadLocal()
+        await until(home) { _ in shelf.loads.count == 2 }
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
+        #expect(shelf.loads.count == 2)
+        #expect(feed.loads.count == 1)
     }
 
     @Test("a failed row says why, and 重試 loads it again")

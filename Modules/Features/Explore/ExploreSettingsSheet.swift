@@ -15,6 +15,7 @@ struct ExploreSettingsSheet: View {
     @AppStorage(ExploreSettings.sourcePageLayoutKey)
     private var sourcePageLayout = ExploreSourcePageLayout.default
     @AppStorage(ExploreSettings.landingKey) private var landing = ExploreLanding.off.rawValue
+    @AppStorage(ExploreSettings.classicRootKey) private var usesClassicRoot = false
     @AppStorage(ExploreSettings.rankedKeywordsKey)
     private var rankedKeywordsRaw = ExploreSettings.encodeKeywords(ExploreSettings.defaultRankedKeywords)
     @AppStorage(ExploreSettings.chartBookCountKey)
@@ -46,6 +47,7 @@ struct ExploreSettingsSheet: View {
                     preloadSection
                 }
                 coverSection
+                classicRootSection
             }
             .animation(reduceMotion ? nil : DSAnimation.standard, value: sourcePageLayout)
             .navigationTitle(localized("探索設定"))
@@ -63,6 +65,17 @@ struct ExploreSettingsSheet: View {
     }
 
     // MARK: Sections
+
+    /// The old roots, one version after the home replaces them (Phase 5 plan, settled decision 10).
+    private var classicRootSection: some View {
+        Section {
+            Toggle(isOn: $usesClassicRoot) {
+                SettingsRowLabel(localized("使用舊版探索頁"), systemImage: "clock.arrow.circlepath")
+            }
+            .accessibilityIdentifier("explore.classicRoot")
+        }
+        .interfaceSectionSurface()
+    }
 
     private var exploreSection: some View {
         Section {

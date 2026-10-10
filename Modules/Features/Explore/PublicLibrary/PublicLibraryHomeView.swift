@@ -1,12 +1,14 @@
 import SwiftUI
 
+/// The old 公有書庫 root, kept behind 使用舊版探索頁 for one version (Phase 5 plan, settled
+/// decision 9). The home shows the same storefront for Gutenberg's tile and scope.
 struct PublicLibraryHomeView: View {
     var modeMenu: ExploreModeMenu? = nil
     @State private var path = NavigationPath()
     @State private var query = ""
     @State private var selection: PublicLibraryBookSelection?
     @State private var coverFrames = PublicLibraryCoverFrames()
-    private static let curatedScope = "curated"
+    @State private var showsSettings = false
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     @ObservedObject private var aozora = AozoraCatalogStore.shared
 
@@ -14,7 +16,7 @@ struct PublicLibraryHomeView: View {
         NavigationStack(path: $path) {
             Group {
                 if trimmedQuery.isEmpty {
-                    storefront
+                    PublicLibraryStorefront(includesAozora: true)
                 } else {
                     List {
                         PublicLibrarySearchResults(query: trimmedQuery, index: aozora.catalog,
@@ -24,8 +26,6 @@ struct PublicLibraryHomeView: View {
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: localized("搜尋公有書庫"))
             .onSubmit(of: .search, submitSearch)
-            .task { await aozora.load() }
-            .refreshable { await aozora.load(forceRefresh: true) }
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
             .rootTabSearchScrollEdges()
@@ -40,30 +40,78 @@ struct PublicLibraryHomeView: View {
                 if let modeMenu {
                     ToolbarItem(placement: .topBarTrailing) { modeMenu }
                 }
+                // 使用舊版探索頁 is switched off in 探索設定, so this root needs its gear too.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showsSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .accessibilityHidden(true)
+                    }
+                    .accessibilityLabel(localized("探索設定"))
+                }
+            }
+            .sheet(isPresented: $showsSettings) {
+                ExploreSettingsSheet(sources: DiscoverViewModel.exploreSources(in: BookSourceStore.shared))
             }
         }
         .publicLibraryBookCarousel(path: $path, request: $selection, coverFrames: coverFrames)
     }
 
-    private var storefront: some View {
+    private func submitSearch() {
+        guard !trimmedQuery.isEmpty else { return }
+        path.append(OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
+            url: PublicLibrary.gutenbergSearchURL(query: trimmedQuery).absoluteString,
+            title: String(trimmedQuery.prefix(500)), presentation: .storefront))
+    }
+}
+
+/// Gutenberg's front page, pushed from its 我的書庫 tile or shown in place by the home's scope
+/// (5c-3): the storefront without Aozora, which has a page of its own there.
+struct GutenbergHomePage: View {
+    @ObservedObject private var aozora = AozoraCatalogStore.shared
+
+    var body: some View {
+        PublicLibraryStorefront(includesAozora: false)
+            .navigationTitle(localized("Project Gutenberg"))
+            .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .explore)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: PublicLibraryRoute.categories(aozora.catalog)) {
+                        Text(localized("分類"))
+                    }.accessibilityIdentifier("publicLibrary.categories")
+                }
+            }
+    }
+}
+
+/// The store's front page: Gutenberg's featured lists and shelves, and Aozora's 新着 where it
+/// is included. Inside a stack wearing `publicLibraryBookCarousel` and `publicLibraryDestinations`.
+struct PublicLibraryStorefront: View {
+    let includesAozora: Bool
+    @Environment(\.openPublicLibraryBooks) private var openBooks
+    @Environment(\.publicLibraryCoverFrames) private var coverFrames
+    @ObservedObject private var aozora = AozoraCatalogStore.shared
+    private static let curatedScope = "curated"
+
+    var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSLayout.publicLibrarySectionSpacing) {
                 featuredCollections.rootTabTitleScrollAnchor()
                 ForEach([PublicLibraryCollection.chinese, .fiction]) { collection in
                     PublicLibraryShelf(title: localized(collection.titleKey),
-                        books: collection.books.map(PublicLibraryBook.gutenberg), select: { selection = $0 },
+                        books: collection.books.map(PublicLibraryBook.gutenberg), select: select,
                         route: .collection(id: collection.id))
                 }
                 curatedReading
                 ForEach([PublicLibraryCollection.children, .thought]) { collection in
                     PublicLibraryShelf(title: localized(collection.titleKey),
-                        books: collection.books.map(PublicLibraryBook.gutenberg), select: { selection = $0 },
+                        books: collection.books.map(PublicLibraryBook.gutenberg), select: select,
                         route: .collection(id: collection.id))
                 }
-                if let index = aozora.catalog {
+                if includesAozora, let index = aozora.catalog {
                     Section {
                         PublicLibraryShelf(title: localized("青空文庫"),
-                            books: Array(index.newWorks.prefix(12)).map { .aozora($0, index) }, select: { selection = $0 },
+                            books: Array(index.newWorks.prefix(12)).map { .aozora($0, index) }, select: select,
                             route: .aozoraWorks(title: localized("新着作品"), works: index.newWorks, index: index))
                         if aozora.isRefreshing { ProgressView(localized("正在更新目錄")) }
                         if case .failed = aozora.state {
@@ -89,6 +137,12 @@ struct PublicLibraryHomeView: View {
             .padding(.top, DSSpacing.xl)
             .padding(.bottom, DSSpacing.xxl)
         }
+        .task { if includesAozora { await aozora.load() } }
+        .refreshable { if includesAozora { await aozora.load(forceRefresh: true) } }
+    }
+
+    private func select(_ selection: PublicLibraryBookSelection) {
+        openBooks?(selection)
     }
 
     private var featuredCollections: some View {
@@ -129,8 +183,8 @@ struct PublicLibraryHomeView: View {
                         VStack(spacing: DSSpacing.lg) {
                             ForEach(Array(books[start..<min(start + 3, books.count)])) { book in
                                 Button {
-                                    coverFrames.activeScope = Self.curatedScope
-                                    selection = PublicLibraryBookSelection(books: books, selectedID: book.id)
+                                    coverFrames?.activeScope = Self.curatedScope
+                                    PublicLibraryBookSelection(books: books, selectedID: book.id).map(select)
                                 } label: {
                                     HStack(spacing: DSSpacing.lg) {
                                         PublicLibraryCover(title: book.title, author: book.author)
@@ -158,12 +212,52 @@ struct PublicLibraryHomeView: View {
             .environment(\.publicLibraryCoverScope, Self.curatedScope)
         }
     }
+}
 
-    private func submitSearch() {
-        guard !trimmedQuery.isEmpty else { return }
-        path.append(OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
-            url: PublicLibrary.gutenbergSearchURL(query: trimmedQuery).absoluteString,
-            title: String(trimmedQuery.prefix(500)), presentation: .storefront))
+/// Aozora's front page, pushed from its 我的書庫 tile or shown in place by the home's scope
+/// (5c-3): 新着 and the three indexes, as 分類 lists them.
+struct AozoraHomePage: View {
+    @ObservedObject private var aozora = AozoraCatalogStore.shared
+
+    var body: some View {
+        List {
+            if let index = aozora.catalog {
+                Section {
+                    ForEach(AozoraBrowseMode.allCases) { mode in
+                        NavigationLink(value: PublicLibraryRoute.aozoraCatalog(mode, index)) {
+                            Label(localized(mode.titleKey), systemImage: mode.symbol)
+                        }
+                    }
+                } footer: {
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                        Text(.init(localized("書誌資料：青空文庫（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）")))
+                        if case .failed = aozora.state { Text(localized("目錄更新失敗，仍顯示已儲存的目錄。")) }
+                    }.dsSectionFooter()
+                }
+                .interfaceSectionSurface()
+            }
+        }
+        .overlay {
+            if aozora.catalog == nil {
+                if case .failed(let error, _) = aozora.state {
+                    ContentUnavailableView {
+                        UnavailableLabel(localized("青空文庫"), systemImage: "books.vertical")
+                    } description: {
+                        Text(error.localizedDescription)
+                    } actions: {
+                        Button(localized("重試")) { Task { await aozora.load(forceRefresh: true) } }
+                            .disabled(aozora.isRefreshing)
+                    }
+                } else {
+                    ProgressView(localized("正在更新目錄"))
+                }
+            }
+        }
+        .task { await aozora.load() }
+        .refreshable { await aozora.load(forceRefresh: true) }
+        .navigationTitle(localized("青空文庫"))
+        .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .explore)
     }
 }
 

@@ -1,12 +1,15 @@
 import SwiftUI
 import TipKit
 
-/// Each mode owns its navigation stack. Choosing another mode discards that stack.
+/// 探索's root: the home (unified library 5c-3), or behind 使用舊版探索頁 the old roots for one
+/// version (Phase 5 plan, settled decisions 9 and 10). Each old mode owns its navigation stack;
+/// choosing another mode discards that stack.
 struct ExploreTabRoot: View {
     @ObservedObject var browser: BrowserState
     @ObservedObject private var model = ExploreTabModel.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @AppStorage(ExploreSettings.modeKey) private var storedMode = ExploreMode.publicLibraries.rawValue
+    @AppStorage(ExploreSettings.classicRootKey) private var usesClassicRoot = false
 
     private var mode: ExploreMode {
         ExploreMode.effective(
@@ -29,9 +32,12 @@ struct ExploreTabRoot: View {
         Group {
             if !model.isLoaded {
                 // The source library is still being read (about a second at 50 000 sources);
-                // which mode applies depends on whether it holds any.
+                // which mode applies depends on whether it holds any, and so do the home's
+                // default sections, which are saved for good the first time it draws.
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !usesClassicRoot {
+                ExploreHome(browser: browser)
             } else {
                 switch mode {
                 case .bookSources: ExploreHomeView(browser: browser, modeMenu: menu)

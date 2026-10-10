@@ -88,6 +88,19 @@ struct yuedu_appApp: App {
                 UserDefaults.standard.removeObject(forKey: key)
             }
         }
+        // The home as a new install sees it: no saved sections, 範圍 全部, the home not the old
+        // roots. Before anything reads `HomePageStore.shared`.
+        if ProcessInfo.processInfo.arguments.contains("-reset-explore-home") {
+            for key in [ExploreSettings.scopeKey, ExploreSettings.classicRootKey] {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+            let home = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json")
+            do {
+                if FileManager.default.fileExists(atPath: home.path) { try FileManager.default.removeItem(at: home) }
+            } catch {
+                AppLogger.error("Explore home reset failed: \(error)")
+            }
+        }
         #endif
         // First launch only, and only once the library is read: the read runs off the main
         // thread now, and evaluating `sources` here used to read the whole file inline on
@@ -96,7 +109,17 @@ struct yuedu_appApp: App {
             ExploreMode.initializeIfNeeded(hasImportedSources: !library.isEmpty)
         }
         _ = ExploreTabModel.shared
+        #if DEBUG
+        // UI tests pose as a storefront (`-debug-storefront-country CHN`) instead of reading
+        // the App Store's, which the simulator cannot change.
+        if let country = UserDefaults.standard.string(forKey: "debug-storefront-country") {
+            PublicLibraryAvailability.shared.receive(countryCode: country)
+        } else {
+            PublicLibraryAvailability.shared.start()
+        }
+        #else
         PublicLibraryAvailability.shared.start()
+        #endif
         // Frees the retired semantic-search model's ~258 MB on devices that had downloaded it.
         Task.detached(priority: .utility) { AIRetiredEmbeddingCleanup.run() }
         #if DEBUG

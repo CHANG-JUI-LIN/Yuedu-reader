@@ -37,34 +37,12 @@ struct ExploreHomeView: View {
     /// 首屏配置 opens its page once, the first time 探索 shows; going back stays here.
     @State private var appliedLanding = false
     @ObservedObject private var pageStore = CustomExplorePageStore.shared
-    /// 新增自訂頁's or 重新命名's name prompt, and the name typed into it.
-    @State private var pageNamePrompt: PageNamePrompt?
-    @State private var pageName = ""
-    @State private var pagePendingDeletion: CustomExplorePage?
+    /// 新增自訂頁, 重新命名 or 刪除 on a custom page.
+    @State private var pagePrompt: CustomExplorePagePrompt?
 
     private struct BrowserPresentation: Identifiable {
         let id = UUID()
         let entry: BrowserEntry
-    }
-
-    /// One alert for both prompts: two on one view compete for one presenter.
-    private enum PageNamePrompt: Identifiable {
-        case create
-        case rename(CustomExplorePage)
-
-        var id: String {
-            switch self {
-            case .create: "create"
-            case .rename(let page): page.id.uuidString
-            }
-        }
-
-        var title: String {
-            switch self {
-            case .create: localized("新增自訂頁")
-            case .rename: localized("重新命名")
-            }
-        }
     }
 
     private var groups: [String] {
@@ -92,7 +70,7 @@ struct ExploreHomeView: View {
         }
     }
 
-    private static func groupNames(of source: BookSource) -> [String] {
+    static func groupNames(of source: BookSource) -> [String] {
         source.bookSourceGroup
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -120,43 +98,13 @@ struct ExploreHomeView: View {
                                 }
                                 .buttonStyle(ExploreTileButtonStyle())
                                 .accessibilityLabel(page.name)
-                                .contextMenu { pageActions(page) }
+                                .contextMenu { CustomExplorePageMenuItems(page: page, prompt: $pagePrompt) }
                             }
-                        }
-                        .confirmationDialog(
-                            String(format: localized("刪除「%@」？"), pagePendingDeletion?.name ?? ""),
-                            isPresented: Binding(
-                                get: { pagePendingDeletion != nil },
-                                set: { if !$0 { pagePendingDeletion = nil } }
-                            ),
-                            titleVisibility: .visible,
-                            presenting: pagePendingDeletion
-                        ) { page in
-                            Button(localized("刪除"), role: .destructive) { deletePage(page) }
-                            Button(localized("取消"), role: .cancel) {}
-                        } message: { _ in
-                            Text(localized("頁面裡的元件會一起刪除。"))
                         }
                     }
                     sourcesBlock
                 }
-                .alert(
-                    pageNamePrompt?.title ?? "",
-                    isPresented: Binding(
-                        get: { pageNamePrompt != nil },
-                        set: { if !$0 { pageNamePrompt = nil } }
-                    ),
-                    presenting: pageNamePrompt
-                ) { prompt in
-                    TextField(localized("名稱"), text: $pageName)
-                    switch prompt {
-                    case .create:
-                        Button(localized("新建")) { pageStore.createPage(named: pageName) }
-                    case .rename(let page):
-                        Button(localized("確定")) { pageStore.renamePage(id: page.id, to: pageName) }
-                    }
-                    Button(localized("取消"), role: .cancel) {}
-                }
+                .customExplorePagePrompts($pagePrompt)
                 // The page's full width even when a search finds no source: while the
                 // search is active the scroll view takes its content's width, and an
                 // empty stack left the page background and 「沒有結果」 a 32pt strip
@@ -186,8 +134,7 @@ struct ExploreHomeView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        pageName = ""
-                        pageNamePrompt = .create
+                        pagePrompt = .create
                     } label: {
                         Image(systemName: "plus")
                             .accessibilityHidden(true)
@@ -261,30 +208,6 @@ struct ExploreHomeView: View {
 
     private func openBrowser(_ entry: BrowserEntry) {
         browserPresentation = BrowserPresentation(entry: entry)
-    }
-
-    /// A custom page's long-press actions.
-    @ViewBuilder
-    private func pageActions(_ page: CustomExplorePage) -> some View {
-        Button {
-            pageName = page.name
-            pageNamePrompt = .rename(page)
-        } label: {
-            Label(localized("重新命名"), systemImage: "pencil")
-        }
-        Button(role: .destructive) {
-            pagePendingDeletion = page
-        } label: {
-            Label(localized("刪除"), systemImage: "trash")
-        }
-    }
-
-    /// Deletes the page; 首屏配置 set to it goes back to off.
-    private func deletePage(_ page: CustomExplorePage) {
-        if ExploreLanding(rawValue: landing) == .customPage(id: page.id) {
-            landing = ExploreLanding.off.rawValue
-        }
-        pageStore.deletePage(id: page.id)
     }
 
     /// The sources, or how to add some. A search that finds none leaves this out for
