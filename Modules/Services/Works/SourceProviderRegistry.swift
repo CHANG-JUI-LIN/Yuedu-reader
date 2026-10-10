@@ -30,14 +30,17 @@ final class SourceProviderRegistry {
     /// The OPDS-speaking provider of a feed route: the built-in Gutenberg, or a saved OPDS or
     /// Calibre connection. Nil when the connection was removed.
     func opdsProvider(catalogID: String) -> (any OPDSFeedProviding)? {
-        if catalogID == PublicLibraryID.gutenberg.rawValue { return gutenberg }
-        guard let connection = connections.catalogs.first(where: { $0.id == catalogID }), connection.kind != .webDAV else { return nil }
+        // The same lookup the browse models made before 2a (`connection(id:)`, which also
+        // answers for the built-in Gutenberg), then a branch on what it found.
+        guard let connection = connections.connection(id: catalogID) else { return nil }
+        if connection.id == PublicLibraryID.gutenberg.rawValue { return gutenberg }
+        guard connection.kind != .webDAV else { return nil }
         return OPDSProvider(connection: connection, store: connections)
     }
 
     /// Nil when the connection was removed.
     func webDAVProvider(connectionID: String) -> WebDAVProvider? {
-        guard let connection = connections.catalogs.first(where: { $0.id == connectionID }), connection.kind == .webDAV else { return nil }
+        guard let connection = connections.connection(id: connectionID), connection.kind == .webDAV else { return nil }
         return WebDAVProvider(connection: connection, store: connections)
     }
 

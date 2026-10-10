@@ -136,12 +136,13 @@ struct OPDSProviderTests {
     // MARK: Helpers
 
     private func makeProvider(kind: RemoteLibraryKind, handler: @escaping (URLRequest) -> (Int, String, String)) -> OPDSProvider {
-        ProviderHTTPStub.handler = { request in
+        ProviderHTTPStub.setHandler(for: root) { request in
             let (status, body, type) = handler(request)
             return (status, ["Content-Type": type], Data(body.utf8))
         }
         let connection = OPDSCatalog(name: "Fixture", url: root.absoluteString, kind: kind)
-        return OPDSProvider(connection: connection, client: OPDSClient(kind: kind, httpClient: ProviderHTTPStub.client(base: root)))
+        let root = root
+        return OPDSProvider(connection: connection) { OPDSClient(kind: kind, httpClient: ProviderHTTPStub.client(base: root)) }
     }
 
     static let atom = """
@@ -200,13 +201,15 @@ struct WebDAVProviderTests {
     }
 
     private func makeProvider(handler: @escaping (URLRequest) -> (Int, String)) -> WebDAVProvider {
-        ProviderHTTPStub.handler = { request in
+        ProviderHTTPStub.setHandler(for: root) { request in
             let (status, body) = handler(request)
             return (status, ["Content-Type": "application/xml"], Data(body.utf8))
         }
         let connection = OPDSCatalog(name: "Fixture", url: root.absoluteString, kind: .webDAV)
-        let client = WebDAVBrowseClient(serverUrl: root.absoluteString, username: "", password: "", httpClient: ProviderHTTPStub.client(base: root))
-        return WebDAVProvider(connection: connection, client: client)
+        let root = root
+        return WebDAVProvider(connection: connection) {
+            WebDAVBrowseClient(serverUrl: root.absoluteString, username: "", password: "", httpClient: ProviderHTTPStub.client(base: root))
+        }
     }
 
     static let listing = """
@@ -324,8 +327,16 @@ struct SourceProviderRegistryTests {
 
 // MARK: - Transport stub
 
+/// Answers by host, so the OPDS and WebDAV suites never answer each other's requests if
+/// they run at the same time.
 private final class ProviderHTTPStub: Foundation.URLProtocol {
-    nonisolated(unsafe) static var handler: ((URLRequest) -> (Int, [String: String], Data))?
+    typealias Handler = (URLRequest) -> (Int, [String: String], Data)
+    private static let handlers = NSLock()
+    nonisolated(unsafe) private static var byHost: [String: Handler] = [:]
+
+    static func setHandler(for base: URL, _ handler: @escaping Handler) {
+        handlers.withLock { byHost[base.host ?? ""] = handler }
+    }
 
     static func client(base: URL) -> RemoteLibraryHTTPClient {
         let configuration = URLSessionConfiguration.ephemeral
@@ -336,7 +347,10 @@ private final class ProviderHTTPStub: Foundation.URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        guard let handler = Self.handler else { return }
+        guard let handler = Self.handlers.withLock({ Self.byHost[request.url?.host ?? ""] }) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
         let (status, headers, data) = handler(request)
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

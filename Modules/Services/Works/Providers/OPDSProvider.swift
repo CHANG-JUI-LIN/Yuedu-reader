@@ -58,15 +58,17 @@ extension OPDSFeedProviding {
 @MainActor
 final class OPDSProvider: OPDSFeedProviding {
     let connection: OPDSCatalog
-    private let client: OPDSClient
+    /// Built on first use: making one reads the keychain, and listing providers must not.
+    private lazy var client: OPDSClient = makeClient()
+    private let makeClient: () -> OPDSClient
 
     convenience init(connection: OPDSCatalog, store: OPDSCatalogStore) {
-        self.init(connection: connection, client: store.client(for: connection))
+        self.init(connection: connection) { store.client(for: connection) }
     }
 
-    init(connection: OPDSCatalog, client: OPDSClient) {
+    init(connection: OPDSCatalog, client: @escaping () -> OPDSClient) {
         self.connection = connection
-        self.client = client
+        makeClient = client
     }
 
     var instance: SourceInstanceKey { SourceInstanceKey(type: ProviderType(connection.kind), id: connection.id) }

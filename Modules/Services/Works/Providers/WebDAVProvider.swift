@@ -5,15 +5,17 @@ import Foundation
 @MainActor
 final class WebDAVProvider: CollectionBrowsing {
     let connection: OPDSCatalog
-    private let client: WebDAVBrowseClient
+    /// Built on first use: making one reads the keychain, and listing providers must not.
+    private lazy var client: WebDAVBrowseClient = makeClient()
+    private let makeClient: () -> WebDAVBrowseClient
 
     convenience init(connection: OPDSCatalog, store: OPDSCatalogStore) {
-        self.init(connection: connection, client: store.webDAVClient(for: connection))
+        self.init(connection: connection) { store.webDAVClient(for: connection) }
     }
 
-    init(connection: OPDSCatalog, client: WebDAVBrowseClient) {
+    init(connection: OPDSCatalog, client: @escaping () -> WebDAVBrowseClient) {
         self.connection = connection
-        self.client = client
+        makeClient = client
     }
 
     var instance: SourceInstanceKey { SourceInstanceKey(type: .webDAV, id: connection.id) }

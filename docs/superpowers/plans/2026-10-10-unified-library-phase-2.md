@@ -182,6 +182,13 @@ Phase 0's and Phase 1's guardrails apply in full:
 - no `try?` that discards a parse or network error;
 - every fallback is disclosed.
 
+**The §19 Phase 2 regression, by the names `-only-testing` needs** (checked against the suite count in 2a):
+
+- Swift Testing structs: `OPDSParserTests`, `OPDS2ParserTests`, `GutenbergOPDS2FixtureTests`, `PublicLibraryStorefrontTests`, `PublicLibraryRegistryTests`, `PublicLibraryAvailabilityTests`, `RemoteLibraryBrowsePresentationTests`, `RemoteLibraryConnectionTests`, `RemoteLibraryHTTPTests`, `RemoteLibraryServiceTests`, `RemoteLibraryWritingTests`, `RemoteLibraryReadFailureTests`, `RemoteReadingRecordTests`, `RemoteEPUBPublicationTests`, `WebDAVBrowseModelTests`, `CalibreCFIMapperTests`, `CalibreProgressServiceTests` (both in `CalibreProgressTests.swift`), `AozoraCatalogStoreTests`, `AozoraCatalogTests`.
+- XCTest classes: `RemotePDFReaderTests`.
+- UI (`yuedu appUITests/…`): `RemoteLibraryNavigationUITests`, `PublicLibraryStorefrontUITests`, `PublicLibraryExploreUITests`.
+- From 2a on, also `SourceFailureTests`, `OPDSProviderTests`, `WebDAVProviderTests`, `AozoraProviderTests`, `ShelfProviderTests`, `SourceProviderRegistryTests`, `OPDSBrowseModelBehaviorTests`.
+
 Phase 2 adds:
 
 - **UI** (2b, 2c, 2d):
@@ -508,6 +515,11 @@ Branch `unified-library/2a-registry`, on `6ad3b788`. Not merged, not pushed.
 - **Decisions made in the step:**
   - An OPDS entry with neither a navigation link nor an acquisition is left out of `browse`, as the feed views already leave it untappable.
   - `OPDSProvider.capabilities()` answers `search: .unknown`, since a feed advertises its search only once fetched, and `capabilities()` sends no request. It does not tell Calibre from Calibre-Web either; `libraryInfo()` would be a request. The model's own search decision is unchanged.
+- **Follow-up fixes in the step:**
+  - The registry resolves through `OPDSCatalogStore.connection(id:)`, the lookup the models made before. That lookup answers only `builtin.gutenberg` beyond the stored connections, so nothing changed.
+  - `OPDSProvider` and `WebDAVProvider` build their client on first use. `browsableProviders()` therefore reads no keychain.
+  - The provider tests' HTTP stub answers by host, so the OPDS and WebDAV suites cannot answer each other's requests if they run concurrently.
+- **Constraint on Phase 5's caller:** `ShelfProvider.browse` calls `WorkIndexService.liveContext`, so it inherits 1c's constraint. `BookSourceStore.source(id:)` waits on the main thread until the source library is read. Browse the shelf only once that store has loaded.
 - **Nothing on screen differs.** The UI tests below include the Gutenberg storefront with fixtures and the three remote library entries. There is no live OPDS or WebDAV server here, so those two were not browsed by hand.
 
 ```
@@ -524,4 +536,7 @@ Branch `unified-library/2a-registry`, on `6ad3b788`. Not merged, not pushed.
 ✔ Test run with 14 tests in 2 suites passed (CalibreCFIMapperTests, CalibreProgressServiceTests)
 UI: RemoteLibraryNavigationUITests (1), PublicLibraryStorefrontUITests (3),
     PublicLibraryExploreUITests (2): Executed 6 tests, with 0 failures
+After the follow-up fixes:
+✔ Test run with 43 tests in 10 suites passed (the six 2a suites, OPDSBrowseModelBehaviorTests,
+   WebDAVBrowseModelTests, PublicLibraryStorefrontTests, RemoteLibraryConnectionTests)
 ```
