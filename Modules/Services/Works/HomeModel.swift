@@ -58,6 +58,8 @@ final class HomeModel: ObservableObject {
     private var providers: [String: any HomeSectionProviding] = [:]
     private var requested: Set<String> = []
     private var queueTails: [SourceInstanceKey: Task<Void, Never>] = [:]
+    /// Rows queued or loading, so a 重試, 載入 or pull to refresh never starts a second load.
+    private var active: Set<String> = []
 
     /// - Parameters:
     ///   - providers: the sources now, asked again at each `sync`
@@ -144,7 +146,7 @@ final class HomeModel: ObservableObject {
 
     /// The reader tapped 載入, or 重試 on a failed row.
     func request(_ rowID: String) {
-        guard let row = row(rowID), row.state != .loading else { return }
+        guard let row = row(rowID) else { return }
         requested.insert(rowID)
         start(row)
     }
@@ -152,7 +154,7 @@ final class HomeModel: ObservableObject {
     /// Pull to refresh: rows already loaded load again. An on-demand row goes back to 載入.
     func reload() {
         for item in items {
-            guard case .row(let row) = item, requested.contains(row.id) else { continue }
+            guard case .row(let row) = item, requested.contains(row.id), !active.contains(row.id) else { continue }
             if row.policy == .onDemandOnly {
                 setState(.awaitingRequest, of: row.id)
             } else {
@@ -162,6 +164,7 @@ final class HomeModel: ObservableObject {
     }
 
     private func start(_ row: Row) {
+        guard active.insert(row.id).inserted else { return }
         switch row.policy {
         case .serialPerSource:
             let previous = queueTails[row.source]
@@ -175,6 +178,7 @@ final class HomeModel: ObservableObject {
     }
 
     private func fetch(_ rowID: String) async {
+        defer { active.remove(rowID) }
         guard let row = row(rowID), let provider = providers[rowID] else { return }
         setState(.loading, of: rowID)
         let started = SourcePerfTrace.now

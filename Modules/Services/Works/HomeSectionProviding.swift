@@ -149,17 +149,11 @@ extension WebDAVProvider: HomeSectionProviding {
 
     /// The indexed books, newest on the server first; a file with no date goes last.
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
-        guard case .latest = section.binding, let state = records?.state(connectionID: connection.id) else { return [] }
-        let dated = state.visibleFiles.map { ($0, $0.lastModified.flatMap(Self.serverDate)) }
-        let newest = dated.sorted { lhs, rhs in
-            switch (lhs.1, rhs.1) {
-            case let (l?, r?): l > r
-            case (_?, nil): true
-            default: false
-            }
-        }.prefix(HomeRow.limit)
-        return newest.map { file, _ in
-            let url = WebDAVMetadataFiller.url(of: file, under: state.root)
+        guard case .latest = section.binding, let records else { return [] }
+        let connectionID = connection.id
+        guard let newest = await Self.newestFiles(in: records, connectionID: connectionID, limit: HomeRow.limit) else { return [] }
+        return newest.files.map { file in
+            let url = WebDAVMetadataFiller.url(of: file, under: newest.root)
             let entry = WebDAVBrowseClient.Entry(url: url, name: url.lastPathComponent, isDirectory: false, size: file.size,
                                                  etag: file.etag, lastModified: file.lastModified)
             let cover: CoverReference = file.cover.map { .copyFile(WebDAVIndexCoordinator.defaultCoverDirectory.appendingPathComponent($0).path) }
@@ -167,18 +161,73 @@ extension WebDAVProvider: HomeSectionProviding {
             return .item(file.record,
                          WorkSummary(title: file.record.title, authors: file.record.authors, cover: cover,
                                      blurb: nil, language: file.record.language, contentKind: file.record.contentKind),
-                         .webDAVFile(entry, connectionID: connection.id))
+                         .webDAVFile(entry, connectionID: connectionID))
         }
     }
 
-    /// `getlastmodified` is an HTTP date (RFC 1123).
+    /// Reads the index and picks the newest files off the main actor: at Phase 2's measured
+    /// size (20,000 books) this took 2.99 s on the main actor in Debug, most of it one
+    /// `DateFormatter` per file (Phase 5 plan, 5b fixes).
+    nonisolated static func newestFiles(in records: RemoteRecordStore, connectionID: String,
+                                        limit: Int) async -> (root: URL, files: [IndexedFile])? {
+        let started = SourcePerfTrace.now
+        guard let state = records.state(connectionID: connectionID) else { return nil }
+        let dated = state.visibleFiles.map { ($0, $0.lastModified.flatMap(serverDate)) }
+        let newest = dated.sorted { lhs, rhs in
+            switch (lhs.1, rhs.1) {
+            case let (l?, r?): l > r
+            case (_?, nil): true
+            default: false
+            }
+        }.prefix(limit).map(\.0)
+        SourcePerfTrace.record("home.webdav.latest", "files=\(dated.count)", since: started, thresholdMs: 0)
+        return (state.root, Array(newest))
+    }
+
+    /// `getlastmodified` is an HTTP date. The fixed RFC 1123 form every server sends
+    /// (`Tue, 01 Oct 2024 08:00:00 GMT`) is read by position: `DateFormatter` cost 1.4 s for
+    /// 20,000 files in Debug. Any other form (RFC 850, asctime) goes to the formatter.
     nonisolated static func serverDate(_ text: String) -> Date? {
+        fixedHTTPDate(text) ?? httpDateFormatter.date(from: text)
+    }
+
+    private nonisolated static func fixedHTTPDate(_ text: String) -> Date? {
+        let bytes = Array(text.utf8)
+        guard bytes.count == 29, bytes[3] == UInt8(ascii: ","), bytes[4] == 0x20, bytes[7] == 0x20, bytes[11] == 0x20,
+              bytes[16] == 0x20, bytes[19] == UInt8(ascii: ":"), bytes[22] == UInt8(ascii: ":"), bytes[25] == 0x20,
+              bytes[26...28].elementsEqual("GMT".utf8) else { return nil }
+        func number(_ range: Range<Int>) -> Int? {
+            var value = 0
+            for byte in bytes[range] {
+                guard (0x30...0x39).contains(byte) else { return nil }
+                value = value * 10 + Int(byte - 0x30)
+            }
+            return value
+        }
+        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        guard let name = String(bytes: bytes[8..<11], encoding: .ascii), let monthIndex = months.firstIndex(of: name),
+              let day = number(5..<7), let year = number(12..<16), let hour = number(17..<19),
+              let minute = number(20..<22), let second = number(23..<25),
+              (1...31).contains(day), hour < 24, minute < 60, second < 61 else { return nil }
+        // Days from 1970-01-01 to the civil date (Howard Hinnant's days_from_civil).
+        let month = monthIndex + 1
+        let y = month <= 2 ? year - 1 : year
+        let era = (y >= 0 ? y : y - 399) / 400
+        let yearOfEra = y - era * 400
+        let dayOfYear = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1
+        let dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear
+        let days = era * 146_097 + dayOfEra - 719_468
+        return Date(timeIntervalSince1970: TimeInterval(days * 86_400 + hour * 3_600 + minute * 60 + second))
+    }
+
+    /// One formatter for the other forms: parsing is thread-safe.
+    private nonisolated static let httpDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "GMT")
         formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-        return formatter.date(from: text)
-    }
+        return formatter
+    }()
 }
 
 // MARK: - Helpers
