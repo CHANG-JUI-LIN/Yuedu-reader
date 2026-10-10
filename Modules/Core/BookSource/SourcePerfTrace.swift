@@ -19,6 +19,7 @@ import Foundation
 ///   search.presentation.runtimeMarkers / kindInference / coverURL / introSanitize / mainMerge
 ///   search.presentation.coverURL.rejected
 ///   search.listPublish / search.listPublish.summary
+///   search.firstResult  (submit to the first merged batch; tagged origin / sources / cacheDays)
 ///   search.iOS17.nativeTableApply
 ///
 /// Only spans at or above their reporting threshold are logged, so hot paths
