@@ -111,6 +111,40 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         close.tap()
     }
 
+    /// The store's pages are pushed by value (unified library 5c, decision 5): a card opened
+    /// two pages deep pushes its author on top of them, and backing out walks the same pages.
+    @MainActor
+    func testCardFromAPushedPageKeepsTheStack() {
+        let app = application()
+        app.launch()
+        let explore = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(explore.waitForExistence(timeout: 30))
+        explore.tap()
+        let categories = app.buttons["publicLibrary.categories"].firstMatch
+        XCTAssertTrue(categories.waitForExistence(timeout: 10))
+        categories.tap()
+        XCTAssertTrue(app.navigationBars["分類"].waitForExistence(timeout: 10))
+        app.buttons["中文書籍"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10))
+        app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/24264.opds"].firstMatch.tap()
+        let close = app.buttons["publicLibrary.closeSheet"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 10))
+        let author = app.buttons["publicLibrary.author.https://www.gutenberg.org/ebooks/author/10001.opds"].firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 10), app.debugDescription)
+        author.tap()
+        XCTAssertTrue(app.navigationBars["曹雪芹"].waitForExistence(timeout: 10))
+        screenshot(app, "storefront-author-from-category")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 10), "Back from the author returns to the card")
+        close.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["中文書籍"].exists, "The card closes onto the page it was opened from")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["分類"].waitForExistence(timeout: 10))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(categories.waitForExistence(timeout: 10))
+    }
+
     @MainActor
     func testProThemeCard() {
         let app = application(pro: true)

@@ -2,9 +2,43 @@ import SwiftUI
 
 /// Feed routes freeze the selected location rather than resolving a live list.
 struct OPDSFeedRoute: Hashable {
+    /// The view the feed opens in. The bookshelf's libraries list a feed and the public-library
+    /// storefront shows it as a grid; both push this route, and Explore's home pushes both on one
+    /// stack (unified library 5c, decision 5), so the route names its view rather than the stack.
+    enum Presentation: Hashable {
+        case list
+        case storefront
+    }
+
     let catalogID: String
     let url: String
     let title: String
+    var presentation = Presentation.list
+}
+
+extension View {
+    /// The remote-library pages: a feed, a WebDAV folder and a book. Registered once per stack.
+    func remoteLibraryDestinations() -> some View {
+        modifier(RemoteLibraryDestinations())
+    }
+}
+
+private struct RemoteLibraryDestinations: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .navigationDestination(for: OPDSFeedRoute.self) { route in
+                switch route.presentation {
+                case .list: OPDSFeedView(route: route)
+                case .storefront: PublicLibraryFeedView(route: route)
+                }
+            }
+            .navigationDestination(for: WebDAVDirectoryRoute.self) { route in
+                WebDAVDirectoryView(route: route)
+            }
+            .navigationDestination(for: RemoteLibraryBookRoute.self) { route in
+                RemoteLibraryBookDetailView(item: route.item)
+            }
+    }
 }
 
 struct OPDSImportView: View {
@@ -78,15 +112,7 @@ struct RemoteLibraryBrowserView: View {
             .navigationTitle(kind.libraryTitle)
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .bookshelf)
-            .navigationDestination(for: OPDSFeedRoute.self) { route in
-                OPDSFeedView(route: route)
-            }
-            .navigationDestination(for: WebDAVDirectoryRoute.self) { route in
-                WebDAVDirectoryView(route: route)
-            }
-            .navigationDestination(for: RemoteLibraryBookRoute.self) { route in
-                RemoteLibraryBookDetailView(item: route.item)
-            }
+            .remoteLibraryDestinations()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { dismiss() } label: {

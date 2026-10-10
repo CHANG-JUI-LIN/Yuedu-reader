@@ -223,7 +223,7 @@ struct ExploreHomeView: View {
                 }
                 .environmentObject(store)
             }
-            .navigationDestination(for: ExploreNavigationRoute.self, destination: destination)
+            .exploreRouteDestinations(openBrowser: openBrowser)
         }
     }
 
@@ -381,54 +381,6 @@ struct ExploreHomeView: View {
             if exploreSources.contains(where: { $0.bookSourceUrl == url }) {
                 navigation.push(.source(sourceURL: url))
             }
-        }
-    }
-
-    // MARK: Destinations
-
-    @ViewBuilder
-    private func destination(_ route: ExploreNavigationRoute) -> some View {
-        switch route {
-        case .source(let sourceURL):
-            if let source = sourceStore.sources.first(where: { $0.bookSourceUrl == sourceURL }) {
-                ExploreSourcePage(source: source) { address in
-                    openBrowser(.open(address))
-                }
-            } else {
-                deletedSourceState
-            }
-        case .customPage(let id):
-            CustomExplorePageView(pageID: id)
-        case .customPageEditor(let id):
-            CustomExplorePageEditor(pageID: id)
-        case .book(let book):
-            OnlineBookDetailDestination(.book(book)).environmentObject(store)
-        case .sourceCategory(let reference):
-            if let source = reference.source, let item = reference.cardItem {
-                DiscoverCategoryView(
-                    section: DiscoverShowcaseSection(
-                        item: item,
-                        coverBaseURL: source.bookSourceUrl,
-                        coverHeaders: source.parsedHeaders
-                    ),
-                    source: source
-                )
-            } else {
-                deletedSourceState
-            }
-        case .searchInSource(let sourceURL):
-            SearchView(sessionScope: SearchSourceScope(
-                mode: .custom, selectedSourceURLs: [sourceURL]
-            ))
-            .environmentObject(store)
-        case .sourceManager:
-            BookSourceListView()
-        }
-    }
-
-    private var deletedSourceState: some View {
-        ContentUnavailableView {
-            UnavailableLabel(localized("來源配置已被刪除"), systemImage: "books.vertical")
         }
     }
 

@@ -162,7 +162,8 @@ struct PublicLibraryFeedView: View {
 #Preview("公有書庫分類") {
     NavigationStack {
         PublicLibraryFeedView(route: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
-            url: PublicLibrary.gutenbergSearchURL(query: "l.zh").absoluteString, title: localized("中文書籍")))
+            url: PublicLibrary.gutenbergSearchURL(query: "l.zh").absoluteString, title: localized("中文書籍"),
+            presentation: .storefront))
     }.environmentObject(BookStore())
 }
 
