@@ -140,6 +140,7 @@ final class WebDAVIndexCoordinator: ObservableObject {
     }
 
     var summariesForTesting: [String: Summary] { summaries }
+    var stopReasonForTesting: WebDAVIndexPauseReason? { running?.stopReason }
     #endif
 
     // MARK: - Decisions
@@ -236,7 +237,9 @@ final class WebDAVIndexCoordinator: ObservableObject {
                 result.outcome = .paused(.notOnWiFi)
                 store.save(result)
             }
-        } else if result.outcome == nil, let reason = running.stopReason {
+        } else if let reason = running.stopReason, result.outcome == nil || result.outcome == .paused(.background) {
+            // The stop flag is shared: a crawl stopped for Wi-Fi or the setting may have seen it
+            // between batches and reported a background pause. The coordinator knows why.
             result.outcome = .paused(reason)
             if reason != .disabled || knownConnectionIDs.contains(running.connectionID) { store.save(result) }
         }

@@ -123,8 +123,11 @@ struct WebDAVIndexer: Sendable {
         }
         state.outcome = .failed(failure.kind, message: failure.localizedDescription)
         save(state)
+        // `AppLogger` writes only the error's description, which names no path; the code and
+        // status are what diagnose it.
+        let code = (failure.underlying as? URLError).map { "\($0.code.rawValue)" } ?? failure.status.map { "http \($0)" } ?? "-"
         AppLogger.network("WebDAV index failed", error: SourceFailure.loggable(failure),
-                          context: ["connection": connectionID, "kind": failure.kind.rawValue, "pending": "\(state.frontier.count)"])
+                          context: ["connection": connectionID, "kind": failure.kind.rawValue, "code": code, "pending": "\(state.frontier.count)"])
         return state
     }
 

@@ -83,6 +83,16 @@ final class OPDSCatalogStore: ObservableObject {
             // the synchronization/backup account and vice versa.
             defaults.set(true, forKey: "remote_library_webdav_migrated")
         }
+        // Unified library 2d: a copy of the backup account made before 2d has no indexing flag
+        // and is recognized by matching the backup account. Write its "off" down now, so a later
+        // change to the backup account cannot turn indexing of the backup server on.
+        var settled = false
+        for index in catalogs.indices where catalogs[index].kind == .webDAV && catalogs[index].indexesBooks == nil
+            && isBackupAccountCopy(catalogs[index]) {
+            catalogs[index].indexesBooks = false
+            settled = true
+        }
+        if settled { save() }
     }
 
     @discardableResult

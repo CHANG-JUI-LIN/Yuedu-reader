@@ -662,6 +662,13 @@ Branch `unified-library/2d-webdav-index`, on `9466ab8f`. Merged by the maintaine
 - **End to end** (`RemoteLibrarySettingsUITests.testWebDAVLibraryIndexesItself`, opt-in by `TEST_RUNNER_YUEDU_WEBDAV_BENCHMARK_URL`):
   - Add a WebDAV library at `…/t1k/` in Settings. The toggle is on by default.
   - The row reaches 「Indexed (1000 books)」 on its own within about 20 s (screenshot checked).
+- **Lifecycle, tested after review** (`WebDAVIndexLifecycleTests`, with a lister held mid-folder):
+  - **Background:** entering the background finishes the batch in hand (one folder), records `paused(.background)`, and lists nothing more; returning resumes with the two remaining folders, not the first again.
+  - **Wi-Fi lost** mid-crawl stops at once, records `paused(.notOnWiFi)`, and lists nothing more.
+  - **That test found a bug:** the stop flag is shared, so a crawl stopped for Wi-Fi reported a background pause. The coordinator's stop reason now wins.
+- **The backup copy's "off" is written down at load** (`BackupAccountCopyTests`). A pre-2d copy recognized by the backup account gets `indexesBooks = false`, so a later change to the backup account cannot turn on indexing of the backup server.
+- **Logs:** `AppLogger` writes only an error's `localizedDescription`, which names no path. The failure line adds the URL error code or HTTP status.
+- **Follow-up, not done:** when a connection's URL or user changes, its old records stay visible until the new crawl's first save, up to 100 folders later.
 - **Also on this branch:** `5a1baa9a` removes the close button from book-source management. 2b pushed it everywhere but left the xmark. The page now has no stack or close button of its own, and `PublicLibraryExploreUITests` asserts the close button is gone.
 
 ```
@@ -675,4 +682,8 @@ UI (with TEST_RUNNER_YUEDU_WEBDAV_BENCHMARK_URL): RemoteLibrarySettingsUITests (
     RemoteLibraryNavigationUITests, PublicLibraryStorefrontUITests (3), PublicLibraryExploreUITests (2),
     BookSourceManagementUITests: Executed 10 tests, with 1 skipped (the opt-in source-pack test), 0 failures
 ruby scripts/check_localizations.rb: OK
+After the review fixes:
+✔ Test run with 25 tests in 7 suites passed (WebDAVIndexerTests, WebDAVIndexCoordinatorTests,
+   WebDAVIndexLifecycleTests, BackupAccountCopyTests, RemoteRecordStoreTests, WorkIndexRemoteRecordsTests,
+   RemoteLibraryConnectionTests)
 ```

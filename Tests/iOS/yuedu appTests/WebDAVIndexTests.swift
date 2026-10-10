@@ -332,6 +332,132 @@ struct WebDAVIndexCoordinatorTests {
     }
 }
 
+/// Holds the lister on one folder until opened, and counts listings.
+private actor ListGate {
+    private var entered: CheckedContinuation<Void, Never>?
+    private var hasEntered = false
+    private var release: CheckedContinuation<Void, Never>?
+    private(set) var calls = 0
+
+    func list(_ url: URL, holdOn held: URL, tree: Tree) async throws -> [WebDAVBrowseClient.Entry] {
+        calls += 1
+        if url == held {
+            hasEntered = true
+            entered?.resume()
+            await withCheckedContinuation { release = $0 }
+        }
+        return try await tree.lister(url)
+    }
+
+    func waitUntilEntered() async {
+        if hasEntered { return }
+        await withCheckedContinuation { entered = $0 }
+    }
+
+    func open() {
+        release?.resume()
+        release = nil
+    }
+}
+
+@MainActor
+@Suite("WebDAV index coordinator lifecycle", .serialized)
+struct WebDAVIndexLifecycleTests {
+    private func context(gate: ListGate, tree: Tree) throws -> (OPDSCatalogStore, RemoteRecordStore, FakeNetwork, WebDAVIndexCoordinator, URL) {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("IndexLifecycle-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let connections = OPDSCatalogStore(storageDirectory: folder, importLegacyWebDAV: false,
+                                           defaults: UserDefaults(suiteName: "index-lifecycle-\(UUID().uuidString)")!)
+        let records = RemoteRecordStore(directory: folder.appendingPathComponent("remote"))
+        let network = FakeNetwork(true)
+        let coordinator = WebDAVIndexCoordinator(
+            connections: connections, network: network,
+            limits: .init(maxDepth: 10, foldersPerBatch: 1, maxFiles: 1_000, recrawlInterval: 3_600),
+            makeLister: { _, _ in { url in try await gate.list(url, holdOn: Tree.root, tree: tree) } }
+        )
+        return (connections, records, network, coordinator, folder)
+    }
+
+    @Test("entering the background finishes the batch in hand and records a pause; returning resumes")
+    func background() async throws {
+        let gate = ListGate()
+        let tree = Tree.make(depth: 1, width: 2, books: 1)
+        let (connections, records, _, coordinator, folder) = try context(gate: gate, tree: tree)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let connection = connections.add(name: "DAV", url: Tree.root.absoluteString, username: nil, password: nil, kind: .webDAV)
+        await coordinator.attach(store: records)
+        coordinator.setActive(true)
+        await gate.waitUntilEntered()
+
+        coordinator.setActive(false)
+        await gate.open()
+        await coordinator.waitForIdleForTesting()
+        records.waitForPendingWritesForTesting()
+        let paused = try #require(records.state(connectionID: connection.id))
+        #expect(paused.outcome == .paused(.background))
+        #expect(paused.isCrawling)
+        #expect(await gate.calls == 1, "only the batch in hand (one folder) ran")
+
+        coordinator.setActive(true)
+        await coordinator.waitForIdleForTesting()
+        records.waitForPendingWritesForTesting()
+        #expect(records.state(connectionID: connection.id)?.outcome == .completed(3))
+        #expect(await gate.calls == 3, "the two remaining folders, not the first again")
+    }
+
+    @Test("losing Wi-Fi mid-crawl stops at once, records a pause, and lists nothing more")
+    func wifiLost() async throws {
+        let gate = ListGate()
+        let tree = Tree.make(depth: 1, width: 2, books: 1)
+        let (connections, records, network, coordinator, folder) = try context(gate: gate, tree: tree)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let connection = connections.add(name: "DAV", url: Tree.root.absoluteString, username: nil, password: nil, kind: .webDAV)
+        await coordinator.attach(store: records)
+        coordinator.setActive(true)
+        await gate.waitUntilEntered()
+
+        network.subject.send(false)
+        // The change reaches the coordinator through a main-actor task; yield until it has.
+        for _ in 0..<100 where coordinator.stopReasonForTesting == nil { await Task.yield() }
+        #expect(coordinator.stopReasonForTesting == .notOnWiFi)
+        await gate.open()
+        await coordinator.waitForIdleForTesting()
+        records.waitForPendingWritesForTesting()
+
+        #expect(records.state(connectionID: connection.id)?.outcome == .paused(.notOnWiFi))
+        #expect(await gate.calls == 1)
+        #expect(coordinator.statuses[connection.id] == .pausedNotOnWiFi)
+    }
+}
+
+@MainActor
+@Suite("Backup account copy", .serialized)
+struct BackupAccountCopyTests {
+    @Test("a pre-2d copy of the backup account is written off, and stays off when the backup account changes")
+    func staysOff() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("BackupCopy-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let defaults = UserDefaults(suiteName: "backup-copy-\(UUID().uuidString)")!
+        defaults.set(true, forKey: "remote_library_webdav_migrated")
+        defaults.set("https://backup.example/dav/", forKey: "webdav_url")
+        // A connection saved by a build before 2d: no indexing flag.
+        let saved = [OPDSCatalog(name: "backup", url: "https://backup.example/dav/", kind: .webDAV),
+                     OPDSCatalog(name: "books", url: "https://books.example/dav/", kind: .webDAV)]
+        try JSONEncoder().encode(saved).write(to: folder.appendingPathComponent("opds_catalogs.json"))
+
+        let store = OPDSCatalogStore(storageDirectory: folder, importLegacyWebDAV: false, defaults: defaults)
+        #expect(store.catalogs[0].indexesBooks == false, "written down at load")
+        #expect(store.catalogs[1].indexesBooks == nil)
+        #expect(!store.indexesBooks(store.catalogs[0]))
+        #expect(store.indexesBooks(store.catalogs[1]))
+
+        defaults.set("https://other.example/dav/", forKey: "webdav_url")
+        let reloaded = OPDSCatalogStore(storageDirectory: folder, importLegacyWebDAV: false, defaults: defaults)
+        #expect(!reloaded.indexesBooks(reloaded.catalogs[0]), "a changed backup account does not turn it on")
+    }
+}
+
 // MARK: - The work index's second input
 
 @MainActor
