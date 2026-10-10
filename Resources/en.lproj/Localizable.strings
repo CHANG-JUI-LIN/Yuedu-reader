@@ -3631,7 +3631,7 @@
 "傳送給開發者" = "Send to Developer";
 "傳送中…" = "Sending…";
 "傳送診斷紀錄給開發者？" = "Send Diagnostic Log to the Developer?";
-"會傳送這次啟動的完整紀錄（含書名與書源網址；帳號、密碼與網址參數已移除）、裝置型號、系統與 App 版本，以及書架、書源的數量。不包含書的內容。" = "This sends the full log of this launch (including book titles and book source addresses; accounts, passwords and URL parameters are removed), your device model, system and app version, and how many books and book sources you have. No book content is included.";
+"會傳送這次啟動的完整紀錄（含書名與來源配置網址；帳號、密碼與網址參數已移除）、裝置型號、系統與 App 版本，以及書架、來源配置的數量。不包含書的內容。" = "This sends the full log of this launch (including book titles and source addresses; accounts, passwords and URL parameters are removed), your device model, system and app version, and how many books and sources you have. No book content is included.";
 "簡單描述發生了什麼（選填）" = "What happened? (optional)";
 "傳送" = "Send";
 "已傳送" = "Sent";

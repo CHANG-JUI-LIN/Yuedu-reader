@@ -277,7 +277,7 @@ struct DiagnosticsView: View {
             Button(localized("傳送")) { model.sendReport(exportBundle, note: sendNote) }
             Button(localized("取消"), role: .cancel) {}
         } message: {
-            Text(localized("會傳送這次啟動的完整紀錄（含書名與書源網址；帳號、密碼與網址參數已移除）、裝置型號、系統與 App 版本，以及書架、書源的數量。不包含書的內容。"))
+            Text(localized("會傳送這次啟動的完整紀錄（含書名與來源配置網址；帳號、密碼與網址參數已移除）、裝置型號、系統與 App 版本，以及書架、來源配置的數量。不包含書的內容。"))
         }
         .alert(
             model.sendOutcome?.title ?? "",
