@@ -266,6 +266,7 @@ struct SourceRecordDerivationTests {
         #expect(label(remoteBook(connectionID: "w", entryID: "https://dav.example/a.epub", format: "epub"), context(kinds: kinds, roots: roots)) == localized("WebDAV 書庫"))
         #expect(label(remoteBook(connectionID: "c", entryID: "e", format: "epub"), context(kinds: kinds)) == localized("Calibre 書庫"))
         #expect(label(remoteBook(connectionID: "builtin.gutenberg", entryID: "urn:gutenberg:1342", format: "epub")) == localized("Project Gutenberg"))
+        #expect(label(remoteBook(connectionID: "removed", entryID: "e", format: "epub")) == localized("遠端書庫"))
 
         var aozora = ReadingBook(title: "a", source: "local_epub", contentFilename: "x")
         aozora.aozora = AozoraBookSource(originalFilename: "x.zip", sourceEncoding: 0, catalogWorkID: "000789")

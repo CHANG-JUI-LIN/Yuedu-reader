@@ -1,7 +1,8 @@
 import Foundation
 
 /// The value of 書籍資訊's 「來源」 row: where a copy came from, read from its source record
-/// (unified library 1a). Every string is an existing key; the mapping is in the Phase 1 plan.
+/// (unified library 1a). The mapping is in the Phase 1 plan; 遠端書庫 is the one string it
+/// added (maintainer, 2026-10-10).
 enum SourceLabel {
     static func text(for book: ReadingBook, record: SourceRecord) -> String {
         switch record.key.instance.type {
@@ -19,9 +20,8 @@ enum SourceLabel {
             return localized("青空文庫")
         case .library, .bibliographic:
             if book.aozora != nil { return localized("青空文庫") }
-            // A remote copy whose connection was removed: no existing string names it yet,
-            // so it keeps the label it had before this row was fixed.
-            if book.remoteSource != nil { return localized("網頁匯入") }
+            // A remote copy whose connection was removed: its kind is gone with it.
+            if book.remoteSource != nil { return localized("遠端書庫") }
             return isWebPage(book) ? localized("網頁匯入") : localized("本機文件")
         }
     }
