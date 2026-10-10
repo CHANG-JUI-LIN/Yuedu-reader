@@ -236,14 +236,20 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
         // Resumed downloads look their sources up on the main thread; wait for the library
         // read here instead (it runs off the main thread from launch).
         await BookSourceStore.shared.waitUntilLoaded()
-        // Shelf records carry no table of contents; each downloading book's is read here.
-        let books = await MainActor.run {
-            store.books
-                .filter { $0.isOnline && $0.offlineDownloadTask != nil }
-                .compactMap { store.readingBook(id: $0.id) }
+        // Only the records are taken on the main thread. Each table of contents (2–4 MB of
+        // JSON for a long book, and the store's cache holds 8) used to be read and decoded
+        // there too, for every downloaded book, on every return to the foreground. The list
+        // store is lock-protected, so it is read here, on this actor.
+        let summaries = await MainActor.run {
+            store.books.filter { $0.isOnline && $0.offlineDownloadTask != nil }
         }
-        for book in books {
-            guard let refs = book.onlineChapters else { continue }
+        for summary in summaries {
+            let chapters = SourcePerfTrace.span(
+                "offline.reconcile.toc", "main=\(Thread.isMainThread)", thresholdMs: 20
+            ) { store.chapters(for: summary.id) }
+            guard let refs = chapters else { continue }
+            var book = summary
+            book.onlineChapters = refs
             // A reconcile validates; it never destroys. With an empty table of contents every
             // requested index falls outside `refs.indices`, so the merge below would drop them
             // all, leave an empty task, and `derivedState` would answer `.none` — the book
@@ -259,7 +265,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                 continue
             }
             let requestedIndices = await MainActor.run {
-                store.books.first(where: { $0.id == book.id })?.offlineDownloadTask?.requestedIndices
+                store.shelfRecord(id: book.id)?.offlineDownloadTask?.requestedIndices
             }
             guard let requestedIndices else { continue }
 
@@ -305,8 +311,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
             // closure is an error under the Swift 6 language mode.
             let merged = await MainActor.run {
                 [droppedIndices, verifiedIndices, missingIndices] () -> BookOfflineDownloadTask? in
-                guard var task = store.books
-                    .first(where: { $0.id == book.id })?.offlineDownloadTask
+                guard var task = store.shelfRecord(id: book.id)?.offlineDownloadTask
                 else { return nil }
                 task.removeRequestedIndices(droppedIndices)
                 for index in verifiedIndices where task.requestedIndices.contains(index) {

@@ -112,8 +112,16 @@ class BookStore: ObservableObject, BookProvider {
         return book
     }
 
+    /// A shelf book's record — its summary, without the table of contents — found without
+    /// building `books`, which filters every record on each access.
+    func shelfRecord(id: UUID) -> ReadingBook? {
+        guard let book = records.first(where: { $0.id == id }), book.isInBookshelf else { return nil }
+        return book
+    }
+
     /// A book's table of contents (legado's `getChapterList`). The shelf's records carry
-    /// only its summary (`totalChapterNum`, `latestChapterTitle`).
+    /// only its summary (`totalChapterNum`, `latestChapterTitle`). Safe off the main thread:
+    /// `chapterStore` has its own lock.
     func chapters(for bookId: UUID) -> [OnlineChapterRef]? {
         chapterStore.chapters(for: bookId)
     }
