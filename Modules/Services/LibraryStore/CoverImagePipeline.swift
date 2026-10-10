@@ -14,6 +14,9 @@ enum CoverImageSource: Hashable, Sendable {
     case bookCover(filename: String)
     /// An image in the user's 預設封面 library.
     case defaultCover(fileName: String)
+    /// A cover another store keeps, by absolute path: the WebDAV index's covers in
+    /// `Caches/Works/covers` (unified library 2d), drawn on Explore's home (5c).
+    case indexedCover(path: String)
 
     /// Downloaded covers sit in the directory 設定 → 快取管理 empties wholesale.
     /// Covers the user picked (`CustomCovers`) and the 預設封面 library do not.
@@ -26,6 +29,7 @@ enum CoverImageSource: Hashable, Sendable {
         switch self {
         case .bookCover(let filename): return "book-cover|\(filename)"
         case .defaultCover(let fileName): return "default-cover|\(fileName)"
+        case .indexedCover(let path): return "indexed-cover|\(path)"
         }
     }
 
@@ -36,6 +40,8 @@ enum CoverImageSource: Hashable, Sendable {
             return StorageLocations.isCustomCoverFilename(filename) ? "custom" : "downloaded"
         case .defaultCover:
             return "default"
+        case .indexedCover:
+            return "indexed"
         }
     }
 }
@@ -165,6 +171,8 @@ struct CoverImageIO: Sendable {
                 return StorageLocations.coverFileLocation(filename)
             case .defaultCover(let fileName):
                 return DefaultCoverStorageManager.imageLocation(fileName: fileName)
+            case .indexedCover(let path):
+                return URL(fileURLWithPath: path)
             }
         },
         // Not memory-mapped: a mapped file truncated by a writer mid-decode faults.
@@ -696,6 +704,8 @@ final class CoverImagePipeline: @unchecked Sendable {
             return source.isDownloadedBookCover ? max(own, state.downloadedBookCoversEpoch) : own
         case .defaultCover:
             return max(own, state.defaultCoversEpoch)
+        case .indexedCover:
+            return own
         }
     }
 

@@ -50,9 +50,12 @@ enum PublicLibraryBook: Identifiable {
     var id: String {
         switch self {
         case .gutenberg(let book): "gutenberg:" + book.id
-        case .aozora(let work, _): "aozora:" + work.id
+        case .aozora(let work, _): Self.aozoraID(work)
         }
     }
+
+    /// An Aozora work's id, for a caller holding the work without its index (Explore's home).
+    static func aozoraID(_ work: AozoraWork) -> String { "aozora:" + work.id }
     var title: String {
         switch self {
         case .gutenberg(let book): book.title

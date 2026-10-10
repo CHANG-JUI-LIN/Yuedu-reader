@@ -339,6 +339,15 @@ enum DSLayout {
     /// Cover in a custom explore page's 推薦卡片 and 左右滑動 rows — five to a phone's card.
     static let customExploreCardCoverWidth: CGFloat = 70
     static let customExploreCardCoverHeight: CGFloat = 105
+    /// A cover in a row of Explore's home (unified library 5c), 2:3. Between Apple Books'
+    /// two jackets to a phone (`publicLibraryMinimumCoverWidth`) and Emby's three: about two
+    /// and a half on a 402pt phone, the next one peeking past the edge. Scaled with Dynamic Type.
+    static let homeCardCoverWidth: CGFloat = 140
+    /// The widest a home cover grows at accessibility text sizes, so one still fits a phone.
+    static let homeCardCoverMaxWidth: CGFloat = 240
+    /// The reading-progress bar along the bottom of a 繼續閱讀 cover, as Emby marks a
+    /// resumable item.
+    static let homeCardProgressHeight: CGFloat = 3
     /// A custom explore page's rank badge at the default text size (scaled with
     /// Dynamic Type); two-digit ranks widen it.
     static let customExploreRankBadgeSize: CGFloat = 24

@@ -145,6 +145,8 @@ struct yuedu_appApp: App {
                     ContinuousScrollGestureFixture()
                 } else if ProcessInfo.processInfo.arguments.contains(AIChatDesignFixture.launchArgument) {
                     AIChatDesignFixture()
+                } else if ProcessInfo.processInfo.arguments.contains(HomeDesignFixture.launchArgument) {
+                    HomeDesignFixture()
                 } else {
                     ContentView()
                 }

@@ -61,6 +61,8 @@ private final class CoverIOProbe: Sendable {
                     return StorageLocations.coverFileLocation(filename, in: self.root)
                 case .defaultCover(let fileName):
                     return CoverFixture.defaultCoverURL(fileName, in: self.root)
+                case .indexedCover(let path):
+                    return URL(fileURLWithPath: path)
                 }
             },
             read: { url in
@@ -282,6 +284,21 @@ struct CoverImagePipelineTests {
         #expect(!FileManager.default.fileExists(atPath: root.path))
         // The directory-creating form resolves to the very same file.
         #expect(StorageLocations.coverFileLocation("x_cover.jpg") == StorageLocations.coverFile("x_cover.jpg"))
+    }
+
+    @Test("An indexed cover is read from its absolute path")
+    func indexedCoverReadsItsPath() async throws {
+        let fixture = try CoverFixture()
+        let url = fixture.root.appendingPathComponent("Works/covers/e1.jpg")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Swatch.png(.red).write(to: url)
+        let source = CoverImageSource.indexedCover(path: url.path)
+        #expect(CoverImageIO.live.locate(source) == url)
+
+        let image = try #require(await fixture.pipeline.image(for: CoverImageRequest(source: source, size: rung(240))).image)
+        #expect(Swatch.tone(of: image) == "red")
+        // Not a downloaded cover: 快取管理 emptying those leaves it alone.
+        #expect(!source.isDownloadedBookCover)
     }
 
     // B

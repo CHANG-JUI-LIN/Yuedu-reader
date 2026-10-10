@@ -3664,3 +3664,9 @@
 "已暫停：未連接 Wi-Fi" = "Paused: Not on Wi-Fi";
 "已達上限（%d 本）" = "Limit Reached (%d books)";
 "建立索引失敗：%@" = "Indexing Failed: %@";
+
+/* Explore home (unified library 5c) */
+"我的書庫" = "My Library";
+"%@・最新" = "Latest in %@";
+"載入" = "Load";
+"相關" = "Related";
