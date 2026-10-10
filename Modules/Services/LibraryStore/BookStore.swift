@@ -3071,9 +3071,7 @@ class BookStore: ObservableObject, BookProvider {
     }
 
     private static func normalizeChapterTitle(_ title: String) -> String {
-        ReaderHTMLUtilities.displayText(fromHTMLFragment: title)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+        ReaderHTMLUtilities.compactTitle(title)
     }
 }
 

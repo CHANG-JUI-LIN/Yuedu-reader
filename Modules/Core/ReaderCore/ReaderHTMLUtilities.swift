@@ -2158,11 +2158,37 @@ enum ReaderHTMLUtilities {
     }
 
     private static func normalizedTitleKey(_ text: String) -> String {
-        displayText(fromHTMLFragment: text)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
-            .lowercased()
+        compactTitle(text).lowercased()
     }
+
+    /// A title's display text with every whitespace character removed — what decides whether
+    /// two chapter titles are the same, and what the volume-separator rules match against.
+    ///
+    /// The same result as `displayText(fromHTMLFragment:)` followed by removing `\s+`, which
+    /// is how every caller used to spell it: two regex replacements per title, each compiling
+    /// an `NSRegularExpression`. A table-of-contents refresh normalizes every title of two
+    /// 2 000-chapter lists several times, for every online book on the shelf, at launch — the
+    /// CPU-exception reports (90 s of CPU within ~2 minutes of launch). Plain titles (no `&` or
+    /// `<`, nearly all of them) skip the markup handling; whitespace goes in one scalar pass.
+    static func compactTitle(_ text: String) -> String {
+        let hasMarkup = text.utf8.contains { $0 == UInt8(ascii: "&") || $0 == UInt8(ascii: "<") }
+        let display = hasMarkup ? displayText(fromHTMLFragment: text) : text
+        var scalars = String.UnicodeScalarView()
+        for scalar in display.unicodeScalars
+        where !scalar.properties.isWhitespace && !titleBidiControls.contains(scalar.value) {
+            scalars.append(scalar)
+        }
+        return String(scalars)
+    }
+
+    /// The directional controls `displayText` strips; `compactTitle` strips them on its fast
+    /// path too.
+    private static let titleBidiControls: Set<UInt32> = [
+        0x061C, 0x200E, 0x200F,
+        0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+        0x2066, 0x2067, 0x2068, 0x2069,
+        0xFEFF,
+    ]
 
     private static func sentenceChunks(from text: String) -> [String] {
         var chunks: [String] = []

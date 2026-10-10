@@ -772,15 +772,16 @@ extension OnlineChapterRef {
     /// Whether a chapter title reads as a volume heading rather than a chapter. Shared with
     /// the AI book summaries, which group chapters by volume.
     static func isVolumeSeparatorTitle(_ rawTitle: String) -> Bool {
-        let title = ReaderHTMLUtilities.displayText(fromHTMLFragment: rawTitle)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+        let title = ReaderHTMLUtilities.compactTitle(rawTitle)
         guard !title.isEmpty else { return false }
         if Self.strongVolumeSeparatorTitles.contains(title)
             || ["正文", "番外卷", "番外"].contains(title) {
             return true
         }
-        if title.range(of: #"^第[0-9一二三四五六七八九十百千万]+卷"#, options: .regularExpression) != nil,
+        // The pattern needs a leading 第 and a 卷; checking both first keeps the two regex
+        // compilations below off the ordinary chapter title, asked once per chapter.
+        if title.hasPrefix("第"), title.contains("卷"),
+           title.range(of: #"^第[0-9一二三四五六七八九十百千万]+卷"#, options: .regularExpression) != nil,
            title.range(of: #"[章节章回][0-9一二三四五六七八九十百千万]*"#, options: .regularExpression) == nil {
             return true
         }
@@ -788,10 +789,7 @@ extension OnlineChapterRef {
     }
 
     private var hasStrongVolumeSeparatorTitle: Bool {
-        let title = ReaderHTMLUtilities.displayText(fromHTMLFragment: self.title)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
-        return Self.strongVolumeSeparatorTitles.contains(title)
+        Self.strongVolumeSeparatorTitles.contains(ReaderHTMLUtilities.compactTitle(title))
     }
 
     private static var strongVolumeSeparatorTitles: Set<String> {
