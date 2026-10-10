@@ -65,6 +65,10 @@
 3. **Connections are libraries, browsed from Explore's 我的書庫 tiles, pushed full page** (Phase 2 decisions 1–2). The bookshelf ＋ entries go once 5c's entry passes UI tests.
 4. **RSS moves into Explore with Phase 5, not deleted** (§13.8). Stats becomes a tab after its own plan.
 5. **Who gets Explore first, and the final tab order, are decided once the cover wall is usable** (§13.7, §17 item 21).
+6. **The default sections** (§13.3, lines 700–704): book-source users get 我的書庫 → 繼續閱讀 → 最新 → 精選; public-library users and new installs get 繼續閱讀 → 我的書庫 → 精選 → 最新; China gets no public-library section.
+7. **精選 is Gutenberg's bundled lists, sending no request** (§13.3, line 686).
+8. **A book source's 「最新」 is the discover category the reader picks for it** (§13.3, line 691). Until one is picked the source has no 最新 row; nothing guesses a category.
+9. **The old Explore roots stay one version behind a fallback flag** (§13.3, line 707). Whether the flag is visible is open decision 2.
 
 ### Open, for the maintainer (each with a recommendation)
 
@@ -72,11 +76,10 @@ These change what is built, so no step that depends on one starts until it is an
 
 1. **Tab order and who gets it** (gates 5h). Plan A is 書架、探索、搜尋、統計、設定, and §13.7 adds "Explore first".
    - Recommend: decide after 5c, on a build, as settled. Then choose between new installs only and everyone with a one-time notice.
-2. **The old Explore roots during the transition** (5c).
-   - Recommend: keep both old roots for one version behind a 探索設定 switch 「使用舊版探索頁」 (one new string), then delete them.
+2. **Whether the reader sees the fallback flag** (5c; the flag itself is settled decision 9).
+   - Recommend: a 探索設定 switch 「使用舊版探索頁」 (one new string) for that one version.
    - Alternative: an internal flag only.
-3. **A book source's 「最新」 row** (5a, 5b).
-   - Recommend: none until the reader picks a discover category for it in the editor. Guessing the first category spends a request per source on every home load.
+3. *(Answered by the design; see settled decision 8.)*
 4. **The card** (5c).
    - Recommend: Apple Books style. A 2:3 cover with title and author below, at most two lines and one line, and the row's source in its header.
    - Alternative: title over the cover, Emby style.
@@ -91,16 +94,22 @@ These change what is built, so no step that depends on one starts until it is an
 Each comes with its reason; the maintainer can overturn any of them.
 
 1. **One branch per step, `5a → 5g`**, each cut from `main` after the previous one merges.
-2. **The home lives in its own file, `explore_home.json`, not inside `custom_explore_pages.json`.**
-   - Changing the custom-page file's format would make an older build keep that file aside as corrupt (0d's rule) and show no custom pages after a downgrade.
-   - The new file has a `schemaVersion`, tolerant decoding (an unknown section kind is kept, not dropped), keep-aside and blocked writes, as 0d does.
-   - Custom pages stay where they are, and become the `.sourceCategories` binding.
+2. **One section type, but the home lives in its own file, `explore_home.json`.** This departs from the letter of §13.4, which makes the home the custom page whose id is `home`.
+   - Home sections and custom-page blocks are both `HomeSection`. A custom-page block reads as a `.sourceCategories` section, so 5b has one loader for both.
+   - Writing the home, or any new binding, into `custom_explore_pages.json` would make an older build fail to decode that file. It would keep the file aside as corrupt (0d's rule) and show no custom pages after a downgrade.
+   - So the custom-page file keeps its format byte for byte. The new file has a `schemaVersion`, tolerant decoding (an unknown binding or layout is kept, not dropped), keep-aside, and blocked writes for unreadable or newer files, as 1d does.
+   - Custom pages gain new bindings only in 5d, which decides how to stay downgrade-safe.
+10. **「最新」 is one section that expands into one row per source,** with an exclusion list. This follows Jellyfin's 最新加入 (`LatestItemsExcludes`, §13.2, line 629) and the default tables, which list 最新 once.
+11. **精選 is one section per bundled list,** titled by the list (中文書籍, 小說與文學…), as the storefront shows them today. No new string is needed for the rows.
 3. **One section loader.** `DiscoverCategoryBookList.loadMoreIfNeeded` and `CustomExplorePageModel.loadMoreWaterfall` become one `SectionPageLoader` that owns paging, dedup (`uniqueAdditionalBooks`) and errors.
    - Book-source rows prime discover cookies first, as `DiscoverViewModel.reload` does (§13.4, audit §12.3).
-4. **Per-row discover filters without a second variable store.**
-   - A row's filter values are applied to the source's runtime variables just before its own request, and the previous values are restored after.
-   - Both happen inside the source's existing serial bridge queue (`BookSourceSession`). Two rows of one source therefore never see each other's values, and the source's own page keeps its filter.
-   - Characterization tests come first (5b).
+4. **Per-row discover filters: the planned apply-and-restore does not work; needs a design before 5b step 4.** Found while starting 5a (2026-10-11):
+   - The filter values live in `BookSourceRuntimeStateStore`, one persisted store per source URL.
+   - The bridge's JS reads it live through `getVariableHandler` (`ModernParserBridge.swift:373-379`). So does search, and the review context copies it (`BookSource.swift:820`).
+   - Network and async operations run outside `BookSourceSession`'s lock (`BookSourceSession.swift:21-24`).
+   - So a row that writes its values, requests, and restores would leak its filter into a search or another row running at the same time. It could also leave the reader's own choice overwritten if the app quits mid-request.
+   - **Direction to verify in 5b:** a per-request overlay. The row's values are passed with its request, and `getVariableHandler` answers from the overlay only for that evaluation. The store is never written.
+   - The overlay's scope has to follow the evaluation across the async hop. Until a characterization test shows it can, rows of one source share the source's filter, as custom pages do today.
 5. **One navigation path for the home.**
    - Every route the home can push (`ExploreNavigationRoute`, `OPDSFeedRoute`, `WebDAVDirectoryRoute`, `RemoteLibraryBookRoute`, Aozora, author pages, the work page) is registered once, on the home's stack.
    - **The `OPDSFeedRoute` clash** (Phase 2 follow-up 1): the route gains its destination kind, so one route opens one view.
@@ -163,18 +172,18 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 
 **Branch:** `unified-library/5a-home-model`. Design §5, §13.3 (default sections), §13.4.
 
-- [ ] **Step 1: Types.** In `Modules/Services/Works/HomeSection.swift`:
+- [x] **Step 1: Types.** In `Modules/Services/Works/HomeSection.swift`:
   - **`HomeSection`:** `id`, `binding`, `layout` (today's 7 plus tiles and single row), `title?`, `isEnabled`, `parameters: [String: String]`.
-  - **`HomeSectionBinding`:** `.myLibrary`, `.continueReading`, `.latest(SourceInstanceKey, excluded: [SourceInstanceKey])`, `.sourceCategories([ExploreCategoryReference])`, `.opdsFeed(connectionID, url)`, `.gutenbergCollection(id)`, `.gutenbergFeed(url)`, `.aozoraNew`, `.aozoraIndex(kind)`, `.related`.
+  - **`HomeSectionBinding`:** `.myLibrary`, `.continueReading`, `.latest(excluded: [SourceInstanceKey])`, `.sourceCategories([ExploreCategoryReference])`, `.opdsFeed(connectionID, url)`, `.gutenbergCollection(id)`, `.gutenbergFeed(url)`, `.aozoraNew`, `.aozoraIndex(kind)`, `.related`.
   - **Unknown bindings** decode as `.unknown(raw JSON)` and are written back unchanged.
   - **`HomePage`:** `schemaVersion` and sections.
-- [ ] **Step 2: `HomePageStore`** (`explore_home.json`): serial atomic writes, 0d's keep-aside and blocked writes, and tolerant decoding.
-- [ ] **Step 3: Migration.** On first read with no file, build the default sections from `explore.mode` (§13.3 table):
+- [x] **Step 2: `HomePageStore`** (`explore_home.json`): serial atomic writes, 0d's keep-aside and blocked writes, and tolerant decoding.
+- [x] **Step 3: Default sections.** A pure function from the effective `explore.mode` and public-library availability to a `HomePage` (settled decisions 6–7):
   - **Book-source users:** 我的書庫 → 繼續閱讀 → 最新 → 精選.
   - **Public-library users and new installs:** 繼續閱讀 → 我的書庫 → 精選 → 最新.
-  - **China region:** no public-library sections.
-  - 最新 is one section per source as it appears, subject to open decision 3. `explore.mode` is left in place for the fallback (open decision 2).
-- [ ] **Step 4: Tests** (`HomeSectionTests`, `HomePageStoreTests`):
+  - **China:** no 精選.
+  - **Nothing calls it at launch, and nothing writes `explore_home.json`, until 5c's home first reads it.** A file written now would freeze defaults before open decision 2 is answered, and changing them later would need a second migration. `explore.mode` stays for the fallback.
+- [x] **Step 4: Tests** (`HomeSectionTests`, `HomePageStoreTests`):
   - round trip;
   - an unknown binding kept;
   - corrupt kept aside, unreadable never written over;
@@ -197,7 +206,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   - **WebDAV:** 2d's records, newest first by server date.
   - **Book sources:** a new `BookSourceProvider` in the registry, over its discover categories.
 - [ ] **Step 3: `SectionPageLoader`,** the one next-page loader (decision 3). Today's two callers move onto it.
-- [ ] **Step 4: Per-row filters** (decision 4): apply and restore around the row's own request inside the bridge queue.
+- [ ] **Step 4: Per-row filters** (decision 4): a per-request variable overlay, never a write to the shared store. Prove it with a characterization test first; otherwise skip the step and record it.
   - Test two rows of one source with different filters, and the source page's filter unchanged after both.
 - [ ] **Step 5: `HomeModel`:**
   - It loads the visible sections by policy, one book-source request at a time per source.
@@ -305,4 +314,17 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 
 ## What landed
 
-Nothing yet.
+### 5a: the home model (2026-10-11)
+
+- **`HomeSection.swift`:**
+  - `HomeSectionLayout` is a string, so a later build's layout survives.
+  - `HomeSectionBinding` has the ten bindings plus `.unknown(PreservedJSON)`, written back byte-equivalent.
+  - `HomeSection` reads missing `title`, `isEnabled` and `parameters` as their defaults. `HomeSection(component:)` reads a custom-page block.
+  - `HomePage` carries `schemaVersion` 1.
+  - `HomePageDefaults.page(mode:publicLibrariesAvailable:)` builds the §13.3 orders.
+- **`HomePageStore.swift`:** `explore_home.json` beside the custom pages, written on a serial queue with sorted keys.
+  - An undecodable file is kept aside as `explore_home.corrupt-<mtime>.json`.
+  - An unreadable file, or one from a newer schema, is read-only for the launch. A newer file is read section by section.
+- **Nothing is wired.** No launch path creates the store or calls the defaults (step 3).
+- **Tests:** `HomeSectionTests` (8) and `HomePageStoreTests` (6), 14 tests in 2 suites, passed. No existing code changed, so no other regression applies.
+- **Found while starting:** per-row filters cannot be apply-and-restore (decision 4, rewritten).
