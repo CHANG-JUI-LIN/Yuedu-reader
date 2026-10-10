@@ -1,0 +1,479 @@
+# Unified Library, Phase 2 — Implementation Plan
+
+> **For the implementer.** Read [AGENTS.md](../../../AGENTS.md) and [CLAUDE.md](../../../CLAUDE.md) first, then the design sections each task cites. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> - Design: [Technotes/UnifiedLibrary-2026-10-08-design.md](../../../Technotes/UnifiedLibrary-2026-10-08-design.md):
+>   - §5 (protocols), §8.3, §9 (capabilities and the registry), §10.1, §13.6;
+>   - §15 (Phase 2, and the 2026-10-10 order with 2d), §17 item 10, §19.
+> - Audit: [Technotes/UnifiedLibrary-2026-10-08-audit.md](../../../Technotes/UnifiedLibrary-2026-10-08-audit.md): §8 (remote libraries; §8.2–§8.4), §9 (Gutenberg), §14 (DI).
+> - Previous plans: [Phase 0](2026-10-10-unified-library-phase-0.md) and [Phase 1](2026-10-10-unified-library-phase-1.md). Their guardrails apply here too.
+>
+> Line numbers are from `main` at `1c80d1eb`. Re-read each file before editing; other sessions commit to `main` all day.
+
+**Goal:** one way to reach every content source, and a library that fills itself in, ahead of Phase 5's cover wall:
+
+- **2a:** a provider registry and `CollectionBrowsing`, with adapters for the shelf, OPDS (including Calibre and Gutenberg), WebDAV and Aozora. The existing browse screens fetch through them, so there is one browse path.
+- **2b:** 設定 → 遠端書庫, a pushed configuration page for every WebDAV, OPDS and Calibre connection. Book-source management (來源配置) is pushed on every iOS version.
+- **2c:** browse rows show 已加入書架 and 已下載, from a lookup instead of a scan.
+- **2d:** WebDAV libraries are indexed in the background: their book files become source records the work index can use.
+- **2e:** indexed WebDAV EPUBs get their OPF metadata and cover, most incomplete first.
+
+**Today:**
+
+- **No registry or provider abstraction exists.** `PublicLibraryAvailability` is read only by `ExploreTabRoot` (`ExploreTabRoot.swift:8, 14, 23, 42`).
+- **Browse paths:**
+  - `OPDSBrowseModel` (`OPDSBrowseModel.swift:21-97`) and `WebDAVBrowseModel` (`WebDAVBrowseModel.swift:18-54`, from 0c) each call their own client.
+  - Errors are strings, so empty and failed cannot be told apart, and a catalog without search reports a failure (`OPDSBrowseModel.swift:57`).
+  - Gutenberg is special-cased inside `OPDSBrowseModel` (`:33-35`, `:53-54`; audit §9).
+- **Entry points:**
+  - Remote libraries are reached only from the bookshelf ＋ menu (`HomeView.swift:732-775`). Each kind opens a sheet with its own `NavigationStack` (`RemoteLibraryBrowserView`, `OPDSImportView.swift:19-139`).
+  - Settings has no entry point.
+  - Book-source management is a sheet on iOS 18+ and pushed on iOS 17 (`BookSourceManagementPresentationPolicy`, `DismissalSequencedPresentation.swift:25-42`).
+- **"On shelf" and "downloaded":**
+  - Browse rows never show either.
+  - The detail page finds the copy with a scan of every reading record (`RemoteLibraryService.swift:41-43`) and calls `fileExists` on every body evaluation (`:140-143`; audit §8.3).
+- **WebDAV:**
+  - Listing is one `PROPFIND Depth: 1` per folder (`WebDAVBrowseClient.swift:31-40`). Nothing recurses.
+  - The work index sees only copies (`WorkIndexService.swift:186`).
+  - Nothing monitors the network path (no `NWPathMonitor` anywhere).
+
+---
+
+## Scope
+
+**In:** 2a–2e as above.
+
+**Out:**
+
+- **Browsing from anywhere new.** Browsing moves to Phase 5's Explore home (the 我的書庫 section, a pushed page per library). Until then the bookshelf ＋ entries stay exactly as they are. They are removed only after Phase 5's entry passes its UI tests, not in 2b.
+- **Book sources in the registry.** Design §9 lists them; they join with Phase 5, which is their first caller.
+- **Search through providers** (`CatalogSearching`, Phase 4) and home sections (`HomeSectionProviding`, Phase 5).
+- **Background processing tasks.** Indexing runs in the foreground only (settled below).
+- **Calibre's structured `/ajax/books` fields** (§9 "v2") and the `OPDSFeedRoute` clash between two stacks. Both are recorded under Follow-ups.
+- **Changing `ReadingBook`.** No field is added (D1).
+
+---
+
+## Decisions
+
+### Settled by the maintainer (2026-10-10)
+
+1. **Connections are libraries, not modules** (the Emby model).
+   - A WebDAV, OPDS or Calibre connection is a content source, like an Emby media library.
+   - Managing it is configuration, in Settings.
+   - Browsing it is a tile in Explore's 我的書庫 section, pushed full-page (Phase 5).
+   - Aggregation is the work index and the home sections.
+   - Modules (Phase 6) shape how sections look.
+2. **2b is configuration only.** 設定 → 遠端書庫 is pushed and lists every connection. Browsing waits for Phase 5; the bookshelf ＋ entries stay until then.
+3. **The page is named 遠端書庫.** The string already exists in five languages (1a).
+4. **Book-source management (來源配置) is pushed on every iOS version**, not a sheet on iOS 18+.
+5. **WebDAV indexing runs in the foreground only.** On entering the background it finishes the batch in hand under a background-task assertion and stops. The next foreground session resumes. No `processing` background mode is added.
+6. **Indexing is on by default for connections the reader added, and off for the one copied automatically from the WebDAV backup account** (`OPDSCatalog.swift:63-73`). That one is a backup server the reader never added as a library; they turn it on in 遠端書庫.
+7. **Covers and summaries come in a second step** (2e): list files first, then read OPF and cover by range, most incomplete first (design §8.3).
+
+### Made while planning
+
+Each comes with its reason; the maintainer can overturn any of them.
+
+1. **One branch per step, `2a → 2b → 2c → 2d → 2e`, each cut from `main` after the previous one merges.**
+   - Branches: `unified-library/2a-registry`, `2b-remote-library-settings`, `2c-shelf-status`, `2d-webdav-index`, `2e-webdav-metadata`.
+   - 2b's book-source change is its own commit, so it can be reverted alone.
+2. **The adapters are the browse path, not a second one.**
+   - `OPDSBrowseModel` and `WebDAVBrowseModel` already take a fetch seam. Their default seam becomes the provider's `browse`. The views do not change.
+   - This gives `CollectionBrowsing` a real caller and test coverage in Phase 2.
+   - Adapters added beside the models would be a second path with no caller until Phase 5.
+3. **Browse failures are typed.**
+   - `SourceFailure`: authentication, network, timeout, parse, rejected(HTTP status), removed connection.
+   - An empty page is not a failure.
+   - A catalog without search reports `capabilities().search == .none` instead of an error string.
+   - The models keep their `loadError` strings for the views, built from the typed failure.
+4. **2c keys everything by `SourceItemKey`.**
+   - Today's lookup keys by `(connectionID, entryID, extension)` with the absolute URL for WebDAV. 1a's `SourceItemKey` uses the path below the root (`SourceRecordDerivation.swift:74-76, 200`).
+   - 2d's records, the work index and Phase 5's cards are all `SourceItemKey`-based, so 2c uses it too.
+   - The lookup lives in `BookStore`, memoized on `mutationRevision`, as `allGroups` is (`BookStore.swift:1304-1311`).
+   - Maps come from the same plain dictionaries `WorkIndexService.liveContext` builds, without touching the keychain.
+5. **已下載 means the copy records an offline file** (`remoteSource.offlineFilename != nil`), not that the file exists right now.
+   - A `fileExists` per row is disk I/O in `body`.
+   - The detail page keeps its existence check when the reader opens it.
+6. **2d gets its own HTTP client per connection**, never the shared one:
+   - It sets `allowsExpensiveNetworkAccess = false` and `allowsConstrainedNetworkAccess = false`, so the system itself refuses cellular. On the shared client that would break reading on cellular.
+   - `OPDSCatalogStore`'s client cache is an unlocked dictionary on a store that is not `@MainActor` (`OPDSCatalog.swift:45, 124-130`). An indexer actor sharing it with the main actor is a data race.
+   - Credentials are read once, on the main actor, when a run starts.
+7. **Wi-Fi is checked twice.** A new `NetworkPathMonitor` (`NWPathMonitor`) decides when to start and pause. The client's session configuration enforces it per request.
+8. **2d's records live in `Works/remote/<connection id>.json`.**
+   - They are derived: they can be rebuilt by crawling again. A file that does not decode is discarded and rebuilt; an unreadable one is not written over (design §10.1).
+   - Removing a connection removes its file.
+   - The work index gains a second input beside copies. Non-copy entries are keyed by `SourceItemKey`, fingerprinted by `(etag, lastModified, size)`. The store has a revision of its own beside `mutationRevision`.
+9. **2d's limits are measured, not guessed.**
+   - The measurement uses an in-process PROPFIND responder in the test target. It is a small `NWListener` HTTP server like `LanWebServer`'s (`LanWebServer.swift:37`) and serves a synthetic tree.
+   - GCDWebServer is not linked into this project, and adding a dependency is out of scope.
+   - The numbers go into "What landed" before 2d merges, as with 1c's benchmark.
+10. **Privacy in logs** (Phase 1, decision 11). WebDAV paths and titles are the reader's private library. Indexer logs and spans carry counts, kinds, connection ids and failure categories, never paths, host names or titles.
+11. **New strings are proposed here for review** (Task 2d). Nothing else adds a string. 2c reuses 已加入書架 and 已下載, and 2b reuses 遠端書庫 and the existing kind names.
+
+---
+
+## Context
+
+### Providers and browsing (2a)
+
+- **OPDS:**
+  - `OPDSClient.fetchFeed(_:isSearch:)` (`OPDSClient.swift:131`) returns `OPDSFeed`: entries, `nextPageURL`, `search`.
+  - Calibre's 404 "No books found" on search is already an empty feed (`:139-158`).
+  - Entry ids: OPDS 1 uses Atom `<id>`, falling back to acquisition, then navigation URL (`:289, 306`). OPDS 2 uses `metadata.identifier` (`OPDS2FeedParser.swift:168`).
+- **Calibre vs Calibre-Web:** both are `RemoteLibraryKind.calibre`, browsed over OPDS. Only `CalibreServerAPI.libraryInfo()` tells them apart (`CalibreServerAPI.swift:118-131`; a 404 means Calibre-Web). `RemoteLibraryWritingService.capabilities` already uses it (`:80-96`).
+- **Gutenberg:**
+  - `PublicLibrary.gutenberg` is a synthetic `OPDSCatalog`, injected by `catalog(id:)` and not stored (`OPDSCatalog.swift:121`; `PublicLibrary.swift:108-117`).
+  - Transport is `PublicLibraryFeedTransport` (`PublicLibraryBookPresentation.swift:140-155`); search URL is `PublicLibrary.gutenbergSearchURL`.
+- **WebDAV:** `WebDAVBrowseClient.list(_:)`, `Entry` (`WebDAVBrowseClient.swift:5-15`). The client asks for no content type and parses `lastModified` as a raw string.
+- **Aozora:**
+  - `AozoraCatalogStore` (`AozoraCatalogStore.swift:7-12, 74-121`) has states `unavailable / loading / ready / failed`.
+  - `AozoraCatalogIndex` (`AozoraCatalog.swift:64-151`) provides `newWorks`, author, title and classification groups, and a local `search`.
+- **Shelf groups:** `BookStore.allGroups`, `setGroup(s)` (`BookStore.swift:1304-1323`). The pages are computed in `HomeView` (`:9-23, 434-470`).
+- **Phase 1 derivations** to reuse: `SourceRecord.derived(from:)` for `OPDSEntry`, WebDAV `Entry`, `AozoraWork`, `GutenbergBook` and `ReadingBook` (`SourceRecordDerivation.swift:44-178`).
+- **DI:** `AppDependencies` (`AppDependencies.swift:350-361`) has no registry or connection store yet. Design §9 puts the registry there.
+
+### Configuration (2b)
+
+- **`RemoteLibraryConnectionEditor`** (`OPDSImportView.swift:141-267`): name, URL, credentials, `syncProgress` (Calibre), 測試連線; save calls `add` then `update`.
+- **`OPDSCatalogStore`** = `RemoteLibraryConnectionStore`:
+  - `add`, `update`, `remove` (`OPDSCatalog.swift:77-114`), persisted to `Library/opds_catalogs.json`, credentials in Keychain.
+  - It is not `@MainActor`.
+- **Settings root** is `ProfileView`. Its 「來源配置管理」 section (`ProfileView.swift:111-132`) holds 管理來源配置, 下載管理 and 網路設定. 遠端書庫 joins that section.
+- **Book-source policy:** `BookSourceManagementPresentationPolicy` (`DismissalSequencedPresentation.swift:30-42`). It is read in `ProfileView.swift:297, 307` and `ExploreHomeView.swift:443-445`, and tested in `DismissalSequencedPresentationTests` and `Tests/Contracts/DismissalSequencedPresentationContract.swift`. CLAUDE.md and `Technotes/iOS17MenuModalPresentation.md` describe the iOS 18 sheet.
+
+### Lookups (2c)
+
+- `RemoteLibraryService.book(for:format:store:)` scans `readingBooks` (`:41-43`); `RemoteBookReference.matches` compares connection, entry id and extension (`RemoteLibraryItem.swift:38-53`).
+- Aozora scans `store.books` by `catalogWorkID` (`AozoraCatalogViews.swift:113`).
+- Rows:
+  - OPDS: `OPDSImportView.swift:376-415`;
+  - WebDAV: `RemoteImportViews.swift:98-123`;
+  - public-library cards: `PublicLibraryBooksView.swift:33`.
+
+### WebDAV indexing (2d, 2e)
+
+- **Background work today:**
+  - `BackgroundTaskHold` (`BackgroundTaskHold.swift:9-31`).
+  - `OfflineDownloadBackgroundTask`, ref-counted with an expiration hook (`OfflineDownloadBackgroundTask.swift:20-65`).
+  - The RSS refresh loop, which checks `Task.isCancelled` per item (`RSSFeedRefreshService.swift:6-50`), is the template.
+  - The scene-phase hooks are in `yuedu_appApp.swift` (around `:237`).
+- **Per-connection settings:** `OPDSCatalog` has custom `CodingKeys` and a `decodeIfPresent` decoder (`OPDSCatalog.swift:13, 26-35`). Its only toggle today is `syncProgress`.
+- **Status UI to follow:** `CalibreProgressStatusView` with `CalibreProgressState` (`RemoteLibraryManagementView.swift:228-249`; `CalibreProgressService.swift:4-5, 30`).
+- **Throttling:** `PerHostSemaphore` (`FetchRetryPolicy.swift:11-110`).
+  - `FetchRetryPolicy` cannot read `OPDSError.http`: it parses a localized "HTTP 錯誤" string (`:183-195`).
+  - 2d therefore classifies failures itself and does not retry through it.
+- **Range reads (2e):**
+  - `RemoteEPUBArchiveOpener` reads the ZIP tail and entries on demand (`RemoteEPUBArchiveOpener.swift:9-122`).
+  - `RemoteLibraryResourceClient` caches ranges and rejects changed versions (`RemoteLibraryCache.swift:47-120`).
+  - `RemoteLibraryService.probe` (`RemoteLibraryService.swift:374-409`).
+  - `PublicationSession.retrievePackage(sourceURL:httpClient:)` returns the OPF without building a session (`PublicationSession.swift:1761-1785`), but it is private.
+- **Work index inputs:** copies only (`WorkIndexService.swift:63-102, 186`). `WorkIndexEntry.nodeKey = record.copyKey ?? record.key` (`WorkIndex.swift:74`), and `build` joins entries that share `record.key` (`:193-198`). A WebDAV record and the shelf copy of the same file therefore join on their own.
+
+---
+
+## Guardrails
+
+Phase 0's and Phase 1's guardrails apply in full:
+- run tests with `scripts/xctest.sh` and `-collect-test-diagnostics never`, checking the suite count;
+- no `-derivedDataPath`;
+- delete your own `.xcresult`s;
+- commit only your own files;
+- no `try?` that discards a parse or network error;
+- every fallback is disclosed.
+
+Phase 2 adds:
+
+- **UI** (2b, 2c, 2d):
+  - Invoke `yuedu-ios-design`. Pushed pages are `.inline`; settings rows use `SettingsRows`.
+  - Footers only where they earn it (design rule 14).
+  - Every view gets a `#Preview` and is read with VoiceOver: row status is part of the row's label, never a separate focusable element.
+- **iOS 17 modals:**
+  - No `Menu` that opens a sheet. 遠端書庫 adds a connection through one row per kind section, not a kind-picking `Menu`.
+  - Read `Technotes/iOS17MenuModalPresentation.md` before touching presentation.
+  - The connection editor may stay a sheet from the pushed page.
+- **No browse routes in the Settings stack.** `OPDSFeedRoute` already opens different views in two stacks (`OPDSImportView.swift:81-89`; `PublicLibraryHomeView.swift:29`), and Phase 5 needs it from Explore.
+- **Strings:** only Task 2d's reviewed list. Run `ruby scripts/check_localizations.rb`.
+- **Region gate:** Gutenberg and Aozora providers report `hiddenInRegion` when `PublicLibraryAvailability.isAvailable` is false, and the registry never lists them.
+
+---
+
+## File map
+
+**Create**
+- `Modules/Services/Works/SourceProvider.swift` (2a): `SourceProvider`, `ProviderAvailability`, `CollectionBrowsing`, `CollectionCapabilities`, `CollectionLocation`, `CollectionCursor`, `CollectionPage`, `CollectionEntry`, `WorkSummary`, `CoverReference`, `SourceFailure`.
+- `Modules/Services/Works/SourceProviderRegistry.swift` (2a).
+- `Modules/Services/Works/Providers/` (2a): `ShelfProvider`, `OPDSProvider` (OPDS and Calibre), `GutenbergProvider`, `WebDAVProvider`, `AozoraProvider`.
+- `Modules/Features/Settings/RemoteLibrarySettingsView.swift` (2b).
+- `Modules/Services/LibraryStore/CopyLookup.swift` (2c), or an extension of `BookStore`.
+- `Modules/Services/Network/NetworkPathMonitor.swift` (2d).
+- `Modules/Services/Works/WebDAVIndexer.swift`, `RemoteRecordStore.swift`, `WebDAVIndexCoordinator.swift` (2d).
+- `Modules/Services/Works/RemoteEPUBMetadataReader.swift` (2e).
+- Tests:
+  - `SourceProviderRegistryTests`, `OPDSProviderTests`, `WebDAVProviderTests`, `AozoraProviderTests`, `ShelfProviderTests` (2a);
+  - `RemoteLibrarySettingsUITests` (2b);
+  - `CopyLookupTests` (2c);
+  - `WebDAVIndexerTests`, `RemoteRecordStoreTests`, `WebDAVIndexCoordinatorTests`, `WorkIndexRemoteRecordsTests`, and an env-gated `WebDAVIndexBenchmarkTests` with its `NWListener` PROPFIND fixture (2d);
+  - `RemoteEPUBMetadataReaderTests` (2e).
+
+**Modify**
+- `Modules/Services/OPDS/OPDSBrowseModel.swift`, `Modules/Services/WebDAV/WebDAVBrowseModel.swift` (2a): default seams through the providers; Gutenberg special cases out.
+- `Targets/Yuedu/SharedApp/AppDependencies.swift` (2a): the registry.
+- `Modules/Features/Settings/ProfileView.swift` (2b): the 遠端書庫 row; book-source management always pushed.
+- `Modules/SharedUI/Components/DismissalSequencedPresentation.swift`, `Modules/Features/Explore/ExploreHomeView.swift`, `ExploreNavigationPath.swift` (2b): the policy and its readers.
+- `CLAUDE.md`, `Technotes/iOS17MenuModalPresentation.md` (2b): the book-source rule.
+- `Modules/Features/Bookshelf/OPDSImportView.swift`, `RemoteImportViews.swift`, `RemoteLibraryBookDetailView.swift`, `Modules/Features/Explore/PublicLibrary/*` (2c): row status; the detail page reads the lookup.
+- `Modules/Services/RemoteLibrary/RemoteLibraryService.swift` (2c): `book(for:format:store:)` through the lookup.
+- `Modules/Services/OPDS/OPDSCatalog.swift` (2d): the per-connection indexing setting.
+- `Modules/Features/Bookshelf/OPDSImportView.swift` (2d): the toggle in `RemoteLibraryConnectionEditor`.
+- `Modules/Services/Works/WorkIndexService.swift` (2d): remote records as a second input.
+- `Targets/Yuedu/SharedApp/yuedu_appApp.swift` (2d): start and stop on scene phase.
+- `Modules/Core/EPUB/PublicationSession.swift` (2e): an internal OPF-and-cover read over range requests.
+- `Resources/*.lproj/Localizable.strings` (2d): the reviewed strings.
+- This plan: "What landed" after each step.
+
+---
+
+## Task 2a: The registry and `CollectionBrowsing`
+
+**Branch:** `unified-library/2a-registry`, from `main`. Design §5, §9; audit §8, §9, §14.
+
+- [ ] **Step 1: Types** (`SourceProvider.swift`), from design §5, all `Sendable` values except the protocols:
+  - **`SourceProvider`** (`@MainActor`, `AnyObject`): `instance: SourceInstanceKey`, `displayName`, `availability: ProviderAvailability` (`available`, `hiddenInRegion`, `needsSetup`, `catalogNotReady`).
+  - **`CollectionBrowsing`:**
+    - `capabilities() async -> CollectionCapabilities`, which covers search (none, on submit, explicit request only) and pagination. Calibre and Calibre-Web differ, so it is async.
+    - `browse(_ location: CollectionLocation?, after cursor: CollectionCursor?) async throws(SourceFailure) -> CollectionPage`.
+  - **`CollectionPage`:** `entries: [CollectionEntry]` and `next: CollectionCursor?`.
+  - **`CollectionEntry`:** `.location(CollectionLocation)` (a folder, a navigation feed, a group, an author) or `.item(SourceRecord, WorkSummary)`.
+  - **`WorkSummary`** is bounded at construction, per design §5 and audit §11.5. `CoverReference` is `.copyFile`, `.remote(URL, headers)` or `.generated(seed)`.
+  - **`SourceFailure`:** `authentication`, `network`, `timeout`, `parse`, `rejected(status)`, `connectionRemoved`. An extension maps `OPDSError`, `URLError` and `RemoteLibraryWriteError`.
+- [ ] **Step 2: Adapters.** Each wraps today's client and returns what the model consumed before.
+  - **`OPDSProvider`**, one per OPDS or Calibre connection: locations are navigation links, items are acquisition entries, and the cursor is `rel=next`. Capabilities come from the last feed's `OPDSSearch`, and for Calibre also from `libraryInfo()`.
+  - **`GutenbergProvider`:** the built-in connection. It owns `PublicLibraryFeedTransport` and `gutenbergSearchURL`, which move out of `OPDSBrowseModel` (design §9, audit §9). Search is `explicitRequestOnly`.
+  - **`WebDAVProvider`**, one per connection: one `PROPFIND Depth: 1` per location. Folders are locations, and every file is an item. Files that are not importable books get no acquisitions (1a's derivation already does this).
+  - **`AozoraProvider`:** locations are 新着, authors, titles and classifications from `AozoraCatalogIndex`. It reports `catalogNotReady` until the store is `ready`, and `hiddenInRegion` per the gate.
+  - **`ShelfProvider`:** locations are groups; items are copies, keyed by `SourceItemKey.copy`.
+- [ ] **Step 3: `SourceProviderRegistry`.**
+  - `@MainActor`, injected through `AppDependencies` (design §9).
+  - It builds the instances from `OPDSCatalogStore.connections`, `PublicLibraryAvailability` and the shelf, and republishes when connections or availability change.
+  - A removed connection's provider disappears. Any model still holding it gets `connectionRemoved`.
+- [ ] **Step 4: One path.**
+  - `OPDSBrowseModel` and `WebDAVBrowseModel` take a provider instead of building a client. Their test seams stay.
+  - `OPDSBrowseModel`'s two Gutenberg branches are deleted, since `GutenbergProvider` answers for them.
+  - Nothing on screen changes. The `loadError` strings stay as they are, built from the typed failure. "此目錄不支援搜尋" stays too, now built from `capabilities().search == .none` instead of a failed search. Hiding the search field instead would change what readers see, so it is left for the maintainer to decide in Phase 5.
+- [ ] **Step 5: Tests.**
+  - **`SourceProviderRegistryTests`:** instances from connections; the region gate hides Gutenberg and Aozora; a removed connection drops its provider.
+  - **`OPDSProviderTests`:**
+    - fixture feeds (OPDS 1 and 2) give locations, items and the next cursor;
+    - an empty feed gives an empty page, not a failure;
+    - 401 maps to `authentication`, 404 to `rejected(404)`, an invalid feed to `parse`, `URLError.timedOut` to `timeout`;
+    - Calibre's empty search stays empty.
+  - **`WebDAVProviderTests`, `AozoraProviderTests` and `ShelfProviderTests`:** the same shape, against fixtures.
+  - **Existing guards:** `PublicLibraryStorefrontTests` (including `sharedBrowseModelLoadsOnePagePerActionAndDeduplicatesNextPage`), `WebDAVBrowseModelTests`, `OPDSParserTests`, `OPDS2ParserTests`, `GutenbergOPDS2FixtureTests`, `PublicLibraryRegistryTests`, `PublicLibraryAvailabilityTests`, `RemoteLibraryBrowsePresentationTests`, `RemoteLibraryConnectionTests`, `RemoteLibraryHTTPTests`.
+- [ ] **Step 6: Run and commit.** Run the §19 Phase 2 row (the remote library and OPDS suites, and `RemoteLibraryNavigationUITests`) plus the new suites. Then UI-check one OPDS, one WebDAV and the Gutenberg storefront in the simulator; nothing on screen should differ.
+
+**2a acceptance:**
+- every browse in the app goes through a provider;
+- failures are typed, and empty is not failure;
+- Gutenberg has no special case left in `OPDSBrowseModel`;
+- the existing suites pass unchanged.
+
+---
+
+## Task 2b: 設定 → 遠端書庫, and book-source management pushed
+
+**Branch:** `unified-library/2b-remote-library-settings`, from `main` after 2a. Design §13.6; maintainer decisions 1–4.
+
+- [ ] **Step 1: `RemoteLibrarySettingsView`.**
+  - Pushed from a new row in `ProfileView`'s 「來源配置管理」 section, titled 遠端書庫 with a `SettingsRowLabel`.
+  - It has one section per kind (WebDAV 書庫, OPDS 書庫, Calibre 書庫), listing that kind's connections from the registry.
+  - Each row opens `RemoteLibraryConnectionEditor` for that connection, as a sheet, the way the browser opens it today.
+  - Each section ends with an add row for its kind, using the existing add-server string. There is no kind-picking `Menu`.
+  - Swipe deletes, as `RemoteLibraryBrowserView` does (`OPDSImportView.swift:51-55`).
+  - No browse routes are registered here.
+- [ ] **Step 2: States.**
+  - **No connections:** `ContentUnavailableView`, with the three add rows still reachable.
+  - **The built-in Gutenberg** is not listed: it is not a connection the reader manages.
+  - **Rows read as one VoiceOver element:** name, then kind, then URL host. Status joins the label in 2d.
+- [ ] **Step 3: `#Preview`s** for no connections, all three kinds, and a long name with large Dynamic Type.
+- [ ] **Step 4: UI test `RemoteLibrarySettingsUITests`:**
+  - Settings → 遠端書庫 → each add row opens the editor for its kind, and Close returns.
+  - A connection added in the editor appears in its section, and swipe-delete removes it.
+  - `RemoteLibraryNavigationUITests` is left as it is and must still pass.
+- [ ] **Step 5: Book-source management pushed everywhere,** in a separate commit:
+  - Delete `BookSourceManagementPresentationPolicy`, and push from `ProfileView` and `ExploreHomeView` on every version.
+  - Update `DismissalSequencedPresentationTests`, `Tests/Contracts/DismissalSequencedPresentationContract.swift`, CLAUDE.md's 「Do not nest the book-source importer under a sheet on iOS 17」 bullet, and the technote.
+  - Grep UI tests for any that close book-source management with Close on iOS 18, and update them.
+  - Then run the book-source import UI tests on iOS 18+ and on iOS 17 (`reference_ios17_simulator_testing`: XCUITest with fixtures).
+- [ ] **Step 6: Run and commit.** Run `RemoteLibrarySettingsUITests`, `RemoteLibraryNavigationUITests`, `DismissalSequencedPresentationTests`, `RemoteLibraryConnectionTests` and the book-source management UI tests found in Step 5. Run `check_localizations.rb` (no new keys expected).
+
+**2b acceptance:**
+- every connection can be added, edited and deleted from Settings, without the bookshelf;
+- the bookshelf ＋ entries are unchanged;
+- book-source management is pushed on every version;
+- VoiceOver reads each row as one element.
+
+---
+
+## Task 2c: 已加入書架 and 已下載 in browse rows
+
+**Branch:** `unified-library/2c-shelf-status`, from `main` after 2b. Audit §8.3; decisions 4–5.
+
+- [ ] **Step 1: `CopyLookup`.**
+  - Maps `SourceItemKey` → copy ids, built from `readingBooks` with `SourceRecord.derived(from:context:)` and plain maps of connections and roots. Each copy's own key is included too.
+  - Memoized on `mutationRevision`; rebuilt on the next read after a change, never per row.
+  - It answers `isOnShelf(key)` (some copy `isInBookshelf`) and `hasDownload(key)` (some copy records `offlineFilename`).
+  - Aozora works key by `aozoraWork` through the same map, so the `catalogWorkID` scans go too.
+- [ ] **Step 2: Callers.**
+  - `RemoteLibraryService.book(for:format:store:)` goes through the lookup; its format-specific match stays.
+  - The detail page's `isOnShelf` scan (`RemoteLibraryBookDetailView.swift:105`) is replaced. Its offline existence check stays, evaluated on appear instead of in `body`.
+  - `AozoraCatalogViews.swift:113` and `AozoraLibraryDownloadService.swift:35` use the lookup.
+- [ ] **Step 3: Rows.**
+  - OPDS rows, WebDAV rows and public-library cards show 已加入書架, or 已下載 when downloaded but not on the shelf, as secondary text. The strings are existing ones.
+  - The status is part of the row's VoiceOver label.
+  - Add `#Preview`s with both states.
+- [ ] **Step 4: Tests.**
+  - **`CopyLookupTests`:**
+    - an OPDS copy, a WebDAV copy (absolute URL in `RemoteBookReference`, relative path in the key) and an Aozora copy are each found by their browse item's key;
+    - an unlisted reading record is not on the shelf;
+    - a mutation rebuilds;
+    - 10,000 copies build once, measured (span `library.copyLookup.build`).
+  - **Guards:** `RemoteLibraryServiceTests`, `RemoteReadingRecordTests`, `AozoraLibraryDownloadServiceTests`.
+- [ ] **Step 5: Run and commit.** The §19 Phase 2 row plus the above.
+
+**2c acceptance:**
+- rows show both states;
+- no per-row scan or file-system call;
+- the lookup is keyed like the work index.
+
+---
+
+## Task 2d: WebDAV background indexing
+
+**Branch:** `unified-library/2d-webdav-index`, from `main` after 2c. Design §8.2, §15 2026-10-10 order, §17 item 10; maintainer decisions 5–6; decisions 6–10.
+
+- [ ] **Step 1: Review the new strings with the maintainer before any code.** The proposals:
+
+  | Key (zh-Hant) | zh-Hans | en | ja | ko | Where |
+  |---|---|---|---|---|---|
+  | 在背景建立書籍索引 | 在后台建立书籍索引 | Index Books in Background | バックグラウンドで本を索引 | 백그라운드에서 책 색인 | Editor toggle, WebDAV only |
+  | 只在連接 Wi-Fi 且 App 開著時進行。 | 只在连接 Wi-Fi 且 App 打开时进行。 | Runs only on Wi-Fi while the app is open. | Wi-Fi 接続中、アプリを開いている間だけ行います。 | Wi-Fi에 연결되어 앱이 열려 있을 때만 진행합니다. | That toggle's footer (a non-obvious precondition) |
+  | 正在建立索引（%d 本） | 正在建立索引（%d 本） | Indexing (%d books) | 索引を作成中（%d 冊） | 색인 생성 중 (%d권) | Status |
+  | 已建立索引（%d 本） | 已建立索引（%d 本） | Indexed (%d books) | 索引を作成済み（%d 冊） | 색인 완료 (%d권) | Status |
+  | 已暫停：未連接 Wi-Fi | 已暂停：未连接 Wi-Fi | Paused: Not on Wi-Fi | 一時停止：Wi-Fi 未接続 | 일시 정지: Wi-Fi 미연결 | Status |
+  | 已達上限（%d 本） | 已达上限（%d 本） | Limit Reached (%d books) | 上限に達しました（%d 冊） | 한도 도달 (%d권) | Status |
+  | 建立索引失敗：%@ | 建立索引失败：%@ | Indexing Failed: %@ | 索引の作成に失敗：%@ | 색인 생성 실패: %@ | Status; `%@` is the failure's existing localized message |
+
+- [ ] **Step 2: Measure and set the limits.**
+  - **The fixture:** `WebDAVIndexBenchmarkTests`, enabled by `YUEDU_WEBDAV_BENCHMARK=1`, starts an in-process `NWListener` PROPFIND responder (decision 9). It serves synthetic trees: 1k, 5k and 20k files across depths 3, 6 and 10.
+  - **What it measures:** PROPFIND milliseconds per folder at 10, 100 and 1,000 children; memory of a listing; total crawl time; `Works/remote` file size and load time; work index refresh with those records added.
+  - **What it sets** (filled in from the numbers): maximum depth, folders per batch, files per connection, and the minimum interval between full crawls.
+  - Before 2d merges, also run one crawl against a real server the maintainer names, and record its numbers next to the synthetic ones.
+- [ ] **Step 3: `NetworkPathMonitor`.**
+  - One `NWPathMonitor` on a private queue, publishing on the main actor: `satisfied`, `isExpensive`, `isConstrained`, Wi-Fi or wired.
+  - Injectable, with a fake for tests.
+- [ ] **Step 4: The per-connection setting.**
+  - `OPDSCatalog` gains `indexesBooks: Bool?`, decoded with `decodeIfPresent`.
+  - `nil` resolves to on for connections the reader added, and to off for the connection the backup-account migration created (`OPDSCatalog.swift:63-73`, flag `remote_library_webdav_migrated`). The migration writes `false` explicitly from now on. An already-migrated connection is recognized by matching the backup account's URL and username at first read; record the rule in "What landed".
+  - The editor shows the toggle for WebDAV with Step 1's footer.
+- [ ] **Step 5: `WebDAVIndexer`.** An actor per connection.
+  - **Client:** its own `RemoteLibraryHTTPClient` (decision 6), credentials passed in at start.
+  - **Crawl:** breadth-first `PROPFIND Depth: 1` from the root within the limits.
+  - **Records:** each importable book file becomes a `SourceRecord` via `SourceRecord.derived(from:connectionID:root:)`, with `etag`, `lastModified` and `size` kept for fingerprinting.
+  - **Resumable:** the frontier is saved after each batch, so a pause loses at most one folder.
+  - **Outcomes:** `completed(count)`, `limitReached(count)`, `paused(reason)` (no Wi-Fi, background, disabled), `failed(SourceFailure)`, `empty`.
+  - **Failure handling:** an authentication failure stops the connection until its credentials change. Network and timeout failures retry at the next start, with no in-run retry loop. Every failure is logged with category and counts only (decision 10).
+- [ ] **Step 6: `RemoteRecordStore`.**
+  - `Works/remote/<connection id>.json`: `schemaVersion`, root, frontier, records, last outcome and times.
+  - Serial atomic writes; discard-and-rebuild on decode failure; never write over an unreadable file.
+  - Removing a connection deletes its file. A change of root URL or credentials resets it.
+- [ ] **Step 7: `WebDAVIndexCoordinator`.**
+  - **Starts** a connection's indexer when the app is active, the path is Wi-Fi, the connection's setting is on, and the last full crawl is older than the measured interval.
+  - **Pauses** when any of those stops holding.
+  - **On entering the background,** it finishes the batch in hand under a `BackgroundTaskHold`, then stops (maintainer decision 5).
+  - One connection at a time.
+  - It publishes each connection's state for 遠端書庫's rows and the editor, following `CalibreProgressStatusView`.
+- [ ] **Step 8: The work index's second input.**
+  - `WorkIndexService.refresh` reads `RemoteRecordStore` records beside copies.
+  - Non-copy entries are fingerprinted by `(key, etag, lastModified, size)`. The remote store's revision joins `mutationRevision` in the stale check.
+  - A WebDAV record and the shelf copy of the same file join through `sameSourceItem` (`WorkIndex.swift:193-198`).
+- [ ] **Step 9: Tests.**
+  - **`WebDAVIndexerTests`**, with a fake lister:
+    - depth, batch and total limits;
+    - pause and resume lose at most one folder;
+    - empty vs failed;
+    - authentication stops it;
+    - non-book files are skipped;
+    - cancellation is prompt.
+  - **`RemoteRecordStoreTests`:** round trip, corrupt discarded, unreadable not written over, deleted with the connection.
+  - **`WebDAVIndexCoordinatorTests`**, with fake path, scene phase and settings:
+    - starts only when everything holds;
+    - pauses on losing Wi-Fi or on background, finishing the batch;
+    - the migrated backup connection stays off.
+  - **`WorkIndexRemoteRecordsTests`:** remote records index; a record joins its shelf copy; incremental equals a full rebuild; a stale remote revision is dropped.
+  - **UI:** `RemoteLibrarySettingsUITests` extended with a fixture connection's status line.
+- [ ] **Step 10: Run and commit.** The §19 Phase 2 row, the new suites, the benchmark (numbers to "What landed"), and `check_localizations.rb`.
+
+**2d acceptance:**
+- a WebDAV library added by the reader is indexed on Wi-Fi in the foreground without being opened;
+- the backup-account connection is not, until turned on;
+- limits come from measurement;
+- progress, pause and failure are visible on 遠端書庫;
+- records reach the work index;
+- nothing runs on cellular or in the background beyond the batch in hand.
+
+---
+
+## Task 2e: OPF and covers for indexed WebDAV EPUBs
+
+**Branch:** `unified-library/2e-webdav-metadata`, from `main` after 2d. Design §8.3, §9 (WebDAV "v2 讀 EPUB 的 OPF"); maintainer decision 7.
+
+- [ ] **Step 1: `RemoteEPUBMetadataReader`.**
+  - An internal entry on `PublicationSession`, around `retrievePackage(sourceURL:httpClient:)`. It reads `container.xml`, the OPF and the cover image over range requests, through `RemoteEPUBArchiveOpener` and 2d's own client (Wi-Fi only).
+  - It never builds a session or writes `spine.json`.
+  - About four requests a book: probe, ZIP tail, container, OPF, plus the cover.
+  - **Per-book budget:** skip covers above a measured size, and stop a book that exceeds its byte budget.
+- [ ] **Step 2: Store.**
+  - Each record gains its identifiers (`ImportedMetadataCapture.classify`, with Calibre packages handled as in 1c's fixes) and `MetadataValue`s in `RemoteRecordStore`, from the same OPF parsing as 1b.
+  - Covers go to `Caches/Works/covers/` (discardable, design §10.1), referenced as `CoverReference.copyFile`.
+- [ ] **Step 3: Order and limits.**
+  - The coordinator fills records by design §8.3's completeness score: cover, summary, author, tags, language and series, with constant weights. Most incomplete first.
+  - It runs under the same lifecycle and Wi-Fi rules, after a connection's crawl completes or reaches its limit.
+- [ ] **Step 4: Work index.** Identifiers from 2e enter the entries, so a WebDAV EPUB with an ISBN joins the same book from Calibre or the shelf at A-level.
+- [ ] **Step 5: Tests.**
+  - **`RemoteEPUBMetadataReaderTests`**, against a range-capable fixture (reuse `RemoteEPUBPublicationTests`' server if it fits): OPF fields and identifiers; cover extracted; byte budget enforced; a changed ETag mid-read fails as `contentChanged`; a non-EPUB is skipped.
+  - **Completeness ordering:** the most incomplete record is filled first.
+  - **`WorkIndexRemoteRecordsTests` extended:** a WebDAV EPUB's ISBN merges with a shelf copy's.
+- [ ] **Step 6: Run and commit.** The §19 Phase 2 row, the new suites, and a measured per-book request count and byte total on the benchmark fixture.
+
+**2e acceptance:**
+- indexed EPUBs gain metadata and covers in completeness order, on Wi-Fi in the foreground, within the measured budgets;
+- their identifiers merge works.
+
+---
+
+## Acceptance (Phase 2)
+
+- [ ] 2a: one browse path through providers; typed failures; Gutenberg special cases gone.
+- [ ] 2b: 設定 → 遠端書庫 manages every connection; book-source management pushed everywhere; bookshelf ＋ unchanged.
+- [ ] 2c: row status from a `SourceItemKey` lookup; no per-row scan.
+- [ ] 2d: WebDAV indexed per the maintainer's rules, with measured limits and visible status.
+- [ ] 2e: OPF and covers for indexed EPUBs, most incomplete first.
+- [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 2 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
+- [ ] Rollback:
+  - 2a and 2c are code only.
+  - Reverting 2b restores the iOS 18 sheet.
+  - 2d and 2e: revert, then delete `Works/remote/` and `Caches/Works/covers/`. The `indexesBooks` field is ignored by older builds.
+
+## Follow-ups found while planning
+
+1. **`OPDSFeedRoute` opens different views in two stacks**: `OPDSFeedView` in `RemoteLibraryBrowserView`, `PublicLibraryFeedView` in `PublicLibraryHomeView` (`OPDSImportView.swift:81-89`; `PublicLibraryHomeView.swift:29`). Phase 5 must give Explore one destination per route.
+2. **The OPDS 「範例目錄」 preset adds Gutenberg as an ordinary connection with no region check** (`OPDSImportView.swift:59-72`). 2a's registry hides the built-in one, but a preset-added copy is an ordinary OPDS connection. Decide with the maintainer whether the preset honours the gate.
+3. **`OPDSFeedView`'s empty overlay does not check `didLoad`** (`OPDSImportView.swift:328`), so it can flash before the first load. `PublicLibraryFeedView` does check it.
+4. **`FetchRetryPolicy.httpStatusCode(from:)` parses a localized string** (`FetchRetryPolicy.swift:183-195`) and cannot read `OPDSError.http`.
+5. **Phase 0's plan still says "not merged"** in its "What landed", though every step is merged. Update it with the next docs change.
+6. **The WebDAV route drops `etag` and `lastModified`** (`RemoteLibraryBookDetailView.swift:5-45`). 2d keeps them on records; the route may want them when Phase 5 opens indexed books.
+
+## What landed
+
+Nothing yet.
