@@ -57,6 +57,7 @@ final class RemoteLibraryService: RemoteLibraryServing {
             existing.remoteSource?.format = format
             existing.source = readerSource(for: format)
             store.saveReadingBook(existing)
+            recordImportedMetadata(of: item, for: existing, store: store)
             return existing
         }
         var book = ReadingBook(title: item.title, author: item.author ?? localized("未知作者"),
@@ -67,7 +68,26 @@ final class RemoteLibraryService: RemoteLibraryServing {
         book.coverUrl = item.coverURL?.absoluteString
         if format.fileExtension == "pdf" { book.contentPipelineKind = .fixedPage }
         store.saveReadingBook(book)
+        recordImportedMetadata(of: item, for: book, store: store)
         return book
+    }
+
+    /// Unified library 1b: the feed's summary, authors, language and identifiers, which the
+    /// copy itself does not keep, go to its sidecar.
+    private func recordImportedMetadata(of item: RemoteLibraryItem, for book: ReadingBook, store: BookStore) {
+        let connections = self.connections
+        let context = SourceRecordContext(
+            bookSourceURL: { _ in nil },
+            connectionKind: { connections.connection(id: $0)?.kind },
+            webDAVRoot: { id in connections.connection(id: id).flatMap { connections.webDAVClient(for: $0).rootURL } }
+        )
+        let record = SourceRecord.derived(from: book, context: context)
+        store.importedMetadata.write(ImportedMetadataCapture.remote(
+            item: item,
+            copy: book,
+            sourceItem: record.key,
+            connectionKind: connections.connection(id: item.connectionID)?.kind
+        ))
     }
 
     /// These markers select the same file readers as local import. In

@@ -1354,6 +1354,35 @@ final class PublicationSession {
         )
     }
 
+    /// One `dc:identifier` of the package, with its EPUB 2 `opf:scheme` when it has one.
+    struct OPFIdentifier: Equatable, Sendable {
+        let value: String
+        let scheme: String?
+    }
+
+    /// Every `dc:identifier` in the package (unified library 1b). Readium's `Metadata` keeps
+    /// only the unique identifier, so an ISBN beside a uuid would be lost there.
+    var opfIdentifiers: [OPFIdentifier] { Self.opfIdentifiers(in: packageResources.opfXML) }
+
+    static func opfIdentifiers(in opfXML: String) -> [OPFIdentifier] {
+        let pattern = #"<(?:[A-Za-z0-9_-]+:)?identifier\b([^>]*)>\s*([^<]+?)\s*</(?:[A-Za-z0-9_-]+:)?identifier>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            return []
+        }
+        let text = opfXML as NSString
+        return regex.matches(in: opfXML, range: NSRange(location: 0, length: text.length)).compactMap { match in
+            guard match.numberOfRanges > 2 else { return nil }
+            let value = text.substring(with: match.range(at: 2))
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { return nil }
+            let attributes = text.substring(with: match.range(at: 1))
+            let scheme = firstMatch(in: attributes, pattern: #"(?:[A-Za-z0-9_-]+:)?scheme\s*=\s*["']([^"']*)["']"#)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return OPFIdentifier(value: value, scheme: scheme?.isEmpty == true ? nil : scheme)
+        }
+    }
+
     private static func firstLanguageValue(in opfXML: String) -> String? {
         if let value = firstMatch(
             in: opfXML,

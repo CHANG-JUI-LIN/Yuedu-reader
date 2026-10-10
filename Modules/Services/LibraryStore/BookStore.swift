@@ -209,6 +209,9 @@ class BookStore: ObservableObject, BookProvider {
     /// Every book's table of contents, one file per book beside the shelf file — legado's
     /// chapters table. The shelf file holds the books and a summary of each list.
     private let chapterStore: BookChapterStore
+    /// Identifiers and metadata each import read beyond title and author, one sidecar per
+    /// copy beside the shelf file (unified library 1b). Never part of a `ReadingBook`.
+    let importedMetadata: ImportedMetadataStore
     /// Whether the last load read both the shelf and the reading records. Only then may a
     /// book missing from `records` be taken as gone, and its list removed.
     private var recordsLoadedCompletely = false
@@ -236,6 +239,7 @@ class BookStore: ObservableObject, BookProvider {
         chapterStore = BookChapterStore(
             directoryURL: metadataFileURL.deletingPathExtension().appendingPathExtension("chapters")
         )
+        importedMetadata = ImportedMetadataStore(besideShelfFile: metadataFileURL)
         // A store reads the files only after writes already queued to them have landed
         // (the queue is shared by every instance). At launch it is empty; it matters for a
         // store opened on files another instance has just saved.
@@ -778,6 +782,20 @@ class BookStore: ObservableObject, BookProvider {
                 try Task.checkCancellation()
                 self.records.insert(finalBook, at: 0)
                 self.saveMeta()
+            }
+            if let session {
+                // Unified library 1b: what the OPF says beyond title and author, beside the copy.
+                let metadata = session.publication.metadata
+                importedMetadata.write(ImportedMetadataCapture.epub(
+                    copy: finalBook,
+                    sourceItem: .copy(finalBook.id),
+                    identifiers: session.opfIdentifiers,
+                    languages: metadata.languages,
+                    description: metadata.description,
+                    subjects: metadata.subjects.map(\.name),
+                    publishers: metadata.publishers.map(\.name),
+                    published: metadata.published
+                ))
             }
             importTrace(
                 "stage=persist done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - persistStart) * 1000)) totalElapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - importStartUptime) * 1000))"
@@ -1397,6 +1415,7 @@ class BookStore: ObservableObject, BookProvider {
             readerSettings.removeSettings(for: bookId)
             // legado's chapters go with their book (`ForeignKey.CASCADE`); so does the list here.
             chapterStore.removeChapters(for: bookId)
+            importedMetadata.remove(copyID: bookId)
             // The 多角色朗讀 cast is keyed by book id and would otherwise outlive the book.
             let globalSettings = GlobalSettings.shared
             let remainingRoleVoices = TTSRoleVoiceCast.clearing(bookID: bookId, in: globalSettings.ttsRoleVoices)
@@ -2449,7 +2468,10 @@ class BookStore: ObservableObject, BookProvider {
         replaceRecords(prepared.snapshot.records)
         cancelPendingMetadataSave()
         let bookIDs = Set(records.map(\.id))
-        if recordsLoadedCompletely { chapterStore.removeChapters(notIn: bookIDs) }
+        if recordsLoadedCompletely {
+            chapterStore.removeChapters(notIn: bookIDs)
+            importedMetadata.remove(notIn: bookIDs)
+        }
         persistMetadata(prepared.shelfData, readingData: prepared.readingData)
         readerSettings.removeSettings(notIn: bookIDs)
         return true
@@ -2879,7 +2901,11 @@ class BookStore: ObservableObject, BookProvider {
         }
         if didRepair { records = repaired }
         recordsLoadedCompletely = complete
-        if complete { chapterStore.removeChapters(notIn: Set(records.map(\.id))) }
+        if complete {
+            let bookIDs = Set(records.map(\.id))
+            chapterStore.removeChapters(notIn: bookIDs)
+            importedMetadata.remove(notIn: bookIDs)
+        }
         if didRepair || chapterStore.hasUnwrittenChanges { saveMetaImmediately() }
     }
 

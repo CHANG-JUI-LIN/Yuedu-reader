@@ -52,6 +52,11 @@ struct OPDSEntry: Identifiable, Hashable {
     var alternateURL: URL?
     var authorNames: [String] = []
     var relatedLinks: [OPDSRelatedLink] = []
+    /// `dc:language` (OPDS 1) or `metadata.language` (OPDS 2), kept for the work index
+    /// (unified library 1b).
+    var language: String?
+    /// `dc:identifier`s (OPDS 1) or `metadata.identifier` (OPDS 2), as the feed wrote them.
+    var identifiers: [String] = []
 
     var isBook: Bool { !acquisitions.isEmpty }
     var isNavigation: Bool { acquisitions.isEmpty && navigationURL != nil }
@@ -285,6 +290,13 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         case "name": if parent == "author", current != nil, !value.isEmpty { authors.append(Self.plain(value, limit: 256)) }
         case "summary", "content":
             if parent == "entry", current?.summary == nil, !value.isEmpty { current?.summary = Self.plain(value, limit: 8_000) }
+        // The parser processes namespaces, so `dc:language` arrives as its local name.
+        case "language":
+            if parent == "entry", current?.language == nil, !value.isEmpty { current?.language = Self.plain(value, limit: 64) }
+        case "identifier":
+            if parent == "entry", !value.isEmpty, (current?.identifiers.count ?? 0) < 10 {
+                current?.identifiers.append(Self.plain(value, limit: 512))
+            }
         case "entry":
             guard var entry = current else { return }
             current = nil

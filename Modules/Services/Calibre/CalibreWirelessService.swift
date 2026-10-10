@@ -319,6 +319,11 @@ final class CalibreWirelessService: ObservableObject {
         registry.books.removeAll { $0.matches(incoming, libraryID: sourceLibraryID) }
         registry.books.append(CalibreDeviceBook(libraryID: sourceLibraryID, lpath: logicalPath, calibreUUID: incoming.uuid, fileExtension: incoming.fileExtension, bookID: imported.id, sha256: staged.sha256, metadata: metadata))
         try registry.save(to: registryURL)
+        // Unified library 1b: Calibre's uuid, ISBN and metadata beside the copy, which keeps
+        // only title and author.
+        store.importedMetadata.write(ImportedMetadataCapture.calibre(
+            metadata: metadata, copy: imported, sourceItem: .copy(imported.id)
+        ))
         updateTransfer(statusID, phase: .completed)
         AppLogger.info("[CalibreWireless] receive imported bookID=\(imported.id) bytes=\(incoming.length)")
         // Calibre 9.14 expects NO final ACK or BOOK_DONE after these raw bytes.

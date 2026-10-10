@@ -27,6 +27,10 @@ struct RemoteLibraryItem: Identifiable, Hashable, Sendable {
     var coverURL: URL? = nil
     var alternateURL: URL? = nil
     let formats: [RemoteLibraryFormat]
+    /// Kept from the feed for the imported-metadata sidecar (unified library 1b).
+    var authorNames: [String] = []
+    var language: String? = nil
+    var identifiers: [String] = []
 }
 
 /// A remote file is not a rule-based web novel. Its format still selects the
