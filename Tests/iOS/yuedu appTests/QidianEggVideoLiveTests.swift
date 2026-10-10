@@ -1,8 +1,8 @@
 @testable import YueduCoreText
-import AVFoundation
 import Foundation
 import Testing
 import UIKit
+import WebKit
 @testable import yuedu_app
 
 private let qidianEggVideoLiveTestsEnabled =
@@ -10,15 +10,19 @@ private let qidianEggVideoLiveTestsEnabled =
         || ProcessInfo.processInfo.environment["TEST_RUNNER_RUN_QIDIAN_EGG_LIVE_TESTS"] == "1"
 
 /// The user's recipe (2026-10-10): 《没钱修什么仙》, chapter 「彩蛋：视频：鄙视链顶端的白真真」,
-/// tap play, the video plays inline in the page. Runs the real source over the network.
+/// tap play, the video plays inline in the page with its 弹幕 (as qimo_yuedu's player shows
+/// them). Runs the real source over the network.
 @Suite("Qidian egg video live", .serialized)
 @MainActor
 struct QidianEggVideoLiveTests {
-    private static let sourcePath =
-        "/Users/zhangruilin/Desktop/Test document/RULE/起点读书qm-行內影片.json"
+    private static var sourcePath: String {
+        ProcessInfo.processInfo.environment["TEST_RUNNER_QIDIAN_EGG_SOURCE"]
+            ?? ProcessInfo.processInfo.environment["QIDIAN_EGG_SOURCE"]
+            ?? "/Users/zhangruilin/Desktop/Test document/RULE/起点读书qm-行內影片.json"
+    }
 
     @Test(
-        "the egg chapter reaches the reader as an inline video with its Referer",
+        "the egg chapter reaches the reader as the source's player page, with its 弹幕, and plays",
         .enabled(if: qidianEggVideoLiveTestsEnabled, "Set RUN_QIDIAN_EGG_LIVE_TESTS=1"),
         .timeLimit(.minutes(3))
     )
@@ -59,24 +63,57 @@ struct QidianEggVideoLiveTests {
             expectedSourceURL: chapter.url, expectedTOCTitle: chapter.title
         ))
         print("⟐ egg.live normalized=\(normalizedHTML.prefix(1600))")
-        #expect(normalizedHTML.contains("<video"))
-        // The Referer the CDN requires survives into the chapter (403 without it).
-        #expect(normalizedHTML.contains("#yd-imgh="))
-
-        // The player sends that Referer: the asset built the way the reader builds it plays,
-        // the same URL without headers does not (the CDN's 403, measured with curl).
-        let srcPattern = try NSRegularExpression(pattern: #"<video[^>]*\ssrc="([^"]+)""#)
+        // The 彩蛋 arrives as the source's own player page — video plus 弹幕 — loaded in place.
+        let srcPattern = try NSRegularExpression(pattern: #"<iframe[^>]*\ssrc="(data:text/html[^"]+)""#)
         let ns = normalizedHTML as NSString
         let match = try #require(srcPattern.firstMatch(in: normalizedHTML, range: NSRange(location: 0, length: ns.length)))
-        let src = ns.substring(with: match.range(at: 1)).replacingOccurrences(of: "&amp;", with: "&")
-        let request = try await EPUBMediaURLResolver.playableRequest(
-            for: EPUBMediaAttachment(kind: .video, sourceHref: src)
+        let embed = ReaderWebEmbed(src: ns.substring(with: match.range(at: 1)), title: nil, referer: nil)
+        let page = try #require(embed.inlinePage)
+        #expect(page.baseURL?.absoluteString == "https://m.qidian.com/")
+        #expect(page.html.contains("<video"))
+        // 弹幕 fetched with the exact SourceId (it is above 2^53; a rounded one returns none).
+        let danmu = try #require(page.html.range(of: "var D=").map { String(page.html[$0.upperBound...].prefix(400)) })
+        print("⟐ egg.live danmu=\(danmu)")
+        #expect(danmu.hasPrefix("[{"))
+
+        // The page plays its video only because it loads as m.qidian.com: the CDN answers 403
+        // to a request without that Referer.
+        #expect(try await Self.videoDuration(html: page.html, baseURL: page.baseURL) > 0)
+        #expect(try await Self.videoDuration(html: page.html, baseURL: nil) < 0)
+    }
+
+    private final class MetadataHandler: NSObject, WKScriptMessageHandler {
+        var continuation: CheckedContinuation<Double, Never>?
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            continuation?.resume(returning: (message.body as? Double) ?? -1)
+            continuation = nil
+        }
+    }
+
+    /// Loads `html` the way `ReaderWebEmbedManager` does and reports the video's duration once
+    /// its metadata arrives, or -1 when the video fails to load.
+    private static func videoDuration(html: String, baseURL: URL?) async throws -> Double {
+        let handler = MetadataHandler()
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        let probe = """
+            var v=document.querySelector('video');
+            v.addEventListener('loadedmetadata',function(){webkit.messageHandlers.m.postMessage(v.duration)});
+            v.addEventListener('error',function(){webkit.messageHandlers.m.postMessage(-1)});
+            v.preload='auto';v.load();
+            """
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: probe, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         )
-        print("⟐ egg.live video=\(request.url) headers=\(request.headers)")
-        let headered = HeaderedMediaAsset.make(url: request.url, headers: request.headers)
-        #expect(try await headered.load(.isPlayable))
-        let bare = AVURLAsset(url: request.url)
-        let barePlayable = (try? await bare.load(.isPlayable)) ?? false
-        #expect(!barePlayable)
+        configuration.userContentController.add(handler, name: "m")
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 320, height: 568), configuration: configuration)
+        let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.windows.first }.first
+        window?.addSubview(webView)
+        defer { webView.removeFromSuperview() }
+        return await withCheckedContinuation { continuation in
+            handler.continuation = continuation
+            webView.loadHTMLString(html, baseURL: baseURL)
+        }
     }
 }

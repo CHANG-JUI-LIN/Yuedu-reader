@@ -137,6 +137,38 @@ struct OnlineInlineVideoTests {
         #expect(live.src == embed.src)
     }
 
+    @Test("a page the source built loads in place, as the address its Referer option names")
+    func sourceBuiltPageIsWebEmbed() async throws {
+        // What the 彩蛋 player in 起点读书qm（行內影片）writes: the player page with its 弹幕,
+        // base64 in the src, and the Referer the page's video request needs.
+        let page = #"<!DOCTYPE html><html><body><video src="https://v.tingbook.com/v.mp4?a=1&amp;b=2"></video><script>var D=[{"t":"怎么没人","c":""}];</script></body></html>"#
+        let base64 = Data(page.utf8).base64EncodedString()
+        let built = try await Self.build(
+            #"<p>前文</p><iframe title="彩蛋视频" width="720" height="1280" src="data:text/html;base64,"#
+                + base64 + #",{"headers":{"Referer":"https://m.qidian.com/"}}"></iframe><p>後文</p>"#
+        )
+        let embed = try #require(Self.webEmbed(in: built))
+        #expect(embed.title == "彩蛋视频")
+        #expect(abs((embed.aspectRatio ?? 0) - 1280.0 / 720.0) < 0.001)
+        let inline = try #require(embed.inlinePage)
+        #expect(inline.html == page)
+        #expect(inline.baseURL?.absoluteString == "https://m.qidian.com/")
+        #expect(embed.host == "m.qidian.com")
+    }
+
+    @Test("a source-built page without a Referer option loads as the chapter's address")
+    func sourceBuiltPageFallsBackToChapter() {
+        let html = "<p>hi</p>"
+        let embed = ReaderWebEmbed(
+            src: "data:text/html;charset=utf-8," + (html.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""),
+            title: nil, referer: "https://book.example/chapter/1"
+        )
+        #expect(embed.inlinePage?.html == html)
+        #expect(embed.inlinePage?.baseURL?.absoluteString == "https://book.example/chapter/1")
+        // A web address is loaded by URL, never as an inline page.
+        #expect(ReaderWebEmbed(src: "https://player.example/embed/42", title: nil, referer: nil).inlinePage == nil)
+    }
+
     @Test("a 1×1 tracking iframe does not become a card")
     func trackingIframeIsNotACard() async throws {
         let built = try await Self.build(
@@ -150,6 +182,18 @@ struct OnlineInlineVideoTests {
         let built = try await Self.build(#"<p>前文</p><iframe src="../inner.html">替代文字</iframe>"#)
         #expect(Self.webEmbed(in: built) == nil)
         #expect(Self.videoAttachment(in: built) == nil)
+    }
+
+    @Test("a cover whose js opens a browser page is a tap, not an image to preview")
+    func browserOpeningCoverIsATap() throws {
+        // Exactly what the original 起点读书qm writes for a video 彩蛋.
+        let html = #"<img src="https://v.tingbook.com/cover.jpg,{'type':'qd',"js":"java.startBrowser('https://h5.if.qidian.com/h5/share/middle?bookId=1&chapterId=2&pageId=3','彩蛋视频')",'style':'FULL'}">"#
+        let context = ReaderHTMLUtilities.LegadoReviewContext(sourceName: "起点读书qm", sourceURL: "https://qdgo.qimo.host")
+        let sanitized = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(html, reviewContext: context)
+        let href = try #require(sanitized.range(of: "ydreview://").map { String(sanitized[$0.lowerBound...].prefix { $0 != "\"" }) })
+        let target = try #require(ReaderHTMLUtilities.reviewTarget(fromHref: href))
+        #expect(target.requiresSourceJS)
+        #expect(target.sourceJS.contains("java.startBrowser("))
     }
 
     @Test("a single-quoted option block carries its headers too, as legado reads it")

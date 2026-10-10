@@ -164,8 +164,9 @@ enum EPUBMediaPlaceholderRenderer {
 
             let title = embed.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 ? embed.title! : localized("內嵌網頁")
+            let host = embed.host
             draw(
-                title + " · " + embed.host,
+                host.isEmpty ? title : title + " · " + host,
                 in: CGRect(x: 16, y: disc.maxY + 12, width: width - 32, height: 22),
                 font: UIFont.systemFont(ofSize: max(13, min(font.pointSize, 16)), weight: .medium),
                 color: UIColor.white.withAlphaComponent(0.86),

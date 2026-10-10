@@ -16,10 +16,12 @@ import Foundation
 /// the offline manifest and the disk cache without any of them having to know about it.
 ///
 /// The same holds for `<video>`/`<audio>`/`<source>` `src` and `poster`: 起点's 彩蛋 videos
-/// answer 403 without the `Referer` their source declares this way.
+/// answer 403 without the `Referer` their source declares this way — and for `<iframe>` `src`,
+/// the page the reader loads in place (`ReaderWebEmbedManager`).
 ///
 /// Encode points: `ReaderHTMLUtilities.rewriteLegadoImageTag` and `carryingMediaRequestHeaders`.
-/// Decode points: `OnlineImageLoader` (images, posters) and `EPUBVideoPlaybackManager` (playback);
+/// Decode points: `OnlineImageLoader` (images, posters), `EPUBVideoPlaybackManager` (playback) and
+/// `ReaderWebEmbedManager` (`<iframe>` pages);
 /// everything in between just sees a slightly longer URL.
 enum OnlineImageRequestOptions {
 
@@ -44,10 +46,16 @@ enum OnlineImageRequestOptions {
     /// Appends `headers` to `src` as a fragment. Returns `src` unchanged when there is nothing to
     /// carry, when it already carries a fragment we would clobber, or when the src is not a remote
     /// URL (a `data:` URI carries its bytes with it — there is no request to add headers to).
+    ///
+    /// The one `data:` src that keeps them is an `<iframe>` page a source builds itself
+    /// (`data:text/html`): its `Referer` is the address the page loads as, so the requests the
+    /// page makes carry it (`ReaderWebEmbed.inlinePage`).
     static func encoding(src: String, headers: [String: String]) -> String {
         guard !headers.isEmpty, !src.contains(marker) else { return src }
         let lowercased = src.lowercased()
-        guard lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://") else { return src }
+        guard lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://")
+                || lowercased.hasPrefix("data:text/html")
+        else { return src }
         guard let data = try? JSONSerialization.data(withJSONObject: headers, options: [.sortedKeys])
         else { return src }
         return src + marker + base64URLEncoded(data)

@@ -54,7 +54,9 @@ final class ReaderWebEmbedManager: NSObject {
         webView.accessibilityLabel = embed.title ?? localized("內嵌網頁")
 
         let decoded = OnlineImageRequestOptions.decode(embed.src)
-        if let url = URL(string: decoded.src) {
+        if let page = embed.inlinePage {
+            webView.loadHTMLString(page.html, baseURL: page.baseURL)
+        } else if let url = URL(string: decoded.src) {
             var request = URLRequest(url: url)
             for (field, value) in decoded.headers {
                 request.setValue(value, forHTTPHeaderField: field)

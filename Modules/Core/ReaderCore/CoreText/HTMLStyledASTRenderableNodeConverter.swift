@@ -248,8 +248,9 @@ private extension HTMLAttributedStringBuilder.ElementNode {
                     style: style
                 )
             } else if resolvedStyle.isBlock {
-                // Relative / custom-scheme pages (EPUB-internal) and `data:` pages are not loaded
-                // into a web view; they keep the fallback content they always had.
+                // Relative / custom-scheme pages (EPUB-internal) and `data:` URIs other than a
+                // source-built `data:text/html` page are not loaded into a web view; they keep
+                // the fallback content they always had.
                 node = .block(tag: tag, children: mappedChildren, style: style)
             } else {
                 node = .inline(tag: tag, children: mappedChildren, style: style)

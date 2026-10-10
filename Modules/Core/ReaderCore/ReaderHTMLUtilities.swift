@@ -1606,20 +1606,21 @@ enum ReaderHTMLUtilities {
     }
 
     private static let mediaTagRegex = try! NSRegularExpression(
-        pattern: #"<(?:video|audio|source)\b[^>]*>"#, options: [.caseInsensitive]
+        pattern: #"<(?:video|audio|source|iframe)\b[^>]*>"#, options: [.caseInsensitive]
     )
     private static let mediaURLAttributeTailRegex = try! NSRegularExpression(
         pattern: #"\b(?:src|poster)\s*=\s*["']([^"']*)$"#, options: [.caseInsensitive]
     )
 
-    /// Moves each `,{json}` option block on a `<video>`/`<audio>`/`<source>` `src` or `poster`
-    /// onto that URL as an `OnlineImageRequestOptions` fragment, before the generic suffix strip
-    /// below would delete it. A media tag can carry two blocks (`src` and `poster`), so every
-    /// block is handled, not just the first one the image path looks at.
+    /// Moves each `,{json}` option block on a `<video>`/`<audio>`/`<source>` `src` or `poster`,
+    /// or an `<iframe>` `src`, onto that URL as an `OnlineImageRequestOptions` fragment, before
+    /// the generic suffix strip below would delete it. A media tag can carry two blocks (`src`
+    /// and `poster`), so every block is handled, not just the first one the image path looks at.
     static func carryingMediaRequestHeaders(_ html: String) -> String {
         guard html.containsMarker(",{"),
               html.containsMarker("<video", ignoringCase: true)
                 || html.containsMarker("<audio", ignoringCase: true)
+                || html.containsMarker("<iframe", ignoringCase: true)
         else { return html }
         let ns = html as NSString
         let matches = mediaTagRegex.matches(in: html, range: NSRange(location: 0, length: ns.length))
@@ -1695,9 +1696,13 @@ enum ReaderHTMLUtilities {
         // `js` is normally UrlOption's render transform. Fork-authored paragraph
         // review images also put these established tap calls there; keep that
         // bounded set without treating arbitrary image transforms as taps.
+        // Opening a browser page is never a transform — it returns no URL — so a `js`
+        // that does it can only mean the tap: 起点读书qm's 彩蛋 covers carry
+        // `"js":"java.startBrowser('<share page>','彩蛋视频')"` under "点击上方图片播放".
         return [
             "showCmt", "androidshowCmt", "showChapterComments",
             "androidshowChapterComments", "createSvg",
+            "startBrowser", "showBrowser",
         ].contains { legadoFunctionArgs(named: $0, in: action) != nil }
     }
 

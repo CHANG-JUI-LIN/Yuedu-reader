@@ -8,8 +8,14 @@ import Foundation
 ///
 /// An iframe whose `src` *is* a media file never becomes one of these: the converter turns it
 /// into a `<video>` and it plays through the inline video player.
+///
+/// A book source can also hand over a page it built itself, as a `data:text/html` `src`
+/// (起点读书qm's 彩蛋 videos with their 弹幕, user's choice 2026-10-10, after qimo_yuedu's
+/// player page). Such a page loads as the address in the `Referer` its source declared on the
+/// src (`,{"headers":{"Referer":…}}`), so what it requests — the 彩蛋 MP4, which its CDN refuses
+/// without that Referer — is requested from that address (`inlinePage`).
 public struct ReaderWebEmbed: Equatable, Sendable {
-    /// The page to load (`http`/`https` only).
+    /// The page to load: an `http`/`https` URL, or a `data:text/html` page the source built.
     public let src: String
     /// The iframe's own `title`, if it gave one — what VoiceOver reads for the card.
     public let title: String?
@@ -29,7 +35,38 @@ public struct ReaderWebEmbed: Equatable, Sendable {
     var key: String { src }
 
     /// The host shown on the card, so the reader can tell a player from an advert before tapping.
-    var host: String { URL(string: src)?.host ?? src }
+    /// A page the source built shows the address it loads as; empty when it declared none.
+    var host: String {
+        if let page = inlinePage { return page.baseURL?.host ?? "" }
+        let url = OnlineImageRequestOptions.decode(src).src
+        return URL(string: url)?.host ?? url
+    }
+
+    /// A page the source built (`data:text/html`): its HTML, and the address it loads as — the
+    /// `Referer` declared on the src, else the chapter's own URL when that is a web address.
+    /// nil for an ordinary web address, and for a `data:` page that does not decode.
+    var inlinePage: (html: String, baseURL: URL?)? {
+        let decoded = OnlineImageRequestOptions.decode(src)
+        guard decoded.src.lowercased().hasPrefix("data:text/html"),
+              let comma = decoded.src.firstIndex(of: ",")
+        else { return nil }
+        let header = decoded.src[..<comma].lowercased()
+        let body = String(decoded.src[decoded.src.index(after: comma)...])
+        let html: String?
+        if header.hasSuffix(";base64") {
+            html = Data(base64Encoded: body, options: .ignoreUnknownCharacters)
+                .flatMap { String(data: $0, encoding: .utf8) }
+        } else {
+            html = body.removingPercentEncoding
+        }
+        guard let html else { return nil }
+        let declared = decoded.headers.first { $0.key.caseInsensitiveCompare("Referer") == .orderedSame }?.value
+        let base = [declared, referer]
+            .compactMap { $0 }
+            .compactMap(URL.init(string:))
+            .first { ["http", "https"].contains($0.scheme?.lowercased() ?? "") }
+        return (html, base)
+    }
 
     /// File extensions that mean the `src` is the media itself, not a page that plays it.
     static let directMediaExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "m3u8"]
@@ -41,9 +78,10 @@ public struct ReaderWebEmbed: Equatable, Sendable {
         return directMediaExtensions.contains(String(path[path.index(after: dot)...]))
     }
 
-    /// True for a `src` a web view can load as an embed.
+    /// True for a `src` a web view can load as an embed: a web address, or a page the source
+    /// built (`data:text/html`).
     static func isEmbeddablePage(_ src: String) -> Bool {
         let lower = src.lowercased()
-        return lower.hasPrefix("https://") || lower.hasPrefix("http://")
+        return lower.hasPrefix("https://") || lower.hasPrefix("http://") || lower.hasPrefix("data:text/html")
     }
 }
