@@ -12,6 +12,8 @@ protocol OPDSFeedProviding: CollectionBrowsing {
     func searchURL(query: String, search: OPDSSearch?) async throws -> URL?
     /// The record of an item entry. A requirement, so Gutenberg's own is the one `browse` uses.
     var makeRecord: @Sendable (OPDSEntry) -> SourceRecord? { get }
+    /// What opening an item entry needs; a requirement for the same reason.
+    var makeOpening: @Sendable (OPDSEntry) -> ItemOpening { get }
 }
 
 extension OPDSFeedProviding {
@@ -23,11 +25,12 @@ extension OPDSFeedProviding {
             throw SourceFailure(kind: .invalidAddress, underlying: OPDSError.invalidURL)
         }
         let feed = try await feed(url, isSearch: false)
-        return await Self.page(from: feed, record: makeRecord)
+        return await Self.page(from: feed, record: makeRecord, opening: makeOpening)
     }
 
     /// The mapping runs off the main actor: summaries are HTML until `plainMetadata` reads them.
-    nonisolated static func page(from feed: OPDSFeed, record: @Sendable (OPDSEntry) -> SourceRecord?) async -> CollectionPage {
+    nonisolated static func page(from feed: OPDSFeed, record: @Sendable (OPDSEntry) -> SourceRecord?,
+                                 opening: @Sendable (OPDSEntry) -> ItemOpening) async -> CollectionPage {
         var entries: [CollectionEntry] = []
         for entry in feed.entries {
             if let made = record(entry) {
@@ -39,7 +42,7 @@ extension OPDSFeedProviding {
                     language: entry.language,
                     contentKind: made.contentKind
                 )
-                entries.append(.item(made, summary))
+                entries.append(.item(made, summary, opening(entry)))
             } else if let navigation = entry.navigationURL {
                 entries.append(.location(CollectionLocation(id: navigation.absoluteString, title: entry.title)))
             }
@@ -51,6 +54,11 @@ extension OPDSFeedProviding {
         let id = instance.id
         let kind: RemoteLibraryKind = instance.type == .calibre ? .calibre : .opds
         return { $0.isBook ? SourceRecord.derived(from: $0, connectionID: id, connectionKind: kind) : nil }
+    }
+
+    var makeOpening: @Sendable (OPDSEntry) -> ItemOpening {
+        let id = instance.id
+        return { .opdsEntry($0, connectionID: id) }
     }
 }
 
@@ -128,5 +136,10 @@ final class GutenbergProvider: OPDSFeedProviding {
     /// Gutenberg's items are `GutenbergBook`s, keyed by ebook number (1a).
     var makeRecord: @Sendable (OPDSEntry) -> SourceRecord? {
         { GutenbergBook(entry: $0).map(SourceRecord.derived(from:)) }
+    }
+
+    /// Only called for entries `makeRecord` made a record of, which are `GutenbergBook`s.
+    var makeOpening: @Sendable (OPDSEntry) -> ItemOpening {
+        { entry in GutenbergBook(entry: entry).map(ItemOpening.gutenberg) ?? .opdsEntry(entry, connectionID: PublicLibraryID.gutenberg.rawValue) }
     }
 }

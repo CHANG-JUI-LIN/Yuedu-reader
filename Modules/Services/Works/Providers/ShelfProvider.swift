@@ -32,13 +32,28 @@ final class ShelfProvider: CollectionBrowsing {
             entries = store.allGroups.map { .location(CollectionLocation(id: "group/\($0)", title: $0)) }
             shown = books
         }
-        let context = WorkIndexService.liveContext(for: shown)
-        entries += shown.map { book in
+        entries += items(shown)
+        return CollectionPage(entries: entries, next: nil)
+    }
+
+    /// Each book as an item, its record made with the shelf's live context.
+    func items(_ books: [ReadingBook]) -> [CollectionEntry] {
+        let context = WorkIndexService.liveContext(for: books)
+        return books.map { book in
             let record = SourceRecord.derived(from: book, context: context)
             return .item(record, WorkSummary(title: book.title, authors: record.authors, cover: Self.cover(of: book),
-                                             blurb: nil, language: nil, contentKind: record.contentKind))
+                                             blurb: nil, language: nil, contentKind: record.contentKind), .copy(book.id))
         }
-        return CollectionPage(entries: entries, next: nil)
+    }
+
+    /// 繼續閱讀: the copies opened most recently, newest first (design §13.3).
+    func continueReading(limit: Int) -> [CollectionEntry] {
+        let opened = store.books
+            .compactMap { book in book.lastOpenedDate.map { (book, $0) } }
+            .sorted { $0.1 > $1.1 }
+            .prefix(limit)
+            .map(\.0)
+        return items(Array(opened))
     }
 
     private static func cover(of book: ReadingBook) -> CoverReference {

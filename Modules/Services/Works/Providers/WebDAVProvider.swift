@@ -9,12 +9,16 @@ final class WebDAVProvider: CollectionBrowsing {
     private lazy var client: WebDAVBrowseClient = makeClient()
     private let makeClient: () -> WebDAVBrowseClient
 
-    convenience init(connection: OPDSCatalog, store: OPDSCatalogStore) {
-        self.init(connection: connection) { store.webDAVClient(for: connection) }
+    /// The 2d index, read for the connection's 「最新」 row; nil where nothing reads it.
+    let records: RemoteRecordStore?
+
+    convenience init(connection: OPDSCatalog, store: OPDSCatalogStore, records: RemoteRecordStore? = nil) {
+        self.init(connection: connection, records: records) { store.webDAVClient(for: connection) }
     }
 
-    init(connection: OPDSCatalog, client: @escaping () -> WebDAVBrowseClient) {
+    init(connection: OPDSCatalog, records: RemoteRecordStore? = nil, client: @escaping () -> WebDAVBrowseClient) {
         self.connection = connection
+        self.records = records
         makeClient = client
     }
 
@@ -49,7 +53,8 @@ final class WebDAVProvider: CollectionBrowsing {
                 entries.append(.location(CollectionLocation(id: entry.url.absoluteString, title: entry.name)))
             } else if let record = SourceRecord.derived(from: entry, connectionID: connectionID, root: root) {
                 entries.append(.item(record, WorkSummary(title: record.title, authors: [], cover: .generated(seed: record.title),
-                                                         blurb: nil, language: nil, contentKind: record.contentKind)))
+                                                         blurb: nil, language: nil, contentKind: record.contentKind),
+                                     .webDAVFile(entry, connectionID: connectionID)))
             }
         }
         return CollectionPage(entries: entries, next: nil)

@@ -79,7 +79,7 @@ final class AozoraProvider: CollectionBrowsing {
             let authors = work.credits.compactMap { index.personsByID[$0.person]?.name }
             let record = SourceRecord.derived(from: work)
             return .item(record, WorkSummary(title: work.title, authors: authors, cover: .generated(seed: work.title),
-                                             blurb: nil, language: "ja", contentKind: .text))
+                                             blurb: nil, language: "ja", contentKind: .text), .aozora(work))
         }
         let end = start + slice.count
         return CollectionPage(entries: entries, next: end < works.count ? CollectionCursor(value: String(end)) : nil)

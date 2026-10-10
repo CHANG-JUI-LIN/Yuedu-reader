@@ -63,4 +63,24 @@ final class SourceProviderRegistry {
         providers.append(aozoraProvider)
         return providers.filter { $0.availability != .hiddenInRegion }
     }
+
+    /// Every source that can put rows on the Explore home (5b), in the order 「最新」 lists
+    /// them: the shelf, saved connections, Gutenberg, Aozora, then the explore sources as
+    /// 探索 lists them. WebDAV connections read `shelf.remoteRecords` for their 「最新」.
+    ///
+    /// Callers wait for `BookSourceStore.waitUntilLoaded()` first: before the library is read
+    /// every source would look deleted.
+    func homeProviders(shelf: BookStore, sources: BookSourceStore = .shared) -> [any HomeSectionProviding] {
+        var providers: [any HomeSectionProviding] = [ShelfProvider(store: shelf)]
+        for connection in connections.catalogs {
+            switch connection.kind {
+            case .webDAV: providers.append(WebDAVProvider(connection: connection, store: connections, records: shelf.remoteRecords))
+            case .opds, .calibre: providers.append(OPDSProvider(connection: connection, store: connections))
+            }
+        }
+        providers.append(gutenberg)
+        providers.append(aozoraProvider)
+        providers += DiscoverViewModel.exploreSources(in: sources).map { BookSourceProvider(source: $0) }
+        return providers.filter { $0.availability != .hiddenInRegion }
+    }
 }
