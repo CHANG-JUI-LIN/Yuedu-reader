@@ -1478,7 +1478,7 @@ struct EditBookSheet: View {
                             Text(localized("來源"))
                                 .foregroundStyle(DSColor.textPrimary)
                             Spacer()
-                            Text(book.source == "local" ? localized("本機文件") : localized("網頁匯入"))
+                            Text(SourceLabel.text(for: book, record: .derived(from: book, context: .live())))
                                 .foregroundStyle(DSColor.textSecondary)
                         }
                     }
