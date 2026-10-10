@@ -199,14 +199,35 @@ enum RootTabIconRenderer {
         for slot in RootTabIconSlot.preferredSlots(colorScheme: colorScheme) {
             if let asset = settings.rootTabIconAsset(for: tab, slot: slot),
                let url = settings.rootTabIconURL(for: asset),
-               let image = UIImage(contentsOfFile: url.path) {
-                return RootTabRenderedIcon(
-                    image: image.rootTabIconPrepared(pointSize: size),
-                    isTemplate: false
-                )
+               let image = preparedImage(at: url, pointSize: size) {
+                return RootTabRenderedIcon(image: image, isTemplate: false)
             }
         }
         return nil
+    }
+
+    /// Decoded and redrawn icons, by file, its modification date and the size drawn.
+    ///
+    /// `customIcon` is called from the root view's body, for every tab, on every root render;
+    /// it read the file and redrew it each time. The modification date is part of the key, so
+    /// an icon replaced under the same name is read again.
+    private static let preparedImages = NSCache<NSString, UIImage>()
+
+    private static func preparedImage(at url: URL, pointSize: CGFloat) -> UIImage? {
+        let modified: Date
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            modified = attributes[.modificationDate] as? Date ?? .distantPast
+        } catch {
+            // A missing file is the ordinary "no custom icon here"; nothing to log.
+            return nil
+        }
+        let key = "\(url.path)|\(modified.timeIntervalSince1970)|\(pointSize)" as NSString
+        if let cached = preparedImages.object(forKey: key) { return cached }
+        guard let image = UIImage(contentsOfFile: url.path) else { return nil }
+        let prepared = image.rootTabIconPrepared(pointSize: pointSize)
+        preparedImages.setObject(prepared, forKey: key)
+        return prepared
     }
 
     static func systemIcon(

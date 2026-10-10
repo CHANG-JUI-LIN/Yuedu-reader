@@ -378,8 +378,19 @@ final class RSSStore: ObservableObject {
         }
     }
 
+    /// Counted through the status overlay directly. `articles(for:)` copies every article to
+    /// apply its status and sorts them; the counts are read in the root view's body (the RSS
+    /// badge) and per row of the RSS list, so that was ~7.6 ms per total over 10 000
+    /// articles (Debug simulator). Same answer: `applying(status:)` takes `isRead` from the
+    /// status when there is one.
     func unreadCount(for sourceID: String) -> Int {
-        articles(for: sourceID).filter { !$0.isRead }.count
+        (cachedArticlesBySource[sourceID] ?? []).reduce(0) { count, article in
+            count + (isRead(article) ? 0 : 1)
+        }
+    }
+
+    private func isRead(_ article: RSSArticleRecord) -> Bool {
+        articleStatuses[article.id]?.isRead ?? article.isRead
     }
 
     func unreadCount(for folder: RSSFolder) -> Int {
@@ -389,7 +400,20 @@ final class RSSStore: ObservableObject {
     }
 
     func unreadCount(for smartFeed: RSSSmartFeedKind) -> Int {
-        articles(for: smartFeed).filter { !$0.isRead }.count
+        var count = 0
+        for source in sources {
+            for article in cachedArticlesBySource[source.id] ?? [] where !isRead(article) {
+                switch smartFeed {
+                case .today:
+                    if Calendar.current.isDateInToday(article.pubDate ?? article.fetchedAt) { count += 1 }
+                case .allUnread:
+                    count += 1
+                case .starred:
+                    if articleStatuses[article.id]?.isFavorite ?? article.isFavorite { count += 1 }
+                }
+            }
+        }
+        return count
     }
 
     func totalUnreadCount() -> Int {

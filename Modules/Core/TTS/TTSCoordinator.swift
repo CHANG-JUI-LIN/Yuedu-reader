@@ -86,13 +86,17 @@ final class NowPlayingHub: ObservableObject {
 
     func update(from coordinator: TTSCoordinator) {
         guard self.coordinator === coordinator, source == .tts else { return }
-        title = coordinator.floatingTitle
+        // Called once per spoken sentence. `@Published` notifies on every assignment, equal
+        // or not, so assigning all seven fields was seven publishes a sentence where one
+        // (`currentSegmentIndex`) changed.
+        if title != coordinator.floatingTitle { title = coordinator.floatingTitle }
         if coverImage !== coordinator.floatingCoverImage { coverImage = coordinator.floatingCoverImage }
         if coverTitle != coordinator.floatingCoverTitle { coverTitle = coordinator.floatingCoverTitle }
-        playbackState = coordinator.playbackState
-        currentSegmentIndex = coordinator.currentSegmentIndex
-        totalSegments = coordinator.totalSegments
-        isVisible = allowsReaderOverlay && coordinator.playbackState != .stopped
+        if playbackState != coordinator.playbackState { playbackState = coordinator.playbackState }
+        if currentSegmentIndex != coordinator.currentSegmentIndex { currentSegmentIndex = coordinator.currentSegmentIndex }
+        if totalSegments != coordinator.totalSegments { totalSegments = coordinator.totalSegments }
+        let visible = allowsReaderOverlay && coordinator.playbackState != .stopped
+        if isVisible != visible { isVisible = visible }
     }
 
     func detach(_ coordinator: TTSCoordinator) {

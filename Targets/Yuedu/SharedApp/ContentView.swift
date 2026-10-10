@@ -13,7 +13,6 @@ struct ContentView: View {
     @ObservedObject private var gs = GlobalSettings.shared
     @StateObject private var rssStore = RSSStore.shared
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
-    @StateObject private var nowPlaying = NowPlayingHub.shared
     /// Whether any screen is hiding the tab bar — answered from every tab, not only the
     /// screen's own (`RootTabBarVisibility`).
     @StateObject private var rootTabBar = RootTabBarVisibility()
@@ -235,17 +234,7 @@ struct ContentView: View {
         .onChange(of: gs.rootTabVisibleIDs) { _, _ in
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
         }
-        .fullScreenCover(isPresented: $nowPlaying.isPresentingAudiobook) {
-            if let bookId = nowPlaying.audiobookBookId {
-                if store.books.contains(where: { $0.id == bookId }) {
-                    BookReaderView(bookId: bookId)
-                        .environmentObject(store)
-                } else {
-                    AudiobookReaderView(bookId: bookId)
-                        .environmentObject(store)
-                }
-            }
-        }
+        .modifier(AudiobookPlayerPresentation(store: store))
         // Cold-launch splash: sits above every tab/overlay and fades out.
         .overlay {
             LaunchImageSplashOverlay()
@@ -442,6 +431,31 @@ struct ContentView: View {
 /// user configured a page background (Pro), the per-scope gradient/image layer.
 /// The default palette resolves to the system grouped background, so default users
 /// keep the same appearance while the view structure stays stable across updates.
+/// The app-root full-screen audiobook player, presented from the global now-playing bar.
+///
+/// Its own view, observing `NowPlayingHub`, so the root does not: the hub publishes on every
+/// spoken sentence (`currentSegmentIndex`), and the root observing it re-ran `ContentView.body`
+/// — the RSS unread count, every tab's icon — once per sentence for as long as TTS played.
+/// Re-running this modifier's body does not re-run `content`.
+private struct AudiobookPlayerPresentation: ViewModifier {
+    @ObservedObject private var hub = NowPlayingHub.shared
+    let store: BookStore
+
+    func body(content: Content) -> some View {
+        content.fullScreenCover(isPresented: $hub.isPresentingAudiobook) {
+            if let bookId = hub.audiobookBookId {
+                if store.books.contains(where: { $0.id == bookId }) {
+                    BookReaderView(bookId: bookId)
+                        .environmentObject(store)
+                } else {
+                    AudiobookReaderView(bookId: bookId)
+                        .environmentObject(store)
+                }
+            }
+        }
+    }
+}
+
 private struct ThemedSurfaceBackground: ViewModifier {
     let scope: AppearancePageBackgroundScope
     let isProActive: Bool
