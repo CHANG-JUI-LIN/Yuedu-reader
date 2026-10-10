@@ -13,11 +13,19 @@ struct WebDAVDirectoryRoute: Hashable {
 struct WebDAVDirectoryView: View {
     let route: WebDAVDirectoryRoute
     @ObservedObject private var catalogStore = RemoteLibraryConnectionStore.shared
-    @State private var entries: [WebDAVBrowseClient.Entry] = []
-    @State private var isLoading = true
-    @State private var didLoad = false
-    @State private var loadError: String?
+    @StateObject private var model: WebDAVBrowseModel
     @State private var searchText = ""
+
+    /// - Parameter list: replaces the server request, for previews.
+    init(route: WebDAVDirectoryRoute, list: ((URL) async throws -> [WebDAVBrowseClient.Entry])? = nil) {
+        self.route = route
+        _model = StateObject(wrappedValue: WebDAVBrowseModel(route: route, list: list))
+    }
+
+    private var entries: [WebDAVBrowseClient.Entry] { model.entries }
+    private var isLoading: Bool { model.isLoading }
+    private var didLoad: Bool { model.didLoad }
+    private var loadError: String? { model.loadError }
 
     private var connection: RemoteLibraryConnection? {
         catalogStore.connection(id: route.connectionID)
@@ -115,26 +123,38 @@ struct WebDAVDirectoryView: View {
     }
 
     private func load() async {
-        isLoading = true
-        loadError = nil
-        guard let connection else {
-            loadError = localized("書庫連線已移除，請重新加入伺服器。")
-            isLoading = false
-            return
-        }
-        do {
-            let result = try await RemoteLibraryConnectionStore.shared.webDAVClient(for: connection).list(route.url)
-            try Task.checkCancellation()
-            entries = result
-            didLoad = true
-        } catch {
-            guard !Task.isCancelled else { return }
-            loadError = error.localizedDescription
-        }
-        isLoading = false
+        await model.load()
     }
 }
 
 #Preview {
     WebDAVImportView().environmentObject(BookStore())
+}
+
+#Preview("WebDAV folder") {
+    let folder = URL(string: "https://dav.example.com/books/")!
+    NavigationStack {
+        WebDAVDirectoryView(
+            route: WebDAVDirectoryRoute(connectionID: "preview", url: folder, title: "Books"),
+            list: { _ in
+                [
+                    .init(url: folder.appendingPathComponent("Fiction/"), name: "Fiction", isDirectory: true, size: 0),
+                    .init(url: folder.appendingPathComponent("Essays/"), name: "Essays", isDirectory: true, size: 0),
+                    .init(url: folder.appendingPathComponent("Three-Body.epub"), name: "Three-Body.epub",
+                          isDirectory: false, size: 1_843_200),
+                ]
+            }
+        )
+    }
+    .environmentObject(BookStore())
+}
+
+#Preview("WebDAV folder, failed") {
+    NavigationStack {
+        WebDAVDirectoryView(
+            route: WebDAVDirectoryRoute(connectionID: "preview", url: URL(string: "https://dav.example.com/books/")!, title: "Books"),
+            list: { _ in throw URLError(.cannotConnectToHost) }
+        )
+    }
+    .environmentObject(BookStore())
 }
