@@ -144,6 +144,31 @@ struct ReaderBarRendererTests {
         #expect(automatic.color == UIColor.white)
     }
 
+    /// A two-page spread showed a header and a footer on each half (reported
+    /// 2026-10-10). Its one pair is drawn by the screen-fixed layer; the pages
+    /// keep only their bookmark ribbon.
+    @Test @MainActor func spreadPagesCarryOnlyTheRibbon() throws {
+        let environment = ReaderPageBarsEnvironment(
+            layout: .default, headerEnabled: true, footerEnabled: true, readerTextColor: .black,
+            headerHorizontalPadding: 16, footerHorizontalPadding: 16,
+            headerTopOffset: 20, footerBottomOffset: 20, bookTitle: "Book",
+            now: Date(timeIntervalSince1970: 0), batteryLevel: 0.7, isCharging: false,
+            readingDuration: 60, userInterfaceStyle: .light, displayScale: 1,
+            bakesBarsIntoPages: false
+        )
+        let controller = ReaderPageBarsController()
+        controller.update(environment: environment, svgAssetStore: nil) { page in
+            ReaderPageBarsPageContent(chapterTitle: "Chapter", chapterPage: 2, chapterPageCount: 10,
+                                      totalProgress: 0.2, estimatedRemainingTime: 240,
+                                      isBookmarked: page == 1)
+        }
+        #expect(controller.bars(forGlobalPage: 0) == nil)
+        let bookmarked = try #require(controller.bars(forGlobalPage: 1))
+        #expect(bookmarked.header == nil)
+        #expect(bookmarked.footer == nil)
+        #expect(bookmarked.isBookmarked)
+    }
+
     /// The bars used to assume a flat 16pt row. The style lets the reader pick
     /// 8–16pt, and a 16pt face does not fit in a 16pt row — descenders were being
     /// clipped. The band has to follow the font.

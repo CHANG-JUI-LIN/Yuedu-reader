@@ -32,6 +32,9 @@ struct ReaderPageBarsEnvironment: Equatable {
     var readingDuration: TimeInterval
     var userInterfaceStyle: UIUserInterfaceStyle
     var displayScale: CGFloat
+    /// False in a two-page spread, where the screen-fixed layer draws one pair of
+    /// bars for both pages; the pages then carry only their bookmark ribbon.
+    var bakesBarsIntoPages = true
 }
 
 /// Builds the 頁眉／頁腳 for any page the paged engine asks about.
@@ -106,7 +109,9 @@ final class ReaderPageBarsController {
         )
         // The ribbon hangs whether or not the user shows any bars: with both off, a
         // bookmarked page still gets bars — empty ones that carry only the ribbon.
-        guard visibility.showsHeader || visibility.showsFooter || content.isBookmarked else {
+        let showsHeader = environment.bakesBarsIntoPages && visibility.showsHeader
+        let showsFooter = environment.bakesBarsIntoPages && visibility.showsFooter
+        guard showsHeader || showsFooter || content.isBookmarked else {
             return nil
         }
 
@@ -124,10 +129,10 @@ final class ReaderPageBarsController {
         )
 
         return ReaderPageBars(
-            header: visibility.showsHeader
+            header: showsHeader
                 ? model(for: .header, snapshot: snapshot, environment: environment)
                 : nil,
-            footer: visibility.showsFooter
+            footer: showsFooter
                 ? model(for: .footer, snapshot: snapshot, environment: environment)
                 : nil,
             headerTopOffset: environment.headerTopOffset,

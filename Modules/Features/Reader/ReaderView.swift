@@ -445,15 +445,19 @@ struct ReaderView: View {
         usesReadableReaderWidth ? DSLayout.readableOverlayWidth : .infinity
     }
 
-    var extraReaderHorizontalInset: CGFloat {
-        ReaderReadableWidthPolicy.extraInset(
-            pageWidth: currentReaderRenderSize.width,
-            usesReadableWidth: usesReadableReaderWidth
+    var effectivePageMarginH: CGFloat {
+        ReaderReadableWidthPolicy.effectiveMargin(
+            readerConfig.pageMarginH,
+            pageWidth: currentReaderRenderSize.width
         )
     }
 
-    var effectivePageMarginH: CGFloat {
-        readerConfig.pageMarginH + extraReaderHorizontalInset
+    var pageMarginHUpperBound: CGFloat {
+        ReaderReadableWidthPolicy.sliderUpperBound(
+            pageWidth: currentReaderRenderSize.width,
+            usesReadableWidth: usesReadableReaderWidth,
+            defaultMargin: ReaderSettingsView.defaultPageMarginH
+        )
     }
 
     var effectiveReaderSpreadMode: ReaderSpreadMode {
@@ -1209,8 +1213,25 @@ struct ReaderView: View {
         clock: ReaderOverlayClockSnapshot
     ) -> ReaderOverlayContentSnapshot {
         let now = clock.now
-        let pageMetrics = readerOverlayPageMetrics
         let readingMetrics = readingStatsTracker?.currentMetrics(at: now) ?? (elapsed: 0, charactersRead: 0)
+        // A spread's one pair of bars describes its later page, the same way that
+        // page's own bars would (`spreadBarsGlobalPage`).
+        if let spreadPage = spreadBarsGlobalPage,
+           let content = pageBarsContent(forGlobalPage: spreadPage) {
+            return ReaderOverlayContentSnapshot(
+                bookTitle: book?.title ?? snapshotBook?.title ?? "",
+                chapterTitle: content.chapterTitle,
+                chapterPage: content.chapterPage,
+                chapterPageCount: content.chapterPageCount,
+                totalProgress: content.totalProgress,
+                now: now,
+                batteryLevel: clock.batteryLevel,
+                isCharging: clock.isCharging,
+                readingDuration: readingMetrics.elapsed,
+                estimatedRemainingTime: content.estimatedRemainingTime
+            )
+        }
+        let pageMetrics = readerOverlayPageMetrics
         let paceMetrics = readingStatsTracker?.currentPaceMetrics(at: now) ?? (elapsed: 0, contentUnitsRead: 0)
         let estimatedRemainingTime = ReaderRemainingTimeEstimator.estimate(
             elapsed: paceMetrics.elapsed,
@@ -1237,6 +1258,10 @@ struct ReaderView: View {
         chapterPageCount: Int,
         totalProgress: Double
     ) {
+        if let spreadPage = spreadBarsGlobalPage,
+           let content = pageBarsContent(forGlobalPage: spreadPage) {
+            return (content.chapterPage, content.chapterPageCount, content.totalProgress)
+        }
         if let engine = epubRenderer.engine, usesCoreTextEPUB, engine.totalPages > 0 {
             let position = displayedCoreTextPosition(in: engine)
             let pagination = displayedChapterPagination(in: engine)
@@ -1782,9 +1807,10 @@ struct ReaderView: View {
             }
 
             // Paged CoreText draws its own bars inside each page, so they turn with
-            // it. What is drawn here is the two cases that cannot: scroll mode, where
-            // a stationary band is the whole point, and fixed-layout pages, which
-            // are images with no CoreText surface to draw into.
+            // it. What is drawn here is the cases that cannot: scroll mode, where
+            // a stationary band is the whole point, fixed-layout pages, which
+            // are images with no CoreText surface to draw into, and a two-page
+            // spread, which is one screen with one pair of bars.
             //
             // The layer is mounted either way, because it also owns the reader's
             // clock — the baked bars tick from it too, and an unmounted layer would
@@ -2449,6 +2475,7 @@ struct ReaderView: View {
                     ),
                     readerSafeTop: effectiveReaderSafeTop,
                     readerSafeBottom: effectiveReaderSafeBottom,
+                    pageMarginHUpperBound: pageMarginHUpperBound,
                     capabilities: readerCapabilities,
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     usesPublicationFontDefault: book?.resolvedPipelineKind == .epub,

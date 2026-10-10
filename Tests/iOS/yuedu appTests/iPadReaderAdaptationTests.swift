@@ -8,18 +8,31 @@ import WebKit
 @Suite("iPad reader adaptation", .serialized)
 @MainActor
 struct iPadReaderAdaptationTests {
-    @Test("readable text stays centered across portrait, landscape, split and narrow windows")
+    @Test("左右邊距 is the user's number on iPad: 0 is the page edge, the old column is the slider's top")
     func readableMargins() {
-        for width: CGFloat in [320, 480, 600, 820, 1024, 1366] {
-            let extra = ReaderReadableWidthPolicy.extraInset(pageWidth: width, usesReadableWidth: true)
-            let contentWidth = width - 2 * (24 + extra)
-            #expect(contentWidth <= DSLayout.readableCompactWidth)
-            #expect(contentWidth >= min(width - 48, 400))
-            #expect(extra >= 0)
+        for width: CGFloat in [320, 480, 600, 820, 1024, 1133, 1366] {
+            // No inset is added on top of the user's value any more.
+            #expect(ReaderReadableWidthPolicy.effectiveMargin(0, pageWidth: width) == 0)
+            #expect(ReaderReadableWidthPolicy.effectiveMargin(24, pageWidth: width) == 24)
+
+            // The slider still reaches the narrow column iPad used to force.
+            let upper = ReaderReadableWidthPolicy.sliderUpperBound(
+                pageWidth: width, usesReadableWidth: true, defaultMargin: 24
+            )
+            #expect(upper >= ReaderReadableWidthPolicy.compactUpperBound)
+            #expect(width - 2 * upper <= DSLayout.readableCompactWidth)
+
+            // A synced or imported margin never collapses the text column.
+            let clamped = ReaderReadableWidthPolicy.effectiveMargin(10_000, pageWidth: width)
+            #expect(width - 2 * clamped >= min(width, ReaderReadableWidthPolicy.minimumTextWidth))
         }
-        #expect(ReaderReadableWidthPolicy.extraInset(pageWidth: 390, usesReadableWidth: false) == 0)
-        #expect(ReaderReadableWidthPolicy.extraInset(pageWidth: 480, usesReadableWidth: true) == 0)
-        #expect(ReaderReadableWidthPolicy.extraInset(pageWidth: 820, usesReadableWidth: true) > 28)
+        #expect(ReaderReadableWidthPolicy.sliderUpperBound(
+            pageWidth: 390, usesReadableWidth: false, defaultMargin: 24
+        ) == ReaderReadableWidthPolicy.compactUpperBound)
+        // Landscape iPad mini, single page: the reported screenshot's ~270pt band.
+        #expect(ReaderReadableWidthPolicy.sliderUpperBound(
+            pageWidth: 1133, usesReadableWidth: true, defaultMargin: 24
+        ) == 271)
     }
 
     @Test("double-column sheets retain native curl and mirror the outer spine", arguments: [false, true])

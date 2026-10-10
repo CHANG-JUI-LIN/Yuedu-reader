@@ -9,6 +9,9 @@ struct ReaderSettingsView: View {
     @Binding var theme: ReaderTheme
     var readerSafeTop: CGFloat = 0
     var readerSafeBottom: CGFloat = 0
+    /// 左右邊距's maximum for the page the reader is showing — wider on iPad, where it
+    /// reaches the narrow column iPad used to force (`ReaderReadableWidthPolicy`).
+    var pageMarginHUpperBound: CGFloat = ReaderReadableWidthPolicy.compactUpperBound
     var capabilities: ReaderCapabilities = .reflowableText
     var allowsUserSelectedReaderFont = false
     var usesPublicationFontDefault = false
@@ -58,7 +61,8 @@ struct ReaderSettingsView: View {
     private let defaultLineHeightMultiple: CGFloat = 1.65
     private let defaultLetterSpacing: CGFloat = 0
     private let defaultParagraphSpacingMultiplier: CGFloat = 0.8
-    private let defaultPageMarginH: CGFloat = 24
+    static let defaultPageMarginH: CGFloat = 24
+    private var defaultPageMarginH: CGFloat { Self.defaultPageMarginH }
     private let defaultPageMarginV: CGFloat = 16
 
     var body: some View {
@@ -473,7 +477,7 @@ struct ReaderSettingsView: View {
                     systemImage: ReadingSettingsScopeItem.pageMargins.systemImage,
                     valueText: String(format: localized("ReaderOverlay.Format.Points"), Int(readerConfig.pageMarginH)),
                     value: $readerConfig.pageMarginH,
-                    range: 0...50,
+                    range: 0...pageMarginHUpperBound,
                     step: 1
                 )
                 SettingsSliderRow(
@@ -989,6 +993,20 @@ private struct LayoutImportAlert: Identifiable {
         capabilities: .reflowableText,
         allowsUserSelectedReaderFont: true,
         allowsVerticalWritingMode: true,
+        onOpenFontImporter: {}
+    )
+}
+
+#Preview("iPad 橫向・左右邊距上限") {
+    ReaderSettingsView(
+        fontSize: .constant(18),
+        theme: .constant(.night),
+        pageMarginHUpperBound: ReaderReadableWidthPolicy.sliderUpperBound(
+            pageWidth: 1133,
+            usesReadableWidth: true,
+            defaultMargin: ReaderSettingsView.defaultPageMarginH
+        ),
+        capabilities: .reflowableText,
         onOpenFontImporter: {}
     )
 }

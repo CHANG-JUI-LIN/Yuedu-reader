@@ -6,7 +6,8 @@ import YueduCoreText
 
 extension ReaderView {
 
-    /// True when the bars are drawn *into* the page rather than over the screen.
+    /// True when the pages on screen are CoreText pages that carry something of the
+    /// bars' channel — the bars themselves, the bookmark ribbon, or both.
     ///
     /// Only the CoreText paged renderer can do it: the bars go in through
     /// `CoreTextPageView.renderPage`, which is also what bakes curl back-pages and
@@ -14,8 +15,31 @@ extension ReaderView {
     /// animation. Scroll mode keeps a fixed overlay by design (the content scrolls
     /// under a stationary band), and fixed-layout pages are images with no
     /// CoreText surface to draw into.
-    var usesPageBakedBars: Bool {
+    var pagesCarryBarsChannel: Bool {
         !effectiveScrollMode && !usesFixedLayoutRenderer && usesCoreTextEPUB
+    }
+
+    /// True when the 頁眉／頁腳 text is drawn *into* each page rather than over the screen.
+    ///
+    /// Not in a two-page spread: each half drew its own pair, so the screen showed two
+    /// headers and two footers (reported 2026-10-10). The spread is one screen and gets
+    /// one pair, from the fixed layer, spanning both pages — the user's choice; the
+    /// price is that those bars stay put during a turn instead of turning with the
+    /// page. The bookmark ribbon still belongs to its page and stays baked.
+    var usesPageBakedBars: Bool {
+        pagesCarryBarsChannel && effectiveReaderSpreadMode != .doublePage
+    }
+
+    /// The page the screen-fixed bars describe in a two-page spread: the later page of
+    /// the pair in reading order, i.e. the last page the reader has on screen. Spreads
+    /// tile global pages (0,1)(2,3)… (`spreadViewController(containingPage:)`); a
+    /// final spread with no second page describes its only page.
+    var spreadBarsGlobalPage: Int? {
+        guard pagesCarryBarsChannel, effectiveReaderSpreadMode == .doublePage,
+              let engine = epubRenderer.engine, engine.totalPages > 0
+        else { return nil }
+        let pairStart = (max(0, currentPage) / 2) * 2
+        return min(pairStart + 1, engine.totalPages - 1)
     }
 
     var readerPageBarsEnvironment: ReaderPageBarsEnvironment {
@@ -46,7 +70,8 @@ extension ReaderView {
             // reading theme under a light system appearance still needs the dark
             // resolution of a dynamic tip colour.
             userInterfaceStyle: readerTheme == .night ? .dark : .light,
-            displayScale: readerDisplayScale
+            displayScale: readerDisplayScale,
+            bakesBarsIntoPages: usesPageBakedBars
         )
     }
 
@@ -143,7 +168,7 @@ extension ReaderView {
                 MainActor.assumeIsolated { pageBarsContent(forGlobalPage: page) }
             }
         )
-        guard usesPageBakedBars else { return }
+        guard pagesCarryBarsChannel else { return }
         (epubRenderer.engine as? PageBarsProviding)?.refreshPageBars()
         pageBarsRevision &+= 1
     }
