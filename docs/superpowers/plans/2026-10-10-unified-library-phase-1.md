@@ -51,7 +51,7 @@ Each comes with its reason; the maintainer can overturn any of them.
    - Its **copy key**, `SourceItemKey(.library, "local", ReadingBook.id)`. It syncs with the book, so it is portable.
    - Its **current source key**, for example `bookSource/<bookSourceUrl>/<normalized detail URL>`.
    - Locks and overrides on a copy's own display fields (title, author) anchor to the copy key. The current source key changes on 換源, and a lock anchored there would vanish (design §8.2, D3).
-5. **The 「來源」 row uses only existing localized keys.** The full mapping is in Task 1a and is for review: the maintainer's rule is that names never change silently. No new strings are needed.
+5. **The 「來源」 row uses existing localized keys, plus one new one.** The full mapping is in Task 1a and is for review: the maintainer's rule is that names never change silently. A remote copy whose connection was removed has no existing string, so 遠端書庫 is added (zh-Hans 远程书库, en Remote Library, ja リモートライブラリ, ko 원격 서재; maintainer, 2026-10-10).
 6. **1b stores `MetadataValue`s, keyed by copy.**
    - One file per copy: `Application Support/Works/metadata/<ReadingBook.id>.json`. Inside: `schemaVersion`, the copy's source key, `[ExternalIdentifier]` and `[MetadataValue]`.
    - That is design §10.1's `Works/metadata/`, sharded per copy, the unit imports know.
@@ -254,6 +254,7 @@ Phase 1 adds:
   | OPDS / WebDAV / Calibre copy | that kind's `libraryTitle`: OPDS 書庫 / WebDAV 書庫 / Calibre 書庫 |
   | Gutenberg | Project Gutenberg |
   | Aozora | 青空文庫 |
+  | remote copy whose connection was removed | 遠端書庫 (new) |
 
   - Only the value text changes; the row's layout, label and accessibility do not.
   - Invoke `yuedu-ios-design`, and add a `#Preview` of the 書籍資訊 section with one copy of each kind if the section has none.
