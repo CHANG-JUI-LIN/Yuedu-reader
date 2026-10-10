@@ -17,16 +17,6 @@ private enum DismissalSequencedPresentationContract {
             )
         )
         precondition(
-            BookSourceManagementPresentationPolicy.prefersNavigationDestination(
-                osMajorVersion: 17
-            )
-        )
-        precondition(
-            !BookSourceManagementPresentationPolicy.prefersNavigationDestination(
-                osMajorVersion: 18
-            )
-        )
-        precondition(
             BookSourceImportPresentationPolicy.requiresFirstLevelImporter(
                 osMajorVersion: 17
             )

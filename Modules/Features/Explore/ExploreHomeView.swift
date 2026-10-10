@@ -29,7 +29,6 @@ struct ExploreHomeView: View {
     @State private var query = ""
     @State private var exploreSources: [BookSource] = []
     @State private var group: String?
-    @State private var showSourceManager = false
     @State private var navigation = ExploreNavigationPath()
     @State private var sourceActionSheet: BookSourceActionSheet?
     @State private var sourcePendingDeletion: BookSource?
@@ -216,12 +215,6 @@ struct ExploreHomeView: View {
                 exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
                 if let group, !groups.contains(group) { self.group = nil }
                 applyLandingIfNeeded()
-            }
-            .sheet(isPresented: $showSourceManager) {
-                // BookSourceListView already provides its own NavigationStack; wrapping
-                // it in another NavigationStack stacks two nav bars (duplicate title on
-                // iOS 18). Present it directly, matching SettingsView.
-                BookSourceListView()
             }
             .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
             .fullScreenCover(item: $browserPresentation) { presentation in
@@ -439,14 +432,9 @@ struct ExploreHomeView: View {
         }
     }
 
-    /// 書源管理: pushed before iOS 18 so its importers have a first-level presenter,
-    /// a sheet afterwards (`BookSourceManagementPresentationPolicy`).
+    /// 書源管理, pushed on every version so its importers always have a first-level presenter.
     private func openSourceManager() {
-        if BookSourceManagementPresentationPolicy.prefersNavigationDestination {
-            navigation.push(.sourceManager)
-        } else {
-            showSourceManager = true
-        }
+        navigation.push(.sourceManager)
     }
 }
 

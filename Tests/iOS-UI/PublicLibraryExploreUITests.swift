@@ -81,7 +81,8 @@ final class PublicLibraryExploreUITests: XCTestCase {
         confirm.tap()
         XCTAssertTrue(app.staticTexts["Public library UI fixture"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts[tipTitle].exists, "The import screen must not show the Explore tip")
-        app.navigationBars["來源配置管理"].buttons["關閉"].tap()
+        // 書源管理 is pushed on every version (unified library 2b): back, not 關閉.
+        app.navigationBars["來源配置管理"].buttons.element(boundBy: 0).tap()
         openExplore(app)
         XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10), "Importing does not switch mode")
         XCTAssertTrue(app.staticTexts[tipTitle].firstMatch.waitForExistence(timeout: 10))

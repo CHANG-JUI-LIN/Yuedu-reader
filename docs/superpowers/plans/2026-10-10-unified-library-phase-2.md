@@ -462,7 +462,7 @@ Phase 2 adds:
 ## Acceptance (Phase 2)
 
 - [x] 2a: one browse path through providers; typed failures; Gutenberg special cases gone.
-- [ ] 2b: 設定 → 遠端書庫 manages every connection; book-source management pushed everywhere; bookshelf ＋ unchanged.
+- [x] 2b: 設定 → 遠端書庫 manages every connection; book-source management pushed everywhere; bookshelf ＋ unchanged.
 - [ ] 2c: row status from a `SourceItemKey` lookup; no per-row scan.
 - [ ] 2d: WebDAV indexed per the maintainer's rules, with measured limits and visible status.
 - [ ] 2e: OPF and covers for indexed EPUBs, most incomplete first.
@@ -485,7 +485,7 @@ Phase 2 adds:
 
 ### 2a (2026-10-10)
 
-Branch `unified-library/2a-registry`, on `6ad3b788`. Not merged, not pushed.
+Branch `unified-library/2a-registry`, on `6ad3b788`. Merged into `main` at `e2234bdd`; not pushed.
 
 - **Pinned first.** `OPDSBrowseModelBehaviorTests` records what the model showed and requested before the change, and passed on the unchanged code:
   - a removed connection's message;
@@ -539,4 +539,37 @@ UI: RemoteLibraryNavigationUITests (1), PublicLibraryStorefrontUITests (3),
 After the follow-up fixes:
 ✔ Test run with 43 tests in 10 suites passed (the six 2a suites, OPDSBrowseModelBehaviorTests,
    WebDAVBrowseModelTests, PublicLibraryStorefrontTests, RemoteLibraryConnectionTests)
+```
+
+### 2b (2026-10-11)
+
+Branch `unified-library/2b-remote-library-settings`, on `e2234bdd`. Not merged, not pushed.
+
+- **設定 → 遠端書庫** (`RemoteLibrarySettingsView`, commit `2d6ffee6`):
+  - A `DSSettingsRow` in 「來源配置管理」 pushes it through `navigationDestination(isPresented:)`, as that section's other pushed page does.
+  - One section per kind, in the bookshelf ＋ order (WebDAV, OPDS, Calibre). Each section ends in a 新增伺服器 row (`SettingsRowLabel`, role `.action`).
+  - Rows show the name and the full address, read by VoiceOver as one element; swipe deletes.
+  - No new strings.
+- **Deviations from the plan:**
+  - **The editor is pushed, not a sheet.** The bookshelf's library list already pushes `RemoteLibraryConnectionEditor`, which has no close button of its own. Nothing on the page presents a modal, so the iOS 17 menu rule does not arise. The editor gained a `surface` parameter so it takes the page background of whichever screen pushed it.
+  - **No `ContentUnavailableView`.** With no connections, the page already shows three sections, each with its add row. A separate empty view would only repeat them.
+  - **The row shows the full address, not the host.** An unnamed connection is named after its host, and the screenshot showed the host twice.
+- **Book-source management pushed on every version** (a separate commit):
+  - `BookSourceManagementPresentationPolicy` is deleted, along with its tests (`DismissalSequencedPresentationTests`, `Tests/Contracts/DismissalSequencedPresentationContract.swift`).
+  - `ProfileView` and `ExploreHomeView` push `BookSourceListView(embedsNavigationStack: false)` and keep no sheet path.
+  - CLAUDE.md's bullet now reads 「Book-source management is pushed, never a sheet」. The technote records the change and when.
+  - `PublicLibraryExploreUITests` leaves 書源管理 by back instead of 關閉.
+  - iOS 17 behavior is unchanged (it was already pushed); only iOS 18+ changed.
+  - `BookSourceImportPresentationPolicy` (the import sheet inside management, iOS 17) stays.
+- **The bookshelf ＋ entries are unchanged.** `RemoteLibraryNavigationUITests` passes as it was.
+
+```
+✔ Test run with 8 tests in 1 suite passed (RemoteLibraryConnectionTests)
+✔ Test run with 11 tests in 1 suite passed (DismissalSequencedPresentationTests)
+UI: RemoteLibrarySettingsUITests (add rows for each kind, add, list, swipe-delete; screenshot checked),
+    RemoteLibraryNavigationUITests, BookSourceManagementUITests, PublicLibraryExploreUITests:
+    Executed 6 tests, with 1 test skipped and 0 failures.
+    The skip is BookSourceManagementUITests.testLargeLibraryOpensScrollsAndSwitchesPages, opt-in through
+    BOOK_SOURCE_UI_LIBRARY (a Legado source pack).
+ruby scripts/check_localizations.rb: OK
 ```

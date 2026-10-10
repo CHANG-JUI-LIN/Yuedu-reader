@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Bindable private var gs = GlobalSettings.shared
     @State private var showSourceList = false
+    @State private var showRemoteLibraries = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
     @State private var showBackupSync = false
@@ -114,6 +115,13 @@ struct SettingsView: View {
                             title: localized("管理來源配置"),
                             action: { showSourceList = true }
                         )
+
+                        DSSettingsRow(
+                            icon: "externaldrive.connected.to.line.below",
+                            title: localized("遠端書庫"),
+                            action: { showRemoteLibraries = true }
+                        )
+                        .accessibilityIdentifier("settings_remote_libraries")
 
                         DSSettingsRow(
                             icon: "arrow.down.circle.fill",
@@ -233,7 +241,12 @@ struct SettingsView: View {
             .rootTabTitle(localized("設定"), onScroll: .minimizesBar)
             // Back from 外觀主題: its 淺色／深色 preview ends here.
             .onAppear { gs.endAppearanceSlotPreview() }
-            .navigationDestination(isPresented: pushedSourceListBinding) {
+            .navigationDestination(isPresented: $showRemoteLibraries) {
+                RemoteLibrarySettingsView()
+            }
+            // Pushed on every version (2026-10-10): its importers then always have a
+            // first-level presenter, and it is configuration like 遠端書庫 beside it.
+            .navigationDestination(isPresented: $showSourceList) {
                 BookSourceListView(embedsNavigationStack: false)
                     .environmentObject(store)
             }
@@ -251,10 +264,6 @@ struct SettingsView: View {
                 }
             }
             #endif
-            .sheet(isPresented: sheetSourceListBinding) {
-                BookSourceListView()
-                    .environmentObject(store)
-            }
             .sheet(isPresented: $showDownloadManager) {
                 DownloadManagementView()
                     .environmentObject(store)
@@ -288,26 +297,6 @@ struct SettingsView: View {
                 TTSSettingsView()
             }
         }
-    }
-
-    private var pushedSourceListBinding: Binding<Bool> {
-        Binding(
-            get: {
-                showSourceList
-                    && BookSourceManagementPresentationPolicy.prefersNavigationDestination
-            },
-            set: { if !$0 { showSourceList = false } }
-        )
-    }
-
-    private var sheetSourceListBinding: Binding<Bool> {
-        Binding(
-            get: {
-                showSourceList
-                    && !BookSourceManagementPresentationPolicy.prefersNavigationDestination
-            },
-            set: { if !$0 { showSourceList = false } }
-        )
     }
 
     private var downloadedBooksCount: Int {

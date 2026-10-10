@@ -22,26 +22,7 @@ enum MenuModalPresentationPolicy {
     }
 }
 
-/// Book-source management owns several import and editor presentations. When
-/// the management screen is itself a sheet, those destinations become nested
-/// sheets; iOS 17 can drop even a direct-button presentation request. Push the
-/// management screen on iOS 17 so its destinations have a stable presenter.
-/// Delete this policy when the deployment target reaches iOS 18.
-enum BookSourceManagementPresentationPolicy {
-    static func prefersNavigationDestination(
-        osMajorVersion: Int
-    ) -> Bool {
-        osMajorVersion < 18
-    }
-
-    static var prefersNavigationDestination: Bool {
-        prefersNavigationDestination(
-            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
-        )
-    }
-}
-
-/// Book-source management is pushed on iOS 17, but its local-import UI is still
+/// Book-source management is pushed, but its local-import UI is still
 /// a sheet. Opening a document picker from that sheet recreates the same nested
 /// presentation boundary and can be dropped. Dismiss the import sheet first and
 /// let management present the picker from the sheet's real `onDismiss` callback.

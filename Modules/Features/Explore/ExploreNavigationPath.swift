@@ -13,7 +13,7 @@ enum ExploreNavigationRoute: Hashable {
     case sourceCategory(ExploreCategoryReference)
     /// Legado's 搜索 on a source: the search page scoped to that source alone.
     case searchInSource(sourceURL: String)
-    /// 書源管理, pushed before iOS 18 (`BookSourceManagementPresentationPolicy`).
+    /// 書源管理, pushed on every version.
     case sourceManager
 
     static func == (lhs: Self, rhs: Self) -> Bool {

@@ -45,10 +45,11 @@ retained there.
 is retained in `DismissalSequencedPresentation`, and the real destination is
 presented only from the chooser sheet's `onDismiss` callback.
 
-`BookSourceManagementPresentationPolicy` separately pushes book-source
-management from Settings and Explore on iOS 17. Its import, add, edit, login,
-and validation destinations therefore become first-level presentations. iOS
-18 retains the original book-source management sheet.
+Book-source management is pushed from Settings and Explore on every iOS version.
+Its import, add, edit, login, and validation destinations are therefore
+first-level presentations. Until 2026-10-10 `BookSourceManagementPresentationPolicy`
+pushed it on iOS 17 only and kept the original sheet on iOS 18; the maintainer then
+made it configuration, like 遠端書庫, and the policy was deleted.
 
 `BookSourceImportPresentationPolicy` covers the remaining nested boundary inside
 book-source management. On iOS 17, choosing a JSON file first dismisses the import
@@ -170,8 +171,8 @@ and do not add a second popover-launched modal without the same handoff.
 Delete the compatibility policy, chooser routes, and contract tests only when
 the app's minimum deployment target reaches iOS 18. Until then, new modal or
 document-picker actions must not be launched directly from a SwiftUI `Menu` on
-iOS 17, book-source management and 書籍資訊 must not be changed back to sheets
-there, and reader font import and the 閱讀設定 style importers must keep their
+iOS 17, 書籍資訊 must not be changed back to a sheet there (book-source
+management is never a sheet, on any version), and reader font import and the 閱讀設定 style importers must keep their
 first-level presenter handoff. Presentation-producing `ShareLink`s must also stay
 out of SwiftUI `Menu`s on iOS 17: either move the link to a direct page or sheet
 control, or route it through `MenuShareLinkPresentationPolicy`'s hand-off. Never
