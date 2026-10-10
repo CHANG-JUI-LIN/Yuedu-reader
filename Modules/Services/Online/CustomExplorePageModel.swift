@@ -21,10 +21,18 @@ final class CustomExplorePageModel: ObservableObject {
     struct WaterfallPaging {
         /// The section these pages belong to; another waterfall starts over.
         var sectionID: UUID?
-        var nextPage = 2
-        var hasMore = true
-        var isLoading = false
-        var errorReason: String?
+        var paging = SectionPaging(firstPageLoaded: true)
+
+        var nextPage: Int { paging.nextPage }
+        var hasMore: Bool { paging.hasMore }
+        var isLoading: Bool { paging.isLoading }
+        var errorReason: String? { paging.errorReason }
+    }
+
+    private let pageLoader: SectionPageLoader
+
+    init(pageLoader: SectionPageLoader = .live) {
+        self.pageLoader = pageLoader
     }
 
     @Published private(set) var blocks: [Block] = []
@@ -103,24 +111,14 @@ final class CustomExplorePageModel: ObservableObject {
               let section = blocks[blockIndex].sections.first,
               section.phase == .loaded,
               section.id == waterfallPaging.sectionID,
-              waterfallPaging.hasMore,
-              !waterfallPaging.isLoading else { return }
-        waterfallPaging.isLoading = true
-        waterfallPaging.errorReason = nil
-        let page = waterfallPaging.nextPage
+              let page = waterfallPaging.paging.start() else { return }
         let existing = section.books.map(\.book)
+        let loader = pageLoader
         Task { [weak self] in
             do {
-                let loaded = try await BookSourceFetcher.shared.discoverBooks(
-                    from: section.item.raw, page: page, in: source
-                )
-                let additional = DiscoverViewModel.uniqueAdditionalBooks(loaded, existing: existing)
-                let displays = await DiscoverViewModel.makeDisplays(additional, source: source)
+                let displays = try await loader.books(page: page, of: section, in: source, after: existing)
                 self?.applyWaterfallPage(displays, page: page, sectionID: section.id)
             } catch {
-                AppLogger.network("⟐ custom explore waterfall page failed", error: error, context: [
-                    "category": section.title, "page": page
-                ])
                 self?.applyWaterfallError(error.localizedDescription, sectionID: section.id)
             }
         }
@@ -152,9 +150,7 @@ final class CustomExplorePageModel: ObservableObject {
         blocks[found.block].sections[found.section].phase = .loading
         blocks[found.block].sections[found.section].errorReason = nil
         do {
-            let books = try await BookSourceFetcher.shared.discoverBooks(
-                from: section.item.raw, page: 1, in: source
-            )
+            let books = try await pageLoader.fetchPage(section.item.raw, 1, source)
             let displays = await DiscoverViewModel.makeDisplays(books, source: source)
             // The block may have been edited or removed while this loaded.
             guard let current = location(of: sectionID) else { return }
@@ -172,18 +168,12 @@ final class CustomExplorePageModel: ObservableObject {
 
     private func applyWaterfallPage(_ displays: [DiscoverBookDisplay], page: Int, sectionID: UUID) {
         guard sectionID == waterfallPaging.sectionID, let found = location(of: sectionID) else { return }
-        if displays.isEmpty {
-            waterfallPaging.hasMore = false
-        } else {
-            blocks[found.block].sections[found.section].books.append(contentsOf: displays)
-            waterfallPaging.nextPage = page + 1
-        }
-        waterfallPaging.isLoading = false
+        blocks[found.block].sections[found.section].books.append(contentsOf: displays)
+        waterfallPaging.paging.receive(newBooks: displays.count, page: page)
     }
 
     private func applyWaterfallError(_ reason: String, sectionID: UUID) {
         guard sectionID == waterfallPaging.sectionID else { return }
-        waterfallPaging.errorReason = reason
-        waterfallPaging.isLoading = false
+        waterfallPaging.paging.fail(reason)
     }
 }

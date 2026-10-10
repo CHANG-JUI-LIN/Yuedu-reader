@@ -205,7 +205,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   - **Aozora:** new works and the index.
   - **WebDAV:** 2d's records, newest first by server date.
   - **Book sources:** a new `BookSourceProvider` in the registry, over its discover categories.
-- [ ] **Step 3: `SectionPageLoader`,** the one next-page loader (decision 3). Today's two callers move onto it.
+- [x] **Step 3: `SectionPageLoader`,** the one next-page loader (decision 3). Today's two callers move onto it.
 - [ ] **Step 4: Per-row filters** (decision 4): a per-request variable overlay, never a write to the shared store. Prove it with a characterization test first; otherwise skip the step and record it.
   - Test two rows of one source with different filters, and the source page's filter unchanged after both.
 - [ ] **Step 5: `HomeModel`:**
@@ -328,3 +328,17 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 - **Nothing is wired.** No launch path creates the store or calls the defaults (step 3).
 - **Tests:** `HomeSectionTests` (8) and `HomePageStoreTests` (6), 14 tests in 2 suites, passed. No existing code changed, so no other regression applies.
 - **Found while starting:** per-row filters cannot be apply-and-restore (decision 4, rewritten).
+
+### 5b, part 1: one next-page loader (2026-10-11)
+
+- **`SectionPageLoader.swift`:**
+  - `SectionPaging` owns which page is next, whether there is one, one request at a time, and the failure reason. A page with no new books ends the category.
+  - `SectionPageLoader` fetches, drops books already shown, and makes them displayable. It takes an injected `fetchPage`; `.live` is `BookSourceFetcher.discoverBooks`.
+- **Callers moved onto it:**
+  - `DiscoverCategoryBookList` (查看全部 and the list layout) keeps no paging state of its own. Its failures are now logged; they were shown but never logged before.
+  - `CustomExplorePageModel` (`init(pageLoader:)`) moves its waterfall onto it, and its first page also goes through the injected fetch.
+  - `WaterfallPaging` keeps its read-only fields, so the views did not change.
+- **Step 1, characterization on unchanged code, was not possible.** The Phase 0a note at the top of `CustomExplorePageModelTests` records why: the fetch reached the network through the JS bridge's own session. The injection came first, with behavior unchanged, and the tests followed: `SectionPagingTests` (4), `SectionPageLoaderTests` (2), `CustomExploreWaterfallPagingTests` (2). The waterfall tests cover page 1 then 2, repeats dropped, the end on a page of repeats, and the retry asking for the same page.
+- **Regression:** with `CustomExplorePageModelTests` and `CustomExplorePageTests`, 19 tests in 5 suites passed.
+- **Left in 5b:** step 2 (providers), step 4 (per-row filters, needs the overlay to be proven), step 5 (`HomeModel`) and step 6 (measurement).
+
