@@ -650,7 +650,7 @@ Each sub-step adds one test file and one commit. A test that fails on unchanged 
 - [x] 0a: six characterization suites; no production diff; gaps recorded (see What landed).
 - [ ] 0b: `empty` and `failed` are distinct and logged; callers and `SourceHealthStore` unchanged.
 - [ ] 0c: the WebDAV view no longer calls the network; behavior and VoiceOver unchanged.
-- [ ] 0d: a corrupt custom Explore file is kept aside before any write, or never written over.
+- [x] 0d: a corrupt custom Explore file is kept aside before any write, or never written over.
 - [ ] 0e: `search.firstResult` in Release Console; baseline recorded.
 - [ ] Every step: its own branch from `main`; its tests and the §19 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
 
@@ -693,6 +693,29 @@ Behavior the tests now lock that the audit did not mention:
 - A `DiscoverViewModel.reload` maps fresh items, so every section gets a new id and starts over, even from the cache.
 
 Left undone, as planned (decision 2): loading, failure and paging for `CustomExplorePageModel` and `DiscoverViewModel`. The optional invalid-URL failure test in 0a.4 was not attempted, because it could not be shown to stay offline.
+
+### 0d (2026-10-10)
+
+Branch `unified-library/0d-custom-explore-write-guard`, one commit on `772b0c95`: `02801265`. Not merged, not pushed.
+
+- `CustomExplorePageStore` (option (b), decision 8):
+  - a read failure sets `writesBlocked`;
+  - a decode failure copies the bytes to `…corrupt-<mtime>.json` with `.withoutOverwriting`, then writes go on as usual;
+  - a second open before any write finds the identical copy and does not add one, as `BookStore.keptUnreadableMetadataAside` does;
+  - a copy that cannot be made sets `writesBlocked`;
+  - `save()` refuses while blocked and logs `⟐ custom explore pages not saved: <file> could not be read at launch`.
+- Tests, `CustomExplorePageStoreWriteGuardTests`:
+  - decode failure: the copy is made, then a fresh file is written and reads back;
+  - two opens leave one copy;
+  - an unreadable file (mode `000`): four edits, four refusals, the original is unchanged;
+  - an uncopyable file (read-only folder): one refusal, the original is unchanged;
+  - no file: saves normally.
+- Before the fix, four of the five failed; only "no file" passed. The unreadable-file test showed the original being replaced, which is the bug. The uncopyable case failed only on the refusal count, since a read-only folder also defeats the atomic write.
+
+```
+✔ Test run with 10 tests in 2 suites passed after 0.326 seconds.
+   (CustomExplorePageStoreWriteGuardTests 5, CustomExplorePageTests 5)
+```
 
 ## Baseline: `search.firstResult` (before Phase 4)
 
