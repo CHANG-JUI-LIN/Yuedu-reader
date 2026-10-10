@@ -13,11 +13,14 @@ final class WebDAVBrowseModel: ObservableObject {
     @Published private(set) var loadError: String?
     private var requestID = UUID()
     private let listOverride: ((URL) async throws -> [WebDAVBrowseClient.Entry])?
+    private let registry: SourceProviderRegistry
 
     /// - Parameter list: replaces the server request, for tests and previews.
-    init(route: WebDAVDirectoryRoute, list: ((URL) async throws -> [WebDAVBrowseClient.Entry])? = nil) {
+    init(route: WebDAVDirectoryRoute, list: ((URL) async throws -> [WebDAVBrowseClient.Entry])? = nil,
+         registry: SourceProviderRegistry = .shared) {
         self.route = route
         listOverride = list
+        self.registry = registry
     }
 
     func load() async {
@@ -30,13 +33,13 @@ final class WebDAVBrowseModel: ObservableObject {
             if let listOverride {
                 result = try await listOverride(route.url)
             } else {
-                let store = RemoteLibraryConnectionStore.shared
-                guard let connection = store.connection(id: route.connectionID) else {
-                    loadError = localized("書庫連線已移除，請重新加入伺服器。")
+                // The connection's provider, resolved at each load (unified library 2a).
+                guard let provider = registry.webDAVProvider(connectionID: route.connectionID) else {
+                    loadError = SourceFailure.connectionRemoved.localizedDescription
                     isLoading = false
                     return
                 }
-                result = try await store.webDAVClient(for: connection).list(route.url)
+                result = try await provider.list(route.url)
             }
             try Task.checkCancellation()
             // A later load (pull to refresh, a library change) owns the folder now.
@@ -47,7 +50,7 @@ final class WebDAVBrowseModel: ObservableObject {
             // A cancelled load leaves the folder as it was, spinner included, for the next
             // load to settle.
             guard !Task.isCancelled, requestID == id else { return }
-            AppLogger.network("WebDAV listing failed (\(route.url.host ?? ""))", error: error)
+            AppLogger.network("WebDAV listing failed (\(route.url.host ?? ""))", error: SourceFailure.loggable(error))
             loadError = error.localizedDescription
         }
         isLoading = false

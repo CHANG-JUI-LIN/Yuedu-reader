@@ -358,6 +358,8 @@ struct AppDependencies {
     var remoteLibraryWriting: any RemoteLibraryWriting = MainActor.assumeIsolated { RemoteLibraryWritingService() }
     var calibreProgress = MainActor.assumeIsolated { CalibreProgressService() }
     var calibreWireless = MainActor.assumeIsolated { CalibreWirelessService() }
+    /// The content sources' providers (unified library 2a, design §9).
+    var sourceProviders = MainActor.assumeIsolated { SourceProviderRegistry.shared }
     var readingPositionStore: ReadingPositionStore
 
     static let live: AppDependencies = {

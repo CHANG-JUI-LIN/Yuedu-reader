@@ -17,23 +17,24 @@ final class OPDSBrowseModel: ObservableObject {
     private var query = ""
     private var requestID = UUID()
     private let fetchOverride: ((URL) async throws -> OPDSFeed)?
+    private let registry: SourceProviderRegistry
 
-    init(route: OPDSFeedRoute, fetch: ((URL) async throws -> OPDSFeed)? = nil) {
+    /// - Parameter fetch: replaces the server request, for tests and previews.
+    init(route: OPDSFeedRoute, fetch: ((URL) async throws -> OPDSFeed)? = nil, registry: SourceProviderRegistry = .shared) {
         self.route = route
         fetchOverride = fetch
+        self.registry = registry
     }
 
-    private var client: OPDSClient? {
-        let store = RemoteLibraryConnectionStore.shared
-        return store.connection(id: route.catalogID).map { store.client(for: $0) }
+    /// The route's source, resolved at each request (unified library 2a): Gutenberg or a saved
+    /// OPDS or Calibre connection. Nil once the connection is removed.
+    private var provider: (any OPDSFeedProviding)? {
+        registry.opdsProvider(catalogID: route.catalogID)
     }
 
-    private func fetch(_ url: URL, client: OPDSClient, isSearch: Bool) async throws -> OPDSFeed {
+    private func fetch(_ url: URL, provider: any OPDSFeedProviding, isSearch: Bool) async throws -> OPDSFeed {
         if let fetchOverride { return try await fetchOverride(url) }
-        if route.catalogID == PublicLibraryID.gutenberg.rawValue {
-            return try await PublicLibraryFeedTransport.fetch(url)
-        }
-        return try await client.fetchFeed(url, isSearch: isSearch)
+        return try await provider.feed(url, isSearch: isSearch)
     }
 
     func load(query: String = "") async {
@@ -43,23 +44,22 @@ final class OPDSBrowseModel: ObservableObject {
         loadError = nil
         failedWhileLoadingMore = false
         defer { if requestID == id { isLoading = false } }
-        guard let client, let url = URL(string: route.url) else {
-            loadError = localized("書庫連線已移除，請重新加入伺服器。")
+        guard let provider, let url = URL(string: route.url) else {
+            loadError = SourceFailure.connectionRemoved.localizedDescription
             return
         }
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             let requestURL: URL
-            if !query.isEmpty, route.catalogID == PublicLibraryID.gutenberg.rawValue {
-                requestURL = PublicLibrary.gutenbergSearchURL(query: query)
-            } else if !query.isEmpty {
-                guard let search, let resolved = try await client.searchFeedURL(search: search, query: query) else {
+            if !query.isEmpty {
+                // Gutenberg searches its own URL; a catalog searches what its root advertised.
+                guard let resolved = try await provider.searchURL(query: query, search: search) else {
                     loadError = localized("此目錄不支援搜尋")
                     return
                 }
                 requestURL = resolved
             } else { requestURL = url }
-            let feed = try await fetch(requestURL, client: client, isSearch: !query.isEmpty)
+            let feed = try await fetch(requestURL, provider: provider, isSearch: !query.isEmpty)
             try Task.checkCancellation()
             guard requestID == id else { return }
             entries = feed.entries
@@ -69,20 +69,20 @@ final class OPDSBrowseModel: ObservableObject {
             didLoad = true
         } catch {
             guard !Task.isCancelled, requestID == id else { return }
-            AppLogger.network("OPDS feed failed", error: error, context: ["url": route.url])
+            AppLogger.network("OPDS feed failed", error: SourceFailure.loggable(error), context: ["url": route.url])
             loadError = error.localizedDescription
         }
     }
 
     func loadMore() async {
-        guard let client, let nextPageURL, !isLoadingMore, !isLoading else { return }
+        guard let provider, let nextPageURL, !isLoadingMore, !isLoading else { return }
         let id = requestID
         isLoadingMore = true
         loadError = nil
         failedWhileLoadingMore = false
         defer { isLoadingMore = false }
         do {
-            let feed = try await fetch(nextPageURL, client: client, isSearch: !query.isEmpty)
+            let feed = try await fetch(nextPageURL, provider: provider, isSearch: !query.isEmpty)
             try Task.checkCancellation()
             guard requestID == id else { return }
             let existing = Set(entries.map(\.id))
@@ -91,7 +91,7 @@ final class OPDSBrowseModel: ObservableObject {
         } catch {
             guard !Task.isCancelled, requestID == id else { return }
             failedWhileLoadingMore = true
-            AppLogger.network("OPDS next page failed", error: error, context: ["url": nextPageURL.absoluteString])
+            AppLogger.network("OPDS next page failed", error: SourceFailure.loggable(error), context: ["url": nextPageURL.absoluteString])
             loadError = error.localizedDescription
         }
     }
