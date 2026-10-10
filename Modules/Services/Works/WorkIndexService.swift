@@ -34,12 +34,12 @@ final class WorkIndexService {
         store: BookStore,
         directory: URL,
         makeContext: @escaping @MainActor ([ReadingBook]) -> SourceRecordContext = WorkIndexService.liveContext,
-        decisions: @escaping @MainActor () -> [WorkDecision] = { [] }
+        decisions: (@MainActor () -> [WorkDecision])? = nil
     ) {
         self.store = store
         self.fileURL = directory.appendingPathComponent("index.json")
         self.makeContext = makeContext
-        self.decisions = decisions
+        self.decisions = decisions ?? { [store] in store.workDecisions.decisions }
     }
 
     #if DEBUG

@@ -182,8 +182,19 @@ final class RemoteLibraryWritingService: RemoteLibraryWriting {
             // Calibre rewrites served EPUB/PDF metadata after this change, so
             // release open resources and let the normal version probe refresh.
             invalidateReadingResources?(book.id)
-            book.title = savedTitle
-            book.author = savedAuthors.joined(separator: ", ")
+            // Unified library 1d: the server keeps the edit (settled 2026-10-10); a copy whose
+            // title or author the reader locked keeps its own.
+            let anchor = SourceItemKey.copy(book.id)
+            if readingStore?.workDecisions.isLocked(.title, anchor: anchor) == true {
+                AppLogger.cache("⟐ locked title kept", context: ["copy": book.id.uuidString, "path": "calibreWriteBack"])
+            } else {
+                book.title = savedTitle
+            }
+            if readingStore?.workDecisions.isLocked(.authors, anchor: anchor) == true {
+                AppLogger.cache("⟐ locked author kept", context: ["copy": book.id.uuidString, "path": "calibreWriteBack"])
+            } else {
+                book.author = savedAuthors.joined(separator: ", ")
+            }
             readingStore?.saveReadingBook(book)
         }
         didChange(item.connectionID)
@@ -229,7 +240,12 @@ final class RemoteLibraryWritingService: RemoteLibraryWriting {
                 format: format, version: old.version, contentLength: old.contentLength,
                 entityTag: old.entityTag, lastModified: old.lastModified, cachedFilename: old.cachedFilename,
                 offlineFilename: old.offlineFilename)
-            book.title = destination.deletingPathExtension().lastPathComponent
+            // Unified library 1d: the copy follows the file; a locked title stays.
+            if readingStore?.workDecisions.isLocked(.title, anchor: .copy(book.id)) == true {
+                AppLogger.cache("⟐ locked title kept", context: ["copy": book.id.uuidString, "path": "webDAVRename"])
+            } else {
+                book.title = destination.deletingPathExtension().lastPathComponent
+            }
             readingStore?.saveReadingBook(book)
         }
     }

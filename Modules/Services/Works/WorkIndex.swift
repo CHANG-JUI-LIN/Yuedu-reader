@@ -39,7 +39,12 @@ enum WorkDecision: Hashable, Codable, Sendable {
     case sameWork(SourceItemKey, SourceItemKey, decidedAt: Date)
     case differentWorks(SourceItemKey, SourceItemKey, decidedAt: Date)
     case override(anchor: SourceItemKey, field: MetadataField, value: MetadataPayload, decidedAt: Date)
-    case lock(anchor: SourceItemKey, field: MetadataField, decidedAt: Date)
+    /// `value` is the effective value when the lock was set, for fields `ReadingBook` does not
+    /// hold: 1b's sidecar keeps only the newest value per field and place, so the locked one
+    /// would not survive there. For title and authors it is nil: the lock stops the automatic
+    /// paths from writing the copy, so the copy's own value is the frozen one, and a manual
+    /// edit still shows.
+    case lock(anchor: SourceItemKey, field: MetadataField, value: MetadataPayload?, decidedAt: Date)
     case chooseCandidate(anchor: SourceItemKey, field: MetadataField, from: SourceItemKey, decidedAt: Date)
 }
 
@@ -349,7 +354,7 @@ private extension WorkDecision {
         case .differentWorks(let a, let b, _): "0\(a.sortKey)\u{1E}\(b.sortKey)"
         case .sameWork(let a, let b, _): "1\(a.sortKey)\u{1E}\(b.sortKey)"
         case .override(let anchor, let field, _, _): "2\(anchor.sortKey)\u{1E}\(field.rawValue)"
-        case .lock(let anchor, let field, _): "3\(anchor.sortKey)\u{1E}\(field.rawValue)"
+        case .lock(let anchor, let field, _, _): "3\(anchor.sortKey)\u{1E}\(field.rawValue)"
         case .chooseCandidate(let anchor, let field, let from, _): "4\(anchor.sortKey)\u{1E}\(field.rawValue)\u{1E}\(from.sortKey)"
         }
     }
