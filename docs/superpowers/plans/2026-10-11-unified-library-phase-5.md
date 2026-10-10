@@ -115,7 +115,7 @@ Each comes with its reason; the maintainer can overturn any of them.
    - **The `OPDSFeedRoute` clash** (Phase 2 follow-up 1): the route gains its destination kind, so one route opens one view.
    - **Value links:** closure `NavigationLink`s inside the public-library storefront become value links.
 6. **Work-index freshness** (Phase 2 constraint): the home holds one `WorkIndexService`, refreshed when the shelf, a WebDAV index or the decisions change, never per view. The first refresh waits for `BookSourceStore.whenLoaded`.
-7. **Continue reading reuses `RecentReadingSelection`**, which already merges shelf and off-shelf records; there is no second recents list.
+7. **Continue reading is the shelf's copies by `lastOpenedDate`, newest first** (design §13.3: 「書架上最近打開的副本」). Revised in 5b: `RecentReadingSelection` is search's list. It carries search's own clearing time, and its off-shelf records hold only a name, which a tap can only search for.
 8. **Gutenberg rows never request on their own.** Bundled collections need no request. A Gutenberg feed row shows 載入 until the reader taps it (`Technotes/PublicLibraries.md:15`).
 9. **China region:** no public-library row, tile, scope option or source-center entry. `ProviderAvailability` drives this through the 2a registry, not view checks.
 
@@ -160,7 +160,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 - **Strings:** reviewed per step (open decision 7), plus `ruby scripts/check_localizations.rb`.
 - **Requests:**
   - The home sends none for Gutenberg.
-  - Book-source rows load one at a time per source (`BookSourceSession`).
+  - Book-source rows load one at a time per source. `HomeModel` queues them itself: `BookSourceSession` does not serialize discover fetches, which run on `bridgeForAsyncOperations` outside its gate (`BookSourceFetcher+Discover.swift:40-44`).
   - Nothing loads for a row off screen beyond the first screen's worth (measured in 5b).
 - **Regression:**
   - From 5c on, run the §19 Phase 5 row: `ExploreModeTests`, `PublicLibraryAvailabilityTests`, `CustomExplorePageTests`, `ExploreNavigationAndMetadataTests`, `PublicLibraryExploreUITests`.
@@ -198,7 +198,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   - `CustomExplorePageModel`'s serial loading and waterfall paging;
   - `DiscoverCategoryBookList`'s next page;
   - `DiscoverViewModel`'s filter write.
-- [ ] **Step 2: `HomeSectionProviding`** on the 2a providers: `templates()`, `loadPolicy` (`.serialPerSource`, `.parallel`, `.onDemandOnly`) and `load(binding, page)`.
+- [x] **Step 2: `HomeSectionProviding`** on the 2a providers: `templates()`, `loadPolicy` (`.serialPerSource`, `.parallel`, `.onDemandOnly`) and `load(binding, page)`.
   - **Shelf:** continue reading (`RecentReadingSelection`), related (same author and series).
   - **OPDS and Calibre:** the feed's 最新 navigation, or the root's first group.
   - **Gutenberg:** bundled collections, and feeds on demand.
@@ -206,13 +206,13 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   - **WebDAV:** 2d's records, newest first by server date.
   - **Book sources:** a new `BookSourceProvider` in the registry, over its discover categories.
 - [x] **Step 3: `SectionPageLoader`,** the one next-page loader (decision 3). Today's two callers move onto it.
-- [ ] **Step 4: Per-row filters** (decision 4): a per-request variable overlay, never a write to the shared store. Prove it with a characterization test first; otherwise skip the step and record it.
+- [ ] **Step 4 (skipped, see 5b part 2): Per-row filters** (decision 4): a per-request variable overlay, never a write to the shared store. Prove it with a characterization test first; otherwise skip the step and record it.
   - Test two rows of one source with different filters, and the source page's filter unchanged after both.
-- [ ] **Step 5: `HomeModel`:**
+- [x] **Step 5: `HomeModel`:**
   - It loads the visible sections by policy, one book-source request at a time per source.
   - It tracks `didLoad`, `loadError` and empty per section.
   - It refreshes on pull and keeps unchanged sections, as `CustomExplorePageModel.sync` does.
-- [ ] **Step 6: Measure** with 20 sections across 5 sources (fixtures). Report time to first section and the requests sent, and record them in "What landed".
+- [x] **Step 6: Measure** with 20 sections across 5 sources (fixtures). Report time to first section and the requests sent, and record them in "What landed".
 
 ## Task 5c: The home screen
 
@@ -311,6 +311,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 2. **`CLAUDE.md:132` and `AGENTS.md:26`** list only `ExploreHomeView` as Explore's root. `docs/design.md:66` also lists `PublicLibraryHomeView`. 5c rewrites all three.
 3. **`discover.categorySelection.<source UUID>`** (`DiscoverViewModel.swift:262`) is keyed by the source's device-local UUID, so a re-imported source loses its shown categories. 5b should key it by `bookSourceUrl` (design D4).
 4. **The audit's third next-page loader** (`DiscoverViewModel.swift:625-673`) loads page 1 only. There are two next-page loaders, not three.
+5. **OPDS 「最新」 cannot follow a feed's `sort/new` link:** `OPDSClient` keeps no `rel` on navigation entries. Keeping it is a parser change with its own tests.
 
 ## What landed
 
@@ -341,4 +342,42 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 - **Step 1, characterization on unchanged code, was not possible.** The Phase 0a note at the top of `CustomExplorePageModelTests` records why: the fetch reached the network through the JS bridge's own session. The injection came first, with behavior unchanged, and the tests followed: `SectionPagingTests` (4), `SectionPageLoaderTests` (2), `CustomExploreWaterfallPagingTests` (2). The waterfall tests cover page 1 then 2, repeats dropped, the end on a page of repeats, and the retry asking for the same page.
 - **Regression:** with `CustomExplorePageModelTests` and `CustomExplorePageTests`, 19 tests in 5 suites passed.
 - **Left in 5b:** step 2 (providers), step 4 (per-row filters, needs the overlay to be proven), step 5 (`HomeModel`) and step 6 (measurement).
+
+### 5b, part 2: what each source puts on the home (2026-10-11)
+
+- **`ItemOpening`** (`SourceProvider.swift`): every `CollectionEntry.item` now carries what opening it needs, frozen when the entry is made (CLAUDE.md, freeze data at navigation boundaries).
+  - `.copy(UUID)`.
+  - `.opdsEntry` and `.webDAVFile`, which `RemoteLibraryBookRoute(entry:connectionID:)` already takes.
+  - `.gutenberg(GutenbergBook)`, `.aozora(AozoraWork)`.
+  - `.onlineBook(FrozenOnlineBook)`, compared by id as `ExploreNavigationRoute.book` is.
+  - The 2a providers fill it. There is one entry type, not a home-only card.
+- **`HomeSectionProviding`** (`HomeSectionProviding.swift`) departs from design §5's draft in three ways:
+  - `load(_ section:)` returns the first page only. 查看全部 opens the source's own page, which already pages.
+  - The policy is asked per section (`loadPolicy(for:)`, nil when not served). Gutenberg's bundled lists are `.local` while its feeds are `.onDemandOnly`, and a book source serves 「最新」 only with a picked category.
+  - `templates()` waits for the editor (5d).
+- **The row each source serves:**
+  - **Shelf:** 繼續閱讀 (decision 7, revised). 相關 is not served (open decision 5).
+  - **OPDS and Calibre:** `.opdsFeed`, and 「最新」 as the root's own books, or else its first navigation feed's. The parser keeps no `rel` on navigation entries, so a `sort/new` link cannot be followed yet (follow-up 5).
+  - **Gutenberg:** bundled lists `.local` with no request; feeds and 「最新」 (`latestURL`) `.onDemandOnly`; nothing in China.
+  - **Aozora:** 新着 and 「最新」 from the catalog, and an index as its groups. Nothing until the catalog is read.
+  - **WebDAV:** 「最新」 is the 2d records, newest `getlastmodified` first, undated last, with 2e's cover when read. A connection without a record store serves nothing.
+  - **Book sources:** `BookSourceProvider` primes the discover cookies (`primeDiscoverCookies`, the same call `DiscoverViewModel.reload` makes) and loads page 1 through `SectionPageLoader`. 「最新」 uses the category stored in the 「最新」 section's `parameters` under `latest.category:<bookSourceUrl>` (settled decision 8).
+- **`SourceProviderRegistry.homeProviders(shelf:)`:** the shelf, connections (WebDAV with `shelf.remoteRecords`), Gutenberg, Aozora, then the explore sources in 探索's order.
+- **`HomeModel`** (`HomeModel.swift`):
+  - Rows are built only after `waitForSources`, which is `BookSourceStore.waitUntilLoaded` when wired in 5c, so a cold launch never reads as deleted sources.
+  - 「最新」 expands into one row per serving source; other sections take the first provider that serves them. 我的書庫 is a tile per source; hidden sections, unserved ones and later builds' bindings have no row.
+  - Loading by policy:
+    - `.serialPerSource` queues per source;
+    - `.local` and `.parallel` start at once;
+    - `.onDemandOnly` shows `awaitingRequest` until `request`;
+    - pull to refresh returns on-demand rows to 載入.
+  - A sync keeps a row whose section and policy are unchanged.
+  - Each load records a `⏱ home.row` span.
+- **Step 4 skipped:** per-row filters, decision 4. Rows of one source share the source's filter, as custom pages do today.
+- **Step 6, measured** (injected 100 ms answers on the simulator, Debug; this measures the home's scheduling, not a network). 20 rows over 5 sources: three book sources × 4 categories, OPDS × 4, Aozora × 4.
+  - The first row loaded at 0.7 ms (on-device).
+  - All 20 loaded at 418 ms: four queued answers per book source plus 18 ms.
+  - Each book source never had more than one load in flight; OPDS had 4.
+- **Tests:** `HomeModelTests` (9), `HomeModelSchedulingTests` (1), `BookSourceProviderTests` (3), `LocalHomeRowTests` (2). With the 2a suites (`SourceFailureTests`, `OPDSProviderTests`, `WebDAVProviderTests`, `AozoraProviderTests`, `ShelfProviderTests`, `SourceProviderRegistryTests`) and `OPDSBrowseModelBehaviorTests`, 34 tests in 10 suites passed; the scheduling run passed 10 in 2.
+- **Left as it was:** `discover.categorySelection.<source UUID>` (follow-up 3) still keys by the device-local UUID. Re-keying it changes stored reader state, so it waits for its own step with a migration.
 

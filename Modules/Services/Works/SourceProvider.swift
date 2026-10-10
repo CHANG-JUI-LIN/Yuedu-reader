@@ -53,7 +53,32 @@ struct CollectionCursor: Hashable, Codable, Sendable {
 
 enum CollectionEntry: Hashable, Sendable {
     case location(CollectionLocation)
-    case item(SourceRecord, WorkSummary)
+    case item(SourceRecord, WorkSummary, ItemOpening)
+}
+
+/// What opening an item needs, frozen when the entry is made, so a destination never
+/// re-reads a list that may have changed (CLAUDE.md, "Freeze data at search navigation
+/// boundaries"). Each case is the snapshot today's route for that kind is built from
+/// (unified library 5b; the home maps them in 5c).
+enum ItemOpening: Hashable, Sendable {
+    /// A copy on the shelf.
+    case copy(UUID)
+    /// An OPDS or Calibre entry: `RemoteLibraryBookRoute(entry:connectionID:)`.
+    case opdsEntry(OPDSEntry, connectionID: String)
+    /// A WebDAV file: `RemoteLibraryBookRoute(entry:connectionID:)`.
+    case webDAVFile(WebDAVBrowseClient.Entry, connectionID: String)
+    case gutenberg(GutenbergBook)
+    case aozora(AozoraWork)
+    /// A book-source result: `ExploreNavigationRoute.book`.
+    case onlineBook(FrozenOnlineBook)
+}
+
+/// An `OnlineBook` in a `Hashable` value, compared by its id as `ExploreNavigationRoute.book` is.
+struct FrozenOnlineBook: Hashable, Sendable {
+    let book: OnlineBook
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.book.id == rhs.book.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(book.id) }
 }
 
 struct CollectionPage: Hashable, Sendable {

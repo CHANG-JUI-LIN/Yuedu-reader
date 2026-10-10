@@ -58,7 +58,7 @@ struct OPDSProviderTests {
         let page = try await provider.browse(nil, after: nil)
 
         #expect(page.entries.count == 2, "an entry with neither a link nor an acquisition is left out")
-        guard case .location(let location) = page.entries[0], case .item(let record, let summary) = page.entries[1] else {
+        guard case .location(let location) = page.entries[0], case .item(let record, let summary, _) = page.entries[1] else {
             Issue.record("unexpected entries: \(page.entries)")
             return
         }
@@ -126,7 +126,7 @@ struct OPDSProviderTests {
         #expect(try await provider.searchURL(query: "austen", search: nil) == PublicLibrary.gutenbergSearchURL(query: "austen"))
         let page = try await provider.browse(nil, after: nil)
         #expect(requested == [URL(string: PublicLibrary.gutenberg.url)!])
-        guard case .item(let record, _) = page.entries.first else { Issue.record("expected a book"); return }
+        guard case .item(let record, _, _) = page.entries.first else { Issue.record("expected a book"); return }
         #expect(record.key.item == "1342")
         #expect(provider.availability == .available)
         availability.receive(countryCode: "CHN")
@@ -178,7 +178,7 @@ struct WebDAVProviderTests {
         #expect(page.entries.count == 3)
         #expect(page.entries.contains(.location(CollectionLocation(id: "https://dav.example/books/Fiction/", title: "Fiction"))))
         let items = page.entries.compactMap { entry -> SourceRecord? in
-            if case .item(let record, _) = entry { return record }
+            if case .item(let record, _, _) = entry { return record }
             return nil
         }
         let epub = try #require(items.first { $0.key.item == "三體.epub" })
@@ -243,7 +243,7 @@ struct AozoraProviderTests {
 
         let newest = try await provider.browse(CollectionLocation(id: "new", title: ""), after: nil)
         #expect(newest.entries.count == min(index.newWorks.count, AozoraProvider.pageSize))
-        if case .item(let record, let summary) = newest.entries.first {
+        if case .item(let record, let summary, _) = newest.entries.first {
             #expect(record.identifiers.contains { $0.scheme == .aozoraWork })
             #expect(summary.language == "ja")
         } else {
@@ -282,7 +282,7 @@ struct ShelfProviderTests {
         let root = try await provider.browse(nil, after: nil)
         #expect(root.entries.first == .location(CollectionLocation(id: "group/科幻", title: "科幻")))
         let rootCopies = root.entries.compactMap { entry -> UUID? in
-            if case .item(let record, _) = entry { return record.copyID }
+            if case .item(let record, _, _) = entry { return record.copyID }
             return nil
         }
         #expect(Set(rootCopies) == [grouped.id, loose.id])
