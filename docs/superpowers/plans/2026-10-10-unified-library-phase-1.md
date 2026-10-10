@@ -448,7 +448,7 @@ Phase 1 adds:
 
 - [x] 1a: source records for every entry type; the 「來源」 row fixed; one URL normalizer.
 - [x] 1b: sidecar metadata for every import; `ReadingBook` keys and hashes unchanged.
-- [ ] 1c: deterministic index, A-level and B-level, with the design's fixtures; benchmark numbers recorded.
+- [x] 1c: deterministic index, A-level and B-level, with the design's fixtures; benchmark numbers recorded.
 - [ ] 1d: decisions store, resolver, locks on three paths, unlocked behavior unchanged.
 - [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 1 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
 - [ ] Rollback: revert the step's merge and delete `Application Support/Works/`. No `ReadingBook` or sync content changed (design §15).
@@ -486,7 +486,7 @@ check_localizations: OK, 3329 keys
 
 ### 1b (2026-10-10)
 
-Branch `unified-library/1b-imported-metadata`, on `346327dd`. Not merged, not pushed.
+Branch `unified-library/1b-imported-metadata`, on `346327dd`. Merged into `main` at `3accf360`; not pushed.
 
 - **Types:** `MetadataField`, `MetadataPayload` (text, texts, number, date), `MetadataValue` and `ImportedMetadata` (`schemaVersion`, copy id, source item, identifiers, values), in `Modules/Services/Works/MetadataValue.swift`.
 - **`ImportedMetadataStore`** keeps `<shelf folder>/Works/metadata/<copy id>.json` (production: `Application Support/Works/metadata`). It writes on one serial queue with atomic replace.
@@ -494,7 +494,7 @@ Branch `unified-library/1b-imported-metadata`, on `346327dd`. Not merged, not pu
   - **Damaged files:** an undecodable file is kept aside (`<id>.corrupt-<mtime>.json`); an unreadable one is never written over.
   - **Removal:** `BookStore.delete` removes the copy's sidecar. `remove(notIn:)` runs only after a complete load and after a sync is applied, beside `removeChapters(notIn:)`. Corrupt backups are kept.
 - **OPF identifiers:** Readium drops every `dc:identifier` except the unique one (its `otherMetadata` excludes them all), so `PublicationSession.opfIdentifiers` reads them from the OPF with their `opf:scheme`. Languages, description, subjects, publishers and date come from Readium `Metadata`.
-  - Classification: ISBN by scheme, `urn:isbn:`, or a valid ISBN shape; Calibre's `opf:scheme="calibre"` as `calibreUUID`; anything else as `epubUniqueIdentifier`.
+  - Classification: ISBN by scheme, `urn:isbn:`, or a valid ISBN shape; anything else as `epubUniqueIdentifier`. 1b read Calibre's `opf:scheme="calibre"` as the Calibre uuid. That identifier is Calibre's application id, so 1c corrected it (`7a52d0a5`, and for OPF 3 in the commit after `dcc8584d`). The uuid is the `opf:scheme="uuid"` identifier (OPF 2) or the `uuid:` text (OPF 3, which has no `opf:scheme`) of a package that also carries Calibre's own `calibre` identifier.
 - **OPDS:** `OPDSEntry` gained `language` and `identifiers`, read from `dc:language` and `dc:identifier` in OPDS 1 (local names, since the parser processes namespaces) and from `metadata.language` and `identifier` in OPDS 2. `RemoteLibraryItem` keeps `authorNames`, `language` and `identifiers`, which `RemoteLibraryBookRoute.init(entry:)` passes on.
 - **Capture points:**
   - `importEpub`, after the copy is persisted;
@@ -516,3 +516,66 @@ Branch `unified-library/1b-imported-metadata`, on `346327dd`. Not merged, not pu
     OPDSParserTests, OPDS2ParserTests, GutenbergOPDS2FixtureTests, CalibreWirelessReceiverTests,
     SourceRecordDerivationTests)
 ```
+
+### 1c (2026-10-10)
+
+Branch `unified-library/1c-work-index`, on `3accf360`. Not merged, not pushed.
+
+- **`WorkMatchKey`** (`WorkMatchKey.swift`):
+  - Folding: NFKC, lowercase, Traditional → Simplified, katakana → hiragana, then without Z\*, P\* and S\* characters and controls. Digits and bracketed text stay.
+  - Authors use the containment rule at 2 characters or more, with an author required on both sides.
+  - **`LanguageTag`** parses a tag's own subtags. `Locale.Language` fills in likely scripts: `zh` and `zho` become Hans, and `und` becomes Latn. A script therefore comes only from an explicit subtag or from a written region (`zh-TW` → Hant). ISO 639-2/B codes (`chi` …) map to their /T codes.
+- **`WorkIndex.build`** (`WorkIndex.swift`) is a pure, deterministic union-find:
+  - A-level joins on the same source item, then on each shared identifier among isbn13, calibreUUID, gutenberg, aozoraWork, openLibraryWork, openLibraryEdition and wikidata.
+  - **`epubUniqueIdentifier` never merges**, because templates reuse package ids. It stays in the data.
+  - B-level joins within a `WorkMatchKey` title bucket when authors are compatible (`WorkIndexPolicy.titleAuthorMerging`, default on). Such a work reports `isMergedByTitleAndAuthor`.
+  - **Rejections are checked on the whole group at each join**, not pair by pair. Evidence never joins groups whose content kinds or known base languages differ, so zh ~ unknown ~ en cannot chain.
+  - **Decisions:** `differentWorks` always wins. `sameWork` overrides the kind and language rules but never a `differentWorks`. A decision matches a record by its copy key or by its source key.
+  - Every result is sorted; no `Set` or `Dictionary` order reaches the output. A test builds from the original, reversed and two seeded shuffles, and compares both the values and the sorted-keys JSON of the works.
+  - **Editions** are language or script plus content kind:
+    - A script-less tag joins the only edition of its language that has a script (`en` beside `en-US`), otherwise its own edition.
+    - A copy with no language joins the only edition of its kind, otherwise `und`.
+    - Neither guess ever splits a work.
+  - `WorkDecision` has all five cases of design §5; only `sameWork` and `differentWorks` are read in 1c.
+- **`WorkIndexService`** (`WorkIndexService.swift`, `Works/index.json`):
+  - Nothing is built until `refresh()`; Phase 1 has no caller.
+  - Records are derived on the main actor from plain maps. The WebDAV root is computed as `rootURL` does, without building a client, which would read the keychain per copy.
+  - Sidecars are read and the index built in a detached task. The result is applied only if `mutationRevision` is unchanged; otherwise the call returns false.
+  - **Incremental:** each copy keeps its record and its sidecar's stamp (modification date and size, from one listing of the folder). An unchanged copy keeps its entry; the union-find always reruns over all entries, since a removal can split a work. A sidecar written after its copy is saved changes no revision, and the stamp catches it (tested).
+  - **Spans:** `works.index.snapshot`, `works.index.build`, `works.index.load` and `works.search.local`, with counts only.
+  - **File rules:** another `schemaVersion`, or a file that does not decode, is discarded and rebuilt. A file that cannot be read is never written over, and the index then lives in memory. Dates use the default `Double` encoding, because ISO 8601 drops the sub-second part of a stamp and every copy would look changed on the next launch.
+- **Each entry stores its folded title and author keys.** The first benchmark showed folding costs about 52 µs a string, nearly all of it in ICU's Traditional-Simplified transform, and the build folded the same strings several times. Caching the keys took the 7,000-entry pure build from 2,099 to 152 ms (Debug `-Onone`). Listing the sidecar folder once took a warm refresh from 209 to 77 ms.
+- **Constraint on the first caller (Phase 2 or the work page):** the main-actor half of `refresh()` calls `BookSourceStore.source(id:)`, and its `ensureLoaded()` waits on the main thread until the source library has been read. On a 50k-source library that can be seconds. Refresh only once the source store has loaded, or move that lookup off main. The benchmark passes no context, so it does not measure this. `works.index.snapshot` stayed under its 5 ms reporting threshold there and never logged.
+- **Rules 1c chose itself, for the maintainer to overturn:**
+  - `sameWork` overrides the content-kind and language rejections, while `differentWorks` always wins.
+  - A copy with no script, or no language, joins the only edition there is.
+  - `epubUniqueIdentifier` never merges.
+  - `7a52d0a5` and its OPF 3 follow-up change how the already-merged 1b code classifies identifiers.
+- **Deviations from the plan and design:**
+  - The only input in Phase 1 is copies. Design §7.3 also lists remote records the reader acted on, but nothing stores those yet. Acting on one (reading, adding) already makes it a copy.
+  - The benchmark's 5,000 remote records go to the pure builder for the same reason.
+  - The `works.index.snapshot` span is extra.
+
+```
+✔ Test run with 33 tests in 4 suites passed after 2.440 seconds.
+   (WorkMatchKeyTests, WorkIndexTests, WorkIndexServiceTests, WorkIndexBenchmarkTests)
+✔ Test run with 110 tests in 12 suites passed after 0.977 seconds, after the last edit.
+   (WorkMatchKeyTests, WorkIndexTests, WorkIndexServiceTests, ImportedMetadataCaptureTests,
+    ImportedMetadataStoreTests, ImportedMetadataImportTests, SourceRecordDerivationTests,
+    BookStoreMetadataWriteBudgetTests, ICloudSyncChangeDetectionTests, RemoteLibraryServiceTests,
+    CalibreWirelessReceiverTests, AozoraLibraryDownloadServiceTests)
+```
+
+Benchmark, iPhone 18 Pro simulator, 2,000 copies (1,400 titles, 40% with a sidecar ISBN) plus 5,000 remote records:
+
+| Measure | Debug `-Onone` | Debug `-O` |
+|---|---|---|
+| `WorkMatchKey.title` × 7,000 | 386 ms | 355 ms |
+| Service cold refresh (snapshot, sidecar reads, build) | 442 ms | 346 ms |
+| Service warm refresh (load, stat, no rebuild) | 77 ms | 61 ms |
+| `works.index.load` (decode 2.4 MB `index.json`) | 49 ms | 43 ms |
+| `works.search.local`, 2,000 copies | 1.7 ms | 1.3 ms |
+| Pure build, 7,000 entries (keys already folded) | 152 ms | 56 ms |
+| Pure search, 7,000 entries | 2.7 ms | 2.1 ms |
+
+`-O` is `SWIFT_OPTIMIZATION_LEVEL=-O` on the Debug configuration (Release would upload dSYMs). Folding barely changes with `-O`, since its cost is inside ICU. Against §10.4's suggested thresholds (load 200 ms, search 16 ms), both are well under, so no SQLite. That decision stays with the maintainer.

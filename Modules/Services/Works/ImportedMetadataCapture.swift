@@ -31,24 +31,43 @@ enum ImportedMetadataCapture {
         return ImportedMetadata(
             copyID: copy.id,
             sourceItem: sourceItem,
-            identifiers: unique(identifiers.compactMap(classify)),
+            identifiers: unique(identifiers.compactMap { classify($0, in: identifiers) }),
             values: values
         )
     }
 
-    /// An OPF identifier as an `ExternalIdentifier`: ISBNs as `isbn13`, Calibre's own
-    /// `opf:scheme="calibre"` as `calibreUUID`, anything else compared only within
-    /// `epubUniqueIdentifier`.
-    static func classify(_ identifier: PublicationSession.OPFIdentifier) -> ExternalIdentifier? {
+    /// An OPF identifier as an `ExternalIdentifier`: ISBNs as `isbn13`, a Calibre book's uuid
+    /// as `calibreUUID`, anything else compared only within `epubUniqueIdentifier`.
+    ///
+    /// Calibre writes two identifiers: its application id, the book's number in that library
+    /// or a random uuid, and the book's uuid, the one its content server names entries by.
+    /// - OPF 2 (`metadata_to_opf` in calibre's `opf2.py`): `opf:scheme="calibre"` and
+    ///   `opf:scheme="uuid"`.
+    /// - OPF 3 (`set_identifiers` in `opf3.py`), which has no `opf:scheme`: the text
+    ///   `calibre:<id>` and `uuid:<uuid>`.
+    ///
+    /// Other tools (Sigil) also write `opf:scheme="UUID"`, so a uuid counts as Calibre's only
+    /// in a package that also has Calibre's own identifier.
+    static func classify(
+        _ identifier: PublicationSession.OPFIdentifier,
+        in package: [PublicationSession.OPFIdentifier] = []
+    ) -> ExternalIdentifier? {
         let value = identifier.value
         let lowered = value.lowercased()
-        switch identifier.scheme?.lowercased() {
-        case "isbn":
+        let scheme = identifier.scheme?.lowercased()
+        if isCalibreApplicationID(identifier) {
+            // The application id: a library's book number, or a uuid made for one export.
+            return nil
+        }
+        if package.contains(where: isCalibreApplicationID) {
+            if scheme == "uuid", let uuid = ExternalIdentifier.normalized(.calibreUUID, value) { return uuid }
+            if scheme == nil, lowered.hasPrefix("uuid:"),
+               let uuid = ExternalIdentifier.normalized(.calibreUUID, String(value.dropFirst("uuid:".count))) {
+                return uuid
+            }
+        }
+        if scheme == "isbn" {
             return ExternalIdentifier.normalized(.isbn13, value)
-        case "calibre":
-            return ExternalIdentifier.normalized(.calibreUUID, value)
-        default:
-            break
         }
         if lowered.hasPrefix("urn:isbn:") || lowered.hasPrefix("isbn:") {
             return ExternalIdentifier.normalized(.isbn13, value)
@@ -61,6 +80,11 @@ enum ImportedMetadataCapture {
             return ExternalIdentifier.normalized(.epubUniqueIdentifier, String(lowered.dropFirst("urn:uuid:".count)))
         }
         return ExternalIdentifier.normalized(.epubUniqueIdentifier, value)
+    }
+
+    private static func isCalibreApplicationID(_ identifier: PublicationSession.OPFIdentifier) -> Bool {
+        let scheme = identifier.scheme?.lowercased()
+        return scheme == "calibre" || (scheme == nil && identifier.value.lowercased().hasPrefix("calibre:"))
     }
 
     // MARK: - Remote libraries
