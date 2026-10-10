@@ -363,6 +363,13 @@ final class SearchBook: Identifiable {
 // 3. As soon as any single source returns results, stream its visible books into the UI
 // 4. Publishes result-list snapshots through a bounded scene-aware cadence
 
+/// Where a search was started, recorded on its `search.firstResult` span so the 搜索 tab's
+/// numbers are not mixed with 換源's.
+enum SearchOrigin: String, Sendable {
+    case searchTab
+    case changeSource
+}
+
 @MainActor
 class SearchAggregator: ObservableObject {
     /// UI-facing result list. Updated from `internalResults` only through the
@@ -476,9 +483,17 @@ class SearchAggregator: ObservableObject {
     /// results forever cannot drive unbounded fan-outs.
     private let maxSearchPages = 5
 
+    /// `search.firstResult`: from `search(query:sources:origin:)` to the end of the first
+    /// merge that added a book to that search. The generation ties the span to one search,
+    /// so a superseded run's late merge cannot end the next search's span. Cleared by
+    /// pause and cancel; a resumed search records nothing, since its time includes the pause.
+    private var searchGeneration = 0
+    private var firstResultTrace: (generation: Int, start: TimeInterval, detail: String)?
+
     // MARK: - Start Search
 
-    func search(query: String, sources: [BookSource]) {
+    func search(query: String, sources: [BookSource], origin: SearchOrigin = .searchTab) {
+        let startedAt = SourcePerfTrace.now
         // Cancel previous search
         searchTask?.cancel()
 
@@ -534,6 +549,14 @@ class SearchAggregator: ObservableObject {
         )
         autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
 
+        searchGeneration += 1
+        firstResultTrace = (
+            generation: searchGeneration,
+            start: startedAt,
+            detail: "origin=\(origin.rawValue) sources=\(activeSources.count) "
+                + "cacheDays=\(GlobalSettings.shared.searchCacheDays)"
+        )
+
         runSearch(sources: activeSources, applyAutoPause: true)
     }
 
@@ -563,6 +586,7 @@ class SearchAggregator: ObservableObject {
         isPaused = false
 
         let q = currentQuery
+        let generation = searchGeneration
         let policy = applyAutoPause ? autoPausePolicy : SearchAutoPausePolicy(count: 0)
         let concurrency = min(maxConcurrency, sources.count)
         let timeout = perSourceTimeout
@@ -587,7 +611,7 @@ class SearchAggregator: ObservableObject {
                             source: source,
                             timeout: sourceTimeout
                         ) { [weak self] books in
-                            await self?.mergeBatch(books, source: source, query: q)
+                            await self?.mergeBatch(books, source: source, query: q, generation: generation)
                         }
                     }
                 }
@@ -608,7 +632,7 @@ class SearchAggregator: ObservableObject {
                     switch batchResult {
                     case .success(let sourceId, let books, let elapsedMs):
                         let source = sources.first { $0.id == sourceId }
-                        await self.mergeBatch(books, source: source, query: q)
+                        await self.mergeBatch(books, source: source, query: q, generation: generation)
                         self.internalProgress.completed += 1
                         self.completedSourceIds.insert(sourceId)
                         self.successfulSourceIds.insert(sourceId)
@@ -715,7 +739,8 @@ class SearchAggregator: ObservableObject {
                         let newlyMerged = await self.mergeBatch(
                             books,
                             source: source,
-                            query: q
+                            query: q,
+                            generation: nil
                         )
                         // The source's own hasMoreRule verdict wins; without one,
                         // a page that contributed nothing new means exhausted.
@@ -749,6 +774,7 @@ class SearchAggregator: ObservableObject {
     func pause() {
         guard isSearching else { return }
         searchTask?.cancel()
+        firstResultTrace = nil
         requestResultsPublication(force: true, reason: "pause")
         isSearching = false
         isPaused = true
@@ -767,6 +793,7 @@ class SearchAggregator: ObservableObject {
 
     func cancel() {
         searchTask?.cancel()
+        firstResultTrace = nil
         requestResultsPublication(force: true, reason: "cancel")
         isSearching = false
         SourceHealthStore.shared.flush()
@@ -782,6 +809,7 @@ class SearchAggregator: ObservableObject {
     func cancelAndClear() {
         searchTask?.cancel()
         searchTask = nil
+        firstResultTrace = nil
         resultsPublicationTask?.cancel()
         resultsPublicationTask = nil
 
@@ -1017,10 +1045,13 @@ class SearchAggregator: ObservableObject {
     /// Returns how many books were newly merged (new titles or new origins) —
     /// the paging loop uses 0 to mark a source as exhausted.
     @discardableResult
+    /// - Parameter generation: the search this batch belongs to; nil for 載入更多 pages,
+    ///   which never end a `search.firstResult` span.
     private func mergeBatch(
         _ books: [OnlineBook],
         source: BookSource?,
-        query: String
+        query: String,
+        generation: Int?
     ) async -> Int {
         let preparedBooks = await SearchResultPresentationBuilder.prepareBatch(
             books,
@@ -1047,6 +1078,15 @@ class SearchAggregator: ObservableObject {
             if processed % 200 == 0 { await Task.yield() }
         }
         guard mergedCount > 0, !Task.isCancelled else { return mergedCount }
+        if let trace = firstResultTrace, trace.generation == generation {
+            firstResultTrace = nil
+            SourcePerfTrace.record(
+                "search.firstResult",
+                trace.detail + " books=\(mergedCount)",
+                since: trace.start,
+                thresholdMs: 0
+            )
+        }
         // Sorting is deferred to publication. It used to run per merged batch — i.e.
         // once per answering source — so a few thousand sources meant a few thousand
         // full sorts of a list that only ever reaches the screen at the publication

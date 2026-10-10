@@ -36,7 +36,7 @@ struct SourceSearchSheet: View {
             aggregator.setResultPresentationActive(scenePhase == .active)
             if aggregator.results.isEmpty {
                 let sources = BookSourceStore.shared.enabledSources
-                aggregator.search(query: query, sources: sources)
+                aggregator.search(query: query, sources: sources, origin: .changeSource)
             }
         }
         .onChange(of: scenePhase) { _, phase in
