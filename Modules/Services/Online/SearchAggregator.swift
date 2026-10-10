@@ -488,6 +488,27 @@ class SearchAggregator: ObservableObject {
     /// so a superseded run's late merge cannot end the next search's span. Cleared by
     /// pause and cancel; a resumed search records nothing, since its time includes the pause.
     private var searchGeneration = 0
+    /// How this search's sources answered, for the completion log line: with books,
+    /// legitimately empty, or failed but shown as no results (Phase 0b).
+    private var answerTally = SourceAnswerTally()
+
+    private struct SourceAnswerTally {
+        var withResults = 0
+        var empty = 0
+        var failedAsEmpty = 0
+
+        mutating func count(_ answer: SourceAnswer) {
+            switch answer {
+            case .results: withResults += 1
+            case .empty: empty += 1
+            case .failedAsEmpty: failedAsEmpty += 1
+            }
+        }
+
+        var logFields: String {
+            "answered=\(withResults) empty=\(empty) failedAsEmpty=\(failedAsEmpty)"
+        }
+    }
     private var firstResultTrace: (generation: Int, start: TimeInterval, detail: String)?
 
     // MARK: - Start Search
@@ -529,6 +550,7 @@ class SearchAggregator: ObservableObject {
         internalHasMoreResults = false
         requestResultsPublication(force: true, reason: "reset")
         deduplicationMap = [:]
+        answerTally = SourceAnswerTally()
         completedSourceIds = []
         searchPage = 1
         successfulSourceIds = []
@@ -630,12 +652,16 @@ class SearchAggregator: ObservableObject {
                     guard !Task.isCancelled, let self = self else { break }
 
                     switch batchResult {
-                    case .success(let sourceId, let books, let elapsedMs):
+                    case .success(let sourceId, let books, let answer, let elapsedMs):
                         let source = sources.first { $0.id == sourceId }
                         await self.mergeBatch(books, source: source, query: q, generation: generation)
                         self.internalProgress.completed += 1
                         self.completedSourceIds.insert(sourceId)
                         self.successfulSourceIds.insert(sourceId)
+                        self.answerTally.count(answer)
+                        // Phase 0b: a failure the fetcher reported as "no results" still
+                        // counts as a success here. Counting it in SourceHealthStore (cooldown)
+                        // is design §17 item 9, not yet decided.
                         SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
                     case .timeout(let sourceId):
                         self.internalProgress.timedOut += 1
@@ -918,6 +944,7 @@ class SearchAggregator: ObservableObject {
     private func logPublicationSummary(reason: String) {
         AppLogger.parse(
             "⏱ search.listPublish.summary reason=\(reason) "
+                + "\(answerTally.logFields) "
                 + "mutations=\(publicationMetrics.mutations) "
                 + "publications=\(publicationMetrics.publications) "
                 + "coalesced=\(publicationMetrics.coalesced) "
@@ -932,8 +959,15 @@ class SearchAggregator: ObservableObject {
     // - Task B: sleep(timeout) then throw TimeoutError
     // Whichever completes first is returned; the other is cancelAll()
 
+    /// What a source that answered in time said.
+    private enum SourceAnswer: Sendable {
+        case results
+        case empty
+        case failedAsEmpty
+    }
+
     private enum SearchBatchResult: Sendable {
-        case success(UUID, [OnlineBook], elapsedMs: Double)
+        case success(UUID, [OnlineBook], answer: SourceAnswer, elapsedMs: Double)
         case timeout(UUID)
         case failed(UUID)
     }
@@ -966,7 +1000,12 @@ class SearchAggregator: ObservableObject {
                 }
                 group.cancelAll()
                 let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
-                return .success(sourceId, result.streamed ? [] : result.books, elapsedMs: elapsedMs)
+                let answer: SourceAnswer = result.failure != nil
+                    ? .failedAsEmpty
+                    : (result.books.isEmpty ? .empty : .results)
+                return .success(
+                    sourceId, result.streamed ? [] : result.books, answer: answer, elapsedMs: elapsedMs
+                )
             }
         } catch is CancellationError {
             return .failed(sourceId)

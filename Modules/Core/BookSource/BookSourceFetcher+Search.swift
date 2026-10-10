@@ -10,6 +10,82 @@ enum BookSourceSearchFailureMode: Sendable {
     case propagateTransportError
 }
 
+/// Why one source's search failed, for the log. Never carries the request URL: a search
+/// URL contains the reader's keyword.
+enum BookSourceSearchFailure: Error, Equatable, Sendable {
+    case http(Int)
+    case encoding
+    case emptyContent
+    case transport(String)
+    case parse(String)
+    /// The search was cancelled (a timeout or a newer search). Not the source's fault and
+    /// not logged.
+    case cancelled
+
+    var logReason: String {
+        switch self {
+        case .http(let code): "HTTP \(code)"
+        case .encoding: "page encoding not recognized"
+        case .emptyContent: "empty response"
+        case .transport(let description): "transport: \(description)"
+        case .parse(let description): "parse: \(description)"
+        case .cancelled: "cancelled"
+        }
+    }
+
+    /// What the native search path does with an error from its request stage. This is the
+    /// mapping `search` has always applied, in both failure modes: these errors come back
+    /// as "no results" and every other one is thrown. `propagateTransportError` throws only
+    /// the errors that are not `FetchError`s.
+    enum Disposition: Equatable, Sendable {
+        /// Reported to the caller as no results; recorded as this failure.
+        case reportedAsEmpty(BookSourceSearchFailure)
+        case thrown
+    }
+
+    static func disposition(of error: Error, mode: BookSourceSearchFailureMode) -> Disposition {
+        if let fetchError = error as? FetchError {
+            switch fetchError {
+            case .encodingError:
+                return .reportedAsEmpty(.encoding)
+            case .httpError(let code) where [401, 403, 404, 429, 500, 502, 503].contains(code):
+                return .reportedAsEmpty(.http(code))
+            case .emptyContent:
+                return .reportedAsEmpty(.emptyContent)
+            default:
+                return .thrown
+            }
+        }
+        if mode == .propagateTransportError { return .thrown }
+        if error is CancellationError || (error as? URLError)?.code == .cancelled {
+            return .reportedAsEmpty(.cancelled)
+        }
+        return .reportedAsEmpty(.transport(error.localizedDescription))
+    }
+}
+
+/// One source's answer to one search page: books, a legitimately empty page, or a failure
+/// that `search(…)` has always reported to its callers as an empty page.
+enum BookSourceSearchOutcome: Sendable {
+    case results([OnlineBook])
+    case empty
+    case failed(BookSourceSearchFailure)
+
+    var books: [OnlineBook] {
+        if case .results(let books) = self { return books }
+        return []
+    }
+
+    var failure: BookSourceSearchFailure? {
+        if case .failed(let failure) = self { return failure }
+        return nil
+    }
+
+    init(books: [OnlineBook]) {
+        self = books.isEmpty ? .empty : .results(books)
+    }
+}
+
 /// Legado aggregate sources accept qualified searches such as
 /// `m:book name@source`. The full expression must reach the source's search JS,
 /// while local result matching must compare against the book-name portion only.
@@ -36,6 +112,9 @@ extension BookSourceFetcher {
     struct SearchStreamingOutcome {
         let books: [OnlineBook]
         let streamed: Bool
+        /// Set when the native path failed and reported the failure as no results. Nil for
+        /// cache hits and the JS runtime, whose errors are thrown.
+        var failure: BookSourceSearchFailure? = nil
     }
 
     /// - Parameters:
@@ -53,6 +132,23 @@ extension BookSourceFetcher {
         onHasMore: ((Bool?) -> Void)? = nil,
         failureMode: BookSourceSearchFailureMode = .emptyResult
     ) async throws -> [OnlineBook] {
+        try await searchOutcome(
+            query: query, in: source, page: page,
+            earlyFilter: earlyFilter, onHasMore: onHasMore, failureMode: failureMode
+        ).books
+    }
+
+    /// `search(…)` with the difference between a legitimately empty page and a failure kept.
+    /// Throws exactly what `search(…)` throws; a failure it has always reported as no results
+    /// comes back as `.failed` and is logged once, here.
+    func searchOutcome(
+        query: String,
+        in source: BookSource,
+        page: Int = 1,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
+        onHasMore: ((Bool?) -> Void)? = nil,
+        failureMode: BookSourceSearchFailureMode = .emptyResult
+    ) async throws -> BookSourceSearchOutcome {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
         let cacheDays = GlobalSettings.shared.searchCacheDays
         let cacheEligible = page == 1 && earlyFilter == nil
@@ -62,8 +158,8 @@ extension BookSourceFetcher {
             days: cacheDays
         ) {
             onHasMore?(nil)
-            guard let earlyFilter else { return cached }
-            return cached.filter { earlyFilter($0.name, $0.author) }
+            guard let earlyFilter else { return BookSourceSearchOutcome(books: cached) }
+            return BookSourceSearchOutcome(books: cached.filter { earlyFilter($0.name, $0.author) })
         }
 
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
@@ -86,7 +182,7 @@ extension BookSourceFetcher {
                     days: cacheDays
                 )
             }
-            return filtered
+            return BookSourceSearchOutcome(books: filtered)
         }
 
         let requestSpec = source.renderSearchRequest(query: query, page: page)
@@ -114,22 +210,14 @@ extension BookSourceFetcher {
                     bodyCharset: requestSpec.charset,
                     source: source)
             }
-        } catch let err as FetchError {
-            switch err {
-            case .encodingError:
-                return []
-            case .httpError(let code) where [401, 403, 404, 429, 500, 502, 503].contains(code):
-                return []
-            case .emptyContent:
-                return []
-            default:
-                throw err
-            }
         } catch {
-            if failureMode == .propagateTransportError {
+            switch BookSourceSearchFailure.disposition(of: error, mode: failureMode) {
+            case .thrown:
                 throw error
+            case .reportedAsEmpty(let failure):
+                Self.logReportedAsEmpty(failure, source: source, host: url.host, mode: failureMode)
+                return .failed(failure)
             }
-            return []
         }
 
         let books: [OnlineBook]
@@ -141,7 +229,9 @@ extension BookSourceFetcher {
             }
         } catch {
             onHasMore?(false)
-            return []
+            let failure = BookSourceSearchFailure.parse(error.localizedDescription)
+            Self.logReportedAsEmpty(failure, source: source, host: url.host, mode: failureMode)
+            return .failed(failure)
         }
 
         if let onHasMore {
@@ -171,7 +261,30 @@ extension BookSourceFetcher {
                 days: cacheDays
             )
         }
-        return filtered
+        return BookSourceSearchOutcome(books: filtered)
+    }
+
+    /// One line per failed source, so a source that keeps failing can be found in the log
+    /// instead of looking like a source without the book. Source name, host and reason only:
+    /// the URL and the query carry what the reader searched for.
+    ///
+    /// Only for searches that show the reader a failure as "no results". 書源驗證
+    /// (`.propagateTransportError`) already lists every source's failure in its own results,
+    /// and a run over tens of thousands of sources would push everything else out of the
+    /// diagnostic log (maintainer's choice, 2026-10-10).
+    private static func logReportedAsEmpty(
+        _ failure: BookSourceSearchFailure,
+        source: BookSource,
+        host: String?,
+        mode: BookSourceSearchFailureMode
+    ) {
+        guard mode == .emptyResult, failure != .cancelled else { return }
+        let message = "search failed; shown as no results: \(source.bookSourceName) (\(host ?? "")) \(failure.logReason)"
+        if case .parse = failure {
+            AppLogger.parse(message, level: .warning)
+        } else {
+            AppLogger.network(message, level: .warning)
+        }
     }
 
     /// Page fetch for 載入更多: books plus the source's own next-page verdict.
@@ -223,10 +336,8 @@ extension BookSourceFetcher {
             return SearchStreamingOutcome(books: filtered, streamed: outcome.streamed)
         }
 
-        return SearchStreamingOutcome(
-            books: try await search(query: query, in: source),
-            streamed: false
-        )
+        let outcome = try await searchOutcome(query: query, in: source)
+        return SearchStreamingOutcome(books: outcome.books, streamed: false, failure: outcome.failure)
     }
 
     /// Legado compatible: filter search results by checkKeyWord (keep only items matching keyword in title/author)
