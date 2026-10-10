@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Bindable private var gs = GlobalSettings.shared
     @State private var showSourceList = false
+    @State private var showRemoteLibraries = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
     @State private var showBackupSync = false
@@ -114,6 +115,13 @@ struct SettingsView: View {
                             title: localized("管理來源配置"),
                             action: { showSourceList = true }
                         )
+
+                        DSSettingsRow(
+                            icon: "externaldrive.connected.to.line.below",
+                            title: localized("遠端書庫"),
+                            action: { showRemoteLibraries = true }
+                        )
+                        .accessibilityIdentifier("settings_remote_libraries")
 
                         DSSettingsRow(
                             icon: "arrow.down.circle.fill",
@@ -233,6 +241,9 @@ struct SettingsView: View {
             .rootTabTitle(localized("設定"), onScroll: .minimizesBar)
             // Back from 外觀主題: its 淺色／深色 preview ends here.
             .onAppear { gs.endAppearanceSlotPreview() }
+            .navigationDestination(isPresented: $showRemoteLibraries) {
+                RemoteLibrarySettingsView()
+            }
             .navigationDestination(isPresented: pushedSourceListBinding) {
                 BookSourceListView(embedsNavigationStack: false)
                     .environmentObject(store)

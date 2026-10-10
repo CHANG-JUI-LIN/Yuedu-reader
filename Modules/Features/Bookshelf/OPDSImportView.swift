@@ -141,6 +141,9 @@ struct RemoteLibraryBrowserView: View {
 struct RemoteLibraryConnectionEditor: View {
     let kind: RemoteLibraryKind
     var connection: RemoteLibraryConnection?
+    /// The page background of the screen that pushed it: the bookshelf's library list, or
+    /// 設定 → 遠端書庫.
+    var surface: AppearancePageBackgroundScope = .bookshelf
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var catalogStore = RemoteLibraryConnectionStore.shared
     @State private var name: String
@@ -152,9 +155,10 @@ struct RemoteLibraryConnectionEditor: View {
     @State private var testResult: String?
     @State private var testTask: Task<Void, Never>?
 
-    init(kind: RemoteLibraryKind, connection: RemoteLibraryConnection? = nil) {
+    init(kind: RemoteLibraryKind, connection: RemoteLibraryConnection? = nil, surface: AppearancePageBackgroundScope = .bookshelf) {
         self.kind = kind
         self.connection = connection
+        self.surface = surface
         _syncProgress = State(initialValue: connection?.syncProgress ?? false)
         _name = State(initialValue: connection?.name ?? "")
         _url = State(initialValue: connection?.url ?? "")
@@ -213,7 +217,7 @@ struct RemoteLibraryConnectionEditor: View {
         .softScrollEdges()
         .navigationTitle(localized(connection == nil ? "新增伺服器" : "編輯伺服器"))
         .toolbarTitleDisplayMode(.inline)
-        .themedAppSurface(for: .bookshelf)
+        .themedAppSurface(for: surface)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: save) {
