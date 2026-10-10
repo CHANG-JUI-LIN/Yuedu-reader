@@ -651,7 +651,7 @@ Each sub-step adds one test file and one commit. A test that fails on unchanged 
 - [x] 0b: `empty` and `failed` are distinct and logged; callers and `SourceHealthStore` unchanged.
 - [x] 0c: the WebDAV view no longer calls the network; behavior and VoiceOver unchanged.
 - [x] 0d: a corrupt custom Explore file is kept aside before any write, or never written over.
-- [ ] 0e: `search.firstResult` in Release Console; baseline recorded.
+- [x] 0e: `search.firstResult` in Release Console; baseline recorded (simulator, see Baseline).
 - [ ] Every step: its own branch from `main`; its tests and the §19 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
 
 ## Follow-ups found while planning
@@ -810,8 +810,22 @@ Branch `unified-library/0b-search-outcome`, one commit on `31ca4ba0` (main with 
 
 ## Baseline: `search.firstResult` (before Phase 4)
 
+Taken 2026-10-10 by the agent at the maintainer's request, not on the maintainer's iPhone.
+
+**Setup** (repeat it exactly for Phase 4's "after"):
+- **Build:** `31ca4ba0`, the 0e span without 0b. The Debug configuration with Release-level optimization (`SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_COMPILATION_MODE=wholemodule GCC_OPTIMIZATION_LEVEL=s`). Not the Release configuration, because its "Crashlytics Upload Symbols" phase would upload simulator dSYMs to Firebase.
+- **Device:** iPhone 18 Pro simulator (iOS 27.0) on the Mac's network.
+- **Sources:** the eight files in `~/Desktop/Test document/RULE`, merged into `book_sources.json`. The app keeps six after de-duplicating by URL: the 光遇, 大灰狼 and 书山 aggregators, 含遇見, 聚合段评, and 起点.
+- **Cache:** 網路設定 →「搜索結果快取天數」 = 0, written to the app container's own preferences. Every line shows `cacheDays=0`.
+- **Driver:** a temporary XCUITest, `BaselineSearchUITests`, not committed. It types into the 搜索 tab and waits for the previous run's rows to disappear before the next search. One app launch; the queries run in table order.
+- **Queries:** Simplified Chinese, because every source is a Simplified Chinese site and search does not fold Traditional into Simplified (0a locks this). 三體 would match nothing.
+
 | Date | Build | Network | Query | `sources=` | Runs (ms) | Median (ms) |
 |---|---|---|---|---|---|---|
-| | | | 三體 | | | |
-| | | | 斗羅大陸 | | | |
-| | | | 凡人修仙傳 | | | |
+| 2026-10-10 | `31ca4ba0`, -O, simulator | Mac host network | 三体 | 6 | 1080, 380, 385 | 385 |
+| 2026-10-10 | `31ca4ba0`, -O, simulator | Mac host network | 斗罗大陆 | 6 | 315, 344, 301 | 315 |
+| 2026-10-10 | `31ca4ba0`, -O, simulator | Mac host network | 凡人修仙传 | 6 | 366, 368, 330 | 366 |
+
+The first run (1080 ms) is the first search after launch, and it includes creating the sources' JS sessions. The other eight runs fall between 301 and 385 ms.
+
+A first attempt the same day measured cache hits, 20–40 ms with `cacheDays=5`, because the cache setting had gone to the simulator's global defaults instead of the app's. It was discarded.
