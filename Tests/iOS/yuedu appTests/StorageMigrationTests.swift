@@ -76,16 +76,20 @@ struct StorageMigrationTests {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
 
-        try fixture.writeLegacy("books_meta.json", contents: "first")
+        // Both must decode: an unreadable legacy index leaves its covers unmoved and the
+        // migration incomplete, so the next launch runs it again by design.
+        let first = "[]"
+        let second = "[ ]"
+        try fixture.writeLegacy("books_meta.json", contents: first)
         StorageMigration.runIfNeeded(userDefaults: fixture.defaults)
-        #expect(fixture.text(at: StorageLocations.booksMetadataFile) == "first")
+        #expect(fixture.text(at: StorageLocations.booksMetadataFile) == first)
 
         // A file reappearing at the legacy path after a completed migration is not
         // picked up: the flag is set, so nothing overwrites the live index.
-        try fixture.writeLegacy("books_meta.json", contents: "second")
+        try fixture.writeLegacy("books_meta.json", contents: second)
         StorageMigration.runIfNeeded(userDefaults: fixture.defaults)
 
-        #expect(fixture.text(at: StorageLocations.booksMetadataFile) == "first")
+        #expect(fixture.text(at: StorageLocations.booksMetadataFile) == first)
         #expect(fixture.legacyExists("books_meta.json"))
     }
 
@@ -123,6 +127,32 @@ struct StorageMigrationTests {
 
         #expect(!fixture.legacyExists("books_meta.json"))
         #expect(fixture.text(at: StorageLocations.booksMetadataFile) == "authoritative")
+    }
+
+    @Test("a cache directory already at the destination is merged into, not taken as moved")
+    func mergesIntoExistingDestinationDirectory() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+
+        // The destination exists the moment anything reads `StorageLocations.onlineCache`
+        // — the migration itself does — and a launch with an incomplete migration may
+        // have written chapters into it. Neither means the legacy chapters were moved.
+        let book = UUID().uuidString
+        let destinationBook = StorageLocations.onlineCache.appendingPathComponent(book, isDirectory: true)
+        try fixture.write("downloaded since", to: destinationBook.appendingPathComponent("1.txt"))
+        try fixture.writeLegacyDirectory("online_cache", file: "\(book)/1.txt", contents: "legacy 1")
+        try fixture.writeLegacyDirectory("online_cache", file: "\(book)/2.txt", contents: "legacy 2")
+        try fixture.writeLegacyDirectory("reading_position", file: "\(book).json", contents: "{\"p\":1}")
+
+        StorageMigration.runIfNeeded(userDefaults: fixture.defaults)
+
+        #expect(!fixture.legacyExists("online_cache"))
+        #expect(!fixture.legacyExists("reading_position"))
+        #expect(fixture.text(at: destinationBook.appendingPathComponent("1.txt")) == "downloaded since")
+        #expect(fixture.text(at: destinationBook.appendingPathComponent("2.txt")) == "legacy 2")
+        let position = StorageLocations.readingPosition.appendingPathComponent("\(book).json")
+        fixture.track(position)
+        #expect(fixture.text(at: position) == "{\"p\":1}")
     }
 
     // MARK: - Helpers
@@ -174,12 +204,9 @@ struct StorageMigrationTests {
 
         func writeLegacyDirectory(_ name: String, file: String, contents: String) throws {
             let directory = documents.appendingPathComponent(name, isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try contents.write(
-                to: directory.appendingPathComponent(file),
-                atomically: true,
-                encoding: .utf8
-            )
+            let url = directory.appendingPathComponent(file)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try contents.write(to: url, atomically: true, encoding: .utf8)
             createdPaths.append(directory)
         }
 
@@ -189,6 +216,11 @@ struct StorageMigrationTests {
                 withIntermediateDirectories: true
             )
             try contents.write(to: url, atomically: true, encoding: .utf8)
+            createdPaths.append(url)
+        }
+
+        /// A path the migration creates that no destination below covers.
+        func track(_ url: URL) {
             createdPaths.append(url)
         }
 

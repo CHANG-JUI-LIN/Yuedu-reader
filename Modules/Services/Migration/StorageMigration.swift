@@ -111,9 +111,23 @@ enum StorageMigration {
     /// - Returns: `true` when there is nothing left to do for this item, whether it
     ///   moved now, moved on an earlier attempt, or never existed.
     private static func move(from source: URL, to destination: URL, fileManager: FileManager) -> Bool {
-        guard fileManager.fileExists(atPath: source.path) else { return true }
+        var sourceIsDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: source.path, isDirectory: &sourceIsDirectory) else { return true }
 
-        if fileManager.fileExists(atPath: destination.path) {
+        var destinationIsDirectory: ObjCBool = false
+        let destinationExists = fileManager.fileExists(atPath: destination.path, isDirectory: &destinationIsDirectory)
+
+        if destinationExists, sourceIsDirectory.boolValue, destinationIsDirectory.boolValue {
+            // A directory at the destination does not mean this one was moved: the
+            // `StorageLocations` getters create their directory on first access, and
+            // `relocations` reads every one of them before the first move. Treating
+            // that empty directory as "already moved" deleted every user's offline
+            // chapters and reading positions instead of moving them. Merge instead —
+            // whatever is already at the destination wins, the rest moves across.
+            return merge(directory: source, into: destination, fileManager: fileManager)
+        }
+
+        if destinationExists {
             // An earlier run already moved this and then failed further down the list,
             // so the new location is authoritative and the source is a stale copy.
             // Removing it is what keeps Documents clean for the Files app.
@@ -141,6 +155,34 @@ enum StorageMigration {
                 "StorageMigration could not move \(source.lastPathComponent)",
                 error: error
             )
+            return false
+        }
+    }
+
+    /// Moves each entry of `source` into `destination` (recursing into directories both
+    /// sides have), then removes `source` once it holds nothing that was not moved.
+    private static func merge(directory source: URL, into destination: URL, fileManager: FileManager) -> Bool {
+        let children: [URL]
+        do {
+            children = try fileManager.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
+        } catch {
+            AppLogger.error("StorageMigration could not list \(source.lastPathComponent)", error: error)
+            return false
+        }
+        var succeeded = true
+        for child in children {
+            succeeded = move(
+                from: child,
+                to: destination.appendingPathComponent(child.lastPathComponent),
+                fileManager: fileManager
+            ) && succeeded
+        }
+        guard succeeded else { return false }
+        do {
+            try fileManager.removeItem(at: source)
+            return true
+        } catch {
+            AppLogger.error("StorageMigration could not remove merged \(source.lastPathComponent)", error: error)
             return false
         }
     }
