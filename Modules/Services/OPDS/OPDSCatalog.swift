@@ -9,11 +9,15 @@ struct OPDSCatalog: Codable, Identifiable, Hashable {
     var sortOrder: Int = 0
     var kind: RemoteLibraryKind = .opds
     var syncProgress: Bool = false
+    /// WebDAV only: whether its book files are indexed in the background (unified library 2d).
+    /// Nil until the reader or the backup-account migration sets it; `OPDSCatalogStore
+    /// .indexesBooks(_:)` resolves it.
+    var indexesBooks: Bool? = nil
 
-    private enum CodingKeys: String, CodingKey { case id, name, url, username, sortOrder, kind, syncProgress }
+    private enum CodingKeys: String, CodingKey { case id, name, url, username, sortOrder, kind, syncProgress, indexesBooks }
 
     init(id: String = UUID().uuidString, name: String, url: String, username: String? = nil,
-         sortOrder: Int = 0, kind: RemoteLibraryKind = .opds, syncProgress: Bool = false) {
+         sortOrder: Int = 0, kind: RemoteLibraryKind = .opds, syncProgress: Bool = false, indexesBooks: Bool? = nil) {
         self.id = id
         self.name = name
         self.url = url
@@ -21,6 +25,7 @@ struct OPDSCatalog: Codable, Identifiable, Hashable {
         self.sortOrder = sortOrder
         self.kind = kind
         self.syncProgress = syncProgress
+        self.indexesBooks = indexesBooks
     }
 
     init(from decoder: Decoder) throws {
@@ -32,6 +37,7 @@ struct OPDSCatalog: Codable, Identifiable, Hashable {
         sortOrder = try values.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
         kind = try values.decodeIfPresent(RemoteLibraryKind.self, forKey: .kind) ?? .opds
         syncProgress = try values.decodeIfPresent(Bool.self, forKey: .syncProgress) ?? false
+        indexesBooks = try values.decodeIfPresent(Bool.self, forKey: .indexesBooks)
     }
 }
 
@@ -43,6 +49,7 @@ final class OPDSCatalogStore: ObservableObject {
     var connections: [RemoteLibraryConnection] { catalogs }
     private let storageURL: URL
     private var clients: [String: RemoteLibraryHTTPClient] = [:]
+    private let defaults: UserDefaults
 
     static let presets: [OPDSCatalog] = [
         OPDSCatalog(name: "Project Gutenberg", url: "https://www.gutenberg.org/ebooks.opds/")
@@ -51,6 +58,7 @@ final class OPDSCatalogStore: ObservableObject {
     init(storageDirectory: URL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!,
          importLegacyWebDAV: Bool = true, defaults: UserDefaults = .standard) {
         storageURL = storageDirectory.appendingPathComponent("opds_catalogs.json")
+        self.defaults = defaults
         if FileManager.default.fileExists(atPath: storageURL.path) {
             do { catalogs = try JSONDecoder().decode([OPDSCatalog].self, from: Data(contentsOf: storageURL)) }
             catch { AppLogger.error("Unable to load remote library connections: \(error)") }
@@ -63,14 +71,28 @@ final class OPDSCatalogStore: ObservableObject {
         if importLegacyWebDAV, !defaults.bool(forKey: "remote_library_webdav_migrated") {
             if let url = defaults.string(forKey: "webdav_url"),
                let normalized = OPDSCatalog.normalizedURL(url, kind: .webDAV) {
-                add(name: normalized.host ?? "WebDAV", url: normalized.absoluteString,
-                    username: defaults.string(forKey: "webdav_username"),
-                    password: defaults.string(forKey: "webdav_password"), kind: .webDAV)
+                var copied = add(name: normalized.host ?? "WebDAV", url: normalized.absoluteString,
+                                 username: defaults.string(forKey: "webdav_username"),
+                                 password: defaults.string(forKey: "webdav_password"), kind: .webDAV)
+                // A backup server the reader never added as a library: not indexed until they
+                // turn it on (maintainer, 2026-10-10).
+                copied.indexesBooks = false
+                update(copied, password: nil)
             }
             // Copy once. Future changes to library connections must never change
             // the synchronization/backup account and vice versa.
             defaults.set(true, forKey: "remote_library_webdav_migrated")
         }
+        // Unified library 2d: a copy of the backup account made before 2d has no indexing flag
+        // and is recognized by matching the backup account. Write its "off" down now, so a later
+        // change to the backup account cannot turn indexing of the backup server on.
+        var settled = false
+        for index in catalogs.indices where catalogs[index].kind == .webDAV && catalogs[index].indexesBooks == nil
+            && isBackupAccountCopy(catalogs[index]) {
+            catalogs[index].indexesBooks = false
+            settled = true
+        }
+        if settled { save() }
     }
 
     @discardableResult
@@ -115,6 +137,24 @@ final class OPDSCatalogStore: ObservableObject {
 
     func remove(atOffsets offsets: IndexSet) {
         for catalog in offsets.map({ catalogs[$0] }) { remove(catalog) }
+    }
+
+    /// Whether a WebDAV connection's books are indexed in the background (unified library 2d).
+    /// Unset means on for a connection the reader added, and off for the one copied from the
+    /// WebDAV backup account. A connection copied before 2d has no flag; it is recognized by
+    /// the backup account's URL and username.
+    func indexesBooks(_ catalog: OPDSCatalog) -> Bool {
+        guard catalog.kind == .webDAV else { return false }
+        if let explicit = catalog.indexesBooks { return explicit }
+        return !isBackupAccountCopy(catalog)
+    }
+
+    func isBackupAccountCopy(_ catalog: OPDSCatalog) -> Bool {
+        guard catalog.kind == .webDAV, defaults.bool(forKey: "remote_library_webdav_migrated"),
+              let backup = defaults.string(forKey: "webdav_url").flatMap({ OPDSCatalog.normalizedURL($0, kind: .webDAV) }),
+              OPDSCatalog.normalizedURL(catalog.url, kind: .webDAV) == backup else { return false }
+        let backupUser = defaults.string(forKey: "webdav_username")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (backupUser?.isEmpty == false ? backupUser : nil) == catalog.username
     }
 
     func password(for catalog: OPDSCatalog) -> String? { KeychainHelper.load(account: Self.keychainAccount(catalog.id)) }

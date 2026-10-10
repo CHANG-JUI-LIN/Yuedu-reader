@@ -151,6 +151,7 @@ struct RemoteLibraryConnectionEditor: View {
     @State private var username: String
     @State private var password: String
     @State private var syncProgress: Bool
+    @State private var indexesBooks: Bool
     @State private var isTesting = false
     @State private var testResult: String?
     @State private var testTask: Task<Void, Never>?
@@ -160,6 +161,9 @@ struct RemoteLibraryConnectionEditor: View {
         self.connection = connection
         self.surface = surface
         _syncProgress = State(initialValue: connection?.syncProgress ?? false)
+        // Unified library 2d: on for a connection the reader adds; an existing one shows what
+        // the store resolves (off for the copy of the WebDAV backup account).
+        _indexesBooks = State(initialValue: connection.map { RemoteLibraryConnectionStore.shared.indexesBooks($0) } ?? true)
         _name = State(initialValue: connection?.name ?? "")
         _url = State(initialValue: connection?.url ?? "")
         _username = State(initialValue: connection?.username ?? "")
@@ -193,6 +197,14 @@ struct RemoteLibraryConnectionEditor: View {
                 SecureField(localized("密碼"), text: $password)
             }
             .interfaceSectionSurface()
+            if kind == .webDAV {
+                Section {
+                    Toggle(localized("在背景建立書籍索引"), isOn: $indexesBooks)
+                } footer: {
+                    Text(localized("只在連接 Wi-Fi 且 App 開著時進行。"))
+                        .dsSectionFooter()
+                }.interfaceSectionSurface()
+            }
             if kind == .calibre {
                 Section {
                     Toggle(localized("回傳至 Calibre 網頁閱讀器"), isOn: $syncProgress)
@@ -240,10 +252,12 @@ struct RemoteLibraryConnectionEditor: View {
             connection.url = url.absoluteString
             connection.username = username.trimmingCharacters(in: .whitespacesAndNewlines)
             connection.syncProgress = syncProgress
+            if kind == .webDAV { connection.indexesBooks = indexesBooks }
             catalogStore.update(connection, password: password)
         } else {
             var added = catalogStore.add(name: name, url: url.absoluteString, username: username, password: password, kind: kind)
             added.syncProgress = syncProgress
+            if kind == .webDAV { added.indexesBooks = indexesBooks }
             catalogStore.update(added, password: nil)
         }
         dismiss()

@@ -56,4 +56,48 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
         app.buttons["Delete"].firstMatch.tap()
         XCTAssertFalse(added.waitForExistence(timeout: 2), "swipe-delete removes it")
     }
+
+    /// Unified library 2d, end to end against a real WebDAV server: a library added in
+    /// Settings is indexed on its own, and its row says so. Opt-in, with
+    /// `TEST_RUNNER_YUEDU_WEBDAV_BENCHMARK_URL` pointing at a server holding `t1k/`
+    /// (1,000 books).
+    @MainActor
+    func testWebDAVLibraryIndexesItself() throws {
+        let key = "YUEDU_WEBDAV_BENCHMARK_URL"
+        let env = ProcessInfo.processInfo.environment
+        guard let server = env[key] ?? env["TEST_RUNNER_" + key] else {
+            throw XCTSkip("Set \(key) to a WebDAV server holding t1k/")
+        }
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        let notNow = app.buttons["Don’t Allow"]
+        if notNow.waitForExistence(timeout: 5) { notNow.tap() }
+        let settingsTab = app.tabBars.buttons["Settings"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 20))
+        settingsTab.tap()
+        let row = app.buttons["settings_remote_libraries"].firstMatch
+        for _ in 0..<4 where !row.exists { app.swipeUp() }
+        row.tap()
+
+        let addRow = app.buttons["remote_library_add_webDAV"].firstMatch
+        XCTAssertTrue(addRow.waitForExistence(timeout: 5))
+        addRow.tap()
+        let url = app.textFields["Server URL"].firstMatch
+        XCTAssertTrue(url.waitForExistence(timeout: 5))
+        url.tap()
+        url.typeText(server + "t1k/")
+        XCTAssertTrue(app.switches["Index Books in Background"].firstMatch.exists, "the toggle is there, on by default")
+        app.navigationBars["Add Server"].buttons["Save"].tap()
+
+        let indexed = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Indexed (1000 books)")).firstMatch
+        XCTAssertTrue(indexed.waitForExistence(timeout: 120), "the library indexes itself and the row says so")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "webdav-indexed"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        indexed.swipeLeft()
+        app.buttons["Delete"].firstMatch.tap()
+    }
 }

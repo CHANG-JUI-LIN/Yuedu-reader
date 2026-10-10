@@ -15,9 +15,9 @@ private enum BookSourceFileImportRoute: Hashable {
 
 // MARK: - Book Source List (Legado Style)
 
+/// Always pushed, never a sheet (CLAUDE.md): it has no navigation stack and no close button of
+/// its own; the pushing stack's back button leaves it.
 struct BookSourceListView: View {
-    var embedsNavigationStack = true
-
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var bookStore: BookStore
     /// Not observed: everything the screen draws from the library comes from `model`, which
@@ -48,7 +48,6 @@ struct BookSourceListView: View {
         DismissalSequencedPresentation<BookSourceImportPresentationRoute>()
     @State private var loginSource: BookSource? = nil
     @State private var variableEditingSource: BookSource? = nil
-    @Environment(\.presentationMode) var dismiss
 
     @State private var showDeleteConfirm = false
     @State private var showMoreMenu = false
@@ -82,12 +81,10 @@ struct BookSourceListView: View {
     /// `store` and `healthChecker` are injectable so scale tests can drive a
     /// 50,000-source library without touching the user's own.
     init(
-        embedsNavigationStack: Bool = true,
         store: BookSourceStore = .shared,
         healthChecker: BookSourceHealthChecker? = nil
     ) {
         let healthChecker = healthChecker ?? .shared
-        self.embedsNavigationStack = embedsNavigationStack
         self.store = store
         _healthChecker = ObservedObject(wrappedValue: healthChecker)
         _model = StateObject(
@@ -156,18 +153,6 @@ struct BookSourceListView: View {
     }
 
     var body: some View {
-        Group {
-            if embedsNavigationStack {
-                NavigationStack {
-                    managementContent
-                }
-            } else {
-                managementContent
-            }
-        }
-    }
-
-    private var managementContent: some View {
         AdaptiveSheetContainer(maxWidth: DSLayout.readableWideWidth) {
                 VStack(spacing: 0) {
                     if model.counts.total == 0 {
@@ -191,14 +176,6 @@ struct BookSourceListView: View {
                 prompt: localized("搜索來源配置")
             )
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss.wrappedValue.dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(localized("關閉"))
-                }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     addSourceToolbarControl
                     Menu {
@@ -1286,6 +1263,8 @@ struct BookSourceListView: View {
 }
 
 #Preview {
-    BookSourceListView()
-        .environmentObject(BookStore())
+    NavigationStack {
+        BookSourceListView()
+    }
+    .environmentObject(BookStore())
 }

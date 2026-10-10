@@ -464,7 +464,7 @@ Phase 2 adds:
 - [x] 2a: one browse path through providers; typed failures; Gutenberg special cases gone.
 - [x] 2b: 設定 → 遠端書庫 manages every connection; book-source management pushed everywhere; bookshelf ＋ unchanged.
 - [x] 2c: row status from a `SourceItemKey` lookup; no per-row scan.
-- [ ] 2d: WebDAV indexed per the maintainer's rules, with measured limits and visible status.
+- [x] 2d: WebDAV indexed per the maintainer's rules, with measured limits and visible status.
 - [ ] 2e: OPF and covers for indexed EPUBs, most incomplete first.
 - [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 2 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
 - [ ] Rollback:
@@ -576,7 +576,7 @@ ruby scripts/check_localizations.rb: OK
 
 ### 2c (2026-10-11)
 
-Branch `unified-library/2c-shelf-status`, on `70300b3e`. Not merged, not pushed.
+Branch `unified-library/2c-shelf-status`, on `70300b3e`. Merged into `main` at `9466ab8f`; not pushed.
 
 - **`CopyLookup`** (`Modules/Services/LibraryStore/CopyLookup.swift`):
   - Maps `SourceItemKey` → copies, built from `readingBooks` with 1a's derivation and plain maps of the connections (no keychain).
@@ -605,4 +605,85 @@ AozoraLibraryDownloadServiceTests:
 ✔ Test run with 173 tests in 28 suites passed after 1.805 seconds; XCTest RemotePDFReaderTests passed
 UI: RemoteLibraryNavigationUITests, PublicLibraryStorefrontUITests (3), PublicLibraryExploreUITests (2),
     RemoteLibrarySettingsUITests: Executed 7 tests, with 0 failures
+```
+
+### 2d (2026-10-11)
+
+Branch `unified-library/2d-webdav-index`, on `9466ab8f`. Merged by the maintainer's standing instruction of 2026-10-11 (merge each step that passes, do not push).
+
+- **Strings:** the seven reviewed strings, in five languages. The maintainer kept 「在背景建立書籍索引」 and the proposed status wording.
+- **`OPDSCatalog.indexesBooks: Bool?`** (decoded with `decodeIfPresent`). `OPDSCatalogStore.indexesBooks(_:)` resolves it:
+  - Unset means on, except for the copy of the WebDAV backup account.
+  - The migration now writes `false` for that copy.
+  - A pre-2d copy is recognized by `isBackupAccountCopy`: the migration flag is set, and the URL and username match `webdav_url` / `webdav_username`. A library the reader added by hand with exactly the backup account's address and user is treated the same way, and they can turn it on.
+- **`NetworkPathMonitor`** (`NWPathMonitor`): background work is allowed on a satisfied path over Wi-Fi or wired that is neither expensive nor constrained. The end-to-end test shows the simulator reports such a path.
+- **`WebDAVIndexer`** crawls breadth-first with `PROPFIND Depth: 1`. Only importable book files become records (1a's derivation), with ETag, date and size.
+  - It saves after each batch. Stop-after-batch is for the background; cancellation is for Wi-Fi lost, setting off, or connection removed.
+  - Outcomes are typed. A failure keeps the frontier, so the next start resumes.
+  - Per-folder `works.webdav.list` spans log only above 500 ms; one `works.webdav.crawl` span per run.
+- **`RemoteRecordStore`** (`Works/remote/<connection id>.json`, owned by `BookStore` as `remoteRecords`):
+  - Serial atomic writes and a revision.
+  - A file that does not decode is discarded; an unreadable one is never written over.
+  - A removed connection is retired, so a crawl's late save cannot bring its file back.
+  - `visibleFiles` is the last complete crawl, updated by the crawl in progress. A file removed on the server leaves only when a crawl completes.
+- **`WebDAVIndexCoordinator`** (`.shared`, attached at launch with the app's store; `setActive` from the scene phase):
+  - It runs one connection at a time, keeps summaries in memory (files are read off main), and publishes `statuses` for 遠端書庫's rows.
+  - **Its own client per run** (`liveLister`): `allowsExpensiveNetworkAccess` and `allowsConstrainedNetworkAccess` are off, and the password is read on main at start.
+  - **Entering the background** sets stop-after-batch under a `BackgroundTaskHold`.
+  - **An authentication failure** stops that connection until the connections change or the app launches again. Deviation: the plan said "until its credentials change", but a password edit leaves `catalogs` equal, so any edit counts.
+  - **A network failure while off Wi-Fi** is recorded as a pause, not a failure.
+- **UI:**
+  - The editor shows the toggle for WebDAV, with its footer.
+  - 遠端書庫's WebDAV rows add the status line, read with the row as one VoiceOver element.
+  - A paused-in-background crawl still shows 正在建立索引, because it resumes on return.
+  - `#Preview` "Row states" shows all five statuses.
+- **Work index:**
+  - `WorkIndexFile` schema 2 adds `remoteInputs`; version-1 files are discarded and rebuilt.
+  - Remote records are entries keyed by their source item, reused when unchanged.
+  - The remote store's revision joins the stale check.
+  - A WebDAV record and the shelf copy of the same file join by `sameSourceItem` (tested).
+- **Measured against a real WebDAV server** (the maintainer: 「你自己測試 webdav」), not the planned in-process `NWListener` fixture:
+  - The server was macOS's own Apache with `mod_dav`/`mod_dav_fs` on `127.0.0.1:8088`, serving synthetic trees from the scratchpad. Nothing was downloaded.
+  - Configuration: iPhone 18 Pro simulator, Debug with `SWIFT_OPTIMIZATION_LEVEL=-O`, final limits.
+
+| Tree | Books / folders | Saves | Crawl | Index file | Load | Work index refresh |
+|---|---|---|---|---|---|---|
+| t1k | 1,000 / 40 | 1 | 81 ms | 340 KB | 7 ms | 85 ms |
+| t5k | 4,953 / 127 | 2 | 393 ms | 1.8 MB | 34 ms | 317 ms |
+| t20k | 20,470 / 2,047 | 21 | 3.5 s (1.7 ms a folder) | 8.5 MB | 146 ms | 1.33 s |
+
+  PROPFIND of one folder took 1.3 ms with 10 children, 3.7 ms with 100, and 25.8 ms with 1,000. A real NAS adds its round trip to every folder.
+  - **Limits** (`WebDAVIndexLimits.standard`), with the reason for each in its doc comment:
+    - **Depth 10:** not measured.
+    - **Batch 100 folders:** with 20, the 20k tree took about 100 whole-file rewrites; 100 takes 21. The batch finished on entering the background is about 3 s at ~30 ms a folder.
+    - **20,000 files:** the work index refresh is 1.3 s at that size.
+    - **Recrawl daily:** not measured.
+  - **Phase 5 note:** a 20k-record refresh is 1.3 s off main. The first caller should refresh once per indexing completion, not per view.
+- **End to end** (`RemoteLibrarySettingsUITests.testWebDAVLibraryIndexesItself`, opt-in by `TEST_RUNNER_YUEDU_WEBDAV_BENCHMARK_URL`):
+  - Add a WebDAV library at `…/t1k/` in Settings. The toggle is on by default.
+  - The row reaches 「Indexed (1000 books)」 on its own within about 20 s (screenshot checked).
+- **Lifecycle, tested after review** (`WebDAVIndexLifecycleTests`, with a lister held mid-folder):
+  - **Background:** entering the background finishes the batch in hand (one folder), records `paused(.background)`, and lists nothing more; returning resumes with the two remaining folders, not the first again.
+  - **Wi-Fi lost** mid-crawl stops at once, records `paused(.notOnWiFi)`, and lists nothing more.
+  - **That test found a bug:** the stop flag is shared, so a crawl stopped for Wi-Fi reported a background pause. The coordinator's stop reason now wins.
+- **The backup copy's "off" is written down at load** (`BackupAccountCopyTests`). A pre-2d copy recognized by the backup account gets `indexesBooks = false`, so a later change to the backup account cannot turn on indexing of the backup server.
+- **Logs:** `AppLogger` writes only an error's `localizedDescription`, which names no path. The failure line adds the URL error code or HTTP status.
+- **Follow-up, not done:** when a connection's URL or user changes, its old records stay visible until the new crawl's first save, up to 100 folders later.
+- **Also on this branch:** `5a1baa9a` removes the close button from book-source management. 2b pushed it everywhere but left the xmark. The page now has no stack or close button of its own, and `PublicLibraryExploreUITests` asserts the close button is gone.
+
+```
+✔ Test run with 50 tests in 7 suites passed (WebDAVIndexerTests, RemoteRecordStoreTests,
+   WebDAVIndexCoordinatorTests, WorkIndexRemoteRecordsTests, WorkIndexServiceTests, WorkIndexTests,
+   RemoteLibraryConnectionTests)
+§19 Phase 2 regression plus 2a–2d suites, WorkIndex*, BookStoreMetadataWriteBudgetTests,
+ICloudSyncChangeDetectionTests, DismissalSequencedPresentationTests:
+✔ Test run with 230 tests in 36 suites passed after 1.816 seconds; XCTest RemotePDFReaderTests passed
+UI (with TEST_RUNNER_YUEDU_WEBDAV_BENCHMARK_URL): RemoteLibrarySettingsUITests (2, end to end included),
+    RemoteLibraryNavigationUITests, PublicLibraryStorefrontUITests (3), PublicLibraryExploreUITests (2),
+    BookSourceManagementUITests: Executed 10 tests, with 1 skipped (the opt-in source-pack test), 0 failures
+ruby scripts/check_localizations.rb: OK
+After the review fixes:
+✔ Test run with 25 tests in 7 suites passed (WebDAVIndexerTests, WebDAVIndexCoordinatorTests,
+   WebDAVIndexLifecycleTests, BackupAccountCopyTests, RemoteRecordStoreTests, WorkIndexRemoteRecordsTests,
+   RemoteLibraryConnectionTests)
 ```
