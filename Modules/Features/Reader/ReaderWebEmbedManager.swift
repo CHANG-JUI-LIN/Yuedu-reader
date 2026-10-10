@@ -1,20 +1,23 @@
 import UIKit
 import WebKit
 
-/// Owns the one live `<iframe>` page the reader is showing (`ReaderWebEmbed`).
+/// Owns the live `<iframe>` pages the reader is showing (`ReaderWebEmbed`).
 ///
 /// Like `EPUBVideoPlaybackManager`, it outlives the page views that show it, so turning back to
-/// the page re-attaches the same page instead of reloading it. Unlike video it keeps a single
-/// live page: an iframe can be anything a web page can be, and two of them running at once is
-/// two sets of audio and scripts. Starting another, closing the book or leaving the app tears
-/// the current one down. WebKit pauses a page's media once its view leaves the window, so a
-/// player page does not keep sounding after its page is turned away — it resumes where it was
-/// when the page comes back.
+/// the page re-attaches the same page instead of reloading it. A web address is tapped open and
+/// kept one at a time: an iframe can be anything a web page can be, and two of them running at
+/// once is two sets of audio and scripts. Starting another, closing the book or leaving the app
+/// tears it down. A page the book source built (`ReaderWebEmbed.inlinePage`) shows as soon as
+/// it is on screen — the source's player is the chapter's content, as its cover would be (user's
+/// choice, 2026-10-10) — so it is not closed by another page starting, and leaving the app only
+/// pauses its media; closing the book closes it. WebKit pauses a page's media once its view
+/// leaves the window, so a player page does not keep sounding after its page is turned away —
+/// it resumes where it was when the page comes back.
 @MainActor
 final class ReaderWebEmbedManager: NSObject {
     static let shared = ReaderWebEmbedManager()
 
-    private var live: (key: String, webView: WKWebView)?
+    private var live: [String: WKWebView] = [:]
 
     private override init() {
         super.init()
@@ -27,13 +30,16 @@ final class ReaderWebEmbedManager: NSObject {
     }
 
     func isActive(_ embed: ReaderWebEmbed) -> Bool {
-        live?.key == embed.key
+        live[embed.key] != nil
     }
 
-    /// The live page for `embed`, loading it on first use (and closing any other live page).
+    /// The live page for `embed`, loading it on first use. Opening a web address closes the
+    /// other web address that was open; pages the source built stay.
     func webView(for embed: ReaderWebEmbed) -> WKWebView {
-        if let live, live.key == embed.key { return live.webView }
-        stopAll()
+        if let webView = live[embed.key] { return webView }
+        if !embed.isSourceBuiltPage {
+            close { key in !ReaderWebEmbed.isSourceBuiltPage(key) }
+        }
 
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
@@ -69,30 +75,41 @@ final class ReaderWebEmbedManager: NSObject {
         } else {
             AppLogger.error("Web embed has no loadable URL", context: ["src": String(embed.src.prefix(160))])
         }
-        live = (embed.key, webView)
+        live[embed.key] = webView
         return webView
     }
 
-    /// Closes the live page. Called when another one starts, when the book closes and when the
-    /// app leaves the foreground.
+    /// Closes every live page. Called when the book closes.
     func stopAll() {
-        guard let live else { return }
-        // `stopLoading` only cancels loading: a player that is already playing keeps playing
-        // (and, with the reader's playback audio session active, keeps sounding in the
-        // background) unless its media is paused and the page itself is replaced.
-        live.webView.pauseAllMediaPlayback()
-        live.webView.stopLoading()
-        live.webView.load(URLRequest(url: URL(string: "about:blank")!))
-        live.webView.navigationDelegate = nil
-        live.webView.uiDelegate = nil
-        live.webView.removeFromSuperview()
-        self.live = nil
-        // Hosts showing it drop their window, or an empty frame would sit over the card.
+        close { _ in true }
+    }
+
+    private func close(where shouldClose: (String) -> Bool) {
+        let closing = live.filter { shouldClose($0.key) }
+        guard !closing.isEmpty else { return }
+        for (key, webView) in closing {
+            // `stopLoading` only cancels loading: a player that is already playing keeps playing
+            // (and, with the reader's playback audio session active, keeps sounding in the
+            // background) unless its media is paused and the page itself is replaced.
+            webView.pauseAllMediaPlayback()
+            webView.stopLoading()
+            webView.load(URLRequest(url: URL(string: "about:blank")!))
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+            webView.removeFromSuperview()
+            live[key] = nil
+        }
+        // Hosts showing them drop their window, or an empty frame would sit over the card.
         NotificationCenter.default.post(name: .readerWebEmbedDidStop, object: self)
     }
 
+    /// A web address closes; a page the source built stays where it is, its media paused —
+    /// on screen it shows without a tap, so closing it would leave an empty card on return.
     @objc private func appDidEnterBackground() {
-        stopAll()
+        for (key, webView) in live where ReaderWebEmbed.isSourceBuiltPage(key) {
+            webView.pauseAllMediaPlayback()
+        }
+        close { key in !ReaderWebEmbed.isSourceBuiltPage(key) }
     }
 }
 

@@ -13,7 +13,9 @@ import Foundation
 /// (起点读书qm's 彩蛋 videos with their 弹幕, user's choice 2026-10-10, after qimo_yuedu's
 /// player page). Such a page loads as the address in the `Referer` its source declared on the
 /// src (`,{"headers":{"Referer":…}}`), so what it requests — the 彩蛋 MP4, which its CDN refuses
-/// without that Referer — is requested from that address (`inlinePage`).
+/// without that Referer — is requested from that address (`inlinePage`). It shows live as soon
+/// as it is on screen, cover and 弹幕 included, without waiting for a tap
+/// (`InlineLiveContent.showsWithoutTap`, user's choice the same day).
 public struct ReaderWebEmbed: Equatable, Sendable {
     /// The page to load: an `http`/`https` URL, or a `data:text/html` page the source built.
     public let src: String
@@ -33,6 +35,14 @@ public struct ReaderWebEmbed: Equatable, Sendable {
 
     /// Identity for the live view and its manager. One page loaded once per `src`.
     var key: String { src }
+
+    /// A page the book source built (`data:text/html`) rather than a web address. Checked on
+    /// every scroll step, so it reads only the scheme; `inlinePage` decodes the page.
+    var isSourceBuiltPage: Bool { Self.isSourceBuiltPage(src) }
+
+    static func isSourceBuiltPage(_ src: String) -> Bool {
+        src.prefix(14).lowercased() == "data:text/html"
+    }
 
     /// The host shown on the card, so the reader can tell a player from an advert before tapping.
     /// A page the source built shows the address it loads as; empty when it declared none.

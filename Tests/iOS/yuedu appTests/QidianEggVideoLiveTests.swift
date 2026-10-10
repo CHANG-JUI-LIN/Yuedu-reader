@@ -75,6 +75,14 @@ struct QidianEggVideoLiveTests {
         let danmu = try #require(page.html.range(of: "var D=").map { String(page.html[$0.upperBound...].prefix(400)) })
         print("⟐ egg.live danmu=\(danmu)")
         #expect(danmu.hasPrefix("[{"))
+        // The cover's caption layer, as qimo_yuedu shows it: 弹幕 count, uploader, the 彩蛋 text.
+        #expect(page.html.contains("条弹幕</div>"))
+        let uploader = try #require(page.html.range(of: #"<span id="uname">"#).map {
+            String(page.html[$0.upperBound...].prefix { $0 != "<" })
+        })
+        print("⟐ egg.live uploader=\(uploader)")
+        #expect(!uploader.isEmpty)
+        #expect(page.html.contains("鄙视链顶端的白真真"))
 
         // The page plays its video only because it loads as m.qidian.com: the CDN answers 403
         // to a request without that Referer.

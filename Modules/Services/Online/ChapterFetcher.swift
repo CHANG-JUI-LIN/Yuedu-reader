@@ -659,8 +659,8 @@ struct ChapterFetcher {
             : text
         output = output.trimmingCharacters(in: .whitespacesAndNewlines)
         if output.isEmpty { return "" }
-        if Self.containsContentImageTag(output) {
-            return Self.preserveImageBearingHTML(output)
+        if Self.containsContentMediaTag(output) {
+            return Self.preserveMediaBearingHTML(output)
         }
         if output.containsMarker("<") {
             // SwiftSoup follows HTML whitespace rules: literal CR/LF inside one block element is
@@ -670,8 +670,8 @@ struct ChapterFetcher {
             output = Self.stripHtmlToText(output)
         } else {
             output = Self.decodeBasicHTMLEntities(output)
-            if Self.containsContentImageTag(output) {
-                return Self.preserveImageBearingHTML(output)
+            if Self.containsContentMediaTag(output) {
+                return Self.preserveMediaBearingHTML(output)
             }
         }
         while output.containsMarker("\n\n\n") {
@@ -680,14 +680,19 @@ struct ChapterFetcher {
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func containsContentImageTag(_ text: String) -> Bool {
+    /// Content that is not text: an image, a video, an audio or an `<iframe>` page. A chapter
+    /// made of nothing else is still a chapter — 起点读书qm（行內影片）'s 彩蛋 is its player page
+    /// alone — so these keep their markup instead of being stripped to an empty string.
+    private static func containsContentMediaTag(_ text: String) -> Bool {
         text.range(
-            of: #"<\s*(?:img|image)\b"#,
+            of: #"<\s*(?:img|image|video|audio|iframe)\b"#,
             options: [.regularExpression, .caseInsensitive]
         ) != nil
     }
 
-    private static func preserveImageBearingHTML(_ html: String) -> String {
+    /// `<iframe>` stays, as it does in the render path: the reader shows it as a video or an
+    /// in-place page (`ReaderWebEmbed`).
+    private static func preserveMediaBearingHTML(_ html: String) -> String {
         var output = html.replacingOccurrences(of: "\u{00A0}", with: " ")
         // Each case-insensitive replace walks the whole document; only pay for the ones present.
         for (entity, replacement) in [("&nbsp;", " "), ("&ensp;", " "), ("&emsp;", " "), ("&thinsp;", "")]
@@ -695,12 +700,12 @@ struct ChapterFetcher {
             output = output.replacingOccurrences(of: entity, with: replacement, options: .caseInsensitive)
         }
         output = output.replacingOccurrences(
-            of: #"(?is)<(script|style|noscript|iframe|object|embed)\b[^>]*>.*?</\1\s*>"#,
+            of: #"(?is)<(script|style|noscript|object|embed)\b[^>]*>.*?</\1\s*>"#,
             with: "",
             options: .regularExpression
         )
         output = output.replacingOccurrences(
-            of: #"(?is)<(script|style|noscript|iframe|object|embed)\b[^>]*>"#,
+            of: #"(?is)<(script|style|noscript|object|embed)\b[^>]*>"#,
             with: "",
             options: .regularExpression
         )

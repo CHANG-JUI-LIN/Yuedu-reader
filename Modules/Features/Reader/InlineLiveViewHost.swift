@@ -24,6 +24,14 @@ enum InlineLiveContent {
         }
     }
 
+    /// Shows live as soon as it is on screen, without a tap: a page the book source built
+    /// (`ReaderWebEmbed.isSourceBuiltPage`) is the chapter's own content, its player with cover and
+    /// 弹幕 (user's choice, 2026-10-10). A web address still waits for the reader's tap.
+    var showsWithoutTap: Bool {
+        if case .web(let embed) = self { return embed.isSourceBuiltPage }
+        return false
+    }
+
     /// The live content a rendered attachment stands for, if any.
     init?(_ attachment: CoreTextPaginator.RenderedAttachment) {
         if let media = attachment.mediaAttachment, media.kind == .video {
@@ -86,7 +94,7 @@ final class InlineLiveViewHost {
             detach(key: key)
         }
         pruneInactive()
-        for item in visible where item.content.isActive {
+        for item in visible where item.content.isActive || item.content.showsWithoutTap {
             embed(item.content, frame: item.frame)
         }
     }

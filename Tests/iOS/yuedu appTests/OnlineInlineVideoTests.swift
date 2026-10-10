@@ -166,7 +166,28 @@ struct OnlineInlineVideoTests {
         #expect(embed.inlinePage?.html == html)
         #expect(embed.inlinePage?.baseURL?.absoluteString == "https://book.example/chapter/1")
         // A web address is loaded by URL, never as an inline page.
-        #expect(ReaderWebEmbed(src: "https://player.example/embed/42", title: nil, referer: nil).inlinePage == nil)
+        let address = ReaderWebEmbed(src: "https://player.example/embed/42", title: nil, referer: nil)
+        #expect(address.inlinePage == nil)
+
+        // The source's own page shows without a tap; a web address waits for one.
+        #expect(InlineLiveContent.web(embed).showsWithoutTap)
+        #expect(!InlineLiveContent.web(address).showsWithoutTap)
+    }
+
+    @Test("a chapter that is only a video, an audio or an iframe page is content, not an empty chapter")
+    func mediaOnlyChapterIsNotEmpty() async {
+        // 起点读书qm（行內影片）'s 彩蛋 is its player page alone once the caption moved into it;
+        // only images used to count, so it failed as `.emptyContent`.
+        for body in [
+            #"<iframe title="彩蛋视频" width="720" height="405" src="data:text/html;base64,PHA+aGk8L3A+"></iframe>"#,
+            #"<video controls src="https://cdn.example/clip.mp4"></video>"#,
+            #"<audio controls src="https://cdn.example/clip.mp3"></audio>"#,
+        ] {
+            let content = await ChapterFetcher.shared.resolveContent(
+                parsed: ChapterParsePayload(content: body, title: "彩蛋章", sourceMatched: true, isPay: false)
+            )
+            #expect(content.contains(body.prefix(7)), "\(body.prefix(7)) chapter resolved to \(content.debugDescription)")
+        }
     }
 
     @Test("a 1×1 tracking iframe does not become a card")
