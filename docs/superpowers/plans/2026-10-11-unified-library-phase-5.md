@@ -456,3 +456,29 @@ Not drawn in the app yet: 5c-3 puts them on the new root. Branch `unified-librar
   - The suites in `SourceProviderTests.swift`, and `BookshelfCoverArtworkTests`: 21 tests in 7 suites passed.
   - After the shared reading status, `HomeCardTests` with the §19 Phase 5 row (`ExploreModeTests`, `PublicLibraryAvailabilityTests`, `CustomExplorePageTests`, `ExploreNavigationAndMetadataTests`): 20 tests in 5 suites passed.
 - **For 5c-3:** Step 2's 我的書庫 also lists shelf groups, custom pages, the browser and, after 5g, 訂閱. `HomeModel.Tile` is built from providers only, so the model cannot produce those tiles yet; 5c-3 adds them.
+
+### 5c-4: 「相關」 and the one work index (2026-10-11)
+
+Branch `unified-library/5c4-related`. Open decision 5 (cross-source too) and decision 6.
+
+- **One owner, app-wide:** `BookStore.workIndex`, beside the stores the index is built from. Decision 6 says the home holds it, but 5f opens 作品詳情 from the bookshelf, and with 使用舊版探索頁 on the new home is never drawn. So the shelf's store holds it instead.
+- **Refreshed when read, not on change.** Every reading-position save bumps `BookStore.mutationRevision`, so refreshing on a shelf change would rebuild on every page turn. A reader calls `WorkIndexService.current()`:
+  - one refresh runs at a time; a caller arriving during it waits for it and one more run;
+  - the first refresh waits until the book-source library is read;
+  - a refresh dropped because the shelf changed mid-build is not retried. The last index stands, and the next caller refreshes, so the row can be one shelf change behind.
+- **Series in the index:** each entry keeps a `seriesKey`, from the copy's sidecar or the WebDAV file's metadata, by `MetadataResolver`'s precedence (the reader's override and lock left out, as from the whole index). It never merges works. `WorkIndexFile` is now schema 3; an older file is discarded and rebuilt.
+- **What 相關 shows** (`RelatedWorks.pick`), seeded by exactly the copies 繼續閱讀 shows and never repeating them:
+  1. the seeds' works from elsewhere: another edition, or a WebDAV file of the same work. Not the file a seed was downloaded from.
+  2. other works of a seed's series;
+  3. other works by a seed's authors.
+  Steps 2 and 3 show one card a work, a shelf copy before a file. A reading record taken off the shelf is never shown. Nothing opened, nothing shown, and the row is hidden.
+- **"Across sources" means the shelf and the WebDAV index** in v1. OPDS, Gutenberg, Aozora and book-source items are not in the work index.
+- **Not on any default page:** `HomePageDefaults` has no 相關 section, so this changes nothing on screen until a reader adds one (5d's editor). Adding it to the defaults is the maintainer's call.
+- **One mapping of an indexed file:** `WebDAVProvider.item(for:root:connectionID:)`, shared by 「最新」 and 「相關」. Files come from the index's memory (`indexedFiles`), not read again.
+- **Measured** (`RelatedRowTests.atScale`, simulator, Debug): 20,000 indexed files (a quarter with a series), 300 shelf copies, 20 opened.
+  - First load, building the index from nothing (every reader's first launch with schema 3): 2,841 ms, off the main actor.
+  - Next load (index current; the WebDAV files read again and compared): 307 ms.
+  - The pick alone: 44 ms.
+  - Longest main-actor stall during both loads: 17.6 ms.
+- **Tests:** `RelatedWorksTests` (3) and `RelatedRowTests` (6), with `WorkIndexTests`, `WorkIndexServiceTests`, `WorkIndexRemoteRecordsTests`, `WebDAVFillIntegrationTests`, `WebDAVMetadataFillerTests`, `MetadataResolverTests`, `HomeModelTests`, `LocalHomeRowTests`, `ShelfProviderTests` and `HomeCardTests`: 72 tests in 12 suites passed.
+- **For the maintainer:** whether 相關 grows from every 繼續閱讀 copy (as built) or only the latest one.

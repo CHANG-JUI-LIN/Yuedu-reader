@@ -7,8 +7,8 @@ import Foundation
 /// - Rows are built only after the book-source library is read, so a cold launch never shows
 ///   a source as deleted.
 /// - 「最新」 expands into one row per source that serves it; every other section is served by
-///   the first provider that takes it. A section nothing serves (a removed connection, 相關
-///   before it is decided, a binding from a later build) has no row.
+///   the first provider that takes it. A section nothing serves (a removed connection, a
+///   binding from a later build) has no row.
 /// - A row loads when its view asks: book-source rows one at a time per source, Gutenberg's
 ///   only when the reader asks, bundled and on-device rows at once.
 @MainActor
