@@ -647,7 +647,7 @@ Each sub-step adds one test file and one commit. A test that fails on unchanged 
 
 ## Acceptance (Phase 0)
 
-- [ ] 0a: six characterization suites; no production diff; gaps recorded.
+- [x] 0a: six characterization suites; no production diff; gaps recorded (see What landed).
 - [ ] 0b: `empty` and `failed` are distinct and logged; callers and `SourceHealthStore` unchanged.
 - [ ] 0c: the WebDAV view no longer calls the network; behavior and VoiceOver unchanged.
 - [ ] 0d: a corrupt custom Explore file is kept aside before any write, or never written over.
@@ -667,6 +667,32 @@ Not part of Phase 0. Listed so the maintainer can decide.
 ## What landed
 
 _Fill in per step: commit, test verdict lines, surprises, and anything left undone._
+
+### 0a (2026-10-10)
+
+Branch `unified-library/0a-characterization`, six commits on `772b0c95`: `dabdee71`, `1f320e79`, `86bf45e8`, `34ab13c4`, `d6a097f4`, `26938459`. Test files only; `git diff main --stat -- Modules Targets` is empty. Not merged, not pushed.
+
+Evidence (`scripts/xctest.sh`, iPhone 18 Pro, iOS 27.0, in a worktree with its own DerivedData, after the last edit):
+
+```
+✔ Test run with 23 tests in 4 suites passed after 1.240 seconds.
+   (SearchKeyCharacterizationTests, SearchAggregatorCharacterizationTests,
+    BookOriginSearchServiceTests, OnlineCoverSearchServiceTests)
+✔ Test run with 32 tests in 5 suites passed after 0.175 seconds.
+   (CustomExplorePageModelTests, DiscoverViewModelReloadTests, DiscoverKindsCacheTests,
+    plus the existing CustomExplorePageTests and ExploreSettingsTests)
+✔ Test run with 8 tests in 1 suite passed after 0.033 seconds.   (ChangeSourceMatchTests)
+```
+
+Every new test passed on unchanged code the first time; no expectation had to be corrected.
+
+Behavior the tests now lock that the audit did not mention:
+- `OnlineCoverSearchService` keeps a remote title that the local title merely contains, so 「三」 passes for 「三體」.
+- `DiscoverKindsCache.key` gives the same key for no variable and an empty one, and joins its inputs with an unescaped `|`, so `("a|b", "c")` and `("a", "b|c")` collide.
+- `CustomExplorePageModel.sync` rebuilds an edited block with new section ids (`DiscoverCardItem.id` is a fresh `UUID`), while an unchanged block keeps its ids.
+- A `DiscoverViewModel.reload` maps fresh items, so every section gets a new id and starts over, even from the cache.
+
+Left undone, as planned (decision 2): loading, failure and paging for `CustomExplorePageModel` and `DiscoverViewModel`. The optional invalid-URL failure test in 0a.4 was not attempted, because it could not be shown to stay offline.
 
 ## Baseline: `search.firstResult` (before Phase 4)
 
