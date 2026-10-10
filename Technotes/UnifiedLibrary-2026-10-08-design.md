@@ -302,6 +302,18 @@ protocol HomeSectionProviding: SourceProvider {
     var loadPolicy: SectionLoadPolicy { get }
     func load(_ binding: HomeSectionBinding, page: Int) async throws -> HomeSectionPage
 }
+
+/// 2026-10-10 新增（§14.3）：只提供閱讀進度的平台，例如 KOReader 同步伺服器。
+/// 外部進度是「概略位置」，不能直接當成 Yuedu 的 (spineIndex, charOffset)。
+protocol ProgressSyncing: SourceProvider {
+    func remoteProgress(for copy: SourceItemKey) async throws -> ExternalProgress?
+    func push(_ progress: ExternalProgress, for copy: SourceItemKey) async throws
+}
+
+/// 2026-10-10 新增（§14.3）：提供筆記與劃線的平台。匯入後與 Yuedu 的書籤分開標示出處。
+protocol AnnotationSyncing: SourceProvider {
+    func annotations(for copy: SourceItemKey) async throws -> [ExternalAnnotation]
+}
 ```
 
 `Acquisition` 不另立協定：取得動作仍由既有服務執行，provider 只回報有哪些 `AcquisitionOption`。執行的服務如下：
@@ -819,6 +831,12 @@ Jellyfin 是從 Emby 分出來的開源專案。
 - **不要求伺服器：** 跨來源聚合、去重與補資料都在 App 內完成（Phase 1、3）。這是與自架伺服器類產品（例如 BookOrbit）的定位差異：使用者連接現成的書庫，而不是先建一座書庫。
 - **介面詞彙：** 畫面上不出現 provider、protocol、metadata 等詞；名稱照 `docs/design.md` 與現有字串。
 
+### 13.7 探索成為第一個分頁（2026-10-10 記錄）
+
+- **方向已定：** 探索首頁會成為第一個分頁，書架移到它後面。每個來源是一個模組，在首頁以自己的欄目呈現，版面與參數照 §13.3 由使用者自訂。
+- **對誰生效，還沒定：** 維護者決定等 Phase 5 的封面牆實際可用時再決定（新安裝、全部使用者，或可在設定切換）。在那之前分頁順序不變。
+- **跟著要改的東西：** `docs/design.md` 與 `CLAUDE.md` 的分頁根白名單與順序、`RootTabItem` 的預設順序與 `gs.visibleRootTabs` 的遷移、所有寫死「第一個分頁是書架」的 UI 測試。
+
 ## 14. 統一作品詳情與模組系統的前置條件
 
 ### 14.1 作品詳情
@@ -875,6 +893,31 @@ Jellyfin 是從 Emby 分出來的開源專案。
 - 以訂閱網址安裝，比照 Legado 的網路導入與 Forward 的 `.fwd`。
 - manifest 帶 `requiredVersion`，版本不符就拒絕安裝。
 - 每個模組有自己獨立的儲存，比照 Forward 的 `Widget.storage`；移除模組時一併清除。
+
+### 14.3 整合平台：不只提供正文的來源（2026-10-10 新增）
+
+「來源」不只代表能提供正文的書源。有些平台只提供推薦、書架、筆記或閱讀進度。它們照 D7 只實作自己有的能力，介面仍只針對「使用者要做什麼」設計一次：探索與搜尋、作品詳情、個人書庫、繼續閱讀、閱讀進度與筆記、可用的閱讀方式。
+
+兩條長期工程：
+
+- **Unified Library（本文件 Phase 0–5）：** 作品身分、來源、書庫、搜尋、探索與 Metadata。**先完成。**
+- **Integration Platform：** 接入外部服務、相容協定、模組執行、同步與認證。建立在 Unified Library 之上，之後持續增加服務。
+
+新增兩個能力協定（§5 草案）：`ProgressSyncing`、`AnnotationSyncing`。
+
+候選服務。都還沒查證或審查，列入前要先完成 §17 第 18–20 項：
+
+| 服務 | 可能提供的能力 | 限制與待確認 |
+|---|---|---|
+| KOReader 同步伺服器 | `ProgressSyncing` | 同步協定公開，但它以文件雜湊識別書、以自己的位置表示法記錄進度；要做位置映射，不能把百分比當成精確段落。 |
+| 微信讀書 | 書目、搜尋、Metadata、推薦、書架、筆記、進度 | 據說有面向 AI Agent 的官方 API，本文件尚未查證。第三方商用 App 是否允許整合、範圍為何，都需確認；正文不在範圍內，閱讀以跳轉微信讀書處理。 |
+| Kindle | DRM-free 已購書的匯入 | 沒有確認可用的通用書庫 API；只考慮使用者自己下載的 DRM-free EPUB／PDF，走既有匯入。 |
+
+規則：
+
+- **外部進度是概略位置：** 只能用來提示「另一個閱讀器讀到大約這裡」，由使用者確認是否跳轉；不覆寫 Yuedu 的精確位置（§6、〈審計〉§6）。
+- **每個整合各自負責：** 資料轉換、認證、同步與錯誤處理在 adapter 內；失敗區分 `empty` 與 `failed`，不吞錯。
+- **原生 adapter 與第三方模組遵守同一套能力規範**（§14.2）。
 
 ## 15. 遷移步驟
 
@@ -1153,6 +1196,10 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
     - 瀏覽單一來源時：預設「優先」。
     - 版本排序：依 §13.3 的建議表。
     - 「聚合所有啟用的來源」：維持設計的預設開啟，與 Rex 相同；維護者未另外表示。
+18. **KOReader 進度同步（§14.3）：** 是否要做？位置映射的精度要求為何（只提示章節，或要對到段落）？
+19. **微信讀書（§14.3）：** 先查證官方 API 是否存在，以及第三方 App 的授權與使用範圍；確認前不實作。
+20. **Kindle（§14.3）：** 是否只做「DRM-free 已購書的匯入引導」，不嘗試任何書庫存取？
+21. **探索成為第一個分頁（§13.7）：** 對誰生效，等 Phase 5 封面牆可用時決定。
 
 ## 18. 風險
 
@@ -1210,3 +1257,8 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
 4. §15 新增「2026-10-10 起的順序」：先探索首頁封面牆，後統一搜尋；新增 Phase 2d WebDAV 背景建索引。
 5. §17 第 10 項定案：WebDAV 建索引預設開啟，有上限，可關閉。§2 的對照表同步更新。
 6. Phase 1 的 1a 新增一個字串「遠端書庫」，用於連線已刪除的遠端副本（維護者同意）。
+
+同日稍後，維護者補充（Yuedu 與內容平台解耦）：
+
+7. 新增 §13.7：探索會成為第一個分頁，每個來源以模組欄目在首頁自訂呈現；對誰生效留到 Phase 5 決定（§17 第 21 項）。
+8. 新增 §14.3 整合平台：Unified Library 先、Integration Platform 後；新增 `ProgressSyncing`、`AnnotationSyncing` 能力協定；KOReader、微信讀書、Kindle 列為待查證的候選（§17 第 18–20 項）。
