@@ -22,7 +22,7 @@ struct HomeCardContent: Identifiable {
     let title: String
     let author: String
     let cover: Cover
-    /// The Emby line: 已加入書架, 已下載, or how far a shelf copy is read.
+    /// The Emby line: 已加入書架, 已下載, or a shelf copy's 新增 or how far it is read.
     let detail: String?
     /// How far a shelf copy is read, for the bar along its cover; nil when unread or finished.
     let progress: Double?
@@ -47,9 +47,9 @@ struct HomeCardContent: Identifiable {
         if case .copy(let bookID) = opening, let book = shelfBooks[bookID] {
             cover = .shelf(book)
             let read = book.currentPosition
-            detail = read >= 0.99 ? localized("已讀完") : String(format: localized("已讀 %d%%"), Int(read * 100))
+            detail = BookshelfAccessibility.readingStatus(for: book)
             progress = read > 0 && read < 0.99 ? read : nil
-            // Read exactly as the shelf reads the book.
+            // Read exactly as the shelf reads the book, how far it is read included.
             accessibilityLabel = BookshelfAccessibility.description(for: book)
             accessibilityValue = ""
             return
@@ -77,7 +77,7 @@ struct HomeCardContent: Identifiable {
     var publicLibraryBookID: String? {
         switch opening {
         case .gutenberg(let book): PublicLibraryBook.gutenberg(book).id
-        case .aozora(let work): "aozora:" + work.id
+        case .aozora(let work): PublicLibraryBook.aozoraID(work)
         default: nil
         }
     }
@@ -122,7 +122,7 @@ struct HomeBookCard: View {
         .contentShape(Rectangle())
     }
 
-    /// Hidden from VoiceOver: the card's value already says how far the book is read.
+    /// Hidden from VoiceOver: the card's label already says how far the book is read.
     private func progressBar(_ progress: Double) -> some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {

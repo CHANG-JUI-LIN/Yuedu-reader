@@ -62,7 +62,11 @@ struct HomeCardTests {
         let finished = try card(at: 1)
         #expect(finished.detail == localized("已讀完"))
         #expect(finished.progress == nil)
-        #expect(try card(at: 0).progress == nil)
+        // Never opened: the shelf's 新增, not 「已讀 0%」.
+        let new = try card(at: 0)
+        #expect(new.detail == localized("新增"))
+        #expect(new.progress == nil)
+        #expect(new.detail == BookshelfAccessibility.readingStatus(for: ReadingBook(title: "x", contentFilename: "x.txt")))
     }
 
     @Test("a library item says its copy's status, and VoiceOver reads author, source and status")
