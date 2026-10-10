@@ -2482,6 +2482,7 @@
 "建立資料夾" = "Create folder";
 "正在更新遠端書庫" = "Updating remote library";
 "管理遠端書庫" = "Manage remote library";
+"遠端書庫" = "Remote Library";
 "遠端書庫已更新" = "Remote library updated";
 "操作已取消，請重新整理書庫確認伺服器狀態" = "Operation cancelled. Refresh the library to check the server's state.";
 "檔案名稱" = "File name";

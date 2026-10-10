@@ -1056,11 +1056,11 @@ class BookStore: ObservableObject, BookProvider {
     /// key lets those source variants coexist, matching the MD3 shelf model,
     /// while repeated opens of the same source reuse one shelf item.
     func onlineBook(sourceId: UUID?, bookInfoURL: String?, onShelf: Bool = true) -> ReadingBook? {
-        let urlKey = Self.onlineBookURLKey(bookInfoURL)
+        let urlKey = OnlineBookURLKey.normalize(bookInfoURL)
         guard !urlKey.isEmpty else { return nil }
         return records.first { book in
             guard book.isInBookshelf == onShelf, book.isOnline, book.bookSourceId == sourceId else { return false }
-            return Self.onlineBookURLKey(book.bookInfoURL ?? book.source) == urlKey
+            return OnlineBookURLKey.normalize(book.bookInfoURL ?? book.source) == urlKey
         }
     }
 
@@ -3041,16 +3041,6 @@ class BookStore: ObservableObject, BookProvider {
 
     private func normalizedOnlineValue(_ value: String?) -> String {
         Self.normalizedOnlineValue(value)
-    }
-
-    private static func onlineBookURLKey(_ raw: String?) -> String {
-        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else { return "" }
-        if var components = URLComponents(string: trimmed) {
-            components.fragment = nil
-            return (components.string ?? trimmed).lowercased()
-        }
-        return trimmed.lowercased()
     }
 
     /// - Parameter preservingExistingTail: keep chapters the refreshed list does not reach.
