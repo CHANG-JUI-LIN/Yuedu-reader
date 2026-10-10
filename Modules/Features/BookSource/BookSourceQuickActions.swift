@@ -96,7 +96,7 @@ extension View {
                 }
             }
             .confirmationDialog(
-                localized("刪除書源"),
+                localized("刪除來源配置"),
                 isPresented: Binding(
                     get: { pendingDeletion.wrappedValue != nil },
                     set: { if !$0 { pendingDeletion.wrappedValue = nil } }

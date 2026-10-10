@@ -75,7 +75,7 @@ struct LanServerView: View {
                 Section {
                     endpointRow(method: "GET", path: "/", description: localized("書架列表"))
                     endpointRow(method: "GET", path: "/book/:id", description: localized("書籍詳情"))
-                    endpointRow(method: "GET", path: "/api/sources", description: localized("書源列表"))
+                    endpointRow(method: "GET", path: "/api/sources", description: localized("來源配置列表"))
                     endpointRow(method: "GET", path: "/health", description: localized("健康檢查"))
                 } header: {
                     Text(localized("可用接口"))

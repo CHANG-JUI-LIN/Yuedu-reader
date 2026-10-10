@@ -78,7 +78,7 @@ struct CustomExploreComponent: Codable, Hashable, Identifiable, Sendable {
             case .grid: "兩排、每排五本的封面"
             case .carousel: "只有封面，左右滑動"
             case .pagedRanking: "一個榜單分成每欄四本，左右翻頁"
-            case .multiCategoryRanking: "同一書源的幾個分類，用標籤切換"
+            case .multiCategoryRanking: "同一來源配置的幾個分類，用標籤切換"
             case .waterfall: "三欄卡片，往下捲會一直載入"
             }
         }

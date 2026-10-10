@@ -153,7 +153,7 @@ struct SourceValidationListHeader: View {
                 .accessibilityHidden(true)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(localized("書源排列方式"))
+        .accessibilityLabel(localized("來源配置排列方式"))
         .accessibilityValue(localized(grouped ? "分組顯示" : "不分組"))
         .accessibilityHint(localized("點兩下切換分組與不分組"))
     }

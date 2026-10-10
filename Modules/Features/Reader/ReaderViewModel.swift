@@ -421,7 +421,7 @@ final class ReaderViewModel: ObservableObject {
         else {
             throw NSError(
                 domain: "ReaderViewModel", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: localized("找不到書源")])
+                userInfo: [NSLocalizedDescriptionKey: localized("找不到來源配置")])
         }
         // A search result almost never carries a tocUrl: it belongs to the book's
         // DETAIL page, so `parseSearchResults` leaves it empty on purpose (an empty
@@ -488,7 +488,7 @@ final class ReaderViewModel: ObservableObject {
             ])
             throw NSError(
                 domain: "ReaderViewModel", code: -2,
-                userInfo: [NSLocalizedDescriptionKey: localized("此書源取不到目錄")])
+                userInfo: [NSLocalizedDescriptionKey: localized("此來源配置取不到目錄")])
         }
         cacheSearchTOC(package, forKey: key)
         return package

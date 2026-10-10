@@ -85,7 +85,7 @@ final class BookSourceDeepLinkHandler: ObservableObject {
         do {
             let (data, _) = try await URLSession.shared.data(from: sourceURL)
             guard !data.isEmpty else {
-                phase = .failed(message: localized("無法讀取書源資料"))
+                phase = .failed(message: localized("無法讀取來源配置資料"))
                 return
             }
             let ext = sourceURL.pathExtension.isEmpty ? "json" : sourceURL.pathExtension

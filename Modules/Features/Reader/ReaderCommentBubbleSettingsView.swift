@@ -40,7 +40,7 @@ struct ReaderCommentBubbleSettingsView: View {
                 Text(localized("顯示偏好"))
                     .foregroundStyle(DSColor.textSecondary)
             } footer: {
-                Text(localized("開啟後優先使用選取的氣泡樣式；關閉後依書源提供的 SVG 顯示。"))
+                Text(localized("開啟後優先使用選取的氣泡樣式；關閉後依來源配置提供的 SVG 顯示。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()

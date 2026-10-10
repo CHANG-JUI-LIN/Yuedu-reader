@@ -170,7 +170,7 @@ struct BookSourceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(source.bookSourceName.isEmpty
-                        ? localized("未命名書源") : source.bookSourceName)
+                        ? localized("未命名來源配置") : source.bookSourceName)
                         .font(DSFont.toolbarIcon)
                         .foregroundColor(source.enabled ? .primary : .secondary)
                         .lineLimit(1)
@@ -249,7 +249,7 @@ struct BookSourceRow: View {
             Button {
                 actions.test(source)
             } label: {
-                Label(localized("測試書源"), systemImage: "stethoscope")
+                Label(localized("測試來源配置"), systemImage: "stethoscope")
             }
             Button {
                 actions.edit(source)
@@ -267,7 +267,7 @@ struct BookSourceRow: View {
                 actions.toggleSelection(source.id)
             } label: {
                 Label(
-                    localized(isSelected ? "取消選取" : "選取此書源"),
+                    localized(isSelected ? "取消選取" : "選取此來源配置"),
                     systemImage: isSelected ? "checkmark.circle.fill" : "checkmark.circle")
             }
             Divider()
@@ -290,9 +290,9 @@ struct BookSourceRow: View {
             }
             Divider()
             BookSourceExportShareLink(
-                label: localized("匯出書源檔案"),
+                label: localized("匯出來源配置檔案"),
                 filenameLabel: source.bookSourceName.isEmpty
-                    ? localized("未命名書源") : source.bookSourceName,
+                    ? localized("未命名來源配置") : source.bookSourceName,
                 sources: { [source] },
                 onHandoff: actions.export
             )
@@ -348,7 +348,7 @@ struct BookSourceRow: View {
     /// The row's VoiceOver name: 書源名稱（分組）, matching the first visible line.
     private var accessibilityLabel: String {
         let name = source.bookSourceName.isEmpty
-            ? localized("未命名書源")
+            ? localized("未命名來源配置")
             : source.bookSourceName
         guard !source.bookSourceGroup.isEmpty else { return name }
         return "\(name)（\(source.bookSourceGroup)）"
@@ -397,7 +397,7 @@ struct BookSourceRow: View {
         Button(localized("查看詳情")) {
             actions.showInfo(source)
         }
-        Button(localized("測試書源")) {
+        Button(localized("測試來源配置")) {
             actions.test(source)
         }
         Button(localized("編輯")) {
@@ -595,10 +595,10 @@ private let previewActions = BookSourceRowActions(
     pinToBottom: { _ in }, unpin: { _, _ in }, delete: { _ in }
 )
 
-#Preview("書源列") {
+#Preview("來源配置列") {
     List {
         BookSourceRow(
-            source: previewSource(name: "示例書源", group: "常用"),
+            source: previewSource(name: "示例來源配置", group: "常用"),
             isSelected: false, pin: nil, health: nil, defaultGroupName: "默認分組",
             actions: previewActions
         )

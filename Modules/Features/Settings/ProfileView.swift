@@ -108,10 +108,10 @@ struct SettingsView: View {
                     // 書架顯示 (每列欄數, 預設封面) lives in 外觀主題's 介面 since 2026-09-29.
 
                     // ── Book Source Management ──
-                    Section(header: Text(localized("書源管理")).foregroundStyle(DSColor.textSecondary)) {
+                    Section(header: Text(localized("來源配置管理")).foregroundStyle(DSColor.textSecondary)) {
                         DSSettingsRow(
                             icon: "books.vertical.fill",
-                            title: localized("管理書源"),
+                            title: localized("管理來源配置"),
                             action: { showSourceList = true }
                         )
 
@@ -504,7 +504,7 @@ private struct AboutSupportView: View {
                 Text(localized("政策與協議"))
                     .foregroundStyle(DSColor.textSecondary)
             } footer: {
-                Text(localized("使用書源、第三方服務與未來付費功能前，請先閱讀相關條款。"))
+                Text(localized("使用來源配置、第三方服務與未來付費功能前，請先閱讀相關條款。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()

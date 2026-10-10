@@ -24,10 +24,10 @@ actor LegadoReviewActionRunner {
         var errorDescription: String? {
             switch self {
             case .sourceUnavailable:
-                return localized("找不到這則段評所屬的書源，可能已被刪除。")
+                return localized("找不到這則段評所屬的來源配置，可能已被刪除。")
             case .noDestination(let sourceName):
                 return String(
-                    format: localized("「%@」沒有回應這則段評，可能需要先在書源設定填寫 Token。"),
+                    format: localized("「%@」沒有回應這則段評，可能需要先在來源配置設定填寫 Token。"),
                     sourceName
                 )
             }

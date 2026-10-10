@@ -9,7 +9,7 @@ description: User Agreement for Yuedu Reader.
 # 使用者協議
 
 閱讀（Yuedu Reader）
-最後更新：2026 年 6 月 30 日
+最後更新：2026 年 10 月 8 日
 
 [English](#en)
 
@@ -19,11 +19,11 @@ description: User Agreement for Yuedu Reader.
 
 閱讀是一款本機優先的閱讀器工具，用於管理、閱讀你自行匯入或自行設定來源取得的內容。除非另有明確說明，我們不提供、託管、上傳、銷售或分發任何第三方小說、書籍、漫畫、音訊、RSS 內容或其他受版權保護的內容。
 
-## 2. 你的內容與書源責任
+## 2. 你的內容與來源配置責任
 
-你需自行確保匯入、下載、閱讀、同步、分享或透過書源取得的內容具有合法權利或授權。你不得使用本 App 侵犯著作權、商標權、隱私權或其他合法權益。
+你需自行確保匯入、下載、閱讀、同步、分享或透過來源配置（原稱「書源」）取得的內容具有合法權利或授權。你不得使用本 App 侵犯著作權、商標權、隱私權或其他合法權益。
 
-書源、RSS、TTS、WebDAV、線上閱讀地址、Cookie、登入狀態與其他第三方服務均由你自行配置或選擇使用。你應遵守第三方網站、服務與內容提供者的條款。因第三方服務、第三方內容、書源規則或你自行配置造成的爭議、損失或法律責任，由你自行承擔。
+來源配置、RSS、TTS、WebDAV、線上閱讀地址、Cookie、登入狀態與其他第三方服務均由你自行配置或選擇使用。你應遵守第三方網站、服務與內容提供者的條款。因第三方服務、第三方內容、來源配置的規則或你自行配置造成的爭議、損失或法律責任，由你自行承擔。
 
 ## 3. 禁止行為
 
@@ -44,7 +44,7 @@ description: User Agreement for Yuedu Reader.
 
 ## 6. 免責聲明
 
-本 App 按「現狀」提供。我們不保證第三方網站、書源、RSS、TTS、WebDAV、iCloud、登入服務或網路內容可用、準確、合法、穩定或持續相容。你需自行備份重要資料，並自行判斷第三方內容與服務的合法性、安全性與可靠性。
+本 App 按「現狀」提供。我們不保證第三方網站、來源配置、RSS、TTS、WebDAV、iCloud、登入服務或網路內容可用、準確、合法、穩定或持續相容。你需自行備份重要資料，並自行判斷第三方內容與服務的合法性、安全性與可靠性。
 
 在法律允許範圍內，我們不對因使用或無法使用本 App、第三方服務、第三方內容、資料遺失、帳號問題、同步失敗、內容爭議或使用者自行配置造成的間接、附帶、特殊、懲罰性或衍生損害負責。
 
@@ -68,7 +68,7 @@ description: User Agreement for Yuedu Reader.
 # User Agreement
 
 Yuedu Reader
-Last updated: June 30, 2026
+Last updated: October 8, 2026
 
 This agreement applies when you download, install, access, or use Yuedu Reader and related features. By using the app, you understand and agree to this agreement. If you do not agree, stop using the app.
 
@@ -80,7 +80,7 @@ Yuedu Reader is a local-first reader tool for managing and reading content that 
 
 You are responsible for ensuring that you have lawful rights or authorization for content you import, download, read, sync, share, or access through sources. You may not use the app to infringe copyright, trademark, privacy, or other legal rights.
 
-Book sources, RSS, TTS, WebDAV, online reading URLs, cookies, login state, and other third-party services are configured or chosen by you. You must comply with the terms of third-party websites, services, and content providers. Disputes, losses, or legal responsibilities caused by third-party services, third-party content, source rules, or your own configuration are your responsibility.
+Sources (formerly called book sources), RSS, TTS, WebDAV, online reading URLs, cookies, login state, and other third-party services are configured or chosen by you. You must comply with the terms of third-party websites, services, and content providers. Disputes, losses, or legal responsibilities caused by third-party services, third-party content, source rules, or your own configuration are your responsibility.
 
 ## 3. Prohibited Uses
 
@@ -101,7 +101,7 @@ The app's software, interface, icons, brand, documentation, and original materia
 
 ## 6. Disclaimer
 
-The app is provided "as is." We do not guarantee that third-party websites, book sources, RSS, TTS, WebDAV, iCloud, sign-in services, or network content will be available, accurate, lawful, stable, or continuously compatible. Back up important data and evaluate the legality, safety, and reliability of third-party content and services yourself.
+The app is provided "as is." We do not guarantee that third-party websites, sources, RSS, TTS, WebDAV, iCloud, sign-in services, or network content will be available, accurate, lawful, stable, or continuously compatible. Back up important data and evaluate the legality, safety, and reliability of third-party content and services yourself.
 
 To the maximum extent permitted by law, we are not liable for indirect, incidental, special, punitive, or consequential damages caused by use of or inability to use the app, third-party services, third-party content, data loss, account issues, sync failures, content disputes, or user configuration.
 

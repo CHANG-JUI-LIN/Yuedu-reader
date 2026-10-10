@@ -120,7 +120,7 @@ struct BookSourceRuleDebugView: View {
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle(source.bookSourceName.isEmpty ? localized("書源調試") : source.bookSourceName)
+            .navigationTitle(source.bookSourceName.isEmpty ? localized("來源配置調試") : source.bookSourceName)
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
             .toolbar {

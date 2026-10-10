@@ -31,7 +31,7 @@ struct NetworkSettingsView: View {
                         isOn: $settings.changeSourceLoadToc
                     )
                 } footer: {
-                    Text(localized("換源搜索時順便抓取每個書源的目錄，點選書源可立即切換；代價是搜索期間的網路請求加倍"))
+                    Text(localized("換源搜索時順便抓取每個來源配置的目錄，點選來源配置可立即切換；代價是搜索期間的網路請求加倍"))
                         .dsSectionFooter()
                 }
                 .interfaceSectionSurface()

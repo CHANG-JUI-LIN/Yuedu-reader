@@ -51,8 +51,8 @@ struct SearchSourceScopeSheet: View {
             List {
                 Section(localized("搜索範圍")) {
                     Picker(localized("搜索範圍"), selection: $mode) {
-                        Text(localized("全部書源")).tag(SearchSourceScope.Mode.all)
-                        Text(localized("自選書源")).tag(SearchSourceScope.Mode.custom)
+                        Text(localized("全部來源配置")).tag(SearchSourceScope.Mode.all)
+                        Text(localized("自選來源配置")).tag(SearchSourceScope.Mode.custom)
                     }
                     .pickerStyle(.segmented)
                     .listRowBackground(DSColor.surface)
@@ -70,7 +70,7 @@ struct SearchSourceScopeSheet: View {
             .pageBackgroundToolbar(for: .search)
             .navigationTitle(localized("搜索範圍"))
             .toolbarTitleDisplayMode(.inline)
-            .searchable(text: $sourceQuery, prompt: localized("搜索書源"))
+            .searchable(text: $sourceQuery, prompt: localized("搜索來源配置"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
@@ -117,7 +117,7 @@ struct SearchSourceScopeSheet: View {
         Section {
             if enabledSources.isEmpty {
                 ContentUnavailableView {
-                    UnavailableLabel(localized("尚未設置書源"), systemImage: "exclamationmark.triangle")
+                    UnavailableLabel(localized("尚未設置來源配置"), systemImage: "exclamationmark.triangle")
                 }
                 .listRowBackground(Color.clear)
             } else if filteredSources.isEmpty {
@@ -130,7 +130,7 @@ struct SearchSourceScopeSheet: View {
             }
         } footer: {
             if !canSave {
-                Text(localized("請至少選擇一個可用書源"))
+                Text(localized("請至少選擇一個可用來源配置"))
                     .dsSectionFooter(color: DSColor.destructive)
             }
         }
@@ -209,10 +209,10 @@ struct SearchSourceScopeSheet: View {
 
 private let searchSourceScopePreviewSources: [BookSource] = {
     var first = BookSource()
-    first.bookSourceName = "示例書源 A"
+    first.bookSourceName = "示例來源配置 A"
     first.bookSourceUrl = "https://source-a.example"
     var second = BookSource()
-    second.bookSourceName = "示例書源 B"
+    second.bookSourceName = "示例來源配置 B"
     second.bookSourceUrl = "https://source-b.example"
     return [first, second]
 }()

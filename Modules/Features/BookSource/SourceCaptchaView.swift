@@ -38,8 +38,8 @@ struct SourceCaptchaView: View {
                 }
                 if sourceID != nil {
                     Section {
-                        Button(localized("停用書源"), action: disableSource)
-                        Button(localized("刪除書源"), role: .destructive) {
+                        Button(localized("停用來源配置"), action: disableSource)
+                        Button(localized("刪除來源配置"), role: .destructive) {
                             confirmsDelete = true
                         }
                     }
@@ -68,7 +68,7 @@ struct SourceCaptchaView: View {
                 }
             }
             .confirmationDialog(
-                String(format: localized("確定要刪除書源「%@」嗎？"), request.sourceName),
+                String(format: localized("確定要刪除來源配置「%@」嗎？"), request.sourceName),
                 isPresented: $confirmsDelete,
                 titleVisibility: .visible
             ) {
@@ -157,7 +157,7 @@ struct SourceCaptchaView: View {
         request: SourceCaptchaRequest(
             imageURL: "data:image/svg+xml;base64," + Data(svg.utf8).base64EncodedString(),
             headers: [:],
-            sourceName: "示例書源",
+            sourceName: "示例來源配置",
             sourceURL: ""
         ),
         onFinish: { _ in }

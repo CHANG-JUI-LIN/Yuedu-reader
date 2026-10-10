@@ -303,7 +303,7 @@ extension ReaderView {
                 // The source asked for a device id and got none, and the toggle that
                 // fixes it lives in 書源編輯 → 基本 — unreachable from here. Offer it
                 // where the failure is. See `AndroidIdentityRecovery`.
-                Text(localized("此書源要求裝置識別碼，目前沒有提供給它"))
+                Text(localized("此來源配置要求裝置識別碼，目前沒有提供給它"))
                     .font(DSFont.caption)
                     .foregroundStyle(DSColor.textSecondary)
                     .multilineTextAlignment(.center)

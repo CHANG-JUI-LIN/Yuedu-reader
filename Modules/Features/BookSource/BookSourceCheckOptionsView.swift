@@ -37,7 +37,7 @@ struct BookSourceCheckOptionsView: View {
                             .foregroundStyle(DSColor.textPrimary)
                         Text(
                             String(
-                                format: localized("將對 %d 個書源進行五階段驗證"), sourceCount)
+                                format: localized("將對 %d 個來源配置進行五階段驗證"), sourceCount)
                         )
                         .font(DSFont.subheadline)
                         .foregroundColor(DSColor.textSecondary)
@@ -75,7 +75,7 @@ struct BookSourceCheckOptionsView: View {
             }
             .softScrollEdges()
             .scrollIndicators(.hidden)
-            .navigationTitle(localized("書源驗證"))
+            .navigationTitle(localized("來源配置驗證"))
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
             .toolbar {
@@ -147,7 +147,7 @@ struct BookSourceCheckOptionsView: View {
 
                 Divider()
 
-                Picker(localized("壞書源處理"), selection: $policy.badAction) {
+                Picker(localized("失效來源配置處理"), selection: $policy.badAction) {
                     ForEach(BookSourceCheckPolicy.BadAction.allCases) { action in
                         Text(action.title).tag(action)
                     }
@@ -161,7 +161,7 @@ struct BookSourceCheckOptionsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                Toggle(localized("停用過慢書源"), isOn: $policy.disableSlow)
+                Toggle(localized("停用過慢來源配置"), isOn: $policy.disableSlow)
                     .padding(.trailing, 2)
 
                 if policy.disableSlow {

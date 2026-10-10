@@ -1,11 +1,11 @@
-# 书源规则语法速查
+# 来源配置规则语法速查
 
 > 其他章节：[快速开始](quickstart.zh-Hans.md) · [与 Legado 的差异](legado-differences.zh-Hans.md) · [常见症状对照表](troubleshooting.zh-Hans.md)
 > 繁體中文：[規則語法速查](rule-syntax.zh-Hant.md)
 
 一条「规则」告诉 App 从抓回来的网页（HTML／JSON）里取出哪个资料。规则可以串接、可以套正则、可以执行 JS。本页是 Yuedu 规则引擎的语法速查，所有语法都与 Legado 3.0 相容。
 
-> 说明：书源编辑器中各个字段的标签在 App 内固定显示繁体中文（不随系统语言变化），本页与下文使用 App 实际显示的标签名。
+> 说明：来源配置编辑器中各个字段的标签在 App 内固定显示繁体中文（不随系统语言变化），本页与下文使用 App 实际显示的标签名。
 
 ## 1. 规则模式与前缀
 
@@ -85,7 +85,7 @@ id.catalog@tag.li@tag.a@href
 
 ## 5. JSONPath 规则
 
-`@json:` 或 `$.`／`$[` 开头的规则对 **JSON 响应**求值（搜索结果是 JSON 的书源必用）：
+`@json:` 或 `$.`／`$[` 开头的规则对 **JSON 响应**求值（搜索结果是 JSON 的来源配置必用）：
 
 ```
 $.info.Datas             ← 键路径
@@ -144,7 +144,7 @@ JS 中的可用变量与函数（`result`、`baseUrl`、`src`、`book`、`chapte
 | `{{key}}`、`{{searchKey}}` | 搜索关键字 |
 | `{{page}}` | 页码（从 1 起） |
 | `{{pageIndex}}` | 页码 - 1 |
-| `{{header}}` | 书源请求头字符串 |
+| `{{header}}` | 来源配置请求头字符串 |
 | `{{speakText}}`、`{{speakSpeed}}` | 朗读用（语音源） |
 | `{{任意 JS 表达式}}` | 当 JS 执行，如 `{{(page-1)*20}}`、`{{java.base64Encode(key)}}` |
 | `<值1,值2>` | 分页规则：page=1 取逗号前，page>1 取逗号后；`<,{{page}}>` 表示第一页留空 |
@@ -163,7 +163,7 @@ https://example.com/search,{"method":"POST","body":"key={{key}}&page={{page}}","
 
 ### 9.1 正文图片点击与段评页
 
-Legado 正文常在图片 URL 后附 `,{...}` 点击配置。Yuedu 支持 `click`、`action`，以及兼容分支使用的 `js` 键；点击时会在**原书源的同一个 session** 执行原始 JS，并恢复当时的 `book`、`chapter`、`result`、`src`、`baseUrl` 与非敏感运行变量。像 `showCmt(bookId, chapterId, paragraphId)` 这种参数不是 URL，App 不会自行猜测 API 路径。
+Legado 正文常在图片 URL 后附 `,{...}` 点击配置。Yuedu 支持 `click`、`action`，以及兼容分支使用的 `js` 键；点击时会在**原来源配置的同一个 session** 执行原始 JS，并恢复当时的 `book`、`chapter`、`result`、`src`、`baseUrl` 与非敏感运行变量。像 `showCmt(bookId, chapterId, paragraphId)` 这种参数不是 URL，App 不会自行猜测 API 路径。
 
 来源调用 `java.showBrowser(baseUrl, html, preloadJS, configJSON)` 时，第四参数支持：
 
@@ -175,17 +175,17 @@ Legado 正文常在图片 URL 后附 `,{...}` 点击配置。Yuedu 支持 `click
 | `expandedCornersRadius` | 展开状态圆角，0–120 |
 | `hardwareAccelerated` | 接受但不另行切换；WKWebView 本身使用加速合成 |
 
-四参数 `showBrowser` 加载的书源自建页面可同步调用 `java.ajax(url)`、`java.get(url, headers)`、`java.post(url, body, headers)`、`java.head(url, headers)` 与 `java.connect(url[, headers, timeout])`。请求仍走原书源的同一个 session，会应用书源标头、登录标头、cookie 与 URL 选项；返回形状按 Legado-E／MD3 的 `WebJsExtensions`，其中 `ajax`／`get`／`post` 是正文字符串、`head` 是标头 JSON 字符串。页面若要执行其他书源 JS，可使用返回 Promise 的 `run(script)`。
+四参数 `showBrowser` 加载的来源配置自建页面可同步调用 `java.ajax(url)`、`java.get(url, headers)`、`java.post(url, body, headers)`、`java.head(url, headers)` 与 `java.connect(url[, headers, timeout])`。请求仍走原来源配置的同一个 session，会应用来源配置标头、登录标头、cookie 与 URL 选项；返回形状按 Legado-E／MD3 的 `WebJsExtensions`，其中 `ajax`／`get`／`post` 是正文字符串、`head` 是标头 JSON 字符串。页面若要执行其他来源配置 JS，可使用返回 Promise 的 `run(script)`。
 
-书源／登录浏览器会把 `java.copyText`、`navigator.clipboard.writeText` 与 `document.execCommand('copy')` 接到 iOS 系统剪贴板。
+来源配置／登录浏览器会把 `java.copyText`、`navigator.clipboard.writeText` 与 `document.execCommand('copy')` 接到 iOS 系统剪贴板。
 
 ## 10. 字段对照：编辑器分页 ↔ Legado JSON 字段
 
-App 的书源编辑器以「基本／搜索／发现／详情／目录／正文」六个分页对应 Legado JSON 的 `rule*` 对象，字段与 JSON 键一一对应（标签名 App 内固定繁体）：
+App 的来源配置编辑器以「基本／搜索／发现／详情／目录／正文」六个分页对应 Legado JSON 的 `rule*` 对象，字段与 JSON 键一一对应（标签名 App 内固定繁体）：
 
 | 编辑器分页 | 字段 | JSON 键 |
 | --- | --- | --- |
-| 基本 | 書源名稱／書源地址／書源分組／源註釋 | 同名顶层键 |
+| 基本 | 来源配置名稱／来源配置地址／来源配置分組／源註釋 | 同名顶层键 |
 | 基本 | 登入頁 URL／登入 UI／登入檢查 JS | `loginUrl`／`loginUi`／`loginCheckJs` |
 | 基本 | 封面解密、書籍 URL 正則、請求頭、變量說明、並發率、jsLib | `coverDecodeJs`／`bookUrlPattern`／`header`／`variableComment`／`concurrentRate`／`jsLib` |
 | 搜索 | 搜索 URL、校驗關鍵字 | `searchUrl`、`ruleSearch.checkKeyWord` |
@@ -203,7 +203,7 @@ App 的书源编辑器以「基本／搜索／发现／详情／目录／正文�
 
 ```json
 {
-  "bookSourceName": "範例書源",
+  "bookSourceName": "範例来源配置",
   "bookSourceUrl": "https://example.com",
   "searchUrl": "/search?q={{key}}",
   "ruleSearch": {
@@ -228,4 +228,4 @@ App 的书源编辑器以「基本／搜索／发现／详情／目录／正文�
 ## 下一步
 
 - [与 Legado 的差异](legado-differences.zh-Hans.md) — 哪些语法在 Yuedu 行为不同或不存在
-- [常见症状对照表](troubleshooting.zh-Hans.md) — 书源坏掉时对照症状找解法
+- [常见症状对照表](troubleshooting.zh-Hans.md) — 来源配置坏掉时对照症状找解法

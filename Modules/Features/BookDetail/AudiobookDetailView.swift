@@ -114,7 +114,7 @@ struct AudiobookDetailView: View {
         let name = currentBook.sourceName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { return name }
         if let s = source?.bookSourceName, !s.isEmpty { return s }
-        return localized("未知書源")
+        return localized("未知來源配置")
     }
 
     private var canSwitchSource: Bool {
@@ -455,7 +455,7 @@ struct AudiobookDetailView: View {
     }
 
     private func load() {
-        guard let source else { loadError = localized("書源已被刪除"); return }
+        guard let source else { loadError = localized("來源配置已被刪除"); return }
         loading = true
         loadError = nil
         loadedRuntimeVariables = nil
@@ -676,7 +676,7 @@ extension BookSourceStore {
             lastChapter: "",
             kind: "玄幻",
             sourceId: UUID(),
-            sourceName: "示範有聲書源"))
+            sourceName: "示範有聲來源配置"))
         .environmentObject(BookStore())
     }
 }

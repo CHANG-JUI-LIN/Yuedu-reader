@@ -1,4 +1,4 @@
-# 書源規則語法速查
+# 來源配置規則語法速查
 
 > 其他章節：[快速開始](quickstart.zh-Hant.md) · [與 Legado 的差異](legado-differences.zh-Hant.md) · [常見症狀對照表](troubleshooting.zh-Hant.md)
 > 简体中文：[规则语法速查](rule-syntax.zh-Hans.md)
@@ -83,7 +83,7 @@ id.catalog@tag.li@tag.a@href
 
 ## 5. JSONPath 規則
 
-`@json:` 或 `$.`／`$[` 開頭的規則對 **JSON 響應**求值（搜索結果是 JSON 的書源必用）：
+`@json:` 或 `$.`／`$[` 開頭的規則對 **JSON 響應**求值（搜索結果是 JSON 的來源配置必用）：
 
 ```
 $.info.Datas             ← 鍵路徑
@@ -142,7 +142,7 @@ JS 中的可用變數與函式（`result`、`baseUrl`、`src`、`book`、`chapte
 | `{{key}}`、`{{searchKey}}` | 搜索關鍵字 |
 | `{{page}}` | 頁碼（從 1 起） |
 | `{{pageIndex}}` | 頁碼 - 1 |
-| `{{header}}` | 書源請求頭字串 |
+| `{{header}}` | 來源配置請求頭字串 |
 | `{{speakText}}`、`{{speakSpeed}}` | 朗讀用（語音源） |
 | `{{任意 JS 表達式}}` | 當 JS 執行，如 `{{(page-1)*20}}`、`{{java.base64Encode(key)}}` |
 | `<值1,值2>` | 分頁規則：page=1 取逗號前，page>1 取逗號後；`<,{{page}}>` 表示第一頁留空 |
@@ -161,7 +161,7 @@ https://example.com/search,{"method":"POST","body":"key={{key}}&page={{page}}","
 
 ### 9.1 正文圖片點擊與段評頁
 
-Legado 正文常在圖片 URL 後附 `,{...}` 點擊設定。Yuedu 支援 `click`、`action`，以及相容分支使用的 `js` 鍵；點擊時會在**原書源的同一個 session** 執行原始 JS，並還原當時的 `book`、`chapter`、`result`、`src`、`baseUrl` 與非敏感運行變數。像 `showCmt(bookId, chapterId, paragraphId)` 這種參數不是 URL，App 不會自行猜 API 路徑。
+Legado 正文常在圖片 URL 後附 `,{...}` 點擊設定。Yuedu 支援 `click`、`action`，以及相容分支使用的 `js` 鍵；點擊時會在**原來源配置的同一個 session** 執行原始 JS，並還原當時的 `book`、`chapter`、`result`、`src`、`baseUrl` 與非敏感運行變數。像 `showCmt(bookId, chapterId, paragraphId)` 這種參數不是 URL，App 不會自行猜 API 路徑。
 
 來源呼叫 `java.showBrowser(baseUrl, html, preloadJS, configJSON)` 時，第四參數支援：
 
@@ -173,17 +173,17 @@ Legado 正文常在圖片 URL 後附 `,{...}` 點擊設定。Yuedu 支援 `click
 | `expandedCornersRadius` | 展開狀態圓角，0–120 |
 | `hardwareAccelerated` | 接受但不另行切換；WKWebView 本身使用加速合成 |
 
-四參數 `showBrowser` 載入的書源自建頁面可同步呼叫 `java.ajax(url)`、`java.get(url, headers)`、`java.post(url, body, headers)`、`java.head(url, headers)` 與 `java.connect(url[, headers, timeout])`。請求仍走原書源的同一個 session，會套用書源標頭、登入標頭、cookie 與 URL 選項；回傳形狀依 Legado-E／MD3 的 `WebJsExtensions`，其中 `ajax`／`get`／`post` 是正文字串、`head` 是標頭 JSON 字串。頁面若要執行其他書源 JS，可用回傳 Promise 的 `run(script)`。
+四參數 `showBrowser` 載入的來源配置自建頁面可同步呼叫 `java.ajax(url)`、`java.get(url, headers)`、`java.post(url, body, headers)`、`java.head(url, headers)` 與 `java.connect(url[, headers, timeout])`。請求仍走原來源配置的同一個 session，會套用來源配置標頭、登入標頭、cookie 與 URL 選項；回傳形狀依 Legado-E／MD3 的 `WebJsExtensions`，其中 `ajax`／`get`／`post` 是正文字串、`head` 是標頭 JSON 字串。頁面若要執行其他來源配置 JS，可用回傳 Promise 的 `run(script)`。
 
-書源／登入瀏覽器會把 `java.copyText`、`navigator.clipboard.writeText` 與 `document.execCommand('copy')` 接到 iOS 系統剪貼簿。
+來源配置／登入瀏覽器會把 `java.copyText`、`navigator.clipboard.writeText` 與 `document.execCommand('copy')` 接到 iOS 系統剪貼簿。
 
 ## 10. 欄位對照：編輯器分頁 ↔ Legado JSON 欄位
 
-App 的書源編輯器以「基本／搜索／發現／詳情／目錄／正文」六個分頁對應 Legado JSON 的 `rule*` 物件，欄位與 JSON 鍵一一對應：
+App 的來源配置編輯器以「基本／搜索／發現／詳情／目錄／正文」六個分頁對應 Legado JSON 的 `rule*` 物件，欄位與 JSON 鍵一一對應：
 
 | 編輯器分頁 | 欄位 | JSON 鍵 |
 | --- | --- | --- |
-| 基本 | 書源名稱／地址／分組／註釋 | 同名頂層鍵 |
+| 基本 | 來源配置名稱／地址／分組／註釋 | 同名頂層鍵 |
 | 基本 | 登入頁 URL／登入 UI／登入檢查 JS | `loginUrl`／`loginUi`／`loginCheckJs` |
 | 基本 | 封面解密、書籍 URL 正則、請求頭、變量說明、並發率、jsLib | `coverDecodeJs`／`bookUrlPattern`／`header`／`variableComment`／`concurrentRate`／`jsLib` |
 | 搜索 | 搜索 URL、校驗關鍵字 | `searchUrl`、`ruleSearch.checkKeyWord` |
@@ -201,7 +201,7 @@ App 的書源編輯器以「基本／搜索／發現／詳情／目錄／正文�
 
 ```json
 {
-  "bookSourceName": "範例書源",
+  "bookSourceName": "範例來源配置",
   "bookSourceUrl": "https://example.com",
   "searchUrl": "/search?q={{key}}",
   "ruleSearch": {
@@ -226,4 +226,4 @@ App 的書源編輯器以「基本／搜索／發現／詳情／目錄／正文�
 ## 下一步
 
 - [與 Legado 的差異](legado-differences.zh-Hant.md) — 哪些語法在 Yuedu 行為不同或不存在
-- [常見症狀對照表](troubleshooting.zh-Hant.md) — 書源壞掉時對照症狀找解法
+- [常見症狀對照表](troubleshooting.zh-Hant.md) — 來源配置壞掉時對照症狀找解法

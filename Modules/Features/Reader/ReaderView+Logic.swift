@@ -575,7 +575,7 @@ extension ReaderView {
     var currentSourceName: String {
         guard let id = book?.bookSourceId,
               let source = BookSourceStore.shared.source(id: id),
-              !source.bookSourceName.isEmpty else { return localized("未知書源") }
+              !source.bookSourceName.isEmpty else { return localized("未知來源配置") }
         return source.bookSourceName
     }
 

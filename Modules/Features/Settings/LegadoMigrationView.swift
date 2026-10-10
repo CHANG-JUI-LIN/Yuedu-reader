@@ -71,7 +71,7 @@ struct LegadoMigrationView: View {
                 Text(localized("支援從 Legado（閱讀）Android 應用匯入："))
                     .font(DSFont.subheadline)
                     .foregroundColor(DSColor.textPrimary)
-                Text("• " + localized("書源 JSON（書源備份 / 分享檔）"))
+                Text("• " + localized("來源配置 JSON（來源配置備份 / 分享檔）"))
                     .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
                 Text("• " + localized("書籍 JSON（書架備份檔）"))
@@ -122,7 +122,7 @@ struct LegadoMigrationView: View {
                 HStack {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
-                    Text(String(format: localized("書源：%d 個"), result.sourcesImported))
+                    Text(String(format: localized("來源配置：%d 個"), result.sourcesImported))
                         .foregroundStyle(DSColor.textPrimary)
                 }
             }

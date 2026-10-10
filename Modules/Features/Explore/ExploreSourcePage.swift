@@ -107,7 +107,7 @@ extension ExploreSourcePage {
 
 #Preview {
     var source = BookSource()
-    source.bookSourceName = "範例書源"
+    source.bookSourceName = "範例來源配置"
     source.bookSourceUrl = "https://example.com"
     source.loginUrl = "https://example.com/login"
     return NavigationStack {

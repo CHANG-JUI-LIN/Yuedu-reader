@@ -269,7 +269,7 @@ struct UserDetailView: View {
 
                         Button(localized("取消"), role: .cancel) {}
                     } message: {
-                        Text(localized("刪除帳號將登出此裝置，並永久刪除已同步的書庫、書源、替換規則、RSS 與頭像資料。此操作無法復原。"))
+                        Text(localized("刪除帳號將登出此裝置，並永久刪除已同步的書庫、來源配置、替換規則、RSS 與頭像資料。此操作無法復原。"))
                     }
                 } footer: {
                     VStack(alignment: .leading, spacing: DSSpacing.xs) {

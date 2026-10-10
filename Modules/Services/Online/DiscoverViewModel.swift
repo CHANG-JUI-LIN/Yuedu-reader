@@ -358,7 +358,7 @@ final class DiscoverViewModel: ObservableObject {
         )
         runningQuickActionID = nil
         if let error = outcome.errorMessage {
-            presentToast(String(format: localized("%@：%@"), localized("書源腳本錯誤"), error))
+            presentToast(String(format: localized("%@：%@"), localized("來源配置腳本錯誤"), error))
         }
         if outcome.refreshesExplore {
             reload(forceRefresh: true)
@@ -521,7 +521,7 @@ final class DiscoverViewModel: ObservableObject {
         guard let sourceUrl = selectedSource?.bookSourceUrl,
               let failure = SourceAPIErrorLog.shared.last(for: sourceUrl)
         else { return nil }
-        return "\(localized("書源伺服器回應失敗"))\n\(failure.displayText)"
+        return "\(localized("來源配置伺服器回應失敗"))\n\(failure.displayText)"
     }
 
     /// The selected source when the empty 發現頁 is explained by it asking for a

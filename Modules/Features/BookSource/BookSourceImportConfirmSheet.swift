@@ -20,7 +20,7 @@ struct BookSourceImportConfirmSheet: View {
         } else {
             NavigationStack {
                 content
-                    .navigationTitle(localized("匯入書源"))
+                    .navigationTitle(localized("匯入來源配置"))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -68,7 +68,7 @@ struct BookSourceImportConfirmSheet: View {
             resultView(
                 systemImage: "checkmark.circle.fill",
                 tint: DSColor.success,
-                message: String(format: localized("成功匯入 %d 個書源"), count),
+                message: String(format: localized("成功匯入 %d 個來源配置"), count),
                 actionTitle: localized("完成")
             ) { handler.finish() }
         case .failed(let message):
@@ -83,7 +83,7 @@ struct BookSourceImportConfirmSheet: View {
 
     private func confirmingView(sourceURL: URL) -> some View {
         VStack(alignment: .leading, spacing: DSSpacing.md) {
-            Text(localized("確認從外部來源匯入書源？"))
+            Text(localized("確認從外部連結匯入來源配置？"))
                 .font(DSFont.headline)
                 .foregroundStyle(DSColor.textPrimary)
 

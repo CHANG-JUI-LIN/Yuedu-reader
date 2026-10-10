@@ -21,7 +21,7 @@ tags: [yuedu, index]
 | EPUB 驗證 | [回歸樣本](epub-regression/README.md) · [相容性矩陣](epub-regression/compatibility-matrix.md) |
 | BrowserLayout 證據 | [橫排基線結案](browser-layout/line-break-baseline/closure-2026-08-31.md) · [能力普查](browser-layout/phase4c-epub-layout-capability-census.md) · [Used-value audit](browser-layout/used-value-resolution-timing-audit.md) |
 | 產品設計 | [UI 規範](design.md) · [功能展示](demo/README.md) |
-| 書源 | [書源文件](book-source/README.md) |
+| 來源配置 | [來源配置文件](book-source/README.md) |
 | 青空文庫 | [註記普查](aozora/annotation-census-2026-10-05.md) · [支援設計](superpowers/specs/2026-10-05-aozora-bunko-support-design.md) · [實作計畫](superpowers/plans/2026-10-05-aozora-bunko-support.md) |
 | 技術文章 | [從 WebView 到 CoreText](blog/from-webview-to-coretext.md) · [EPUB3 適配](blog/coretext-epub3-adaptation.md) |
 

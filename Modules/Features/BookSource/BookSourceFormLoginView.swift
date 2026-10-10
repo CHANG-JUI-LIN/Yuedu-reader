@@ -189,7 +189,7 @@ struct BookSourceFormLoginView: View {
 
     /// Legado's `login_source` title format: 「登入：源名稱」.
     private var loginTitle: String {
-        let name = source.bookSourceName.isEmpty ? localized("書源登入") : source.bookSourceName
+        let name = source.bookSourceName.isEmpty ? localized("來源配置登入") : source.bookSourceName
         return String(format: localized("登入：%@"), name)
     }
 
@@ -236,7 +236,7 @@ struct BookSourceFormLoginView: View {
                     guard parsed == nil else { return }
                     self.canRetryLoginUi = true
                     self.menuAlert = MenuActionAlert(
-                        title: localized("書源腳本錯誤"),
+                        title: localized("來源配置腳本錯誤"),
                         detail: evaluation.error ?? localized("載入失敗，點按重試")
                     )
                 }
@@ -569,7 +569,7 @@ struct BookSourceFormLoginView: View {
         let rawLogin = source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rawLogin.isEmpty else {
             menuAlert = MenuActionAlert(
-                title: localized("操作失敗"), detail: localized("書源未設定 loginUrl"))
+                title: localized("操作失敗"), detail: localized("來源配置未設定 loginUrl"))
             return
         }
 
@@ -743,10 +743,10 @@ struct BookSourceFormLoginView: View {
                 guard !spoke.fired else { return }
                 let report: MenuActionAlert?
                 if let jsError = engine.lastError {
-                    report = MenuActionAlert(title: localized("書源腳本錯誤"), detail: jsError)
+                    report = MenuActionAlert(title: localized("來源配置腳本錯誤"), detail: jsError)
                 } else if let failure = SourceAPIErrorLog.shared.last(for: source.bookSourceUrl) {
                     report = MenuActionAlert(
-                        title: localized("書源伺服器回應失敗"), detail: failure.displayText)
+                        title: localized("來源配置伺服器回應失敗"), detail: failure.displayText)
                 } else {
                     report = nil
                 }
@@ -988,7 +988,7 @@ struct BookSourceFormLoginView: View {
 
 #Preview("登入表單") {
     var source = BookSource()
-    source.bookSourceName = "範例書源"
+    source.bookSourceName = "範例來源配置"
     source.bookSourceUrl = "https://example.com"
     source.loginUrl = "function login() { return true; }"
     // 輸入框整行、按鈕預設半行；cols 1/2/4 展示混合欄寬（登入＋註冊半行、
@@ -1009,9 +1009,9 @@ struct BookSourceFormLoginView: View {
     return BookSourceFormLoginView(source: source, onDismiss: {})
 }
 
-#Preview("書源選單") {
+#Preview("來源配置選單") {
     var source = BookSource()
-    source.bookSourceName = "範例書源・設定選單"
+    source.bookSourceName = "範例來源配置・設定選單"
     source.bookSourceUrl = "https://example.com"
     source.loginUrl = "function noop() {}"
     // 書源動態選單常見的組合：開關、下拉與動作按鈕；viewName 是引號字面值時

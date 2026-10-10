@@ -64,7 +64,7 @@ final class BookSourceManagementUITests: XCTestCase {
         let settingsTab = app.tabBars.buttons["設定"].firstMatch
         XCTAssertTrue(settingsTab.waitForExistence(timeout: 60), "settings tab should exist")
         settingsTab.tap()
-        let manageRow = app.buttons["管理書源"].firstMatch
+        let manageRow = app.buttons["管理來源配置"].firstMatch
         for _ in 0..<6 where !manageRow.exists {
             app.swipeUp()
         }
@@ -140,7 +140,7 @@ final class BookSourceManagementUITests: XCTestCase {
         XCTAssertTrue(settingsTab.waitForExistence(timeout: 20), "settings tab should exist")
         settingsTab.tap()
 
-        let manageRow = app.buttons["管理書源"].firstMatch
+        let manageRow = app.buttons["管理來源配置"].firstMatch
         for _ in 0..<6 where !manageRow.exists {
             app.swipeUp()
         }
@@ -154,11 +154,11 @@ final class BookSourceManagementUITests: XCTestCase {
         let more = app.navigationBars.buttons["更多"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 5), "the toolbar 更多 menu should exist")
         more.tap()
-        let validate = app.buttons["書源驗證"].firstMatch
+        let validate = app.buttons["來源配置驗證"].firstMatch
         XCTAssertTrue(validate.waitForExistence(timeout: 5), "書源驗證 should be in the menu")
         validate.tap()
 
-        let count = app.staticTexts["將對 3 個書源進行五階段驗證"].firstMatch
+        let count = app.staticTexts["將對 3 個來源配置進行五階段驗證"].firstMatch
         XCTAssertTrue(count.waitForExistence(timeout: 10), "the options sheet should count the 3 sources")
         let start = app.buttons["開始驗證"].firstMatch
         XCTAssertTrue(start.waitForExistence(timeout: 5))

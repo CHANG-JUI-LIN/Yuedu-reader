@@ -65,7 +65,7 @@ struct BookSourceCheckView: View {
                     }
                 }
             }
-            .navigationTitle(localized("書源驗證"))
+            .navigationTitle(localized("來源配置驗證"))
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
             .toolbar {
@@ -107,7 +107,7 @@ struct BookSourceCheckView: View {
             Image(systemName: "waveform.and.magnifyingglass")
                 .font(DSFont.fixed(size: 56))
                 .foregroundColor(DSColor.textSecondary.opacity(0.35))
-            Text(localized("沒有選取的書源"))
+            Text(localized("沒有選取的來源配置"))
                 .font(DSFont.title3.weight(.semibold))
                 .foregroundStyle(DSColor.textPrimary)
             Spacer()
@@ -230,7 +230,7 @@ struct BookSourceCheckView: View {
         VStack(alignment: .leading, spacing: DSSpacing.xs) {
             Text(
                 String(
-                    format: localized("共 %1$d 個書源，通過 %2$d 個"),
+                    format: localized("共 %1$d 個來源配置，通過 %2$d 個"),
                     checker.items.count, checker.passedCount)
             )
             if let summary = checker.lastSummary {
@@ -255,7 +255,7 @@ private struct BookSourceCheckResultRow: View {
                 healthIcon
                 Text(
                     item.source.bookSourceName.isEmpty
-                        ? localized("未命名書源") : item.source.bookSourceName
+                        ? localized("未命名來源配置") : item.source.bookSourceName
                 )
                 .font(DSFont.bodyBold)
                 .foregroundColor(DSColor.textPrimary)
@@ -431,7 +431,7 @@ private struct FailureFilterChip: View {
 
 #Preview("驗證結果列") {
     var failed = BookSourceCheckItem(
-        source: BookSource(bookSourceUrl: "https://example.com", bookSourceName: "示例書源"))
+        source: BookSource(bookSourceUrl: "https://example.com", bookSourceName: "示例來源配置"))
     failed.stages = [
         StageOutcome(status: .pass, summary: "「我的」12 本"),
         StageOutcome(status: .skipped, summary: "—"),
@@ -442,7 +442,7 @@ private struct FailureFilterChip: View {
     failed.responseTime = 1_234
     failed.failureCategory = .tocEmpty
     let passed = BookSourceCheckItem(
-        source: BookSource(bookSourceUrl: "https://example.org", bookSourceName: "通過的書源"))
+        source: BookSource(bookSourceUrl: "https://example.org", bookSourceName: "通過的來源配置"))
     return VStack(alignment: .leading, spacing: DSSpacing.lg) {
         BookSourceCheckResultRow(item: failed)
         BookSourceCheckResultRow(item: passed)

@@ -10,7 +10,7 @@ extension ReaderView {
             List {
                 // 目前使用中的書源 — always visible with a checkmark so the user knows
                 // which source is active (search results below exclude this one).
-                Section(localized("目前書源")) {
+                Section(localized("目前來源配置")) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(currentSourceName)
@@ -50,7 +50,7 @@ extension ReaderView {
                         if changeSourceLoading {
                             HStack(spacing: 8) {
                                 ProgressView()
-                                Text(localized("正在搜尋更多書源…"))
+                                Text(localized("正在搜尋更多來源配置…"))
                                     .font(DSFont.footnote)
                                     .foregroundStyle(DSColor.textSecondary)
                             }
@@ -58,15 +58,15 @@ extension ReaderView {
                     } else if changeSourceLoading {
                         HStack(spacing: 8) {
                             ProgressView()
-                            Text(localized("正在搜尋其他書源…"))
+                            Text(localized("正在搜尋其他來源配置…"))
                                 .foregroundStyle(DSColor.textSecondary)
                         }
                     } else {
-                        Text(localized("暫無其他書源"))
+                        Text(localized("暫無其他來源配置"))
                             .foregroundStyle(DSColor.textSecondary)
                     }
                 } header: {
-                    Text(localized("其他書源"))
+                    Text(localized("其他來源配置"))
                         .foregroundStyle(DSColor.textSecondary)
                 } footer: {
                     if let err = changeSourceError {

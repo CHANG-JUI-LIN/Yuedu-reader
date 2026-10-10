@@ -30,7 +30,7 @@ struct BookSourceInfoSheet: View {
         NavigationStack {
             List {
                 Section {
-                    infoRow(localized("書源名稱"), value: displayName)
+                    infoRow(localized("來源配置名稱"), value: displayName)
                     infoRow(
                         localized("分組"),
                         value: source.bookSourceGroup.isEmpty
@@ -119,7 +119,7 @@ struct BookSourceInfoSheet: View {
     }
 
     private var displayName: String {
-        source.bookSourceName.isEmpty ? localized("未命名書源") : source.bookSourceName
+        source.bookSourceName.isEmpty ? localized("未命名來源配置") : source.bookSourceName
     }
 
     private var supportsExplore: Bool {
@@ -170,11 +170,11 @@ struct BookSourceInfoSheet: View {
 
 #Preview {
     var source = BookSource()
-    source.bookSourceName = "範例書源"
+    source.bookSourceName = "範例來源配置"
     source.bookSourceUrl = "https://example.com"
     source.bookSourceGroup = "小說"
     source.searchUrl = "https://example.com/search?q={{key}}"
-    source.bookSourceComment = "這是一個範例書源的註釋。"
+    source.bookSourceComment = "這是一個範例來源配置的註釋。"
     return BookSourceInfoSheet(
         source: source,
         validation: SourceValidationSummary(health: .passed, responseMs: 320)
