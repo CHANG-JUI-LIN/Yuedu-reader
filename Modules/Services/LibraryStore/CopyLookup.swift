@@ -20,7 +20,7 @@ struct CopyLookup {
     }
 
     /// What a browse row shows of its copies.
-    enum Status: Equatable {
+    enum Status: Hashable {
         /// Some copy is on the shelf.
         case onShelf
         /// Some copy recorded an offline file and none is on the shelf. Whether that file still

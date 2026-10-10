@@ -165,3 +165,14 @@ struct PublicLibraryFeedView: View {
             url: PublicLibrary.gutenbergSearchURL(query: "l.zh").absoluteString, title: localized("中文書籍")))
     }.environmentObject(BookStore())
 }
+
+#Preview("書卡狀態") {
+    HStack(alignment: .top, spacing: DSSpacing.lg) {
+        ForEach([nil, CopyLookup.Status.onShelf, .downloaded], id: \.self) { status in
+            PublicLibraryBookCard(book: .gutenberg(GutenbergBook(id: 1342, title: "Pride and Prejudice", author: "Jane Austen")),
+                                  status: status)
+                .frame(width: 120)
+        }
+    }
+    .padding()
+}
