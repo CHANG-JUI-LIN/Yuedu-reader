@@ -648,7 +648,7 @@ Each sub-step adds one test file and one commit. A test that fails on unchanged 
 ## Acceptance (Phase 0)
 
 - [x] 0a: six characterization suites; no production diff; gaps recorded (see What landed).
-- [ ] 0b: `empty` and `failed` are distinct and logged; callers and `SourceHealthStore` unchanged.
+- [x] 0b: `empty` and `failed` are distinct and logged; callers and `SourceHealthStore` unchanged.
 - [x] 0c: the WebDAV view no longer calls the network; behavior and VoiceOver unchanged.
 - [x] 0d: a corrupt custom Explore file is kept aside before any write, or never written over.
 - [ ] 0e: `search.firstResult` in Release Console; baseline recorded.
@@ -773,6 +773,40 @@ Branch `unified-library/0e-search-first-result-span`, one commit on `772b0c95`: 
    (SearchFirstResultSpanTests 5, NetworkSettingsSearchTests, SearchSourceScopeTests,
     SearchResultPublicationGateTests, IOS17SearchResultTableTests)
 ```
+
+### 0b (2026-10-10)
+
+Branch `unified-library/0b-search-outcome`, one commit on `31ca4ba0` (main with 0a, 0c, 0d and 0e merged): `723a8308`. Not merged, not pushed.
+
+- **`BookSourceFetcher+Search.swift`:**
+  - New types: `BookSourceSearchFailure` (`http`, `encoding`, `emptyContent`, `transport`, `parse`, `cancelled`) and `BookSourceSearchOutcome` (`results`, `empty`, `failed`).
+  - The pure `BookSourceSearchFailure.disposition(of:mode:)` holds the old lines 117-145 mapping, unchanged in both modes.
+  - `searchOutcome(…)` holds the old body, and `search(…)` is a one-line wrapper over it.
+  - `SearchStreamingOutcome.failure` carries the failure to the aggregator.
+  - A cancelled request still comes back as no results, but is classified `.cancelled` and not logged, because it is not the source's fault.
+- **Logging:** one `AppLogger` warning per failure: `search failed; shown as no results: <source> (<host>) <reason>`. It never contains the URL or the query.
+  - **Maintainer's choice (2026-10-10): only `.emptyResult` searches log.** That covers the 搜索 tab, 換源 and cover search. 書源驗證 (`.propagateTransportError`) does not log, since its own results list each source's failure, and a run over tens of thousands of sources would push everything else out of the 6,000-line diagnostic snapshot.
+- **`SearchAggregator`:**
+  - `SearchBatchResult.success` carries `answer: .results | .empty | .failedAsEmpty`;
+  - a per-search tally is reset in `search(…)` and printed in `search.listPublish.summary` as `answered= empty= failedAsEmpty=`.
+  - Every `SourceHealthStore` call and the progress counters are byte-for-byte unchanged. The only added line there is the §17 item 9 comment above `recordSuccess`.
+- **Log volume:** at most two lines per failing source per search. Page 1 fails; the source still counts as successful, so 載入更多 asks it for page 2 once. That page adds no books, so the source is marked exhausted. Each line is about 150 bytes, so a 1,000-source search with 300 dead sources adds about 300–600 lines, roughly 45–90 KB of the 2 MB file.
+- **Not covered by a test:** the parse-failure path through a real request. No rule was found that makes `parseSearchResults` throw deterministically. The code path is the same `logReportedAsEmpty` call, and the `.parse` reason is set there.
+- **`BookSourceSearchOutcomeTests`** has 11 tests:
+  - the mapping table, for both modes, cancellation, and unlisted statuses;
+  - through a stubbed `WebFetcher(session:)`: a page with books, a legitimately empty page, a 403 in both modes, an unlisted 418 (thrown), a transport error in both modes;
+  - the log line's content, and no log in validation mode.
+
+```
+✔ Test run with 84 tests in 12 suites passed after 2.471 seconds.
+   (BookSourceSearchOutcomeTests 11, NetworkSettingsSearchTests, SearchSourceScopeTests,
+    SearchResultPublicationGateTests, IOS17SearchResultTableTests, AggregateSearchStreamingTests,
+    BookSourceHealthCheckerPerformanceTests, ChangeSourceMatchTests, and 0a/0e's
+    SearchKeyCharacterizationTests, SearchAggregatorCharacterizationTests,
+    SearchFirstResultSpanTests, BookOriginSearchServiceTests)
+```
+
+**Baseline note:** take 0e's baseline on a build of `31ca4ba0` (before this branch), as decision 11 intends.
 
 ## Baseline: `search.firstResult` (before Phase 4)
 
