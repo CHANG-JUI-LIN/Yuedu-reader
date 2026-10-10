@@ -247,7 +247,7 @@ struct SettingsView: View {
             // Pushed on every version (2026-10-10): its importers then always have a
             // first-level presenter, and it is configuration like 遠端書庫 beside it.
             .navigationDestination(isPresented: $showSourceList) {
-                BookSourceListView(embedsNavigationStack: false)
+                BookSourceListView()
                     .environmentObject(store)
             }
             #if DEBUG

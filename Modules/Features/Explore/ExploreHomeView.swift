@@ -422,7 +422,7 @@ struct ExploreHomeView: View {
             ))
             .environmentObject(store)
         case .sourceManager:
-            BookSourceListView(embedsNavigationStack: false)
+            BookSourceListView()
         }
     }
 

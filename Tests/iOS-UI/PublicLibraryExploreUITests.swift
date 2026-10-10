@@ -69,6 +69,8 @@ final class PublicLibraryExploreUITests: XCTestCase {
         manage.tap()
         let add = app.buttons["新增來源配置"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.navigationBars["來源配置管理"].buttons["關閉"].exists,
+                       "書源管理 is pushed: it leaves by back, with no close button")
         add.tap()
         app.buttons["本地導入"].firstMatch.tap()
         let editor = app.textViews.firstMatch

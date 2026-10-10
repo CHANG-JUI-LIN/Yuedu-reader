@@ -60,9 +60,12 @@ struct BookSourceManagementScaleTests {
         let before = MemoryFootprint.current()
         sampler.start()
         let startedAt = ProcessInfo.processInfo.systemUptime
+        // Hosted in a stack, as Settings and Explore push it.
         let host = try WindowHost(
-            BookSourceListView(store: fixture.store, healthChecker: checker)
-                .environmentObject(fixture.bookStore)
+            NavigationStack {
+                BookSourceListView(store: fixture.store, healthChecker: checker)
+            }
+            .environmentObject(fixture.bookStore)
         )
         let firstLayoutMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
         host.pump(seconds: 0.5)
