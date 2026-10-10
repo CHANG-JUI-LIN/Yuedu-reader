@@ -45,9 +45,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 45), app.debugDescription)
         screenshot(app, "nonpro-search")
         result.tap()
-        let resize = app.buttons["publicLibrary.resizeSheet"].firstMatch
-        XCTAssertTrue(resize.waitForExistence(timeout: 45), app.debugDescription)
-        resize.tap()
+        XCTAssertTrue(app.buttons["publicLibrary.closeSheet"].firstMatch.waitForExistence(timeout: 45), app.debugDescription)
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["開始閱讀", "繼續閱讀"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(read.isEnabled)
@@ -62,7 +60,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         // so a still-running range request cannot be mistaken for reader readiness.
         let footer = app.otherElements["頁腳"].firstMatch
         XCTAssertTrue(footer.waitForExistence(timeout: 90), app.debugDescription)
-        XCTAssertTrue(app.buttons["publicLibrary.resizeSheet"].firstMatch.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["publicLibrary.closeSheet"].firstMatch.waitForNonExistence(timeout: 10))
         // This edition begins with an image-only cover. Scroll into its text.
         let content = app.collectionViews.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "(?s).{101,}")).firstMatch
         for _ in 0..<4 where !content.exists { app.swipeUp() }

@@ -275,23 +275,17 @@ struct RemoteLibraryBookDetailView: View {
                 Link(localized("在書庫網站查看"), destination: url)
                     .font(DSFont.subheadline).padding(.horizontal, DSSpacing.lg)
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { begin(.addToShelf) } label: {
-                    Label(localized(isOnShelf ? "已加入書架" : "加入書架"), systemImage: isOnShelf ? "checkmark" : "plus")
-                        .labelStyle(.iconOnly)
-                }.disabled(!canAct || isOnShelf)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker(localized("格式"), selection: $selectedFormatID) {
-                        ForEach(item.formats) { format in Text(formatLabel(format)).tag(format.id) }
-                    }.disabled(action != nil)
-                    if let url = item.alternateURL { ShareLink(item: url) }
-                } label: {
-                    Label(localized("書庫操作"), systemImage: "ellipsis").labelStyle(.iconOnly)
-                }
+        } actions: {
+            Button { begin(.addToShelf) } label: {
+                BookDetailCardIcon(title: localized(isOnShelf ? "已加入書架" : "加入書架"), systemImage: isOnShelf ? "checkmark" : "plus")
+            }.disabled(!canAct || isOnShelf)
+            Menu {
+                Picker(localized("格式"), selection: $selectedFormatID) {
+                    ForEach(item.formats) { format in Text(formatLabel(format)).tag(format.id) }
+                }.disabled(action != nil)
+                if let url = item.alternateURL { ShareLink(item: url) }
+            } label: {
+                BookDetailCardIcon(title: localized("書庫操作"), systemImage: "ellipsis")
             }
         }
     }

@@ -24,7 +24,7 @@
   <a href="https://iosdevweekly.com/issues/751">
     <img src="https://img.shields.io/badge/iOS%20Dev%20Weekly-%23751%20收录-FF6600" alt="获 iOS Dev Weekly #751 收录">
   </a>
-  <img src="https://img.shields.io/badge/iOS-18.0%2B-000000?logo=apple&logoColor=white" alt="iOS 18.0+">
+  <img src="https://img.shields.io/badge/iOS-17.0%2B-000000?logo=apple&logoColor=white" alt="iOS 17.0+">
   <img src="https://img.shields.io/badge/许可证-MPL--2.0-blue" alt="MPL 2.0 许可证">
 </p>
 
@@ -61,7 +61,7 @@ Sync (WebDAV / iCloud / OPDS)
 
 ## 构建
 
-**环境要求：** Xcode 16+ · iOS 18.0+ · Swift 6.0
+**环境要求：** Xcode 16+ · iOS 17.0+ · Swift 6.0
 
 ```bash
 git clone https://github.com/CHANG-JUI-LIN/Yuedu-reader.git

@@ -23,6 +23,7 @@ struct PublicLibraryBookCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xs) {
             PublicLibraryCover(title: book.title, author: book.author)
+                .publicLibraryCoverFrame(id: book.id)
                 .padding(.bottom, DSSpacing.sm)
             if showsMetadata {
                 Text(book.title).font(DSFont.headline).foregroundStyle(DSColor.textPrimary)
@@ -41,6 +42,8 @@ struct PublicLibraryBooksGrid: View {
     let select: (PublicLibraryBookSelection) -> Void
     @Environment(\.dynamicTypeSize) private var textSize
     @ScaledMetric(relativeTo: .body) private var minimumWidth = DSLayout.publicLibraryMinimumCoverWidth
+    @Environment(\.publicLibraryCoverFrames) private var coverFrames
+    private static let scope = "grid"
 
     private var columns: [GridItem] {
         textSize.isAccessibilitySize ? [GridItem(.flexible())]
@@ -51,6 +54,7 @@ struct PublicLibraryBooksGrid: View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: DSSpacing.xl) {
             ForEach(books) { book in
                 Button {
+                    coverFrames?.activeScope = Self.scope
                     if let selection = PublicLibraryBookSelection(books: books, selectedID: book.id) { select(selection) }
                 } label: { PublicLibraryBookCard(book: book) }
                 .buttonStyle(ExploreTileButtonStyle())
@@ -63,22 +67,22 @@ struct PublicLibraryBooksGrid: View {
         }
         .padding(.horizontal, DSLayout.publicLibraryMargin)
         .padding(.vertical, DSSpacing.lg)
+        .environment(\.publicLibraryCoverScope, Self.scope)
     }
 }
 
 struct PublicLibraryCollectionView: View {
     let collection: PublicLibraryCollection
-    @State private var selection: PublicLibraryBookSelection?
+    @Environment(\.openPublicLibraryBooks) private var openBooks
 
     var body: some View {
         ScrollView {
-            PublicLibraryBooksGrid(books: collection.books.map(PublicLibraryBook.gutenberg)) { selection = $0 }
+            PublicLibraryBooksGrid(books: collection.books.map(PublicLibraryBook.gutenberg)) { openBooks?($0) }
         }
         .softScrollEdges()
         .navigationTitle(localized(collection.titleKey))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .explore)
-        .sheet(item: $selection) { PublicLibraryBookSheet(selection: $0) }
     }
 }
 
@@ -87,7 +91,7 @@ struct PublicLibraryCollectionView: View {
 struct PublicLibraryFeedView: View {
     let route: OPDSFeedRoute
     @StateObject private var model: OPDSBrowseModel
-    @State private var selection: PublicLibraryBookSelection?
+    @Environment(\.openPublicLibraryBooks) private var openBooks
     @State private var query = ""
     @State private var request: Task<Void, Never>?
 
@@ -101,7 +105,7 @@ struct PublicLibraryFeedView: View {
             LazyVStack(spacing: DSSpacing.lg) {
                 if !model.entries.isEmpty {
                     PublicLibraryBooksGrid(books: model.entries.compactMap(GutenbergBook.init(entry:)).map(PublicLibraryBook.gutenberg)) {
-                        selection = $0
+                        openBooks?($0)
                     }
                 }
                 if let error = model.loadError {
@@ -143,7 +147,6 @@ struct PublicLibraryFeedView: View {
         }
         .submitScope()
         .task { if !model.didLoad { await model.load() } }
-        .sheet(item: $selection) { PublicLibraryBookSheet(selection: $0) }
         .onDisappear { request?.cancel() }
     }
 }

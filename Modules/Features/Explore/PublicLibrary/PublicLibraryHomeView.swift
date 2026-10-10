@@ -5,6 +5,8 @@ struct PublicLibraryHomeView: View {
     @State private var path = NavigationPath()
     @State private var query = ""
     @State private var selection: PublicLibraryBookSelection?
+    @State private var coverFrames = PublicLibraryCoverFrames()
+    private static let curatedScope = "curated"
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     @ObservedObject private var aozora = AozoraCatalogStore.shared
 
@@ -25,6 +27,7 @@ struct PublicLibraryHomeView: View {
             .task { await aozora.load() }
             .refreshable { await aozora.load(forceRefresh: true) }
             .navigationDestination(for: OPDSFeedRoute.self) { PublicLibraryFeedView(route: $0) }
+            .publicLibraryCarouselDestinations()
             .rootTabSearchScrollEdges()
             .themedAppSurface(for: .explore)
             .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
@@ -38,8 +41,8 @@ struct PublicLibraryHomeView: View {
                     ToolbarItem(placement: .topBarTrailing) { modeMenu }
                 }
             }
-            .sheet(item: $selection) { PublicLibraryBookSheet(selection: $0) }
         }
+        .publicLibraryBookCarousel(path: $path, request: $selection, coverFrames: coverFrames)
     }
 
     private var storefront: some View {
@@ -129,11 +132,13 @@ struct PublicLibraryHomeView: View {
                         VStack(spacing: DSSpacing.lg) {
                             ForEach(Array(books[start..<min(start + 3, books.count)])) { book in
                                 Button {
+                                    coverFrames.activeScope = Self.curatedScope
                                     selection = PublicLibraryBookSelection(books: books, selectedID: book.id)
                                 } label: {
                                     HStack(spacing: DSSpacing.lg) {
                                         PublicLibraryCover(title: book.title, author: book.author)
                                             .frame(width: DSLayout.discoverRowCoverWidth, height: DSLayout.discoverRowCoverHeight)
+                                            .publicLibraryCoverFrame(id: book.id)
                                         VStack(alignment: .leading, spacing: DSSpacing.xs) {
                                             Text(book.title).font(DSFont.headline).foregroundStyle(DSColor.textPrimary).lineLimit(2)
                                             Text(book.author).font(DSFont.subheadline).foregroundStyle(DSColor.textSecondary).lineLimit(1)
@@ -153,6 +158,7 @@ struct PublicLibraryHomeView: View {
             }
             .contentMargins(.horizontal, DSLayout.publicLibraryMargin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned).scrollIndicators(.hidden).scrollClipDisabled()
+            .environment(\.publicLibraryCoverScope, Self.curatedScope)
         }
     }
 
@@ -190,6 +196,7 @@ struct PublicLibraryShelf<Destination: View>: View {
     let select: (PublicLibraryBookSelection) -> Void
     @ViewBuilder let destination: () -> Destination
     @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.publicLibraryCoverFrames) private var coverFrames
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xl) {
@@ -204,6 +211,7 @@ struct PublicLibraryShelf<Destination: View>: View {
                 LazyHStack(alignment: .top, spacing: DSSpacing.lg) {
                     ForEach(books) { book in
                         Button {
+                            coverFrames?.activeScope = title
                             if let selection = PublicLibraryBookSelection(books: books, selectedID: book.id) { select(selection) }
                         } label: {
                             PublicLibraryBookCard(book: book, showsMetadata: false)
@@ -219,6 +227,7 @@ struct PublicLibraryShelf<Destination: View>: View {
             }
             .contentMargins(.horizontal, DSLayout.publicLibraryMargin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned).scrollIndicators(.hidden).scrollClipDisabled()
+            .environment(\.publicLibraryCoverScope, title)
         }
     }
 }

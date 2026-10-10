@@ -25,77 +25,267 @@ struct BookDetailAuthorAction: Identifiable {
 
 // MARK: - Page scaffold
 
+/// Set by a container that scrolls the detail page itself — the public-library card
+/// carousel, where each card's own vertical scroll view is also its expansion gesture.
+/// The scaffold then lays its content out without a scroll view of its own, at a
+/// fixed width so nothing rewraps while the card widens around it, and puts its
+/// buttons in the card's own header instead of the navigation bar.
+struct BookDetailEmbedding {
+    /// Width the hero's text and the sections keep, however wide the card grows.
+    let contentWidth: CGFloat
+    /// The book's cover colours. The card's top — header and hero — is painted in
+    /// them as Apple Books paints its store card in the cover's colour.
+    let tone: BookDetailCardTone
+}
+
+/// Colours of a carousel card's top, taken from the book's generated cover.
+struct BookDetailCardTone {
+    let top: Color
+    let bottom: Color
+    /// Text and icons on the top; guaranteed to read against it.
+    let ink: Color
+    /// The cover's frame line: the tint of the header's glass.
+    let line: Color
+
+    init(_ tone: GeneratedCoverTone) {
+        top = Color(uiColor: tone.top)
+        bottom = Color(uiColor: tone.bottom)
+        ink = Color(uiColor: tone.ink)
+        line = Color(uiColor: tone.line)
+    }
+}
+
+private struct BookDetailEmbeddingKey: EnvironmentKey {
+    static let defaultValue: BookDetailEmbedding? = nil
+}
+
+/// Scroll state of the card around an embedded page, for its header: how far the card
+/// has scrolled up from rest, the scroll view's top inset (the card's resting
+/// distance from the top of the screen) and the margin the card widens across.
+struct BookDetailCardChrome {
+    var offset: CGFloat
+    var inset: CGFloat
+    var margin: CGFloat
+    var close: () -> Void
+
+    /// 0 at rest, 1 once the card's top has reached the top of the screen.
+    var progress: CGFloat { inset > 0 ? min(max(offset / inset, 0), 1) : 0 }
+}
+
+private struct BookDetailCardChromeKey: EnvironmentKey {
+    static let defaultValue: BookDetailCardChrome? = nil
+}
+
+extension EnvironmentValues {
+    var bookDetailEmbedding: BookDetailEmbedding? {
+        get { self[BookDetailEmbeddingKey.self] }
+        set { self[BookDetailEmbeddingKey.self] = newValue }
+    }
+
+    var bookDetailCardChrome: BookDetailCardChrome? {
+        get { self[BookDetailCardChromeKey.self] }
+        set { self[BookDetailCardChromeKey.self] = newValue }
+    }
+}
+
 /// Scroll container, background and navigation chrome shared by the detail pages.
 ///
 /// When the hero's actions scroll under the navigation bar, the book's title fades
 /// into the bar and the primary action follows it as a compact button — the App
 /// Store and Apple Books pattern — so the primary action is never more than one tap
 /// away without a bar permanently covering the chapter list.
-struct BookDetailScaffold<Hero: View, Content: View>: View {
+struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
     let title: String
     let compactAction: BookDetailAction
     var onRefresh: (() async -> Void)?
-    @ViewBuilder var hero: Hero
-    @ViewBuilder var content: Content
+    var hero: Hero
+    var content: Content
+    /// Trailing buttons: in the navigation bar, or in the card's header when embedded.
+    var actions: Actions
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.bookDetailEmbedding) private var embedding
     /// Bottom edge of the hero, in global coordinates.
     @State private var heroBottom = CGFloat.greatestFiniteMagnitude
     /// Top edge of the visible scroll area (below the navigation bar), in global coordinates.
     @State private var visibleTop: CGFloat = 0
 
+    init(title: String, compactAction: BookDetailAction, onRefresh: (() async -> Void)? = nil,
+         @ViewBuilder hero: () -> Hero, @ViewBuilder content: () -> Content,
+         @ViewBuilder actions: () -> Actions) {
+        self.title = title
+        self.compactAction = compactAction
+        self.onRefresh = onRefresh
+        self.hero = hero()
+        self.content = content()
+        self.actions = actions()
+    }
+
     private var heroScrolledAway: Bool { heroBottom < visibleTop }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: DSSpacing.xl) {
-                hero
-                    .onGeometryChange(for: CGFloat.self) { proxy in
-                        proxy.frame(in: .global).maxY
-                    } action: { heroBottom = $0 }
-                content
-            }
-            .padding(.bottom, DSSpacing.xxl)
-        }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
-        } action: { visibleTop = $0 }
-        .modifier(BookDetailRefreshModifier(onRefresh: onRefresh))
-        // iOS 26's soft top edge fades whatever scrolls under the navigation bar into
-        // the page background — it turned the cover wash under the bar into a flat
-        // band. The cover shows through while it is on screen; once it has scrolled
-        // away the edge effect returns to keep the bar's title and button legible.
-        .softScrollEdges(hidingTop: !heroScrolledAway)
-        .scrollIndicators(.hidden)
-        .background(PageBackgroundView(scope: .global).ignoresSafeArea())
-        .pageBackgroundToolbar(for: .global)
-        .toolbarTitleDisplayMode(.inline)
-        .hidesRootTabBar()
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(title)
-                    .font(DSFont.headline)
-                    .foregroundStyle(DSColor.textPrimary)
-                    .lineLimit(1)
-                    .opacity(heroScrolledAway ? 1 : 0)
-                    .accessibilityHidden(!heroScrolledAway)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                if heroScrolledAway {
-                    Button(action: compactAction.action) {
-                        Text(compactAction.title)
-                            .font(DSFont.subheadline.weight(.semibold))
+        if embedding != nil {
+            stack.frame(maxWidth: .infinity)
+        } else {
+            ScrollView { stack }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
+                } action: { visibleTop = $0 }
+                .modifier(BookDetailRefreshModifier(onRefresh: onRefresh))
+                // iOS 26's soft top edge fades whatever scrolls under the navigation bar into
+                // the page background — it turned the cover wash under the bar into a flat
+                // band. The cover shows through while it is on screen; once it has scrolled
+                // away the edge effect returns to keep the bar's title and button legible.
+                .softScrollEdges(hidingTop: !heroScrolledAway)
+                .scrollIndicators(.hidden)
+                .background(PageBackgroundView(scope: .global).ignoresSafeArea())
+                .pageBackgroundToolbar(for: .global)
+                .toolbarTitleDisplayMode(.inline)
+                .hidesRootTabBar()
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        Text(title)
+                            .font(DSFont.headline)
+                            .foregroundStyle(DSColor.textPrimary)
+                            .lineLimit(1)
+                            .opacity(heroScrolledAway ? 1 : 0)
+                            .accessibilityHidden(!heroScrolledAway)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.small)
-                    .tint(DSColor.accent)
-                    .disabled(!compactAction.isEnabled || compactAction.isBusy)
-                    .transition(.opacity)
+                    ToolbarItem(placement: .topBarTrailing) {
+                        if heroScrolledAway {
+                            Button(action: compactAction.action) {
+                                Text(compactAction.title)
+                                    .font(DSFont.subheadline.weight(.semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.small)
+                            .tint(DSColor.accent)
+                            .disabled(!compactAction.isEnabled || compactAction.isBusy)
+                            .transition(.opacity)
+                        }
+                    }
+                    ToolbarItemGroup(placement: .topBarTrailing) { actions }
+                }
+                .animation(reduceMotion ? nil : DSAnimation.fast, value: heroScrolledAway)
+        }
+    }
+
+    private var stack: some View {
+        VStack(spacing: DSSpacing.xl) {
+            VStack(spacing: 0) {
+                if embedding != nil {
+                    BookDetailCardHeader(hasActions: Actions.self != EmptyView.self) { actions }
+                        // Over the hero, whose cover wash runs up behind it.
+                        .zIndex(1)
+                }
+                hero
+                    // Only the navigation bar's title uses it; a card has no bar, and
+                    // tracking it there re-rendered the page on every frame of a scroll.
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        embedding == nil ? proxy.frame(in: .global).maxY : 0
+                    } action: { heroBottom = $0 }
+            }
+            content
+                .frame(maxWidth: embedding?.contentWidth ?? .infinity)
+        }
+        .padding(.bottom, DSSpacing.xxl)
+    }
+}
+
+extension BookDetailScaffold where Actions == EmptyView {
+    init(title: String, compactAction: BookDetailAction, onRefresh: (() async -> Void)? = nil,
+         @ViewBuilder hero: () -> Hero, @ViewBuilder content: () -> Content) {
+        self.init(title: title, compactAction: compactAction, onRefresh: onRefresh,
+                  hero: hero, content: content, actions: { EmptyView() })
+    }
+}
+
+// MARK: - Card header
+
+/// The buttons at the top of a carousel card, in the manner of Apple Books' store
+/// card: they ride with the card, then stay pinned below the status bar once it has
+/// scrolled up. They are drawn as the navigation bar draws its own — glass capsules —
+/// tinted with the card's colour.
+struct BookDetailCardHeader<Actions: View>: View {
+    let hasActions: Bool
+    @ViewBuilder var actions: Actions
+    @Environment(\.bookDetailCardChrome) private var chrome
+    @Environment(\.bookDetailEmbedding) private var embedding
+
+    var body: some View {
+        if let chrome, let embedding {
+            HStack(spacing: DSSpacing.md) {
+                BookDetailCardButtonGroup(tone: embedding.tone) {
+                    Button(action: chrome.close) {
+                        BookDetailCardIcon(title: localized("關閉"), systemImage: "xmark")
+                    }
+                    .accessibilityIdentifier("publicLibrary.closeSheet")
+                }
+                Spacer()
+                if hasActions {
+                    BookDetailCardButtonGroup(tone: embedding.tone) { actions }
                 }
             }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.top, DSSpacing.lg)
+            .frame(maxWidth: embedding.contentWidth)
+            .padding(.horizontal, -chrome.margin * chrome.progress)
+            // Rides with the card for the first stretch, then stays where it is.
+            .offset(y: chrome.offset < DSLayout.cardHeaderPinDistance ? 0 : chrome.offset - DSLayout.cardHeaderPinDistance)
         }
-        .animation(reduceMotion ? nil : DSAnimation.fast, value: heroScrolledAway)
+    }
+}
+
+/// A navigation-bar-sized icon button label.
+struct BookDetailCardIcon: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .labelStyle(.iconOnly)
+            .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+            .contentShape(Rectangle())
+    }
+}
+
+/// Adjacent buttons on one glass capsule, as the navigation bar groups them.
+private struct BookDetailCardButtonGroup<Buttons: View>: View {
+    let tone: BookDetailCardTone
+    @ViewBuilder var buttons: Buttons
+
+    var body: some View {
+        HStack(spacing: 0) { buttons }
+            .buttonStyle(.plain)
+            .font(DSFont.body.weight(.medium))
+            .foregroundStyle(tone.ink)
+            .modifier(CardButtonGlass(tint: tone.line))
+    }
+}
+
+/// The bar's glass on iOS 26, tinted with the card; older systems have no glass, so
+/// the tint lies over `.regularMaterial`. The `#if compiler` guard mirrors
+/// `FrostedGlassBackground`.
+private struct CardButtonGlass: ViewModifier {
+    let tint: Color
+
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.tint(tint.opacity(DSLayout.cardHeaderGlassTintOpacity)).interactive(), in: Capsule())
+        } else {
+            legacy(content)
+        }
+        #else
+        legacy(content)
+        #endif
+    }
+
+    private func legacy(_ content: Content) -> some View {
+        content
+            .background(tint.opacity(DSLayout.cardHeaderGlassTintOpacity), in: Capsule())
+            .background(.regularMaterial, in: Capsule())
     }
 }
 
@@ -133,6 +323,7 @@ struct BookDetailHero<Cover: View>: View {
     var artworkHeight: CGFloat? = nil
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.bookDetailEmbedding) private var embedding
 
     private var artworkSize: CGSize {
         switch artworkShape {
@@ -145,15 +336,43 @@ struct BookDetailHero<Cover: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: DSSpacing.lg) {
+        VStack(spacing: 0) {
             artwork
             titleBlock
+                .padding(.top, isCard ? DSLayout.cardCarouselCoverTitleSpacing : DSSpacing.lg)
             actions
+                .padding(.top, DSSpacing.lg)
         }
         .padding(.horizontal, DSSpacing.lg)
-        .padding(.top, DSSpacing.lg)
+        // On a card the cover sits where Apple Books puts it, under the card's header.
+        .padding(.top, isCard ? DSLayout.cardCarouselCoverTop - DSSpacing.lg - DSLayout.minimumTapTarget : DSSpacing.lg)
+        .padding(.bottom, isCard ? DSLayout.cardCarouselTopBottomPadding : 0)
+        // In a widening card the text keeps its width; only the wash grows with it.
+        .frame(maxWidth: embedding?.contentWidth ?? .infinity)
         .frame(maxWidth: .infinity)
-        .background(alignment: .top) { backdrop }
+        .background(alignment: .top) {
+            if let tone = embedding?.tone { cardTop(tone) } else { backdrop }
+        }
+    }
+
+    /// In a carousel card: the cover's colours fill the card's top, running up behind
+    /// the header (the card clips it to its rounded top).
+    private func cardTop(_ tone: BookDetailCardTone) -> some View {
+        GeometryReader { proxy in
+            let extensionHeight = DSLayout.bookDetailBackdropTopExtension
+            LinearGradient(colors: [tone.top, tone.bottom], startPoint: .top, endPoint: .bottom)
+                .frame(width: proxy.size.width, height: proxy.size.height + extensionHeight)
+                .offset(y: -extensionHeight)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var isCard: Bool { embedding != nil }
+
+    private var primaryText: Color { embedding?.tone.ink ?? DSColor.textPrimary }
+    private var secondaryText: Color {
+        embedding.map { $0.tone.ink.opacity(DSLayout.cardSecondaryTextOpacity) } ?? DSColor.textSecondary
     }
 
     private var artwork: some View {
@@ -175,13 +394,13 @@ struct BookDetailHero<Cover: View>: View {
         VStack(spacing: DSSpacing.xs) {
             Text(title)
                 .font(DSFont.title2.weight(.bold))
-                .foregroundStyle(DSColor.textPrimary)
+                .foregroundStyle(primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             if authorActions.isEmpty {
                 Text(author)
                     .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .foregroundStyle(secondaryText)
                     .lineLimit(1)
             } else {
                 ForEach(authorActions) { author in
@@ -195,16 +414,20 @@ struct BookDetailHero<Cover: View>: View {
                         .font(DSFont.subheadline)
                         .frame(minHeight: DSLayout.minimumTapTarget)
                     }
+                    // A card sets the author line as tight under the title as Apple Books
+                    // does; the tap target keeps its height, overlapping the text around it.
+                    .padding(.vertical, isCard ? -DSSpacing.md : 0)
                     .buttonStyle(.plain)
-                    .foregroundStyle(DSColor.accent)
+                    .foregroundStyle(embedding?.tone.ink ?? DSColor.accent)
                     .accessibilityIdentifier("publicLibrary.author.\(author.id)")
                 }
             }
             if !meta.isEmpty {
                 Text(meta)
                     .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .foregroundStyle(secondaryText)
                     .lineLimit(2)
+                    .padding(.top, isCard ? DSSpacing.md : 0)
             }
         }
         .multilineTextAlignment(.center)
@@ -226,27 +449,48 @@ struct BookDetailHero<Cover: View>: View {
         }
     }
 
+    @ViewBuilder
     private var primaryButton: some View {
-        Button(action: primary.action) {
-            BookDetailActionLabel(action: primary, progressTint: DSColor.textOnAccent)
+        if embedding != nil {
+            // Apple Books' 取得: white whatever the card's colour, and the same white
+            // while the page loads, so paging between cards never changes it.
+            Button(action: primary.action) {
+                BookDetailActionLabel(action: primary, progressTint: DSColor.cardPrimaryActionLabel)
+            }
+            .buttonStyle(BookDetailCardActionStyle(fill: DSColor.cardPrimaryActionFill, label: DSColor.cardPrimaryActionLabel))
+            .disabled(!primary.isEnabled || primary.isBusy)
+        } else {
+            Button(action: primary.action) {
+                BookDetailActionLabel(action: primary, progressTint: DSColor.textOnAccent)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .tint(DSColor.accent)
+            .disabled(!primary.isEnabled || primary.isBusy)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
-        .tint(DSColor.accent)
-        .disabled(!primary.isEnabled || primary.isBusy)
     }
 
+    @ViewBuilder
     private var secondaryButton: some View {
-        Button(action: secondary.action) {
-            BookDetailActionLabel(action: secondary, progressTint: DSColor.textPrimary)
+        if let tone = embedding?.tone {
+            // Apple Books' 試讀: the card's ink over a light veil of itself.
+            Button(action: secondary.action) {
+                BookDetailActionLabel(action: secondary, progressTint: tone.ink)
+            }
+            .buttonStyle(BookDetailCardActionStyle(fill: tone.ink.opacity(DSLayout.cardSecondaryActionFillOpacity), label: tone.ink))
+            .disabled(!secondary.isEnabled || secondary.isBusy)
+        } else {
+            Button(action: secondary.action) {
+                BookDetailActionLabel(action: secondary, progressTint: DSColor.textPrimary)
+            }
+            // Neutral, so the accent belongs to the one primary action beside it.
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .tint(DSColor.textPrimary)
+            .disabled(!secondary.isEnabled || secondary.isBusy)
         }
-        // Neutral, so the accent belongs to the one primary action beside it.
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
-        .tint(DSColor.textPrimary)
-        .disabled(!secondary.isEnabled || secondary.isBusy)
     }
 
     /// The artwork blurred into a wash behind the hero, as Apple Books does. It runs
@@ -281,6 +525,22 @@ struct BookDetailHero<Cover: View>: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+    }
+}
+
+/// A carousel card's action, as Apple Books draws its store card's: a flat capsule
+/// whose colours do not change when the action is unavailable, so a card does not
+/// flicker as its page loads. Whether it can be pressed is still announced.
+private struct BookDetailCardActionStyle: ButtonStyle {
+    let fill: Color
+    let label: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(label)
+            .frame(minHeight: DSLayout.cardActionHeight)
+            .background(fill, in: Capsule())
+            .opacity(configuration.isPressed ? DSLayout.cardActionPressedOpacity : 1)
     }
 }
 

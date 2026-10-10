@@ -62,6 +62,12 @@ enum DSColor {
     static var surfaceTertiary: Color { themed(\.appSecondaryBackground, fallback: .tertiarySystemBackground) }
     /// Grouped content background
     static var groupedBackground: Color { themed(\.appPageBackground, fallback: .systemGroupedBackground) }
+    /// The dim over the store behind the public-library card carousel.
+    static let cardCarouselDim = Color.black
+    /// A carousel card's primary action, white with black text in every card colour
+    /// and appearance, as Apple Books' 取得.
+    static let cardPrimaryActionFill = Color.white
+    static let cardPrimaryActionLabel = Color.black
     /// Neutral gray fill for controls that must not inherit an appearance-theme tint.
     static let neutralControlFill = Color(uiColor: .systemGray5)
     /// Pressed-state fill layered inside `neutralControlFill` controls (pre-iOS 26 fallback).
@@ -330,10 +336,6 @@ enum DSLayout {
     static let publicLibrarySectionSpacing: CGFloat = 48
     static let publicLibraryFeaturedAspect: CGFloat = 1.46
     static let publicLibraryFeaturedRotation: Double = -16
-    /// The medium sheet keeps the title and actions reachable below the jacket.
-    static let publicLibraryCompactCoverHeight: CGFloat = 168
-    static let publicLibraryExpandedCoverHeight: CGFloat = 312
-    static let publicLibrarySheetChromeAllowance: CGFloat = 224
     /// Cover in a custom explore page's 推薦卡片 and 左右滑動 rows — five to a phone's card.
     static let customExploreCardCoverWidth: CGFloat = 70
     static let customExploreCardCoverHeight: CGFloat = 105
@@ -384,6 +386,30 @@ enum DSLayout {
     /// How far a detail page's cover wash runs above the hero, under the status and
     /// navigation bars — taller than both together at the largest text size, so even a
     /// pull-down overscroll does not uncover the page background behind the bars.
+    /// Public-library card carousel (Apple Books store card). How far the card
+    /// scrolls before its header pins; the tint over the header's glass; secondary
+    /// text on the card's coloured top; the dim over the store, measured off Apple
+    /// Books (white #FFFFFF under it reads #434343); and how far a resting card has
+    /// to be pulled down, or how fast, to close when let go.
+    static let cardHeaderPinDistance: CGFloat = 20
+    /// Card geometry measured off Apple Books (414pt-wide phone, 2x): the resting
+    /// card's top below the status bar; the cover's top below the card's top (under
+    /// the 16pt + 44pt header), its height, and the gap to the title under it; and
+    /// the coloured top's run below the actions.
+    static let cardCarouselTopGap: CGFloat = 13
+    static let cardCarouselCoverTop: CGFloat = 83
+    static let cardCarouselCoverHeight: CGFloat = 314
+    static let cardCarouselCoverTitleSpacing: CGFloat = 34
+    static let cardCarouselTopBottomPadding: CGFloat = 44
+    static let cardHeaderGlassTintOpacity: Double = 0.35
+    static let cardSecondaryTextOpacity: Double = 0.72
+    static let cardCarouselDimOpacity: Double = 0.74
+    static let cardCarouselDismissPull: CGFloat = 80
+    static let cardCarouselDismissVelocity: CGFloat = 600
+    /// A card's actions, measured off Apple Books' 試讀 / 取得 (45.5pt tall).
+    static let cardActionHeight: CGFloat = 46
+    static let cardActionPressedOpacity: Double = 0.7
+    static let cardSecondaryActionFillOpacity: Double = 0.14
     static let bookDetailBackdropTopExtension: CGFloat = 320
     /// Blur radius of the cover repeated behind the hero as a colour wash.
     static let bookCoverHeroBackdropBlur: CGFloat = 44
@@ -600,6 +626,8 @@ enum DSRadius {
     static let lg: CGFloat = 12
     /// Extra-large radius (image containers)
     static let xl: CGFloat = 16
+    /// A public-library carousel card's top corners, fitted to Apple Books' store card.
+    static let carouselCard: CGFloat = 35
     /// Extra-extra-large radius (large preview tiles, prominent panel buttons)
     static let xxl: CGFloat = 20
     /// A cover in the 搜索 page's lists: nearly square, as Apple Books' search draws them.
@@ -623,6 +651,17 @@ enum DSAnimation {
     static let fast = easeOut(duration: 0.15)
     /// Standard transition
     static let standard = easeOut(duration: 0.28)
+    /// Public-library carousel, timed off Apple Books' store card at 240 fps: it
+    /// opens out of the cover with a spring that peaks at 0.23 s and overshoots ~2%,
+    /// drops back to the cover's height in 0.32 s, then shrinks into it and fades.
+    static let cardCarouselOpen = Animation.spring(response: 0.3, dampingFraction: 0.78)
+    static let cardCarouselFadeIn = easeOut(duration: 0.1)
+    static let cardCarouselDrop = easeOut(duration: 0.32)
+    static let cardCarouselCollapse = easeOut(duration: 0.3)
+    /// A pulled-down card let go: straight back into its cover on a gesture spring,
+    /// critically damped enough not to bounce off the shelf, then faded into it.
+    static let cardCarouselReturn = Spring(response: 0.35, dampingRatio: 0.9)
+    static let cardCarouselFadeOut = easeOut(duration: 0.15)
     /// Slow expansion
     static let slow = Animation.easeInOut(duration: 0.4)
     /// The reading menu coming up or going away, and whatever moves with it. One

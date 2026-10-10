@@ -25,7 +25,7 @@ enum AozoraBrowseMode: String, CaseIterable, Identifiable {
 struct AozoraCatalogView: View {
     let index: AozoraCatalogIndex
     let mode: AozoraBrowseMode
-    @State private var selection: PublicLibraryBookSelection?
+    @Environment(\.openPublicLibraryBooks) private var openBooks
     private var groups: [AozoraIndexGroup] {
         switch mode {
         case .authors: index.authorGroups
@@ -41,7 +41,7 @@ struct AozoraCatalogView: View {
             } else {
                 AozoraIndexedList(groups: groups, select: mode == .authors ? nil : { id in
                     let books = groups.flatMap(\.ids).compactMap { index.worksByID[$0] }.map { PublicLibraryBook.aozora($0, index) }
-                    selection = PublicLibraryBookSelection(books: books, selectedID: "aozora:" + id)
+                    PublicLibraryBookSelection(books: books, selectedID: "aozora:" + id).map { openBooks?($0) }
                 }) { id in
                     if mode == .authors, let person = index.personsByID[id] {
                         VStack(alignment: .leading, spacing: DSSpacing.xs) {
@@ -66,7 +66,6 @@ struct AozoraCatalogView: View {
                 .themedAppSurface(for: .explore)
             }
         }
-        .sheet(item: $selection) { PublicLibraryBookSheet(selection: $0) }
     }
 }
 
@@ -74,10 +73,10 @@ struct AozoraWorksView: View {
     let index: AozoraCatalogIndex
     let works: [AozoraWork]
     let title: String
-    @State private var selection: PublicLibraryBookSelection?
+    @Environment(\.openPublicLibraryBooks) private var openBooks
     var body: some View {
         ScrollView {
-            PublicLibraryBooksGrid(books: works.map { .aozora($0, index) }) { selection = $0 }
+            PublicLibraryBooksGrid(books: works.map { .aozora($0, index) }) { openBooks?($0) }
         }
         .overlay {
             if works.isEmpty { ContentUnavailableView(localized("此目錄沒有內容"), systemImage: "books.vertical") }
@@ -85,7 +84,6 @@ struct AozoraWorksView: View {
         .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .explore)
-        .sheet(item: $selection) { PublicLibraryBookSheet(selection: $0) }
     }
 }
 
