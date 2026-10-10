@@ -3,7 +3,10 @@ import Foundation
 /// Unified library 1c: keeps the work index of the copies on this device (design §10.1,
 /// §10.2; Phase 1 plan, decision 9).
 ///
-/// - Nothing is built until `refresh()` is called; Phase 1 has no caller.
+/// - Nothing is built until a caller asks. The one instance is `BookStore.workIndex`
+///   (unified library 5c-4); readers call `current()`, which refreshes on demand, one refresh
+///   at a time. Nothing refreshes on a shelf change: every reading-position save bumps the
+///   shelf's revision.
 /// - A refresh derives each copy's record on the main actor, from plain maps of the book
 ///   sources and connections, then reads sidecars and builds off it. The result is applied
 ///   only if `BookStore.mutationRevision` is unchanged; otherwise it is dropped and the call
@@ -28,17 +31,25 @@ final class WorkIndexService {
     private var loaded = false
     private var writesBlocked = false
 
+    private let waitForSources: @MainActor () async -> Void
+    private var sourcesRead = false
+    private var inFlight: Task<Void, Never>?
+    /// Someone asked while a refresh ran on a snapshot older than their question.
+    private var rerunRequested = false
+
     private static let writeQueue = DispatchQueue(label: "com.yuedu.works.index", qos: .utility)
 
     init(
         store: BookStore,
         directory: URL,
         makeContext: @escaping @MainActor ([ReadingBook]) -> SourceRecordContext = WorkIndexService.liveContext,
-        decisions: (@MainActor () -> [WorkDecision])? = nil
+        decisions: (@MainActor () -> [WorkDecision])? = nil,
+        waitForSources: @escaping @MainActor () async -> Void = { await BookSourceStore.shared.waitUntilLoaded() }
     ) {
         self.store = store
         self.fileURL = directory.appendingPathComponent("index.json")
         self.makeContext = makeContext
+        self.waitForSources = waitForSources
         // Only merges and splits shape the index. Field decisions would force a rebuild on every
         // lock and copy the reader's override text into a derived file.
         self.decisions = decisions ?? { [store] in
@@ -56,6 +67,37 @@ final class WorkIndexService {
     /// shelf in between.
     var willApplyForTesting: (@MainActor () -> Void)?
     #endif
+
+    /// The index as of now, for a reader of it. One refresh runs at a time: a caller arriving
+    /// during one waits for it and one more run after it, which sees what changed meanwhile.
+    ///
+    /// The first refresh waits until the book-source library is read; a copy's record derived
+    /// before then has no source URL. A refresh dropped because the shelf changed mid-build
+    /// (`refresh()` returning false) is not retried: the last index applied is returned, and
+    /// the next caller refreshes again. So a caller can be one shelf change behind.
+    func current() async -> WorkIndex {
+        if let running = inFlight {
+            rerunRequested = true
+            await running.value
+        } else {
+            let task = Task { await refreshWhileAsked() }
+            inFlight = task
+            await task.value
+        }
+        return index ?? .empty
+    }
+
+    private func refreshWhileAsked() async {
+        if !sourcesRead {
+            await waitForSources()
+            sourcesRead = true
+        }
+        repeat {
+            rerunRequested = false
+            await refresh()
+        } while rerunRequested
+        inFlight = nil
+    }
 
     /// Brings the index up to date with the copies. Returns false when the shelf changed
     /// while it was being built, and the result was dropped.
@@ -103,6 +145,13 @@ final class WorkIndexService {
         index = computed.file.index
         if computed.changed { save(computed.file) }
         return true
+    }
+
+    /// The indexed WebDAV files the current index was built from, by key; empty before the
+    /// first refresh. Read from memory, so a caller turning index entries into items reads no
+    /// connection's file again.
+    var indexedFiles: [SourceItemKey: IndexedFile] {
+        Dictionary((file?.remoteInputs ?? []).map { ($0.record.key, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Local search over the current index; empty before the first refresh.
@@ -220,7 +269,8 @@ final class WorkIndexService {
                     }
                 }.first
                 entries.append(WorkIndexEntry(record: file.record, extraIdentifiers: file.identifiers ?? [],
-                                              language: language ?? LanguageTag(file.record.language)))
+                                              language: language ?? LanguageTag(file.record.language),
+                                              series: series(in: file.values ?? [], for: file.record)))
             }
         }
 
@@ -242,8 +292,22 @@ final class WorkIndexService {
         WorkIndexEntry(
             record: record,
             extraIdentifiers: sidecar?.identifiers ?? [],
-            language: sidecar.flatMap { language(in: $0, for: record) } ?? LanguageTag(record.language)
+            language: sidecar.flatMap { language(in: $0, for: record) } ?? LanguageTag(record.language),
+            series: sidecar.flatMap { series(in: $0.values, for: record) }
         )
+    }
+
+    /// The series name the values give, by `MetadataResolver`'s precedence. The reader's
+    /// override and lock are left out, as they are from the whole index: they would rebuild it
+    /// on every lock.
+    nonisolated static func series(in values: [MetadataValue], for record: SourceRecord) -> String? {
+        let resolved = MetadataResolver.resolve(.series, anchor: record.copyKey ?? record.key, copySource: record.key.instance,
+                                                copyValue: nil, values: values, decisions: [])
+        switch resolved?.value {
+        case .text(let name): return name
+        case .texts(let names): return names.first
+        case .number, .date, nil: return nil
+        }
     }
 
     /// One language per copy, by a fixed priority, never a union: what the copy's own file
@@ -298,8 +362,9 @@ final class WorkIndexService {
 
 /// `Works/index.json`.
 struct WorkIndexFile: Codable, Hashable, Sendable {
-    /// 2: `remoteInputs` (2d). A version-1 file is discarded and rebuilt; the index is derived.
-    static let currentSchemaVersion = 2
+    /// 2: `remoteInputs` (2d). 3: each entry's `seriesKey` (5c-4). A file of an older version is
+    /// discarded and rebuilt; the index is derived.
+    static let currentSchemaVersion = 3
 
     /// What each copy's entry was built from. A copy whose record and sidecar stamp are the
     /// same next time keeps its entry.

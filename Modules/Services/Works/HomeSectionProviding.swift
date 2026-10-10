@@ -37,15 +37,19 @@ enum HomeRow {
 // MARK: - The shelf
 
 extension ShelfProvider: HomeSectionProviding {
-    /// 相關 is not served until the maintainer decides on it (Phase 5 plan, open decision 5).
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
-        if case .continueReading = section.binding { return .local }
-        return nil
+        switch section.binding {
+        case .continueReading, .related: .local
+        default: nil
+        }
     }
 
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
-        guard case .continueReading = section.binding else { return [] }
-        return continueReading(limit: HomeRow.limit)
+        switch section.binding {
+        case .continueReading: continueReading(limit: HomeRow.limit)
+        case .related: await related(limit: HomeRow.limit)
+        default: []
+        }
     }
 }
 
@@ -152,17 +156,20 @@ extension WebDAVProvider: HomeSectionProviding {
         guard case .latest = section.binding, let records else { return [] }
         let connectionID = connection.id
         guard let newest = await Self.newestFiles(in: records, connectionID: connectionID, limit: HomeRow.limit) else { return [] }
-        return newest.files.map { file in
-            let url = WebDAVMetadataFiller.url(of: file, under: newest.root)
-            let entry = WebDAVBrowseClient.Entry(url: url, name: url.lastPathComponent, isDirectory: false, size: file.size,
-                                                 etag: file.etag, lastModified: file.lastModified)
-            let cover: CoverReference = file.cover.map { .copyFile(WebDAVIndexCoordinator.defaultCoverDirectory.appendingPathComponent($0).path) }
-                ?? .generated(seed: file.record.title)
-            return .item(file.record,
-                         WorkSummary(title: file.record.title, authors: file.record.authors, cover: cover,
-                                     blurb: nil, language: file.record.language, contentKind: file.record.contentKind),
-                         .webDAVFile(entry, connectionID: connectionID))
-        }
+        return newest.files.map { Self.item(for: $0, root: newest.root, connectionID: connectionID) }
+    }
+
+    /// An indexed file as a home item, for 「最新」 and 「相關」 alike.
+    nonisolated static func item(for file: IndexedFile, root: URL, connectionID: String) -> CollectionEntry {
+        let url = WebDAVMetadataFiller.url(of: file, under: root)
+        let entry = WebDAVBrowseClient.Entry(url: url, name: url.lastPathComponent, isDirectory: false, size: file.size,
+                                             etag: file.etag, lastModified: file.lastModified)
+        let cover: CoverReference = file.cover.map { .copyFile(WebDAVIndexCoordinator.defaultCoverDirectory.appendingPathComponent($0).path) }
+            ?? .generated(seed: file.record.title)
+        return .item(file.record,
+                     WorkSummary(title: file.record.title, authors: file.record.authors, cover: cover,
+                                 blurb: nil, language: file.record.language, contentKind: file.record.contentKind),
+                     .webDAVFile(entry, connectionID: connectionID))
     }
 
     /// Reads the index and picks the newest files off the main actor: at Phase 2's measured

@@ -236,6 +236,13 @@ class BookStore: ObservableObject, BookProvider {
     let workDecisions: WorkDecisionsStore
     /// Unified library 2d: what WebDAV indexing found, `Works/remote/<connection id>.json`.
     let remoteRecords: RemoteRecordStore
+    /// Unified library 5c-4: the one work index of this shelf, `Works/index.json`, refreshed
+    /// when a reader of it asks (`WorkIndexService.current()`). Here, beside the stores it is
+    /// built from, so Explore's home and the bookshelf's 作品詳情 (5f) share it.
+    @MainActor lazy var workIndex = WorkIndexService(
+        store: self,
+        directory: metadataFileURL.deletingLastPathComponent().appendingPathComponent("Works", isDirectory: true)
+    )
     /// Whether the last load read both the shelf and the reading records. Only then may a
     /// book missing from `records` be taken as gone, and its list removed.
     private var recordsLoadedCompletely = false

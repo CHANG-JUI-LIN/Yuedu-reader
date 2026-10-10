@@ -60,13 +60,18 @@ struct WorkIndexEntry: Hashable, Codable, Sendable {
     /// keeps its entry, keys included, from one refresh to the next.
     var titleKey: String
     var authorKeys: [String]
+    /// `WorkMatchKey` of the series the record's metadata names, for 相關 (unified library
+    /// 5c-4). It never merges works: two books of a series are two works.
+    var seriesKey: String?
 
-    init(record: SourceRecord, extraIdentifiers: [ExternalIdentifier] = [], language: LanguageTag? = nil) {
+    init(record: SourceRecord, extraIdentifiers: [ExternalIdentifier] = [], language: LanguageTag? = nil,
+         series: String? = nil) {
         self.record = record
         self.identifiers = Set(record.identifiers).union(extraIdentifiers).sorted { $0.sortKey < $1.sortKey }
         self.language = language
         self.titleKey = WorkMatchKey.title(record.title)
         self.authorKeys = record.authors.map(WorkMatchKey.author).filter { !$0.isEmpty }
+        self.seriesKey = series.map(WorkMatchKey.title).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// The record's node in the index: a copy's own key, which is unique and does not change
