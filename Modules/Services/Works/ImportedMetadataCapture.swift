@@ -31,22 +31,33 @@ enum ImportedMetadataCapture {
         return ImportedMetadata(
             copyID: copy.id,
             sourceItem: sourceItem,
-            identifiers: unique(identifiers.compactMap(classify)),
+            identifiers: unique(identifiers.compactMap { classify($0, in: identifiers) }),
             values: values
         )
     }
 
-    /// An OPF identifier as an `ExternalIdentifier`: ISBNs as `isbn13`, Calibre's own
-    /// `opf:scheme="calibre"` as `calibreUUID`, anything else compared only within
-    /// `epubUniqueIdentifier`.
-    static func classify(_ identifier: PublicationSession.OPFIdentifier) -> ExternalIdentifier? {
+    /// An OPF identifier as an `ExternalIdentifier`: ISBNs as `isbn13`, a Calibre book's uuid
+    /// as `calibreUUID`, anything else compared only within `epubUniqueIdentifier`.
+    ///
+    /// Calibre writes two identifiers (`metadata_to_opf` in calibre's `opf2.py`):
+    /// `opf:scheme="calibre"` holds its application id, the book's number in that library or
+    /// a random uuid, and `opf:scheme="uuid"` holds the book's uuid, the one its content
+    /// server names entries by. Other tools (Sigil) also write `opf:scheme="UUID"`, so the uuid
+    /// counts as Calibre's only in a package that also has Calibre's own identifier.
+    static func classify(
+        _ identifier: PublicationSession.OPFIdentifier,
+        in package: [PublicationSession.OPFIdentifier] = []
+    ) -> ExternalIdentifier? {
         let value = identifier.value
         let lowered = value.lowercased()
         switch identifier.scheme?.lowercased() {
         case "isbn":
             return ExternalIdentifier.normalized(.isbn13, value)
         case "calibre":
-            return ExternalIdentifier.normalized(.calibreUUID, value)
+            // The application id: a library's book number, or a uuid made for one export.
+            return nil
+        case "uuid" where package.contains { $0.scheme?.lowercased() == "calibre" }:
+            if let uuid = ExternalIdentifier.normalized(.calibreUUID, value) { return uuid }
         default:
             break
         }

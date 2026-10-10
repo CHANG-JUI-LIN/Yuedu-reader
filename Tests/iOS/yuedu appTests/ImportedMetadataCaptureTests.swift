@@ -38,8 +38,14 @@ struct ImportedMetadataCaptureTests {
         #expect(ImportedMetadataCapture.classify(OPF(value: "978-7-5366-9293-0", scheme: "ISBN")) == .normalized(.isbn13, "9787536692930"))
         #expect(ImportedMetadataCapture.classify(OPF(value: "urn:isbn:7536692935", scheme: nil)) == .normalized(.isbn13, "9787536692930"))
         #expect(ImportedMetadataCapture.classify(OPF(value: "9787536692930", scheme: nil)) == .normalized(.isbn13, "9787536692930"))
-        #expect(ImportedMetadataCapture.classify(OPF(value: "6BA7B810-9DAD-11D1-80B4-00C04FD430C8", scheme: "calibre"))
+        // Calibre's two identifiers: the application id is no uuid of the book; the uuid is,
+        // but only in a package Calibre wrote (Sigil also writes opf:scheme="UUID").
+        let calibrePackage = [OPF(value: "42", scheme: "calibre"), OPF(value: "6BA7B810-9DAD-11D1-80B4-00C04FD430C8", scheme: "uuid")]
+        #expect(ImportedMetadataCapture.classify(calibrePackage[0], in: calibrePackage) == nil)
+        #expect(ImportedMetadataCapture.classify(calibrePackage[1], in: calibrePackage)
             == .normalized(.calibreUUID, "6ba7b810-9dad-11d1-80b4-00c04fd430c8"))
+        #expect(ImportedMetadataCapture.classify(OPF(value: "6BA7B810-9DAD-11D1-80B4-00C04FD430C8", scheme: "UUID"))
+            == .normalized(.epubUniqueIdentifier, "6BA7B810-9DAD-11D1-80B4-00C04FD430C8"))
         #expect(ImportedMetadataCapture.classify(OPF(value: "urn:uuid:ABC-1", scheme: nil)) == .normalized(.epubUniqueIdentifier, "abc-1"))
         #expect(ImportedMetadataCapture.classify(OPF(value: "1234567890123", scheme: nil)) == .normalized(.epubUniqueIdentifier, "1234567890123"),
                 "13 digits with a wrong check digit are not an ISBN")
