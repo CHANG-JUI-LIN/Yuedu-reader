@@ -554,7 +554,7 @@ struct ReaderView: View {
 
     var onlineBookDetail: OnlineBook? {
         guard let book, book.isOnline, let sourceId = book.bookSourceId else { return nil }
-        let source = BookSourceStore.shared.sources.first(where: { $0.id == sourceId })
+        let source = BookSourceStore.shared.source(id: sourceId)
         return OnlineBook(
             name: book.title,
             author: book.author,
@@ -2377,7 +2377,7 @@ struct ReaderView: View {
             guard let request = notification.userInfo?["request"] as? CoreTextReplaceSelectionRequest else { return }
             let currentBook = book ?? snapshotBook
             let sourceURL = currentBook?.bookSourceId.flatMap { sourceID in
-                BookSourceStore.shared.sources.first(where: { $0.id == sourceID })?.bookSourceUrl
+                BookSourceStore.shared.source(id: sourceID)?.bookSourceUrl
             }
             replaceRuleDraft = ReplaceSelectionDraft.makeRule(
                 selectedText: request.selectedText,
