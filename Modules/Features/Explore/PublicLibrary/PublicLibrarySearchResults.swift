@@ -30,9 +30,8 @@ struct PublicLibrarySearchResults: View {
                         }
                     }
                     if matches.count > 50 {
-                        NavigationLink(localized("顯示全部")) {
-                            AozoraWorksView(index: index, works: matches, title: query)
-                        }
+                        NavigationLink(localized("顯示全部"),
+                                       value: PublicLibraryRoute.aozoraWorks(title: query, works: matches, index: index))
                     }
                 }
             }.interfaceSectionSurface()

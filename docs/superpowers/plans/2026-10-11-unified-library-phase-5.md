@@ -74,6 +74,10 @@
     - **Open decision 4:** the card is Apple Books style. A 2:3 cover, then the title in at most two lines and the author in one; the row's header names its source.
     - **Open decision 5:** 相關 ships in v1 **including the same work across sources**, not only same author and series. 5b's `ShelfProvider` serves no 相關 yet. It needs the work index kept fresh by one owner (decision 6) before 5c can show it; this is now part of 5c.
     - **Open decision 6:** RSS is a 「訂閱」 tile in 我的書庫 that pushes today's RSS content, with its unread count. An optional 「訂閱的最新文章」 row may follow. The RSS tab stays until open decision 1.
+11. **The home's look, stated by the maintainer on 2026-10-11:** 「70% Apple Books 的視覺質感，30% Emby 的資訊密度，但底層採用 Emby 式的來源聚合和動態欄目能力。」 How 5c reads it, to be shown in previews before it ships:
+    - **Apple Books' finish:** large covers, generous spacing, the title in two lines and the author in one, no card chrome.
+    - **Emby's density:** one more small line per card, holding the source or the copy status (已加入書架, 已下載). 繼續閱讀 cards carry a reading-progress bar. Each row header names its source and leads to 查看全部.
+    - **Emby's model underneath:** every source serves its own sections, and 最新 expands per source. 5a and 5b already work this way.
 
 ### Open, for the maintainer (each with a recommendation)
 
@@ -223,7 +227,15 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 
 **Branch:** `unified-library/5c-home-screen`. Design §13.3, §13.9; decisions 5, 8, 9; open decisions 2, 4, 7.
 
-- [ ] **Step 1: Strings** reviewed with the maintainer.
+- [x] **Step 1: Strings** reviewed with the maintainer. Approved as proposed, 2026-10-11:
+
+  | zh-Hant | zh-Hans | en | ja | ko |
+  |---|---|---|---|---|
+  | 我的書庫 | 我的书库 | My Library | マイライブラリ | 내 서재 |
+  | 相關 | 相关 | Related | 関連 | 관련 |
+  | %@・最新 | %@・最新 | Latest in %@ | %@の新着 | %@ 최신 |
+  | 載入 | 加载 | Load | 読み込む | 불러오기 |
+  | 使用舊版探索頁 | 使用旧版探索页 | Use Classic Explore | 以前の探索画面を使う | 이전 탐색 화면 사용 |
 - [ ] **Step 2: `ExploreHome`,** the new tab root.
   - It shows the sections in order, as horizontal cover-wall rows. Each row header names its source and pushes 查看全部.
   - Cards are the open-decision-4 style, with the `CoverReference` cover and `CopyLookup` status.
@@ -232,7 +244,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   - 「全部」 shows the home.
   - Choosing one source shows that source's own page in place: book source → `ExploreSourcePage`; OPDS or Calibre → `OPDSFeedView`; WebDAV → `WebDAVDirectoryView`; Gutenberg → storefront; Aozora → catalog.
   - The choice is stored in UserDefaults and replaces `explore.mode`.
-- [ ] **Step 4: One navigation path** (decision 5). Fix the `OPDSFeedRoute` clash, and turn the storefront's closure links into value links.
+- [x] **Step 4: One navigation path** (decision 5). Fix the `OPDSFeedRoute` clash, and turn the storefront's closure links into value links. Done first, as 5c-1 (see "What landed").
 - [ ] **Step 5: The fallback** (open decision 2). `ExploreTabRoot` shows the old roots when the switch is on.
 - [ ] **Step 6: Tests.**
   - **Unit:** section ordering and the scope choice.
@@ -397,3 +409,29 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 - **No second load of a row.** A row that is queued or loading is not started again by 重試, 載入 or pull to refresh (`noDuplicateLoads`).
 - **Tests:** `HomeModelTests` (10), `BookSourceProviderTests` (4), `LocalHomeRowTests` (4), `HomeModelSchedulingTests` (1): 19 tests in 4 suites passed.
 
+### 5c-1: one navigation path (2026-10-11), before the home is drawn
+
+No screen changed. Branch `unified-library/5c1-navigation`.
+
+- **The `OPDSFeedRoute` clash (Phase 2 follow-up 1):** the route carries `presentation` (`.list` for the libraries' `OPDSFeedView`, `.storefront` for `PublicLibraryFeedView`). One `remoteLibraryDestinations()` registers the feed, WebDAV folder and book pages; the bookshelf's libraries and the storefront both use it.
+- **Value links in the store:** `PublicLibraryRoute` (分類, a bundled list, an Aozora works list, an Aozora index) replaces every closure link on the storefront, in 分類 and in search's 顯示全部. `publicLibraryDestinations()` (renamed from `publicLibraryCarouselDestinations()`) registers them with the carousel's author and reader pages. The carousel ties each card to the path's depth, so pages pushed by closure added no depth.
+- **Left as it was:** `AozoraIndexedList`'s rows (an author's works, a work's detail) still push by closure or by item. Its iOS 17 branch is a `UITableView` that has no path to append to. Card depth there is unchanged from today.
+- **Explore's routes:** `ExploreHomeView`'s destination builder moved, unchanged, into `exploreRouteDestinations(openBrowser:)`, so the 5c home registers the same pages.
+- **What a home item opens:** `ExploreItemTarget(ItemOpening, aozoraIndex:)` maps each frozen opening onto a page that already exists:
+  - a copy → `PublicLibraryReaderRoute`, Explore's in-stack reader. The shelf's card transition belongs to the shelf's stack.
+  - OPDS and WebDAV → `RemoteLibraryBookRoute`.
+  - a book-source result → `ExploreNavigationRoute.book`.
+  - Gutenberg and Aozora → the storefront's carousel.
+- **Contract:** `ExploreMixedNavigationPathContract` pushed the removed `.search` route. It now pushes `.searchInSource` and mixes in a feed route; it compiles and passes with `swiftc` (command in the file).
+- **Tests:**
+  - Unit: `ExploreItemTargetTests` (7) with the Phase 5 regression units: 22 tests in 5 suites passed.
+  - UI: `PublicLibraryStorefrontUITests` (4, one new: a card opened two pages deep pushes its author and backs out through the same pages), `PublicLibraryExploreUITests` (2) and `RemoteLibraryNavigationUITests` (1) passed. `PublicLibraryStorefrontUITests` also passed on iOS 17.5 (4 of 4), since every store page now goes through the path.
+- **`DetailReaderBackSwipeUITests`** (fixture: `scripts/navigation_swipe_fixture.py prepare`, then `serve`):
+  - **Fixed in the test:** every launch pins `-explore.mode sources`, because a public-library UI test run first leaves its own mode saved. The taps open the source's tile, then its book card (`openDiscoveredBook`). The fixture source and its book share the name "Navigation Swipe Fixture", and since Explore became tiles the first text with that name was the tile.
+  - **On 5c-1, 13 of 23 pass,** among them every Explore → source page → detail → reader test. That is the moved `.source` and `.book` destinations working end to end.
+  - **10 fail on main the same way.** Run at b85e7637 (5c-1's code removed) with the same test file, the same 10 failed at the same lines:
+    - 806: 「Interior pan must turn the page」 (the four edge-back tests);
+    - 634: the menu must go away when the page turns (the four turn tests);
+    - 590: 「With the menu away, the tap turns the page」;
+    - 703: after a relaunch, the shelf list shows no book labelled 「Navigation Swipe Fixture，Regression」 (`testShelfListExposesOneBookButtonAndOpensReader`).
+  - Nine fail inside the reader, after navigation has succeeded; the tenth is the shelf list's label. All predate Phase 5 and are recorded here, not fixed in 5c.

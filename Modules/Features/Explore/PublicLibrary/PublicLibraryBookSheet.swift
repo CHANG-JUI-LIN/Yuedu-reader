@@ -86,7 +86,7 @@ extension View {
     /// Apply to the tab's `NavigationStack`, with its path: an author or the reader
     /// opened from a card is pushed on that stack, the card waiting hidden underneath
     /// until the stack comes back to it. The stack's root needs
-    /// `publicLibraryCarouselDestinations()`.
+    /// `publicLibraryDestinations()`.
     /// `request` is for the view applying it, which cannot read the action it puts in
     /// the environment of the pages below it: a selection set there opens at once.
     func publicLibraryBookCarousel(path: Binding<NavigationPath>,
@@ -95,9 +95,10 @@ extension View {
         modifier(PublicLibraryCarouselHost(path: path, request: request, frames: coverFrames))
     }
 
-    /// The pages a carousel card pushes on the stack: an author's books and the reader.
-    func publicLibraryCarouselDestinations() -> some View {
-        modifier(PublicLibraryCarouselDestinations())
+    /// The pages pushed on the store's stack: its own pages (`PublicLibraryRoute`), and from a
+    /// carousel card an author's books and the reader.
+    func publicLibraryDestinations() -> some View {
+        modifier(PublicLibraryDestinations())
     }
 
     /// Records this cover's frame as the place a card for `id` opens from.
@@ -138,6 +139,30 @@ private struct PublicLibraryCoverAnchorView: UIViewRepresentable {
 /// A book pushed from a card into the reader.
 struct PublicLibraryReaderRoute: Hashable {
     let bookID: UUID
+}
+
+/// A page of the store, pushed by value so every page the store opens is on its stack's
+/// path: the carousel ties each open card to the path's depth (`PublicLibraryCarouselHost`),
+/// and Explore's home pushes these on the one stack it shares with every source (unified
+/// library 5c, decision 5). Catalog values are snapshots; equality is by what the page shows.
+enum PublicLibraryRoute: Hashable {
+    case categories(AozoraCatalogIndex?)
+    /// A bundled list, by `PublicLibraryCollection.id`.
+    case collection(id: String)
+    case aozoraWorks(title: String, works: [AozoraWork], index: AozoraCatalogIndex)
+    case aozoraCatalog(AozoraBrowseMode, AozoraCatalogIndex)
+
+    private var key: [String] {
+        switch self {
+        case .categories: ["categories"]
+        case .collection(let id): ["collection", id]
+        case .aozoraWorks(let title, let works, _): ["aozoraWorks", title] + works.map(\.id)
+        case .aozoraCatalog(let mode, _): ["aozoraCatalog", mode.rawValue]
+        }
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.key == rhs.key }
+    func hash(into hasher: inout Hasher) { hasher.combine(key) }
 }
 
 /// What a card pushes on the tab's stack.
@@ -197,11 +222,25 @@ private struct PublicLibraryCarouselHost: ViewModifier {
     }
 }
 
-private struct PublicLibraryCarouselDestinations: ViewModifier {
+private struct PublicLibraryDestinations: ViewModifier {
     @EnvironmentObject private var store: BookStore
 
     func body(content: Content) -> some View {
         content
+            .navigationDestination(for: PublicLibraryRoute.self) { route in
+                switch route {
+                case .categories(let index):
+                    PublicLibraryCategoriesView(index: index)
+                case .collection(let id):
+                    if let collection = PublicLibraryCollection.all.first(where: { $0.id == id }) {
+                        PublicLibraryCollectionView(collection: collection)
+                    }
+                case .aozoraWorks(let title, let works, let index):
+                    AozoraWorksView(index: index, works: works, title: title)
+                case .aozoraCatalog(let mode, let index):
+                    AozoraCatalogView(index: index, mode: mode)
+                }
+            }
             .navigationDestination(for: PublicLibraryReaderRoute.self) { route in
                 BookReaderView(bookId: route.bookID).environmentObject(store)
                     .environment(\.readerNavigator, nil)
@@ -213,7 +252,7 @@ private struct PublicLibraryCarouselDestinations: ViewModifier {
                 switch destination {
                 case .gutenberg(let author):
                     PublicLibraryFeedView(route: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
-                        url: author.url.absoluteString, title: author.name))
+                        url: author.url.absoluteString, title: author.name, presentation: .storefront))
                 case .aozora(let author, let index):
                     AozoraWorksView(index: index, works: index.works(forPerson: author.id), title: author.name)
                 }

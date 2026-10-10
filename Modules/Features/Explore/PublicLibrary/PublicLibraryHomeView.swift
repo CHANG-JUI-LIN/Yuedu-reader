@@ -26,14 +26,14 @@ struct PublicLibraryHomeView: View {
             .onSubmit(of: .search, submitSearch)
             .task { await aozora.load() }
             .refreshable { await aozora.load(forceRefresh: true) }
-            .navigationDestination(for: OPDSFeedRoute.self) { PublicLibraryFeedView(route: $0) }
-            .publicLibraryCarouselDestinations()
+            .remoteLibraryDestinations()
+            .publicLibraryDestinations()
             .rootTabSearchScrollEdges()
             .themedAppSurface(for: .explore)
             .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink { PublicLibraryCategoriesView(index: aozora.catalog) } label: {
+                    NavigationLink(value: PublicLibraryRoute.categories(aozora.catalog)) {
                         Text(localized("分類"))
                     }.accessibilityIdentifier("publicLibrary.categories")
                 }
@@ -51,23 +51,20 @@ struct PublicLibraryHomeView: View {
                 featuredCollections.rootTabTitleScrollAnchor()
                 ForEach([PublicLibraryCollection.chinese, .fiction]) { collection in
                     PublicLibraryShelf(title: localized(collection.titleKey),
-                        books: collection.books.map(PublicLibraryBook.gutenberg), select: { selection = $0 }) {
-                        PublicLibraryCollectionView(collection: collection)
-                    }
+                        books: collection.books.map(PublicLibraryBook.gutenberg), select: { selection = $0 },
+                        route: .collection(id: collection.id))
                 }
                 curatedReading
                 ForEach([PublicLibraryCollection.children, .thought]) { collection in
                     PublicLibraryShelf(title: localized(collection.titleKey),
-                        books: collection.books.map(PublicLibraryBook.gutenberg), select: { selection = $0 }) {
-                        PublicLibraryCollectionView(collection: collection)
-                    }
+                        books: collection.books.map(PublicLibraryBook.gutenberg), select: { selection = $0 },
+                        route: .collection(id: collection.id))
                 }
                 if let index = aozora.catalog {
                     Section {
                         PublicLibraryShelf(title: localized("青空文庫"),
-                            books: Array(index.newWorks.prefix(12)).map { .aozora($0, index) }, select: { selection = $0 }) {
-                            AozoraWorksView(index: index, works: index.newWorks, title: localized("新着作品"))
-                        }
+                            books: Array(index.newWorks.prefix(12)).map { .aozora($0, index) }, select: { selection = $0 },
+                            route: .aozoraWorks(title: localized("新着作品"), works: index.newWorks, index: index))
                         if aozora.isRefreshing { ProgressView(localized("正在更新目錄")) }
                         if case .failed = aozora.state {
                             Button(localized("重試")) { Task { await aozora.load(forceRefresh: true) } }
@@ -81,7 +78,7 @@ struct PublicLibraryHomeView: View {
                     }
                 }
                 Section {
-                    NavigationLink { PublicLibraryCategoriesView(index: aozora.catalog) } label: {
+                    NavigationLink(value: PublicLibraryRoute.categories(aozora.catalog)) {
                         Label(localized("瀏覽所有分類"), systemImage: "books.vertical")
                     }.padding(.horizontal, DSLayout.publicLibraryMargin)
                 } footer: {
@@ -98,7 +95,7 @@ struct PublicLibraryHomeView: View {
         ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: DSSpacing.lg) {
                 ForEach([PublicLibraryCollection.chinese, .fiction, .thought]) { collection in
-                    NavigationLink { PublicLibraryCollectionView(collection: collection) } label: {
+                    NavigationLink(value: PublicLibraryRoute.collection(id: collection.id)) {
                         VStack(alignment: .leading, spacing: DSSpacing.lg) {
                             VStack(alignment: .leading, spacing: DSSpacing.sm) {
                                 Text(localized("Project Gutenberg")).font(DSFont.footnote.weight(.semibold))
@@ -166,7 +163,7 @@ struct PublicLibraryHomeView: View {
         guard !trimmedQuery.isEmpty else { return }
         path.append(OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
             url: PublicLibrary.gutenbergSearchURL(query: trimmedQuery).absoluteString,
-            title: String(trimmedQuery.prefix(500))))
+            title: String(trimmedQuery.prefix(500)), presentation: .storefront))
     }
 }
 
@@ -190,17 +187,18 @@ private struct PublicLibraryCollectionArtwork: View {
     }
 }
 
-struct PublicLibraryShelf<Destination: View>: View {
+struct PublicLibraryShelf: View {
     let title: String
     let books: [PublicLibraryBook]
     let select: (PublicLibraryBookSelection) -> Void
-    @ViewBuilder let destination: () -> Destination
+    /// The page behind the shelf's title.
+    let route: PublicLibraryRoute
     @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.publicLibraryCoverFrames) private var coverFrames
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xl) {
-            NavigationLink(destination: destination) {
+            NavigationLink(value: route) {
                 HStack(spacing: DSSpacing.sm) {
                     Text(title).font(DSFont.title2.weight(.bold))
                     Image(systemName: "chevron.right").font(DSFont.title3.weight(.semibold))
@@ -238,21 +236,21 @@ struct PublicLibraryCategoriesView: View {
         List {
             Section(localized("精選書單")) {
                 ForEach(PublicLibraryCollection.all) { collection in
-                    NavigationLink(localized(collection.titleKey)) { PublicLibraryCollectionView(collection: collection) }
+                    NavigationLink(localized(collection.titleKey), value: PublicLibraryRoute.collection(id: collection.id))
                 }
             }.interfaceSectionSurface()
             Section(localized("Project Gutenberg")) {
                 ForEach(GutenbergShelf.shelves(language: Bundle.main.preferredLocalizations.first ?? "en")) { shelf in
-                    NavigationLink {
-                        PublicLibraryFeedView(route: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
-                            url: shelf.url.absoluteString, title: localized(shelf.titleKey)))
-                    } label: { Label(localized(shelf.titleKey), systemImage: shelf.symbol) }
+                    NavigationLink(value: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
+                        url: shelf.url.absoluteString, title: localized(shelf.titleKey), presentation: .storefront)) {
+                        Label(localized(shelf.titleKey), systemImage: shelf.symbol)
+                    }
                 }
             }.interfaceSectionSurface()
             if let index {
                 Section(localized("青空文庫")) {
                     ForEach(AozoraBrowseMode.allCases) { mode in
-                        NavigationLink { AozoraCatalogView(index: index, mode: mode) } label: {
+                        NavigationLink(value: PublicLibraryRoute.aozoraCatalog(mode, index)) {
                             Label(localized(mode.titleKey), systemImage: mode.symbol)
                         }
                     }
@@ -266,4 +264,8 @@ struct PublicLibraryCategoriesView: View {
 }
 
 #Preview { PublicLibraryHomeView().environmentObject(BookStore()) }
-#Preview("公有書庫分類選單") { NavigationStack { PublicLibraryCategoriesView(index: .preview) } }
+#Preview("公有書庫分類選單") {
+    NavigationStack {
+        PublicLibraryCategoriesView(index: .preview).publicLibraryDestinations().remoteLibraryDestinations()
+    }.environmentObject(BookStore())
+}
