@@ -446,7 +446,7 @@ Phase 1 adds:
 
 ## Acceptance (Phase 1)
 
-- [ ] 1a: source records for every entry type; the 「來源」 row fixed; one URL normalizer.
+- [x] 1a: source records for every entry type; the 「來源」 row fixed; one URL normalizer.
 - [ ] 1b: sidecar metadata for every import; `ReadingBook` keys and hashes unchanged.
 - [ ] 1c: deterministic index, A-level and B-level, with the design's fixtures; benchmark numbers recorded.
 - [ ] 1d: decisions store, resolver, locks on three paths, unlocked behavior unchanged.
@@ -462,3 +462,24 @@ Phase 1 adds:
 ## What landed
 
 _Fill in per step: commit, test verdict lines, surprises, and anything left undone._
+
+### 1a (2026-10-10)
+
+Branch `unified-library/1a-source-records`, on `f394ab40`. Two commits: `28791650` (records, derivations, shared URL key, the row) and `233f02ca` (遠端書庫). Not merged, not pushed.
+
+- **Types** are in `Modules/Services/Works/SourceRecord.swift`. `ExternalIdentifier.normalized` turns ISBN-10 into ISBN-13 with both check digits verified, and lowercases Calibre uuids without `urn:uuid:`. A Gutenberg number may be given bare, as `urn:gutenberg:N`, or as a `…/ebooks/N` URL; an Aozora work id is kept as it is.
+- **Derivations** are in `SourceRecordDerivation.swift`. A `SourceRecordContext` answers source URLs, connection kinds and WebDAV roots: `live()` reads the stores, and tests pass dictionaries.
+  - The WebDAV item key is the percent-*decoded* path below the root, so two spellings of one path give one key. The plan said percent-encoded; decoded is what landed.
+  - A copy whose connection was removed keeps its copy key.
+- **`OnlineBookURLKey.normalize`** replaced `BookStore.onlineBookURLKey`, with identical body. Both lookup call sites use it.
+- **The 「來源」 row** reads `SourceLabel.text(for:record:)`, with the table in Task 1a plus 遠端書庫. The existing 「書籍資訊 – 封面區」 `#Preview` covers the section.
+- **Surprise found by the tests:** `normalized(.gutenberg, "1342")` returned nil, because it only accepted urns and URLs, so every derived Gutenberg record had no identifier. It is fixed, and a test covers the bare number.
+- **Evidence:**
+
+```
+✔ Test run with 42 tests in 5 suites passed after 0.431 seconds.
+   (SourceRecordDerivationTests, RemoteReadingRecordTests, RemoteLibraryBrowsePresentationTests,
+    LocalBookImportServiceTests, BookStoreMetadataWriteBudgetTests; on 28791650)
+✔ Test run with 17 tests in 1 suite passed after 0.018 seconds.   (SourceRecordDerivationTests, on 233f02ca)
+check_localizations: OK, 3329 keys
+```
