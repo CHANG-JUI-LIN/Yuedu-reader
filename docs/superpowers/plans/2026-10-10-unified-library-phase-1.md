@@ -11,7 +11,7 @@
 **Goal:** the data model the later phases stand on, without changing what readers see or what syncs:
 - **1a:** derive a source record from every kind of book and remote item, and fix the 書籍資訊 「來源」 row;
 - **1b:** keep the identifiers and metadata that imports throw away today, in a sidecar, never in `ReadingBook`;
-- **1c:** a work index rebuilt from those records, merging only on shared identifiers for now;
+- **1c:** a work index rebuilt from those records, merging on shared identifiers (A-level) and on title + author (B-level, labeled and splittable);
 - **1d:** a store for the reader's decisions, a resolver for each field's effective value, and lock checks on the three paths that overwrite a copy's title.
 
 **Today:**
@@ -26,10 +26,9 @@
 
 **In:**
 - 1a, 1b, 1d;
-- 1c with **A-level merging only**: shared identifiers or the same source item. The 交接 table allows only that until §17 item 1 is decided.
+- 1c with A-level merging (shared identifiers or the same source item) and B-level merging (title + author). The maintainer settled §17 item 1 on 2026-10-10: yes, labeled and splittable.
 
 **Out:**
-- **1c B-level (title + author).** It is written as sub-step 1c.4, which waits for §17 item 1. The MVP's 《三體》 row needs it.
 - **Any screen beyond the 「來源」 row.** There is no work page, unified search or lock UI yet. Phase 1 ships dormant: nothing in production builds the index or sets a lock.
 - **Syncing decisions** (Phase S2, §17 item 2), and a portable key for remote connections (§17 item 3). Decisions anchored on remote connections stay device-local until then.
 - **Changing `ReadingBook`.** No field is added (D1).
@@ -70,7 +69,13 @@ Each comes with its reason; the maintainer can overturn any of them.
 11. **Privacy in logs.** `AppLogger` writes `.public`. Works spans and logs carry counts and kinds only, never titles or authors; Calibre and WebDAV titles are the reader's private library (design §10.3).
 12. **Names.** Code comments say "unified library 1b". `AozoraBookImporter` already uses "Phase 1b, route C" for an unrelated plan.
 
-### Open questions for the maintainer
+### Settled by the maintainer (2026-10-10)
+
+1. **§17 item 1, B-level auto-merge: yes.** Merges are labeled 「依書名與作者判斷」 and can be split; a split is permanent. 1c.4 is built in Phase 1, on by default.
+2. **No flag for Phase 1.** Rollback means reverting the step's merge and deleting `Application Support/Works/`. This deviates from design §15, which assumes a flag "like `ReaderFeatureFlags`". That type is dead code (follow-up 1), and Phase 1 ships dormant except for the 「來源」 row.
+3. **Calibre write-back on a locked title:** the server edit goes through, but a copy whose title is locked keeps it, and one `AppLogger` line notes the skip.
+
+### The questions as they were asked
 
 1. **§17 item 1, B-level auto-merge.** Should two copies whose titles match after `WorkMatchKey` normalization, and whose authors are both present and compatible, merge automatically, labeled 「依書名與作者判斷」 and splittable? The design recommends yes; the MVP needs it. This decides whether 1c.4 is built now.
 2. **A flag for Phase 1.** The design says screen-affecting steps sit behind a UserDefaults flag "like `ReaderFeatureFlags`". But `ReaderFeatureFlags` (`Models.swift:1086`) is never read on `main`, and Phase 1 changes one label. Phase 1's rollback text in §15 assumes a flag.
@@ -336,7 +341,7 @@ Phase 1 adds:
 
 ---
 
-## Task 1c: The work index (A-level)
+## Task 1c: The work index
 
 **Branch:** `unified-library/1c-work-index`, from `main` after 1b. Design §7, §10.2, §10.4.
 
@@ -350,15 +355,15 @@ Phase 1 adds:
 - [ ] **Step 3: The union-find** (design §7.3), deterministic: the same records and decisions always give the same works, editions and ordering. `WorkIndexTests` covers:
   - **《三體》** zh-Hans EPUB (OPF ISBN X) + Calibre EPUB and PDF (uuid U, ISBN X) + OPDS zh-Hant (ISBN X) → one work, two editions (zh-Hans with three records, zh-Hant with one), evidence `identifier(isbn13 X)`;
   - 《三體》 and 《三體II》 with different ISBNs → two works;
-  - same title, different author, no shared identifier → two works (A-level only);
+  - same title, incompatible authors, no shared identifier → two works (B-level needs compatible authors);
   - a comic adaptation sharing a title → two works (content kind differs; A-level does not even try);
   - a translation (en) → its own work;
   - Calibre EPUB and PDF of one uuid → one edition;
   - a `differentWorks` decision between two records sharing an ISBN → two works, whatever else matches ("rejection always wins");
   - a `sameWork` decision → one work;
   - two copies of the same source item, for example two shelf entries of one OPDS entry → one work.
-- [ ] **Step 4 (waits for §17 item 1): B-level.** Merging on equal `WorkMatchKey` titles plus present, compatible authors plus same content kind plus compatible language, with evidence `.titleAuthor`. zh-Hans and zh-Hant are compatible but separate editions.
-  - Behind `WorkIndexPolicy.titleAuthorMerging`, default `false` until the maintainer decides.
+- [ ] **Step 4: B-level** (settled 2026-10-10: yes). Merging on equal `WorkMatchKey` titles plus present, compatible authors plus same content kind plus compatible language, with evidence `.titleAuthor`. zh-Hans and zh-Hant are compatible but separate editions.
+  - `WorkIndexPolicy.titleAuthorMerging` defaults to `true`. It is a policy value for tests and a later "split" UI, not a feature flag.
   - Fixtures: 《三體》 without ISBNs merges; with one author missing it does not (C-level, suggestion only); with a `differentWorks` decision it does not.
 - [ ] **Step 5: `WorkIndexService`.**
   - It snapshots `readingBooks` plus the source URL map on the main actor, builds off it, and applies only if `mutationRevision` is unchanged (decision 9).
@@ -381,7 +386,7 @@ Phase 1 adds:
   ```
 
 **1c acceptance:**
-- the fixtures above pass, without B-level unless the maintainer said yes;
+- the fixtures above pass, B-level included;
 - the index is deterministic, built only on demand, and rebuildable from nothing;
 - benchmark numbers are recorded.
 
@@ -406,7 +411,7 @@ Phase 1 adds:
   - `MetadataResolverTests` is table-driven per rule, including that a lock freezes the value at lock time while newer values arrive.
 - [ ] **Step 4: Lock checks.** Before writing `title` or `author`, each path asks the store about the copy key (decision 4). When locked, it keeps the copy's value and logs one `AppLogger` line with the copy id and path, not the title.
   - **Online refresh:** in `commitRefreshedList`. The other refreshed fields (`tocURL`, `runtimeVariables`, chapters) still update.
-  - **Calibre write-back:** per open question 3. The default (a) sends the server edit and skips only the locked copies' local title.
+  - **Calibre write-back** (settled: the server edit goes through): only the locked copies' local title is skipped.
   - **WebDAV rename:** `remoteSource` follows the new path, and the locked title stays.
   - Extend `TitleOverwriteLockTests`: with a lock, each path keeps the title; without one, Step 1's expectations hold unchanged.
 - [ ] **Step 5: Run and commit.**
@@ -442,14 +447,14 @@ Phase 1 adds:
 
 - [ ] 1a: source records for every entry type; the 「來源」 row fixed; one URL normalizer.
 - [ ] 1b: sidecar metadata for every import; `ReadingBook` keys and hashes unchanged.
-- [ ] 1c: deterministic A-level index with the design's fixtures; B-level built only if §17 item 1 says so; benchmark numbers recorded.
+- [ ] 1c: deterministic index, A-level and B-level, with the design's fixtures; benchmark numbers recorded.
 - [ ] 1d: decisions store, resolver, locks on three paths, unlocked behavior unchanged.
 - [ ] Every step: its own branch from `main` after the previous one merges; its tests and the §19 Phase 1 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
 - [ ] Rollback: revert the step's merge and delete `Application Support/Works/`. No `ReadingBook` or sync content changed (design §15).
 
 ## Follow-ups found while planning
 
-1. **`ReaderFeatureFlags` is dead code** (`Models.swift:1086`): never read on `main`. Either delete it or make it the flag precedent the design assumes (open question 2).
+1. **`ReaderFeatureFlags` is dead code** (`Models.swift:1086`): never read on `main`. Phase 1 adds no flag (settled 2); deleting the type is a separate cleanup.
 2. **`BookStore.delete` leaves files behind** (audit §16 item 5). 1b removes its own sidecar but none of the rest.
 3. **`DiscoverKindsCache.key` joins its inputs with an unescaped `|`** (found in Phase 0a). It can collide; it is unrelated to Phase 1.
 
