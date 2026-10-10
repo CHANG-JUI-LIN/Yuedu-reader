@@ -20,10 +20,3 @@ enum ReplaceSelectionDraft {
         )
     }
 }
-
-enum ReplaceRuleScope {
-    static func resolve(chapterURL: String, bookSourceURL: String) -> String {
-        let source = bookSourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        return source.isEmpty ? chapterURL : source
-    }
-}

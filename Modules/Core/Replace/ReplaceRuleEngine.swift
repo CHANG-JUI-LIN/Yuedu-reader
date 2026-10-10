@@ -36,24 +36,7 @@ enum ReplaceRuleEngine {
     // MARK: - Private
 
     private static func applyRegex(pattern: String, replacement: String, to content: String) -> String {
-        guard !pattern.isEmpty else { return content }
-
-        let regex: NSRegularExpression
-        lock.lock()
-        if let cached = regexCache[pattern] {
-            regex = cached
-            lock.unlock()
-        } else {
-            lock.unlock()
-            guard let r = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else {
-                return content
-            }
-            lock.lock()
-            if regexCache.count > 64 { regexCache.removeAll() } // simple eviction
-            regexCache[pattern] = r
-            lock.unlock()
-            regex = r
-        }
+        guard !pattern.isEmpty, let regex = regex(for: pattern) else { return content }
 
         // Reject expansion before allocating it. A zero-width or broad rule can
         // otherwise grow a chapter until Foundation aborts the entire process.
@@ -65,6 +48,117 @@ enum ReplaceRuleEngine {
             return content
         }
         return output
+    }
+
+    /// The compiled rule, shared by both entry points so a string and an attributed string
+    /// see exactly the same options (`anchorsMatchLines`).
+    private static func regex(for pattern: String) -> NSRegularExpression? {
+        lock.lock()
+        if let cached = regexCache[pattern] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+        let compiled: NSRegularExpression
+        do {
+            compiled = try NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
+        } catch {
+            AppLogger.error("Replace rule pattern does not compile", context: [
+                "pattern": String(pattern.prefix(120)),
+                "error": error.localizedDescription,
+            ])
+            return nil
+        }
+        lock.lock()
+        if regexCache.count > 64 { regexCache.removeAll() } // simple eviction
+        regexCache[pattern] = compiled
+        lock.unlock()
+        return compiled
+    }
+
+    // MARK: - Attributed text
+
+    /// Applies `rules` to the text of `attributed` from `start` to its end, in place, with
+    /// exactly the semantics of `apply(_:to:)` — same regex options, same `$n` template
+    /// syntax, same output budget. Each replacement takes the attributes of the text it
+    /// replaces, so the reader's styling survives.
+    ///
+    /// This is how the online reader applies rules at display time. It used to carry its
+    /// own copy of this loop, which had drifted three ways: `$1` became the literal "1",
+    /// `^`/`$` matched only the chapter's ends, and a rule whose replacement had the same
+    /// length as its match ("永夜"→"長夜") was discarded as "no change".
+    /// - Returns: whether any rule matched.
+    @discardableResult
+    static func apply(
+        _ rules: [ReplaceRule],
+        to attributed: NSMutableAttributedString,
+        from start: Int
+    ) -> Bool {
+        var changed = false
+        for rule in rules {
+            guard rule.enabled, !rule.pattern.isEmpty else { continue }
+            let text = attributed.string as NSString
+            let lower = min(max(0, start), text.length)
+            let range = NSRange(location: lower, length: text.length - lower)
+            let edits = rule.isRegex
+                ? regexEdits(rule, in: text, range: range)
+                : literalEdits(rule, in: text, range: range)
+            guard let edits, !edits.isEmpty else { continue }
+
+            // Same budget as the string path: a zero-width or broad rule must not grow a
+            // chapter until Foundation aborts.
+            let limit = max(text.length, 8 * 1024 * 1024)
+            let grown = edits.reduce(text.length) { $0 - $1.range.length + ($1.text as NSString).length }
+            guard grown <= limit else {
+                AppLogger.error("Replace rule output exceeds chapter budget", context: ["limit": "\(limit)"])
+                continue
+            }
+            for edit in edits.reversed() {
+                attributed.replaceCharacters(in: edit.range, with: edit.text)
+            }
+            changed = true
+        }
+        return changed
+    }
+
+    private struct Edit {
+        let range: NSRange
+        let text: String
+    }
+
+    private static func regexEdits(_ rule: ReplaceRule, in text: NSString, range: NSRange) -> [Edit]? {
+        guard let regex = regex(for: rule.pattern) else { return nil }
+        let parts = templateParts(rule.replacement, captureCount: regex.numberOfCaptureGroups)
+        var edits: [Edit] = []
+        regex.enumerateMatches(in: text as String, range: range) { match, _, _ in
+            guard let match else { return }
+            var output = ""
+            for part in parts {
+                switch part {
+                case .literal(let literal):
+                    output += literal
+                case .capture(let group):
+                    guard group < match.numberOfRanges else { continue }
+                    let captured = match.range(at: group)
+                    if captured.location != NSNotFound { output += text.substring(with: captured) }
+                }
+            }
+            edits.append(Edit(range: match.range, text: output))
+        }
+        return edits
+    }
+
+    private static func literalEdits(_ rule: ReplaceRule, in text: NSString, range: NSRange) -> [Edit] {
+        var edits: [Edit] = []
+        var searchRange = range
+        while searchRange.length > 0 {
+            let found = text.range(of: rule.pattern, options: [], range: searchRange)
+            guard found.location != NSNotFound, found.length > 0 else { break }
+            edits.append(Edit(range: found, text: rule.replacement))
+            let next = NSMaxRange(found)
+            searchRange = NSRange(location: next, length: NSMaxRange(range) - next)
+        }
+        return edits
     }
 
     private enum TemplatePart {

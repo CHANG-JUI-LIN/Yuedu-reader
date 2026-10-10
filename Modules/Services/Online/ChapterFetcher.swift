@@ -523,7 +523,6 @@ struct ChapterFetcher {
         initialHTML: String,
         initialURL: URL,
         initialBaseURL: String,
-        replaceRuleScope: String = "",
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext? = nil,
         parsePage: @escaping @Sendable (String, String) async throws -> ChapterParsePayload,
         extractNextURLs: @escaping @Sendable (String, String) async -> [String],
@@ -548,13 +547,7 @@ struct ChapterFetcher {
             fetchNextPageHTML: fetchNextPageHTML
         )
         let parsed = paginated.payload
-        let content = await resolveContent(
-            parsed: parsed,
-            sourceUrl: ReplaceRuleScope.resolve(
-                chapterURL: sourceURL,
-                bookSourceURL: replaceRuleScope
-            )
-        )
+        let content = await resolveContent(parsed: parsed)
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FetchError.emptyContent
         }
@@ -612,10 +605,7 @@ struct ChapterFetcher {
         return ChapterBuildResult(package: package, rawHTML: rawHTML, normalizedHTML: normalizedHTML)
     }
 
-    func resolveContent(
-        parsed: ChapterParsePayload,
-        sourceUrl: String = ""
-    ) async -> String {
+    func resolveContent(parsed: ChapterParsePayload) async -> String {
         let chapterTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
         var content = Self.sanitizeResolvedContent(parsed.content, title: chapterTitle)
 
@@ -624,12 +614,6 @@ struct ChapterFetcher {
         }
 
         content = Self.normalizeLegadoContent(content)
-
-        // Audiobook chapters resolve to a bare media URL (or <audio> markup), not prose.
-        // Text-cleanup replace rules must not run on them: the stock "水印去除" preset
-        // deletes every http… token, which erased the audio URL and surfaced as
-        // "Fetched empty content" in the player. Mirrors the manga-image exemption below.
-        let isDirectAudio = DirectChapterAudioResolver.looksLikeAudioContent(content)
 
         // The source's own `ruleContent.replaceRegex` is NOT applied here. It runs at parse time
         // (`ModernParserBridge.parseChapterResult`, matching Legado's `BookContent.analyzeContent`),
@@ -640,13 +624,13 @@ struct ChapterFetcher {
 
         content = Self.sanitizeResolvedContent(content, title: chapterTitle)
 
-        // Apply user-configured global replace rules (after per-source rules).
-        // Default/global text cleanup can include tag stripping; don't run it on
-        // image-bearing chapters because that erases manga pages and novel illustrations.
-        let globalRules = ReplaceRuleStore.shared.rules(for: sourceUrl)
-        if !globalRules.isEmpty && !Self.containsContentImageTag(content) && !isDirectAudio {
-            content = ReplaceRuleEngine.apply(globalRules, to: content)
-        }
+        // The user's global replace rules are NOT applied here either: the cache keeps the
+        // source's text and the reader applies them at display time
+        // (`OnlineProviderAttributedStringBuilder.applyReplaceRules`), as legado's
+        // `ContentProcessor` does. Baking them in here applied them twice to plain-text
+        // chapters and kept an edited rule from reaching chapters already cached. Manga
+        // pages and audio URLs are safe from text-cleanup rules for the same reason: the
+        // reader's rules only ever see laid-out prose.
 
         let finalNormalizedTitle = chapterTitle
             .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)

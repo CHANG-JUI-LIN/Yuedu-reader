@@ -22,16 +22,4 @@ struct ReplaceSelectionDraftTests {
     func ignoresWhitespaceOnlySelection() {
         #expect(ReplaceSelectionDraft.makeRule(selectedText: "  \n  ", scope: "global") == nil)
     }
-
-    @Test("Book-source URL is preferred over the chapter URL for cleanup scope")
-    func resolvesBookSourceScope() {
-        #expect(ReplaceRuleScope.resolve(
-            chapterURL: "https://example.com/book/1/chapter/2",
-            bookSourceURL: "https://example.com"
-        ) == "https://example.com")
-        #expect(ReplaceRuleScope.resolve(
-            chapterURL: "https://example.com/book/1/chapter/2",
-            bookSourceURL: "  "
-        ) == "https://example.com/book/1/chapter/2")
-    }
 }

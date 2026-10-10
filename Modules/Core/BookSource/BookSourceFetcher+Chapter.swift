@@ -262,7 +262,6 @@ extension BookSourceFetcher {
             initialHTML: stagedRawHTML,
             initialURL: url,
             initialBaseURL: url.absoluteString,
-            replaceRuleScope: source.bookSourceUrl,
             reviewContext: source.legadoReviewContext.withChapter(ref),
             parsePage: parsePage,
             extractNextURLs: extractNextPages
@@ -321,10 +320,7 @@ extension BookSourceFetcher {
                 )
             }
         }
-        let content = await ChapterFetcher.shared.resolveContent(
-            parsed: parsed,
-            sourceUrl: ref.url
-        )
+        let content = await ChapterFetcher.shared.resolveContent(parsed: parsed)
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FetchError.emptyContent
         }

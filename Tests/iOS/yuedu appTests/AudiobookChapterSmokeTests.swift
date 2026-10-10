@@ -327,8 +327,7 @@ struct AudiobookChapterSmokeTests {
         let payload = ChapterParsePayload(
             content: audioURL, title: "终极斗罗 0001 那是什么", sourceMatched: true, isPay: false)
         let resolved = await ChapterFetcher.shared.resolveContent(
-            parsed: payload,
-            sourceUrl: "data:;base64,xxx"
+            parsed: payload
         )
         log("▸ resolveContent(rawURL) → len=\(resolved.count) head=\(resolved.prefix(140))")
 
@@ -337,8 +336,7 @@ struct AudiobookChapterSmokeTests {
             let payload2 = ChapterParsePayload(
                 content: stage2Content, title: "终极斗罗 0001 那是什么", sourceMatched: true, isPay: false)
             let resolved2 = await ChapterFetcher.shared.resolveContent(
-                parsed: payload2,
-                sourceUrl: "data:;base64,xxx"
+                parsed: payload2
             )
             log("▸ resolveContent(stage2) → len=\(resolved2.count) head=\(resolved2.prefix(140))")
         }

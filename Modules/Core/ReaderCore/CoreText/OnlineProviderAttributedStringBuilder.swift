@@ -264,15 +264,24 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     /// network behind the reader's back.
     func chapterPlainText(at index: Int) async -> String? { await localChapterText(at: index).text }
 
+    private var replaceRuleScopeURL: String {
+        (provider as? OnlineBookContentProvider)?.replaceRuleScopeURL ?? ""
+    }
+
     func localChapterText(at index: Int) async -> AILocalChapterText {
         do {
             // OnlineBookContentProvider uses cacheOnly. No AI-specific network loader.
             let payload = try await provider.contentForChapter(index: index)
+            let text: String
             switch payload.body {
-            case let .plainText(text): return .extracted(text)
+            case let .plainText(plain): text = plain
             case let .html(html):
-                return .extracted(await Task.detached(priority: .utility) { ChapterPlainText.fromHTML(html) }.value)
+                text = await Task.detached(priority: .utility) { ChapterPlainText.fromHTML(html) }.value
             }
+            // The cache holds the source's text; rules apply on the way out, here as on
+            // screen (`applyReplaceRules`), so AI reads what the reader shows.
+            let rules = ReplaceRuleStore.shared.rules(for: replaceRuleScopeURL)
+            return .extracted(rules.isEmpty ? text : ReplaceRuleEngine.apply(rules, to: text))
         } catch BookContentProviderError.contentNotCached {
             return .init(text: nil, status: .notDownloaded)
         } catch BookContentProviderError.unsupportedChapterContent {
@@ -481,7 +490,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         ])
         #endif
 
-        let result: AttributedChapterBuildResult
+        let built: (result: AttributedChapterBuildResult, titleBlockLength: Int)
         switch payload.body {
         case .html(let rawHTML):
             ReaderHTMLUtilities.logReviewMarkupDiagnostics(
@@ -501,7 +510,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 "bubbles": rawHTML.countMarkers("showCmt("),
                 "len": rawHTML.count
             ])
-            result = await buildHTMLChapter(
+            built = await buildHTMLChapter(
                 payload: payload,
                 html: ReaderHTMLUtilities.rewriteReviewComments(rawHTML),
                 settings: settings,
@@ -509,7 +518,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 themeBackgroundColor: themeBackgroundColor
             )
         case .plainText(let text):
-            result = await buildPlainTextChapter(
+            built = await buildPlainTextChapter(
                 payload: payload,
                 text: text,
                 settings: settings,
@@ -518,6 +527,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             )
         }
 
+        let result = built.result
         var renderedReviewAnchors: [String] = []
         result.attributedString.enumerateAttribute(
             HTMLAttributedStringBuilder.internalLinkAttribute,
@@ -540,59 +550,39 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             }
         )
 
-        let scopeURL = (provider as? OnlineBookContentProvider)?.replaceRuleScopeURL ?? ""
-        let rules = ReplaceRuleStore.shared.rules(for: scopeURL)
+        let rules = ReplaceRuleStore.shared.rules(for: replaceRuleScopeURL)
         guard !rules.isEmpty else { return result }
 
-        return applyReplaceRules(rules, to: result)
+        return applyReplaceRules(rules, to: result, bodyStart: built.titleBlockLength)
     }
 
+    /// The one place an online chapter's replace rules run: at display time, over the
+    /// chapter text as laid out, the way legado's `ContentProcessor` applies them on every
+    /// show while the cache keeps the source's text. A rule edited later therefore reaches
+    /// every cached chapter at once; the chapter fetcher no longer bakes rules into the
+    /// cache, which applied them twice to plain-text chapters.
+    ///
+    /// Rules act on the chapter's text, never on the title block this builder typesets in
+    /// front of it — the same as the TXT path, and legado, whose rules reach titles only
+    /// when scoped to them. Running them over the whole string let the default rule
+    /// `^[\u3000\s]+` delete the title's 上距 spacer line, so 標題上距 did nothing in every
+    /// online book (reported 2026-10-10).
     private func applyReplaceRules(
         _ rules: [ReplaceRule],
-        to result: AttributedChapterBuildResult
+        to result: AttributedChapterBuildResult,
+        bodyStart: Int
     ) -> AttributedChapterBuildResult {
         let mutable = NSMutableAttributedString(attributedString: result.attributedString)
-        let backing = mutable.mutableString
-        var changed = false
-
-        for rule in rules {
-            guard rule.enabled, !rule.pattern.isEmpty else { continue }
-            let range = NSRange(location: 0, length: backing.length)
-            let replacement = Self.legadoToNSReplacement(rule.replacement)
-            if rule.isRegex {
-                guard let regex = try? NSRegularExpression(pattern: rule.pattern) else { continue }
-                let before = backing.length
-                regex.replaceMatches(in: backing, range: range, withTemplate: replacement)
-                if backing.length != before { changed = true }
-            } else {
-                let before = backing.length
-                backing.replaceOccurrences(
-                    of: rule.pattern,
-                    with: rule.replacement,
-                    options: [],
-                    range: range
-                )
-                if backing.length != before { changed = true }
-            }
-        }
-
-        guard changed else { return result }
+        guard ReplaceRuleEngine.apply(rules, to: mutable, from: bodyStart) else { return result }
 
         return AttributedChapterBuildResult(
             attributedString: mutable,
             imagePage: result.imagePage,
             pageBackgroundImage: result.pageBackgroundImage,
             pageBackgroundColor: result.pageBackgroundColor,
+            darkPageBackgroundColor: result.darkPageBackgroundColor,
             anchorOffsets: result.anchorOffsets
         )
-    }
-
-    private static func legadoToNSReplacement(_ template: String) -> String {
-        var result = template
-        for i in stride(from: 9, through: 0, by: -1) {
-            result = result.replacingOccurrences(of: "$\(i)", with: "\\\(i)")
-        }
-        return result
     }
 
     private func buildHTMLChapter(
@@ -601,7 +591,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         settings: ReaderRenderSettings,
         themeTextColor: UIColor,
         themeBackgroundColor: UIColor
-    ) async -> AttributedChapterBuildResult {
+    ) async -> (result: AttributedChapterBuildResult, titleBlockLength: Int) {
         let contentRenderWidth = max(
             1,
             renderSize.width - settings.contentInsets.left - settings.contentInsets.right
@@ -632,12 +622,13 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             config: cfg,
             stylesheetCache: stylesheetCache
         ) else {
-            return AttributedChapterBuildResult(
+            let empty = AttributedChapterBuildResult(
                 attributedString: NSAttributedString(),
                 imagePage: nil,
                 pageBackgroundImage: nil,
                 anchorOffsets: [:]
             )
+            return (empty, 0)
         }
 
         if let imagePage = await builder.imagePage(from: ast) {
@@ -648,7 +639,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 .foregroundColor: themeTextColor,
                 .backgroundColor: themeBackgroundColor,
             ]
-            return AttributedChapterBuildResult(
+            let result = AttributedChapterBuildResult(
                 attributedString: NSAttributedString(string: "\u{FFFC}", attributes: attrs),
                 imagePage: imagePage,
                 pageBackgroundImage: nil,
@@ -656,6 +647,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 darkPageBackgroundColor: darkPageBackgroundColor,
                 anchorOffsets: [:]
             )
+            return (result, 0)
         }
 
         if let styleResolver {
@@ -736,6 +728,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             Self.mergeTitleAccessories(renderedAccessories, into: styledTitle)
         }
         let bodyAttributed = await renderer.render(renderNodes)
+        let titleBlockLength = styledTitle.length
         let attributedString: NSAttributedString
         if styledTitle.length > 0 {
             styledTitle.append(bodyAttributed)
@@ -754,7 +747,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         let pageBackgroundImage = await builder.pageBackgroundImage(from: ast)
         let pageBackgroundColor = builder.pageBackgroundColor(from: ast)
         let darkPageBackgroundColor = builder.pageBackgroundDarkColor(from: ast)
-        return AttributedChapterBuildResult(
+        let result = AttributedChapterBuildResult(
             attributedString: attributedString,
             imagePage: nil,
             pageBackgroundImage: pageBackgroundImage,
@@ -762,6 +755,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             darkPageBackgroundColor: darkPageBackgroundColor,
             anchorOffsets: builder.anchorOffsets(in: attributedString)
         )
+        return (result, titleBlockLength)
     }
 
     /// Moves a source title's inline review attachment onto the last visible line of the
@@ -899,7 +893,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         settings: ReaderRenderSettings,
         themeTextColor: UIColor,
         themeBackgroundColor: UIColor
-    ) async -> AttributedChapterBuildResult {
+    ) async -> (result: AttributedChapterBuildResult, titleBlockLength: Int) {
         let bodyFont = UserReaderFontResolver.bodyFont(size: settings.fontSize, isBold: settings.isBold)
         let syntheticBoldAttributes = UserReaderFontResolver.syntheticBoldAttributes(
             for: bodyFont,
@@ -936,6 +930,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             to: attr
         )
 
+        let titleBlockLength = attr.length
+
         // Title and body convert together so the leading-title match still compares like with
         // like; the title block above converts inside `ChapterTitleAttributedBuilder`.
         let paragraphs = ReaderHTMLUtilities.bodyParagraphs(
@@ -960,11 +956,12 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             ))
         }
 
-        return AttributedChapterBuildResult(
+        let result = AttributedChapterBuildResult(
             attributedString: attr,
             imagePage: nil,
             pageBackgroundImage: nil,
             anchorOffsets: [:]
         )
+        return (result, titleBlockLength)
     }
 }
