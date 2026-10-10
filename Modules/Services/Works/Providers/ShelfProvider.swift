@@ -57,7 +57,9 @@ final class ShelfProvider: CollectionBrowsing {
     }
 
     private static func cover(of book: ReadingBook) -> CoverReference {
-        if let path = book.coverImagePath, !path.isEmpty { return .copyFile(path) }
+        if let filename = book.coverImagePath, !filename.isEmpty {
+            return .copyFile(StorageLocations.coverFileLocation(filename).path)
+        }
         if let url = book.coverUrl.flatMap(URL.init(string:)), url.scheme?.hasPrefix("http") == true { return .remote(url, headers: [:]) }
         return .generated(seed: book.title)
     }

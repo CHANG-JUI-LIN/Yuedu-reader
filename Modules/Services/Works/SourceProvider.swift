@@ -88,7 +88,8 @@ struct CollectionPage: Hashable, Sendable {
 
 /// A cover, wherever it lives.
 enum CoverReference: Hashable, Codable, Sendable {
-    /// A file the app keeps (a copy's cover, a cached cover).
+    /// A file the app keeps, by absolute path: a copy's saved cover, the WebDAV index's
+    /// cover. Never persisted, so the path is the running container's.
     case copyFile(String)
     case remote(URL, headers: [String: String])
     /// No cover: `GeneratedBookCover` draws one from this seed (design §13.9).
