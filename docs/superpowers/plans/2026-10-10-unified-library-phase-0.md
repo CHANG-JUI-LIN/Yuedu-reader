@@ -649,7 +649,7 @@ Each sub-step adds one test file and one commit. A test that fails on unchanged 
 
 - [x] 0a: six characterization suites; no production diff; gaps recorded (see What landed).
 - [ ] 0b: `empty` and `failed` are distinct and logged; callers and `SourceHealthStore` unchanged.
-- [ ] 0c: the WebDAV view no longer calls the network; behavior and VoiceOver unchanged.
+- [x] 0c: the WebDAV view no longer calls the network; behavior and VoiceOver unchanged.
 - [x] 0d: a corrupt custom Explore file is kept aside before any write, or never written over.
 - [ ] 0e: `search.firstResult` in Release Console; baseline recorded.
 - [ ] Every step: its own branch from `main`; its tests and the §19 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
@@ -716,6 +716,37 @@ Branch `unified-library/0d-custom-explore-write-guard`, one commit on `772b0c95`
 ✔ Test run with 10 tests in 2 suites passed after 0.326 seconds.
    (CustomExplorePageStoreWriteGuardTests 5, CustomExplorePageTests 5)
 ```
+
+### 0c (2026-10-10)
+
+Branch `unified-library/0c-webdav-browse-model`, one commit on `772b0c95`: `560377f9`. Not merged, not pushed.
+
+- **New `WebDAVBrowseModel`** (`Modules/Services/WebDAV/WebDAVBrowseModel.swift`), shaped like `OPDSBrowseModel`:
+  - `@MainActor ObservableObject` with an optional `list` closure in `init`;
+  - `isLoading` starts true, as the view's `@State` did;
+  - a request-ID guard;
+  - `AppLogger.network("WebDAV listing failed (<host>)", error:)` on failure;
+  - a cancelled or superseded load returns without touching state, keeping the view's old behavior for cancellation.
+  - With a `list` override, the connection lookup is skipped. That is how tests and previews run without a saved connection.
+- **`WebDAVDirectoryView`:**
+  - four `@State` properties became one `@StateObject`;
+  - `init(route:list:)`;
+  - `load()` forwards to the model.
+  - The body, `.task(id:)` with its `didLoad` guard, `.refreshable`, `.onReceive(.remoteLibraryDidChange)` and 「重試」 are unchanged, so the screen and VoiceOver read the same.
+  - Two `#Preview`s were added: a folder with two folders and an EPUB, and the failed state.
+- **New behavior, both intended:** an earlier load that answers last no longer overwrites a later one, and failures are logged.
+- **`WebDAVBrowseModelTests`** covers success, failure with its log line, failure after a listing, a removed connection, reload, a stale load, and a cancelled load. The stale and cancelled cases are held by a continuation, not a sleep.
+- **Static checks:** `yuedu-ios-design` checks pass (`check_localizations`, `git diff --check`, no title-mode change).
+- **Manual check not done:** browsing two folder levels against a real WebDAV server was not tried, because none was at hand.
+
+```
+✔ Test run with 33 tests in 4 suites passed after 0.598 seconds.
+   (WebDAVBrowseModelTests 7, RemoteLibraryBrowsePresentationTests,
+    RemoteLibraryConnectionTests, RemoteLibraryHTTPTests)
+RemoteLibraryNavigationUITests: Executed 1 test, with 0 failures (0 unexpected) in 36.666 (36.669) seconds
+```
+
+`RemoteLibraryNavigationUITests` only opens the WebDAV screen; the model tests are the evidence for listing.
 
 ## Baseline: `search.firstResult` (before Phase 4)
 
