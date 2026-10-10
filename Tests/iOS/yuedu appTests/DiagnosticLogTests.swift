@@ -275,6 +275,61 @@ struct DiagnosticLogTests {
         log.flush(wait: true)
         #expect(log.uncleanPreviousSessions().isEmpty)
     }
+
+    // MARK: - Sequence across launches
+    //
+    // A second `DiagnosticLog` on the same directory is the next launch: the files carry
+    // over, the in-memory counter does not.
+
+    @Test("a later launch numbers its lines after the earlier launch's")
+    func laterLaunchContinuesTheSequence() {
+        let (first, dir) = makeLog()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        first.record(severity: .info, category: .general, message: "launch 1, line 1")
+        first.record(severity: .info, category: .general, message: "launch 1, line 2")
+        first.flush(wait: true)
+
+        let second = DiagnosticLog(directory: dir, verboseOverride: true)
+        second.record(severity: .info, category: .general, message: "launch 2, line 1")
+
+        let entries = second.snapshot()
+        #expect(entries.map(\.message) == ["launch 2, line 1", "launch 1, line 2", "launch 1, line 1"])
+        #expect(entries.map(\.sequence) == entries.map(\.sequence).sorted(by: >))
+        #expect(Set(entries.map(\.sequence)).count == entries.count)
+    }
+
+    @Test("a report sent in an earlier launch does not hide a new anomaly")
+    func earlierReportDoesNotHideNewAnomaly() {
+        let (first, dir) = makeLog()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for index in 1...5 {
+            first.record(severity: .info, category: .general, message: "launch 1, line \(index)")
+        }
+        first.record(severity: .anomaly, category: .general, message: "launch 1 anomaly")
+        // The uploader acknowledges the highest sequence it sent; on a device that value
+        // is persisted and read back by the next launch.
+        let reported = first.snapshot().map(\.sequence).max() ?? 0
+
+        let second = DiagnosticLog(directory: dir, verboseOverride: true)
+        second.acknowledgeReported(through: reported)
+        second.record(severity: .anomaly, category: .general, message: "launch 2 anomaly")
+
+        let newAnomaly = second.snapshot().first { $0.message == "launch 2 anomaly" }
+        #expect(newAnomaly.map(second.isUnreported) == true)
+    }
+
+    @Test("an acknowledgement above everything on disk does not hide a new anomaly")
+    func acknowledgementAboveTheFilesDoesNotHideNewAnomaly() {
+        // The lines a report covered can rotate away while the persisted mark stays.
+        let (log, dir) = makeLog()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        log.acknowledgeReported(through: 500)
+
+        log.record(severity: .anomaly, category: .general, message: "new anomaly")
+
+        let entry = log.snapshot().first { $0.message == "new anomaly" }
+        #expect(entry.map(log.isUnreported) == true)
+    }
 }
 
 @Suite("AppLogger severity classification")
