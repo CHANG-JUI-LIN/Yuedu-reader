@@ -29,7 +29,7 @@
 **Out:**
 - **`SourceHealthStore`.** 0b does not change what is recorded there. A failure reported as empty keeps counting as a success, and blocked sources keep never entering cooldown. Changing that is §17 item 9, which the maintainer has not decided.
 - **The `try?` in `BookOriginSearchService.searchSourceWithTimeout`** (`BookOriginSearchService.swift:139`). It swallows the same failures for 換源 and 換封面. It is listed under Follow-ups rather than widening 0b.
-- **Any visible UI change.** Phase 0 changes no screen, so it needs no UserDefaults flag (§15). 0c moves code without changing what the WebDAV screen shows. 0d adds no message for a corrupt file (decision 8).
+- **Any visible UI change.** Phase 0 changes no screen, so it needs no UserDefaults flag (§15). 0c moves code without changing what the WebDAV screen shows. 0d keeps a corrupt file aside without showing a message (decision 8).
 
 ---
 
@@ -60,10 +60,10 @@ Each comes with its reason; the maintainer can overturn any of them.
    - Same test hook: an optional closure in `init`.
    - Same request-ID guard.
    One browsing pattern for both remote-library kinds, not a second one with `@Observable`.
-8. **0d refuses writes after a failed read, and keeps the file where it is.**
-   - This is the design's wording: "讀取失敗後拒絕寫入", and in §18, "解碼失敗時保留舊檔，不寫新檔".
-   - The alternative is the `BookReaderSettingsStore` pattern: copy the unreadable file aside as `…corrupt-<stamp>.json`, then allow writes. The maintainer may prefer it; see open question 1.
-   - 0d shows no message. Edits made while writes are blocked stay in memory for that run only.
+8. **0d keeps the unreadable file aside, then allows writes** (the maintainer chose option (b), 2026-10-10).
+   - This follows `BookReaderSettingsStore`: a file that cannot be decoded is copied to `custom_explore_pages.corrupt-<stamp>.json`, and only then may the store write a fresh file.
+   - If the copy cannot be made, or the file cannot be read at all, writes stay blocked, so the original is never lost. The design's "讀取失敗後拒絕寫入" survives in that branch.
+   - 0d shows no message. Phase 5's migration must also look for `*.corrupt-*.json` (noted in Follow-ups).
 9. **0e tags each search with its origin and its cache setting, instead of adding a "from cache" flag.**
    - `SourceSearchSheet` (換源) also calls `search(query:sources:)`. So the span says `origin=searchTab` or `origin=changeSource`, and the baseline counts only the first.
    - A `SearchResultCache` hit reaches `mergeBatch` the same way a network result does. Setting 網路設定 →「搜索結果快取天數」to 0 turns the cache off entirely (`SearchResultCache.freshBooks` returns nil for `days <= 0`). The span records `cacheDays=`, so a cached run can be told apart in the log.
@@ -80,10 +80,7 @@ Each comes with its reason; the maintainer can overturn any of them.
 
 ### Open questions for the maintainer
 
-1. **0d, a corrupt `custom_explore_pages.json`:**
-   - (a) Refuse writes, show nothing. This is decision 8.
-   - (b) Copy it aside and allow writes, like `BookReaderSettingsStore`.
-   - (c) Refuse writes and tell the reader. That is a UI change and needs a flag (§15).
+1. ~~**0d, a corrupt `custom_explore_pages.json`.**~~ Settled 2026-10-10: (b), copy it aside and allow writes. See decision 8.
 2. **0e, the baseline queries.** The plan suggests 三體, 斗羅大陸 and 凡人修仙傳, three runs each, on the maintainer's iPhone with their own sources. Replace them if other queries better represent real use.
 
 ---
@@ -555,24 +552,27 @@ Each sub-step adds one test file and one commit. A test that fails on unchanged 
 - `Modules/Services/Online/CustomExplorePageStore.swift`
 - create `Tests/iOS/yuedu appTests/CustomExplorePageStoreWriteGuardTests.swift`
 
-**Settle first:** open question 1. The steps below implement (a). If the maintainer picks (b), follow `BookReaderSettingsStore.keepUnreadableFile` and its test instead. If (c), stop and plan the UI and its flag separately.
+**Decision:** option (b), decision 8. Copy the unreadable file aside, then allow writes; block writes only when the copy cannot be made or the file cannot be read. The template is `BookReaderSettingsStore` (`load()` 151-170, `keepUnreadableFile` 174-191, guarded `save()` 194-198) and its test `BookReaderSettingsStoreTests.swift:73`.
 
-- [ ] **Step 1: Write the failing tests** (`@MainActor`; each uses its own temporary file, like `CustomExplorePageTests.temporaryStore()`).
+- [ ] **Step 1: Write the failing tests** (`@MainActor`; each uses its own temporary directory, so the corrupt copy lands beside the file and is cleaned up with it).
   - **Decode failure:**
-    - Write `"{ not json"`, open the store, and call `createPage`, then `renamePage`, `deletePage`, `saveComponent`, `removeComponents` and `moveComponents`.
-    - After each call, the file's bytes equal the original bytes.
-    - A second store opened on the same file also sees the original bytes.
-  - **Read failure:** make `fileURL` a directory, so `Data(contentsOf:)` throws. Mutations neither crash nor create anything at that path.
-  - **No file:** `createPage` writes the file, and a second store reads the page back. This guards against blocking the normal first launch.
-  - **Log:** one `AppLogger.cache` line per refused save, stating that edits are not being saved because the file on disk could not be read.
+    - Write `"{ not json"` and open the store: `pages` is empty.
+    - A file whose name contains `corrupt` now sits beside it, holding exactly the original bytes.
+    - `createPage` then writes a valid file, and a second store opened on the same path reads that page back.
+    - The corrupt copy is still there and unchanged after the write.
+  - **Opening the same corrupt file twice** (two store instances before any write) leaves one copy, not two. Either name the copy after the file's modification time, as `BookStore.keptUnreadableMetadataAside` does, or treat an existing copy with identical bytes as done.
+  - **Read failure:** make `fileURL` a directory, so `Data(contentsOf:)` throws. No copy can be made, so writes are blocked: mutations neither crash nor create anything at that path, and one `AppLogger.cache` line says why per refused save.
+  - **Copy failure:** if the copy cannot be written (for example, the directory is read-only), writes are blocked and the original bytes stay unchanged.
+  - **No file:** `createPage` writes the file, and a second store reads the page back. This guards the normal first launch.
 - [ ] **Step 2: Implement.**
   - Add `private var writesBlocked = false`.
   - In `load()`:
     - a missing file stays normal;
-    - a failed read or decode sets `writesBlocked = true` and logs, keeping the existing `⟐ … could not be read` line;
-    - the file is left untouched.
+    - a failed read sets `writesBlocked = true` and logs;
+    - a failed decode logs (keep the existing `⟐ … could not be read` line) and calls `keepUnreadableFile(data)`;
+  - `keepUnreadableFile(_:)` writes the bytes to `fileURL.deletingPathExtension().appendingPathExtension("corrupt-<stamp>.json")` with `.withoutOverwriting`. If that fails, it sets `writesBlocked = true` and logs.
   - In `save()`: `guard !writesBlocked else { AppLogger.cache(…); return }`.
-  - The in-memory `pages` still change, so the editor behaves as before for the rest of that run. Write that down in a comment on `writesBlocked`, with a pointer to this plan's open question 1.
+  - Comment on `writesBlocked`: what it guards, and that it lifts only on the next launch once the file reads.
 - [ ] **Step 3: Run and commit.**
 
   ```bash
@@ -583,10 +583,10 @@ Each sub-step adds one test file and one commit. A test that fails on unchanged 
   ```
 
 **0d acceptance:**
-- a corrupt or unreadable file is byte-for-byte unchanged after any edit;
+- a file that cannot be decoded is kept aside byte-for-byte before any write; one that cannot be read, or cannot be copied, is never written over;
 - a missing file still saves;
 - the existing `CustomExplorePageTests` pass;
-- Phase 5's migration will find the original file.
+- Phase 5's migration can find the original, either in place or as the `corrupt` copy.
 
 ---
 
@@ -650,7 +650,7 @@ Each sub-step adds one test file and one commit. A test that fails on unchanged 
 - [ ] 0a: six characterization suites; no production diff; gaps recorded.
 - [ ] 0b: `empty` and `failed` are distinct and logged; callers and `SourceHealthStore` unchanged.
 - [ ] 0c: the WebDAV view no longer calls the network; behavior and VoiceOver unchanged.
-- [ ] 0d: a corrupt custom Explore file survives any edit.
+- [ ] 0d: a corrupt custom Explore file is kept aside before any write, or never written over.
 - [ ] 0e: `search.firstResult` in Release Console; baseline recorded.
 - [ ] Every step: its own branch from `main`; its tests and the §19 regression pass after its last edit; nothing pushed or merged without the maintainer's yes.
 
@@ -662,6 +662,7 @@ Not part of Phase 0. Listed so the maintainer can decide.
 2. **`OnlineCoverSearchService` uses `URLSession.shared` directly** (audit §16 item 10). It bypasses `safeURL` and `SourceRateLimit`.
 3. **Discover and custom-page loading have no seam** (decision 2). Phase 5's loaders should take an injected fetcher from the start.
 4. **Stale comments in `SearchAggregator`** (audit §16 item 11): the timeout comment says 15 seconds where the code uses 12, and the normalization comment says "strip punctuation" where it does not strip.
+5. **Phase 5's migration must also read `custom_explore_pages.corrupt-*.json`** (decision 8), or at least tell the reader that an unreadable copy was kept.
 
 ## What landed
 
