@@ -280,6 +280,22 @@ enum LegadoJavaInteropRuntime {
             return hexToBytes(java.aesDecryptHex(String(transformation || 'AES'), bytesToHex(getBytes(key || '', 'UTF-8')), bytesToHex(getBytes(iv || '', 'UTF-8')), bytesToHex(decode64(data))));
         };
         java.aesBase64DecodeToString = function () { return bytesToString(java.aesBase64Decode.apply(java, arguments), 'UTF-8'); };
+        // legado `JsEncodeUtils.tripleDES*`: thin wrappers over createSymmetricCrypto("DESede/…").
+        // 起点's Argus API signs every request with tripleDESEncodeBase64Str; without it the
+        // qm source's 彩蛋 TOC and 彩蛋 content requests never left the device.
+        // The `Args` variants take a Base64 key and a UTF-8 iv, as legado's do.
+        java.tripleDESEncodeBase64Str = function (data, key, mode, padding, iv) {
+            return java.createSymmetricCrypto('DESede/' + mode + '/' + padding, key, iv).encryptBase64(data);
+        };
+        java.tripleDESDecodeStr = function (data, key, mode, padding, iv) {
+            return java.createSymmetricCrypto('DESede/' + mode + '/' + padding, key, iv).decryptStr(data);
+        };
+        java.tripleDESEncodeArgsBase64Str = function (data, key, mode, padding, iv) {
+            return java.createSymmetricCrypto('DESede/' + mode + '/' + padding, decode64(key), getBytes(iv || '', 'UTF-8')).encryptBase64(data);
+        };
+        java.tripleDESDecodeArgsBase64Str = function (data, key, mode, padding, iv) {
+            return java.createSymmetricCrypto('DESede/' + mode + '/' + padding, decode64(key), getBytes(iv || '', 'UTF-8')).decryptStr(data);
+        };
         java.toURL = function (url, baseUrl) {
             var value = java.urlParts(String(url || ''), baseUrl == null ? null : String(baseUrl));
             value.searchParams = __yueduJavaMap(value.searchParams || {});
