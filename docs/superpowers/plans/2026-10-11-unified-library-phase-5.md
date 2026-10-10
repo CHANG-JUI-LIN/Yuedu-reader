@@ -223,7 +223,15 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 
 **Branch:** `unified-library/5c-home-screen`. Design §13.3, §13.9; decisions 5, 8, 9; open decisions 2, 4, 7.
 
-- [ ] **Step 1: Strings** reviewed with the maintainer.
+- [x] **Step 1: Strings** reviewed with the maintainer. Approved as proposed, 2026-10-11:
+
+  | zh-Hant | zh-Hans | en | ja | ko |
+  |---|---|---|---|---|
+  | 我的書庫 | 我的书库 | My Library | マイライブラリ | 내 서재 |
+  | 相關 | 相关 | Related | 関連 | 관련 |
+  | %@・最新 | %@・最新 | Latest in %@ | %@の新着 | %@ 최신 |
+  | 載入 | 加载 | Load | 読み込む | 불러오기 |
+  | 使用舊版探索頁 | 使用旧版探索页 | Use Classic Explore | 以前の探索画面を使う | 이전 탐색 화면 사용 |
 - [ ] **Step 2: `ExploreHome`,** the new tab root.
   - It shows the sections in order, as horizontal cover-wall rows. Each row header names its source and pushes 查看全部.
   - Cards are the open-decision-4 style, with the `CoverReference` cover and `CopyLookup` status.
