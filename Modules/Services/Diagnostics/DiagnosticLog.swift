@@ -47,7 +47,18 @@ final class DiagnosticLog: @unchecked Sendable {
 
     private let lock = NSLock()
     private var pending: [DiagnosticEntry] = []
+    /// This launch's count of recorded lines. It restarts at 0 every launch, so it is not
+    /// what lands on disk: `drainPending` adds `sequenceBase` to it there.
     private var nextSequence: UInt64 = 0
+    /// Where this launch's numbering starts on disk: past every line earlier launches left
+    /// in the files and past the acknowledged mark. Without it each launch numbered from 0,
+    /// so `snapshot()` and the export, which sort by sequence, interleaved launches, and a
+    /// report acknowledged in an earlier launch hid this launch's anomalies.
+    ///
+    /// Resolved on `ioQueue` at the first drain, never in `init`: reading the files goes
+    /// through `StorageLocations`, which logs through `AppLogger` back into `shared` while
+    /// it is still being created. Only `ioQueue` reads or writes it.
+    private var sequenceBase: UInt64?
     private var sessionReportableCount = 0
     private var cachedVerbose: Bool
 
@@ -422,9 +433,19 @@ final class DiagnosticLog: @unchecked Sendable {
         }
         guard !batch.isEmpty else { return }
 
+        let base = resolvedSequenceBase()
         var blob = Data()
         for entry in batch {
-            guard let line = try? Self.encoder.encode(entry) else { continue }
+            let numbered = DiagnosticEntry(
+                id: entry.id,
+                sequence: base + entry.sequence,
+                timestamp: entry.timestamp,
+                severity: entry.severity,
+                category: entry.category,
+                message: entry.message,
+                detail: entry.detail
+            )
+            guard let line = try? Self.encoder.encode(numbered) else { continue }
             blob.append(line)
             blob.append(0x0A)
         }
@@ -432,6 +453,17 @@ final class DiagnosticLog: @unchecked Sendable {
 
         rotateIfNeeded()
         append(blob, to: currentFileURL)
+    }
+
+    /// Must only run on `ioQueue`. See `sequenceBase`.
+    private func resolvedSequenceBase() -> UInt64 {
+        if let sequenceBase { return sequenceBase }
+        let onDisk = (readEntries(from: previousFileURL) + readEntries(from: currentFileURL))
+            .map(\.sequence).max().map { $0 + 1 } ?? 0
+        let acknowledged = lock.withLock { acknowledgedSequence }
+        let base = max(onDisk, acknowledged == 0 ? 0 : acknowledged + 1)
+        sequenceBase = base
+        return base
     }
 
     private func append(_ data: Data, to url: URL) {
