@@ -80,7 +80,8 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
     }
 
     @MainActor
-    func testCardExpansionCarouselAndAuthorWithoutPro() {
+    func testCardExpansionCarouselAndAuthorWithoutPro() throws {
+        try XCTSkipIf(true, "The store's card carousel is off Explore's home for now (Phase 5 plan, decision 27); its code stays.")
         let app = application()
         let close = openBook(app)
         screenshot(app, "storefront-card-resting")
@@ -121,12 +122,12 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         close.tap()
     }
 
-    /// The store's pages are pushed by value (unified library 5c, decision 5): a card opened on a
-    /// pushed page pushes its author on top of it, and backing out walks the same pages. The page
-    /// is 中文書籍's, opened from its row's name: since 5d-3b 範圍 filters the home instead of
-    /// showing Gutenberg's own page, and the entry that opened it is gone.
+    /// The store's pages are pushed by value (unified library 5c, decision 5), and since 5f a book
+    /// opens 作品詳情 on top of the page it was tapped on (Phase 5 plan, decision 27). Its source's
+    /// own page is pushed from 可用來源, and backing out walks the same pages. The page is
+    /// 中文書籍's, opened from its row's name.
     @MainActor
-    func testCardFromAPushedPageKeepsTheStack() {
+    func testBookFromAPushedPageKeepsTheStack() {
         let app = application()
         app.launch()
         let explore = app.tabBars.buttons["探索"].firstMatch
@@ -138,25 +139,49 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         header.tap()
         XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10))
         app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/24264.opds"].firstMatch.tap()
-        let close = app.buttons["publicLibrary.closeSheet"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 10))
-        let author = app.buttons["publicLibrary.author.https://www.gutenberg.org/ebooks/author/10001.opds"].firstMatch
-        XCTAssertTrue(author.waitForExistence(timeout: 10), app.debugDescription)
-        author.tap()
-        XCTAssertTrue(app.navigationBars["曹雪芹"].waitForExistence(timeout: 10))
-        screenshot(app, "storefront-author-from-collection")
+        let versions = app.descendants(matching: .any)["work.versions"].firstMatch
+        XCTAssertTrue(versions.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["publicLibrary.closeSheet"].exists, "No card carousel over the store's page")
+        let gutenberg = app.buttons["work.version.gutenberg"].firstMatch
+        XCTAssertTrue(gutenberg.waitForExistence(timeout: 10), app.debugDescription)
+        screenshot(app, "work-detail-from-collection")
+        gutenberg.tap()
+        XCTAssertTrue(app.navigationBars["書籍詳情"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["紅樓夢"].firstMatch.waitForExistence(timeout: 10), "The library page reads the fixture's entry")
+        screenshot(app, "work-detail-source-page")
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(close.waitForExistence(timeout: 10), "Back from the author returns to the card")
-        close.tap()
-        XCTAssertTrue(close.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.navigationBars["中文書籍"].exists, "The card closes onto the page it was opened from")
+        XCTAssertTrue(versions.waitForExistence(timeout: 10), "Back from the source's page returns to 作品詳情")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10), "Back from 作品詳情 returns to the page it was opened from")
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(header.waitForExistence(timeout: 10), "Back from 中文書籍 returns to the home")
         XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "The home is 探索's root")
     }
 
+    /// A home card opens 作品詳情 (decision 27): the book, what reads it, and where it is from.
     @MainActor
-    func testProThemeCard() {
+    func testHomeCardOpensWorkDetail() {
+        let app = application()
+        app.launch()
+        let explore = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(explore.waitForExistence(timeout: 30))
+        explore.tap()
+        homeCard(app, 24264).tap()
+        let versions = app.descendants(matching: .any)["work.versions"].firstMatch
+        XCTAssertTrue(versions.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["紅樓夢"].firstMatch.exists, app.debugDescription)
+        let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["開始閱讀", "繼續閱讀"])).firstMatch
+        XCTAssertTrue(read.exists && read.isEnabled, app.debugDescription)
+        XCTAssertTrue(app.buttons["work.version.gutenberg"].firstMatch.exists, app.debugDescription)
+        screenshot(app, "work-detail-from-home")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(homeCard(app, 24264).waitForExistence(timeout: 10))
+        XCTAssertTrue(explore.isHittable, "Back from 作品詳情 returns to the home")
+    }
+
+    @MainActor
+    func testProThemeCard() throws {
+        try XCTSkipIf(true, "The store's card carousel is off Explore's home for now (Phase 5 plan, decision 27); its code stays.")
         let app = application(pro: true)
         let close = openBook(app)
         screenshot(app, "storefront-pro-theme-resting")
@@ -169,7 +194,8 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
     }
 
     @MainActor
-    func testPullDownClosesRestingCard() {
+    func testPullDownClosesRestingCard() throws {
+        try XCTSkipIf(true, "The store's card carousel is off Explore's home for now (Phase 5 plan, decision 27); its code stays.")
         let app = application()
         let close = openBook(app)
         let carousel = app.scrollViews["publicLibrary.carousel"].firstMatch

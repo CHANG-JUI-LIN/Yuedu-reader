@@ -82,10 +82,7 @@ struct RemoteLibraryBookDetailView: View {
     @EnvironmentObject private var store: BookStore
     @ObservedObject private var catalogStore = RemoteLibraryConnectionStore.shared
     @State private var selectedFormatID: String
-    @State private var action: RemoteLibraryDetailAction?
-    @State private var actionTask: Task<Void, Never>?
-    @State private var message: String?
-    @State private var actionFailed = false
+    @StateObject private var actions = RemoteLibraryActionModel()
     @State private var readerBookID: UUID?
     @State private var introExpanded = false
     /// Whether the copy's offline file exists, checked when the copy or its file changes
@@ -112,6 +109,9 @@ struct RemoteLibraryBookDetailView: View {
     private var isOnShelf: Bool { book?.isInBookshelf ?? false }
     private var isOffline: Bool { book != nil && offlineFileExists }
     private var offlineProbe: String { "\(book?.id.uuidString ?? "")|\(book?.remoteSource?.offlineFilename ?? "")" }
+    private var action: RemoteLibraryActionModel.Action? { actions.action }
+    private var message: String? { actions.message }
+    private var actionFailed: Bool { actions.failed }
     private var canAct: Bool { selectedFormat?.isSupported == true && action == nil }
     private var connection: RemoteLibraryConnection? {
         catalogStore.connection(id: item.connectionID)
@@ -130,11 +130,11 @@ struct RemoteLibraryBookDetailView: View {
                 }
             }
         }
-        .onChange(of: selectedFormatID) { _, _ in message = nil }
+        .onChange(of: selectedFormatID) { _, _ in actions.clearMessage() }
         .task(id: offlineProbe) {
             offlineFileExists = book.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false
         }
-        .onDisappear { actionTask?.cancel() }
+        .onDisappear { actions.cancelForDisappearance() }
     }
 
     private var libraryList: some View {
@@ -319,57 +319,16 @@ struct RemoteLibraryBookDetailView: View {
         return format.isSupported ? name : name + " · " + localized("不支援")
     }
 
-    private func begin(_ selectedAction: RemoteLibraryDetailAction) {
+    private func begin(_ selectedAction: RemoteLibraryActionModel.Action) {
         guard canAct, let format = selectedFormat else { return }
-        action = selectedAction
-        message = nil
-        actionFailed = false
-        actionTask = Task { @MainActor in
-            do {
-                switch selectedAction {
-                case .read:
-                    let result = try await dependencies.remoteLibrary.read(item: item, format: format, store: store)
-                    try Task.checkCancellation()
-                    if storefront { sheet?.openReader(result.id) }
-                    else { readerBookID = result.id }
-                case .addToShelf:
-                    _ = try dependencies.remoteLibrary.addToShelf(item: item, format: format, store: store)
-                    message = localized("已加入書架")
-                case .download:
-                    _ = try await dependencies.remoteLibrary.downloadOffline(item: item, format: format, store: store)
-                    try Task.checkCancellation()
-                    message = localized("下載完成")
-                }
-            } catch {
-                if Task.isCancelled {
-                    message = localized("已取消")
-                } else {
-                    actionFailed = true
-                    message = error.localizedDescription
-                }
-            }
-            action = nil
-            if let message { UIAccessibility.post(notification: .announcement, argument: message) }
+        actions.begin(selectedAction, item: item, format: format, service: dependencies.remoteLibrary, store: store) { id in
+            if storefront { sheet?.openReader(id) }
+            else { readerBookID = id }
         }
     }
 
     private func cancelAction() {
-        actionTask?.cancel()
-        // Do not start another action until the cancelled service operation has
-        // completed its cleanup and the task above clears the active operation.
-        message = localized("正在取消")
-    }
-}
-
-private enum RemoteLibraryDetailAction {
-    case read, addToShelf, download
-
-    var progressTitle: String {
-        switch self {
-        case .read: localized("正在開啟書籍")
-        case .addToShelf: localized("加入書架")
-        case .download: localized("正在下載書籍")
-        }
+        actions.cancel()
     }
 }
 

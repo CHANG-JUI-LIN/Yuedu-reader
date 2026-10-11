@@ -35,6 +35,8 @@ struct HomeCardContent: Identifiable {
     let accessibilityLabel: String
     let accessibilityValue: String
     let opening: ItemOpening
+    /// 作品詳情's route, the item frozen as the row had it; none for a placeholder.
+    let route: WorkDetailRoute?
 
     /// - Parameters:
     ///   - status: the item's copies on this device (`CopyLookup.status(for:)`). Book-source
@@ -48,6 +50,7 @@ struct HomeCardContent: Identifiable {
         guard case .item(let record, let summary, let opening) = entry else { return nil }
         id = record.key
         self.opening = opening
+        route = WorkDetailRoute(record: record, summary: summary, opening: opening)
         kind = record.contentKind
         title = summary.title
         author = summary.authors.joined(separator: "、")
@@ -89,12 +92,13 @@ struct HomeCardContent: Identifiable {
         accessibilityLabel = ""
         accessibilityValue = ""
         opening = .copy(UUID())
+        route = nil
     }
 
     /// A library's covers come through its connection's session, which carries its sign-in;
     /// Gutenberg's through the built-in connection's, as the store and a shelf copy load them.
     @MainActor
-    private static func session(for opening: ItemOpening, connections: RemoteLibraryConnectionStore) -> URLSession? {
+    static func session(for opening: ItemOpening, connections: RemoteLibraryConnectionStore) -> URLSession? {
         switch opening {
         case .opdsEntry(_, let connectionID), .webDAVFile(_, let connectionID):
             return connections.connection(id: connectionID).map { connections.httpClient(for: $0).session }
@@ -223,20 +227,29 @@ struct HomeCardCover: View {
     let title: String
     let author: String
     let size: CGSize
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: DSRadius.searchListCover, style: .continuous)
-        artwork
+        HomeCoverArtwork(cover: cover, title: title, author: author, size: size)
             .frame(width: size.width, height: size.height)
             .clipShape(shape)
             .shadow(color: DSColor.searchListCoverShadow, radius: DSLayout.searchListCoverShadowRadius,
                     y: DSLayout.searchListCoverShadowY)
             .accessibilityHidden(true)
     }
+}
 
-    @ViewBuilder
-    private var artwork: some View {
+/// The artwork alone, filling whatever frame it is given, for a hero that frames, clips and
+/// blurs it itself (作品詳情). `size` is the size it is mostly drawn at, which the shelf's
+/// artwork and the cover pipeline size their images for.
+struct HomeCoverArtwork: View {
+    let cover: HomeCardContent.Cover
+    let title: String
+    let author: String
+    let size: CGSize
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
         switch cover {
         case .shelf(let book):
             BookshelfCoverArtwork(book: book, plan: .shelf(for: book, colorScheme: colorScheme), displaySize: size)

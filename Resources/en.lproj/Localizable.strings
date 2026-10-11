@@ -3672,3 +3672,9 @@
 "書庫" = "Libraries";
 "參數" = "Parameters";
 "來源配置要選一個分類代表它的最新，沒選的不會出現在最新。" = "A source appears in Latest only through a category you choose for it.";
+
+/* Unified library 5f: 作品詳情 */
+"作品詳情" = "Work Details";
+"可用來源" = "Available Sources";
+"目前沒有可閱讀的來源" = "No source to read this from";
+"查看來源詳情" = "View Source Details";

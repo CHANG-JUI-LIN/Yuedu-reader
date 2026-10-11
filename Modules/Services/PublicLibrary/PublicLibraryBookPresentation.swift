@@ -112,6 +112,8 @@ struct PublicLibraryBookSelection: Identifiable {
         self.books = books.filter { seen.insert($0.id).inserted }
         self.selectedID = selectedID
     }
+
+    var selectedBook: PublicLibraryBook? { books.first { $0.id == selectedID } }
 }
 
 struct GutenbergAuthor: Identifiable, Hashable {

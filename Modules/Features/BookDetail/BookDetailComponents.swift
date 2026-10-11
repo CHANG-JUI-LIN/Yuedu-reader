@@ -360,7 +360,8 @@ struct BookDetailHero<Cover: View>: View {
     let author: String
     let meta: String
     let primary: BookDetailAction
-    let secondary: BookDetailAction
+    /// None when the page has no second thing to do (作品詳情 of a book-source result).
+    let secondary: BookDetailAction?
     var authorActions: [BookDetailAuthorAction] = []
     var artworkHeight: CGFloat? = nil
     /// Taps a book source handles through its `callBackJs` (legado `SourceCallBack`); nil
@@ -546,6 +547,11 @@ struct BookDetailHero<Cover: View>: View {
 
     @ViewBuilder
     private var secondaryButton: some View {
+        if let secondary { secondaryButton(secondary) }
+    }
+
+    @ViewBuilder
+    private func secondaryButton(_ secondary: BookDetailAction) -> some View {
         if let tone = embedding?.tone {
             // Apple Books' 試讀: the card's ink over a light veil of itself.
             Button(action: secondary.action) {

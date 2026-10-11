@@ -18,12 +18,13 @@ struct yuedu_appApp: App {
 
     #if DEBUG
     /// UI-test hook: imports the Documents-relative EPUB named by
-    /// `-auto-import-epub` once (idempotent — skips when already on the shelf).
+    /// `-auto-import-epub` once (idempotent — skips when already on the shelf). An absolute
+    /// path is taken as it is: a UI test writes its own book beside it on the simulator.
     @MainActor
     private static func runAutoImportIfNeeded(bookStore: BookStore) async {
         guard let filename = autoImportFilename else { return }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = docs.appendingPathComponent(filename)
+        let url = filename.hasPrefix("/") ? URL(fileURLWithPath: filename) : docs.appendingPathComponent(filename)
         guard FileManager.default.fileExists(atPath: url.path) else {
             print("AUTO-IMPORT file missing: \(url.path)")
             return
@@ -31,6 +32,7 @@ struct yuedu_appApp: App {
         // Skip if already imported (same filename) to keep the shelf stable.
         let exists = bookStore.books.contains { $0.contentFilename == filename }
             || bookStore.books.contains { $0.title.contains("红楼梦") }
+            || autoImportTitle.map { title in bookStore.books.contains { $0.title == title } } == true
         if exists { return }
         do {
             // The generic importer, not importEpub: the same flag has to seed

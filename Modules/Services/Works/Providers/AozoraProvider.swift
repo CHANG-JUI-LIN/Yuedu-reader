@@ -75,12 +75,7 @@ final class AozoraProvider: CollectionBrowsing {
     private func page(of works: [AozoraWork], index: AozoraCatalogIndex, cursor: CollectionCursor?) -> CollectionPage {
         let start = cursor.flatMap { Int($0.value) } ?? 0
         let slice = works.dropFirst(start).prefix(Self.pageSize)
-        let entries: [CollectionEntry] = slice.map { work in
-            let authors = work.credits.compactMap { index.personsByID[$0.person]?.name }
-            let record = SourceRecord.derived(from: work)
-            return .item(record, WorkSummary(title: work.title, authors: authors, cover: .generated(seed: work.title),
-                                             blurb: nil, language: "ja", contentKind: .text), .aozora(work))
-        }
+        let entries: [CollectionEntry] = slice.map { CollectionEntry.aozora($0, index: index) }
         let end = start + slice.count
         return CollectionPage(entries: entries, next: end < works.count ? CollectionCursor(value: String(end)) : nil)
     }

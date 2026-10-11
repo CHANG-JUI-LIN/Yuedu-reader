@@ -120,6 +120,39 @@ final class ShelfProvider: CollectionBrowsing {
         return entries
     }
 
+    /// 作品詳情's versions (5f): the tapped item, its copies on the shelf, and the other members
+    /// of the works those belong to in the index (`WorkVersions.merge`). Only shelf copies and
+    /// WebDAV files are indexed, so a library or public-library book reaches its work through a
+    /// copy of it.
+    func versions(of tapped: WorkDetailRoute) async -> [WorkDetailRoute] {
+        let started = SourcePerfTrace.now
+        var copies = store.copyLookup().copies(for: tapped.record.key).filter(\.isInBookshelf)
+        if case .copy(let id) = tapped.opening, !copies.contains(where: { $0.id == id }),
+           let book = store.shelfRecord(id: id) {
+            copies.append(book)
+        }
+        let index = await store.workIndex.current()
+        let files = store.workIndex.indexedFiles
+        // Read after the refresh, so a copy removed meanwhile is not offered.
+        let shelf = Dictionary(store.books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        copies = copies.filter { shelf[$0.id] != nil || $0.id == tapped.record.copyID }
+        let seeds = [tapped.nodeKey] + copies.map { SourceItemKey.copy($0.id) }
+        var members: [SourceItemKey] = []
+        var seenWorks = Set<String>()
+        for seed in seeds {
+            guard let work = index.work(containing: seed), seenWorks.insert(work.id).inserted else { continue }
+            members += index.entries(of: work).map(\.nodeKey)
+        }
+        let copyRoutes = items(copies).compactMap(WorkDetailRoute.init)
+        let versions = WorkVersions.merge(
+            tapped: tapped,
+            copies: zip(copyRoutes, copies.map(\.lastOpenedDate)).map { ($0, $1) },
+            members: entries(for: members, shelf: shelf, files: files).compactMap(WorkDetailRoute.init))
+        SourcePerfTrace.record("works.detail.versions", "copies=\(copies.count) members=\(members.count) versions=\(versions.count)",
+                               since: started, thresholdMs: 0)
+        return versions
+    }
+
     /// The picked nodes as items: a shelf copy as the shelf shows it, an indexed file as its
     /// connection does.
     private func entries(for picked: [SourceItemKey], shelf: [UUID: ReadingBook],

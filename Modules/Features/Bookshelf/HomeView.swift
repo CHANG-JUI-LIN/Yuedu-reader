@@ -183,7 +183,9 @@ struct HomeView: View {
         DismissalSequencedPresentation<BookshelfImportPresentationRoute>()
     @State private var editingBook: ReadingBook? = nil
     @State private var bookToDelete: ReadingBook? = nil
-    @State private var selectedOnlineBookDetail: OnlineBook? = nil
+    /// 書籍詳情 or 作品詳情 from a book's •••: one item destination for both (iOS 17
+    /// guardrail 12, `Technotes/iOS17SearchWatchdogPostmortem.md`).
+    @State private var shelfDetail: ShelfBookDetail? = nil
     @State private var editMode = EditMode.inactive
     /// The group's page in view on the shelf; `""` is 全部.
     @State private var selectedGroup: String = ""
@@ -597,13 +599,19 @@ struct HomeView: View {
                 PaywallView(highlightedFeature: .aiReading)
                     .environmentObject(subscription)
             }
-            .navigationDestination(item: $selectedOnlineBookDetail) { book in
-                OnlineBookDetailDestination(
-                    .book(book),
-                    onRemoveFromShelf: { selectedOnlineBookDetail = nil },
-                    textPageReaderNavigator: readerCoordinator
-                )
-                    .environmentObject(store)
+            .navigationDestination(item: $shelfDetail) { detail in
+                switch detail {
+                case .online(let book):
+                    OnlineBookDetailDestination(
+                        .book(book),
+                        onRemoveFromShelf: { shelfDetail = nil },
+                        textPageReaderNavigator: readerCoordinator
+                    )
+                        .environmentObject(store)
+                case .work(let route):
+                    WorkDetailView(route: route, host: WorkDetailHost(readerNavigator: readerCoordinator))
+                        .environmentObject(store)
+                }
             }
             // 書籍資訊 owns the cover pickers, so on iOS 17 it is pushed rather
             // than presented (`BookInfoEditPresentationPolicy`); iOS 18 keeps the
@@ -1072,7 +1080,8 @@ struct HomeView: View {
                             onDelete: { bookToDelete = book },
                             onShowDetail: canShowOnlineBookDetail(for: book)
                                 ? { showOnlineBookDetail(for: book) }
-                                : nil
+                                : nil,
+                            onShowWork: { showWorkDetail(for: book) }
                         )
                         .equatable()
                         .tag(book.id)
@@ -1190,7 +1199,8 @@ struct HomeView: View {
                             onDelete: { bookToDelete = book },
                             onShowDetail: canShowOnlineBookDetail(for: book)
                                 ? { showOnlineBookDetail(for: book) }
-                                : nil
+                                : nil,
+                            onShowWork: { showWorkDetail(for: book) }
                         )
                         .equatable()
                     case .folder(let name, let books):
@@ -1270,7 +1280,13 @@ struct HomeView: View {
     }
 
     private func showOnlineBookDetail(for book: ReadingBook) {
-        selectedOnlineBookDetail = onlineBookDetail(for: book)
+        shelfDetail = onlineBookDetail(for: book).map(ShelfBookDetail.online)
+    }
+
+    /// 作品詳情 (unified library 5f): the copy as the shelf's own item, as Explore's cards
+    /// freeze theirs.
+    private func showWorkDetail(for book: ReadingBook) {
+        shelfDetail = ShelfProvider(store: store).items([book]).first.flatMap(WorkDetailRoute.init).map(ShelfBookDetail.work)
     }
 
     private func onlineBookDetail(for book: ReadingBook) -> OnlineBook? {
@@ -1291,6 +1307,12 @@ struct HomeView: View {
             runtimeVariables: book.runtimeVariables
         )
     }
+}
+
+/// What a book's ••• pushes on the shelf's stack.
+private enum ShelfBookDetail: Hashable {
+    case online(OnlineBook)
+    case work(WorkDetailRoute)
 }
 
 // MARK: - Edit Book Info Sheet
@@ -1740,6 +1762,8 @@ struct BookRow: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
     var onShowDetail: (() -> Void)? = nil
+    /// 作品詳情 (5f), offered for every book.
+    var onShowWork: (() -> Void)? = nil
 
     /// A row's cover. A group's folder in the list takes the same frame.
     static let coverSize = CGSize(width: 45, height: 65)
@@ -1761,6 +1785,9 @@ struct BookRow: View {
                 .accessibilityActions {
                     if let onShowDetail {
                         Button(localized("書籍詳情")) { onShowDetail() }
+                    }
+                    if let onShowWork {
+                        Button(localized("作品詳情")) { onShowWork() }
                     }
                     Button(localized("編輯書籍資訊")) { onEdit() }
                     Button(localized("刪除書籍"), role: .destructive) { onDelete() }
@@ -1795,7 +1822,8 @@ struct BookRow: View {
                                 iconSize: 16,
                                 onEdit: onEdit,
                                 onDelete: onDelete,
-                                onShowDetail: onShowDetail
+                                onShowDetail: onShowDetail,
+                                onShowWork: onShowWork
                             )
                         }
                     }
@@ -1964,6 +1992,8 @@ struct BookGridCell: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
     var onShowDetail: (() -> Void)? = nil
+    /// 作品詳情 (5f), offered for every book.
+    var onShowWork: (() -> Void)? = nil
     @State private var coverFrame = BookshelfCoverFrameBox()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -2050,7 +2080,8 @@ struct BookGridCell: View {
                         controlSize: isCompactLayout ? 28 : 32,
                         onEdit: onEdit,
                         onDelete: onDelete,
-                        onShowDetail: onShowDetail
+                        onShowDetail: onShowDetail,
+                        onShowWork: onShowWork
                     )
                     // 選取 takes the per-book menu away, as it does in the list. It keeps
                     // its room, so the shelf does not reflow on the way in and out.
@@ -2073,6 +2104,9 @@ struct BookGridCell: View {
             if !isEditing {
                 if let onShowDetail {
                     Button(localized("書籍詳情")) { onShowDetail() }
+                }
+                if let onShowWork {
+                    Button(localized("作品詳情")) { onShowWork() }
                 }
                 Button(localized("編輯書籍資訊")) { onEdit() }
                 Button(localized("刪除書籍"), role: .destructive) { onDelete() }
@@ -2386,12 +2420,19 @@ private struct BookOverflowMenu: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
     var onShowDetail: (() -> Void)? = nil
+    /// 作品詳情 (5f), offered for every book.
+    var onShowWork: (() -> Void)? = nil
 
     var body: some View {
         Menu {
             if let onShowDetail {
                 Button { onShowDetail() } label: {
                     Label(localized("書籍詳情"), systemImage: "book")
+                }
+            }
+            if let onShowWork {
+                Button { onShowWork() } label: {
+                    Label(localized("作品詳情"), systemImage: "books.vertical")
                 }
             }
             Button { onEdit() } label: {
@@ -2544,6 +2585,7 @@ extension BookGridCell: Equatable {
             && lhs.selectedCoverScale == rhs.selectedCoverScale
             && lhs.transitionNamespace == rhs.transitionNamespace
             && (lhs.onShowDetail == nil) == (rhs.onShowDetail == nil)
+            && (lhs.onShowWork == nil) == (rhs.onShowWork == nil)
             && (lhs.onCoverFrameChange == nil) == (rhs.onCoverFrameChange == nil)
     }
 }
@@ -2554,6 +2596,7 @@ extension BookRow: Equatable {
             && lhs.isEditing == rhs.isEditing
             && lhs.transitionNamespace == rhs.transitionNamespace
             && (lhs.onShowDetail == nil) == (rhs.onShowDetail == nil)
+            && (lhs.onShowWork == nil) == (rhs.onShowWork == nil)
             && (lhs.onCoverFrameChange == nil) == (rhs.onCoverFrameChange == nil)
     }
 }
