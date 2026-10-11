@@ -8,13 +8,17 @@ struct GutenbergBook: Identifiable, Hashable {
     let author: String
     let feedURL: URL?
     let entry: OPDSEntry?
+    /// The text's language (`zh`, `en`), for 偏好閱讀語言 (5d-3d): the bundled lists say it per
+    /// book, since a list mixes languages; a feed's entry says it when the feed does.
+    let language: String?
 
     /// The id stays the XML feed's URL whatever the endpoint, so a bundled
     /// book keeps one identity; only the feed it loads follows the endpoint.
-    init(id: Int, title: String, author: String, endpoint: GutenbergEndpoint = .current) {
+    init(id: Int, title: String, author: String, language: String? = nil, endpoint: GutenbergEndpoint = .current) {
         self.id = "https://www.gutenberg.org/ebooks/\(id).opds"
         self.title = title
         self.author = author
+        self.language = language
         feedURL = endpoint.bookFeedURL(id: id)
         entry = nil
     }
@@ -28,6 +32,7 @@ struct GutenbergBook: Identifiable, Hashable {
         guard entry.isBook || isBookLink else { return nil }
         id = entry.id
         title = String(entry.title.prefix(500))
+        language = entry.language
         // Gutenberg's navigation feed puts the creator in Atom content; the
         // acquisition feed uses Atom author. This is its two-level OPDS schema.
         let creator = String((entry.author ?? (isBookLink ? entry.summary : nil) ?? "").prefix(500))

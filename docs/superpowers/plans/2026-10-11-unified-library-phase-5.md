@@ -124,6 +124,15 @@
     - **A full catalog entry, always visible, at the top of the home:** 「完整目錄入口應該始終可見，但不放在首頁最底部」. Under 全部, one 「瀏覽書庫」 entry for every library; under one library, 「瀏覽完整目錄」, which opens that library's own page (Gutenberg's popular, latest and categories; 青空's author index, 五十音 and categories; a book source's discover page; an OPDS or WebDAV root). It does not depend on what the home holds. Reuse the existing pages: 「不要重新實作第二套目錄系統」.
     - **A sixth layout, 精簡閱讀卡片,** from the maintainer's screenshot of Apple Books' 「繼續」: a small cover beside the title, author and kind・status, with •••. It becomes 繼續閱讀's default; 大型閱讀卡片 stays as a choice. The card takes its cover's main colour, with white text, darkened where white would not read. ••• offers 從繼續閱讀移除 and 標記為已讀完.
 
+21. **Answered 2026-10-11, after 5d-3c** (maintainer, by option): **a new 聚合設定 page, mapped from Emby's own settings** (「新開一個聚合設定，emby的聚合設定怎麼寫的我們就對應過來」). Emby's user settings that shape its aggregation (`UserConfiguration` and the Home Screen page) map one to one:
+    - Home sections → 首頁欄目, the same sections and edits as 編輯首頁 (no second editor of the data).
+    - `OrderedViews` (library order) → 書庫順序: the libraries' order in 範圍, 瀏覽書庫 and 最新's turns.
+    - `LatestItemsExcludes` → each library's 「顯示在最新」. It replaces 最新's per-section 排除的來源: one place, not two.
+    - `HidePlayedInLatest` / `HidePlayedInSuggestions` → 最新／相關 hide books already read.
+    - Emby's playback language preferences → 偏好閱讀語言 (several, in order; first use: the interface language alone) and 推薦範圍 (優先推薦偏好語言 by default, 只推薦偏好語言, 不限制語言). Within each section the preferred languages come first, in their order; sections keep the order 編輯首頁 gives them. A book of unknown language (most book sources, OPDS) is kept, after the preferred ones, even under 只推薦.
+    - **Entry: the 設定 tab only,** as Emby's are in its user settings.
+    - Built as 5d-3d (the page and 偏好閱讀語言), then 5d-3e (書庫順序), 5d-3f (顯示在最新), 5d-3g (隱藏已讀).
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -747,3 +756,18 @@ Branch `unified-library/5d3c-compact-card`. Decision 20, from the maintainer's A
 - **Strings:** 精簡閱讀卡片, 書籍, 從繼續閱讀移除, 標記為已讀完, in five languages.
 - **Tests (unit):** `HomeCompactReadingCardTests` (new, 5: the ground's contrast, the menu's items and line, 移除 until reopened, 標記為已讀完, the field absent when unset); `HomeLayoutStyleTests.defaults` now expects 精簡閱讀卡片. With the home suites, `LocalHomeRowTests` and `AudiobookSettingsStorageTests`: 66/66 passed (iOS 27).
 - **Tests (UI):** `ExploreHomeUITests.testCompactCardMenu` (new, in the design fixture: ••• is its own hittable control labelled 更多 and offers both items). iOS 27: `ExploreHomeUITests` 7/7, `HomeEditorUITests` 3/3. iOS 17.5: `testCompactCardMenu`, `testNewInstallShowsTheDefaultSections`, `HomeEditorUITests` 3/3. The fixture's card was checked on screen: a pale generated cover gives (115, 119, 123).
+
+### 5d-3d: 聚合設定 and 偏好閱讀語言 (2026-10-11)
+
+Branch `unified-library/5d3d-aggregation-settings`. Decision 21: Emby's aggregation settings (emby.media "User Preferences: Home Screen"; dev.emby.media `UserConfiguration`) mapped onto Yuedu's libraries. This step is the page and the language; 書庫順序, 顯示在最新 and 隱藏已讀 follow as 5d-3e to 5d-3g.
+
+- **設定 → 來源配置管理 → 聚合設定**, after 遠端書庫; pushed, `.inline`. The only entry.
+- **偏好閱讀語言:** several languages in order, starting as the interface language alone. Rows are reordered by dragging (VoiceOver: 上移／下移, and each row reads 「第 N 優先」), removed by swiping (not the last), and 新增語言 pushes the offered languages (zh, en, ja, ko, fr, de, es, it, pt, ru, nl, la), each named in itself.
+- **推薦範圍:** 優先推薦偏好語言 (default), 只推薦偏好語言, 不限制語言.
+- **What it does to the home:** within each section, after 最新's round-robin merge, books of the preferred languages come first in the list's order, then books of unknown language, then the rest; the source's own order holds within each. Under 只推薦 the books known to be in another language leave; unknown ones stay. Section order is unchanged, and 繼續閱讀 keeps its recency. A section left with nothing takes no room.
+- **Gutenberg's categories** follow the list: 熱門, 最新, then a shelf per reading language in order, then English if absent, titled with the language's own name. This replaces the interface-language rule.
+- **Languages known:** Gutenberg books carry `dcterms:language` into the record and summary; every bundled list book is tagged (checked against its Gutenberg page). Gutenberg's 最新 navigation entries and most book sources and OPDS feeds say none, so they count as unknown.
+- **Stored on this device** (`yd_aggregation_settings`, one JSON value, nothing written until the reader changes something; an unreadable value is logged and read as the defaults). Not synced through iCloud. `-reset-explore-home` clears it.
+- **Strings:** 聚合設定, 偏好閱讀語言, 新增語言, 推薦範圍, the three scopes, two footers, 第 %d 優先, in five languages.
+- **Tests (unit):** `ReadingLanguagesTests` (new, 6: the initial value, 優先's order, 只推薦 and 不限制, sections ordered after 最新's turns with 繼續閱讀 untouched, the bundled books' languages, the store); `PublicLibraryRegistryTests.shelvesFollowReadingLanguages` replaces the interface-language test. With the home suites: 69/69 passed (iOS 27).
+- **Tests (UI):** `AggregationSettingsUITests.testReadingLanguages` (new: a fresh install shows 中文 第 1 優先 and 優先推薦; adds 日本語, drags it first, picks 只推薦, and a relaunch reads both back). iOS 27: it, `ExploreHomeUITests` 7/7, `HomeEditorUITests` 3/3. iOS 17.5: it and `testScopeFiltersTheHomeAndBack`.

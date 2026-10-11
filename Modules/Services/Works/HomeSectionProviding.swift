@@ -120,7 +120,7 @@ extension CollectionEntry {
         .item(SourceRecord.derived(from: book),
               WorkSummary(title: book.title, authors: book.author.isEmpty ? [] : [book.author],
                           cover: book.coverURL.map { .remote($0, headers: [:]) } ?? .generated(seed: book.title),
-                          blurb: nil, language: nil, contentKind: .text),
+                          blurb: nil, language: book.language, contentKind: .text),
               .gutenberg(book))
     }
 }

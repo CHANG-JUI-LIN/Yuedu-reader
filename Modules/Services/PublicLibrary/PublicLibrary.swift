@@ -144,21 +144,25 @@ enum PublicLibrary {
 
 struct GutenbergShelf: Identifiable {
     let id: String
-    let titleKey: String
+    let title: String
     let symbol: String
     let url: URL
 
-    static func shelves(language: String, endpoint: GutenbergEndpoint = .current) -> [Self] {
+    /// 熱門, 最新, then a shelf for each of the reader's languages (偏好閱讀語言, 5d-3d) in
+    /// their order, and English, Gutenberg's largest, when they leave it out. Before 5d-3d the
+    /// language shelf followed the interface language, which says nothing of what the reader
+    /// reads.
+    static func shelves(languages: [String], endpoint: GutenbergEndpoint = .current) -> [Self] {
         var shelves = [
-            Self(id: "popular", titleKey: "熱門", symbol: "chart.bar", url: endpoint.popularURL),
-            Self(id: "latest", titleKey: "最新", symbol: "clock", url: endpoint.latestURL),
+            Self(id: "popular", title: localized("熱門"), symbol: "chart.bar", url: endpoint.popularURL),
+            Self(id: "latest", title: localized("最新"), symbol: "clock", url: endpoint.latestURL),
         ]
-        let code = language.split(separator: "-").first.map(String.init) ?? language
-        let names = ["zh": "中文", "ja": "日本語", "ko": "한국어"]
-        if let name = names[code] {
-            shelves.append(Self(id: code, titleKey: name, symbol: "character.book.closed", url: endpoint.languageURL(code)))
+        var codes: [String] = []
+        for code in languages.map(ReadingLanguage.base(of:)) + ["en"] where !codes.contains(code) { codes.append(code) }
+        for code in codes {
+            shelves.append(Self(id: code, title: ReadingLanguage.name(of: code), symbol: "character.book.closed",
+                                url: endpoint.languageURL(code)))
         }
-        shelves.append(Self(id: "en", titleKey: "English", symbol: "character.book.closed", url: endpoint.languageURL("en")))
         return shelves
     }
 }

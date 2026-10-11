@@ -185,7 +185,7 @@ extension SourceRecord {
             ),
             title: book.title,
             authors: authorList(book.author),
-            language: nil,
+            language: book.language,
             contentKind: .text,
             identifiers: Set([number.flatMap { ExternalIdentifier.normalized(.gutenberg, $0) }].compactMap { $0 }),
             copyID: nil,

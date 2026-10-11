@@ -77,10 +77,10 @@ struct yuedu_appApp: App {
         if ProcessInfo.processInfo.arguments.contains("-reset-public-library-explore") {
             UserDefaults.standard.removeObject(forKey: ExploreSettings.modeKey)
         }
-        // The home as a new install sees it: no saved sections, 範圍 全部. Before anything reads
-        // `HomePageStore.shared`.
+        // The home as a new install sees it: no saved sections, 範圍 全部, no 聚合設定. Before
+        // anything reads `HomePageStore.shared` or `AggregationSettingsStore.shared`.
         if ProcessInfo.processInfo.arguments.contains("-reset-explore-home") {
-            for key in [ExploreSettings.scopeKey, ExploreSettings.showsBrowserKey] {
+            for key in [ExploreSettings.scopeKey, ExploreSettings.showsBrowserKey, AggregationSettingsStore.defaultsKey] {
                 UserDefaults.standard.removeObject(forKey: key)
             }
             let home = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json")

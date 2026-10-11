@@ -38,6 +38,7 @@ private struct ExploreHomeRoot: View {
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @ObservedObject private var tabModel = ExploreTabModel.shared
     @ObservedObject private var aozora = AozoraCatalogStore.shared
+    @ObservedObject private var aggregation = AggregationSettingsStore.shared
     @AppStorage(ExploreSettings.scopeKey) private var storedScope = ExploreScope.all.rawValue
     @AppStorage(ExploreSettings.modeKey) private var storedMode = ExploreMode.publicLibraries.rawValue
     @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
@@ -87,9 +88,10 @@ private struct ExploreHomeRoot: View {
         return nil
     }
 
-    /// The sections drawn: under 範圍, only the chosen source's books.
+    /// The sections drawn: under 範圍, only the chosen source's books; in the reader's
+    /// languages' order (聚合設定, 5d-3d).
     private var groups: [HomeSectionGroup] {
-        model.groups(in: scopeKey)
+        model.groups(in: scopeKey, languages: aggregation.readingLanguages)
     }
 
     /// What the rows are built from; any change builds them again.
@@ -147,7 +149,7 @@ private struct ExploreHomeRoot: View {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
                 if isEditing {
                     // Every section, whatever 範圍 keeps: 編輯首頁 edits the home itself.
-                    HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil),
+                    HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil, languages: aggregation.readingLanguages),
                                         openSettings: { path.append(HomeEditRoute.section($0)) }) { group in
                         groupHost(group)
                     }
