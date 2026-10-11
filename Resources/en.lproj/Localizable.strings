@@ -3672,3 +3672,26 @@
 "書庫" = "Libraries";
 "參數" = "Parameters";
 "來源配置要選一個分類代表它的最新，沒選的不會出現在最新。" = "A source appears in Latest only through a category you choose for it.";
+
+/* Reeden .red theme import */
+"Reeden 主題包" = "Reeden Theme";
+"下列高亮規則需要圖片、首字下沉或只套用於標題，本 App 無法重現，已略過：%@" = "These highlight rules need artwork, drop caps or title-only matching, which this app can't reproduce, so they were skipped: %@";
+"主題動態特效" = "animated theme effects";
+"主題包只記錄了 Reeden 字型庫的編號，沒有附帶字型檔，正文與標題仍使用原本的字型。" = "The theme only names fonts from Reeden's font library and doesn't include the font files, so body text and titles keep their current fonts.";
+"主題設定的「無動畫」翻頁無法隨排版匯入，已保留原本的翻頁方式。" = "The theme's \"no animation\" page turn can't be imported with the layout, so your current page-turn style was kept.";
+"主題顏色的透明度沒有對應設定，已以不透明顏色套用。" = "Theme colors' transparency has no equivalent setting, so they were applied as opaque colors.";
+"分頁列與開關邊框" = "tab bar and switch borders";
+"卡片圓角與陰影" = "card corner radius and shadow";
+"啟動畫面不是圖片（例如影片），本 App 只支援圖片，已略過。" = "The launch screen isn't an image (it may be a video). This app supports images only, so it was skipped.";
+"彈出視窗與對話框配色" = "popover and dialog colors";
+"書架底色" = "bookshelf background color";
+"書架輪播圖" = "bookshelf carousel images";
+"標題樣式「%@」的版型無法辨識，只套用了標題的對齊、大小與間距。" = "The layout of title style \"%@\" isn't recognized, so only the title's alignment, size and spacing were applied.";
+"標題樣式的下列設定沒有對應項目，已略過：%@" = "These title style settings have no equivalent and were skipped: %@";
+"聽書介面樣式" = "audiobook player style";
+"輸入框與搜尋框配色" = "text field and search field colors";
+"這不是可讀取的 Reeden 主題包。" = "This isn't a readable Reeden theme.";
+"這是加密的 Reeden 主題包，無法讀取。請向主題作者索取未加密版本。" = "This Reeden theme is encrypted and can't be read. Ask the theme's author for an unencrypted version.";
+"閱讀背景圖的透明度與模糊沒有對應設定，已以原圖套用。" = "The reading background's transparency and blur have no equivalent setting, so the original picture was applied.";
+"高亮規則" = "Highlight Rule";
+"高亮規則的下列樣式沒有對應設定，已略過：%@" = "These highlight rule styles have no equivalent setting and were skipped: %@";

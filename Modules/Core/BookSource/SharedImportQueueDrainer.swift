@@ -562,7 +562,7 @@ enum SharedImportPayloadClassifier {
     ) throws -> SharedImportPayloadClassification {
         let ext = normalizedExtension(fileExtension, suggestedFilename: suggestedFilename)
         if ext == "yuedustyle" { return .customization(.nativePackage) }
-        if ext == "qitheme" { return .customization(.qiTheme) }
+        if ext == "qitheme" || ext == "red" { return .customization(.qiTheme) }
 
         if directLocalBookExtensions.contains(ext) {
             return .localBook(fileExtension: ext)
@@ -599,7 +599,7 @@ enum SharedImportPayloadClassifier {
     ) throws -> SharedImportPayloadClassification {
         let ext = normalizedExtension(fileExtension, suggestedFilename: suggestedFilename)
         if ext == "yuedustyle" { return .customization(.nativePackage) }
-        if ext == "qitheme" { return .customization(.qiTheme) }
+        if ext == "qitheme" || ext == "red" { return .customization(.qiTheme) }
 
         if ["yds", "xbs", "mrs"].contains(ext) {
             return .bookSource(fileExtension: ext)

@@ -5,6 +5,7 @@ import Foundation
 enum SharedCustomizationKind: Equatable {
     case appearanceJSON
     case nativePackage
+    /// A foreign theme pack: QiReader `.qitheme` or Reeden `.red`.
     case qiTheme
 
     static func isAppearanceJSON(_ root: Any) -> Bool {

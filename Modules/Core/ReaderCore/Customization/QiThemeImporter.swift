@@ -10,11 +10,19 @@ enum QiThemeImportError: Error, LocalizedError, Equatable {
     case tooManyFiles(Int)
     case expandedDataTooLarge(Int)
     case unsafePath(String)
+    /// A `.red` file without Reeden's container header.
+    case notAReedenTheme
+    /// A Reeden pack whose manifest is encrypted with Reeden's own key.
+    case encryptedReedenTheme
 
     var errorDescription: String? {
         switch self {
         case .notAQiTheme:
             return localized("這不是可讀取的 QiReader 外觀包。")
+        case .notAReedenTheme:
+            return localized("這不是可讀取的 Reeden 主題包。")
+        case .encryptedReedenTheme:
+            return localized("這是加密的 Reeden 主題包，無法讀取。請向主題作者索取未加密版本。")
         case .malformedArchive, .malformedNestedPayload:
             return localized("外觀包內容損毀，無法讀取。")
         case .tooManyFiles, .expandedDataTooLarge:
@@ -76,11 +84,17 @@ struct QiThemeImport: Sendable {
     var themeFile: AppearanceThemeExportFile?
     var pageBackgrounds: [String: AppearanceThemeExportFile.PageBackgroundPayload] = [:]
     var tabIcons: [TabIconImport] = []
+    /// Dark-appearance artwork, for packs that author light and dark separately (Reeden).
+    /// Empty / nil means the light artwork serves both appearances, as in every QiReader
+    /// pack.
+    var darkTabIcons: [TabIconImport] = []
     var readerChromeIcons: [ReaderChromeIconImport] = []
     var tabIconSize: Double?
     var hidesTabLabels: Bool?
     var defaultCovers: [ImageFile] = []
+    var darkDefaultCovers: [ImageFile] = []
     var launchImage: ImageFile?
+    var darkLaunchImage: ImageFile?
     var launchEnabled: Bool?
     var font: FontImport?
     var effects = InterfaceEffects()
@@ -90,9 +104,21 @@ struct QiThemeImport: Sendable {
     /// layout parser instead of a second one written for QiReader.
     var layoutConfig: Data?
     var chapterTitleStyle: ChapterTitleStyle?
+    /// Highlight rules bound to the pack's reading page (Reeden). They are added to the
+    /// user's own rules when the pack is applied, not substituted for them.
+    var highlightRules: [RegexHighlightRule] = []
     var overlayLayout: ReaderOverlayLayout?
     var bubble: BubbleImport?
     var readerBackground: ImageFile?
+    /// The reading page's own colours beside its picture. nil lets the saved background
+    /// pick a readable text colour itself.
+    var readerBackgroundColorHex: UInt32?
+    var readerTextColorHex: UInt32?
+    /// A separate reading background for dark appearance (Reeden binds one per mode).
+    /// nil wears `readerBackground` in both.
+    var darkReaderBackground: ImageFile?
+    var darkReaderBackgroundColorHex: UInt32?
+    var darkReaderTextColorHex: UInt32?
     /// Card artwork geometry; the image *bytes* travel beside it because the file
     /// names are only known once the app target has stored them.
     var cardBackground: AppearanceCardBackground?
@@ -418,7 +444,7 @@ enum QiThemeImporter {
     }
 
     /// Header-only read, so a large PNG is never decoded just to learn its size.
-    private static func pixelSize(of data: Data) -> CGSize? {
+    static func pixelSize(of data: Data) -> CGSize? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
@@ -1060,7 +1086,7 @@ enum QiThemeImporter {
     /// Extracts `archiveURL` into `contentRoot`, applying the same path, count and size
     /// checks `ReaderStylePackage` applies to our own archives — reusing its validators
     /// rather than growing a second, drifting copy.
-    private static func extractArchive(at archiveURL: URL, into contentRoot: URL) async throws -> [String] {
+    static func extractArchive(at archiveURL: URL, into contentRoot: URL) async throws -> [String] {
         let archive: Archive
         do {
             archive = try await Archive(url: archiveURL, accessMode: .read)
@@ -1157,7 +1183,7 @@ enum QiThemeImporter {
         return root
     }
 
-    private static func imageFile(at relativePath: String?, rootURL: URL) -> QiThemeImport.ImageFile? {
+    static func imageFile(at relativePath: String?, rootURL: URL) -> QiThemeImport.ImageFile? {
         guard let relativePath, !relativePath.isEmpty,
               let url = try? ReaderStylePackage.containedURL(for: relativePath, under: rootURL),
               let data = try? Data(contentsOf: url), !data.isEmpty else {
@@ -1166,7 +1192,7 @@ enum QiThemeImporter {
         return QiThemeImport.ImageFile(data: data, fileName: (relativePath as NSString).lastPathComponent)
     }
 
-    private static func imagePayload(
+    static func imagePayload(
         at relativePath: String?,
         rootURL: URL
     ) -> AppearanceThemeExportFile.ImagePayload? {
@@ -1185,7 +1211,7 @@ enum QiThemeImporter {
 /// Absent values are *omitted*, not encoded as null: `ReaderLayoutPresetImporter` gates on
 /// the set of keys present, so emitting a key we have no value for would make an empty
 /// preset look recognized and reset the reader's type size.
-private struct QiTranslatedReadConfig: Encodable {
+struct QiTranslatedReadConfig: Encodable {
     var name: String?
     var textSize: Double?
     var textBold: Int?

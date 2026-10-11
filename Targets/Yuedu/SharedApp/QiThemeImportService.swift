@@ -53,8 +53,13 @@ enum QiThemeImportService {
         var notes: [String] = []
     }
 
+    /// Reeden `.red` packs and QiReader `.qitheme` packs both land here; the container's
+    /// own bytes say which, so a misnamed file still reaches the right parser.
     static func load(_ data: Data) async throws -> QiThemeImport {
-        try await QiThemeImporter.parse(data)
+        if ReedenThemeImporter.isReedenContainer(data) {
+            return try await ReedenThemeImporter.parse(data)
+        }
+        return try await QiThemeImporter.parse(data)
     }
 
     /// The pack's reading setup is its theme's own, like the rest of its look: nothing is
@@ -84,11 +89,24 @@ enum QiThemeImportService {
                data: launch.data,
                scheme: .light
            ) {
-            // QiReader's splash is not per-appearance, so one file serves both slots.
+            // QiReader's splash is not per-appearance, so one file serves both slots
+            // unless the pack authored a dark one (Reeden).
             extras.launchImageLightFileName = name
             extras.launchImageDarkFileName = name
         }
-        extras.defaultCoverLightFileNames = storeDefaultCovers(theme, outcome: &outcome)
+        if let launch = theme.darkLaunchImage,
+           let name = try? LaunchImageStorageManager.shared.importImage(
+               data: launch.data,
+               scheme: .dark
+           ) {
+            extras.launchImageDarkFileName = name
+        }
+        extras.defaultCoverLightFileNames = storeDefaultCovers(theme.defaultCovers, scheme: .light,
+                                                               outcome: &outcome)
+        if !theme.darkDefaultCovers.isEmpty {
+            extras.defaultCoverDarkFileNames = storeDefaultCovers(theme.darkDefaultCovers, scheme: .dark,
+                                                                  outcome: &outcome)
+        }
         extras.forceDefaultCover = theme.bookshelf.forceDefaultCover
         extras.frostedGlass = theme.effects.frostedGlass
         extras.glassTransparency = theme.effects.glassTransparency
@@ -201,6 +219,10 @@ enum QiThemeImportService {
     ) -> AppearanceThemeReadingSettings? {
         var reading = readingPlan(theme, notes: &outcome.notes).readingSettings
         if let readerFontPostScript { reading.fontPostScript = readerFontPostScript }
+        if !theme.highlightRules.isEmpty {
+            reading.regexHighlights = highlightConfiguration(adding: theme.highlightRules,
+                                                             to: settings.regexHighlightConfiguration)
+        }
         if let bubble = theme.bubble {
             settings.storeCommentBubbleCustomStyle(bubble.style)
             reading.commentBubble = AppearanceThemeReadingSettings.CommentBubble(
@@ -215,52 +237,144 @@ enum QiThemeImportService {
                 )
             )
         }
-        if let image = theme.readerBackground {
+        let light = saveReaderBackground(
+            image: theme.readerBackground,
+            colorHex: theme.readerBackgroundColorHex,
+            textColorHex: theme.readerTextColorHex,
+            name: theme.name,
+            settings: settings,
+            outcome: &outcome
+        )
+        let dark = saveReaderBackground(
+            image: theme.darkReaderBackground,
+            colorHex: theme.darkReaderBackgroundColorHex,
+            textColorHex: theme.darkReaderTextColorHex,
+            name: theme.name,
+            settings: settings,
+            outcome: &outcome
+        )
+        if let light {
+            reading.readerBackgroundID = light.id.uuidString
+            // Worn in both appearances unless the pack authored a dark one: dark mode keeps
+            // the pack's picture instead of turning 黑色, and either pick can be changed
+            // under 綁定閱讀主題.
+            reading.bindsAppearanceReaderTheme = true
+            reading.boundLightReaderTheme = ReaderBoundTheme.custom(light.id).storageValue
+            reading.boundDarkReaderTheme = ReaderBoundTheme.custom((dark ?? light).id).storageValue
+            reading.followsSystemTheme = false
+        }
+        return reading.isEmpty ? nil : reading
+    }
+
+    /// The user's rules as they stand, plus the pack's (decided 2026-10-11): Reeden layers a
+    /// theme's bound rules over its global ones. A user with highlighting switched off had
+    /// no rule showing, so in that case their rules stay off and only the pack's show.
+    static func highlightConfiguration(
+        adding rules: [RegexHighlightRule],
+        to base: RegexHighlightConfiguration
+    ) -> RegexHighlightConfiguration {
+        var configuration = base
+        // Importing the same pack again replaces its rules rather than stacking a second
+        // copy (ids are fresh per parse, so compare what the rule does).
+        configuration.customRules.removeAll { existing in
+            rules.contains { $0.hasSameEffect(as: existing) }
+        }
+        if !base.isEnabled, rules.contains(where: \.isEnabled) {
+            configuration.isEnabled = true
+            for index in configuration.rules.indices { configuration.rules[index].isEnabled = false }
+            for index in configuration.customRules.indices {
+                configuration.customRules[index].isEnabled = false
+            }
+        }
+        configuration.customRules += rules
+        return configuration.sanitized()
+    }
+
+    /// A saved background named after the pack, in the list with the user's own: the
+    /// picture when there is one, else the pack's plain page colour. nil when the pack
+    /// carries neither.
+    private static func saveReaderBackground(
+        image: QiThemeImport.ImageFile?,
+        colorHex: UInt32?,
+        textColorHex: UInt32?,
+        name: String,
+        settings: GlobalSettings,
+        outcome: inout Outcome
+    ) -> ReaderCustomBackground? {
+        var background: ReaderCustomBackground
+        let backgroundName = ReaderCustomBackgroundLibrary.unusedName(
+            base: name,
+            among: settings.readerCustomBackgrounds
+        )
+        if let image {
             do {
-                // A saved background named after the pack, in the list with the user's own.
                 let picture = try settings.importReaderBackgroundPicture(data: image.data)
-                let background = settings.saveReaderCustomBackground(ReaderCustomBackground(
-                    name: ReaderCustomBackgroundLibrary.unusedName(
-                        base: theme.name,
-                        among: settings.readerCustomBackgrounds
-                    ),
+                background = ReaderCustomBackground(
+                    name: backgroundName,
                     colorHex: picture.averageColorHex,
                     imageFileName: picture.fileName,
+                    textColorHex: textColorHex,
                     isDark: picture.isDark
-                ))
-                reading.readerBackgroundID = background.id.uuidString
-                // Worn in both appearances: dark mode keeps the pack's picture instead of
-                // turning 黑色, and either pick can be changed under 綁定閱讀主題.
-                reading.bindsAppearanceReaderTheme = true
-                reading.boundLightReaderTheme = ReaderBoundTheme.custom(background.id).storageValue
-                reading.boundDarkReaderTheme = ReaderBoundTheme.custom(background.id).storageValue
-                reading.followsSystemTheme = false
+                )
             } catch {
                 AppLogger.parse("⟐ qitheme reader background unreadable", error: error)
                 outcome.notes.append(localized("閱讀背景圖無法讀取，已略過。"))
+                return nil
             }
+        } else if let colorHex {
+            background = ReaderCustomBackground(
+                name: backgroundName,
+                colorHex: colorHex,
+                textColorHex: textColorHex,
+                isDark: ReaderBackgroundTone.isDark(rgbHex: colorHex)
+            )
+        } else {
+            return nil
         }
-        return reading.isEmpty ? nil : reading
+        background = settings.saveReaderCustomBackground(background)
+        return background
     }
 
     /// Stores each tab icon and returns the `"<tab>.<slot>"` map the extras carry.
     /// One artwork per tab, written to both slots: QiReader has no light/dark split,
     /// and leaving dark on the default SF Symbol looks like a half-applied theme.
+    /// A pack with its own dark icons (Reeden) fills the dark slot from those instead.
     private static func storeTabIcons(_ theme: QiThemeImport) -> [String: String]? {
         var icons: [String: String] = [:]
-        for icon in theme.tabIcons {
-            guard let tab = RootTabItem(rawValue: icon.tabID) else { continue }
-            for slot in RootTabIconSlot.allCases {
-                guard let asset = try? RootTabIconStorageManager.shared.importIcon(
+        let hasDark = !theme.darkTabIcons.isEmpty
+        let sets: [([QiThemeImport.TabIconImport], [RootTabIconSlot])] = hasDark
+            ? [(theme.tabIcons, [.light]), (theme.darkTabIcons, [.dark])]
+            : [(theme.tabIcons, RootTabIconSlot.allCases)]
+        for (set, slots) in sets {
+            for icon in set {
+                guard let tab = RootTabItem(rawValue: icon.tabID) else { continue }
+                storeTabIcon(icon, tab: tab, slots: slots, into: &icons)
+            }
+        }
+        return icons.isEmpty ? nil : icons
+    }
+
+    private static func storeTabIcon(
+        _ icon: QiThemeImport.TabIconImport,
+        tab: RootTabItem,
+        slots: [RootTabIconSlot],
+        into icons: inout [String: String]
+    ) {
+        for slot in slots {
+            do {
+                let asset = try RootTabIconStorageManager.shared.importIcon(
                     data: icon.image.data,
                     originalFileName: icon.image.fileName,
                     tab: tab,
                     slot: slot
-                ) else { continue }
+                )
                 icons["\(tab.rawValue).\(slot.rawValue)"] = asset.fileName
+            } catch {
+                AppLogger.parse("⟐ theme pack tab icon unreadable", error: error, context: [
+                    "tab": tab.rawValue,
+                ])
             }
         }
-        return icons.isEmpty ? nil : icons
     }
 
     /// Stores each reading-toolbar icon and returns the `itemID → file` map the extras
@@ -286,18 +400,19 @@ enum QiThemeImportService {
     }
 
     private static func storeDefaultCovers(
-        _ theme: QiThemeImport,
+        _ covers: [QiThemeImport.ImageFile],
+        scheme: DefaultCoverScheme,
         outcome: inout Outcome
     ) -> [String]? {
         var names: [String] = []
-        for cover in theme.defaultCovers {
+        for cover in covers {
             guard let name = try? DefaultCoverStorageManager.shared.importImage(
                 data: cover.data,
-                scheme: .light
+                scheme: scheme
             ) else { continue }
             names.append(name)
         }
-        outcome.importedCoverCount = names.count
+        outcome.importedCoverCount += names.count
         return names.isEmpty ? nil : names
     }
 
@@ -421,5 +536,13 @@ enum QiThemeImportService {
             format: localized("章節標題使用的字型未隨外觀包附帶：%@，已改用閱讀字型顯示。"),
             missing.sorted().joined(separator: localized("、"))
         ))
+    }
+}
+
+private extension RegexHighlightRule {
+    /// Same name, pattern, options and both styles — id and on/off state aside.
+    func hasSameEffect(as other: RegexHighlightRule) -> Bool {
+        name == other.name && pattern == other.pattern && options == other.options
+            && lightStyle == other.lightStyle && darkStyle == other.darkStyle
     }
 }

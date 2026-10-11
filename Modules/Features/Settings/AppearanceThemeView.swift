@@ -642,6 +642,7 @@ struct AppearanceThemeView: View {
                 .json,
                 .yueduReaderStyle,
                 UTType(filenameExtension: "qitheme") ?? .data,
+                UTType(filenameExtension: "red") ?? .data,
             ],
             allowsMultipleSelection: false,
             onCompletion: handleThemeImport
@@ -692,7 +693,7 @@ struct AppearanceThemeView: View {
                 if didAccess { url.stopAccessingSecurityScopedResource() }
             }
             let data = try Data(contentsOf: url)
-            if QiThemeImporter.hasQiThemeExtension(url) {
+            if QiThemeImporter.hasQiThemeExtension(url) || ReedenThemeImporter.hasRedExtension(url) {
                 handleQiThemeImport(data)
                 return
             }
@@ -720,9 +721,8 @@ struct AppearanceThemeView: View {
         }
     }
 
-    /// QiReader packs are a foreign archive: their manifest lives under a UUID directory,
-    /// so `ReaderStylePackage` cannot read them and they get their own parse before any of
-    /// the native routes are tried.
+    /// QiReader `.qitheme` and Reeden `.red` packs are foreign archives `ReaderStylePackage`
+    /// cannot read, so they get their own parse before any of the native routes are tried.
     private func handleQiThemeImport(_ data: Data) {
         Task { @MainActor in
             do {

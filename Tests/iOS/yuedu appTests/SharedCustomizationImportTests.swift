@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @Suite("Shared theme and style imports", .serialized)
 @MainActor
 struct SharedCustomizationImportTests {
-    @Test("Native and QiReader packages advertise the system Open In entry", arguments: ["yuedustyle", "qitheme"])
+    @Test("Native, QiReader and Reeden packages advertise the system Open In entry", arguments: ["yuedustyle", "qitheme", "red"])
     func registration(ext: String) throws {
         let type = try #require(UTType(filenameExtension: ext))
         #expect(!type.isDynamic)
