@@ -8,6 +8,16 @@ extension BookSourceFetcher {
         page: Int = 1,
         in source: BookSource
     ) async -> [ModernParserBridge.DiscoverItem] {
+        await discoverItems(page: page, in: source, variableOverlay: [:])
+    }
+
+    /// - Parameter variableOverlay: discover filter values the explore rule reads in place of
+    ///   the source's stored ones, without storing them (an Explore home section's, 5d-5).
+    func discoverItems(
+        page: Int = 1,
+        in source: BookSource,
+        variableOverlay: [String: String]
+    ) async -> [ModernParserBridge.DiscoverItem] {
         guard source.enabledExplore,
               !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
@@ -15,7 +25,7 @@ extension BookSourceFetcher {
         }
 
         return await BookSourceSession.session(for: source)
-            .bridgeForAsyncOperations.getExploreItems(page: page)
+            .bridgeForAsyncOperations.getExploreItems(page: page, variableOverlay: variableOverlay)
     }
 
     /// Prime any site cookie the source's discover endpoints need but don't set themselves

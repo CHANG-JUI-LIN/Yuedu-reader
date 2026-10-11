@@ -654,6 +654,20 @@ class JSCoreEngine {
         return evaluate(isolated, bindings: bindings)
     }
 
+    /// `evaluateIsolated(_:bindings:)` with `overlay` read in place of the source's stored
+    /// variable for this one evaluation, and never stored (unified library 5d-5:
+    /// `LegadoSourceBridge.withVariableOverlay`). The overlay is put in place on the JS queue,
+    /// around the script alone.
+    func evaluateIsolated(_ script: String, bindings: [String: Any], variableOverlay overlay: [String: String]) -> String? {
+        guard !overlay.isEmpty else { return evaluateIsolated(script, bindings: bindings) }
+        switch onJSQueueWithTimeout({ [self] () -> String? in
+            LegadoSourceBridge.withVariableOverlay(overlay) { evaluateIsolated(script, bindings: bindings) }
+        }) {
+        case .completed(let r): return r
+        case .timedOut: return nil
+        }
+    }
+
     /// Evaluate a script whose result is BYTES (Legado image-decode convention:
     /// `result` holds the raw bytes, the script returns decoded bytes). The
     /// input bytes are exposed as a JS number array (0–255); the return value

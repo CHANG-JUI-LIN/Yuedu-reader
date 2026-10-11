@@ -2078,12 +2078,15 @@ class ModernParserBridge {
     /// Evaluate exploreUrl for a book source and return discover items.
     /// Mirrors Legado's exploreKinds(): JS may produce a rule string, JSON is
     /// decoded directly, and plain text is split into title::url kinds.
-    func getExploreItems(page: Int = 1) async -> [DiscoverItem] {
-        await SourceScriptThread.run { self.exploreItems(page: page) }
+    /// - Parameter variableOverlay: values the explore rule reads in place of the source's
+    ///   stored variable, without storing them: an Explore home section's own discover
+    ///   filters (unified library 5d-5).
+    func getExploreItems(page: Int = 1, variableOverlay: [String: String] = [:]) async -> [DiscoverItem] {
+        await SourceScriptThread.run { self.exploreItems(page: page, variableOverlay: variableOverlay) }
     }
 
     /// `getExploreItems`' body: the explore rule — often JS — evaluated synchronously.
-    private func exploreItems(page: Int) -> [DiscoverItem] {
+    private func exploreItems(page: Int, variableOverlay: [String: String]) -> [DiscoverItem] {
         ensureCloudSettingsIfNeeded()
         let source = sourceRuleData.source
         let rawExploreUrl = source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2121,7 +2124,7 @@ class ModernParserBridge {
                 "page": page,
                 "baseUrl": source.bookSourceUrl,
             ]
-            ruleStr = jsEngine.evaluateIsolated(jsCode, bindings: bindings)?
+            ruleStr = jsEngine.evaluateIsolated(jsCode, bindings: bindings, variableOverlay: variableOverlay)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             // Snapshot now: any later `jsEngine.evaluate` clears `lastError`, so
             // reading it at log time would report "none" for a rule that threw.
