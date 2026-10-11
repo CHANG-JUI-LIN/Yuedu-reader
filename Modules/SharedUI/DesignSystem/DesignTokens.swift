@@ -348,6 +348,16 @@ enum DSLayout {
     /// The reading-progress bar along the bottom of a 繼續閱讀 cover, as Emby marks a
     /// resumable item.
     static let homeCardProgressHeight: CGFloat = 3
+    /// The home's other layouts (unified library 5d-3), all 2:3 and scaled with Dynamic Type.
+    /// 大型閱讀卡片's cover, beside its text.
+    static let homeReadingCardCoverWidth: CGFloat = 110
+    /// How much of the next 大型閱讀卡片 shows past the edge, so the row reads as one to swipe.
+    static let homeReadingCardPeek: CGFloat = 40
+    /// A cover in 多行橫向輪播, and the narrowest a 固定封面網格 column gets: three to a
+    /// 402pt phone.
+    static let homeCompactCoverWidth: CGFloat = 100
+    /// A cover in 圖文資訊清單, beside its text.
+    static let homeListCoverWidth: CGFloat = 60
     /// A custom explore page's rank badge at the default text size (scaled with
     /// Dynamic Type); two-digit ranks widen it.
     static let customExploreRankBadgeSize: CGFloat = 24

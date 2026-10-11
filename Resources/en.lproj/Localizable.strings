@@ -3649,3 +3649,12 @@
 "已隱藏" = "Hidden";
 "上移" = "Move Up";
 "下移" = "Move Down";
+
+/* Unified library 5d-3: the home's layouts */
+"呈現方式" = "Layout";
+"大型閱讀卡片" = "Featured Cards";
+"橫向單排書架" = "Single Row";
+"多行橫向輪播" = "Multi-Row Carousel";
+"固定封面網格" = "Cover Grid";
+"圖文資訊清單" = "Detailed List";
+"顯示排名" = "Show Rankings";

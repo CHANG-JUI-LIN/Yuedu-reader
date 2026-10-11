@@ -1,8 +1,8 @@
 #if DEBUG
 import SwiftUI
 
-/// Opt-in design fixture for Explore's home cards and rows (`-explore-home-fixture`), until
-/// 5c-3 draws them in the app (unified library 5c-2). Every row state on one page, from
+/// Opt-in design fixture for Explore's home cards and rows (`-explore-home-fixture`), from
+/// unified library 5c-2; 5d-3 adds a list in each layout. Every row state on one page, from
 /// bundled and made-up data: nothing is read from or written to this device's stores, and
 /// nothing is sent. Never selected in a normal launch.
 struct HomeDesignFixture: View {
@@ -73,9 +73,9 @@ enum HomeDesignFixtureData {
         return book
     }
 
-    private static func row(_ binding: HomeSectionBinding, source: SourceInstanceKey, name: String,
-                            policy: SectionLoadPolicy, state: HomeModel.RowState) -> HomeModel.Row {
-        let section = HomeSection(layout: .row, binding: binding)
+    private static func row(_ binding: HomeSectionBinding, layout: HomeSectionLayout = .row, source: SourceInstanceKey,
+                            name: String, policy: SectionLoadPolicy, state: HomeModel.RowState) -> HomeModel.Row {
+        let section = HomeSection(layout: layout, binding: binding)
         return HomeModel.Row(id: HomeModel.rowID(section: section.id, source: source), section: section, source: source,
                              sourceName: name, policy: policy, state: state)
     }
@@ -90,9 +90,19 @@ enum HomeDesignFixtureData {
             CollectionEntry.location(CollectionLocation(id: $0, title: $0))
         }
         return [
-            row(.continueReading, source: .localLibrary, name: localized("書架"), policy: .local, state: .loaded([])),
+            row(.continueReading, layout: .readingCard, source: .localLibrary, name: localized("書架"), policy: .local,
+                state: .loaded([])),
+            // One list in each of the other layouts (5d-3).
             row(.gutenbergCollection(id: chinese.id), source: gutenberg, name: localized("Project Gutenberg"),
                 policy: .local, state: .loaded(collection)),
+            row(.gutenbergCollection(id: chinese.id), layout: .multiRow, source: gutenberg,
+                name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
+            row(.gutenbergCollection(id: chinese.id), layout: .rankedList, source: gutenberg,
+                name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
+            row(.gutenbergCollection(id: chinese.id), layout: .coverGrid, source: gutenberg,
+                name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
+            row(.gutenbergCollection(id: chinese.id), layout: .coverGrid, source: gutenberg,
+                name: localized("Project Gutenberg"), policy: .local, state: .loading),
             row(.aozoraIndex(kind: AozoraBrowseMode.authors.rawValue), source: aozora, name: localized("青空文庫"),
                 policy: .local, state: .loaded(authors)),
             row(.latest(excluded: []), source: aozora, name: localized("青空文庫"), policy: .local, state: .loading),

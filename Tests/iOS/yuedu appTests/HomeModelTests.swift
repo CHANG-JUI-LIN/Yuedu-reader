@@ -106,6 +106,58 @@ struct HomeModelTests {
         #expect(rows(home).map(\.source) == [a.instance])
     }
 
+    @Test("a new layout or title keeps what a row loaded (5d-3): only how it is drawn changed")
+    func layoutKeepsContent() async {
+        let a = FakeProvider("a") { _ in .parallel }
+        let home = model([a])
+        var section = HomeSection(layout: .row, binding: .sourceCategories([category]))
+        await home.sync(with: HomePage(sections: [section]))
+        home.load(rows(home)[0].id)
+        await until(home) { $0.first.map { isLoaded($0.state) } ?? false }
+
+        section.layout = .rankedList
+        section.title = "排行"
+        await home.sync(with: HomePage(sections: [section]))
+        #expect(isLoaded(rows(home)[0].state))
+        #expect(rows(home)[0].section.layout == .rankedList)
+        #expect(a.loads.count == 1)
+    }
+
+    @Test("excluding one source from 最新 keeps the other sources' rows loaded")
+    func exclusionKeepsOtherRows() async {
+        let a = FakeProvider("a") { _ in .parallel }
+        let b = FakeProvider("b", type: .opds) { section in
+            if case .latest(let excluded) = section.binding, !excluded.contains(SourceInstanceKey(type: .opds, id: "b")) { return .parallel }
+            return nil
+        }
+        let home = model([a, b])
+        var section = HomeSection(layout: .row, binding: .latest(excluded: []))
+        await home.sync(with: HomePage(sections: [section]))
+        for row in rows(home) { home.load(row.id) }
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
+
+        section.binding = .latest(excluded: [b.instance])
+        await home.sync(with: HomePage(sections: [section]))
+        #expect(rows(home).map(\.source.id) == ["a"])
+        #expect(isLoaded(rows(home)[0].state))
+        #expect(a.loads.count == 1)
+    }
+
+    @Test("a row whose content changed under the same id loads again by itself once it had loaded")
+    func changedContentReloads() async {
+        let a = FakeProvider("a") { _ in .parallel }
+        let home = model([a])
+        var section = HomeSection(layout: .row, binding: .sourceCategories([category]))
+        await home.sync(with: HomePage(sections: [section]))
+        home.load(rows(home)[0].id)
+        await until(home) { $0.first.map { isLoaded($0.state) } ?? false }
+
+        section.parameters = ["sort": "new"]
+        await home.sync(with: HomePage(sections: [section]))
+        await until(home) { $0.first.map { isLoaded($0.state) } ?? false }
+        #expect(a.loads.count == 2)
+    }
+
     @Test("「最新」 is one row per source that serves it, in provider order, skipping the excluded")
     func latestExpands() async {
         let a = FakeProvider("a") { _ in .serialPerSource }
@@ -275,11 +327,11 @@ struct HomeModelTests {
         #expect(a.loads.count == 2)
     }
 
-    @Test("a sync keeps what an unchanged row loaded and rebuilds a changed one")
+    @Test("a sync keeps what an unchanged row loaded")
     func syncKeepsRows() async throws {
         let a = FakeProvider("a", type: .opds) { _ in .parallel }
         let home = model([a])
-        var section = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let section = HomeSection(layout: .row, binding: .latest(excluded: []))
         await home.sync(with: HomePage(sections: [section]))
         let row = try #require(rows(home).first)
         home.load(row.id)
@@ -287,13 +339,7 @@ struct HomeModelTests {
 
         await home.sync(with: HomePage(sections: [section]))
         #expect(isLoaded(rows(home)[0].state))
-
-        section.title = "新標題"
-        await home.sync(with: HomePage(sections: [section]))
-        #expect(rows(home)[0].state == .idle)
-        home.load(row.id)
-        await until(home) { isLoaded($0[0].state) }
-        #expect(a.loads.count == 2)
+        #expect(a.loads.count == 1)
     }
 
     @Test("Gutenberg's bundled lists load without a request, with Gutenberg's covers; its feeds load with the home")
