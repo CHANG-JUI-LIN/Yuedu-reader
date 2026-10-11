@@ -2,7 +2,7 @@ import Foundation
 
 // Unified library 5d-3e: 書庫順序 (Phase 5 plan, decision 21), Emby's `OrderedViews`. One
 // order for the libraries (saved connections, Gutenberg, 青空文庫) wherever they are listed
-// together: 範圍, 瀏覽書庫, and the turns 最新's books take. Book sources keep the order their
+// together: 範圍 and the turns 最新's books take. Book sources keep the order their
 // own management gives them, after the libraries; the shelf is not a library here.
 
 enum LibraryOrder {

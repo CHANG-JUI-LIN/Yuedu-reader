@@ -10,7 +10,7 @@ struct AggregationSettingsView: View {
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
 
-    /// The libraries in 書庫順序, as 範圍 and 瀏覽書庫 list them.
+    /// The libraries in 書庫順序, as 範圍 lists them.
     private var libraries: [LibraryListing] {
         LibraryListing.ordered(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
                                order: store.settings.libraryOrder)
@@ -54,7 +54,7 @@ struct AggregationSettingsView: View {
                 } header: {
                     Text(localized("書庫順序"))
                 } footer: {
-                    Text(localized("範圍、瀏覽書庫和最新照這個順序；來源配置排在書庫之後，照它們自己的順序。"))
+                    Text(localized("範圍和最新照這個順序；來源配置排在書庫之後，照它們自己的順序。"))
                         .dsSectionFooter()
                 }
                 .interfaceSectionSurface()

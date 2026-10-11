@@ -145,9 +145,8 @@ final class ExploreHomeUITests: XCTestCase {
     }
 
     /// 範圍 filters the same home to one library, as Emby's library switch does (5d-3b,
-    /// decision 19), and the choice survives a relaunch. The library's whole catalog is its
-    /// own page, from 瀏覽完整目錄 at the top; under 全部, 瀏覽書庫 lists every library
-    /// (decision 20).
+    /// decision 19), and the choice survives a relaunch. No catalog entry sits at the top,
+    /// under 全部 or one library (removed 2026-10-11).
     @MainActor
     func testScopeFiltersTheHomeAndBack() {
         let app = application()
@@ -155,47 +154,27 @@ final class ExploreHomeUITests: XCTestCase {
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15))
         XCTAssertFalse(app.staticTexts["Project Gutenberg"].exists, "the home names no source")
+        XCTAssertFalse(app.buttons["home.libraries"].exists, "no catalog entry at the top")
 
-        // 瀏覽書庫 lists the libraries, each opening its own page.
-        let libraries = app.buttons["home.libraries"].firstMatch
-        XCTAssertTrue(libraries.waitForExistence(timeout: 5), app.debugDescription)
-        libraries.tap()
-        let gutenbergLink = app.buttons["home.libraries.gutenberg.\(gutenbergID)"].firstMatch
-        XCTAssertTrue(gutenbergLink.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.buttons["home.libraries.aozora.builtin.aozora"].firstMatch.exists)
-        attach(app, "explore-home-libraries")
-        gutenbergLink.tap()
-        XCTAssertTrue(app.buttons["publicLibrary.categories"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-
-        // The same home, with Gutenberg's books alone; its catalog at the top.
+        // The same home, with Gutenberg's books alone.
         chooseScope(app, "Project Gutenberg")
         XCTAssertEqual(app.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg")
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), "the home stays, filtered")
         XCTAssertTrue(app.navigationBars["探索"].exists || app.tabBars.buttons["探索"].firstMatch.isHittable)
-        let catalog = app.buttons["home.catalog"].firstMatch
-        XCTAssertTrue(catalog.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["home.catalog"].exists, "no catalog entry at the top")
         attach(app, "explore-home-scope-gutenberg")
-        catalog.tap()
-        XCTAssertTrue(app.navigationBars["Project Gutenberg"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.buttons["publicLibrary.categories"].firstMatch.waitForExistence(timeout: 10))
-        app.navigationBars.buttons.element(boundBy: 0).tap()
 
         app.terminate()
         let relaunched = application(reset: false)
         relaunched.launch()
         openExplore(relaunched)
-        XCTAssertTrue(relaunched.buttons["home.catalog"].firstMatch.waitForExistence(timeout: 15), "the scope is kept")
-        XCTAssertEqual(relaunched.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg")
+        XCTAssertTrue(relaunched.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), relaunched.debugDescription)
+        XCTAssertEqual(relaunched.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg", "the scope is kept")
 
         // 青空文庫: no Gutenberg book stays on the home.
         chooseScope(relaunched, "青空文庫")
         XCTAssertTrue(relaunched.buttons[featuredCard].firstMatch.waitForNonExistence(timeout: 10), relaunched.debugDescription)
-        relaunched.buttons["home.catalog"].firstMatch.tap()
-        XCTAssertTrue(relaunched.navigationBars["青空文庫"].waitForExistence(timeout: 10), relaunched.debugDescription)
-        attach(relaunched, "explore-home-scope-aozora-catalog")
-        relaunched.navigationBars.buttons.element(boundBy: 0).tap()
+        attach(relaunched, "explore-home-scope-aozora")
 
         chooseScope(relaunched, "全部")
         XCTAssertTrue(relaunched.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10))
@@ -296,14 +275,11 @@ final class ExploreHomeUITests: XCTestCase {
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         chooseScope(app, host)
-        // The home, filtered to a library no section draws from yet; its catalog at the top.
+        // The home, filtered to a library no section draws from yet.
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForNonExistence(timeout: 10))
-        let catalog = app.buttons["home.catalog"].firstMatch
-        XCTAssertTrue(catalog.waitForExistence(timeout: 10), app.debugDescription)
-        catalog.tap()
-        XCTAssertTrue(app.navigationBars[host].waitForExistence(timeout: 10), app.debugDescription)
-        attach(app, "explore-home-connection-page")
-        app.navigationBars[host].buttons.element(boundBy: 0).tap()
+        XCTAssertEqual(app.buttons["explore.scopeMenu"].value as? String, host)
+        XCTAssertFalse(app.buttons["home.catalog"].exists, "no catalog entry at the top")
+        attach(app, "explore-home-connection-scope")
         chooseScope(app, "全部")
 
         // Leave nothing behind for the next run.

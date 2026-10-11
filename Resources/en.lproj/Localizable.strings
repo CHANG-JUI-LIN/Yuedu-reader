@@ -3662,8 +3662,6 @@
 "顯示排名" = "Show Rankings";
 
 /* Unified library 5d-3b: the full catalogs from the top of the home */
-"瀏覽書庫" = "Browse Libraries";
-"瀏覽完整目錄" = "Browse Full Catalog";
 
 /* Unified library 5d-3d: 聚合設定 */
 "聚合設定" = "Aggregation";
@@ -3676,10 +3674,9 @@
 "排在前面的語言優先推薦。" = "Languages higher in the list come first.";
 "沒有標示語言的書（多數來源配置）一律保留，排在偏好語言之後。" = "Books with no language given (most sources) are always kept, after your languages.";
 "第 %d 優先" = "Priority %d";
-"書庫" = "Libraries";
 "書庫順序" = "Library Order";
 "第 %d 個" = "Position %d";
-"範圍、瀏覽書庫和最新照這個順序；來源配置排在書庫之後，照它們自己的順序。" = "Range, Browse Libraries and Latest follow this order; sources come after the libraries, in their own order.";
+"範圍和最新照這個順序；來源配置排在書庫之後，照它們自己的順序。" = "Range and Latest follow this order; sources come after the libraries, in their own order.";
 "顯示在最新" = "Show in Latest";
 "隱藏已讀" = "Hide Read";
 "讀到最後或標記為已讀完的書，任何一份都算。" = "Books read to the end or marked as finished, in any copy.";

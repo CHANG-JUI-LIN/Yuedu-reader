@@ -4,8 +4,9 @@ import SwiftUI
 /// across every source — Emby's model under Apple Books' covers (Phase 5 plan, settled
 /// decision 11). 範圍 narrows the same home to one source's books, as switching Emby's library
 /// does (5d-3b, decision 19), and holds every other way in: the custom pages and the browser
-/// (5d-1, settled decision 12, which took 我的書庫 off the home). The full catalogs are one tap
-/// from the top of the home: 瀏覽書庫, or the chosen library's 瀏覽完整目錄 (decision 20).
+/// (5d-1, settled decision 12, which took 我的書庫 off the home). There is no catalog entry at
+/// the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
+/// they want, and a row's 查看全部 opens the rest of what it shows.
 ///
 /// - One stack for everything the home opens (decision 5): Explore's routes, the libraries'
 ///   feeds, folders and books, the store's pages, and the store's card carousel over it all.
@@ -99,7 +100,7 @@ private struct ExploreHomeRoot: View {
                                                        isRead: lookup.isRead))
     }
 
-    /// The libraries in 書庫順序 (聚合設定, 5d-3e), as 範圍 and 瀏覽書庫 list them.
+    /// The libraries in 書庫順序 (聚合設定, 5d-3e), as 範圍 lists them.
     private var libraries: [LibraryListing] {
         LibraryListing.ordered(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
                                order: aggregation.settings.libraryOrder)
@@ -132,9 +133,6 @@ private struct ExploreHomeRoot: View {
             }
             .exploreRouteDestinations(openBrowser: openBrowser)
             .homeEditDestinations()
-            .navigationDestination(for: HomeLibrariesRoute.self) { _ in
-                HomeLibrariesPage(libraries: libraries, sources: exploreSources)
-            }
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
         }
@@ -165,7 +163,6 @@ private struct ExploreHomeRoot: View {
                         groupHost(group)
                     }
                 } else {
-                    if model.isReady { catalogEntry }
                     ForEach(groups) { group in groupHost(group) }
                 }
                 if model.isReady {
@@ -191,8 +188,6 @@ private struct ExploreHomeRoot: View {
                         Text(localized("從右上角的範圍打開書庫或來源配置。")).foregroundStyle(DSColor.textSecondary)
                     }
                 }
-                // The catalog entry above it stays tappable.
-                .allowsHitTesting(false)
             }
         }
         .refreshable { model.reload() }
@@ -203,29 +198,6 @@ private struct ExploreHomeRoot: View {
         .pageBackgroundToolbar(for: .explore)
         .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
         .animation(reduceMotion ? nil : DSAnimation.standard, value: groups.map(\.id))
-    }
-
-    /// 瀏覽書庫 under 全部, 瀏覽完整目錄 under one library (decision 20).
-    @ViewBuilder
-    private var catalogEntry: some View {
-        if let key = scopeKey {
-            let name = ExploreHomeScope.name(of: key, sources: sourceStore.sources, connections: connections)
-            if let page = ExplorePlace.page(of: key, name: name) {
-                ExplorePushLink(push: page) {
-                    HomeCatalogEntryLabel(title: localized("瀏覽完整目錄"), systemImage: "books.vertical")
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("home.catalog")
-                .padding(.horizontal, DSSpacing.lg)
-            }
-        } else if !connections.catalogs.isEmpty || availability.isAvailable || !exploreSources.isEmpty {
-            NavigationLink(value: HomeLibrariesRoute()) {
-                HomeCatalogEntryLabel(title: localized("瀏覽書庫"), systemImage: "books.vertical")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("home.libraries")
-            .padding(.horizontal, DSSpacing.lg)
-        }
     }
 
     private func groupHost(_ group: HomeSectionGroup) -> some View {
@@ -405,7 +377,7 @@ enum ExploreHomeScope {
     }
 }
 
-/// A library as 範圍, 瀏覽書庫 and 書庫順序 list it.
+/// A library as 範圍 and 書庫順序 list it.
 struct LibraryListing: Identifiable, Hashable {
     let key: SourceInstanceKey
     let name: String
