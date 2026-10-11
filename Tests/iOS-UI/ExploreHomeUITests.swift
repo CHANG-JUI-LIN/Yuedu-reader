@@ -62,6 +62,26 @@ final class ExploreHomeUITests: XCTestCase {
         option.tap()
     }
 
+    /// 範圍 → 首頁配置 → `name`.
+    @MainActor
+    private func chooseConfiguration(_ app: XCUIApplication, _ name: String) {
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 10), app.debugDescription)
+        menu.tap()
+        openConfigurations(app)
+        let option = app.buttons[name].firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
+        option.tap()
+    }
+
+    /// The 首頁配置 submenu of an open 範圍; its label also reads the current one.
+    @MainActor
+    private func openConfigurations(_ app: XCUIApplication) {
+        let submenu = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "首頁配置")).firstMatch
+        XCTAssertTrue(submenu.waitForExistence(timeout: 5), app.debugDescription)
+        submenu.tap()
+    }
+
     /// 精選's first list: a row of covers, so the home is drawn.
     private let featuredCard = "home.card.gutenberg.24264"
     private let gutenbergID = "builtin.gutenberg"
@@ -203,13 +223,15 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-configuration-blank")
 
         // 範圍 lists 預設, 空白 and the new one; 預設 is the home as it was.
-        chooseScope(app, "預設")
-        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         let menu = app.buttons["explore.scopeMenu"].firstMatch
         menu.tap()
+        attach(app, "explore-scope-menu")
+        openConfigurations(app)
         XCTAssertTrue(app.buttons["空白"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "explore-scope-configurations")
-        app.buttons[name].firstMatch.tap()
+        app.buttons["預設"].firstMatch.tap()
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        chooseConfiguration(app, name)
         XCTAssertTrue(app.staticTexts["這個首頁配置還沒有欄目"].waitForExistence(timeout: 10), app.debugDescription)
 
         // 編輯首頁 deletes it, which ends the edit, and 預設 shows again.
@@ -219,10 +241,13 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-configuration-editing")
         delete.tap()
         XCTAssertTrue(app.staticTexts["刪除「\(name)」？"].waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["刪除"].firstMatch.tap()
+        // The dialog's, not the card's of the same name.
+        app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "刪除",
+                                         "homeEditor.deleteConfiguration")).firstMatch.tap()
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["home.editDoneBar"].exists, "no longer editing")
         menu.tap()
+        openConfigurations(app)
         XCTAssertTrue(app.buttons["空白"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons[name].exists, "deleted from 範圍")
 
@@ -268,6 +293,7 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["探索還沒有內容"].waitForExistence(timeout: 15), app.debugDescription)
         let menu = app.buttons["explore.scopeMenu"].firstMatch
         menu.tap()
+        openConfigurations(app)
         XCTAssertTrue(app.buttons["週末書單"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "explore-custom-page-moved-in")
         app.buttons["週末書單"].firstMatch.tap()
