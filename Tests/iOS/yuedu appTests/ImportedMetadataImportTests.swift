@@ -164,6 +164,34 @@ struct ImportedMetadataImportTests {
         #expect(reread == 0, "done is kept beside the shelf")
     }
 
+    @Test("a Calibre EPUB 2's calibre:series and series_index are read")
+    func calibreSeries() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
+        let book = try await store.importEpub(url: try await makeEPUB(version: "2.0", series: """
+            <meta name="calibre:series" content="基地"/>
+            <meta name="calibre:series_index" content="2.5"/>
+            """))
+        defer { store.delete(bookId: book.id) }
+        store.importedMetadata.waitForPendingWritesForTesting()
+        let sidecar = try #require(store.importedMetadata.read(copyID: book.id))
+        #expect(sidecar.values.contains { $0.field == .series && $0.value == .text("基地") })
+        #expect(sidecar.values.contains { $0.field == .seriesIndex && $0.value == .number(2.5) })
+    }
+
+    /// A sidecar does not sync: a local EPUB that came from another device is read when its file
+    /// arrives (`ICloudSyncManager.readArrivedPackages`).
+    @Test("the copies read after an iCloud download are the local EPUBs whose file arrived")
+    func arrivedCopies() {
+        let epub = ReadingBook(title: "三體", author: "劉慈欣", source: "local_epub", contentFilename: "\(UUID()).epub")
+        let other = ReadingBook(title: "黑暗森林", author: "劉慈欣", source: "local_epub", contentFilename: "\(UUID()).epub")
+        let text = ReadingBook(title: "文字", author: "某", source: "local_txt", contentFilename: "\(UUID()).txt")
+        let fetched = [epub, text].map { StorageLocations.bookFile($0.contentFilename) }
+            + [StorageLocations.coverFile("cover.jpg")]
+        #expect(ICloudSyncManager.localEPUBs(arrivedAt: fetched, of: [epub, other, text]).map(\.id) == [epub.id])
+    }
+
     @Test("callers during the pass wait for it; it reads only local EPUB copies, and a failed one does not stop it")
     func seriesPassSingleFlight() async throws {
         let directory = try temporaryDirectory()
@@ -200,7 +228,11 @@ struct ImportedMetadataImportTests {
         return url
     }
 
-    private func makeEPUB() async throws -> URL {
+    private func makeEPUB(version: String = "3.0", series: String = """
+        <meta property="belongs-to-collection" id="series">地球往事</meta>
+        <meta refines="#series" property="collection-type">series</meta>
+        <meta refines="#series" property="group-position">1</meta>
+        """) async throws -> URL {
         try await EPUBTestFixtures.makeArchive(entries: [
             "mimetype": Data("application/epub+zip".utf8),
             "META-INF/container.xml": Data("""
@@ -211,7 +243,7 @@ struct ImportedMetadataImportTests {
             """.utf8),
             "OPS/package.opf": Data("""
             <?xml version="1.0" encoding="UTF-8"?>
-            <package version="3.0" unique-identifier="bookid" xmlns="http://www.idpf.org/2007/opf">
+            <package version="\(version)" unique-identifier="bookid" xmlns="http://www.idpf.org/2007/opf">
               <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:identifier id="bookid">urn:uuid:1B-FIXTURE</dc:identifier>
                 <dc:identifier>urn:isbn:978-7-5366-9293-0</dc:identifier>
@@ -220,9 +252,7 @@ struct ImportedMetadataImportTests {
                 <dc:language>zh-Hans</dc:language>
                 <dc:description>地球往事</dc:description>
                 <dc:subject>科幻</dc:subject>
-                <meta property="belongs-to-collection" id="series">地球往事</meta>
-                <meta refines="#series" property="collection-type">series</meta>
-                <meta refines="#series" property="group-position">1</meta>
+                \(series)
               </metadata>
               <manifest>
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>

@@ -418,7 +418,7 @@ final class ICloudSyncManager: ObservableObject {
                 if try await uploadBookFileIfNeeded(picture) { uploadedPictures += 1 }
             }
             changedRemote = changedRemote || uploadedPictures > 0
-            if try await downloadMissingFiles(backgroundPictures) > 0 {
+            if !(try await downloadMissingFiles(backgroundPictures)).isEmpty {
                 // A background already worn gets its picture only now; nothing it names
                 // changed, so the reader has to be told to look again.
                 await MainActor.run { GlobalSettings.shared.readerBackgroundPicturesDidArrive() }
@@ -1312,8 +1312,31 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     private func downloadMissingBookFiles() async throws {
-        let fetched = try await downloadMissingFiles(dynamicBookFilePayloads())
-        AppLogger.sync("restore: fetched \(fetched) book file(s)", level: .notice)
+        let books = localBooks()
+        let fetched = try await downloadMissingFiles(bookFilePayloads(books))
+        AppLogger.sync("restore: fetched \(fetched.count) book file(s)", level: .notice)
+        await readArrivedPackages(fetched, of: books)
+    }
+
+    /// A copy's sidecar does not sync, so a local EPUB that arrived from another device has
+    /// none: its package is read once its file is here (unified library 5d-6b, for 系列下一本's
+    /// series numbers; the identifiers and language come with it). Copies that already have
+    /// one are left as they are.
+    private func readArrivedPackages(_ fetched: [URL], of books: [ReadingBook]) async {
+        let copies = Self.localEPUBs(arrivedAt: fetched, of: books)
+        guard !copies.isEmpty, let store = boundBookStore else { return }
+        for copy in copies {
+            await ImportedMetadataCapture.captureIfMissing(copy: copy, store: store)
+        }
+    }
+
+    /// The local EPUB copies whose content file is among `fetched`.
+    static func localEPUBs(arrivedAt fetched: [URL], of books: [ReadingBook]) -> [ReadingBook] {
+        let arrived = Set(fetched.map(\.standardizedFileURL))
+        return books.filter {
+            $0.source == "local_epub" && $0.remoteSource == nil
+                && arrived.contains(StorageLocations.bookFile($0.contentFilename).standardizedFileURL)
+        }
     }
 
     /// The pictures the saved reading backgrounds show — synced like the book files, and
@@ -1338,12 +1361,13 @@ final class ICloudSyncManager: ObservableObject {
         return payloads
     }
 
-    /// Fetches each of `files` this device does not have. Returns how many arrived.
-    private func downloadMissingFiles(_ files: [ICloudSyncPayloadFile]) async throws -> Int {
+    /// Fetches each of `files` this device does not have. Returns where those that arrived
+    /// were written.
+    private func downloadMissingFiles(_ files: [ICloudSyncPayloadFile]) async throws -> [URL] {
         let missing = files.filter { !FileManager.default.fileExists(atPath: $0.localURL.path) }
-        guard !missing.isEmpty else { return 0 }
+        guard !missing.isEmpty else { return [] }
         AppLogger.sync("restore: \(missing.count) file(s) missing locally; fetching", level: .notice)
-        var fetched = 0
+        var fetched: [URL] = []
         for file in missing {
             do {
                 let record = try await fetchRecord(CKRecord.ID(recordName: file.recordName))
@@ -1357,7 +1381,7 @@ final class ICloudSyncManager: ObservableObject {
                 // A restored cover replaces a file the shelf may have found missing.
                 CoverImagePipeline.shared.invalidateBookCover(at: file.localURL)
                 rememberUploadedBookFileMarker("\(file.recordName):\(data.count)")
-                fetched += 1
+                fetched.append(file.localURL)
             } catch {
                 if isRecordNotFound(error) { continue }
                 throw error
