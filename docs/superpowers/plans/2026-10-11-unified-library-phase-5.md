@@ -107,6 +107,13 @@
     - **範圍 stays a menu,** with no search for a library of thousands of sources (asked; the maintainer kept the menu).
     - **Amended the same day, after seeing it:** no scope bar and no text naming the search scope. 「搜索不應該有顯示搜索範圍的文字」: the scope bar, the hint's 「Project Gutenberg和青空文庫」 and the sources' 「已啟用 N 個來源配置」 all go. One search covers both. The sources' results come first, then a 公有書庫 section with 「在 Project Gutenberg 搜尋」 and 青空文庫's matches. With no book source, the keyboard's Search asks Gutenberg.
 
+18. **Answered 2026-10-11, starting 5d-2** (maintainer, by option and in their own words):
+    - **編輯首頁 is reached from the end of the home:** 「拖到最下面有個編輯按鈕」, not from the bar.
+    - **It edits the home in place,** from the maintainer's screenshot of Rex's home editor (「我要這樣子」), replacing a first pushed list page: each section becomes a card with a check mark beside it to show or hide it; cards are dragged to reorder; a card opens its own page (在首頁顯示, 最新's 排除的來源, 刪除), where 5d-5's section form will grow; 完成 at the top and at the end.
+    - **The screenshot's ＋ (新增欄目)** comes with 5d-5, not as a button with nothing behind it (recommended option).
+    - **The browser's switch** is a 範圍 card at the end of the edited home (recommended option).
+    - **A section name's long press** offers 隱藏, 設定 (that section's page) and 刪除, which asks first (recommended option). 5d-3 adds 呈現方式 to the same menu.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -658,3 +665,24 @@ Branch `unified-library/5d1c-gutenberg-covers`. Settled decision 15.
   - `ExploreHomeUITests` 6 of 6, including the new `testGutenbergLatestLoadsWithTheHome` (最新 appears with no 載入 to tap). Its feeds now answer from fixtures; covers still load from gutenberg.org as cards show.
   - `PublicLibrarySearchTabUITests` passed.
   - `PublicLibraryStorefrontUITests`: 3 passed in the batch. `testPullDownClosesRestingCard` failed there because the simulator was touched during the run (the maintainer, 2026-10-11), and passed when run again on its own.
+
+### 5d-2: 編輯首頁 (2026-10-11)
+
+Branch `unified-library/5d2-edit-home`. Settled decisions 13, 14 and 18.
+
+- **The edits** are `HomePage` methods (`HomePageEditing.swift`), made through `HomePageStore.edit`, so the home builds its rows again from the saved page. Editing in place, a section's page and the long press use the same ones.
+  - **Edited:** the sections a home draws. 我的書庫 (not drawn since 5d-1) and a later build's sections are not shown; reordering moves the shown ones among the places they held, so the others keep theirs.
+  - **Hidden** keeps the section, its place and its settings; **deleted** drops it, after a confirmation.
+  - **排除的來源** lists the sources that serve 最新 (`HomeModel.latestSources`), checked when excluded. A source excluded and since removed stays excluded, unseen.
+- **編輯首頁, in place** (`HomeEditingSections` in `HomeEditor.swift`), from the button at the end of the home:
+  - every section, hidden ones too, is a card holding its rows, with a check mark beside it (VoiceOver: the section's name, 顯示 or 已隱藏);
+  - a card is dragged onto another to take its place (`draggable`/`dropDestination`); VoiceOver has 上移 and 下移 instead;
+  - a tap opens the section's page; the rows inside a card do not take taps;
+  - the last card is 範圍's, with the browser's switch (`explore.showsBrowser`), the 隱藏 decision 13 moved here;
+  - 完成 sits in the bar (in place of 範圍 and ＋) and at the end; the empty-home message is not shown while editing.
+  - **First try, replaced the same day:** a pushed list page with 編輯 to reorder; the maintainer asked for Rex's in-place editor instead.
+- **Long press:** a row's name offers 隱藏, 設定 and 刪除. On 最新's rows, one per source, they act on the whole 最新 section; excluding one source is on its page.
+- **Strings (5 languages):** 編輯首頁, 在首頁顯示, 排除的來源, 已隱藏, 上移, 下移. Reused: 完成, 顯示, 隱藏, 設定, 刪除, 取消, 範圍, 瀏覽器, 最新, 刪除「%@」？.
+- **Not yet:** 新增欄目 and its ＋ (5d-5), so a deleted default section cannot be added back until then; 呈現方式 in the long press (5d-3).
+- **Tests (unit):** `HomePageEditingTests`, `HomeSectionTests`, `HomePageStoreTests`, `HomeModelTests`, `ExploreHomeTests` — 37/37 passed (iOS 27).
+- **Tests (UI):** `HomeEditorUITests` 2/2 on iOS 27 and iOS 17.5 (the long press's 刪除 → confirmation included); `ExploreHomeUITests` 6/6 on iOS 27. On iOS 27 the minimized bar hides its 完成 while the home is scrolled to the bottom, so the test checks the home's own 完成 there and the bar's after scrolling back up.

@@ -42,7 +42,7 @@ enum HomeSectionBinding: Hashable, Sendable {
     case opdsFeed(connectionID: String, url: String)
     /// A list bundled with the app (`PublicLibraryCollection`); sends no request.
     case gutenbergCollection(id: String)
-    /// A Gutenberg feed; loads only when the reader asks.
+    /// A Gutenberg feed; loads when the home shows (Phase 5 plan, decision 15).
     case gutenbergFeed(url: String)
     case aozoraNew
     case aozoraIndex(kind: String)

@@ -48,6 +48,14 @@ final class HomePageStore: ObservableObject {
         return defaults
     }
 
+    /// 編輯首頁 and a section's long press (5d-2): changes the saved page. Nothing to change
+    /// before the home has read or made one.
+    func edit(_ change: (inout HomePage) -> Void) {
+        guard var page else { return }
+        change(&page)
+        save(page)
+    }
+
     func save(_ page: HomePage) {
         self.page = page
         guard !isReadOnly else {

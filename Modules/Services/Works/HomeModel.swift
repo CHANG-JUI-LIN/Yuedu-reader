@@ -99,6 +99,14 @@ final class HomeModel: ObservableObject {
         return false
     }
 
+    /// The sources that serve 最新, excluded or not, by name: 排除的來源's choices (5d-2).
+    func latestSources() -> [(key: SourceInstanceKey, name: String)] {
+        let latest = HomeSection(layout: .row, binding: .latest(excluded: []))
+        return makeProviders()
+            .filter { $0.loadPolicy(for: latest) != nil }
+            .map { (key: $0.instance, name: $0.displayName) }
+    }
+
     static func rowID(section: UUID, source: SourceInstanceKey) -> String {
         "\(section.uuidString)|\(source.type.rawValue):\(source.id)"
     }

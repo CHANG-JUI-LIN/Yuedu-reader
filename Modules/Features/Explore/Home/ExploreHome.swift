@@ -48,6 +48,8 @@ private struct ExploreHomeRoot: View {
     @State private var exploreSources: [BookSource] = []
     @State private var browserPresentation: BrowserPresentation?
     @State private var pagePrompt: CustomExplorePagePrompt?
+    /// 編輯首頁: the sections drawn as cards to show, hide, reorder and open (5d-2).
+    @State private var isEditing = false
 
     private struct BrowserPresentation: Identifiable {
         let id = UUID()
@@ -116,6 +118,7 @@ private struct ExploreHomeRoot: View {
                 .environmentObject(store)
             }
             .exploreRouteDestinations(openBrowser: openBrowser)
+            .homeEditDestinations(model: model)
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
         }
@@ -142,9 +145,20 @@ private struct ExploreHomeRoot: View {
     private var home: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                ForEach(model.rows) { row in
-                    HomeRowHost(row: row, store: store, aozoraIndex: aozora.catalog, model: model,
-                                push: push, select: { selection = $0 })
+                if isEditing {
+                    HomeEditingSections(sections: pageStore.page?.editableSections ?? [], rows: model.rows,
+                                        openSettings: { path.append(HomeEditRoute.section($0)) }) { row in
+                        rowHost(row)
+                    }
+                } else {
+                    ForEach(model.rows) { row in rowHost(row) }
+                }
+                if model.isReady {
+                    // At the end of the home (maintainer, 2026-10-11, decision 18).
+                    Button(localized(isEditing ? "完成" : "編輯首頁")) { setEditing(!isEditing) }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier(isEditing ? "home.editDone" : "home.edit")
                 }
             }
             .padding(.vertical, DSSpacing.lg)
@@ -154,7 +168,7 @@ private struct ExploreHomeRoot: View {
         .overlay {
             if !model.isReady {
                 ProgressView()
-            } else if showsNothing {
+            } else if showsNothing, !isEditing {
                 ContentUnavailableView {
                     UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
                 } description: {
@@ -169,6 +183,16 @@ private struct ExploreHomeRoot: View {
         .pageBackgroundToolbar(for: .explore)
         .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
         .animation(reduceMotion ? nil : DSAnimation.standard, value: model.rows.map(\.id))
+    }
+
+    private func rowHost(_ row: HomeModel.Row) -> some View {
+        HomeRowHost(row: row, store: store, aozoraIndex: aozora.catalog, model: model,
+                    push: push, select: { selection = $0 },
+                    openSettings: { path.append(HomeEditRoute.section(row.section.id)) })
+    }
+
+    private func setEditing(_ editing: Bool) {
+        withAnimation(reduceMotion ? nil : DSAnimation.standard) { isEditing = editing }
     }
 
     // MARK: One source
@@ -206,6 +230,18 @@ private struct ExploreHomeRoot: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        if isEditing {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(localized("完成")) { setEditing(false) }
+                    .accessibilityIdentifier("home.editDoneBar")
+            }
+        } else {
+            scopeAndPageItems
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var scopeAndPageItems: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             ExploreScopeMenu(scope: Binding(get: { scope }, set: { storedScope = $0.rawValue }),
                              connections: connections.catalogs, librariesAvailable: availability.isAvailable,
@@ -246,6 +282,8 @@ private struct HomeRowHost: View {
     let model: HomeModel
     let push: (ExplorePush) -> Void
     let select: (PublicLibraryBookSelection) -> Void
+    let openSettings: () -> Void
+    @State private var confirmsDelete = false
 
     var body: some View {
         HomeRowView(row: row, content: content,
@@ -255,7 +293,14 @@ private struct HomeRowHost: View {
                     open: open,
                     openLocation: { location in
                         ExplorePlace.page(of: location, in: row, aozoraIndex: aozoraIndex).map(push)
-                    })
+                    },
+                    actions: HomeSectionActions(
+                        hide: { HomePageStore.shared.edit { $0.setEnabled(false, section: row.section.id) } },
+                        openSettings: openSettings,
+                        delete: { confirmsDelete = true }))
+            .homeSectionDeleteConfirmation(isPresented: $confirmsDelete, title: row.section.editorTitle()) {
+                HomePageStore.shared.edit { $0.removeSection(row.section.id) }
+            }
     }
 
     private var content: HomeRowContent? {
