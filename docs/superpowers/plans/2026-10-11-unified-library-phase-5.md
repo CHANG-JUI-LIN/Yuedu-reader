@@ -771,3 +771,17 @@ Branch `unified-library/5d3d-aggregation-settings`. Decision 21: Emby's aggregat
 - **Strings:** 聚合設定, 偏好閱讀語言, 新增語言, 推薦範圍, the three scopes, two footers, 第 %d 優先, in five languages.
 - **Tests (unit):** `ReadingLanguagesTests` (new, 6: the initial value, 優先's order, 只推薦 and 不限制, sections ordered after 最新's turns with 繼續閱讀 untouched, the bundled books' languages, the store); `PublicLibraryRegistryTests.shelvesFollowReadingLanguages` replaces the interface-language test. With the home suites: 69/69 passed (iOS 27).
 - **Tests (UI):** `AggregationSettingsUITests.testReadingLanguages` (new: a fresh install shows 中文 第 1 優先 and 優先推薦; adds 日本語, drags it first, picks 只推薦, and a relaunch reads both back). iOS 27: it, `ExploreHomeUITests` 7/7, `HomeEditorUITests` 3/3. iOS 17.5: it and `testScopeFiltersTheHomeAndBack`.
+
+### 5d-3e: 書庫順序 (2026-10-11)
+
+Branch `unified-library/5d3e-library-order`. Decision 21's `OrderedViews`.
+
+- **聚合設定 → 書庫順序:** the libraries there are now (saved connections, then Gutenberg and 青空文庫 where offered), reordered by dragging; VoiceOver reads 「第 N 個」 and offers 上移／下移. Hidden with fewer than two libraries. Book sources are not listed: they keep 來源配置's own order, after the libraries (the footer says so).
+- **One order, three places** (`LibraryOrder.arrange`, `LibraryListing.ordered`):
+  - 範圍's library picker;
+  - 瀏覽書庫: the libraries are now **one section, 「書庫」**, so a public library can go before a remote one. It replaces the 遠端書庫 and 公有書庫 sections. Book sources stay their own section. (The maintainer may prefer the two sections kept, each ordered within itself.)
+  - 最新's turns: `HomeScopeFilter.groups` orders a section's rows when it draws them. The shelf's row stays first and book sources' rows after. The providers and rows are untouched, so changing the order reloads nothing.
+- **Stored** in `AggregationSettings.libraryOrder` (optional; nil until the reader moves one, and settings saved by 5d-3d read as nil). A library added since follows the ordered ones; one removed, or Gutenberg in China, is passed over.
+- **Strings:** 書庫, 書庫順序, 第 %d 個, the footer, in five languages.
+- **Tests (unit):** `LibraryOrderTests` (new, 5: the default order and China, the reader's order with one added and one gone, the shelf and book sources keeping their places, 最新's turns, old settings decoding and the store). With the home suites, `ReadingLanguagesTests` and `PublicLibraryRegistryTests`: 54/54 in 9 suites (iOS 27).
+- **Tests (UI):** `AggregationSettingsUITests.testLibraryOrder` (new: drags 青空文庫 above Gutenberg, then checks 瀏覽書庫 and 範圍 list it first). iOS 27: `AggregationSettingsUITests` 2/2, `ExploreHomeUITests` 7/7, `HomeEditorUITests` 3/3. iOS 17.5: `AggregationSettingsUITests` 2/2, `testScopeFiltersTheHomeAndBack`.

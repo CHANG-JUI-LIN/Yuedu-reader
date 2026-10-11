@@ -91,7 +91,14 @@ private struct ExploreHomeRoot: View {
     /// The sections drawn: under 範圍, only the chosen source's books; in the reader's
     /// languages' order (聚合設定, 5d-3d).
     private var groups: [HomeSectionGroup] {
-        model.groups(in: scopeKey, languages: aggregation.readingLanguages)
+        model.groups(in: scopeKey, languages: aggregation.readingLanguages,
+                     libraryOrder: aggregation.settings.libraryOrder)
+    }
+
+    /// The libraries in 書庫順序 (聚合設定, 5d-3e), as 範圍 and 瀏覽書庫 list them.
+    private var libraries: [LibraryListing] {
+        LibraryListing.ordered(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
+                               order: aggregation.settings.libraryOrder)
     }
 
     /// What the rows are built from; any change builds them again.
@@ -122,8 +129,7 @@ private struct ExploreHomeRoot: View {
             .exploreRouteDestinations(openBrowser: openBrowser)
             .homeEditDestinations(model: model)
             .navigationDestination(for: HomeLibrariesRoute.self) { _ in
-                HomeLibrariesPage(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                                  sources: exploreSources)
+                HomeLibrariesPage(libraries: libraries, sources: exploreSources)
             }
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
@@ -245,8 +251,7 @@ private struct ExploreHomeRoot: View {
     private var scopeAndPageItems: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             ExploreScopeMenu(scope: Binding(get: { scope }, set: { storedScope = $0.rawValue }),
-                             connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                             sources: exploreSources, customPages: customPages.pages, showsBrowser: showsBrowser,
+                             libraries: libraries, sources: exploreSources, customPages: customPages.pages, showsBrowser: showsBrowser,
                              openPage: { path.append(ExploreNavigationRoute.customPage(id: $0)) },
                              openBrowser: { openBrowser(.resume) })
         }
@@ -395,13 +400,38 @@ enum ExploreHomeScope {
     }
 }
 
+/// A library as 範圍, 瀏覽書庫 and 書庫順序 list it.
+struct LibraryListing: Identifiable, Hashable {
+    let key: SourceInstanceKey
+    let name: String
+    let systemImage: String
+
+    var id: SourceInstanceKey { key }
+
+    /// The libraries there are now (saved connections; Gutenberg and 青空文庫 where offered),
+    /// in 書庫順序.
+    static func ordered(connections: [RemoteLibraryConnection], librariesAvailable: Bool,
+                        order: [SourceInstanceKey]?) -> [LibraryListing] {
+        let names = Dictionary(connections.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let keys = LibraryOrder.defaultKeys(connections: connections, librariesAvailable: librariesAvailable)
+        return LibraryOrder.arrange(keys, by: order, key: { $0 }).map { key in
+            let name = switch key.type {
+            case .gutenberg: localized("Project Gutenberg")
+            case .aozora: localized("青空文庫")
+            default: names[key.id] ?? key.id
+            }
+            return LibraryListing(key: key, name: name, systemImage: SourceKindSymbol.symbol(for: key.type) ?? "books.vertical")
+        }
+    }
+}
+
 /// 範圍, a picker in a menu (design §13.3), which opens nothing modal. Book sources sit in a
 /// submenu of their own: a reader can have thousands. Below the picker, what is pushed rather
 /// than shown in place: the custom pages and the browser (5d-1).
 private struct ExploreScopeMenu: View {
     @Binding var scope: ExploreScope
-    let connections: [RemoteLibraryConnection]
-    let librariesAvailable: Bool
+    /// In 書庫順序.
+    let libraries: [LibraryListing]
     let sources: [BookSource]
     let customPages: [CustomExplorePage]
     let showsBrowser: Bool
@@ -413,17 +443,11 @@ private struct ExploreScopeMenu: View {
             Picker(localized("範圍"), selection: $scope) {
                 Label(localized("全部"), systemImage: "square.grid.2x2").tag(ExploreScope.all)
             }
-            if !connections.isEmpty || librariesAvailable {
+            if !libraries.isEmpty {
                 Picker(localized("範圍"), selection: $scope) {
-                    ForEach(connections) { connection in
-                        Label(connection.name, systemImage: SourceKindSymbol.symbol(for: ProviderType(connection.kind)) ?? "books.vertical")
-                            .tag(ExploreScope.source(SourceInstanceKey(type: ProviderType(connection.kind), id: connection.id)))
-                    }
-                    if librariesAvailable {
-                        Label(localized("Project Gutenberg"), systemImage: "building.columns")
-                            .tag(ExploreScope.source(SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue)))
-                        Label(localized("青空文庫"), systemImage: "building.columns")
-                            .tag(ExploreScope.source(SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue)))
+                    ForEach(libraries) { library in
+                        Label(library.name, systemImage: library.systemImage)
+                            .tag(ExploreScope.source(library.key))
                     }
                 }
             }
@@ -466,12 +490,8 @@ private struct ExploreScopeMenu: View {
 
     private var valueName: String {
         guard case .source(let key) = scope else { return localized("全部") }
-        switch key.type {
-        case .bookSource: return sources.first { $0.bookSourceUrl == key.id }?.bookSourceName ?? key.id
-        case .gutenberg: return localized("Project Gutenberg")
-        case .aozora: return localized("青空文庫")
-        default: return connections.first { $0.id == key.id }?.name ?? key.id
-        }
+        if key.type == .bookSource { return sources.first { $0.bookSourceUrl == key.id }?.bookSourceName ?? key.id }
+        return libraries.first { $0.key == key }?.name ?? key.id
     }
 }
 
