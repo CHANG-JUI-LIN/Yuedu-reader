@@ -91,7 +91,7 @@ struct yuedu_appApp: App {
         // The home as a new install sees it: no saved sections, 範圍 全部, the home not the old
         // roots. Before anything reads `HomePageStore.shared`.
         if ProcessInfo.processInfo.arguments.contains("-reset-explore-home") {
-            for key in [ExploreSettings.scopeKey, ExploreSettings.classicRootKey] {
+            for key in [ExploreSettings.scopeKey, ExploreSettings.classicRootKey, ExploreSettings.showsBrowserKey] {
                 UserDefaults.standard.removeObject(forKey: key)
             }
             let home = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json")

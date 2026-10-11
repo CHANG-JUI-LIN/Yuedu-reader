@@ -4,13 +4,16 @@ import SwiftUI
 
 /// One of the reader's custom explore pages: its blocks top to bottom, each loading as it
 /// scrolls on. 編輯 opens the blocks as a list to change, reorder and delete; an empty
-/// page offers 新增元件 at once.
+/// page offers 新增元件 at once. Its ⋯ menu renames or deletes it: since unified library 5d-1
+/// it is opened from 範圍, and no tile is left to long-press.
 struct CustomExplorePageView: View {
     let pageID: UUID
 
     @ObservedObject private var store = CustomExplorePageStore.shared
     @StateObject private var model = CustomExplorePageModel()
     @State private var isAddingComponent = false
+    @State private var prompt: CustomExplorePagePrompt?
+    @Environment(\.dismiss) private var dismiss
 
     private var page: CustomExplorePage? { store.page(id: pageID) }
 
@@ -38,15 +41,32 @@ struct CustomExplorePageView: View {
                     NavigationLink(localized("編輯"), value: ExploreNavigationRoute.customPageEditor(id: pageID))
                 }
             }
+            if let page {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        CustomExplorePageMenuItems(page: page, prompt: $prompt)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .accessibilityHidden(true)
+                    }
+                    .accessibilityLabel(localized("更多"))
+                }
+            }
         }
+        .customExplorePagePrompts($prompt)
         .sheet(isPresented: $isAddingComponent) {
             CustomExploreComponentSheet(pageID: pageID, editing: nil)
         }
         .onAppear {
             if let page { model.sync(with: page) }
         }
-        .onChange(of: page) { _, page in
-            if let page { model.sync(with: page) }
+        .onChange(of: page) { previous, page in
+            if let page {
+                model.sync(with: page)
+            } else if previous != nil {
+                // Deleted from its own ⋯ menu: nothing is left to show here.
+                dismiss()
+            }
         }
     }
 

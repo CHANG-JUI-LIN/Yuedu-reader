@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Unified library 5c: a row of Explore's home and the 我的書庫 tiles (design §13.3). The row
+// Unified library 5c: a row of Explore's home (design §13.3). The row
 // header names the row and its source, Emby's way, and leads to 查看全部; the covers below it
 // swipe sideways as Apple Books' shelves do.
 
@@ -248,89 +248,10 @@ struct HomeRowView: View {
     }
 }
 
-// MARK: - 我的書庫
+// MARK: - 範圍's symbols
 
-/// The browser, the custom pages and a tile per source, laid out as 探索's entries always were
-/// (the reader's grid, or the list when 格狀 is off or at accessibility text sizes).
-struct HomeLibraryTiles<MenuItems: View>: View {
-    let tiles: [HomeModel.Tile]
-    let open: (HomeModel.Tile) -> Void
-    /// A tile's long-press actions: a custom page's or a book source's, as on 探索 before.
-    @ViewBuilder let menu: (HomeModel.Tile) -> MenuItems
-
-    @AppStorage(ExploreSettings.showsGridKey) private var showsGrid = true
-    @AppStorage(ExploreSettings.gridColumnCountKey) private var gridColumnCount = ExploreGridDensity.default.rawValue
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    private var layout: ExploreEntryLabel.Layout {
-        guard showsGrid, !dynamicTypeSize.isAccessibilitySize else { return .list }
-        return .grid(.fitting(gridColumnCount, dynamicTypeSize: dynamicTypeSize))
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
-            Text(localized("我的書庫"))
-                .font(DSFont.title2.weight(.bold))
-                .foregroundStyle(DSColor.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            grid {
-                ForEach(tiles, id: \.self) { tile in
-                    Button { open(tile) } label: { label(for: tile) }
-                        .buttonStyle(ExploreTileButtonStyle())
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityLabel(tile.name)
-                        .accessibilityIdentifier(Self.identifier(for: tile))
-                        .contextMenu { menu(tile) }
-                }
-            }
-        }
-        .padding(.horizontal, DSSpacing.lg)
-    }
-
-    @ViewBuilder
-    private func grid<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        switch layout {
-        case .grid(let density):
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md), count: density.rawValue),
-                      spacing: DSSpacing.md, content: content)
-        case .list:
-            LazyVStack(spacing: DSSpacing.md, content: content)
-        }
-    }
-
-    /// A book source keeps its emoji or first character, as on 探索 today; every other
-    /// place has a symbol for its kind.
-    private func label(for tile: HomeModel.Tile) -> ExploreEntryLabel {
-        switch tile {
-        case .browser:
-            return ExploreEntryLabel(title: tile.name, artwork: .symbol("safari"), layout: layout)
-        case .customPage:
-            return ExploreEntryLabel(name: tile.name, layout: layout)
-        case .source(let source, _):
-            guard let symbol = HomeLibraryTileSymbol.symbol(for: source.type) else {
-                return ExploreEntryLabel(name: tile.name, layout: layout)
-            }
-            return ExploreEntryLabel(title: tile.name, artwork: .symbol(symbol), layout: layout)
-        }
-    }
-
-    static func identifier(for tile: HomeModel.Tile) -> String {
-        switch tile {
-        case .browser: "home.tile.browser"
-        case .customPage(let id, _): "home.tile.page.\(id.uuidString)"
-        case .source(let source, _): "home.tile.\(source.type.rawValue).\(source.id)"
-        }
-    }
-}
-
-extension HomeLibraryTiles where MenuItems == EmptyView {
-    init(tiles: [HomeModel.Tile], open: @escaping (HomeModel.Tile) -> Void) {
-        self.init(tiles: tiles, open: open) { _ in EmptyView() }
-    }
-}
-
-enum HomeLibraryTileSymbol {
+/// A library's symbol in 範圍. A book source has none: it is named by its own name.
+enum SourceKindSymbol {
     static func symbol(for type: ProviderType) -> String? {
         switch type {
         case .library: "books.vertical"

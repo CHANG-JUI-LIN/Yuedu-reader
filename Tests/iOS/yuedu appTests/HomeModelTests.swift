@@ -72,14 +72,12 @@ private func model(_ providers: [any HomeSectionProviding], sources: Gate? = nil
 
 @MainActor
 private func rows(_ model: HomeModel) -> [HomeModel.Row] {
-    model.items.compactMap { if case .row(let row) = $0 { return row } else { return nil } }
+    model.rows
 }
 
 @MainActor
 private func until(_ model: HomeModel, _ condition: @escaping ([HomeModel.Row]) -> Bool) async {
-    _ = await model.$items.values.first { items in
-        condition(items.compactMap { if case .row(let row) = $0 { return row } else { return nil } })
-    }
+    _ = await model.$rows.values.first { rows in condition(rows) }
 }
 
 private func isLoaded(_ state: HomeModel.RowState) -> Bool {
@@ -101,7 +99,7 @@ struct HomeModelTests {
         let syncing = Task { await home.sync(with: page) }
 
         #expect(!home.isReady)
-        #expect(home.items.isEmpty)
+        #expect(home.rows.isEmpty)
         sources.open()
         await syncing.value
         #expect(home.isReady)
@@ -126,24 +124,24 @@ struct HomeModelTests {
         #expect(rows(home).map(\.source.id) == ["a"])
     }
 
-    @Test("我的書庫 is the browser, the custom pages, then a tile per source but the shelf; a hidden section and one nothing serves have no row")
-    func tilesAndUnserved() async {
-        let shelf = FakeProvider("local", type: .library) { _ in nil }
+    /// 5d-1 (settled decision 12): 我的書庫 is off the home, its libraries reached from 範圍.
+    @Test("我的書庫, a hidden section and one nothing serves have no row; the rest keep their order")
+    func unservedHaveNoRow() async {
+        let shelf = FakeProvider("local", type: .library) { section in
+            if case .related = section.binding { return .local }
+            return nil
+        }
         let a = FakeProvider("a") { _ in nil }
-        let b = FakeProvider("b", type: .webDAV) { _ in nil }
-        let page = CustomExplorePage(name: "我的頁")
-        let home = HomeModel(providers: { [shelf, a, b] }, customPages: { [page] }, waitForSources: {})
-        let tiles = HomeSection(layout: .tiles, binding: .myLibrary)
+        let home = HomeModel(providers: { [shelf, a] }, waitForSources: {})
+        let related = HomeSection(layout: .row, binding: .related)
         await home.sync(with: HomePage(sections: [
-            tiles,
+            HomeSection(layout: .tiles, binding: .myLibrary),
             HomeSection(layout: .row, binding: .continueReading, isEnabled: false),
-            HomeSection(layout: .row, binding: .related),
+            related,
             HomeSection(layout: .row, binding: .unknown(.object(["type": .string("later")]))),
         ]))
-        #expect(home.items == [.tiles(sectionID: tiles.id, [
-            .browser, .customPage(id: page.id, name: "我的頁"),
-            .source(a.instance, name: "a"), .source(b.instance, name: "b"),
-        ])])
+        #expect(home.rows.map(\.section.id) == [related.id])
+        #expect(home.isReady)
     }
 
     @Test("one source's rows load one at a time; another source's do not wait for them")

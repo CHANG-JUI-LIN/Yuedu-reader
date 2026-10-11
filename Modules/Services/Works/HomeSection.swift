@@ -16,7 +16,7 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     init(rawValue: String) { self.rawValue = rawValue }
     init(_ kind: CustomExploreComponent.Kind) { rawValue = kind.rawValue }
 
-    /// One tile per place (我的書庫).
+    /// One tile per place (我的書庫, no longer drawn: see `HomeSectionBinding.myLibrary`).
     static let tiles = Self(rawValue: "tiles")
     /// One row of covers that swipes sideways.
     static let row = Self(rawValue: "row")
@@ -29,7 +29,9 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
 
 /// What a section shows (design §13.4).
 enum HomeSectionBinding: Hashable, Sendable {
-    /// 我的書庫: a tile for every place.
+    /// 我的書庫: a tile for every place. Not drawn since unified library 5d-1 (settled
+    /// decision 12: the libraries are reached from 範圍); kept so a saved page round-trips
+    /// and an older build still shows it.
     case myLibrary
     /// 繼續閱讀, across every source.
     case continueReading
@@ -187,7 +189,8 @@ struct HomePage: Codable, Hashable, Sendable {
     }
 }
 
-/// The sections a reader starts with (design §13.3, lines 700–704).
+/// The sections a reader starts with (design §13.3, lines 700–704), without 我的書庫 since
+/// unified library 5d-1 (settled decision 12).
 ///
 /// Pure: nothing calls it at launch and nothing writes it until the home first reads it
 /// (Phase 5 plan, 5a step 3), so the defaults can still change without a second migration.
@@ -198,7 +201,6 @@ enum HomePageDefaults {
     ///   - publicLibrariesAvailable: false in China, where no public-library section is made.
     static func page(mode: ExploreMode, publicLibrariesAvailable: Bool,
                      makeID: () -> UUID = UUID.init) -> HomePage {
-        let myLibrary = HomeSection(id: makeID(), layout: .tiles, binding: .myLibrary)
         let continueReading = HomeSection(id: makeID(), layout: .row, binding: .continueReading)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest(excluded: []))
         // 精選: one section per bundled list, titled by the list (plan decision 11).
@@ -209,9 +211,9 @@ enum HomePageDefaults {
             : []
         switch mode {
         case .bookSources:
-            return HomePage(sections: [myLibrary, continueReading, latest] + featured)
+            return HomePage(sections: [continueReading, latest] + featured)
         case .publicLibraries:
-            return HomePage(sections: [continueReading, myLibrary] + featured + [latest])
+            return HomePage(sections: [continueReading] + featured + [latest])
         }
     }
 }

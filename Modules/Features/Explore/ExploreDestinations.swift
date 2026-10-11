@@ -122,11 +122,11 @@ enum ExplorePush: Hashable {
     }
 }
 
-/// The pages the home's tiles, row headers and chips push: each the page its source already
+/// The pages 範圍, the home's row headers and its chips open: each the page its source already
 /// shows from its own screens (unified library 5c-3). Nil where the source has no such page.
 enum ExplorePlace {
     /// A source's own page: its discover page, its root feed or folder, or a public library's
-    /// front page. The scope menu shows the same page in place.
+    /// front page, which 範圍 shows in place (5d-1; 我的書庫's tiles pushed it before).
     static func page(of source: SourceInstanceKey, name: String,
                      connections: RemoteLibraryConnectionStore = .shared) -> ExplorePush? {
         switch source.type {

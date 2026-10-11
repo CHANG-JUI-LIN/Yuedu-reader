@@ -35,7 +35,7 @@ struct ExploreHomeTests {
         #expect(sources.page == nil)
         let saved = sources.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: true)
         let featured = PublicLibraryCollection.all.count
-        #expect(bindings(saved) == ["myLibrary", "continueReading", "latest"] + Array(repeating: "featured", count: featured))
+        #expect(bindings(saved) == ["continueReading", "latest"] + Array(repeating: "featured", count: featured))
         sources.waitForPendingWritesForTesting()
 
         // Read again in another mode: the saved page stands.
@@ -43,18 +43,18 @@ struct ExploreHomeTests {
         #expect(reopened.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true) == saved)
     }
 
-    @Test("a new install starts with 繼續閱讀; China gets no public-library section")
+    @Test("a new install starts with 繼續閱讀; China gets no public-library section; no default has 我的書庫")
     func defaultsByReader() throws {
         let folder = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let newInstall = HomePageStore(fileURL: folder.appendingPathComponent("a.json"))
         let featured = PublicLibraryCollection.all.count
         #expect(bindings(newInstall.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true))
-                == ["continueReading", "myLibrary"] + Array(repeating: "featured", count: featured) + ["latest"])
+                == ["continueReading"] + Array(repeating: "featured", count: featured) + ["latest"])
 
         let china = HomePageStore(fileURL: folder.appendingPathComponent("b.json"))
         #expect(bindings(china.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: false))
-                == ["myLibrary", "continueReading", "latest"])
+                == ["continueReading", "latest"])
         newInstall.waitForPendingWritesForTesting()
         china.waitForPendingWritesForTesting()
     }

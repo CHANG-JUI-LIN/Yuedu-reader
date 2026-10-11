@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 設定 → 遠端書庫 (unified library 2b): every WebDAV, OPDS and Calibre connection in one place,
 /// as configuration. A connection is a library the reader adds, edits or removes here;
-/// browsing it is Explore's job (its 我的書庫 tiles). Since unified library 5c-5 this is also
+/// browsing it is Explore's job (its 範圍 menu). Since unified library 5c-5 this is also
 /// the only place to add one, and holds OPDS's 範例目錄, both once in the bookshelf ＋ menu.
 ///
 /// The editor is pushed, as the bookshelf's library list pushes it; nothing here presents a

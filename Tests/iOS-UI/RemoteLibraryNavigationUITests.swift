@@ -1,7 +1,7 @@
 import XCTest
 
 /// Unified library 5c-5: the bookshelf ＋ puts books on the shelf — from Files or from a
-/// computer. Libraries left it: they are browsed from Explore's 我的書庫 tiles
+/// computer. Libraries left it: they are browsed from Explore's 範圍
 /// (`ExploreHomeUITests`) and set up in 設定 → 遠端書庫 (`RemoteLibrarySettingsUITests`).
 final class RemoteLibraryNavigationUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }

@@ -9,6 +9,8 @@ import Foundation
 /// - 「最新」 expands into one row per source that serves it; every other section is served by
 ///   the first provider that takes it. A section nothing serves (a removed connection, a
 ///   binding from a later build) has no row.
+/// - 我的書庫 is not drawn (unified library 5d-1, settled decision 12): the libraries are
+///   reached from 範圍. A saved page keeps its section, so an older build still shows it.
 /// - A row loads when its view asks: book-source rows one at a time per source, Gutenberg's
 ///   only when the reader asks, bundled and on-device rows at once.
 @MainActor
@@ -31,42 +33,11 @@ final class HomeModel: ObservableObject {
         var state: RowState
     }
 
-    /// A place in 我的書庫. The browser and the custom pages lead, as on 探索 before the home:
-    /// a reader with thousands of book sources would otherwise find them below every source.
-    enum Tile: Hashable {
-        case browser
-        case customPage(id: UUID, name: String)
-        /// A library connection, a public library or a book source. Never the shelf itself:
-        /// nothing in Explore shows the shelf's own page.
-        case source(SourceInstanceKey, name: String)
-
-        var name: String {
-            switch self {
-            case .browser: localized("瀏覽器")
-            case .customPage(_, let name), .source(_, let name): name
-            }
-        }
-    }
-
-    enum Item: Identifiable, Equatable {
-        /// 我的書庫: the browser, the custom pages, then a tile for every source.
-        case tiles(sectionID: UUID, [Tile])
-        case row(Row)
-
-        var id: String {
-            switch self {
-            case .tiles(let sectionID, _): "tiles|\(sectionID.uuidString)"
-            case .row(let row): row.id
-            }
-        }
-    }
-
-    @Published private(set) var items: [Item] = []
+    @Published private(set) var rows: [Row] = []
     /// False until the first `sync` has read the book-source library.
     @Published private(set) var isReady = false
 
     private let makeProviders: () -> [any HomeSectionProviding]
-    private let customPages: () -> [CustomExplorePage]
     private let waitForSources: () async -> Void
     private var providers: [String: any HomeSectionProviding] = [:]
     private var requested: Set<String> = []
@@ -77,13 +48,10 @@ final class HomeModel: ObservableObject {
     /// - Parameters:
     ///   - providers: the sources now, asked again at each `sync`
     ///     (`SourceProviderRegistry.homeProviders(shelf:)`).
-    ///   - customPages: the reader's custom pages now, for 我的書庫.
     ///   - waitForSources: returns once the book-source library is read
     ///     (`BookSourceStore.waitUntilLoaded`).
-    init(providers: @escaping () -> [any HomeSectionProviding], customPages: @escaping () -> [CustomExplorePage] = { [] },
-         waitForSources: @escaping () async -> Void) {
+    init(providers: @escaping () -> [any HomeSectionProviding], waitForSources: @escaping () async -> Void) {
         makeProviders = providers
-        self.customPages = customPages
         self.waitForSources = waitForSources
     }
 
@@ -94,19 +62,11 @@ final class HomeModel: ObservableObject {
     func sync(with page: HomePage) async {
         await waitForSources()
         let available = makeProviders()
-        let existing = Dictionary(items.compactMap { item -> (String, Row)? in
-            if case .row(let row) = item { return (row.id, row) }
-            return nil
-        }, uniquingKeysWith: { first, _ in first })
-        var built: [Item] = []
+        let existing = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var built: [Row] = []
         var servedBy: [String: any HomeSectionProviding] = [:]
         for section in page.sections where section.isEnabled {
-            if case .myLibrary = section.binding {
-                let pages = customPages().map { Tile.customPage(id: $0.id, name: $0.name) }
-                let sources = available.filter { $0.instance.type != .library }.map { Tile.source($0.instance, name: $0.displayName) }
-                built.append(.tiles(sectionID: section.id, [.browser] + pages + sources))
-                continue
-            }
+            if case .myLibrary = section.binding { continue }
             let serving: [any HomeSectionProviding]
             if case .latest = section.binding {
                 serving = available.filter { $0.loadPolicy(for: section) != nil }
@@ -121,17 +81,17 @@ final class HomeModel: ObservableObject {
                 let id = Self.rowID(section: section.id, source: provider.instance)
                 servedBy[id] = provider
                 if let kept = existing[id], kept.section == section, kept.policy == policy {
-                    built.append(.row(kept))
+                    built.append(kept)
                 } else {
                     requested.remove(id)
-                    built.append(.row(Row(id: id, section: section, source: provider.instance, sourceName: provider.displayName,
-                                          policy: policy, state: .idle)))
+                    built.append(Row(id: id, section: section, source: provider.instance, sourceName: provider.displayName,
+                                     policy: policy, state: .idle))
                 }
             }
         }
         providers = servedBy
         requested.formIntersection(servedBy.keys)
-        items = built
+        rows = built
         isReady = true
     }
 
@@ -145,8 +105,7 @@ final class HomeModel: ObservableObject {
     }
 
     func row(_ id: String) -> Row? {
-        for item in items { if case .row(let row) = item, row.id == id { return row } }
-        return nil
+        rows.first { $0.id == id }
     }
 
     // MARK: - Loading
@@ -171,8 +130,8 @@ final class HomeModel: ObservableObject {
 
     /// Pull to refresh: rows already loaded load again. An on-demand row goes back to 載入.
     func reload() {
-        for item in items {
-            guard case .row(let row) = item, requested.contains(row.id), !active.contains(row.id) else { continue }
+        for row in rows {
+            guard requested.contains(row.id), !active.contains(row.id) else { continue }
             if row.policy == .onDemandOnly {
                 setState(.awaitingRequest, of: row.id)
             } else {
@@ -184,9 +143,7 @@ final class HomeModel: ObservableObject {
     /// The rows read from this device load again, when the home comes back into view: a book
     /// read meanwhile moves in 繼續閱讀. Not on every shelf change, which a page turn makes.
     func reloadLocal() {
-        for item in items {
-            guard case .row(let row) = item, row.policy == .local, requested.contains(row.id),
-                  !active.contains(row.id) else { continue }
+        for row in rows where row.policy == .local && requested.contains(row.id) && !active.contains(row.id) {
             start(row)
         }
     }
@@ -229,8 +186,7 @@ final class HomeModel: ObservableObject {
     }
 
     private func setState(_ state: RowState, of rowID: String) {
-        guard let index = items.firstIndex(where: { $0.id == rowID }), case .row(var row) = items[index] else { return }
-        row.state = state
-        items[index] = .row(row)
+        guard let index = rows.firstIndex(where: { $0.id == rowID }) else { return }
+        rows[index].state = state
     }
 }

@@ -151,7 +151,7 @@ enum PublicLibraryRoute: Hashable {
     case collection(id: String)
     case aozoraWorks(title: String, works: [AozoraWork], index: AozoraCatalogIndex)
     case aozoraCatalog(AozoraBrowseMode, AozoraCatalogIndex)
-    /// Each library's own front page, as a 我的書庫 tile pushes it (5c-3): Gutenberg's lists
+    /// Each library's own front page, as 範圍 shows it (5c-3, 5d-1): Gutenberg's lists
     /// and shelves, and Aozora's 新着 and indexes.
     case gutenbergHome
     case aozoraHome

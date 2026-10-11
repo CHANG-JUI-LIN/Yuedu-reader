@@ -5,7 +5,7 @@ import StoreKitTest
 /// These tests deliver actual touches to the production Explore/detail/reader.
 /// Every launch pins 探索 to its book sources (`-explore.mode sources`): a public-library UI
 /// test run before these leaves its own mode saved on the simulator. Since unified library
-/// 5c-3 a source opens from its tile in the home's 我的書庫, which that mode puts first.
+/// 5d-1 a source opens from 範圍, in place at Explore's root.
 final class DetailReaderBackSwipeUITests: XCTestCase {
     private var storeKitSession: SKTestSession?
 
@@ -23,23 +23,48 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         storeKitSession = session
     }
 
-    /// A book source's tile in 我的書庫.
+    /// 範圍 → Source → the source: its discover page, in place at Explore's root.
     @MainActor
-    private func sourceTile(_ app: XCUIApplication, named name: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "home.tile.bookSource.", name))
-            .firstMatch
+    private func chooseSource(_ app: XCUIApplication, named name: String) {
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 20), app.debugDescription)
+        menu.tap()
+        let sources = app.buttons["Source"].firstMatch
+        XCTAssertTrue(sources.waitForExistence(timeout: 5), app.debugDescription)
+        sources.tap()
+        let source = app.buttons[name].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 5), app.debugDescription)
+        source.tap()
     }
 
-    /// Explore lists sources as tiles: the fixture's tile opens its discover page, whose card
-    /// opens the book. The source and its book share a name, so each is found by its own label.
+    /// The fixture's source opens its discover page, whose card opens the book. The source and
+    /// its book share a name, so the book is found by its own label.
     @MainActor
     private func openDiscoveredBook(_ app: XCUIApplication, named name: String) {
-        let source = sourceTile(app, named: name)
-        XCTAssertTrue(source.waitForExistence(timeout: 20), app.debugDescription)
-        source.tap()
+        chooseSource(app, named: name)
         let book = app.buttons["\(name), Regression"].firstMatch
         XCTAssertTrue(book.waitForExistence(timeout: 20), app.debugDescription)
         book.tap()
+    }
+
+    /// The 搜索 tab finds the book across sources, and its result opens the detail. Explore's own
+    /// search narrowed its source tiles, which left with them in unified library 5d-1.
+    @MainActor
+    private func openSearchedBook(_ app: XCUIApplication, query: String, named name: String) {
+        let searchTab = app.tabBars.buttons["Search"]
+        XCTAssertTrue(searchTab.waitForExistence(timeout: 15), app.debugDescription)
+        searchTab.tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
+        search.tap()
+        search.typeText(query + "\n")
+        // iOS 17 lists results in a UIKit table, later systems in a SwiftUI list.
+        let result = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ AND (elementType == %d OR elementType == %d)",
+                                  name, XCUIElement.ElementType.cell.rawValue,
+                                  XCUIElement.ElementType.button.rawValue)).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 20), app.debugDescription)
+        result.tap()
     }
 
     @MainActor
@@ -58,17 +83,14 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         try configureStoreKit()
         let app = XCUIApplication()
         app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-                               "-yd_root_tab_visible_ids", "(explore, settings)",
-                               "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
+                               "-yd_root_tab_visible_ids", "(explore, settings, search)",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
         if fromSearch {
-            let search = app.searchFields.firstMatch
-            XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
-            search.tap()
-            search.typeText("navigation\n")
+            openSearchedBook(app, query: "navigation swipe", named: "Navigation Swipe Fixture")
+        } else {
+            openDiscoveredBook(app, named: "Navigation Swipe Fixture")
         }
-        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read Now", "Continue Reading"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
         for _ in 0..<2 {
@@ -104,19 +126,14 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        // Search starts from the text source's Explore, where only search can reach the manga.
-        let discoverSource = fromSearch ? "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4" : "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"
         app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-                               "-yd_root_tab_visible_ids", "(explore, settings)",
-                               "-discover.selectedSourceId", discoverSource]
+                               "-yd_root_tab_visible_ids", "(explore, settings, search)"]
         app.launch()
         if fromSearch {
-            let search = app.searchFields.firstMatch
-            XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
-            search.tap()
-            search.typeText("manga fixture\n")
+            openSearchedBook(app, query: "manga fixture", named: "Navigation Manga Fixture")
+        } else {
+            openDiscoveredBook(app, named: "Navigation Manga Fixture")
         }
-        openDiscoveredBook(app, named: "Navigation Manga Fixture")
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read Now", "Continue Reading"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
         let progress = app.sliders["Progress"]
@@ -244,9 +261,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"]
         app.launch()
-        let source = sourceTile(app, named: "Navigation Manga Fixture")
-        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
-        source.tap()
+        chooseSource(app, named: "Navigation Manga Fixture")
         let discovered = app.buttons["Navigation Manga Fixture, Regression"].firstMatch
         XCTAssertTrue(discovered.waitForExistence(timeout: 20), app.debugDescription)
         discovered.tap()
@@ -726,9 +741,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                                "-yd_tts_use_system_voice", "YES",
                                "-yd_appearance_reader_interface", "classic"]
         app.launch()
-        let source = sourceTile(app, named: "Navigation Swipe Fixture")
-        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
-        source.tap()
+        chooseSource(app, named: "Navigation Swipe Fixture")
         let book = app.buttons["Navigation Swipe Fixture, Regression"].firstMatch
         XCTAssertTrue(book.waitForExistence(timeout: 20), app.debugDescription)
         book.tap()

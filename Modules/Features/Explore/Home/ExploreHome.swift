@@ -2,7 +2,9 @@ import SwiftUI
 
 /// 探索's root since unified library 5c-3 (design §13.3): the reader's sections, in their order,
 /// across every source — Emby's model under Apple Books' covers (Phase 5 plan, settled
-/// decision 11). 範圍 narrows it to one source, whose own page then shows in place.
+/// decision 11). 範圍 narrows it to one source, whose own page then shows in place, and holds
+/// every other way in: the custom pages and the browser (5d-1, settled decision 12, which took
+/// 我的書庫 off the home).
 ///
 /// - One stack for everything the home opens (decision 5): Explore's routes, the libraries'
 ///   feeds, folders and books, the store's pages, and the store's card carousel over it all.
@@ -11,8 +13,8 @@ import SwiftUI
 /// - Rows are built again when the page, the sources, the connections, the custom pages or
 ///   the region change. Rows read from this device load again when the home comes back into
 ///   view, never on a shelf change: a page turn is one.
-/// - The search field narrows 我的書庫's book sources, as 探索's did; books are searched from
-///   the 搜索 tab.
+/// - Books are searched from the 搜索 tab. The field that narrowed 我的書庫's book sources went
+///   with it.
 struct ExploreHome: View {
     @ObservedObject var browser: BrowserState
     @EnvironmentObject private var store: BookStore
@@ -38,16 +40,13 @@ private struct ExploreHomeRoot: View {
     @AppStorage(ExploreSettings.scopeKey) private var storedScope = ExploreScope.all.rawValue
     @AppStorage(ExploreSettings.modeKey) private var storedMode = ExploreMode.publicLibraries.rawValue
     @AppStorage(ExploreSettings.landingKey) private var landing = ExploreLanding.off.rawValue
+    @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var path = NavigationPath()
     @State private var selection: PublicLibraryBookSelection?
     @State private var coverFrames = PublicLibraryCoverFrames()
-    @State private var query = ""
-    @State private var group: String?
     @State private var exploreSources: [BookSource] = []
-    @State private var sourceActionSheet: BookSourceActionSheet?
-    @State private var sourcePendingDeletion: BookSource?
     @State private var browserPresentation: BrowserPresentation?
     @State private var showsSettings = false
     @State private var pagePrompt: CustomExplorePagePrompt?
@@ -64,7 +63,6 @@ private struct ExploreHomeRoot: View {
         self.browser = browser
         _model = StateObject(wrappedValue: HomeModel(
             providers: { SourceProviderRegistry.shared.homeProviders(shelf: store) },
-            customPages: { CustomExplorePageStore.shared.pages },
             waitForSources: { await BookSourceStore.shared.waitUntilLoaded() }))
     }
 
@@ -86,14 +84,17 @@ private struct ExploreHomeRoot: View {
 
     /// What the rows are built from; any change builds them again.
     private var syncKey: [AnyHashable] {
-        [pageStore.page, customPages.pages.map(\.id), customPages.pages.map(\.name), connections.catalogs.map(\.id),
-         exploreSources.map(\.bookSourceUrl), availability.isAvailable, aozora.catalog != nil]
+        [pageStore.page, connections.catalogs.map(\.id), exploreSources.map(\.bookSourceUrl), availability.isAvailable,
+         aozora.catalog != nil]
     }
 
-    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    private var groups: [String] {
-        Array(Set(exploreSources.flatMap { ExploreHomeView.groupNames(of: $0) })).sorted()
+    /// Every row is settled with nothing in it, so the home would be blank: a China storefront
+    /// with no source and nothing read yet.
+    private var showsNothing: Bool {
+        model.rows.allSatisfy { row in
+            if case .loaded(let entries) = row.state { return entries.isEmpty }
+            return false
+        }
     }
 
     // MARK: Body
@@ -115,7 +116,6 @@ private struct ExploreHomeRoot: View {
                 ExploreSettingsSheet(sources: exploreSources)
             }
             .customExplorePagePrompts($pagePrompt)
-            .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
             .fullScreenCover(item: $browserPresentation) { presentation in
                 NavigationStack {
                     BrowserPage(browser: browser, entry: presentation.entry)
@@ -138,7 +138,6 @@ private struct ExploreHomeRoot: View {
         }
         .onReceive(sourceStore.sourcesPublisher) { _ in
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
-            if let group, !groups.contains(group) { self.group = nil }
             applyLandingIfNeeded()
         }
         .onChange(of: storedScope) { _, _ in
@@ -152,19 +151,9 @@ private struct ExploreHomeRoot: View {
     private var home: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                if trimmedQuery.isEmpty {
-                    ForEach(model.items) { item in
-                        switch item {
-                        case .tiles(_, let tiles):
-                            libraryTiles(tiles)
-                        case .row(let row):
-                            HomeRowHost(row: row, store: store, aozoraIndex: aozora.catalog, model: model,
-                                        push: push, select: { selection = $0 })
-                        }
-                    }
-                } else {
-                    let found = libraryTilesMatching(query: trimmedQuery)
-                    if !found.isEmpty { libraryTiles(found) }
+                ForEach(model.rows) { row in
+                    HomeRowHost(row: row, store: store, aozoraIndex: aozora.catalog, model: model,
+                                push: push, select: { selection = $0 })
                 }
             }
             .padding(.vertical, DSSpacing.lg)
@@ -174,56 +163,24 @@ private struct ExploreHomeRoot: View {
         .overlay {
             if !model.isReady {
                 ProgressView()
-            } else if !trimmedQuery.isEmpty, libraryTilesMatching(query: trimmedQuery).isEmpty {
-                ContentUnavailableView.search(text: trimmedQuery)
+            } else if showsNothing {
+                ContentUnavailableView {
+                    UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
+                } description: {
+                    Text(localized("從右上角的範圍打開書庫或來源配置。")).foregroundStyle(DSColor.textSecondary)
+                }
             }
         }
         .refreshable { model.reload() }
-        .rootTabSearchScrollEdges()
-        .scrollDismissesKeyboard(.immediately)
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
         .pageBackgroundToolbar(for: .explore)
         .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: localized("搜索來源配置"))
-        .animation(reduceMotion ? nil : DSAnimation.standard, value: model.items.map(\.id))
-    }
-
-    /// 我的書庫's tiles, its book sources narrowed to the 分組 picked.
-    private func libraryTiles(_ tiles: [HomeModel.Tile]) -> some View {
-        let shown = group.map { group in
-            tiles.filter { tile in
-                guard case .source(let key, _) = tile, key.type == .bookSource else { return true }
-                return sourceByURL[key.id].map { ExploreHomeView.groupNames(of: $0).contains(group) } ?? false
-            }
-        } ?? tiles
-        return HomeLibraryTiles(tiles: shown, open: open) { tile in
-            switch tile {
-            case .customPage(let id, _):
-                if let page = customPages.page(id: id) {
-                    CustomExplorePageMenuItems(page: page, prompt: $pagePrompt)
-                }
-            case .source(let key, _) where key.type == .bookSource:
-                if let source = sourceByURL[key.id] { sourceActions(source) }
-            default:
-                EmptyView()
-            }
-        }
-    }
-
-    /// The book-source tiles whose name or group holds `query`, Legado's explore search.
-    private func libraryTilesMatching(query: String) -> [HomeModel.Tile] {
-        ExploreHomeView.sources(exploreSources, inGroup: group, matching: query).map {
-            .source(SourceInstanceKey(type: .bookSource, id: $0.bookSourceUrl), name: $0.bookSourceName)
-        }
-    }
-
-    private var sourceByURL: [String: BookSource] {
-        Dictionary(exploreSources.map { ($0.bookSourceUrl, $0) }, uniquingKeysWith: { first, _ in first })
+        .animation(reduceMotion ? nil : DSAnimation.standard, value: model.rows.map(\.id))
     }
 
     // MARK: One source
 
-    /// The page a 我的書庫 tile pushes, shown at the root.
+    /// A source's own page, shown at the root.
     @ViewBuilder
     private func scopePage(_ key: SourceInstanceKey) -> some View {
         if let place = ExplorePlace.page(of: key, name: ExploreHomeScope.name(of: key, sources: sourceStore.sources,
@@ -259,12 +216,11 @@ private struct ExploreHomeRoot: View {
         ToolbarItem(placement: .topBarTrailing) {
             ExploreScopeMenu(scope: Binding(get: { scope }, set: { storedScope = $0.rawValue }),
                              connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                             sources: exploreSources)
+                             sources: exploreSources, customPages: customPages.pages, showsBrowser: showsBrowser,
+                             openPage: { path.append(ExploreNavigationRoute.customPage(id: $0)) },
+                             openBrowser: { openBrowser(.resume) })
         }
         if scope == .all {
-            if groups.count > 1 {
-                ToolbarItem(placement: .topBarTrailing) { groupMenu }
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { pagePrompt = .create } label: {
                     Image(systemName: "plus")
@@ -282,54 +238,7 @@ private struct ExploreHomeRoot: View {
         }
     }
 
-    /// Legado's explore page narrows its list to one group from its menu.
-    private var groupMenu: some View {
-        Menu {
-            Picker(localized("分組"), selection: $group) {
-                Text(localized("全部")).tag(String?.none)
-                ForEach(groups, id: \.self) { name in
-                    Text(name).tag(Optional(name))
-                }
-            }
-        } label: {
-            Image(systemName: group == nil
-                  ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                .accessibilityHidden(true)
-        }
-        .accessibilityLabel(localized("分組"))
-        .accessibilityValue(group ?? localized("全部"))
-    }
-
-    /// Legado's long-press actions on an explore source. 刷新 lives on the source's own
-    /// page, where pulling down reloads it.
-    private func sourceActions(_ source: BookSource) -> some View {
-        BookSourceActionMenuItems(
-            source: source,
-            onEdit: { sourceActionSheet = .edit(source) },
-            onPinToTop: {
-                BookSourceStore.shared.pinToTop(id: source.id)
-                UIAccessibility.post(notification: .announcement, argument: localized("已置頂"))
-            },
-            onLogin: { sourceActionSheet = .login(source) },
-            onSearch: { path.append(ExploreNavigationRoute.searchInSource(sourceURL: source.bookSourceUrl)) },
-            onRefresh: nil,
-            onSetVariable: { sourceActionSheet = .variable(source) },
-            onDelete: { sourcePendingDeletion = source }
-        )
-    }
-
     // MARK: Opening
-
-    private func open(_ tile: HomeModel.Tile) {
-        switch tile {
-        case .browser:
-            openBrowser(.resume)
-        case .customPage(let id, _):
-            path.append(ExploreNavigationRoute.customPage(id: id))
-        case .source(let key, let name):
-            ExplorePlace.page(of: key, name: name, connections: connections).map(push)
-        }
-    }
 
     private func push(_ push: ExplorePush) {
         push.append(to: &path)
@@ -447,12 +356,17 @@ enum ExploreHomeScope {
 }
 
 /// 範圍, a picker in a menu (design §13.3), which opens nothing modal. Book sources sit in a
-/// submenu of their own: a reader can have thousands.
+/// submenu of their own: a reader can have thousands. Below the picker, what is pushed rather
+/// than shown in place: the custom pages and the browser (5d-1).
 private struct ExploreScopeMenu: View {
     @Binding var scope: ExploreScope
     let connections: [RemoteLibraryConnection]
     let librariesAvailable: Bool
     let sources: [BookSource]
+    let customPages: [CustomExplorePage]
+    let showsBrowser: Bool
+    let openPage: (UUID) -> Void
+    let openBrowser: () -> Void
 
     var body: some View {
         Menu {
@@ -462,7 +376,7 @@ private struct ExploreScopeMenu: View {
             if !connections.isEmpty || librariesAvailable {
                 Picker(localized("範圍"), selection: $scope) {
                     ForEach(connections) { connection in
-                        Label(connection.name, systemImage: HomeLibraryTileSymbol.symbol(for: ProviderType(connection.kind)) ?? "books.vertical")
+                        Label(connection.name, systemImage: SourceKindSymbol.symbol(for: ProviderType(connection.kind)) ?? "books.vertical")
                             .tag(ExploreScope.source(SourceInstanceKey(type: ProviderType(connection.kind), id: connection.id)))
                     }
                     if librariesAvailable {
@@ -479,6 +393,24 @@ private struct ExploreScopeMenu: View {
                         ForEach(sources) { source in
                             Text(source.bookSourceName)
                                 .tag(ExploreScope.source(SourceInstanceKey(type: .bookSource, id: source.bookSourceUrl)))
+                        }
+                    }
+                }
+            }
+            if !customPages.isEmpty || showsBrowser {
+                Section {
+                    if !customPages.isEmpty {
+                        Menu {
+                            ForEach(customPages) { page in
+                                Button(page.name) { openPage(page.id) }
+                            }
+                        } label: {
+                            Label(localized("自訂頁"), systemImage: "rectangle.3.group")
+                        }
+                    }
+                    if showsBrowser {
+                        Button(action: openBrowser) {
+                            Label(localized("瀏覽器"), systemImage: "safari")
                         }
                     }
                 }

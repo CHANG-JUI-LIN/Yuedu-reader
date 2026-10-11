@@ -40,7 +40,6 @@ private struct HomeDesignFixturePage: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                HomeLibraryTiles(tiles: HomeDesignFixtureData.tiles, open: { _ in })
                 ForEach(HomeDesignFixtureData.rows, id: \.id) { row in
                     HomeRowView(row: row, content: HomeDesignFixtureData.content(for: row, store: store),
                                 load: {}, request: {}, showAll: row.state.isSettled ? {} : nil,
@@ -62,16 +61,6 @@ private extension HomeModel.RowState {
 
 @MainActor
 enum HomeDesignFixtureData {
-    static let tiles: [HomeModel.Tile] = [
-        .browser,
-        .customPage(id: UUID(uuidString: "00000000-0000-0000-0000-00000000F001")!, name: "我的書單"),
-        .source(SourceInstanceKey(type: .webDAV, id: "fixture-nas"), name: "NAS"),
-        .source(SourceInstanceKey(type: .calibre, id: "fixture-calibre"), name: "Calibre"),
-        .source(SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue), name: localized("Project Gutenberg")),
-        .source(SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue), name: localized("青空文庫")),
-        .source(SourceInstanceKey(type: .bookSource, id: "https://fixture.example"), name: "📚书山聚合"),
-    ]
-
     /// Made-up copies read to different points, for 繼續閱讀.
     static let shelfBooks: [ReadingBook] = [
         ("宿命之環", "愛潛水的烏賊", 0.32),
