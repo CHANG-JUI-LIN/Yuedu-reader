@@ -2,7 +2,8 @@ import SwiftUI
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), Emby's aggregation settings
 // mapped onto Yuedu's libraries. Pushed from 設定 only, as Emby's sit in its user settings.
-// 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e), 顯示在最新 (5d-3f), 隱藏已讀 (5d-3g).
+// 首頁欄目 (5d-3h), 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e), 顯示在最新 (5d-3f),
+// 隱藏已讀 (5d-3g).
 
 struct AggregationSettingsView: View {
     @ObservedObject private var store = AggregationSettingsStore.shared
@@ -19,6 +20,16 @@ struct AggregationSettingsView: View {
         let preferences = store.readingLanguages
         let libraries = libraries
         List {
+            Section {
+                NavigationLink {
+                    HomeSectionsSettingsView()
+                } label: {
+                    SettingsRowLabel(localized("首頁欄目"), systemImage: "rectangle.stack")
+                }
+                .accessibilityIdentifier("aggregation.homeSections")
+            }
+            .interfaceSectionSurface()
+
             // One library has no order to give (China without a connection saved).
             if libraries.count > 1 {
                 Section {

@@ -808,3 +808,12 @@ Branch `unified-library/5d3g-hide-read`. Decision 21's `HidePlayedInLatest` / `H
 - **Strings:** 隱藏已讀 and the footer, in five languages (the switches reuse 最新 and 相關).
 - **Tests (unit):** `HideReadTests` (new, 3: a copy read to the end marks its Gutenberg item and its shelf card read; 最新 and 相關 each follow their own switch while other sections keep read books; both start on and are saved). With the home suites, `CopyLookupTests` and `HomeCompactReadingCardTests`: 59/59 in 11 suites (iOS 27).
 - **Tests (UI):** `AggregationSettingsUITests.testHideReadSwitches` (new: both on; 相關 off survives a relaunch). The page is longer now, so the suite scrolls to each control first. iOS 27: `AggregationSettingsUITests` 3/3, `ExploreHomeUITests` 8/8. iOS 17.5: `AggregationSettingsUITests` 3/3, `testNewInstallShowsTheDefaultSections`.
+
+### 5d-3h: 首頁欄目 in 聚合設定 (2026-10-11)
+
+Branch `unified-library/5d3h-home-sections`. Decision 21's home sections: the same sections and edits as 編輯首頁.
+
+- **聚合設定 → 首頁欄目** (first on the page) pushes the saved home's editable sections in order: a section's name, and 已隱藏 when hidden. Drag to reorder (`HomePage.moveEditable`; VoiceOver 上移／下移); a tap pushes the section's own page, the one 編輯首頁 pushes (`HomeSectionPage`: 在首頁顯示, 刪除). The footer says it is the same as 編輯首頁.
+- **Before 探索 first opens** there is no saved home (`pageOrDefaults` needs the book-source library read); the page says so with `ContentUnavailableView` rather than making the home itself.
+- **Strings:** 首頁欄目, the footer, the empty state, in five languages.
+- **Tests (UI):** `AggregationSettingsUITests.testHomeSections` (new: empty before 探索 opens; then the sections are listed, and hiding the first from its page shows 已隱藏 on its row). iOS 27: `AggregationSettingsUITests` 4/4, `HomeEditorUITests` 3/3. Not run on iOS 17.5.

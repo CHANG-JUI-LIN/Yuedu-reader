@@ -3,7 +3,7 @@ import XCTest
 /// Unified library 5d-3d and 5d-3e: 設定 → 聚合設定 (Phase 5 plan, decision 21). 偏好閱讀語言
 /// starts as the interface language; a language added there leads Gutenberg's categories once
 /// moved first, and the choice survives a relaunch. 書庫順序 orders 範圍 and 瀏覽書庫. 隱藏已讀
-/// starts on for 最新 and 相關.
+/// starts on for 最新 and 相關. 首頁欄目 edits the home 探索 saved.
 final class AggregationSettingsUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -168,6 +168,47 @@ final class AggregationSettingsUITests: XCTestCase {
         XCTAssertEqual(reread.value as? String, "0")
         XCTAssertEqual(relaunched.switches["aggregation.hideRead.latest"].firstMatch.value as? String, "1")
         relaunched.terminate()
+        application(fresh: true).launch()
+    }
+
+    @MainActor
+    func testHomeSections() {
+        let app = application(fresh: true)
+        app.launch()
+        openAggregationSettings(app)
+        let entry = app.buttons["aggregation.homeSections"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), app.debugDescription)
+        entry.tap()
+        // Before 探索 first opens there is no home yet.
+        XCTAssertTrue(app.staticTexts["打開探索後，首頁欄目會列在這裡。"].waitForExistence(timeout: 5), app.debugDescription)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        let exploreTab = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(exploreTab.waitForExistence(timeout: 5), app.debugDescription)
+        exploreTab.tap()
+        XCTAssertTrue(app.buttons["home.libraries"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+
+        openAggregationSettings(app)
+        app.buttons["aggregation.homeSections"].firstMatch.tap()
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "aggregation.homeSection."))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        // A row reads its section's name, and 已隱藏 when hidden.
+        XCTAssertFalse(rows.firstMatch.label.contains("已隱藏"), rows.firstMatch.label)
+        attach(app, "aggregation-home-sections")
+
+        // A section's own page, the one 編輯首頁 pushes: hiding it shows here.
+        rows.firstMatch.tap()
+        let shown = app.switches.firstMatch
+        XCTAssertTrue(shown.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(shown.value as? String, "1")
+        shown.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
+        XCTAssertEqual(shown.value as? String, "0")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(rows.firstMatch.label.hasSuffix("已隱藏"), rows.firstMatch.label)
+
+        app.terminate()
         application(fresh: true).launch()
     }
 }
