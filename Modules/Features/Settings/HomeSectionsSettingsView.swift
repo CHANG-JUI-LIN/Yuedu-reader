@@ -3,7 +3,8 @@ import SwiftUI
 // Unified library 5d-3h: 聚合設定 → 首頁欄目 (Phase 5 plan, decision 21), Emby's home screen
 // sections. The same sections and the same edits as 探索's 編輯首頁: the 首頁配置 探索 shows
 // (`HomePageStore`, 5d-4), `moveEditable` to reorder, and each section's own page
-// (`HomeSectionPage`, the section form since 5d-5). No second copy of the home.
+// (`HomeSectionPage`, the section form since 5d-5). No second copy of the home. Its first row
+// names the 首頁配置 it edits (maintainer, 2026-10-11), since 範圍 chooses it elsewhere.
 
 struct HomeSectionsSettingsView: View {
     @ObservedObject private var pageStore = HomePageStore.shared
@@ -13,6 +14,13 @@ struct HomeSectionsSettingsView: View {
             if let page = pageStore.page {
                 let sections = page.editableSections
                 List {
+                    if let configuration = selectedConfiguration {
+                        Section {
+                            LabeledContent(localized("首頁配置"), value: configuration.name)
+                                .accessibilityIdentifier("aggregation.homeConfiguration")
+                        }
+                        .interfaceSectionSurface()
+                    }
                     Section {
                         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                             NavigationLink {
@@ -50,6 +58,11 @@ struct HomeSectionsSettingsView: View {
         .navigationTitle(localized("首頁欄目"))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .settings)
+    }
+
+    /// The 首頁配置 探索 shows, which these sections are.
+    private var selectedConfiguration: HomeConfigurationListing? {
+        pageStore.configurations.first { $0.id == pageStore.selectedConfiguration }
     }
 
     /// 上移／下移 for VoiceOver, in `onMove`'s offsets.

@@ -186,6 +186,10 @@ final class AggregationSettingsUITests: XCTestCase {
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         // A row reads its section's name, and 已隱藏 when hidden.
         XCTAssertFalse(rows.firstMatch.label.contains("已隱藏"), rows.firstMatch.label)
+        // It names the 首頁配置 it edits.
+        let configuration = app.descendants(matching: .any)["aggregation.homeConfiguration"].firstMatch
+        XCTAssertTrue(configuration.exists, app.debugDescription)
+        XCTAssertTrue("\(configuration.label) \(configuration.value ?? "")".contains("預設"), configuration.debugDescription)
         attach(app, "aggregation-home-sections")
 
         // A section's own page, the one 編輯首頁 pushes: hiding it shows here.
