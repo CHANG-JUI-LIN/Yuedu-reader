@@ -43,6 +43,17 @@ struct GutenbergBook: Identifiable, Hashable {
     }
 }
 
+extension GutenbergBook {
+    /// Gutenberg's own cover (Phase 5 plan, decision 15), from the ebook number: the
+    /// `cover.medium.jpg` each book's feed links as its image, which a shelf copy keeps as its
+    /// `coverUrl`, so the copy shows the same cover. Nil when the id carries no number; that
+    /// book keeps its generated cover. The list feeds' own thumbnails are 22-point glyphs, not
+    /// covers, and fetching every book's feed for its link would be a request per card.
+    var coverURL: URL? {
+        ExternalIdentifier.gutenbergNumber(from: id).flatMap(PublicLibrary.gutenbergCoverURL(number:))
+    }
+}
+
 enum PublicLibraryBook: Identifiable {
     case gutenberg(GutenbergBook)
     case aozora(AozoraWork, AozoraCatalogIndex)
@@ -67,6 +78,13 @@ enum PublicLibraryBook: Identifiable {
         case .gutenberg(let book): book.author
         case .aozora(let work, let index):
             work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、")
+        }
+    }
+    /// Gutenberg's cover; nil for 青空文庫, which has none.
+    var coverURL: URL? {
+        switch self {
+        case .gutenberg(let book): book.coverURL
+        case .aozora: nil
         }
     }
     /// The key a copy of this book is found by (unified library 1a, 2c).

@@ -4,23 +4,39 @@ import Testing
 
 @Suite("Public library registry", .serialized)
 struct PublicLibraryRegistryTests {
-    @Test func builtInListsShowThumbnailsButNeverFullCovers() {
-        let inline = URL(string: "data:image/png;base64,iVBORw0KGgo=")!
+    /// Phase 5 plan, decision 15 (replacing decision 19's thumbnails): a Gutenberg book shows
+    /// Gutenberg's own cover, derived from its ebook number, whatever thumbnail its list sends.
+    @Test func builtInListsShowGutenbergsOwnCovers() {
+        let glyph = URL(string: "data:image/png;base64,iVBORw0KGgo=")!
         let small = URL(string: "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.small.jpg")!
         let medium = URL(string: "https://www.gutenberg.org/cache/epub/1342/pg1342.cover.medium.jpg")!
         let gutenberg = "builtin.gutenberg"
-        // XML feeds: the embedded thumbnail.
-        let embedded = OPDSEntry(id: "a", title: "A", thumbnailURL: inline)
-        #expect(PublicLibrary.listCoverURL(for: embedded, connectionID: gutenberg) == inline)
-        // OPDS 2: the small remote thumbnail, not the medium cover.
-        let remote = OPDSEntry(id: "b", title: "B", thumbnailURL: small, coverURL: medium)
-        #expect(PublicLibrary.listCoverURL(for: remote, connectionID: gutenberg) == small)
-        let coverOnly = OPDSEntry(id: "c", title: "C", coverURL: medium)
-        #expect(PublicLibrary.listCoverURL(for: coverOnly, connectionID: gutenberg) == nil)
-        #expect(PublicLibrary.listCoverURL(for: OPDSEntry(id: "d", title: "D"), connectionID: gutenberg) == nil)
+        // XML navigation feed: a link to the book's feed and a glyph for a thumbnail.
+        var listed = OPDSEntry(id: "https://www.gutenberg.org/ebooks/1342.opds", title: "A", thumbnailURL: glyph)
+        listed.navigationURL = URL(string: "https://www.gutenberg.org/ebooks/1342.opds")
+        #expect(PublicLibrary.listCoverURL(for: listed, connectionID: gutenberg) == medium)
+        // A navigation entry that is not a book has none.
+        var category = OPDSEntry(id: "https://www.gutenberg.org/ebooks/bookshelf/1", title: "B", thumbnailURL: glyph)
+        category.navigationURL = URL(string: "https://www.gutenberg.org/ebooks/bookshelf/1.opds")
+        #expect(PublicLibrary.listCoverURL(for: category, connectionID: gutenberg) == nil)
         // Other catalogs keep their thumbnail-or-cover behavior.
+        let remote = OPDSEntry(id: "b", title: "B", thumbnailURL: small, coverURL: medium)
+        let coverOnly = OPDSEntry(id: "c", title: "C", coverURL: medium)
         #expect(PublicLibrary.listCoverURL(for: coverOnly, connectionID: "saved-catalog") == medium)
         #expect(PublicLibrary.listCoverURL(for: remote, connectionID: "saved-catalog") == small)
+    }
+
+    @Test func gutenbergCoverComesFromTheEbookNumber() {
+        let medium = URL(string: "https://www.gutenberg.org/cache/epub/24264/pg24264.cover.medium.jpg")!
+        // A bundled book, keyed by its book feed.
+        #expect(GutenbergBook(id: 24264, title: "紅樓夢", author: "曹雪芹").coverURL == medium)
+        // A book feed's acquisition entry.
+        let acquisition = OPDSEntry(id: "urn:gutenberg:24264:3", title: "紅樓夢",
+                                    acquisitions: [OPDSAcquisition(url: URL(string: "https://www.gutenberg.org/ebooks/24264.epub3.images")!,
+                                                                   type: "application/epub+zip",
+                                                                   rel: "http://opds-spec.org/acquisition")])
+        #expect(GutenbergBook(entry: acquisition)?.coverURL == medium)
+        #expect(PublicLibraryBook.gutenberg(GutenbergBook(id: 24264, title: "紅樓夢", author: "")).coverURL == medium)
     }
 
     @Test func builtInConnection() throws {

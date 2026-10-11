@@ -5,7 +5,7 @@ import Foundation
 // - A row is the source's first page only. 查看全部 opens the source's own page, which
 //   already pages, so `load` takes no page number.
 // - The policy is asked per section, not once per provider: Gutenberg's bundled lists send no
-//   request while its feeds wait for the reader, and a book source serves 「最新」 only once
+//   request while its feeds load with the home, and a book source serves 「最新」 only once
 //   the reader has picked the category that stands for it.
 
 /// When a section may send its request.
@@ -17,8 +17,10 @@ enum SectionLoadPolicy: Hashable, Sendable {
     /// (`BookSourceFetcher+Discover.swift`, `bridgeForAsyncOperations`), so the home does.
     case serialPerSource
     case parallel
-    /// Only when the reader asks: Gutenberg's terms (`Technotes/PublicLibraries.md`).
-    case onDemandOnly
+    /// As soon as the home is on screen, wherever the row sits on the page, in parallel:
+    /// Gutenberg's feeds (Phase 5 plan, decision 15). Nothing before 探索 opens, and no next
+    /// page until the reader asks for one (`Technotes/PublicLibraries.md`).
+    case withHome
 }
 
 @MainActor
@@ -89,8 +91,8 @@ extension GutenbergProvider: HomeSectionProviding {
         guard availability == .available else { return nil }
         switch section.binding {
         case .gutenbergCollection(let id): return PublicLibraryCollection.all.contains { $0.id == id } ? .local : nil
-        case .gutenbergFeed: return .onDemandOnly
-        case .latest(let excluded): return excluded.contains(instance) ? nil : .onDemandOnly
+        case .gutenbergFeed: return .withHome
+        case .latest(let excluded): return excluded.contains(instance) ? nil : .withHome
         default: return nil
         }
     }
@@ -99,12 +101,7 @@ extension GutenbergProvider: HomeSectionProviding {
         switch section.binding {
         case .gutenbergCollection(let id):
             guard let collection = PublicLibraryCollection.all.first(where: { $0.id == id }) else { return [] }
-            return collection.books.map { book in
-                .item(SourceRecord.derived(from: book),
-                      WorkSummary(title: book.title, authors: book.author.isEmpty ? [] : [book.author],
-                                  cover: .generated(seed: book.title), blurb: nil, language: nil, contentKind: .text),
-                      .gutenberg(book))
-            }
+            return collection.books.map(CollectionEntry.bundledGutenberg)
         case .gutenbergFeed(let url):
             return try await browse(CollectionLocation(id: url, title: ""), after: nil).items(limit: HomeRow.limit)
         case .latest:
@@ -113,6 +110,18 @@ extension GutenbergProvider: HomeSectionProviding {
         default:
             return []
         }
+    }
+}
+
+extension CollectionEntry {
+    /// A book of Gutenberg's bundled lists, with Gutenberg's own cover (decision 15): the list
+    /// sends no request, its covers load as their cards show.
+    static func bundledGutenberg(_ book: GutenbergBook) -> CollectionEntry {
+        .item(SourceRecord.derived(from: book),
+              WorkSummary(title: book.title, authors: book.author.isEmpty ? [] : [book.author],
+                          cover: book.coverURL.map { .remote($0, headers: [:]) } ?? .generated(seed: book.title),
+                          blurb: nil, language: nil, contentKind: .text),
+              .gutenberg(book))
     }
 }
 

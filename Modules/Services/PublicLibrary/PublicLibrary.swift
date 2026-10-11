@@ -116,12 +116,24 @@ enum PublicLibrary {
         id == gutenberg.id ? gutenberg : nil
     }
 
-    /// Gutenberg lists show only the entry's thumbnail, never its full cover:
-    /// embedded data in the XML feeds, the small `cover.small.jpg` in OPDS 2
-    /// (decision 19). The full cover loads only on the book's detail.
+    /// The cover a list shows for an entry: the entry's thumbnail or cover, except for
+    /// Gutenberg's books, which show Gutenberg's own cover (Phase 5 plan, decision 15; it
+    /// replaces decision 19's thumbnails, which in the XML feeds are glyphs).
     static func listCoverURL(for entry: OPDSEntry, connectionID: String) -> URL? {
         guard connectionID == PublicLibraryID.gutenberg.rawValue else { return entry.displayCoverURL }
-        return entry.thumbnailURL
+        return GutenbergBook(entry: entry)?.coverURL
+    }
+
+    static func gutenbergCoverURL(number: String) -> URL? {
+        URL(string: "https://www.gutenberg.org/cache/epub/\(number)/pg\(number).cover.medium.jpg")
+    }
+
+    /// The session Gutenberg's covers load through: the built-in connection's, as a shelf
+    /// copy's cover does (`BookCoverLoader.remoteSession(for:)`), so both share one cache entry.
+    @MainActor
+    static var gutenbergCoverSession: URLSession? {
+        let connections = OPDSCatalogStore.shared
+        return connections.connection(id: PublicLibraryID.gutenberg.rawValue).map { connections.httpClient(for: $0).session }
     }
 
     static func gutenbergSearchURL(query: String, sortByDownloads: Bool = false,

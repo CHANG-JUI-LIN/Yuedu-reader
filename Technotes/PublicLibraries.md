@@ -12,13 +12,13 @@
 - 搜尋：`https://www.gutenberg.org/ebooks/search.opds/?query={percent-encoded query}`；`l.zh`、`l.ja`、`l.ko`、`l.en` 是語言篩選。
 - 書籍：feed 提供的 `/ebooks/{id}.opds`，取得網址仍以 feed 為準。
 
-公有書庫首頁採隨 App 附帶的真實書單與本機產生的書封，包含精選集合、多排橫向書架與經典選讀；不是即時排行，也不顯示虛構評分。開啟首頁不請求 Gutenberg。讀者選書、開啟線上分類／作者目錄、送出搜尋或按「載入更多」時才請求對應的一頁；不預抓、不背景爬取、不讀取仍指向舊 `m.` host 的 OpenSearch description。公有書庫書架、格線及詳情皆使用同一個本機書封，不另外抓封面。線上 Gutenberg 目錄列表只用縮圖（見下方 OPDS 2 說明）；一般 OPDS 列表原有的縮圖或封面行為不變。EPUB3 優先於 EPUB，詳情合併同一書籍 feed 的格式並保留官網連結。
+公有書庫首頁採隨 App 附帶的真實書單，包含精選集合、多排橫向書架與經典選讀；不是即時排行，也不顯示虛構評分。探索首頁上的 Gutenberg 欄目（最新、線上書單）在打開探索、首頁出現時全部載入，連捲動才看得到的也一起（Phase 5 計畫 decision 15，取代原本「開啟首頁不請求 Gutenberg」與「載入」按鈕）；App 啟動時不請求。其他時候只在讀者選書、開啟線上分類／作者目錄、送出搜尋或按「載入更多」時才請求對應的一頁；不預抓下一頁、不背景爬取、不讀取仍指向舊 `m.` host 的 OpenSearch description。封面一律是 Gutenberg 自己的 `cache/epub/<編號>/pg<編號>.cover.medium.jpg`，由書號推得（`GutenbergBook.coverURL`），卡片出現時才抓、存進封面快取；首頁卡片、公有書庫書架與格線、輪播卡片、詳情與加入書架後的書都是同一個網址，同一個快取項目。推不出書號的書才用本機產生的書封。一般 OPDS 列表原有的縮圖或封面行為不變。EPUB3 優先於 EPUB，詳情合併同一書籍 feed 的格式並保留官網連結。
 
 共享 HTTP client 的 request、session 預設 header 和重新導向均保留 `Yuedu/<version> (iOS; +https://yuedureader.com/support)`。沒有個人 email。參照 [OPDS 使用條款](https://www.gutenberg.org/policy/terms_of_use.html) 與 [機器人政策](https://www.gutenberg.org/policy/robot_access.html)，所有書籍由讀者直接從 Gutenberg 取得，保留原檔授權文字。介面註明其公有領域判斷以美國為準，其他所在地法律可能不同。
 
 [離線目錄說明](https://www.gutenberg.org/ebooks/offline_catalogs.html) 預告 2027 年停用現有 XML OPDS。Gutenberg 已提供開發用端點 `https://opds-test.pglaf.org/opds/`，正式網址尚未公布。Task 13 第一部分已完成：`OPDSClient` 依 Content-Type（`application/opds+json`、`application/opds-publication+json`、`application/json`）以 `OPDS2FeedParser` 解析 OPDS 2，對應同一組 `OPDSFeed`／`OPDSEntry`；fixture 由 `scripts/fetch_gutenberg_opds2_fixtures.sh` 手動自開發端點取得。Release／TestFlight 不連線開發端點，`builtin.gutenberg` 仍是 XML feed。Debug 版以 `-gutenberg-opds2-dev` 啟動時（共用 scheme 的 Run 會帶入；Test 不繼承）改用開發端點，所有 Gutenberg 網址由 `GutenbergEndpoint` 產生（計畫 decision 20）。正式網址公布後只改 `GutenbergEndpoint` 並刪除開發用 case 與參數。
 
-Gutenberg 列表只顯示書籍的縮圖，不載入完整封面（計畫 decision 19）：XML feed 是內嵌縮圖，OPDS 2 則是遠端的 `cover.small.jpg`，切換後每個可見列最多多一個小圖請求，不預抓。完整封面只在詳情頁載入。
+Gutenberg 列表原本只顯示縮圖（計畫 decision 19），2026-10-11 由 Phase 5 計畫 decision 15 取代：XML 列表 feed 的「內嵌縮圖」實際上是 17×29、22×22 的通用書本圖示，不是封面，所以列表改用由書號推得的 `cover.medium.jpg`（跟書籍 feed 的 `http://opds-spec.org/image` 連結、加入書架後的 `coverUrl` 相同），每張出現的卡片一個圖片請求，不預抓。
 
 ## 書店與書籍 sheet
 
@@ -84,7 +84,7 @@ App 每 24 小時最多自動檢查一次 manifest；讀者可手動重新整理
 
 這是同一量測案例的冷／暖執行，沒有宣稱前後改碼的加速，也不能推算完整官方目錄的時間或畫面首幀時間。`PublicLibraryMeasurementTests` 1 個測試通過；再次執行需明確設定 `TEST_RUNNER_PUBLIC_LIBRARY_LIVE_MEASURE=1`，一般測試不會打 Gutenberg。兩個 UI opt-in 分別為 `TEST_RUNNER_PUBLIC_LIBRARY_LIVE_UI=1` 與 `TEST_RUNNER_PUBLIC_LIBRARY_THEME_UI=1`；目前非 Pro 案例使用 Gutenberg 174，記錄既有書架／下載狀態，首次取書覆蓋三個動作，重跑則驗證閱讀與已完成狀態；主題案例需先匯入主題與準備 fixture 快取。
 
-成功的非 Pro run（17:48–17:49，App PID 61925）網路紀錄只有一個搜尋 OPDS task 和一個書籍 OPDS task；`publicLibrary.opds.load` 分別為 925／300 ms。列表沒有額外封面請求，進入詳情後才取封面，按閱讀後才走既有 EPUB HEAD／Range 與下載。User-Agent 由 HTTP 測試檢查；沒有把系統 log 隱去的 header 當成已讀到的值。
+成功的非 Pro run（2026-10-07，5d-1c 改用 Gutenberg 封面之前；17:48–17:49，App PID 61925）網路紀錄只有一個搜尋 OPDS task 和一個書籍 OPDS task；`publicLibrary.opds.load` 分別為 925／300 ms。列表沒有額外封面請求，進入詳情後才取封面，按閱讀後才走既有 EPUB HEAD／Range 與下載。User-Agent 由 HTTP 測試檢查；沒有把系統 log 隱去的 header 當成已讀到的值。
 
 本機證據位於 `~/Library/Logs/YueduPublicLibraries/20261007/`：`logs/` 保留測試與網路摘要；根目錄 PNG 包含 `nonpro-shelved-and-downloaded.png`、`nonpro-remote-reader.png`、`qitheme-import.png`、`pro-qitheme-library-home.png`、`pro-qitheme-aozora-authors.png`、`pro-qitheme-aozora-detail.png` 及首次匯入提示。匯出附件後已刪除本次 `.xcresult`。
 

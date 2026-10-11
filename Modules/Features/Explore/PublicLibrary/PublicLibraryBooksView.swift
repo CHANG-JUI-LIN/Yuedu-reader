@@ -1,13 +1,30 @@
 import SwiftUI
 
-/// Local artwork is the store's deliberate cover treatment. It never starts a
-/// remote cover request and stays identical from a shelf into its detail sheet.
+/// A store book's artwork: Gutenberg's own cover, loaded as it shows and kept in the cover
+/// cache, else the generated one (Phase 5 plan, decision 15). Every store surface draws it,
+/// so a cover stays the same from a shelf into its detail sheet and onto the bookshelf.
+struct PublicLibraryCoverArtwork: View {
+    let title: String
+    let author: String?
+    let coverURL: URL?
+
+    var body: some View {
+        if let coverURL {
+            BookCoverImage(coverURL: coverURL.absoluteString, title: title, author: author,
+                           session: PublicLibrary.gutenbergCoverSession)
+        } else {
+            GeneratedBookCover(title: title, author: author)
+        }
+    }
+}
+
 struct PublicLibraryCover: View {
     let title: String
     let author: String
+    let coverURL: URL?
 
     var body: some View {
-        GeneratedBookCover(title: title, author: author)
+        PublicLibraryCoverArtwork(title: title, author: author, coverURL: coverURL)
             .aspectRatio(DSLayout.discoverCoverAspectRatio, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.searchListCover))
             .shadow(color: DSColor.coverHeroShadow, radius: DSLayout.bookCoverHeroShadowRadius,
@@ -24,7 +41,7 @@ struct PublicLibraryBookCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xs) {
-            PublicLibraryCover(title: book.title, author: book.author)
+            PublicLibraryCover(title: book.title, author: book.author, coverURL: book.coverURL)
                 .publicLibraryCoverFrame(id: book.id)
                 .padding(.bottom, DSSpacing.sm)
             if showsMetadata {
@@ -175,5 +192,15 @@ struct PublicLibraryFeedView: View {
                 .frame(width: 120)
         }
     }
+    .padding()
+}
+
+#Preview("封面：古騰堡自己的與產生的") {
+    let book = GutenbergBook(id: 24264, title: "紅樓夢", author: "曹雪芹")
+    HStack(alignment: .top, spacing: DSSpacing.lg) {
+        PublicLibraryCover(title: book.title, author: book.author, coverURL: book.coverURL)
+        PublicLibraryCover(title: book.title, author: book.author, coverURL: nil)
+    }
+    .frame(height: 180)
     .padding()
 }

@@ -74,6 +74,8 @@ struct RemoteLibraryBookDetailView: View {
     private let authors: [GutenbergAuthor]
     private let artworkTitle: String?
     private let artworkAuthor: String?
+    /// The store card's cover, so the hero is the cover the card grew from.
+    private let artworkCoverURL: URL?
     @State private var item: RemoteLibraryItem
     @State private var writeCapabilities: RemoteLibraryWriteCapabilities?
     @Environment(\.appDependencies) private var dependencies
@@ -92,11 +94,12 @@ struct RemoteLibraryBookDetailView: View {
     @Environment(\.publicLibrarySheet) private var sheet
 
     init(item: RemoteLibraryItem, storefront: Bool = false, authors: [GutenbergAuthor] = [],
-         artworkTitle: String? = nil, artworkAuthor: String? = nil) {
+         artworkTitle: String? = nil, artworkAuthor: String? = nil, artworkCoverURL: URL? = nil) {
         self.storefront = storefront
         self.authors = authors
         self.artworkTitle = artworkTitle
         self.artworkAuthor = artworkAuthor
+        self.artworkCoverURL = artworkCoverURL
         _item = State(initialValue: item)
         _selectedFormatID = State(initialValue: RemoteLibraryBrowsePresentation.preferredFormat(in: item)?.id ?? "")
     }
@@ -255,7 +258,8 @@ struct RemoteLibraryBookDetailView: View {
     private var storefrontBody: some View {
         BookDetailScaffold(title: item.title, compactAction: readAction) {
             BookDetailHero(artworkShape: .book,
-                cover: GeneratedBookCover(title: artworkTitle ?? item.title, author: artworkAuthor ?? item.author),
+                cover: PublicLibraryCoverArtwork(title: artworkTitle ?? item.title, author: artworkAuthor ?? item.author,
+                                                 coverURL: artworkCoverURL),
                 title: item.title, author: item.author ?? "", meta: localized("Project Gutenberg"),
                 primary: readAction,
                 secondary: BookDetailAction(title: localized(isOffline ? "已下載" : "下載"),

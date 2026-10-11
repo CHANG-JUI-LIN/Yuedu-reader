@@ -201,24 +201,38 @@ struct HomeModelTests {
         #expect(a.loads.count == 2)
     }
 
-    @Test("an on-demand row sends nothing until the reader asks")
-    func onDemand() async throws {
-        let g = FakeProvider("g", type: .gutenberg) { _ in .onDemandOnly }
-        let home = model([g])
-        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .gutenbergFeed(url: "https://g.test/feed"))]))
-        let row = try #require(rows(home).first)
-
-        home.load(row.id)
-        #expect(home.row(row.id)?.state == .awaitingRequest)
+    @Test("a row that loads with the home starts when the home appears, view or not; other rows wait for their view")
+    func withHome() async throws {
+        let g = FakeProvider("g", type: .gutenberg) { section in
+            if case .gutenbergFeed = section.binding { return .withHome }
+            return nil
+        }
+        let a = FakeProvider("a", type: .opds) { section in
+            if case .opdsFeed = section.binding { return .parallel }
+            return nil
+        }
+        let home = model([g, a])
+        await home.sync(with: HomePage(sections: [
+            HomeSection(layout: .row, binding: .gutenbergFeed(url: "https://g.test/feed")),
+            HomeSection(layout: .row, binding: .opdsFeed(connectionID: "a", url: "https://a.test/feed")),
+        ]))
         #expect(g.loads.isEmpty)
 
-        home.request(row.id)
+        // No row's view has asked: only the one that loads with the home starts.
+        home.homeAppeared()
         await until(home) { isLoaded($0[0].state) }
+        #expect(g.loads.count == 1)
+        #expect(a.loads.isEmpty)
+        #expect(rows(home)[1].state == .idle)
+
+        // Its view coming into view, or the home appearing again, sends nothing more.
+        home.load(rows(home)[0].id)
+        home.homeAppeared()
         #expect(g.loads.count == 1)
 
         home.reload()
-        #expect(home.row(row.id)?.state == .awaitingRequest)
-        #expect(g.loads.count == 1)
+        await until(home) { isLoaded($0[0].state) && g.loads.count == 2 }
+        #expect(a.loads.isEmpty)
     }
 
     @Test("coming back into view loads again only the rows read from this device, and only those already loaded")
@@ -282,7 +296,7 @@ struct HomeModelTests {
         #expect(a.loads.count == 2)
     }
 
-    @Test("Gutenberg's bundled lists load without a request, and its feeds wait for the reader")
+    @Test("Gutenberg's bundled lists load without a request, with Gutenberg's covers; its feeds load with the home")
     func gutenbergRequests() async throws {
         let availability = PublicLibraryAvailability(defaults: UserDefaults(suiteName: "HomeModelTests-\(UUID().uuidString)")!)
         var requests = 0
@@ -297,20 +311,23 @@ struct HomeModelTests {
             HomeSection(layout: .row, binding: .gutenbergFeed(url: "https://www.gutenberg.org/ebooks.opds/")),
             HomeSection(layout: .row, binding: .latest(excluded: [])),
         ]))
-        #expect(rows(home).map(\.policy) == [.local, .onDemandOnly, .onDemandOnly])
-        for row in rows(home) { home.load(row.id) }
+        #expect(rows(home).map(\.policy) == [.local, .withHome, .withHome])
+        home.load(rows(home)[0].id)
         await until(home) { isLoaded($0[0].state) }
 
         guard case .loaded(let entries) = rows(home)[0].state else { Issue.record("not loaded"); return }
         #expect(entries.count == collection.books.count)
-        if case .item(_, _, .gutenberg(let book)) = entries.first {
+        if case .item(_, let summary, .gutenberg(let book)) = entries.first {
             #expect(book == collection.books.first)
+            #expect(summary.cover == book.coverURL.map { .remote($0, headers: [:]) })
         } else {
             Issue.record("expected a Gutenberg book")
         }
-        #expect(rows(home)[1].state == .awaitingRequest)
-        #expect(rows(home)[2].state == .awaitingRequest)
         #expect(requests == 0)
+
+        home.homeAppeared()
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
+        #expect(requests == 2)
     }
 
     @Test("in China Gutenberg serves no section at all")
