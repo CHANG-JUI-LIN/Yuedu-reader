@@ -12,7 +12,7 @@ enum ExploreSettings {
     /// 編輯首頁 (5d-2) is where the reader turns it off.
     static let showsBrowserKey = "explore.showsBrowser"
     /// The deleted 首屏頁面 choice: `source:<url>` or `page:<uuid>`. Read only by
-    /// `migrateLegacyLanding`.
+    /// `migrateLegacyLanding` and, for a page, `HomePageStore`.
     static let legacyLandingKey = "explore.landing"
 
     /// Words that put a category in a numbered chart rather than a shelf of covers. A title
@@ -24,8 +24,9 @@ enum ExploreSettings {
     static let chartBookCount = 4
 
     /// A saved 首屏頁面 source becomes the home's 範圍, once (Phase 5 plan, settled decision 13):
-    /// only when the reader has not picked a 範圍 and the source still exists. A custom page
-    /// stays saved for the configurations of 5d-4; anything else is dropped.
+    /// only when the reader has not picked a 範圍 and the source still exists. A custom page is
+    /// left for `HomePageStore`, which selects its 首頁配置 when the pages move in (5d-4);
+    /// anything else is dropped.
     static func migrateLegacyLanding(sourceURLs: Set<String>, defaults: UserDefaults = .standard) {
         guard let landing = defaults.string(forKey: legacyLandingKey) else { return }
         if landing.hasPrefix("page:") { return }

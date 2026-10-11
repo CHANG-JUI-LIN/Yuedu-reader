@@ -32,10 +32,6 @@ private struct ExploreRouteDestinations: ViewModifier {
             } else {
                 deletedSourceState
             }
-        case .customPage(let id):
-            CustomExplorePageView(pageID: id)
-        case .customPageEditor(let id):
-            CustomExplorePageEditor(pageID: id)
         case .book(let book):
             OnlineBookDetailDestination(.book(book)).environmentObject(store)
         case .sourceCategory(let reference):

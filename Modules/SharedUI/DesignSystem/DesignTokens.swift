@@ -338,9 +338,6 @@ enum DSLayout {
     static let publicLibrarySectionSpacing: CGFloat = 48
     static let publicLibraryFeaturedAspect: CGFloat = 1.46
     static let publicLibraryFeaturedRotation: Double = -16
-    /// Cover in a custom explore page's 推薦卡片 and 左右滑動 rows — five to a phone's card.
-    static let customExploreCardCoverWidth: CGFloat = 70
-    static let customExploreCardCoverHeight: CGFloat = 105
     /// A cover in a row of Explore's home (unified library 5c), 2:3. Between Apple Books'
     /// two jackets to a phone (`publicLibraryMinimumCoverWidth`) and Emby's three: about two
     /// and a half on a 402pt phone, the next one peeking past the edge. Scaled with Dynamic Type.
@@ -362,14 +359,9 @@ enum DSLayout {
     static let homeListCoverWidth: CGFloat = 60
     /// 精簡閱讀卡片's cover (5d-3c), beside its text on the cover's colour.
     static let homeCompactReadingCardCoverWidth: CGFloat = 64
-    /// A custom explore page's rank badge at the default text size (scaled with
-    /// Dynamic Type); two-digit ranks widen it.
-    static let customExploreRankBadgeSize: CGFloat = 24
-    /// Narrowest a layout's tile gets in 新增元件's grid — four to a row on an iPhone,
-    /// fewer as the text grows (scaled with Dynamic Type) — and the circle its symbol
-    /// sits in.
-    static let customExploreLayoutTileMinWidth: CGFloat = 76
-    static let customExploreLayoutIconSize: CGFloat = 40
+    /// 圖文資訊清單's rank badge at the default text size (scaled with Dynamic Type); two-digit
+    /// ranks widen it.
+    static let homeRankBadgeSize: CGFloat = 24
     /// Site icon in a bookmark or history row.
     static let browserRowIconSide: CGFloat = 28
     /// A site on the browser's start page — Safari's Favorites: the icon, and the

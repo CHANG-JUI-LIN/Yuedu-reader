@@ -227,7 +227,7 @@ struct DiscoverSectionHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu {
             if let reference {
-                AddToCustomPageMenu(reference: reference)
+                AddToHomeConfigurationMenu(reference: reference)
             }
         }
     }
@@ -606,9 +606,9 @@ struct DiscoverCategoryView: View {
                 if let reference = ExploreCategoryReference(source: source, item: section.item) {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            AddToCustomPageItems(reference: reference)
+                            AddToHomeConfigurationItems(reference: reference)
                         } label: {
-                            Label(localized("加入自訂頁"), systemImage: "rectangle.stack.badge.plus")
+                            Label(localized("加入首頁配置"), systemImage: "rectangle.stack.badge.plus")
                                 .labelStyle(.iconOnly)
                         }
                     }

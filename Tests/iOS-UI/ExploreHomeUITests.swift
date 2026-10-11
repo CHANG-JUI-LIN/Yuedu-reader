@@ -1,7 +1,7 @@
 import XCTest
 
 /// Unified library 5c-3 and 5d-1: the Explore home as a new install sees it, its 範圍 menu
-/// with the libraries, custom pages and browser, and the China storefront. Each launch starts
+/// with the libraries, 首頁配置 and browser, and the China storefront. Each launch starts
 /// from no saved home (`-reset-explore-home`) and an empty book-source library of its own.
 /// Gutenberg's feeds answer from fixtures (its rows load with the home since 5d-1c); its
 /// covers still load from gutenberg.org as their cards show.
@@ -181,45 +181,59 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertEqual(relaunched.buttons["explore.scopeMenu"].value as? String, "全部")
     }
 
-    /// 範圍 also opens the custom pages and the browser (unified library 5d-1). A custom page
-    /// deletes itself from its own ⋯. With the browser hidden (編輯首頁, 5d-2), 範圍 leaves it out.
+    /// 範圍 switches 首頁配置 (unified library 5d-4) and opens the browser (5d-1). A 首頁配置 made
+    /// from ＋ starts from 空白 or 預設; 編輯首頁 deletes it. With the browser hidden (編輯首頁,
+    /// 5d-2), 範圍 leaves it out.
     @MainActor
-    func testScopeOpensCustomPagesAndTheBrowser() {
+    func testConfigurationsAndTheBrowser() {
         let app = application()
         app.launch()
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15))
 
-        // A custom page, made from ＋, is listed under 自訂頁.
-        let name = "測試頁\(UUID().uuidString.prefix(4))"
-        app.buttons["新增自訂頁"].firstMatch.tap()
+        // From 空白: nothing on the home but the way to fill it.
+        let name = "測試配置\(UUID().uuidString.prefix(4))"
+        app.buttons["home.addConfiguration"].firstMatch.tap()
         let field = app.textFields["名稱"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
         field.typeText(name)
-        app.buttons["新建"].firstMatch.tap()
+        app.buttons["從空白開始"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["這個首頁配置還沒有欄目"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons[featuredCard].exists)
+        attach(app, "explore-configuration-blank")
+
+        // 範圍 lists 預設, 空白 and the new one; 預設 is the home as it was.
+        chooseScope(app, "預設")
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         let menu = app.buttons["explore.scopeMenu"].firstMatch
         menu.tap()
-        let pages = app.buttons["自訂頁"].firstMatch
-        XCTAssertTrue(pages.waitForExistence(timeout: 5), app.debugDescription)
-        pages.tap()
-        let page = app.buttons[name].firstMatch
-        XCTAssertTrue(page.waitForExistence(timeout: 5), app.debugDescription)
-        page.tap()
-        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 10), app.debugDescription)
-        attach(app, "explore-scope-custom-page")
+        XCTAssertTrue(app.buttons["空白"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "explore-scope-configurations")
+        app.buttons[name].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["這個首頁配置還沒有欄目"].waitForExistence(timeout: 10), app.debugDescription)
 
-        // Deleting it from its ⋯ leaves the page.
-        app.navigationBars[name].buttons["更多"].firstMatch.tap()
-        let delete = app.buttons["刪除"].firstMatch
+        // 編輯首頁 deletes it, which ends the edit, and 預設 shows again.
+        app.buttons["home.edit"].firstMatch.tap()
+        let delete = app.buttons["homeEditor.deleteConfiguration"].firstMatch
         XCTAssertTrue(delete.waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "explore-configuration-editing")
         delete.tap()
         XCTAssertTrue(app.staticTexts["刪除「\(name)」？"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["刪除"].firstMatch.tap()
-        XCTAssertTrue(app.navigationBars[name].waitForNonExistence(timeout: 10), "a deleted page closes")
-        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["home.editDoneBar"].exists, "no longer editing")
         menu.tap()
-        XCTAssertTrue(app.buttons["全部"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["自訂頁"].exists, "no pages, no 自訂頁")
+        XCTAssertTrue(app.buttons["空白"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons[name].exists, "deleted from 範圍")
+
+        // From 預設: its sections.
+        app.buttons["預設"].firstMatch.tap()
+        app.buttons["home.addConfiguration"].firstMatch.tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        field.typeText(name)
+        app.buttons["從預設開始"].firstMatch.tap()
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        menu.tap()
 
         // The browser opens full screen and closes back to the home.
         // A menu item carries no identifier into the accessibility tree: found by its label.
@@ -241,6 +255,29 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertTrue(hidden.buttons["全部"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(hidden.buttons["瀏覽器"].exists, "hidden from 範圍")
         attach(hidden, "explore-scope-no-browser")
+    }
+
+    /// A custom page saved before 5d-4, chosen as the old 首屏頁面, is the 首頁配置 the home opens
+    /// on; its ranking became a section, which 編輯首頁 shows. Its source is not on this device,
+    /// so nothing loads.
+    @MainActor
+    func testCustomPageMovesIn() {
+        let app = application(extra: ["-seed-custom-explore-page"])
+        app.launch()
+        openExplore(app)
+        XCTAssertTrue(app.staticTexts["探索還沒有內容"].waitForExistence(timeout: 15), app.debugDescription)
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        menu.tap()
+        XCTAssertTrue(app.buttons["週末書單"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "explore-custom-page-moved-in")
+        app.buttons["週末書單"].firstMatch.tap()
+
+        app.buttons["home.edit"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["homeEditor.section.5D4C0000-0000-4000-8000-000000000002"].firstMatch
+            .waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["週末書單"].exists)
+        XCTAssertTrue(app.buttons["homeEditor.renameConfiguration"].exists)
+        attach(app, "explore-custom-page-editing")
     }
 
     /// A connection added in 設定 → 遠端書庫 is in 範圍; its catalog opens from the top of the
