@@ -70,20 +70,21 @@ final class ShelfProvider: CollectionBrowsing {
             .map(\.0))
     }
 
-    /// 相關 (unified library 5c-4): what `RelatedWorks` picks around 繼續閱讀's copies, from
-    /// the shelf and the WebDAV index. Empty when nothing has been opened.
+    /// 相關 (unified library 5c-4): what `RelatedWorks` picks around the copy opened most
+    /// recently, from the shelf and the WebDAV index, leaving out 繼續閱讀's copies. Empty when
+    /// nothing has been opened.
     func related(limit: Int) async -> [CollectionEntry] {
-        let seeds = recentlyOpened(limit: limit)
-        guard !seeds.isEmpty else { return [] }
+        let opened = recentlyOpened(limit: limit)
+        guard let seed = opened.first.map({ SourceItemKey.copy($0.id) }) else { return [] }
         let started = SourcePerfTrace.now
         let index = await store.workIndex.current()
         let files = store.workIndex.indexedFiles
         // Read after the refresh, so a copy removed meanwhile is not offered.
         let shelf = Dictionary(store.books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let shown = Set(shelf.keys.map(SourceItemKey.copy)).union(files.keys)
-        let seedKeys = seeds.map { SourceItemKey.copy($0.id) }
+        let continueReading = Set(opened.map { SourceItemKey.copy($0.id) })
         let picked = await Task.detached(priority: .userInitiated) {
-            RelatedWorks.pick(in: index, seeds: seedKeys, shown: shown, limit: limit)
+            RelatedWorks.pick(in: index, seed: seed, continueReading: continueReading, shown: shown, limit: limit)
         }.value
 
         let roots = webDAVRoots()
@@ -99,7 +100,7 @@ final class ShelfProvider: CollectionBrowsing {
             guard let file = files[key], let root = roots[key.instance.id] else { return nil }
             return WebDAVProvider.item(for: file, root: root, connectionID: key.instance.id)
         }
-        SourcePerfTrace.record("home.related", "seeds=\(seeds.count) works=\(index.works.count) shown=\(entries.count)",
+        SourcePerfTrace.record("home.related", "continueReading=\(opened.count) works=\(index.works.count) shown=\(entries.count)",
                                since: started, thresholdMs: 0)
         return entries
     }

@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-/// Unified library 5c-4: Explore's 「相關」 row — the seeds' works from another place, then their
-/// series, then their authors — and the one work index behind it.
+/// Unified library 5c-4: Explore's 「相關」 row — the latest copy's work from another place, then
+/// its series, then its authors — and the one work index behind it.
 @Suite("Related works")
 struct RelatedWorksTests {
     private static let dav = SourceInstanceKey(type: .webDAV, id: "dav")
@@ -35,11 +35,11 @@ struct RelatedWorksTests {
         let index = WorkIndex.build(entries: entries)
         let shown = Set(entries.map(\.nodeKey))
 
-        let picked = RelatedWorks.pick(in: index, seeds: [seed.nodeKey], shown: shown, limit: 20)
+        let picked = RelatedWorks.pick(in: index, seed: seed.nodeKey, continueReading: [], shown: shown, limit: 20)
         #expect(picked == [otherEdition.nodeKey, sequel.nodeKey, sameAuthor.nodeKey])
     }
 
-    @Test("an item matching series and author appears once; a seed is never shown; the limit holds")
+    @Test("an item matching series and author appears once; no 繼續閱讀 copy is shown; the limit holds")
     func dedupeAndLimit() {
         let first = Self.copy("黑暗森林", "劉慈欣", series: "地球往事")
         let second = Self.copy("死神永生", "劉慈欣", series: "地球往事")
@@ -48,12 +48,13 @@ struct RelatedWorksTests {
         let index = WorkIndex.build(entries: entries)
         let shown = Set(entries.map(\.nodeKey))
 
-        let picked = RelatedWorks.pick(in: index, seeds: [first.nodeKey, second.nodeKey], shown: shown, limit: 20)
+        let picked = RelatedWorks.pick(in: index, seed: first.nodeKey, continueReading: [first.nodeKey, second.nodeKey],
+                                       shown: shown, limit: 20)
         #expect(!picked.contains(first.nodeKey))
         #expect(!picked.contains(second.nodeKey))
         #expect(Set(picked).count == picked.count)
         #expect(Set(picked) == Set(more.map(\.nodeKey)))
-        #expect(RelatedWorks.pick(in: index, seeds: [first.nodeKey], shown: shown, limit: 3).count == 3)
+        #expect(RelatedWorks.pick(in: index, seed: first.nodeKey, continueReading: [], shown: shown, limit: 3).count == 3)
     }
 
     @Test("one card a work, a shelf copy before a file; a node not shown is left out")
@@ -66,8 +67,25 @@ struct RelatedWorksTests {
         let index = WorkIndex.build(entries: entries)
         let shown = Set([seed, shelfCopy, file].map(\.nodeKey))
 
-        #expect(RelatedWorks.pick(in: index, seeds: [seed.nodeKey], shown: shown, limit: 20) == [shelfCopy.nodeKey])
-        #expect(RelatedWorks.pick(in: index, seeds: [], shown: shown, limit: 20).isEmpty)
+        #expect(RelatedWorks.pick(in: index, seed: seed.nodeKey, continueReading: [], shown: shown, limit: 20)
+                == [shelfCopy.nodeKey])
+        #expect(RelatedWorks.pick(in: index, seed: seed.nodeKey, continueReading: [], shown: shown, limit: 0).isEmpty)
+    }
+
+    /// Maintainer, 2026-10-11: one seed, the copy opened most recently.
+    @Test("only the latest copy seeds the row; an older 繼續閱讀 copy adds nothing of its own")
+    func latestCopyOnly() {
+        let latest = Self.copy("三體", "劉慈欣")
+        let older = Self.copy("紅樓夢", "曹雪芹")
+        let sameAuthor = Self.copy("球狀閃電", "劉慈欣")
+        let olderAuthor = Self.copy("石頭記補", "曹雪芹")
+        let entries = [latest, older, sameAuthor, olderAuthor]
+        let index = WorkIndex.build(entries: entries)
+        let shown = Set(entries.map(\.nodeKey))
+
+        let picked = RelatedWorks.pick(in: index, seed: latest.nodeKey, continueReading: [latest.nodeKey, older.nodeKey],
+                                       shown: shown, limit: 20)
+        #expect(picked == [sameAuthor.nodeKey])
     }
 }
 
@@ -206,7 +224,7 @@ struct RelatedRowTests {
         var state = WebDAVIndexState(connectionID: connection.id, root: URL(string: connection.url)!)
         state.records = (0..<20_000).map { index in
             let record = SourceRecord(key: SourceItemKey(instance: instance, item: "d\(index / 10)/b\(index).epub"),
-                                      title: "第\(index)部", authors: ["作者\(index % 2_000)"], language: nil, contentKind: .text,
+                                      title: "第\(index)部", authors: ["作者\(index % 1_000)"], language: nil, contentKind: .text,
                                       identifiers: [], copyID: nil, acquisitions: [.download(format: "epub")])
             var file = IndexedFile(record: record, etag: "\"\(index)\"", lastModified: nil, size: 1)
             if index % 4 == 0 {
@@ -218,7 +236,7 @@ struct RelatedRowTests {
         store.remoteRecords.save(state)
         store.remoteRecords.waitForPendingWritesForTesting()
         for index in 0..<300 {
-            var book = ReadingBook(title: "第\(index * 7)部", author: "作者\((index * 7) % 2_000)", source: "local_epub",
+            var book = ReadingBook(title: "第\(index * 7)部", author: "作者\((index * 7) % 1_000)", source: "local_epub",
                                    contentFilename: "\(index).epub")
             if index < 20 { book.lastOpenedDate = Date(timeIntervalSinceReferenceDate: Double(1_000 - index)) }
             store.saveReadingBook(book)
@@ -244,9 +262,12 @@ struct RelatedRowTests {
         let warmTime = clock.now - start
         let index = await store.workIndex.current()
         let opened = store.books.filter { $0.lastOpenedDate != nil }.sorted { $0.lastOpenedDate! > $1.lastOpenedDate! }
-        let seeds = opened.map { SourceItemKey.copy($0.id) }
+        let continueReading = Set(opened.map { SourceItemKey.copy($0.id) })
+        let seed = SourceItemKey.copy(opened[0].id)
         let shown = Set(index.entries.map(\.nodeKey))
-        let pickTime = clock.measure { _ = RelatedWorks.pick(in: index, seeds: seeds, shown: shown, limit: HomeRow.limit) }
+        let pickTime = clock.measure {
+            _ = RelatedWorks.pick(in: index, seed: seed, continueReading: continueReading, shown: shown, limit: HomeRow.limit)
+        }
         ticking.cancel()
         print("⏱ home.related files=20000 copies=300 cold=\(coldTime) warm=\(warmTime) pick=\(pickTime) "
             + "works=\(index.works.count) mainActorLongestGap=\(longestGap)")
