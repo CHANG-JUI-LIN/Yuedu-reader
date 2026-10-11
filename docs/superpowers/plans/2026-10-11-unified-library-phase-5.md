@@ -639,3 +639,22 @@ Branch `unified-library/5d1b-remove-explore-settings`. Settled decisions 13 and 
   - iOS 27, after the combined search: `PublicLibrarySearchTabUITests`, `DetailReaderBackSwipeUITests/testSearchTabMangaResultOpensEveryTime` and `testSearchDetailReaderLoadsAndReturns` passed. The unit rerun (`IOS17SearchResultTableTests`, `SearchRecentsTests`, `PublicLibraryStorefrontTests`) ran 35 tests with the same one failure as above.
   - iOS 17.5 (iPhone 15 Pro), after the combined search: `PublicLibrarySearchTabUITests` (through `IOS17SearchResultTable`) and `testSearchTabMangaResultOpensEveryTime` passed. The 17.5 simulator needs `python3 scripts/navigation_swipe_fixture.py prepare --simulator <UDID>` first; without the fixture sources the manga test finds 「沒有找到…」 and fails.
   - The English-plural failure is the simulator's region: both simulators run `zh_TW`, and `.stringsdict` picks plural rules by locale, which have no "one" for Chinese. Not this branch.
+
+### 5d-1c: Gutenberg loads with 探索 and shows its own covers (2026-10-11)
+
+Branch `unified-library/5d1c-gutenberg-covers`. Settled decision 15.
+
+- **Loading.** `SectionLoadPolicy.onDemandOnly` becomes `.withHome`: Gutenberg's feed rows (最新 and any `gutenbergFeed`) start in parallel as soon as the home shows, from `HomeModel.homeAppeared()`, also the rows below the fold whose views the `LazyVStack` has not made. Every other row still waits for its view. Nothing before 探索 opens, no next pages.
+  - **Deleted:** `RowState.awaitingRequest`, the row's 載入 button (`home.row.load.`) and the 「載入」 string in five languages, which nothing else used.
+  - **Scope:** the trigger is the home's own view, so a Gutenberg row sends nothing while 範圍 shows one source's page.
+- **Covers.** The XML list feeds' 「thumbnails」 are 17×29 and 22×22 book glyphs, not covers, which is why the cards looked coverless. Each book's cover is `cache/epub/<N>/pg<N>.cover.medium.jpg`, the image its own book feed links; it is derived from the ebook number (`GutenbergBook.coverURL`), not fetched per book, which would be a feed request per card. Checked 2026-10-11: the three newest releases already had theirs (HTTP 200).
+  - **One URL, one session, one cache entry everywhere:** the home's cards (bundled lists through `CollectionEntry.bundledGutenberg`, feeds through `PublicLibrary.listCoverURL`, now used by `OPDSFeedProviding.page`), the store's covers (`PublicLibraryCoverArtwork`, inside `PublicLibraryCover`), the carousel's overlay, both detail heroes, and the OPDS list rows. They load through the built-in connection's session, as a shelf copy's cover does (`BookCoverLoader.remoteSession(for:)`), and the copy's `coverUrl` is that same medium URL, so a book added to the shelf keeps its cover.
+  - **No flash in the carousel:** `BookCoverImage` reads the memory cache in its initializer, so the overlay that the carousel makes mid-animation paints the loaded cover on its first pass.
+  - **Without a number** (no Gutenberg id), a book keeps its generated cover; 青空文庫 has no covers and keeps them all.
+  - **Decision 7 in practice:** 精選's lists still send no request for their data, but their covers now load from gutenberg.org as the cards show. Decision 19 (lists show thumbnails only) is replaced; `PublicLibraryRegistryTests` now states the new rule.
+- **Docs:** `Technotes/PublicLibraries.md` drops 「開啟首頁不請求 Gutenberg」 and the thumbnails rule; its 2026-10-07 network measurement is marked as taken before this step.
+- **Tests (unit):** `HomeModelTests` (`withHome` replaces the on-demand test; the Gutenberg test now checks the bundled lists' covers and that the feeds load on `homeAppeared`), `PublicLibraryRegistryTests` (the decision 19 test rewritten to decision 15, plus `gutenbergCoverComesFromTheEbookNumber`), `ExploreHomeTests`, `PublicLibraryStorefrontTests` and `OPDSProviderTests`: 39 of 39 passed. `SourceProviderTests` and `OPDSBrowseModelBehaviorTests`: 5 of 5.
+- **Tests (UI), iOS 27 (iPhone 18 Pro):**
+  - `ExploreHomeUITests` 6 of 6, including the new `testGutenbergLatestLoadsWithTheHome` (最新 appears with no 載入 to tap). Its feeds now answer from fixtures; covers still load from gutenberg.org as cards show.
+  - `PublicLibrarySearchTabUITests` passed.
+  - `PublicLibraryStorefrontUITests`: 3 passed in the batch. `testPullDownClosesRestingCard` failed there because the simulator was touched during the run (the maintainer, 2026-10-11), and passed when run again on its own.

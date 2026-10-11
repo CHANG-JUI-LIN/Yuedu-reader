@@ -62,12 +62,15 @@ struct HomeCardContent: Identifiable {
         accessibilityValue = [author, sourceName, status?.title ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
-    /// A library's covers come through its connection's session, which carries its sign-in.
+    /// A library's covers come through its connection's session, which carries its sign-in;
+    /// Gutenberg's through the built-in connection's, as the store and a shelf copy load them.
     @MainActor
     private static func session(for opening: ItemOpening, connections: RemoteLibraryConnectionStore) -> URLSession? {
         switch opening {
         case .opdsEntry(_, let connectionID), .webDAVFile(_, let connectionID):
             return connections.connection(id: connectionID).map { connections.httpClient(for: $0).session }
+        case .gutenberg:
+            return connections.connection(id: PublicLibraryID.gutenberg.rawValue).map { connections.httpClient(for: $0).session }
         default:
             return nil
         }

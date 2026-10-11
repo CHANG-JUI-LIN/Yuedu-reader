@@ -11,14 +11,13 @@ import Foundation
 ///   binding from a later build) has no row.
 /// - 我的書庫 is not drawn (unified library 5d-1, settled decision 12): the libraries are
 ///   reached from 範圍. A saved page keeps its section, so an older build still shows it.
-/// - A row loads when its view asks: book-source rows one at a time per source, Gutenberg's
-///   only when the reader asks, bundled and on-device rows at once.
+/// - A row loads when its view asks: book-source rows one at a time per source, bundled and
+///   on-device rows at once. Gutenberg's load as soon as the home shows (`homeAppeared`),
+///   wherever they sit on the page (Phase 5 plan, decision 15).
 @MainActor
 final class HomeModel: ObservableObject {
     enum RowState: Equatable {
         case idle
-        /// Shown with 載入; nothing is sent until the reader taps it.
-        case awaitingRequest
         case loading
         case loaded([CollectionEntry])
         case failed(String)
@@ -42,7 +41,7 @@ final class HomeModel: ObservableObject {
     private var providers: [String: any HomeSectionProviding] = [:]
     private var requested: Set<String> = []
     private var queueTails: [SourceInstanceKey: Task<Void, Never>] = [:]
-    /// Rows queued or loading, so a 重試, 載入 or pull to refresh never starts a second load.
+    /// Rows queued or loading, so a 重試 or pull to refresh never starts a second load.
     private var active: Set<String> = []
 
     /// - Parameters:
@@ -110,33 +109,30 @@ final class HomeModel: ObservableObject {
 
     // MARK: - Loading
 
-    /// The row came into view. An on-demand row only offers 載入.
+    /// The row came into view.
     func load(_ rowID: String) {
         guard !requested.contains(rowID), let row = row(rowID) else { return }
         requested.insert(rowID)
-        if row.policy == .onDemandOnly {
-            setState(.awaitingRequest, of: rowID)
-        } else {
-            start(row)
-        }
+        start(row)
     }
 
-    /// The reader tapped 載入, or 重試 on a failed row.
+    /// The home is on screen: the rows that load with it start now, also those below the
+    /// fold, whose views have not been made yet.
+    func homeAppeared() {
+        for row in rows where row.policy == .withHome { load(row.id) }
+    }
+
+    /// The reader tapped 重試 on a failed row.
     func request(_ rowID: String) {
         guard let row = row(rowID) else { return }
         requested.insert(rowID)
         start(row)
     }
 
-    /// Pull to refresh: rows already loaded load again. An on-demand row goes back to 載入.
+    /// Pull to refresh: rows already loaded load again.
     func reload() {
-        for row in rows {
-            guard requested.contains(row.id), !active.contains(row.id) else { continue }
-            if row.policy == .onDemandOnly {
-                setState(.awaitingRequest, of: row.id)
-            } else {
-                start(row)
-            }
+        for row in rows where requested.contains(row.id) && !active.contains(row.id) {
+            start(row)
         }
     }
 
@@ -157,7 +153,7 @@ final class HomeModel: ObservableObject {
                 await previous?.value
                 await self?.fetch(row.id)
             }
-        case .local, .parallel, .onDemandOnly:
+        case .local, .parallel, .withHome:
             Task { [weak self] in await self?.fetch(row.id) }
         }
     }

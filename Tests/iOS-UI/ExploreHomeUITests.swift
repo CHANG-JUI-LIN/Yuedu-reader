@@ -3,6 +3,8 @@ import XCTest
 /// Unified library 5c-3 and 5d-1: the Explore home as a new install sees it, its 範圍 menu
 /// with the libraries, custom pages and browser, and the China storefront. Each launch starts
 /// from no saved home (`-reset-explore-home`) and an empty book-source library of its own.
+/// Gutenberg's feeds answer from fixtures (its rows load with the home since 5d-1c); its
+/// covers still load from gutenberg.org as their cards show.
 final class ExploreHomeUITests: XCTestCase {
     private var sourceDirectory: URL!
 
@@ -11,6 +13,13 @@ final class ExploreHomeUITests: XCTestCase {
         sourceDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ExploreHomeUITests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        // 最新, whatever list asks: the transport reads the path alone.
+        let latest = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><title>Latest</title>
+        <entry><id>https://www.gutenberg.org/ebooks/79760.opds</id><title>Fixture Release</title><content>Fixture Author</content><link rel="subsection" type="application/atom+xml" href="/ebooks/79760.opds"/></entry>
+        </feed>
+        """
+        try Data(latest.utf8).write(to: sourceDirectory.appendingPathComponent("ebooks_search.opds.xml"))
     }
 
     override func tearDownWithError() throws {
@@ -24,6 +33,7 @@ final class ExploreHomeUITests: XCTestCase {
                                "-yd_source_disclaimer_accepted", "YES", "-book-source-store-dir", sourceDirectory.path]
         if reset { app.launchArguments += ["-reset-public-library-explore", "-reset-explore-home"] }
         app.launchArguments += extra
+        app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = sourceDirectory.path
         return app
     }
 
@@ -68,6 +78,21 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertEqual(app.buttons["explore.scopeMenu"].value as? String, "全部")
         XCTAssertFalse(app.buttons["explore.modeMenu"].exists, "the old roots' switch is not on the home")
         attach(app, "explore-home-new-install")
+    }
+
+    /// Decision 15: Gutenberg's 最新 loads when 探索 opens, with no 載入 to tap, wherever the
+    /// row sits on the page.
+    @MainActor
+    func testGutenbergLatestLoadsWithTheHome() {
+        let app = application()
+        app.launch()
+        openExplore(app)
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        let latest = app.buttons["home.card.gutenberg.79760"].firstMatch
+        for _ in 0..<6 where !latest.exists { app.swipeUp() }
+        XCTAssertTrue(latest.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.row.load.")).firstMatch.exists)
+        attach(app, "explore-home-gutenberg-latest")
     }
 
     /// 範圍 shows one source's own page in place, at the root, and comes back to 全部; the choice

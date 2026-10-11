@@ -572,7 +572,7 @@ private struct PublicLibraryCarouselTransform: ViewModifier {
             .overlay(alignment: .top) {
                 // The shelf's own cover artwork at the card's width; scaled with the
                 // card it lands exactly on the shelf's cover.
-                GeneratedBookCover(title: book.title, author: book.author)
+                PublicLibraryCoverArtwork(title: book.title, author: book.author, coverURL: book.coverURL)
                     .frame(width: cardWidth, height: cardWidth / DSLayout.discoverCoverAspectRatio)
                     .opacity(coverOpacity)
                     .allowsHitTesting(false)
@@ -793,12 +793,14 @@ private struct GutenbergBookDetailPage: View {
         Group {
             if let detail = model.detail, isSelected {
                 RemoteLibraryBookDetailView(item: detail.item, storefront: true, authors: detail.authors,
-                                            artworkTitle: book.title, artworkAuthor: book.author)
+                                            artworkTitle: book.title, artworkAuthor: book.author,
+                                            artworkCoverURL: book.coverURL)
             } else {
                 // The same card top the loaded page shows, so the card does not change
                 // shape when the catalog entry arrives.
                 BookDetailScaffold(title: book.title, compactAction: loadingAction) {
-                    BookDetailHero(artworkShape: .book, cover: GeneratedBookCover(title: book.title, author: book.author),
+                    BookDetailHero(artworkShape: .book,
+                        cover: PublicLibraryCoverArtwork(title: book.title, author: book.author, coverURL: book.coverURL),
                         title: book.title, author: book.author, meta: localized("Project Gutenberg"),
                         primary: loadingAction,
                         secondary: BookDetailAction(title: localized("下載"), systemImage: "arrow.down.circle",

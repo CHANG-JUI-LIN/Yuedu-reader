@@ -85,12 +85,7 @@ enum HomeDesignFixtureData {
     static let rows: [HomeModel.Row] = {
         let gutenberg = SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue)
         let aozora = SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue)
-        let collection = chinese.books.map { book in
-            CollectionEntry.item(SourceRecord.derived(from: book),
-                                 WorkSummary(title: book.title, authors: book.author.isEmpty ? [] : [book.author],
-                                             cover: .generated(seed: book.title), blurb: nil, language: nil, contentKind: .text),
-                                 .gutenberg(book))
-        }
+        let collection = chinese.books.map(CollectionEntry.bundledGutenberg)
         let authors = ["芥川 竜之介", "太宰 治", "夏目 漱石", "宮沢 賢治", "森 鷗外"].map {
             CollectionEntry.location(CollectionLocation(id: $0, title: $0))
         }
@@ -101,8 +96,8 @@ enum HomeDesignFixtureData {
             row(.aozoraIndex(kind: AozoraBrowseMode.authors.rawValue), source: aozora, name: localized("青空文庫"),
                 policy: .local, state: .loaded(authors)),
             row(.latest(excluded: []), source: aozora, name: localized("青空文庫"), policy: .local, state: .loading),
-            row(.latest(excluded: []), source: gutenberg, name: localized("Project Gutenberg"), policy: .onDemandOnly,
-                state: .awaitingRequest),
+            row(.latest(excluded: []), source: gutenberg, name: localized("Project Gutenberg"), policy: .withHome,
+                state: .loading),
             row(.latest(excluded: []), source: SourceInstanceKey(type: .calibre, id: "fixture-calibre"), name: "Calibre",
                 policy: .parallel, state: .failed(URLError(.timedOut).localizedDescription)),
         ]

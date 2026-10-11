@@ -25,11 +25,11 @@ extension OPDSFeedProviding {
             throw SourceFailure(kind: .invalidAddress, underlying: OPDSError.invalidURL)
         }
         let feed = try await feed(url, isSearch: false)
-        return await Self.page(from: feed, record: makeRecord, opening: makeOpening)
+        return await Self.page(from: feed, connectionID: instance.id, record: makeRecord, opening: makeOpening)
     }
 
     /// The mapping runs off the main actor: summaries are HTML until `plainMetadata` reads them.
-    nonisolated static func page(from feed: OPDSFeed, record: @Sendable (OPDSEntry) -> SourceRecord?,
+    nonisolated static func page(from feed: OPDSFeed, connectionID: String, record: @Sendable (OPDSEntry) -> SourceRecord?,
                                  opening: @Sendable (OPDSEntry) -> ItemOpening) async -> CollectionPage {
         var entries: [CollectionEntry] = []
         for entry in feed.entries {
@@ -37,7 +37,8 @@ extension OPDSFeedProviding {
                 let summary = WorkSummary(
                     title: entry.title,
                     authors: made.authors,
-                    cover: entry.displayCoverURL.map { .remote($0, headers: [:]) } ?? .generated(seed: entry.title),
+                    cover: PublicLibrary.listCoverURL(for: entry, connectionID: connectionID)
+                        .map { .remote($0, headers: [:]) } ?? .generated(seed: entry.title),
                     blurb: entry.summary.map { OPDSClient.plainMetadata($0, limit: WorkSummary.blurbLimit) },
                     language: entry.language,
                     contentKind: made.contentKind

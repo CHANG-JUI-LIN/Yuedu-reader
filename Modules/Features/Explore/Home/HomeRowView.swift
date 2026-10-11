@@ -77,7 +77,7 @@ struct HomeRowView: View {
     let content: HomeRowContent?
     /// The row came into view (`HomeModel.load`).
     let load: () -> Void
-    /// 載入 or 重試 (`HomeModel.request`).
+    /// 重試 (`HomeModel.request`).
     let request: () -> Void
     /// Pushes 查看全部; nil when the source has no page for this row.
     var showAll: (() -> Void)?
@@ -152,11 +152,6 @@ struct HomeRowView: View {
         switch row.state {
         case .idle, .loading:
             placeholder
-        case .awaitingRequest:
-            Button(localized("載入"), action: request)
-                .buttonStyle(.bordered)
-                .padding(.horizontal, DSSpacing.lg)
-                .accessibilityIdentifier("home.row.load.\(row.id)")
         case .failed(let message):
             VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 Text(message)

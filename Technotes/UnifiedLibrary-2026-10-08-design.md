@@ -298,7 +298,7 @@ struct SectionParameter: Hashable, Codable, Sendable {
 
 protocol HomeSectionProviding: SourceProvider {
     func templates() -> [HomeSectionTemplate]
-    /// .serialPerSource：來源配置（共用 JS 狀態）；.parallel；.onDemandOnly：Gutenberg
+    /// .serialPerSource：來源配置（共用 JS 狀態）；.parallel；.withHome：Gutenberg（2026-10-11 Phase 5 decision 15 前為 .onDemandOnly）
     var loadPolicy: SectionLoadPolicy { get }
     func load(_ binding: HomeSectionBinding, page: Int) async throws -> HomeSectionPage
 }
@@ -690,7 +690,7 @@ Jellyfin 是從 Emby 分出來的開源專案。
 
 - 來源配置：由使用者指定一個發現分類代表它；
 - OPDS／Calibre：feed 的「最新」導覽，沒有時用根目錄的第一組書；
-- Gutenberg：依發布日期的搜尋，但只在使用者按「載入」後才請求；
+- Gutenberg：依發布日期的搜尋；原本只在使用者按「載入」後才請求，2026-10-11 起（Phase 5 decision 15）打開探索、首頁出現時就載入；
 - 青空：新着，來自本機目錄，不連網。
 
 規則：
@@ -1263,7 +1263,7 @@ S4 的條件：連續 N 個版本，而且 v3 的裝置登記顯示已沒有舊�
 | 改到 `ReadingBook` 的編碼，iCloud 合併時用舊進度蓋掉新進度 | D1、D2。§16 第 9 項把雜湊不變列為驗收。 |
 | 錯誤歸併：同名異書、譯本、改編 | §7.2 的保守等級；拆開的決定永久有效；每個歸併都標示依據 |
 | 區域 gate 外洩：搜尋或首頁在中國區出現公有書庫 | gate 放在 provider 可用性，而不是 view；每個進入點都有測試 |
-| 違反 Gutenberg 使用條款：自動請求、預抓 | `searchPolicy` 設為 `.onExplicitRequest`；首頁載入策略設為 `.onDemandOnly` |
+| 違反 Gutenberg 使用條款：自動請求、預抓 | `searchPolicy` 設為 `.onExplicitRequest`；首頁載入策略原為 `.onDemandOnly`；2026-10-11 Phase 5 decision 15 改為打開探索才載入（`.withHome`），不預抓下一頁、不在啟動時請求 |
 | iOS 17 回歸 | §12.2 的約束；§16 第 6 項把 iOS 17 runtime 列為必測 |
 | 大型書庫的效能 | §10.4 的量測門檻；索引在背景建立並增量更新 |
 | 私人書庫的書名外流 | 索引只在本機；書目查詢需要明確開啟；日誌依 privacy 標記處理 |

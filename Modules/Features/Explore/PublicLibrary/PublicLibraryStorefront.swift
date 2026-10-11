@@ -123,7 +123,7 @@ struct PublicLibraryStorefront: View {
                                     PublicLibraryBookSelection(books: books, selectedID: book.id).map(select)
                                 } label: {
                                     HStack(spacing: DSSpacing.lg) {
-                                        PublicLibraryCover(title: book.title, author: book.author)
+                                        PublicLibraryCover(title: book.title, author: book.author, coverURL: book.coverURL)
                                             .frame(width: DSLayout.discoverRowCoverWidth, height: DSLayout.discoverRowCoverHeight)
                                             .publicLibraryCoverFrame(id: book.id)
                                         VStack(alignment: .leading, spacing: DSSpacing.xs) {
@@ -204,7 +204,7 @@ private struct PublicLibraryCollectionArtwork: View {
         GeometryReader { proxy in
             HStack(spacing: DSSpacing.lg) {
                 ForEach(Array(collection.books.prefix(3))) { book in
-                    PublicLibraryCover(title: book.title, author: book.author)
+                    PublicLibraryCover(title: book.title, author: book.author, coverURL: book.coverURL)
                         .frame(width: proxy.size.width / 3, height: proxy.size.height)
                 }
             }

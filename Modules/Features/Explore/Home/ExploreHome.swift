@@ -163,6 +163,8 @@ private struct ExploreHomeRoot: View {
             }
         }
         .refreshable { model.reload() }
+        // Again when a sync changes the rows: a Gutenberg row added while the home shows.
+        .task(id: model.rows.map(\.id)) { model.homeAppeared() }
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
         .pageBackgroundToolbar(for: .explore)
         .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
