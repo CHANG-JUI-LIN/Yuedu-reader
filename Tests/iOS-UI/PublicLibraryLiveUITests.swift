@@ -106,4 +106,32 @@ final class PublicLibraryLiveUITests: XCTestCase {
         XCTAssertLessThan(translator.frame.midX, app.frame.maxX)
         screenshot(app, "pro-qitheme-aozora-detail")
     }
+
+    /// The catalog published on yuedureader.com (2026-10-11): pulling the home down fetches it
+    /// even within the daily check, and 範圍 → 青空文庫 then shows its works.
+    @MainActor
+    func testAozoraCatalogFromTheWebsite() throws {
+        guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+                               "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home"]
+        app.launch()
+        let tab = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 30))
+        tab.tap()
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        app.swipeDown()
+
+        menu.tap()
+        let aozora = app.buttons["青空文庫"].firstMatch
+        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
+        aozora.tap()
+        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
+        screenshot(app, "aozora-from-website")
+
+        menu.tap()
+        app.buttons["全部"].firstMatch.tap()
+    }
 }

@@ -825,3 +825,11 @@ Branch `unified-library/remove-catalog-entry`. The maintainer, after 5d-3h: 「�
 - **Removed:** the entry at the top of the home (瀏覽書庫 under 全部, 瀏覽完整目錄 under one library), its page and route (`HomeCatalogEntry.swift`: `HomeLibrariesPage`, `HomeLibrariesRoute`, `HomeCatalogEntryLabel`, `ExplorePushLink`), and the strings 瀏覽書庫, 瀏覽完整目錄 and 書庫. A reader adds the sections they want; a row's 查看全部 still opens the rest of what it shows (`ExplorePlace.page(of:)` stays for it). The empty home no longer passes touches through for the entry.
 - **書庫順序** now orders 範圍 and 最新's turns; its footer says so (the string changed in five languages).
 - **Tests (UI):** `testScopeFiltersTheHomeAndBack` and `testConnectionIsInScope` check there is no entry; `testLibraryOrder` checks 範圍 alone; `testHomeSections` waits for 精選's first card. iOS 27: `AggregationSettingsUITests` 4/4, `ExploreHomeUITests` 8/8, `HomeEditorUITests` 3/3.
+
+### 青空文庫 never loaded: its catalog was never published (2026-10-11)
+
+The maintainer: 「青空文庫一直連結不上」. `AozoraCatalogStore` reads `https://yuedureader.com/catalogs/aozora/v1/manifest.json`, which answered 404: the catalog was built by `scripts/aozora_catalog/build_catalog.py` but its first publication waited on the maintainer (`Technotes/PublicLibraries.md`). Aozora's own site answers.
+
+- **Published** (maintainer's choice: the website repository, not a GitHub release): built from the official CSV (Last-Modified 2026-08-21), 17,344 works, `works.json` 9.4 MB, its SHA-256 matching the manifest's. Yuedu-website `4484749`, with a README note on updating it. Live and verified by hash.
+- **The home's pull to refresh now fetches the catalog again** (`aozora.load(forceRefresh:)`), as 青空文庫's own page does. A failed check counts toward the daily check, so a device that got the 404 today would otherwise wait up to a day. The daily check itself is unchanged; its comment's reason (the official site's outage) no longer applies now that the manifest is ours.
+- **Tests (UI, live, opt-in `AOZORA_CATALOG_LIVE_UI`):** `PublicLibraryLiveUITests.testAozoraCatalogFromTheWebsite`: a pull, then 範圍 → 青空文庫 shows its works from the website. Passed on iOS 27.

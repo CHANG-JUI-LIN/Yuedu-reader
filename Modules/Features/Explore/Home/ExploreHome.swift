@@ -190,7 +190,13 @@ private struct ExploreHomeRoot: View {
                 }
             }
         }
-        .refreshable { model.reload() }
+        .refreshable {
+            model.reload()
+            // 青空文庫's rows are read from its catalog. Pulling down checks for it again, as
+            // 青空文庫's own page does, instead of waiting out the daily check: a device that
+            // found none (the catalog went unpublished until 2026-10-11) would wait a day.
+            if availability.isAvailable { await aozora.load(forceRefresh: true) }
+        }
         // Again when a sync changes the rows (a Gutenberg row added while the home shows), or
         // 範圍 brings other rows in.
         .task(id: [AnyHashable(model.rows.map(\.id)), AnyHashable(scopeKey)]) { model.homeAppeared(in: scopeKey) }
