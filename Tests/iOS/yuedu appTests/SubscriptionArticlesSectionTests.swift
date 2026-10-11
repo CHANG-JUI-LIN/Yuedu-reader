@@ -110,4 +110,21 @@ struct SubscriptionArticlesSectionTests {
         #expect(content.articles.map(\.id) == ["1", "2"])
         #expect(!content.isEmpty)
     }
+
+    @Test("the UI tests' feed is stored by its argument and taken away by any launch without it")
+    func testSeedIsRemoved() throws {
+        let (store, cleanUp) = try makeStore()
+        defer { cleanUp() }
+        let kept = RSSSource(name: "留下", url: "https://kept.example/feed", sortOrder: 0)
+        store.addSourcesReturningAdded([kept])
+        store.seedForTesting()
+        #expect(store.sources.contains { $0.url == RSSStore.testSeedFeedURL && !$0.enabled })
+        #expect(store.allArticles().filter { !$0.isRead }.count == 2)
+
+        store.removeTestSeed()
+        #expect(store.sources.map(\.url) == [kept.url])
+        #expect(store.allArticles().isEmpty)
+        #expect(store.totalUnreadCount() == 0)
+    }
 }
+
