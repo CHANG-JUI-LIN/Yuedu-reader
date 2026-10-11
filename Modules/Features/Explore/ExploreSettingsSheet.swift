@@ -16,6 +16,7 @@ struct ExploreSettingsSheet: View {
     private var sourcePageLayout = ExploreSourcePageLayout.default
     @AppStorage(ExploreSettings.landingKey) private var landing = ExploreLanding.off.rawValue
     @AppStorage(ExploreSettings.classicRootKey) private var usesClassicRoot = false
+    @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
     @AppStorage(ExploreSettings.rankedKeywordsKey)
     private var rankedKeywordsRaw = ExploreSettings.encodeKeywords(ExploreSettings.defaultRankedKeywords)
     @AppStorage(ExploreSettings.chartBookCountKey)
@@ -79,6 +80,10 @@ struct ExploreSettingsSheet: View {
 
     private var exploreSection: some View {
         Section {
+            Toggle(isOn: $showsBrowser) {
+                SettingsRowLabel(localized("在範圍選單顯示瀏覽器"), systemImage: "safari")
+            }
+            .accessibilityIdentifier("explore.showsBrowser")
             Toggle(isOn: $showsGrid) {
                 SettingsRowLabel(localized("格狀"), systemImage: "square.grid.2x2")
             }

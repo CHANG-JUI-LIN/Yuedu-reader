@@ -4,7 +4,7 @@ import XCTest
 /// The test changes no book-source data outside its own temporary directory.
 ///
 /// Since unified library 5c-3 the cards open from the Explore home's 精選 rows, as a new install
-/// sees them (`-reset-explore-home`), and the store's own pages from its 我的書庫 tile.
+/// sees them (`-reset-explore-home`), and the store's own pages from 範圍 (5d-1).
 final class PublicLibraryStorefrontUITests: XCTestCase {
     private var fixtureDirectory: URL!
 
@@ -130,9 +130,11 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         let explore = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(explore.waitForExistence(timeout: 30))
         explore.tap()
-        let gutenberg = app.buttons["home.tile.gutenberg.builtin.gutenberg"].firstMatch
-        XCTAssertTrue(gutenberg.waitForExistence(timeout: 10), app.debugDescription)
-        gutenberg.tap()
+        // 範圍 shows Gutenberg's own page in place (unified library 5d-1).
+        let scope = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(scope.waitForExistence(timeout: 10), app.debugDescription)
+        scope.tap()
+        app.buttons["Project Gutenberg"].firstMatch.tap()
         let categories = app.buttons["publicLibrary.categories"].firstMatch
         XCTAssertTrue(categories.waitForExistence(timeout: 10))
         categories.tap()
@@ -155,9 +157,11 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["分類"].waitForExistence(timeout: 10))
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(categories.waitForExistence(timeout: 10))
-        app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(gutenberg.waitForExistence(timeout: 10), "Back from the store's page returns to the home")
+        XCTAssertTrue(categories.waitForExistence(timeout: 10), "Back from 分類 returns to Gutenberg's page")
+        XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "Gutenberg's page is 探索's root")
+        // Leave 全部 for the next test.
+        scope.tap()
+        app.buttons["全部"].firstMatch.tap()
     }
 
     @MainActor

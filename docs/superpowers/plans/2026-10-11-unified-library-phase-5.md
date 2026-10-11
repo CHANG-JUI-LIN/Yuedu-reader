@@ -78,6 +78,29 @@
     - **Apple Books' finish:** large covers, generous spacing, the title in two lines and the author in one, no card chrome.
     - **Emby's density:** one more small line per card, holding the source or the copy status (已加入書架, 已下載). 繼續閱讀 cards carry a reading-progress bar. Each row header names its source and leads to 查看全部.
     - **Emby's model underneath:** every source serves its own sections, and 最新 expands per source. 5a and 5b already work this way.
+12. **Answered 2026-10-11, while planning 5d** (maintainer, by option and in their own words):
+    - **我的書庫 leaves the home.** 「我的書庫我覺得不應該在這個頁面，emby 播放器應該也不會把emby庫的列表放在這吧」. Every library and book source is reached from 範圍, as Emby switches libraries. This replaces decision 3's 「browsed from Explore's 我的書庫 tiles」; settled 2026-10-11 too: no shelf or shelf-group tiles.
+    - **The browser** is an item of 範圍, shown unless turned off in 探索設定.
+    - **Several home configurations, switchable:** 「探索頁應該是可以自己切換配置的，有預設模塊和空白模塊」. Built in: 預設 (the defaults of decision 6, without 我的書庫) and 空白. The reader can add more.
+    - **Custom pages merge into configurations:** a custom page becomes one configuration, and there is one kind of page left. This needs a migration of `custom_explore_pages`; plan decision 2 (custom pages keep their own format) no longer holds once it lands.
+    - **Affected, to re-plan when reached:** decision 10's RSS 「訂閱」 tile (5g) has no 我的書庫 to sit in.
+13. **Answered 2026-10-11, after 5d-1** (maintainer: 「話說探索頁的設置頁可以拿掉了吧？全部換新的就對了」):
+    - **探索設定 goes, and the old roots with it:** `ExploreHomeView`, `PublicLibraryHomeView` and 使用舊版探索頁. This ends decision 9/10's one-version grace.
+    - **No global presentation settings.** 「肯定全部刪掉啊，都是自己選擇呈現方式和呈現模塊了」: 列表／雜誌, the magazine's 豎排關鍵詞, 展示數量 and 預加載, the grid, 每列欄數, 首屏頁面 and 封面並發數 are deleted, not moved. Sections choose how they are drawn.
+    - **首屏頁面:** 範圍 is remembered; a saved 首屏 source becomes the 範圍 once, on upgrade.
+    - **The browser's 隱藏** moves to 編輯首頁 (5d-2), with the other 範圍 entries (recommendation, not answered against).
+14. **Answered 2026-10-11, from the maintainer's layout notes** (Featured Reading Card, Horizontal Rail, Multi-row Carousel, Cover Grid, Detailed List, then Hero, Bento, spine shelf, stacked collection and editorial cards later):
+    - **Five layouts, and only five for now:** 大型閱讀卡片, 橫向單排, 多行橫向輪播, 固定封面網格, 圖文清單 (with ranks as an option). The seven custom-page kinds map onto them when custom pages migrate (5d-4): 左右滑動 and 推薦卡片 → 橫向單排; 宮格 → 多行橫向輪播; 排行榜 and 網絡排行榜 → 圖文清單 with ranks; 多分類排行榜 → one 圖文清單 section per category; 錯位瀑布流 → 固定封面網格.
+    - **A source may suggest a layout; the app decides** what is drawn (small screens, Dynamic Type, VoiceOver), and the reader can change it.
+    - **繼續閱讀 defaults to 大型閱讀卡片.** This replaces the 「保留現在的樣子」 row for the default only. 「可以自己改，反正每一個呈現方式還可以在長按名字部分來做編輯或是其他動作」: long-pressing a section's name offers its layout and its other actions.
+15. **Answered 2026-10-11, on Gutenberg** (maintainer, looking at 「Latest in Project Gutenberg」 with only 載入: 「每次都要手動加載，還有古騰堡沒有封面不正常吧，這樣我怎麼刮削」):
+    - **Gutenberg's rows load when 探索 opens,** every one of them, as other sources' do. Chosen over 「load as each row scrolls into view」. This drops `.onDemandOnly` from the home and the 「開啟首頁不請求 Gutenberg」 promise of `Technotes/PublicLibraries.md`. Gutenberg's robot policy says only that the site is 「intended for human users only」 and that automated access may block the IP; it says nothing of apps, OPDS or covers. Still no prefetch of next pages, no background crawling, nothing at launch.
+    - **Covers are Gutenberg's own,** fetched when a card shows and kept in the cover cache; the locally drawn cover stays only for a book without one. A book added to the shelf keeps the same cover.
+16. **Answered 2026-10-11, from the maintainer's notes on Emby's home** (home sections are queries over collections the sources already have; metadata providers only fill gaps, so no 「novel TMDB」 is needed, and a search-only source must not pretend to rank). Four new section kinds, all of them, as 5d-6:
+    - **古騰堡熱門:** the official download ranking (`PublicLibrary.popularURL`), a default section.
+    - **最近加入書庫:** indexed WebDAV, Calibre and OPDS books by when they were added; no section without a library.
+    - **系列下一本:** the next volume of a series in 繼續閱讀, Emby's Next Up; only where the source records the series.
+    - **書源的排行／最近更新:** only for a book source whose discover categories offer one; a search-only source gets neither.
 
 ### Open, for the maintainer (each with a recommendation)
 
@@ -236,17 +259,17 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   | %@・最新 | %@・最新 | Latest in %@ | %@の新着 | %@ 최신 |
   | 載入 | 加载 | Load | 読み込む | 불러오기 |
   | 使用舊版探索頁 | 使用旧版探索页 | Use Classic Explore | 以前の探索画面を使う | 이전 탐색 화면 사용 |
-- [ ] **Step 2: `ExploreHome`,** the new tab root.
+- [x] **Step 2: `ExploreHome`,** the new tab root.
   - It shows the sections in order, as horizontal cover-wall rows. Each row header names its source and pushes 查看全部.
   - Cards are the open-decision-4 style, with the `CoverReference` cover and `CopyLookup` status.
   - 我的書庫 renders as tiles: shelf groups, each connection, Gutenberg, Aozora, each book source, custom pages, the browser, and 訂閱 after 5g.
-- [ ] **Step 3: Scope menu.**
+- [x] **Step 3: Scope menu.**
   - 「全部」 shows the home.
   - Choosing one source shows that source's own page in place: book source → `ExploreSourcePage`; OPDS or Calibre → `OPDSFeedView`; WebDAV → `WebDAVDirectoryView`; Gutenberg → storefront; Aozora → catalog.
   - The choice is stored in UserDefaults and replaces `explore.mode`.
 - [x] **Step 4: One navigation path** (decision 5). Fix the `OPDSFeedRoute` clash, and turn the storefront's closure links into value links. Done first, as 5c-1 (see "What landed").
-- [ ] **Step 5: The fallback** (open decision 2). `ExploreTabRoot` shows the old roots when the switch is on.
-- [ ] **Step 6: Tests.**
+- [x] **Step 5: The fallback** (open decision 2). `ExploreTabRoot` shows the old roots when the switch is on.
+- [x] **Step 6: Tests.**
   - **Unit:** section ordering and the scope choice.
   - **UI** `ExploreHomeUITests`: the home shows its default sections (fixtures); a 我的書庫 tile pushes a WebDAV library, using the Phase 2 local-server opt-in; scope switches to one source and back; CHN shows no public libraries.
   - **Existing:** `PublicLibraryExploreUITests` and `DetailReaderBackSwipeUITests` are updated, not deleted. They assert the same behaviors through the new home.
@@ -256,6 +279,16 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 ## Task 5d: The section editor
 
 **Branch:** `unified-library/5d-section-editor`. Design §13.3 (新增欄目, Rex order).
+
+**Re-split 2026-10-11 after settled decision 12**, each on its own branch and merged on its own, so main never offers a layout the home cannot draw and never has two editors:
+- **5d-1:** 我的書庫 leaves the home; 範圍 holds the libraries, the book sources, the custom pages and the browser.
+- **5d-1b:** 探索設定, the old roots and every global presentation setting are deleted (decision 13).
+- **5d-1c:** Gutenberg's rows load with 探索, and its cards show Gutenberg's covers (decision 15).
+- **5d-2:** 編輯首頁: reorder, hide and remove sections, 最新's 排除的來源, and the browser's 隱藏 (store edits that keep unknown sections in place). A section's name, long-pressed, offers the same actions for that section (decision 14).
+- **5d-3:** the five layouts of decision 14, drawn by the home for any section, and chosen from the section name's long press. 繼續閱讀's default becomes 大型閱讀卡片.
+- **5d-4:** configurations: 預設, 空白 and the reader's own, switched from 範圍; custom pages migrate into them, their blocks mapped onto the five layouts (decision 14).
+- **5d-5:** one section form for 新增欄目 and for what were custom-page blocks, with 選擇內容來源. App 資料 offers only bindings that exist (繼續閱讀, 相關); 最近加入書架, 書架分組 and 閱讀統計 have none.
+- **5d-6:** the four section kinds of decision 16.
 
 - [ ] **Step 0: Strings, for the maintainer's review before any code** (proposed 2026-10-11). Reused as they are: 預覽, 隱藏, 顯示, 標題, 刪除, 移除, 目前, 全部, 來源配置, 最新.
 
@@ -541,3 +574,24 @@ Branch `unified-library/5c5-entries`. Step 7 of Task 5c (settled decision 3). Tw
   - `RemoteLibraryNavigationUITests` now checks ＋: 從本地匯入 and 電腦傳書 only; 電腦傳書 opens its receiver and closes.
   - `RemoteLibrarySettingsUITests` +1: an example becomes a connection, leaves the list, and returns when removed.
   - With `testAddEditAndDeleteFromSettings` and `ExploreHomeUITests.testConnectionTilePushesItsLibrary`: 4 passed, and the opt-in WebDAV benchmark was skipped.
+
+### 5d-1: the libraries are in 範圍 (2026-10-11)
+
+Branch `unified-library/5d1-scope-entries`. Settled decision 12.
+
+- **The home** draws its sections only: 我的書庫 is skipped wherever a saved page has it (the section is kept, so an older build still shows it), and the defaults no longer add it. `HomeModel` publishes `rows`; `Tile`/`Item` and `HomeLibraryTiles` are gone (`SourceKindSymbol` stays, for 範圍).
+- **範圍** lists 全部, the connections and the two public libraries, a 來源配置 submenu, then a 自訂頁 submenu and 瀏覽器. Choosing a library or source shows its page in place, as 5c-3's sources did. 瀏覽器 can be turned off in 探索設定 (`explore.showsBrowser`; moves to 編輯首頁 with decision 13).
+- **The home's bar on 全部:** 範圍, ＋ 新增自訂頁, 探索設定. The search field, the groups menu and the source long-press actions left with the tiles. Those actions still live in 設定 → 管理來源配置.
+- **A custom page** has a ⋯ menu (重新命名, 刪除, as on the classic root's long press), and closes when it is deleted.
+- **An empty home** (every row loaded and empty: a China storefront with no source and nothing read) says 「探索還沒有內容」 and points to 範圍.
+- **Strings:** +3 (在範圍選單顯示瀏覽器, 探索還沒有內容, 從右上角的範圍打開書庫或來源配置。), −1 (我的書庫).
+- **Tests (unit):** `HomeModelTests` (tiles test replaced by `unservedHaveNoRow`), `HomeSectionTests` and `ExploreHomeTests` defaults without 我的書庫; with `HomePageStoreTests`, `HomeCardTests`, `CustomExplorePageTests` and `ExploreItemTargetTests`: 49 tests in 7 suites passed.
+- **Tests (UI):**
+  - `ExploreHomeUITests` (6): `testScopeOpensCustomPagesAndTheBrowser` is new (a page made with ＋ opens from 自訂頁 and deletes itself from its ⋯; the browser opens and closes; 探索設定 hides it). `testConnectionIsInScope` replaces the tile test. A menu item does not carry its identifier into the accessibility tree, so 瀏覽器 is found by its label.
+  - The China test accepts 繼續閱讀 or the empty state: the shelf is the simulator's own, and here it held a fixture book.
+  - `PublicLibraryStorefrontUITests` (4) enters Gutenberg from 範圍 and leaves it on 全部; `RemoteLibraryNavigationUITests` (1). All 11 passed, three of them on a second run after the fixes above.
+  - `DetailReaderBackSwipeUITests` reaches a source through 範圍 → 來源配置. Its two 「search」 tests searched Explore's source tiles, which are gone; they now search from the 搜索 tab (`openSearchedBook`). Of the tests that go through 範圍 or search, run on this simulator:
+    - **Passed (7):** `testClassicReaderControlsFromExploreAreAccessible`, `testListeningStartsCapsuleAndRolePanelRemainsAvailable`, `testScrollEdgeBack`, `testScrollHidesMenu`, `testShelfMangaOpensOnThePage`, `testWebtoonStripZoomsAndPansSideways`, `testSearchDetailReaderLoadsAndReturns`.
+    - **The two known failures from 5c-1** (`testTapWithMenuUpOnlyPutsMenuAway`, `testShelfListExposesOneBookButtonAndOpensReader`), at the same assertions (lines moved by the new helper).
+    - **Both manga reader tests** (`testDetailMangaReaderLoadsAndReturns`, `testSearchDetailMangaReaderLoadsAndReturns`) reach the reader, then fail on 「Page 1 / 3」: the reader opens on Page 2 / 3. The fixture manga is on this simulator's shelf with its last page saved (`testShelfMangaOpensOnThePage` adds it), so both routes resume there. Not caused by 5d-1; the test does not reset the book's progress.
+- **Not done, disclosed:** 範圍 has no search, which a library of thousands of sources will need; the RSS 「訂閱」 tile (5g) needs re-planning.

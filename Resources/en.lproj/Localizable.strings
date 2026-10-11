@@ -3664,8 +3664,12 @@
 "建立索引失敗：%@" = "Indexing Failed: %@";
 
 /* Explore home (unified library 5c) */
-"我的書庫" = "My Library";
 "%@・最新" = "Latest in %@";
 "載入" = "Load";
 "相關" = "Related";
 "使用舊版探索頁" = "Use Classic Explore";
+
+/* Unified library 5d-1: 範圍 holds the libraries */
+"在範圍選單顯示瀏覽器" = "Show Browser in Range Menu";
+"探索還沒有內容" = "Nothing to Explore Yet";
+"從右上角的範圍打開書庫或來源配置。" = "Open a library or source from Range at the top right.";

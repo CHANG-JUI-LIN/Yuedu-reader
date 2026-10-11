@@ -88,17 +88,17 @@ struct HomeSectionTests {
 
     private var featured: [String] { Array(repeating: "featured", count: PublicLibraryCollection.all.count) }
 
-    @Test("book-source readers start from 我的書庫 → 繼續閱讀 → 最新 → 精選")
+    // 我的書庫 left the defaults in 5d-1 (settled decision 12): 範圍 holds the libraries.
+    @Test("book-source readers start from 繼續閱讀 → 最新 → 精選")
     func bookSourceDefaults() {
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true)
-        #expect(kinds(page) == ["library", "continue", "latest"] + featured)
-        #expect(page.sections.first?.layout == .tiles)
+        #expect(kinds(page) == ["continue", "latest"] + featured)
     }
 
-    @Test("public-library readers and new installs start from 繼續閱讀 → 我的書庫 → 精選 → 最新")
+    @Test("public-library readers and new installs start from 繼續閱讀 → 精選 → 最新")
     func publicLibraryDefaults() {
         let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true)
-        #expect(kinds(page) == ["continue", "library"] + featured + ["latest"])
+        #expect(kinds(page) == ["continue"] + featured + ["latest"])
         let lists = page.sections.compactMap { section -> String? in
             if case .gutenbergCollection(let id) = section.binding { return id }
             return nil
@@ -113,7 +113,7 @@ struct HomeSectionTests {
             #expect(!kinds(page).contains("featured"))
         }
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false)
-        #expect(kinds(page) == ["library", "continue", "latest"])
+        #expect(kinds(page) == ["continue", "latest"])
     }
 
     @Test("every default section is enabled, untitled and has its own id")

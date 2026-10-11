@@ -14,6 +14,8 @@ enum ExploreSettings {
     /// 使用舊版探索頁: the roots from before the home, kept one version (Phase 5 plan,
     /// settled decisions 9 and 10).
     static let classicRootKey = "explore.classicRoot"
+    /// Whether 範圍 offers the browser (unified library 5d-1, settled decision 12). On by default.
+    static let showsBrowserKey = "explore.showsBrowser"
     static let showsGridKey = "explore.showsGrid"
     static let gridColumnCountKey = "explore.gridColumnCount"
 

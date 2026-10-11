@@ -64,8 +64,8 @@ struct PublicLibraryHomeView: View {
     }
 }
 
-/// Gutenberg's front page, pushed from its 我的書庫 tile or shown in place by the home's scope
-/// (5c-3): the storefront without Aozora, which has a page of its own there.
+/// Gutenberg's front page, shown in place by the home's 範圍 (5c-3, 5d-1): the storefront
+/// without Aozora, which has a page of its own there.
 struct GutenbergHomePage: View {
     @ObservedObject private var aozora = AozoraCatalogStore.shared
 
@@ -214,8 +214,8 @@ struct PublicLibraryStorefront: View {
     }
 }
 
-/// Aozora's front page, pushed from its 我的書庫 tile or shown in place by the home's scope
-/// (5c-3): 新着 and the three indexes, as 分類 lists them.
+/// Aozora's front page, shown in place by the home's 範圍 (5c-3, 5d-1): 新着 and the three
+/// indexes, as 分類 lists them.
 struct AozoraHomePage: View {
     @ObservedObject private var aozora = AozoraCatalogStore.shared
 
