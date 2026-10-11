@@ -81,7 +81,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
 
     @MainActor
     func testCardExpansionCarouselAndAuthorWithoutPro() throws {
-        try XCTSkipIf(true, "The store's card carousel is off Explore's home for now (Phase 5 plan, decision 27); its code stays.")
+        try XCTSkipIf(true, "The store's card carousel is off 探索 and 搜索 for now (Phase 5 plan, decision 27); its code stays.")
         let app = application()
         let close = openBook(app)
         screenshot(app, "storefront-card-resting")
@@ -182,7 +182,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
 
     @MainActor
     func testProThemeCard() throws {
-        try XCTSkipIf(true, "The store's card carousel is off Explore's home for now (Phase 5 plan, decision 27); its code stays.")
+        try XCTSkipIf(true, "The store's card carousel is off 探索 and 搜索 for now (Phase 5 plan, decision 27); its code stays.")
         let app = application(pro: true)
         let close = openBook(app)
         screenshot(app, "storefront-pro-theme-resting")
@@ -196,7 +196,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
 
     @MainActor
     func testPullDownClosesRestingCard() throws {
-        try XCTSkipIf(true, "The store's card carousel is off Explore's home for now (Phase 5 plan, decision 27); its code stays.")
+        try XCTSkipIf(true, "The store's card carousel is off 探索 and 搜索 for now (Phase 5 plan, decision 27); its code stays.")
         let app = application()
         let close = openBook(app)
         let carousel = app.scrollViews["publicLibrary.carousel"].firstMatch
