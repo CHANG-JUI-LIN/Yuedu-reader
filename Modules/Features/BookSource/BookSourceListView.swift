@@ -1055,7 +1055,6 @@ struct BookSourceListView: View {
             .json,
             .plainText,
             UTType(filenameExtension: "yds") ?? .data,
-            UTType(filenameExtension: "xbs") ?? .data,
             UTType(filenameExtension: "mrs") ?? .data,
         ]
     }

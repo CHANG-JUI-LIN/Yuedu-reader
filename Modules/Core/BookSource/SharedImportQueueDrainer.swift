@@ -568,7 +568,7 @@ enum SharedImportPayloadClassifier {
             return .localBook(fileExtension: ext)
         }
 
-        if ["yds", "xbs", "mrs"].contains(ext) {
+        if ["yds", "mrs"].contains(ext) {
             return .bookSource(fileExtension: ext)
         }
 
@@ -601,7 +601,7 @@ enum SharedImportPayloadClassifier {
         if ext == "yuedustyle" { return .customization(.nativePackage) }
         if ext == "qitheme" || ext == "red" { return .customization(.qiTheme) }
 
-        if ["yds", "xbs", "mrs"].contains(ext) {
+        if ["yds", "mrs"].contains(ext) {
             return .bookSource(fileExtension: ext)
         }
 

@@ -617,7 +617,7 @@ class BookSourceStore: ObservableObject {
         switch lower {
         case "yds":
             return try parseYDS(data)
-        case "xbs", "mrs":
+        case "mrs":
             throw ImportError.encryptedFormat(lower.uppercased())
         default:
             // .txt, .json, or unknown → try as Legado JSON
