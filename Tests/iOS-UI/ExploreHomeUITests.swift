@@ -64,6 +64,7 @@ final class ExploreHomeUITests: XCTestCase {
 
     /// 精選's first list: a row of covers, so the home is drawn.
     private let featuredCard = "home.card.gutenberg.24264"
+    private let gutenbergID = "builtin.gutenberg"
 
     /// A new install, without book sources: 繼續閱讀 (empty, so not drawn), then 精選. No
     /// library tiles since unified library 5d-1: the libraries are in 範圍.
@@ -95,32 +96,58 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-home-gutenberg-latest")
     }
 
-    /// 範圍 shows one source's own page in place, at the root, and comes back to 全部; the choice
-    /// survives a relaunch.
+    /// 範圍 filters the same home to one library, as Emby's library switch does (5d-3b,
+    /// decision 19), and the choice survives a relaunch. The library's whole catalog is its
+    /// own page, from 瀏覽完整目錄 at the top; under 全部, 瀏覽書庫 lists every library
+    /// (decision 20).
     @MainActor
-    func testScopeShowsOneSourceInPlaceAndBack() {
+    func testScopeFiltersTheHomeAndBack() {
         let app = application()
         app.launch()
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["Project Gutenberg"].exists, "the home names no source")
 
+        // 瀏覽書庫 lists the libraries, each opening its own page.
+        let libraries = app.buttons["home.libraries"].firstMatch
+        XCTAssertTrue(libraries.waitForExistence(timeout: 5), app.debugDescription)
+        libraries.tap()
+        let gutenbergLink = app.buttons["home.libraries.gutenberg.\(gutenbergID)"].firstMatch
+        XCTAssertTrue(gutenbergLink.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["home.libraries.aozora.builtin.aozora"].firstMatch.exists)
+        attach(app, "explore-home-libraries")
+        gutenbergLink.tap()
+        XCTAssertTrue(app.buttons["publicLibrary.categories"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // The same home, with Gutenberg's books alone; its catalog at the top.
         chooseScope(app, "Project Gutenberg")
-        XCTAssertTrue(app.navigationBars["Project Gutenberg"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["publicLibrary.categories"].firstMatch.exists)
-        XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "the source's page is the root: the tab bar stays")
         XCTAssertEqual(app.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg")
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), "the home stays, filtered")
+        XCTAssertTrue(app.navigationBars["探索"].exists || app.tabBars.buttons["探索"].firstMatch.isHittable)
+        let catalog = app.buttons["home.catalog"].firstMatch
+        XCTAssertTrue(catalog.waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "explore-home-scope-gutenberg")
+        catalog.tap()
+        XCTAssertTrue(app.navigationBars["Project Gutenberg"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["publicLibrary.categories"].firstMatch.waitForExistence(timeout: 10))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
 
         app.terminate()
         let relaunched = application(reset: false)
         relaunched.launch()
         openExplore(relaunched)
-        XCTAssertTrue(relaunched.navigationBars["Project Gutenberg"].waitForExistence(timeout: 15), "the scope is kept")
+        XCTAssertTrue(relaunched.buttons["home.catalog"].firstMatch.waitForExistence(timeout: 15), "the scope is kept")
+        XCTAssertEqual(relaunched.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg")
 
+        // 青空文庫: no Gutenberg book stays on the home.
         chooseScope(relaunched, "青空文庫")
-        XCTAssertTrue(relaunched.navigationBars["青空文庫"].waitForExistence(timeout: 10))
-        attach(relaunched, "explore-home-scope-aozora")
+        XCTAssertTrue(relaunched.buttons[featuredCard].firstMatch.waitForNonExistence(timeout: 10), relaunched.debugDescription)
+        relaunched.buttons["home.catalog"].firstMatch.tap()
+        XCTAssertTrue(relaunched.navigationBars["青空文庫"].waitForExistence(timeout: 10), relaunched.debugDescription)
+        attach(relaunched, "explore-home-scope-aozora-catalog")
+        relaunched.navigationBars.buttons.element(boundBy: 0).tap()
 
         chooseScope(relaunched, "全部")
         XCTAssertTrue(relaunched.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10))
@@ -189,8 +216,8 @@ final class ExploreHomeUITests: XCTestCase {
         attach(hidden, "explore-scope-no-browser")
     }
 
-    /// A connection added in 設定 → 遠端書庫 is in 範圍, which shows its library in place. The
-    /// server does not exist; the page is shown whether or not it loads.
+    /// A connection added in 設定 → 遠端書庫 is in 範圍; its catalog opens from the top of the
+    /// home. The server does not exist; the page is shown whether or not it loads.
     @MainActor
     func testConnectionIsInScope() {
         let app = application()
@@ -221,9 +248,14 @@ final class ExploreHomeUITests: XCTestCase {
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         chooseScope(app, host)
+        // The home, filtered to a library no section draws from yet; its catalog at the top.
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForNonExistence(timeout: 10))
+        let catalog = app.buttons["home.catalog"].firstMatch
+        XCTAssertTrue(catalog.waitForExistence(timeout: 10), app.debugDescription)
+        catalog.tap()
         XCTAssertTrue(app.navigationBars[host].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "in place, at the root")
         attach(app, "explore-home-connection-page")
+        app.navigationBars[host].buttons.element(boundBy: 0).tap()
         chooseScope(app, "全部")
 
         // Leave nothing behind for the next run.

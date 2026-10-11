@@ -162,7 +162,7 @@ enum ExplorePlace {
                 return page(of: row.source, name: row.sourceName, connections: connections)
             case .gutenberg:
                 return .feed(OPDSFeedRoute(catalogID: gutenbergID, url: GutenbergEndpoint.current.latestURL.absoluteString,
-                                           title: row.title, presentation: .storefront))
+                                           title: row.section.displayTitle(sourceName: row.sourceName), presentation: .storefront))
             case .aozora:
                 return aozoraIndex.map { .publicLibrary(.aozoraCatalog(.newest, $0)) }
             case .webDAV, .library, .bibliographic:
@@ -172,11 +172,11 @@ enum ExplorePlace {
         case .sourceCategories(let references):
             return references.first { $0.sourceURL == row.source.id }.map { .explore(.sourceCategory($0)) }
         case .opdsFeed(let connectionID, let url):
-            return .feed(OPDSFeedRoute(catalogID: connectionID, url: url, title: row.title))
+            return .feed(OPDSFeedRoute(catalogID: connectionID, url: url, title: row.section.displayTitle(sourceName: row.sourceName)))
         case .gutenbergCollection(let id):
             return .publicLibrary(.collection(id: id))
         case .gutenbergFeed(let url):
-            return .feed(OPDSFeedRoute(catalogID: gutenbergID, url: url, title: row.title, presentation: .storefront))
+            return .feed(OPDSFeedRoute(catalogID: gutenbergID, url: url, title: row.section.displayTitle(sourceName: row.sourceName), presentation: .storefront))
         case .aozoraNew:
             return aozoraIndex.map { .publicLibrary(.aozoraCatalog(.newest, $0)) }
         case .aozoraIndex(let kind):

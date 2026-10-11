@@ -3636,7 +3636,6 @@
 "建立索引失敗：%@" = "建立索引失败：%@";
 
 /* Explore home (unified library 5c) */
-"%@・最新" = "%@・最新";
 "相關" = "相关";
 
 /* Unified library 5d-1: 範圍 holds the libraries */
@@ -3659,3 +3658,7 @@
 "固定封面網格" = "固定封面网格";
 "圖文資訊清單" = "图文信息清单";
 "顯示排名" = "显示排名";
+
+/* Unified library 5d-3b: the full catalogs from the top of the home */
+"瀏覽書庫" = "浏览书库";
+"瀏覽完整目錄" = "浏览完整目录";

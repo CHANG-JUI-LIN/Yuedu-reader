@@ -40,9 +40,9 @@ private struct HomeDesignFixturePage: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                ForEach(HomeDesignFixtureData.rows, id: \.id) { row in
-                    HomeRowView(row: row, content: HomeDesignFixtureData.content(for: row, store: store),
-                                load: {}, request: {}, showAll: row.state.isSettled ? {} : nil,
+                ForEach(HomeScopeFilter.groups(HomeDesignFixtureData.rows, in: nil)) { group in
+                    HomeRowView(group: group, content: HomeDesignFixtureData.content(for: group, store: store),
+                                load: {}, request: {}, showAll: group.state.isSettled ? {} : nil,
                                 open: { _, _ in }, openLocation: { _ in })
                 }
             }
@@ -115,19 +115,19 @@ enum HomeDesignFixtureData {
 
     /// 繼續閱讀 shows the made-up copies; the bundled list marks two books as already here.
     @MainActor
-    static func content(for row: HomeModel.Row, store: BookStore) -> HomeRowContent? {
-        guard case .loaded(let entries) = row.state else { return nil }
-        if case .continueReading = row.section.binding {
+    static func content(for group: HomeSectionGroup, store: BookStore) -> HomeRowContent? {
+        if case .continueReading = group.section.binding {
             let books = shelfBooks
-            return HomeRowContent(entries: ShelfProvider(store: store).items(books), sourceName: row.sourceName,
+            return HomeRowContent(entries: ShelfProvider(store: store).items(books),
                                   status: { _ in nil }, shelfBooks: Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0) }))
         }
+        guard case .loaded(let entries) = group.state else { return nil }
         let keys = entries.compactMap { entry -> SourceItemKey? in
             if case .item(let record, _, _) = entry { return record.key }
             return nil
         }
         let onShelf = keys.first, downloaded = keys.dropFirst(2).first
-        return HomeRowContent(entries: entries, sourceName: row.sourceName, status: { key in
+        return HomeRowContent(entries: entries, status: { key in
             key == onShelf ? .onShelf : key == downloaded ? .downloaded : nil
         }, shelfBooks: [:])
     }

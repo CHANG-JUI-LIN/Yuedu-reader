@@ -1,8 +1,9 @@
 import SwiftUI
 
-// Unified library 5c: a row of Explore's home (design §13.3). The row
-// header names the row and its source, Emby's way, and leads to 查看全部; the covers below it
-// swipe sideways as Apple Books' shelves do.
+// Unified library 5c: a section of Explore's home (design §13.3). The header names the
+// section and leads to 查看全部; the books below it are drawn in the section's layout (5d-3).
+// Since 5d-3b the home names no source (Phase 5 plan, decision 19): a book's source shows on
+// its own page.
 
 extension HomeSection {
     /// The section's name, over its row and in 編輯首頁: the one the reader gave it, else its
@@ -24,26 +25,6 @@ extension HomeSection {
     }
 }
 
-extension HomeModel.Row {
-    /// The row's own title: the one the reader gave the section, else its binding's. 最新's
-    /// rows, one per source, are named by their source.
-    var title: String {
-        if section.title.isEmpty, case .latest = section.binding {
-            return String(format: localized("%@・最新"), sourceName)
-        }
-        return section.displayTitle(sourceName: sourceName)
-    }
-
-    /// The source under the title. None for rows that draw from every source, or whose title
-    /// already names it.
-    var subtitle: String? {
-        switch section.binding {
-        case .continueReading, .related, .latest: return nil
-        default: return title == sourceName ? nil : sourceName
-        }
-    }
-}
-
 /// What a row shows once loaded, resolved against the shelf as it is now.
 struct HomeRowContent {
     var cards: [HomeCardContent]
@@ -53,15 +34,14 @@ struct HomeRowContent {
     var isEmpty: Bool { cards.isEmpty && locations.isEmpty }
 
     @MainActor
-    init(entries: [CollectionEntry], sourceName: String, status: (SourceItemKey) -> CopyLookup.Status?,
-         shelfBooks: [UUID: ReadingBook]) {
+    init(entries: [CollectionEntry], status: (SourceItemKey) -> CopyLookup.Status?, shelfBooks: [UUID: ReadingBook]) {
         var cards: [HomeCardContent] = []
         var locations: [CollectionLocation] = []
         for entry in entries {
             switch entry {
             case .location(let location): locations.append(location)
             case .item:
-                if let card = HomeCardContent(entry, sourceName: sourceName, status: status, shelfBooks: shelfBooks) {
+                if let card = HomeCardContent(entry, status: status, shelfBooks: shelfBooks) {
                     cards.append(card)
                 }
             }
@@ -72,7 +52,7 @@ struct HomeRowContent {
 
     /// One pass over the shelf, for the copies this row shows.
     @MainActor
-    init(entries: [CollectionEntry], sourceName: String, store: BookStore) {
+    init(entries: [CollectionEntry], store: BookStore) {
         let wanted = Set(entries.compactMap { entry -> UUID? in
             if case .item(_, _, .copy(let id)) = entry { return id }
             return nil
@@ -80,7 +60,7 @@ struct HomeRowContent {
         let shelfBooks = wanted.isEmpty ? [:] : Dictionary(
             store.books.lazy.filter { wanted.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let lookup = store.copyLookup()
-        self.init(entries: entries, sourceName: sourceName, status: lookup.status(for:), shelfBooks: shelfBooks)
+        self.init(entries: entries, status: lookup.status(for:), shelfBooks: shelfBooks)
     }
 }
 
@@ -96,12 +76,12 @@ struct HomeSectionActions {
 }
 
 struct HomeRowView: View {
-    let row: HomeModel.Row
-    /// Nil until the row has loaded.
+    let group: HomeSectionGroup
+    /// Nil until a row of the section has loaded.
     let content: HomeRowContent?
-    /// The row came into view (`HomeModel.load`).
+    /// The section came into view: its rows load (`HomeModel.load`).
     let load: () -> Void
-    /// 重試 (`HomeModel.request`).
+    /// 重試: every failed row of the section (`HomeModel.request`).
     let request: () -> Void
     /// Pushes 查看全部; nil when the source has no page for this row.
     var showAll: (() -> Void)?
@@ -114,7 +94,7 @@ struct HomeRowView: View {
     var body: some View {
         Group {
             // A loaded row with nothing in it takes no room.
-            if case .loaded = row.state, content?.isEmpty ?? true {
+            if case .loaded = group.state, content?.isEmpty ?? true {
                 EmptyView()
             } else {
                 VStack(alignment: .leading, spacing: DSSpacing.md) {
@@ -131,16 +111,9 @@ struct HomeRowView: View {
     @ViewBuilder
     private var header: some View {
         let label = HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
-            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                Text(row.title)
-                    .font(DSFont.title2.weight(.bold))
-                    .foregroundStyle(DSColor.textPrimary)
-                if let subtitle = row.subtitle {
-                    Text(subtitle)
-                        .font(DSFont.footnote)
-                        .foregroundStyle(DSColor.textSecondary)
-                }
-            }
+            Text(group.title)
+                .font(DSFont.title2.weight(.bold))
+                .foregroundStyle(DSColor.textPrimary)
             if showAll != nil {
                 Image(systemName: "chevron.right")
                     .font(DSFont.title3.weight(.semibold))
@@ -157,13 +130,13 @@ struct HomeRowView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityHint(localized("查看全部"))
-                .accessibilityIdentifier("home.row.header.\(row.id)")
+                .accessibilityIdentifier("home.row.header.\(group.id)")
                 .contextMenu { actionsMenu }
         } else {
             label
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("home.row.header.\(row.id)")
+                .accessibilityIdentifier("home.row.header.\(group.id)")
                 .contextMenu { actionsMenu }
         }
     }
@@ -172,7 +145,7 @@ struct HomeRowView: View {
     @ViewBuilder
     private var actionsMenu: some View {
         if let actions {
-            let layout = row.section.layout
+            let layout = group.section.layout
             Menu {
                 Picker(localized("呈現方式"), selection: Binding(
                     get: { layout.style },
@@ -199,7 +172,7 @@ struct HomeRowView: View {
 
     @ViewBuilder
     private var stateContent: some View {
-        switch row.state {
+        switch group.state {
         case .idle, .loading:
             placeholder
         case .failed(let message):
@@ -210,7 +183,7 @@ struct HomeRowView: View {
                     .lineLimit(3)
                 Button(localized("重試"), action: request)
                     .buttonStyle(.bordered)
-                    .accessibilityIdentifier("home.row.retry.\(row.id)")
+                    .accessibilityIdentifier("home.row.retry.\(group.id)")
             }
             .padding(.horizontal, DSSpacing.lg)
         case .loaded:
@@ -223,7 +196,7 @@ struct HomeRowView: View {
 
     /// The section's layout with blank cards, so the page does not jump when the books arrive.
     private var placeholder: some View {
-        HomeSectionCards(layout: row.section.layout, cards: (0..<6).map(HomeCardContent.placeholder), rowID: row.id,
+        HomeSectionCards(layout: group.section.layout, cards: (0..<6).map(HomeCardContent.placeholder), rowID: group.id,
                          hasShowAll: showAll != nil, open: { _, _ in })
             .redacted(reason: .placeholder)
             .scrollDisabled(true)
@@ -234,7 +207,7 @@ struct HomeRowView: View {
     }
 
     private func cards(_ cards: [HomeCardContent]) -> some View {
-        HomeSectionCards(layout: row.section.layout, cards: cards, rowID: row.id, hasShowAll: showAll != nil, open: open)
+        HomeSectionCards(layout: group.section.layout, cards: cards, rowID: group.id, hasShowAll: showAll != nil, open: open)
     }
 
     private func locationChips(_ locations: [CollectionLocation]) -> some View {

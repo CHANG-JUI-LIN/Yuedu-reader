@@ -2,9 +2,10 @@ import SwiftUI
 
 /// 探索's root since unified library 5c-3 (design §13.3): the reader's sections, in their order,
 /// across every source — Emby's model under Apple Books' covers (Phase 5 plan, settled
-/// decision 11). 範圍 narrows it to one source, whose own page then shows in place, and holds
-/// every other way in: the custom pages and the browser (5d-1, settled decision 12, which took
-/// 我的書庫 off the home).
+/// decision 11). 範圍 narrows the same home to one source's books, as switching Emby's library
+/// does (5d-3b, decision 19), and holds every other way in: the custom pages and the browser
+/// (5d-1, settled decision 12, which took 我的書庫 off the home). The full catalogs are one tap
+/// from the top of the home: 瀏覽書庫, or the chosen library's 瀏覽完整目錄 (decision 20).
 ///
 /// - One stack for everything the home opens (decision 5): Explore's routes, the libraries'
 ///   feeds, folders and books, the store's pages, and the store's card carousel over it all.
@@ -80,35 +81,34 @@ private struct ExploreHomeRoot: View {
                                             librariesAvailable: availability.isAvailable) ? stored : .all
     }
 
+    /// The source 範圍 keeps; nil for 全部.
+    private var scopeKey: SourceInstanceKey? {
+        if case .source(let key) = scope { return key }
+        return nil
+    }
+
+    /// The sections drawn: under 範圍, only the chosen source's books.
+    private var groups: [HomeSectionGroup] {
+        model.groups(in: scopeKey)
+    }
+
     /// What the rows are built from; any change builds them again.
     private var syncKey: [AnyHashable] {
         [pageStore.page, connections.catalogs.map(\.id), exploreSources.map(\.bookSourceUrl), availability.isAvailable,
          aozora.catalog != nil]
     }
 
-    /// Every row is settled with nothing in it, so the home would be blank: a China storefront
-    /// with no source and nothing read yet.
+    /// Every section is settled with nothing in it, so the home would be blank: a China
+    /// storefront with no source and nothing read yet, or a source no section draws from.
     private var showsNothing: Bool {
-        model.rows.allSatisfy { row in
-            if case .loaded(let entries) = row.state { return entries.isEmpty }
-            return false
-        }
+        groups.allSatisfy(\.isSettledEmpty)
     }
 
     // MARK: Body
 
     var body: some View {
         NavigationStack(path: $path) {
-            Group {
-                switch scope {
-                case .all:
-                    home
-                case .source(let key):
-                    scopePage(key)
-                        .id(key)
-                        .showsRootTabBarOnlyHere()
-                }
-            }
+            home
             .toolbar { toolbar }
             .customExplorePagePrompts($pagePrompt)
             .fullScreenCover(item: $browserPresentation) { presentation in
@@ -119,6 +119,10 @@ private struct ExploreHomeRoot: View {
             }
             .exploreRouteDestinations(openBrowser: openBrowser)
             .homeEditDestinations(model: model)
+            .navigationDestination(for: HomeLibrariesRoute.self) { _ in
+                HomeLibrariesPage(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
+                                  sources: exploreSources)
+            }
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
         }
@@ -134,10 +138,6 @@ private struct ExploreHomeRoot: View {
         .onReceive(sourceStore.sourcesPublisher) { _ in
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
         }
-        .onChange(of: storedScope) { _, _ in
-            // Another source's page in place: what was pushed over the last one goes.
-            path = NavigationPath()
-        }
     }
 
     // MARK: 全部
@@ -146,12 +146,14 @@ private struct ExploreHomeRoot: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
                 if isEditing {
-                    HomeEditingSections(sections: pageStore.page?.editableSections ?? [], rows: model.rows,
-                                        openSettings: { path.append(HomeEditRoute.section($0)) }) { row in
-                        rowHost(row)
+                    // Every section, whatever 範圍 keeps: 編輯首頁 edits the home itself.
+                    HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil),
+                                        openSettings: { path.append(HomeEditRoute.section($0)) }) { group in
+                        groupHost(group)
                     }
                 } else {
-                    ForEach(model.rows) { row in rowHost(row) }
+                    if model.isReady { catalogEntry }
+                    ForEach(groups) { group in groupHost(group) }
                 }
                 if model.isReady {
                     // At the end of the home (maintainer, 2026-10-11, decision 18).
@@ -172,58 +174,55 @@ private struct ExploreHomeRoot: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
                 } description: {
-                    Text(localized("從右上角的範圍打開書庫或來源配置。")).foregroundStyle(DSColor.textSecondary)
+                    if scopeKey == nil {
+                        Text(localized("從右上角的範圍打開書庫或來源配置。")).foregroundStyle(DSColor.textSecondary)
+                    }
                 }
+                // The catalog entry above it stays tappable.
+                .allowsHitTesting(false)
             }
         }
         .refreshable { model.reload() }
-        // Again when a sync changes the rows: a Gutenberg row added while the home shows.
-        .task(id: model.rows.map(\.id)) { model.homeAppeared() }
+        // Again when a sync changes the rows (a Gutenberg row added while the home shows), or
+        // 範圍 brings other rows in.
+        .task(id: [AnyHashable(model.rows.map(\.id)), AnyHashable(scopeKey)]) { model.homeAppeared(in: scopeKey) }
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
         .pageBackgroundToolbar(for: .explore)
         .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
-        .animation(reduceMotion ? nil : DSAnimation.standard, value: model.rows.map(\.id))
+        .animation(reduceMotion ? nil : DSAnimation.standard, value: groups.map(\.id))
     }
 
-    private func rowHost(_ row: HomeModel.Row) -> some View {
-        HomeRowHost(row: row, store: store, aozoraIndex: aozora.catalog, model: model,
+    /// 瀏覽書庫 under 全部, 瀏覽完整目錄 under one library (decision 20).
+    @ViewBuilder
+    private var catalogEntry: some View {
+        if let key = scopeKey {
+            let name = ExploreHomeScope.name(of: key, sources: sourceStore.sources, connections: connections)
+            if let page = ExplorePlace.page(of: key, name: name) {
+                ExplorePushLink(push: page) {
+                    HomeCatalogEntryLabel(title: localized("瀏覽完整目錄"), systemImage: "books.vertical")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("home.catalog")
+                .padding(.horizontal, DSSpacing.lg)
+            }
+        } else if !connections.catalogs.isEmpty || availability.isAvailable || !exploreSources.isEmpty {
+            NavigationLink(value: HomeLibrariesRoute()) {
+                HomeCatalogEntryLabel(title: localized("瀏覽書庫"), systemImage: "books.vertical")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.libraries")
+            .padding(.horizontal, DSSpacing.lg)
+        }
+    }
+
+    private func groupHost(_ group: HomeSectionGroup) -> some View {
+        HomeRowHost(group: group, store: store, aozoraIndex: aozora.catalog, model: model,
                     push: push, select: { selection = $0 },
-                    openSettings: { path.append(HomeEditRoute.section(row.section.id)) })
+                    openSettings: { path.append(HomeEditRoute.section(group.section.id)) })
     }
 
     private func setEditing(_ editing: Bool) {
         withAnimation(reduceMotion ? nil : DSAnimation.standard) { isEditing = editing }
-    }
-
-    // MARK: One source
-
-    /// A source's own page, shown at the root.
-    @ViewBuilder
-    private func scopePage(_ key: SourceInstanceKey) -> some View {
-        if let place = ExplorePlace.page(of: key, name: ExploreHomeScope.name(of: key, sources: sourceStore.sources,
-                                                                             connections: connections)) {
-            placePage(place)
-        }
-    }
-
-    @ViewBuilder
-    private func placePage(_ place: ExplorePush) -> some View {
-        switch place {
-        case .explore(.source(let sourceURL)):
-            if let source = sourceStore.sources.first(where: { $0.bookSourceUrl == sourceURL }) {
-                ExploreSourcePage(source: source) { address in openBrowser(.open(address)) }
-            }
-        case .feed(let route):
-            OPDSFeedView(route: route)
-        case .folder(let route):
-            WebDAVDirectoryView(route: route)
-        case .publicLibrary(.gutenbergHome):
-            GutenbergHomePage()
-        case .publicLibrary(.aozoraHome):
-            AozoraHomePage()
-        default:
-            EmptyView()
-        }
     }
 
     // MARK: Toolbar
@@ -271,12 +270,12 @@ private struct ExploreHomeRoot: View {
     }
 }
 
-// MARK: - A row
+// MARK: - A section
 
-/// One row, resolved against the shelf when it draws. Its own view, so a row that did not
-/// change is not drawn again when another one loads.
+/// One section, resolved against the shelf when it draws. Its own view, so a section that did
+/// not change is not drawn again when another one loads.
 private struct HomeRowHost: View {
-    let row: HomeModel.Row
+    let group: HomeSectionGroup
     let store: BookStore
     let aozoraIndex: AozoraCatalogIndex?
     let model: HomeModel
@@ -286,35 +285,42 @@ private struct HomeRowHost: View {
     @State private var confirmsDelete = false
 
     var body: some View {
-        HomeRowView(row: row, content: content,
-                    load: { model.load(row.id) },
-                    request: { model.request(row.id) },
+        HomeRowView(group: group, content: content,
+                    load: { for row in group.rows { model.load(row.id) } },
+                    request: {
+                        for row in group.rows { if case .failed = row.state { model.request(row.id) } }
+                    },
                     showAll: showAll,
                     open: open,
                     openLocation: { location in
+                        // Places come from a section of one source: an index's groups, a feed's.
+                        guard let row = group.rows.first else { return }
                         ExplorePlace.page(of: location, in: row, aozoraIndex: aozoraIndex).map(push)
                     },
                     actions: HomeSectionActions(
                         setLayout: { layout in
                             withAnimation(DSAnimation.standard) {
-                                HomePageStore.shared.edit { $0.setLayout(layout, section: row.section.id) }
+                                HomePageStore.shared.edit { $0.setLayout(layout, section: group.section.id) }
                             }
                         },
-                        hide: { HomePageStore.shared.edit { $0.setEnabled(false, section: row.section.id) } },
+                        hide: { HomePageStore.shared.edit { $0.setEnabled(false, section: group.section.id) } },
                         openSettings: openSettings,
                         delete: { confirmsDelete = true }))
-            .homeSectionDeleteConfirmation(isPresented: $confirmsDelete, title: row.section.editorTitle()) {
-                HomePageStore.shared.edit { $0.removeSection(row.section.id) }
+            .homeSectionDeleteConfirmation(isPresented: $confirmsDelete, title: group.section.editorTitle()) {
+                HomePageStore.shared.edit { $0.removeSection(group.section.id) }
             }
     }
 
     private var content: HomeRowContent? {
-        guard case .loaded(let entries) = row.state else { return nil }
-        return HomeRowContent(entries: entries, sourceName: row.sourceName, store: store)
+        guard case .loaded(let entries) = group.state else { return nil }
+        return HomeRowContent(entries: entries, store: store)
     }
 
+    /// The page of a section of one source. 最新 across several has none: no one page lists
+    /// them all.
     private var showAll: (() -> Void)? {
-        guard let target = ExplorePlace.showAll(row, aozoraIndex: aozoraIndex) else { return nil }
+        guard group.rows.count == 1,
+              let target = ExplorePlace.showAll(group.rows[0], aozoraIndex: aozoraIndex) else { return nil }
         return { push(target) }
     }
 

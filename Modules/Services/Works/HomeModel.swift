@@ -131,12 +131,6 @@ final class HomeModel: ObservableObject {
         start(row)
     }
 
-    /// The home is on screen: the rows that load with it start now, also those below the
-    /// fold, whose views have not been made yet.
-    func homeAppeared() {
-        for row in rows where row.policy == .withHome { load(row.id) }
-    }
-
     /// The reader tapped 重試 on a failed row.
     func request(_ rowID: String) {
         guard let row = row(rowID) else { return }

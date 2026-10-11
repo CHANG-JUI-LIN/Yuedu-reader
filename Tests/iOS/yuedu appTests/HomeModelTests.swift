@@ -271,7 +271,7 @@ struct HomeModelTests {
         #expect(g.loads.isEmpty)
 
         // No row's view has asked: only the one that loads with the home starts.
-        home.homeAppeared()
+        home.homeAppeared(in: nil)
         await until(home) { isLoaded($0[0].state) }
         #expect(g.loads.count == 1)
         #expect(a.loads.isEmpty)
@@ -279,12 +279,29 @@ struct HomeModelTests {
 
         // Its view coming into view, or the home appearing again, sends nothing more.
         home.load(rows(home)[0].id)
-        home.homeAppeared()
+        home.homeAppeared(in: nil)
         #expect(g.loads.count == 1)
 
         home.reload()
         await until(home) { isLoaded($0[0].state) && g.loads.count == 2 }
         #expect(a.loads.isEmpty)
+    }
+
+    @Test("with 範圍 on another source, the rows that load with the home send nothing (5d-3b)")
+    func homeAppearedFollowsScope() async {
+        let g = FakeProvider(PublicLibraryID.gutenberg.rawValue, type: .gutenberg) { section in
+            if case .gutenbergFeed = section.binding { return .withHome }
+            return nil
+        }
+        let home = model([g])
+        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .gutenbergFeed(url: "https://g.test/feed"))]))
+        home.homeAppeared(in: SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue))
+        #expect(g.loads.isEmpty)
+        #expect(rows(home)[0].state == .idle)
+
+        home.homeAppeared(in: g.instance)
+        await until(home) { isLoaded($0[0].state) }
+        #expect(g.loads.count == 1)
     }
 
     @Test("coming back into view loads again only the rows read from this device, and only those already loaded")
@@ -371,7 +388,7 @@ struct HomeModelTests {
         }
         #expect(requests == 0)
 
-        home.homeAppeared()
+        home.homeAppeared(in: nil)
         await until(home) { $0.allSatisfy { isLoaded($0.state) } }
         #expect(requests == 2)
     }

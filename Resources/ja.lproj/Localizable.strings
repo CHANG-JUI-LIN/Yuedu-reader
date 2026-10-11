@@ -3631,7 +3631,6 @@
 "建立索引失敗：%@" = "索引の作成に失敗：%@";
 
 /* Explore home (unified library 5c) */
-"%@・最新" = "%@の新着";
 "相關" = "関連";
 
 /* Unified library 5d-1: 範圍 holds the libraries */
@@ -3654,3 +3653,7 @@
 "固定封面網格" = "表紙グリッド";
 "圖文資訊清單" = "詳細リスト";
 "顯示排名" = "順位を表示";
+
+/* Unified library 5d-3b: the full catalogs from the top of the home */
+"瀏覽書庫" = "ライブラリを見る";
+"瀏覽完整目錄" = "カタログ全体を見る";
