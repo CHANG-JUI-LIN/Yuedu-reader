@@ -3,7 +3,7 @@ import Foundation
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), mapped from the Emby user
 // settings that shape its aggregation: 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e),
-// 顯示在最新 (5d-3f); 隱藏已讀 joins it in 5d-3g.
+// 顯示在最新 (5d-3f), 隱藏已讀 (5d-3g).
 
 struct AggregationSettings: Codable, Equatable, Sendable {
     /// Nil until the reader chooses: then `ReadingLanguagePreferences.initial`, which follows
@@ -16,12 +16,18 @@ struct AggregationSettings: Codable, Equatable, Sendable {
     /// reader or by the move of the 最新 section's own list (`adoptLegacyLatestExcluded`). A
     /// library removed and added again under the same id stays off.
     var hiddenFromLatest: [SourceInstanceKey]?
+    /// 隱藏已讀 in 最新 and in 相關 (`HomeReadFilter`); nil is on, as Emby starts
+    /// `HidePlayedInLatest`.
+    var hidesReadInLatest: Bool?
+    var hidesReadInRelated: Bool?
 
     init(readingLanguages: ReadingLanguagePreferences? = nil, libraryOrder: [SourceInstanceKey]? = nil,
-         hiddenFromLatest: [SourceInstanceKey]? = nil) {
+         hiddenFromLatest: [SourceInstanceKey]? = nil, hidesReadInLatest: Bool? = nil, hidesReadInRelated: Bool? = nil) {
         self.readingLanguages = readingLanguages
         self.libraryOrder = libraryOrder
         self.hiddenFromLatest = hiddenFromLatest
+        self.hidesReadInLatest = hidesReadInLatest
+        self.hidesReadInRelated = hidesReadInRelated
     }
 
     /// The languages in effect.
@@ -87,6 +93,18 @@ final class AggregationSettingsStore: ObservableObject {
             if !shown { hidden.append(key) }
             settings.hiddenFromLatest = hidden
         }
+    }
+
+    /// 隱藏已讀, 最新 and 相關 each on until the reader turns it off.
+    var hidesReadInLatest: Bool { settings.hidesReadInLatest ?? true }
+    var hidesReadInRelated: Bool { settings.hidesReadInRelated ?? true }
+
+    func setHidesReadInLatest(_ hides: Bool) {
+        edit { $0.hidesReadInLatest = hides }
+    }
+
+    func setHidesReadInRelated(_ hides: Bool) {
+        edit { $0.hidesReadInRelated = hides }
     }
 
     /// Until 5d-3f, 最新 kept its own 排除的來源 (decision 21 makes 顯示在最新 the one place).

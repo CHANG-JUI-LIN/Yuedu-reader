@@ -797,3 +797,14 @@ Branch `unified-library/5d3f-show-in-latest`. Decision 21's `LatestItemsExcludes
 - **Not covered:** a WebDAV connection has a switch but no 最新 row until its books are indexed, as before.
 - **Tests (unit):** `ShowInLatestTests` (new, 3: an old home file reads, hands its list over and loses it once saved; the libraries move once and never over the reader's choice; the switch is saved). `HomeModelTests` now hide sources through `sync(hiddenFromLatest:)`; the 排除的來源 editing test is gone. With the home suites: 71/71 in 13 suites (iOS 27).
 - **Tests (UI):** `ExploreHomeUITests.testShowInLatestOff` (new: Gutenberg off in 聚合設定, then its fixture book is not on the home; `testGutenbergLatestLoadsWithTheHome` shows the same scroll finds it when on). iOS 27: `AggregationSettingsUITests` 2/2, `ExploreHomeUITests` 8/8, `HomeEditorUITests` 3/3. iOS 17.5: `testShowInLatestOff`, `AggregationSettingsUITests` 2/2, `HomeEditorUITests` 3/3.
+
+### 5d-3g: 隱藏已讀 (2026-10-11)
+
+Branch `unified-library/5d3g-hide-read`. Decision 21's `HidePlayedInLatest` / `HidePlayedInSuggestions`.
+
+- **聚合設定 → 隱藏已讀:** two switches, 最新 and 相關, both on until turned off (Emby starts `HidePlayedInLatest` on). VoiceOver hears 「隱藏已讀」 as each switch's hint. Footer: a book counts when read to the end or marked 已讀完, in any copy.
+- **What counts as read:** a copy on this device at progress ≥ 0.99, the shelf's own 已讀完 (`ReadingBook.isReadToEnd`), so 標記為已讀完 counts. `CopyLookup.isRead` checks the shelf copy a card stands for and every copy made from the entry's item. Book-source items have no copies in `CopyLookup`, so they are never hidden.
+- **Where:** `HomeScopeFilter.groups(readFilter:)` drops read books from 最新's and 相關's rows when the home draws, before 最新's turns and the languages' order. Nothing reloads; the shelf lookup is the memoised one the cards already use. A book finished in the reader leaves on the next return to 探索 (`reloadLocal`).
+- **Strings:** 隱藏已讀 and the footer, in five languages (the switches reuse 最新 and 相關).
+- **Tests (unit):** `HideReadTests` (new, 3: a copy read to the end marks its Gutenberg item and its shelf card read; 最新 and 相關 each follow their own switch while other sections keep read books; both start on and are saved). With the home suites, `CopyLookupTests` and `HomeCompactReadingCardTests`: 59/59 in 11 suites (iOS 27).
+- **Tests (UI):** `AggregationSettingsUITests.testHideReadSwitches` (new: both on; 相關 off survives a relaunch). The page is longer now, so the suite scrolls to each control first. iOS 27: `AggregationSettingsUITests` 3/3, `ExploreHomeUITests` 8/8. iOS 17.5: `AggregationSettingsUITests` 3/3, `testNewInstallShowsTheDefaultSections`.

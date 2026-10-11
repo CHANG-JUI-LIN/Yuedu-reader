@@ -2,7 +2,7 @@ import SwiftUI
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), Emby's aggregation settings
 // mapped onto Yuedu's libraries. Pushed from 設定 only, as Emby's sit in its user settings.
-// 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e), 顯示在最新 (5d-3f); 隱藏已讀 follows (5d-3g).
+// 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e), 顯示在最新 (5d-3f), 隱藏已讀 (5d-3g).
 
 struct AggregationSettingsView: View {
     @ObservedObject private var store = AggregationSettingsStore.shared
@@ -62,6 +62,24 @@ struct AggregationSettingsView: View {
                 }
                 .interfaceSectionSurface()
             }
+
+            Section {
+                Toggle(localized("最新"), isOn: Binding(get: { store.hidesReadInLatest },
+                                                       set: { store.setHidesReadInLatest($0) }))
+                    // The switch alone reads 「最新」; the section says what it does.
+                    .accessibilityHint(localized("隱藏已讀"))
+                    .accessibilityIdentifier("aggregation.hideRead.latest")
+                Toggle(localized("相關"), isOn: Binding(get: { store.hidesReadInRelated },
+                                                       set: { store.setHidesReadInRelated($0) }))
+                    .accessibilityHint(localized("隱藏已讀"))
+                    .accessibilityIdentifier("aggregation.hideRead.related")
+            } header: {
+                Text(localized("隱藏已讀"))
+            } footer: {
+                Text(localized("讀到最後或標記為已讀完的書，任何一份都算。"))
+                    .dsSectionFooter()
+            }
+            .interfaceSectionSurface()
 
             Section {
                 ForEach(Array(preferences.languages.enumerated()), id: \.element) { index, code in
