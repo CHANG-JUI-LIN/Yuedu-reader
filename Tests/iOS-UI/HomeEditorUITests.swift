@@ -141,4 +141,145 @@ final class HomeEditorUITests: XCTestCase {
         confirm.tap()
         XCTAssertTrue(app.buttons[card].firstMatch.waitForNonExistence(timeout: 10), "a deleted section has no row")
     }
+
+    // MARK: 新增欄目 (5d-5)
+
+    /// One book source whose discover page lists one category, 熱門, under one filter, 頻道, that
+    /// its rule reads from the source's variable as 光遇's does. Its host answers nothing: the
+    /// row it gives the home fails to load, which still draws its name.
+    private func writeBookSource() throws {
+        let sources = directory.appendingPathComponent("sources")
+        try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+        let source: [String: Any] = [
+            "bookSourceName": "介面測試書源",
+            "bookSourceUrl": "https://ui-test-explore.example",
+            "exploreUrl": #"""
+                <js>var v = JSON.parse(source.getVariable() || '{}'); var c = v['頻道'] || '男';
+                JSON.stringify([{title: '頻道', type: 'select', chars: ['男', '女'], 'default': c, action: "show(c,'頻道')"},
+                {title: '熱門', url: 'https://ui-test-explore.example/hot?c=' + c}]);</js>
+                """#,
+            "enabled": true,
+            "enabledExplore": true,
+        ]
+        try JSONSerialization.data(withJSONObject: [source]).write(to: sources.appendingPathComponent("book_sources.json"))
+    }
+
+    /// The cards of the sections named `title` in 編輯首頁.
+    @MainActor
+    private func sectionCards(_ app: XCUIApplication, named title: String) -> XCUIElementQuery {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "homeEditor.section.", title))
+    }
+
+    /// Picks `layout`, then 資料來源, in 新增欄目's sheet.
+    @MainActor
+    private func startSection(_ app: XCUIApplication, layout: String) {
+        let add = app.buttons["homeEditor.addSection"].firstMatch
+        for _ in 0..<8 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        let style = app.buttons["homeNewSection.layout.\(layout)"].firstMatch
+        XCTAssertTrue(style.waitForExistence(timeout: 5), app.debugDescription)
+        style.tap()
+        let addButton = app.buttons["homeSection.add"].firstMatch
+        XCTAssertTrue(addButton.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(addButton.isEnabled, "nothing to add before 資料來源")
+        app.buttons["homeSection.source"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["App 資料"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    /// 新增欄目 from 編輯首頁: a layout, then the form, whose 資料來源 opens 選擇內容來源. A library's
+    /// list and a book source's category each become a section at the end of the home.
+    @MainActor
+    func testAddSections() throws {
+        try writeBookSource()
+        let app = launchExplore()
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+        XCTAssertEqual(sectionCards(app, named: "兒童與青少年").count, 1)
+
+        // A library: Gutenberg's bundled list.
+        startSection(app, layout: "coverGrid")
+        attach(app, "home-new-section-picker")
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Project Gutenberg")).firstMatch.tap()
+        let list = app.buttons["homePicker.item.兒童與青少年"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5), app.debugDescription)
+        list.tap()
+        let source = app.buttons["homeSection.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(source.value as? String, "Project Gutenberg › 兒童與青少年")
+        XCTAssertTrue(app.buttons["home.card.gutenberg.11"].firstMatch.waitForExistence(timeout: 10), "the preview loads the list")
+        attach(app, "home-new-section-form")
+        app.buttons["homeSection.add"].firstMatch.tap()
+        // The home brings the new section, at its end, into view.
+        XCTAssertTrue(app.buttons["homeEditor.addSection"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(sectionCards(app, named: "兒童與青少年").count, 2, app.debugDescription)
+        attach(app, "home-new-section-added")
+
+        // A book source's category.
+        startSection(app, layout: "row")
+        app.buttons["homePicker.bookSources"].firstMatch.tap()
+        let sourceRow = app.buttons["homePicker.source.介面測試書源"].firstMatch
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10), app.debugDescription)
+        sourceRow.tap()
+        let category = app.buttons["homePicker.item.熱門"].firstMatch
+        XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription)
+        // The section's own filter: the categories list again under it.
+        let channel = app.descendants(matching: .any)["homePicker.filter.頻道"].firstMatch
+        XCTAssertTrue(channel.waitForExistence(timeout: 5), app.debugDescription)
+        channel.tap()
+        let female = app.buttons["女"].firstMatch
+        XCTAssertTrue(female.waitForExistence(timeout: 5), app.debugDescription)
+        female.tap()
+        // A menu picker reads its choice in its label (「頻道、女」).
+        wait(for: [expectation(for: NSPredicate(format: "label CONTAINS %@", "女"), evaluatedWith: channel)], timeout: 15)
+        XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription)
+        attach(app, "home-new-section-categories")
+        category.tap()
+        XCTAssertTrue(source.waitForExistence(timeout: 5))
+        XCTAssertEqual(source.value as? String, "介面測試書源 › 熱門")
+        XCTAssertEqual(app.buttons["homeSection.filters"].firstMatch.value as? String, "女", app.debugDescription)
+        app.buttons["homeSection.add"].firstMatch.tap()
+        XCTAssertTrue(sectionCards(app, named: "熱門").firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+
+        // The same form edits it: its card pushes it, its title shows on the home.
+        sectionCards(app, named: "熱門").firstMatch.tap()
+        let title = app.textFields["homeSection.title"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5), app.debugDescription)
+        title.tap()
+        title.typeText("今日熱門")
+        XCTAssertEqual(app.buttons["homeSection.filters"].firstMatch.value as? String, "女", "the section keeps its filter")
+        attach(app, "home-section-form")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(sectionCards(app, named: "今日熱門").firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+
+        // 最新's parameters: the category that stands for the book source in it.
+        let latest = sectionCards(app, named: "最新").firstMatch
+        for _ in 0..<10 where !(latest.exists && latest.isHittable) { app.swipeDown() }
+        latest.tap()
+        let addLatest = app.buttons["homeSection.latest.add"].firstMatch
+        XCTAssertTrue(addLatest.waitForExistence(timeout: 5), app.debugDescription)
+        addLatest.tap()
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10), app.debugDescription)
+        sourceRow.tap()
+        XCTAssertTrue(category.waitForExistence(timeout: 15), app.debugDescription)
+        category.tap()
+        let picked = app.buttons["homeSection.latest.介面測試書源"].firstMatch
+        XCTAssertTrue(picked.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(picked.label.contains("熱門"), picked.label)
+        attach(app, "home-section-latest-parameters")
+
+        // 刪除 leaves the form, and the section the home.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let renamed = sectionCards(app, named: "今日熱門").firstMatch
+        for _ in 0..<10 where !(renamed.exists && renamed.isHittable) { app.swipeUp() }
+        renamed.tap()
+        let delete = app.buttons["homeSection.delete"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<5 where !delete.isHittable { app.swipeUp() }
+        delete.tap()
+        XCTAssertTrue(app.staticTexts["刪除「今日熱門」？"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "刪除", "homeSection.delete")).firstMatch.tap()
+        XCTAssertTrue(delete.waitForNonExistence(timeout: 10), "the form left")
+        XCTAssertTrue(renamed.waitForNonExistence(timeout: 5), app.debugDescription)
+    }
 }

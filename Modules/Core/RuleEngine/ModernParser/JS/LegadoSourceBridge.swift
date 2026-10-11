@@ -283,11 +283,82 @@ import JavaScriptCore
     // MARK: Source Variables
 
     func getVariable() -> String {
-        return getVariableHandler?() ?? ""
+        return readVariableJSON()
     }
 
     func setVariable(_ variable: String?) {
-        setVariableHandler?(variable)
+        writeVariableJSON(variable)
+    }
+
+    // MARK: Variable overlay (unified library 5d-5)
+
+    private static let variableOverlayKey = "com.yuedu.sourceVariableOverlay"
+
+    /// Runs `body` with `overlay`'s keys read in place of the stored variable's, and never
+    /// stored: an Explore home section's own discover filter values (Phase 5 plan, decision
+    /// 23), which must not change the source's page or another section.
+    ///
+    /// Kept per thread. Call it on the engine's queue, around one evaluation: the script runs
+    /// there synchronously, so nothing else the engine runs sees the overlay — not the next
+    /// job, and not a job on the queue a timeout's reset makes while this one still runs.
+    static func withVariableOverlay<T>(_ overlay: [String: String], _ body: () -> T) -> T {
+        let thread = Thread.current.threadDictionary
+        let previous = thread[variableOverlayKey]
+        thread[variableOverlayKey] = overlay
+        defer { thread[variableOverlayKey] = previous }
+        return body()
+    }
+
+    private var variableOverlay: [String: String]? {
+        guard let overlay = Thread.current.threadDictionary[Self.variableOverlayKey] as? [String: String],
+              !overlay.isEmpty else { return nil }
+        return overlay
+    }
+
+    /// The variable as the script sees it: the stored one, under the overlay's keys.
+    private func readVariableJSON() -> String {
+        let stored = getVariableHandler?() ?? ""
+        guard let overlay = variableOverlay else { return stored }
+        guard var object = Self.variableObject(stored) else {
+            AppLogger.network("⟐ source variable is not a JSON object; filter overlay skipped",
+                              context: ["source": bookSourceUrl])
+            return stored
+        }
+        for (key, value) in overlay { object[key] = value }
+        return Self.variableJSON(object) ?? stored
+    }
+
+    /// Stores what the script wrote. Under an overlay, the overlay's keys keep the values
+    /// stored before (or stay absent): the script read the overlay's, and a script that writes
+    /// the whole variable back (光遇's `getCloudSettings`) would otherwise store them.
+    private func writeVariableJSON(_ json: String?) {
+        guard let overlay = variableOverlay, let json, var written = Self.variableObject(json) else {
+            setVariableHandler?(json)
+            return
+        }
+        let stored = Self.variableObject(getVariableHandler?() ?? "") ?? [:]
+        for key in overlay.keys {
+            written[key] = stored[key]
+        }
+        setVariableHandler?(Self.variableJSON(written) ?? json)
+    }
+
+    /// The variable as a JSON object; an empty variable is an empty one. Nil for an array or
+    /// an opaque token.
+    private static func variableObject(_ json: String) -> [String: Any]? {
+        if json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [:] }
+        guard let data = json.data(using: .utf8) else { return nil }
+        do {
+            return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        } catch {
+            return nil
+        }
+    }
+
+    private static func variableJSON(_ object: [String: Any]) -> String? {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     // MARK: Login Info
@@ -345,7 +416,7 @@ import JavaScriptCore
     // MARK: Key-Value Store
 
     func put(_ key: String, _ value: String) {
-        let currentJson = getVariableHandler?() ?? ""
+        let currentJson = readVariableJSON()
         let normalized = Self.normalizeStored(value)
 
         // Older Yuedu sources used getVariable() as a JSON object and expected
@@ -357,7 +428,7 @@ import JavaScriptCore
             mutableDict[key] = normalized
             if let newData = try? JSONSerialization.data(withJSONObject: mutableDict),
                let newJson = String(data: newData, encoding: .utf8) {
-                setVariableHandler?(newJson)
+                writeVariableJSON(newJson)
             }
         } else {
             putKeyValueHandler?(key, normalized)
@@ -367,7 +438,7 @@ import JavaScriptCore
     }
 
     func get(_ key: String) -> String {
-        let currentJson = getVariableHandler?() ?? ""
+        let currentJson = readVariableJSON()
         if let data = currentJson.data(using: .utf8),
            let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
            let value = dict[key] {

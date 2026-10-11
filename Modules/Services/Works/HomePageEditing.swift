@@ -54,3 +54,17 @@ extension HomePage {
         sections.removeAll { $0.id == id }
     }
 }
+
+// Unified library 5d-5: the section form (Phase 5 plan, decision 23). 新增欄目 adds its section
+// at the end; the form of a section already there writes it back in its place.
+extension HomePage {
+    mutating func appendSection(_ section: HomeSection) {
+        sections.append(section)
+    }
+
+    /// The section of the same id, replaced; nothing when it is gone.
+    mutating func replaceSection(_ section: HomeSection) {
+        guard let index = sections.firstIndex(where: { $0.id == section.id }) else { return }
+        sections[index] = section
+    }
+}

@@ -100,12 +100,60 @@ extension HomeSection {
         let key = Self.latestCategoryKey(sourceURL: sourceURL)
         guard let reference else {
             parameters[key] = nil
+            setFilterValues([:], forSourceURL: sourceURL)
             return
         }
         do {
             parameters[key] = String(decoding: try JSONEncoder().encode(reference), as: UTF8.self)
         } catch {
             AppLogger.cache("⟐ home 「最新」 category could not be stored", error: error, context: ["source": sourceURL])
+        }
+    }
+
+    // MARK: Discover filters
+
+    /// The parameter holding the discover filter values a book source's category was picked
+    /// under (unified library 5d-5, decision 23): the section's own, kept here instead of in
+    /// the source's shared variables, by source, so 最新 keeps one set per source.
+    ///
+    /// The source reads them when it lists its categories (`SourceCategoryListing`); a source
+    /// that writes them into the category's URL (光遇) shows them in the section. A source that
+    /// reads them again when it loads the books reads its shared ones there.
+    static func filtersKey(sourceURL: String) -> String {
+        "filters:" + sourceURL
+    }
+
+    func filterValues(forSourceURL sourceURL: String) -> [String: String] {
+        Self.filterValues(in: parameters, sourceURL: sourceURL)
+    }
+
+    static func filterValues(in parameters: [String: String], sourceURL: String) -> [String: String] {
+        guard let stored = parameters[filtersKey(sourceURL: sourceURL)] else { return [:] }
+        do {
+            return try JSONDecoder().decode([String: String].self, from: Data(stored.utf8))
+        } catch {
+            AppLogger.cache("⟐ home section's discover filters unreadable", error: error, context: ["source": sourceURL])
+            return [:]
+        }
+    }
+
+    /// Empty values remove the parameter.
+    mutating func setFilterValues(_ values: [String: String], forSourceURL sourceURL: String) {
+        parameters.merge(Self.filterParameters(values, sourceURL: sourceURL)) { $1 }
+        if values.isEmpty { parameters[Self.filtersKey(sourceURL: sourceURL)] = nil }
+    }
+
+    /// The parameter for `values`, keys sorted so the same values are the same parameter
+    /// (`HomeModel.sync` keeps a row whose parameters did not change).
+    static func filterParameters(_ values: [String: String], sourceURL: String) -> [String: String] {
+        guard !values.isEmpty else { return [:] }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        do {
+            return [filtersKey(sourceURL: sourceURL): String(decoding: try encoder.encode(values), as: UTF8.self)]
+        } catch {
+            AppLogger.cache("⟐ home section's discover filters could not be stored", error: error, context: ["source": sourceURL])
+            return [:]
         }
     }
 }

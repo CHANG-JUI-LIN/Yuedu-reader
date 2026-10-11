@@ -52,6 +52,10 @@ private struct ExploreHomeRoot: View {
     @State private var configurationPrompt: HomeConfigurationPrompt?
     /// 編輯首頁: the sections drawn as cards to show, hide, reorder and open (5d-2).
     @State private var isEditing = false
+    /// 新增欄目's sheet (5d-5).
+    @State private var addsSection = false
+    /// The section 新增欄目 just added, brought into view: it is at the end of the home.
+    @State private var addedSection: UUID?
 
     private struct BrowserPresentation: Identifiable {
         let id = UUID()
@@ -134,6 +138,10 @@ private struct ExploreHomeRoot: View {
             home
             .toolbar { toolbar }
             .homeConfigurationPrompts($configurationPrompt)
+            .sheet(isPresented: $addsSection) {
+                HomeNewSectionSheet(added: { addedSection = $0; addsSection = false }, close: { addsSection = false })
+                    .environmentObject(store)
+            }
             .fullScreenCover(item: $browserPresentation) { presentation in
                 NavigationStack {
                     BrowserPage(browser: browser, entry: presentation.entry)
@@ -167,6 +175,7 @@ private struct ExploreHomeRoot: View {
     // MARK: 全部
 
     private var home: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
                 if isEditing {
@@ -174,11 +183,12 @@ private struct ExploreHomeRoot: View {
                     HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil, languages: aggregation.readingLanguages),
                                         configuration: selectedConfiguration,
                                         openSettings: { path.append(HomeEditRoute.section($0)) },
-                                        prompt: { configurationPrompt = $0 }) { group in
+                                        prompt: { configurationPrompt = $0 },
+                                        addSection: { addsSection = true }) { group in
                         groupHost(group)
                     }
                 } else {
-                    ForEach(groups) { group in groupHost(group) }
+                    ForEach(groups) { group in groupHost(group).id(group.section.id) }
                 }
                 // Over a home with nothing drawn, the button is the empty state's own.
                 if model.isReady, isEditing || !showsNothing {
@@ -193,6 +203,12 @@ private struct ExploreHomeRoot: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .rootTabTitleScrollAnchor()
         }
+        .onChange(of: addedSection) { _, added in
+            guard let added else { return }
+            withAnimation(reduceMotion ? nil : DSAnimation.standard) { proxy.scrollTo(added, anchor: .center) }
+            addedSection = nil
+        }
+        }
         .overlay {
             if !model.isReady {
                 ProgressView()
@@ -204,13 +220,15 @@ private struct ExploreHomeRoot: View {
                         UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
                     }
                 } description: {
-                    if hasNoSections {
-                        // Until 新增欄目 (5d-5), the one way to fill a 首頁配置.
-                        Text(localized("長按來源配置的分類，選擇「加入首頁配置」。")).foregroundStyle(DSColor.textSecondary)
-                    } else if scopeKey == nil {
+                    if !hasNoSections, scopeKey == nil {
                         Text(localized("從右上角的範圍打開書庫或來源配置。")).foregroundStyle(DSColor.textSecondary)
                     }
                 } actions: {
+                    if hasNoSections {
+                        Button(localized("新增欄目")) { addsSection = true }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("home.addSection")
+                    }
                     Button(localized("編輯首頁")) { setEditing(true) }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("home.edit")
@@ -248,6 +266,14 @@ private struct ExploreHomeRoot: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if isEditing {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { addsSection = true } label: {
+                    Image(systemName: "plus")
+                        .accessibilityHidden(true)
+                }
+                .accessibilityLabel(localized("新增欄目"))
+                .accessibilityIdentifier("home.addSectionBar")
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button(localized("完成")) { setEditing(false) }
                     .accessibilityIdentifier("home.editDoneBar")

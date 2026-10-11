@@ -167,7 +167,7 @@ final class DiscoverViewModel: ObservableObject {
     /// deliberately outside the source variable JSON so nothing the source's JS reads
     /// changes. Keyed by bookSourceUrl to match the runtime variable store.
     private let filterKeysPrefix = "discover.filterKeys."
-    private let defaultDiscoverPlatform = "全部"
+    nonisolated static let defaultDiscoverPlatform = "全部"
     private var loadItemsTask: Task<Void, Never>?
     /// Guards the one-shot "reset poisoned discover variable + reload" recovery so a source
     /// that genuinely returns no filters can't loop. Cleared whenever the selected source changes.
@@ -410,7 +410,7 @@ final class DiscoverViewModel: ObservableObject {
 
         switch filter.paramKey {
         case "发现页类型":
-            let platform = discoverPlatform(for: value, dict: dict)
+            let platform = Self.discoverPlatform(for: value, dict: dict)
             dict["发现页来源"] = platform
             rememberFilterKeys(["发现页来源"], for: source)
             Self.setDiscoverPlatform(platform, forMode: value, in: &dict)
@@ -949,7 +949,9 @@ final class DiscoverViewModel: ObservableObject {
         return "小说"
     }
 
-    private func discoverPlatform(for mode: String, dict: [String: Any]) -> String {
+    /// The 发现页来源 a 发现页类型 starts on. Also what an Explore home section's own filters
+    /// start on when the reader changes its 类型 (`SourceCategoryListing`), which only reads it.
+    nonisolated static func discoverPlatform(for mode: String, dict: [String: Any]) -> String {
         let memory = (dict[Self.discoverPlatformMemoryKey] as? [String: Any]) ?? [:]
         if let saved = Self.nonEmptyString(memory[mode]) {
             return saved
@@ -963,7 +965,7 @@ final class DiscoverViewModel: ObservableObject {
            !configured.contains(",") {
             return configured
         }
-        return defaultDiscoverPlatform
+        return Self.defaultDiscoverPlatform
     }
 
     // MARK: - Discover platform memory (app-private, kept out of 更多设置)
