@@ -20,6 +20,7 @@ struct ExploreHomeTests {
             case .continueReading: "continueReading"
             case .latest: "latest"
             case .gutenbergCollection: "featured"
+            case .gutenbergShelf("popular"): "popular"
             default: "other"
             }
         }
@@ -35,7 +36,7 @@ struct ExploreHomeTests {
         #expect(sources.page == nil)
         let saved = sources.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: true)
         let featured = PublicLibraryCollection.all.count
-        #expect(bindings(saved) == ["continueReading", "latest"] + Array(repeating: "featured", count: featured))
+        #expect(bindings(saved) == ["continueReading", "latest", "popular"] + Array(repeating: "featured", count: featured))
         sources.waitForPendingWritesForTesting()
 
         // Read again in another mode: the saved page stands.
@@ -50,7 +51,7 @@ struct ExploreHomeTests {
         let newInstall = HomePageStore(fileURL: folder.appendingPathComponent("a.json"))
         let featured = PublicLibraryCollection.all.count
         #expect(bindings(newInstall.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true))
-                == ["continueReading"] + Array(repeating: "featured", count: featured) + ["latest"])
+                == ["continueReading", "popular"] + Array(repeating: "featured", count: featured) + ["latest"])
 
         let china = HomePageStore(fileURL: folder.appendingPathComponent("b.json"))
         #expect(bindings(china.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: false))

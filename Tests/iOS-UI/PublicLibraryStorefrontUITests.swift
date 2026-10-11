@@ -4,7 +4,7 @@ import XCTest
 /// The test changes no book-source data outside its own temporary directory.
 ///
 /// Since unified library 5c-3 the cards open from the Explore home's 精選 rows, as a new install
-/// sees them (`-reset-explore-home`), and the store's own pages from 範圍 (5d-1).
+/// sees them (`-reset-explore-home`), and the store's own pages from a row's name.
 final class PublicLibraryStorefrontUITests: XCTestCase {
     private var fixtureDirectory: URL!
 
@@ -121,8 +121,10 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         close.tap()
     }
 
-    /// The store's pages are pushed by value (unified library 5c, decision 5): a card opened
-    /// two pages deep pushes its author on top of them, and backing out walks the same pages.
+    /// The store's pages are pushed by value (unified library 5c, decision 5): a card opened on a
+    /// pushed page pushes its author on top of it, and backing out walks the same pages. The page
+    /// is 中文書籍's, opened from its row's name: since 5d-3b 範圍 filters the home instead of
+    /// showing Gutenberg's own page, and the entry that opened it is gone.
     @MainActor
     func testCardFromAPushedPageKeepsTheStack() {
         let app = application()
@@ -130,16 +132,10 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         let explore = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(explore.waitForExistence(timeout: 30))
         explore.tap()
-        // 範圍 shows Gutenberg's own page in place (unified library 5d-1).
-        let scope = app.buttons["explore.scopeMenu"].firstMatch
-        XCTAssertTrue(scope.waitForExistence(timeout: 10), app.debugDescription)
-        scope.tap()
-        app.buttons["Project Gutenberg"].firstMatch.tap()
-        let categories = app.buttons["publicLibrary.categories"].firstMatch
-        XCTAssertTrue(categories.waitForExistence(timeout: 10))
-        categories.tap()
-        XCTAssertTrue(app.navigationBars["分類"].waitForExistence(timeout: 10))
-        app.buttons["中文書籍"].firstMatch.tap()
+        let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.row.header.' AND label == '中文書籍'")).firstMatch
+        for _ in 0..<4 where !header.waitForExistence(timeout: 3) { app.swipeUp() }
+        XCTAssertTrue(header.exists, app.debugDescription)
+        header.tap()
         XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10))
         app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/24264.opds"].firstMatch.tap()
         let close = app.buttons["publicLibrary.closeSheet"].firstMatch
@@ -148,20 +144,15 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         XCTAssertTrue(author.waitForExistence(timeout: 10), app.debugDescription)
         author.tap()
         XCTAssertTrue(app.navigationBars["曹雪芹"].waitForExistence(timeout: 10))
-        screenshot(app, "storefront-author-from-category")
+        screenshot(app, "storefront-author-from-collection")
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(close.waitForExistence(timeout: 10), "Back from the author returns to the card")
         close.tap()
         XCTAssertTrue(close.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["中文書籍"].exists, "The card closes onto the page it was opened from")
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["分類"].waitForExistence(timeout: 10))
-        app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(categories.waitForExistence(timeout: 10), "Back from 分類 returns to Gutenberg's page")
-        XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "Gutenberg's page is 探索's root")
-        // Leave 全部 for the next test.
-        scope.tap()
-        app.buttons["全部"].firstMatch.tap()
+        XCTAssertTrue(header.waitForExistence(timeout: 10), "Back from 中文書籍 returns to the home")
+        XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "The home is 探索's root")
     }
 
     @MainActor

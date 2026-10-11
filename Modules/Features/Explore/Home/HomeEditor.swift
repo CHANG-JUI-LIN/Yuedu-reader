@@ -30,7 +30,7 @@ extension HomeSection {
         let sourceName: String
         switch binding {
         case .opdsFeed(let connectionID, _): sourceName = connections.connection(id: connectionID)?.name ?? ""
-        case .gutenbergFeed: sourceName = localized("Project Gutenberg")
+        case .gutenbergFeed, .gutenbergShelf: sourceName = localized("Project Gutenberg")
         default: sourceName = ""
         }
         return displayTitle(sourceName: sourceName)

@@ -177,8 +177,14 @@ enum PublicLibraryFeedTransport {
         // Fixtures exercise gestures without touching the unavailable Aozora site
         // or multiplying Gutenberg traffic during UI regression runs.
         if let directory = ProcessInfo.processInfo.environment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] {
-            let name = url.path.split(separator: "/").joined(separator: "_") + ".xml"
-            let data = try Data(contentsOf: URL(fileURLWithPath: directory).appendingPathComponent(name))
+            // By path; a test that tells two lists of one path apart (熱門 and 最新 are both
+            // `ebooks/search.opds`, 5d-6a) writes `<path>@<query>.xml` for one of them.
+            let folder = URL(fileURLWithPath: directory)
+            let name = url.path.split(separator: "/").joined(separator: "_")
+            let byQuery = url.query.map { folder.appendingPathComponent(name + "@" + $0 + ".xml") }
+            let file = byQuery.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+                ?? folder.appendingPathComponent(name + ".xml")
+            let data = try Data(contentsOf: file)
             return try OPDSClient.parseFeed(data: data, feedURL: url)
         }
         #endif

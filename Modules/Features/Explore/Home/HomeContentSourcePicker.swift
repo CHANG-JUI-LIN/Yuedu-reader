@@ -177,6 +177,7 @@ private struct HomeFeedChoices: View {
     let current: HomeSectionBinding?
     let choose: (HomeContentChoice) -> Void
     @State private var state = LoadState.loading
+    @ObservedObject private var aggregation = AggregationSettingsStore.shared
 
     private var name: String {
         switch source {
@@ -202,6 +203,17 @@ private struct HomeFeedChoices: View {
     var body: some View {
         List {
             if case .gutenberg = source {
+                // Gutenberg's shelves, as its storefront lists them: 熱門, 最新, the reader's
+                // languages. Kept by id, so they follow the endpoint (5d-6a).
+                Section {
+                    ForEach(GutenbergShelf.shelves(languages: aggregation.readingLanguages.languages)) { shelf in
+                        let binding = HomeSectionBinding.gutenbergShelf(id: shelf.id)
+                        HomeChoiceRow(title: shelf.title, isCurrent: current == binding) {
+                            choose(HomeContentChoice(binding: binding))
+                        }
+                    }
+                }
+                .interfaceSectionSurface()
                 Section {
                     ForEach(HomeSectionBinding.gutenbergCollections, id: \.self) { binding in
                         HomeChoiceRow(title: HomeSection(layout: .row, binding: binding).displayTitle(sourceName: ""),
