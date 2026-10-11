@@ -23,12 +23,12 @@ final class HomeEditorUITests: XCTestCase {
     private let card = "home.card.gutenberg.24264"
 
     @MainActor
-    private func launchExplore() -> XCUIApplication {
+    private func launchExplore(_ extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", directory.appendingPathComponent("sources").path,
-                               "-reset-public-library-explore", "-reset-explore-home"]
+                               "-reset-public-library-explore", "-reset-explore-home"] + extraArguments
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = directory.path
         app.launch()
         let tab = app.tabBars.buttons["探索"].firstMatch
@@ -282,5 +282,69 @@ final class HomeEditorUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "刪除", "homeSection.delete")).firstMatch.tap()
         XCTAssertTrue(delete.waitForNonExistence(timeout: 10), "the form left")
         XCTAssertTrue(renamed.waitForNonExistence(timeout: 5), app.debugDescription)
+    }
+
+    /// 訂閱的最新文章 (5g): App 資料's section of the RSS tab's articles. An article opens the
+    /// RSS tab's article page, not 作品詳情, and reads as read when the home shows again.
+    /// `-seed-rss-articles` stores a feed of two unread articles, the newest of all.
+    @MainActor
+    func testSubscriptionArticles() {
+        let app = launchExplore(["-seed-rss-articles"])
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+
+        startSection(app, layout: "list")
+        let choice = app.buttons["homePicker.item.訂閱的最新文章"].firstMatch
+        XCTAssertTrue(choice.waitForExistence(timeout: 5), app.debugDescription)
+        choice.tap()
+        let newest = app.buttons["home.article.yuedu-home-subscription-test-1"].firstMatch
+        XCTAssertTrue(newest.waitForExistence(timeout: 10), "the preview shows the articles\n\(app.debugDescription)")
+        attach(app, "home-subscription-form")
+        app.buttons["homeSection.add"].firstMatch.tap()
+        XCTAssertTrue(sectionCards(app, named: "訂閱的最新文章").firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        let done = app.buttons["home.editDone"].firstMatch
+        for _ in 0..<8 where !done.isHittable { app.swipeUp() }
+        done.tap()
+
+        // On the home, at its end: the title is the label, the feed and 未讀 the value.
+        for _ in 0..<10 where !(newest.exists && newest.isHittable) { app.swipeUp() }
+        XCTAssertTrue(newest.isHittable, app.debugDescription)
+        XCTAssertEqual(newest.label, "首頁訂閱測試文章一")
+        XCTAssertTrue((newest.value as? String)?.contains("首頁訂閱測試") == true, String(describing: newest.value))
+        XCTAssertTrue((newest.value as? String)?.contains("未讀") == true, String(describing: newest.value))
+        XCTAssertTrue(app.buttons["home.article.yuedu-home-subscription-test-2"].firstMatch.exists)
+        attach(app, "home-subscription-section")
+
+        // The RSS tab's article page, not 作品詳情.
+        newest.tap()
+        let body = app.webViews.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "首頁訂閱測試的文章內文")).firstMatch
+        XCTAssertTrue(body.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["detail.info.source"].exists, "an article has no 作品詳情")
+        attach(app, "home-subscription-article")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // Back on the home, the article reads as read.
+        XCTAssertTrue(newest.waitForExistence(timeout: 10), app.debugDescription)
+        wait(for: [expectation(for: NSPredicate(format: "NOT (value CONTAINS %@)", "未讀"), evaluatedWith: newest)], timeout: 10)
+        attach(app, "home-subscription-read")
+
+        // A sideways layout draws landscape article cards, several to a screen, not book covers.
+        // The header has no 查看全部 (the rest is the RSS tab's), so it is no button.
+        let header = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                      "home.row.header.", "訂閱的最新文章")).firstMatch
+        XCTAssertTrue(header.waitForExistence(timeout: 5), app.debugDescription)
+        header.press(forDuration: 1.0)
+        let layouts = app.buttons["呈現方式"].firstMatch
+        XCTAssertTrue(layouts.waitForExistence(timeout: 5), app.debugDescription)
+        layouts.tap()
+        let row = app.buttons["橫向單排書架"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        row.tap()
+        let narrow = NSPredicate { _, _ in newest.frame.width < app.frame.width * 0.8 }
+        wait(for: [XCTNSPredicateExpectation(predicate: narrow, object: nil)], timeout: 5)
+        XCTAssertEqual(newest.label, "首頁訂閱測試文章一")
+        for _ in 0..<5 where !newest.isHittable { app.swipeUp() }
+        attach(app, "home-subscription-row")
     }
 }

@@ -65,13 +65,13 @@ final class SourceProviderRegistry {
     }
 
     /// Every source that can put rows on the Explore home (5b), in the order 「最新」 lists
-    /// them: the shelf, saved connections, Gutenberg, Aozora, then the explore sources as
-    /// 探索 lists them. WebDAV connections read `shelf.remoteRecords` for their 「最新」.
+    /// them: the shelf (and 訂閱的最新文章, which serves no 最新), saved connections, Gutenberg,
+    /// Aozora, then the explore sources as 探索 lists them. WebDAV connections read `shelf.remoteRecords` for their 「最新」.
     ///
     /// Callers wait for `BookSourceStore.waitUntilLoaded()` first: before the library is read
     /// every source would look deleted.
     func homeProviders(shelf: BookStore, sources: BookSourceStore = .shared) -> [any HomeSectionProviding] {
-        var providers: [any HomeSectionProviding] = [ShelfProvider(store: shelf)]
+        var providers: [any HomeSectionProviding] = [ShelfProvider(store: shelf), SubscriptionArticlesProvider()]
         for connection in connections.catalogs {
             switch connection.kind {
             case .webDAV: providers.append(WebDAVProvider(connection: connection, store: connections, records: shelf.remoteRecords))

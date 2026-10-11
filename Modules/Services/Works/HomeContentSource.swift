@@ -2,7 +2,8 @@ import Foundation
 
 // Unified library 5d-5: 選擇內容來源 (design §13.3, Rex's 「選擇內容來源」; Phase 5 plan,
 // decision 23). What a section can show, grouped by who serves it:
-// - App 資料: 繼續閱讀, 最新 and 相關, which gather across sources (decision 23);
+// - App 資料: 繼續閱讀, 最新 and 相關, which gather across sources (decision 23), and
+//   訂閱的最新文章, the RSS subscriptions' articles (5g, decision 26);
 // - 書庫: each OPDS or Calibre connection's feeds, Gutenberg's lists and feeds, 青空文庫's
 //   新着 and indexes. A WebDAV connection serves 最新 only, so it is not listed;
 // - 來源配置: each book source's discover categories.
@@ -21,7 +22,7 @@ extension HomeSectionBinding {
     /// Nil for 我的書庫 and a later build's binding, which the form does not offer.
     var contentOwner: HomeContentOwner? {
         switch self {
-        case .continueReading, .latest, .related, .nextInSeries: .appData
+        case .continueReading, .latest, .related, .nextInSeries, .subscriptionArticles: .appData
         case .opdsFeed(let connectionID, _): .connection(id: connectionID)
         case .gutenbergCollection, .gutenbergFeed, .gutenbergShelf: .gutenberg
         case .aozoraNew, .aozoraIndex: .aozora
@@ -31,7 +32,7 @@ extension HomeSectionBinding {
     }
 
     /// App 資料's choices, in the order they are listed.
-    static let appData: [HomeSectionBinding] = [.continueReading, .nextInSeries, .latest, .related]
+    static let appData: [HomeSectionBinding] = [.continueReading, .nextInSeries, .latest, .related, .subscriptionArticles]
 
     /// 青空文庫's choices: 新着, then each index.
     static let aozora: [HomeSectionBinding] = [.aozoraNew] + ["authors", "titles", "categories"].map { .aozoraIndex(kind: $0) }

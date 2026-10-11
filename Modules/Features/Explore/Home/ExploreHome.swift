@@ -162,9 +162,6 @@ private struct ExploreHomeRoot: View {
                              hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
         }
         .task { await aozora.load() }
-        .onAppear {
-            model.reloadLocal()
-        }
         // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
         .onChange(of: pageStore.selectedConfiguration) { _, _ in
             if isEditing { setEditing(false) }
@@ -247,6 +244,12 @@ private struct ExploreHomeRoot: View {
         // Again when a sync changes the rows (a Gutenberg row added while the home shows), or
         // 範圍 brings other rows in.
         .task(id: [AnyHashable(model.rows.map(\.id)), AnyHashable(scopeKey)]) { model.homeAppeared(in: scopeKey) }
+        // On the stack's root, not the stack: coming back from a page the home pushed is coming
+        // back into view too. An article read there reads as read; a book read from 作品詳情
+        // moves in 繼續閱讀.
+        .onAppear {
+            model.reloadLocal()
+        }
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
         .pageBackgroundToolbar(for: .explore)
         .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
@@ -341,6 +344,7 @@ private struct HomeRowHost: View {
                         guard let row = group.rows.first else { return }
                         ExplorePlace.page(of: location, in: row, aozoraIndex: aozoraIndex).map(push)
                     },
+                    openArticle: { push(.article(SubscriptionArticleRoute(articleID: $0.id))) },
                     actions: HomeSectionActions(
                         setLayout: { layout in
                             withAnimation(DSAnimation.standard) {

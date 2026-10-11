@@ -15,7 +15,7 @@ struct HomeSectionTests {
             .opdsFeed(connectionID: "c1", url: "https://opds.example/new"),
             .gutenbergCollection(id: "chinese"), .gutenbergFeed(url: "https://gutenberg.example/feed"),
             .gutenbergShelf(id: "popular"),
-            .aozoraNew, .aozoraIndex(kind: "authors"), .related, .nextInSeries,
+            .aozoraNew, .aozoraIndex(kind: "authors"), .related, .nextInSeries, .subscriptionArticles,
         ]
     }
 

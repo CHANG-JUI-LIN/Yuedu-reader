@@ -18,7 +18,12 @@ private struct ExploreRouteDestinations: ViewModifier {
     @ObservedObject private var sourceStore = BookSourceStore.shared
 
     func body(content: Content) -> some View {
-        content.navigationDestination(for: ExploreNavigationRoute.self, destination: destination)
+        content
+            .navigationDestination(for: ExploreNavigationRoute.self, destination: destination)
+            // 訂閱的最新文章's articles (5g): the RSS tab's own article page, which marks it read.
+            .navigationDestination(for: SubscriptionArticleRoute.self) { route in
+                RSSArticleReaderView(articleID: route.articleID)
+            }
     }
 
     @ViewBuilder
@@ -98,6 +103,11 @@ enum ExploreItemTarget {
 }
 
 /// A page pushed from the home, each registered on Explore's stack.
+/// An article of 訂閱的最新文章 (unified library 5g), by the id the RSS tab stores it under.
+struct SubscriptionArticleRoute: Hashable {
+    let articleID: String
+}
+
 enum ExplorePush: Hashable {
     case work(WorkDetailRoute)
     case reader(PublicLibraryReaderRoute)
@@ -105,6 +115,7 @@ enum ExplorePush: Hashable {
     case feed(OPDSFeedRoute)
     case folder(WebDAVDirectoryRoute)
     case publicLibrary(PublicLibraryRoute)
+    case article(SubscriptionArticleRoute)
 
     /// Appends the route itself, so it reaches the destination registered for its type.
     func append(to path: inout NavigationPath) {
@@ -115,6 +126,7 @@ enum ExplorePush: Hashable {
         case .feed(let route): path.append(route)
         case .folder(let route): path.append(route)
         case .publicLibrary(let route): path.append(route)
+        case .article(let route): path.append(route)
         }
     }
 }
@@ -184,7 +196,8 @@ enum ExplorePlace {
         case .aozoraIndex(let kind):
             guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
-        case .myLibrary, .continueReading, .related, .nextInSeries, .unknown:
+        // 訂閱的最新文章: the rest is the RSS tab's, a tab root that cannot be pushed.
+        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .unknown:
             return nil
         }
     }
