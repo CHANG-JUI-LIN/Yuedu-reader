@@ -2,8 +2,9 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-/// Unified library 5c-2: what a home card and a row header say (settled decision 11 — the
-/// title, the author, and one Emby line of status or progress; the header names its source).
+/// Unified library 5c-2: what a home card and a section header say (settled decision 11 — the
+/// title, the author, and one Emby line of status or progress). Since 5d-3b the home names no
+/// source (decision 19).
 @MainActor
 @Suite("Explore home cards and rows", .serialized)
 struct HomeCardTests {
@@ -14,30 +15,30 @@ struct HomeCardTests {
                              sourceName: name, policy: .local, state: .idle)
     }
 
-    @Test("a row header is the reader's title, else its binding's, with the source under it")
+    @Test("a section header is the reader's title, else its binding's, and never names a source beside it")
     func rowTitles() {
-        let continueReading = row(.continueReading)
-        #expect(continueReading.title == localized("繼續閱讀"))
-        #expect(continueReading.subtitle == nil)
-
-        let latest = row(.latest(excluded: []), name: "NAS")
-        #expect(latest.title == String(format: localized("%@・最新"), "NAS"))
-        #expect(latest.subtitle == nil)
+        func title(_ binding: HomeSectionBinding, title: String = "", name: String = "來源", rows: Int = 1) -> String {
+            let rowList = (0..<rows).map { index in
+                row(binding, title: title, source: SourceInstanceKey(type: .opds, id: "\(index)"), name: name)
+            }
+            let section = rowList[0].section
+            let sameSection = rowList.map { HomeModel.Row(id: HomeModel.rowID(section: section.id, source: $0.source),
+                                                          section: section, source: $0.source, sourceName: $0.sourceName,
+                                                          policy: .local, state: .idle) }
+            return HomeScopeFilter.groups(sameSection, in: nil)[0].title
+        }
+        #expect(title(.continueReading) == localized("繼續閱讀"))
+        // 最新 is one section whatever the sources (decision 19).
+        #expect(title(.latest(excluded: []), name: "NAS", rows: 2) == localized("最新"))
+        #expect(title(.latest(excluded: []), name: "NAS") == localized("最新"))
 
         let collection = PublicLibraryCollection.all[0]
-        let featured = row(.gutenbergCollection(id: collection.id), name: "Project Gutenberg")
-        #expect(featured.title == localized(collection.titleKey))
-        #expect(featured.subtitle == "Project Gutenberg")
-
-        let authors = row(.aozoraIndex(kind: AozoraBrowseMode.authors.rawValue), name: "青空文庫")
-        #expect(authors.title == localized(AozoraBrowseMode.authors.titleKey))
-
-        // A feed's title is its source; the source is not said twice.
-        let feed = row(.opdsFeed(connectionID: "c", url: "https://opds.test/new"), name: "Calibre")
-        #expect(feed.title == "Calibre")
-        #expect(feed.subtitle == nil)
-
-        #expect(row(.continueReading, title: "我的").title == "我的")
+        #expect(title(.gutenbergCollection(id: collection.id), name: "Project Gutenberg") == localized(collection.titleKey))
+        #expect(title(.aozoraIndex(kind: AozoraBrowseMode.authors.rawValue), name: "青空文庫")
+            == localized(AozoraBrowseMode.authors.titleKey))
+        // A feed is titled by its source, having no title of its own.
+        #expect(title(.opdsFeed(connectionID: "c", url: "https://opds.test/new"), name: "Calibre") == "Calibre")
+        #expect(title(.continueReading, title: "我的") == "我的")
     }
 
     @Test("a shelf copy shows how far it is read, and a bar only while it is part read")
@@ -51,7 +52,7 @@ struct HomeCardTests {
             let entry = CollectionEntry.item(record, WorkSummary(title: book.title, authors: [book.author], cover: nil,
                                                                  blurb: nil, language: nil, contentKind: .text),
                                              .copy(book.id))
-            return try #require(HomeCardContent(entry, sourceName: "書架", status: { _ in nil },
+            return try #require(HomeCardContent(entry, status: { _ in nil },
                                                 shelfBooks: [book.id: book]))
         }
         let reading = try card(at: 0.32)
@@ -69,7 +70,7 @@ struct HomeCardTests {
         #expect(new.detail == BookshelfAccessibility.readingStatus(for: ReadingBook(title: "x", contentFilename: "x.txt")))
     }
 
-    @Test("a library item says its copy's status, and VoiceOver reads author, source and status")
+    @Test("a library item says its copy's status, and VoiceOver reads author and status, not the source")
     func libraryItemStatus() throws {
         let book = GutenbergBook(id: 24264, title: "紅樓夢", author: "曹雪芹")
         let entry = CollectionEntry.item(SourceRecord.derived(from: book),
@@ -77,17 +78,17 @@ struct HomeCardTests {
                                                      cover: .generated(seed: book.title), blurb: nil, language: nil,
                                                      contentKind: .text),
                                          .gutenberg(book))
-        let onShelf = try #require(HomeCardContent(entry, sourceName: "Project Gutenberg", status: { _ in .onShelf },
+        let onShelf = try #require(HomeCardContent(entry, status: { _ in .onShelf },
                                                    shelfBooks: [:]))
         #expect(onShelf.detail == localized("已加入書架"))
         #expect(onShelf.progress == nil)
         #expect(onShelf.accessibilityLabel == "紅樓夢")
-        #expect(onShelf.accessibilityValue == "曹雪芹, Project Gutenberg, \(localized("已加入書架"))")
+        #expect(onShelf.accessibilityValue == "曹雪芹, \(localized("已加入書架"))")
         #expect(onShelf.publicLibraryBookID == PublicLibraryBook.gutenberg(book).id)
 
-        let none = try #require(HomeCardContent(entry, sourceName: "Project Gutenberg", status: { _ in nil }, shelfBooks: [:]))
+        let none = try #require(HomeCardContent(entry, status: { _ in nil }, shelfBooks: [:]))
         #expect(none.detail == nil)
-        #expect(none.accessibilityValue == "曹雪芹, Project Gutenberg")
+        #expect(none.accessibilityValue == "曹雪芹")
     }
 
     @Test("a row's places become chips and its items cards, each in order")
@@ -98,12 +99,12 @@ struct HomeCardTests {
                                                     language: nil, contentKind: .text),
                                         .gutenberg(book))
         let places = [CollectionLocation(id: "a", title: "太宰 治"), CollectionLocation(id: "b", title: "夏目 漱石")]
-        let content = HomeRowContent(entries: [.location(places[0]), item, .location(places[1])], sourceName: "x",
+        let content = HomeRowContent(entries: [.location(places[0]), item, .location(places[1])],
                                      status: { _ in nil }, shelfBooks: [:])
         #expect(content.locations == places)
         #expect(content.cards.map(\.title) == ["西遊記"])
         #expect(!content.isEmpty)
-        #expect(HomeRowContent(entries: [], sourceName: "x", status: { _ in nil }, shelfBooks: [:]).isEmpty)
+        #expect(HomeRowContent(entries: [], status: { _ in nil }, shelfBooks: [:]).isEmpty)
     }
 
     @Test("a shelf copy's cover file is named by its absolute path, read through the cover pipeline")

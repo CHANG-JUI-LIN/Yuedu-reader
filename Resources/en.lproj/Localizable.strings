@@ -3635,7 +3635,6 @@
 "建立索引失敗：%@" = "Indexing Failed: %@";
 
 /* Explore home (unified library 5c) */
-"%@・最新" = "Latest in %@";
 "相關" = "Related";
 
 /* Unified library 5d-1: 範圍 holds the libraries */
@@ -3658,3 +3657,7 @@
 "固定封面網格" = "Cover Grid";
 "圖文資訊清單" = "Detailed List";
 "顯示排名" = "Show Rankings";
+
+/* Unified library 5d-3b: the full catalogs from the top of the home */
+"瀏覽書庫" = "Browse Libraries";
+"瀏覽完整目錄" = "Browse Full Catalog";

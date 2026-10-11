@@ -120,6 +120,10 @@
     - **最新 is one row.** Under 全部 it mixes every source, newest first; sources without dates take turns. Under one library it is that library's 最新. 排除的來源 stays. This replaces plan decision 10's 「one row per source」.
     - **偏好閱讀語言 is its own step after these** (the maintainer's pasted notes): several languages, in order, default 「prefer, allow others」; Gutenberg's bundled lists tagged per book, 青空 as Japanese; the 全部 home sorts and filters by it; Gutenberg's categories follow it instead of the interface language. China's region rule still holds.
 
+20. **Answered 2026-10-11, after decision 19** (maintainer, by option and in their own words):
+    - **A full catalog entry, always visible, at the top of the home:** 「完整目錄入口應該始終可見，但不放在首頁最底部」. Under 全部, one 「瀏覽書庫」 entry for every library; under one library, 「瀏覽完整目錄」, which opens that library's own page (Gutenberg's popular, latest and categories; 青空's author index, 五十音 and categories; a book source's discover page; an OPDS or WebDAV root). It does not depend on what the home holds. Reuse the existing pages: 「不要重新實作第二套目錄系統」.
+    - **A sixth layout, 精簡閱讀卡片,** from the maintainer's screenshot of Apple Books' 「繼續」: a small cover beside the title, author and kind・status, with •••. It becomes 繼續閱讀's default; 大型閱讀卡片 stays as a choice. The card takes its cover's main colour, with white text, darkened where white would not read. ••• offers 從繼續閱讀移除 and 標記為已讀完.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -713,3 +717,17 @@ Branch `unified-library/5d3-layouts`. From the maintainer's layout notes (decisi
 - **Strings:** 呈現方式, 大型閱讀卡片, 橫向單排書架, 多行橫向輪播, 固定封面網格, 圖文資訊清單, 顯示排名, in five languages.
 - **Tests (unit):** `HomeLayoutStyleTests` (new, 6), with three new `HomeModelTests` (a layout keeps content, an exclusion keeps the other rows, changed content reloads). `syncKeepsRows` no longer expects a new title to rebuild the row. With `HomePageEditingTests`, `HomeSectionTests`, `HomePageStoreTests`, `HomeCardTests` and `ExploreHomeTests`: 51/51 passed (iOS 27).
 - **Tests (UI):** `HomeEditorUITests` 3/3 (new: `testLongPressChangesTheLayout`) on iOS 27 and iOS 17.5; `ExploreHomeUITests` 6/6 on iOS 27. The fixture (`-explore-home-fixture`, now a list in each layout) was checked on iOS 27 afterwards: stacked cards reserve their room below the text, not between title and author.
+
+### 5d-3b: one home, filtered by 範圍 (2026-10-11)
+
+Branch `unified-library/5d3b-aggregate`. Decisions 19 and 20.
+
+- **The home draws one group per section** (`HomeSectionGroup`). 最新's rows, one per source so each loads on its own terms, draw as one row titled 最新: their books take turns in provider order, since no source gives dates. The group shows books as soon as one row has some; else it loads while any row is still to load; else it shows the first failure, and 重試 asks every failed row again; else it takes no room. A failed row beside one with books is not shown (the model logs it). `%@・最新` is gone.
+- **The home names no source.** The source line under a row's title and the source in a card's VoiceOver value are gone; the work page still names it.
+- **範圍 filters the same home** (`HomeScopeFilter`): sections, order and layouts are unchanged. A source's own rows stay; the shelf's rows (繼續閱讀, 相關) keep the copies whose current source is the chosen one (`SourceRecord.derived(from:)`'s key) and drop groups; every other row goes, and an empty section takes no room. `homeAppeared(in:)` loads only the rows 範圍 keeps, so choosing 青空文庫 sends nothing to Gutenberg. 範圍 no longer replaces the home with the source's page.
+- **The full catalog is always at the top** (`HomeCatalogEntry`), whatever the sections hold: under 全部, 瀏覽書庫 lists the remote libraries, the public libraries and the book sources, each opening its existing page (`ExplorePlace.page(of:)`); under one library, 瀏覽完整目錄 opens that page. No second catalog: Gutenberg's popular/latest/categories, 青空's indexes, a book source's discover page and an OPDS/WebDAV root are the pages 範圍 used to show.
+- **查看全部** stays for a section of one row; 最新 under 全部 has none, since its books come from several pages.
+- **Known gap:** a 青空 copy without a catalog work id keeps its copy key, so it is not under the 青空文庫 scope.
+- **Strings:** 瀏覽書庫, 瀏覽完整目錄, in five languages.
+- **Tests (unit):** `HomeSectionGroupTests` (new, 3: 最新 is one section in turns, the merged state, the scope filter) and `HomeModelTests.homeAppearedFollowsScope`; `HomeCardTests` titles go through the groups. With the other home suites: 55/55 passed (iOS 27).
+- **Tests (UI):** `ExploreHomeUITests.testScopeFiltersTheHomeAndBack` replaces `testScopeShowsOneSourceInPlaceAndBack` (瀏覽書庫 lists the libraries; Gutenberg keeps the home with 瀏覽完整目錄 on top, which opens Gutenberg's page; the scope survives a relaunch; 青空文庫 drops Gutenberg's books; 全部 brings them back), and `testConnectionIsInScope` opens the connection from 瀏覽完整目錄. iOS 27: `ExploreHomeUITests` 6/6 and `HomeEditorUITests` 3/3. iOS 17.5: the scope test and `HomeEditorUITests` 3/3.

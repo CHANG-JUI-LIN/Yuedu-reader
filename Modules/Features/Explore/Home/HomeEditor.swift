@@ -43,17 +43,17 @@ extension HomeSection {
 struct HomeEditingSections<RowContent: View>: View {
     /// `HomePage.editableSections`.
     let sections: [HomeSection]
-    /// The home's rows; a hidden section has none.
-    let rows: [HomeModel.Row]
-    let rowContent: (HomeModel.Row) -> RowContent
+    /// The home's sections as drawn; a hidden section has none.
+    let groups: [HomeSectionGroup]
+    let rowContent: (HomeSectionGroup) -> RowContent
     let openSettings: (UUID) -> Void
     @ObservedObject private var pageStore = HomePageStore.shared
     @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
 
-    init(sections: [HomeSection], rows: [HomeModel.Row], openSettings: @escaping (UUID) -> Void,
-         @ViewBuilder rowContent: @escaping (HomeModel.Row) -> RowContent) {
+    init(sections: [HomeSection], groups: [HomeSectionGroup], openSettings: @escaping (UUID) -> Void,
+         @ViewBuilder rowContent: @escaping (HomeSectionGroup) -> RowContent) {
         self.sections = sections
-        self.rows = rows
+        self.groups = groups
         self.openSettings = openSettings
         self.rowContent = rowContent
     }
@@ -67,7 +67,8 @@ struct HomeEditingSections<RowContent: View>: View {
 
     private func card(_ section: HomeSection, at index: Int) -> some View {
         let title = section.editorTitle()
-        let sectionRows = rows.filter { $0.section.id == section.id }
+        // A section with nothing to draw shows its name, so its card is not blank.
+        let group = groups.first { $0.section.id == section.id && !$0.isSettledEmpty }
         return HStack(spacing: DSSpacing.sm) {
             Button {
                 pageStore.edit { $0.setEnabled(!section.isEnabled, section: section.id) }
@@ -83,13 +84,13 @@ struct HomeEditingSections<RowContent: View>: View {
             .accessibilityIdentifier("homeEditor.toggle.\(section.id.uuidString)")
 
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
-                if sectionRows.isEmpty {
+                if let group {
+                    rowContent(group)
+                } else {
                     Text(title)
                         .font(DSFont.title2.weight(.bold))
                         .foregroundStyle(DSColor.textSecondary)
                         .padding(.horizontal, DSSpacing.lg)
-                } else {
-                    ForEach(sectionRows) { rowContent($0) }
                 }
             }
             .padding(.vertical, DSSpacing.lg)
@@ -232,7 +233,7 @@ extension View {
     ]
     ScrollView {
         LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
-            HomeEditingSections(sections: sections, rows: [], openSettings: { _ in }) { _ in EmptyView() }
+            HomeEditingSections(sections: sections, groups: [], openSettings: { _ in }) { _ in EmptyView() }
         }
     }
 }

@@ -41,7 +41,7 @@ struct HomeCardContent: Identifiable {
     ///   - shelfBooks: the shelf records of this row's `.copy` items, read live so progress
     ///     is current.
     @MainActor
-    init?(_ entry: CollectionEntry, sourceName: String, status: (SourceItemKey) -> CopyLookup.Status?,
+    init?(_ entry: CollectionEntry, status: (SourceItemKey) -> CopyLookup.Status?,
           shelfBooks: [UUID: ReadingBook], connections: RemoteLibraryConnectionStore = .shared) {
         guard case .item(let record, let summary, let opening) = entry else { return nil }
         id = record.key
@@ -65,7 +65,8 @@ struct HomeCardContent: Identifiable {
         detail = status?.title
         progress = nil
         accessibilityLabel = summary.title
-        accessibilityValue = [author, sourceName, status?.title ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+        // No source, as on screen: the home names none (5d-3b, decision 19).
+        accessibilityValue = [author, status?.title ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     /// One of the blank cards a loading row shows, as long as a real one's text.
