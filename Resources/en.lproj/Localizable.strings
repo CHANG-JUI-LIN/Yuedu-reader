@@ -3641,3 +3641,11 @@
 /* Unified library 5d-1: 範圍 holds the libraries */
 "探索還沒有內容" = "Nothing to Explore Yet";
 "從右上角的範圍打開書庫或來源配置。" = "Open a library or source from Range at the top right.";
+
+/* Unified library 5d-2: 編輯首頁 */
+"編輯首頁" = "Edit Home";
+"在首頁顯示" = "Show on Home";
+"排除的來源" = "Excluded Sources";
+"已隱藏" = "Hidden";
+"上移" = "Move Up";
+"下移" = "Move Down";

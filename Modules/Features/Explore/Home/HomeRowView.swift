@@ -4,13 +4,15 @@ import SwiftUI
 // header names the row and its source, Emby's way, and leads to 查看全部; the covers below it
 // swipe sideways as Apple Books' shelves do.
 
-extension HomeModel.Row {
-    /// The row's own title: the one the reader gave the section, else its binding's.
-    var title: String {
-        if !section.title.isEmpty { return section.title }
-        switch section.binding {
+extension HomeSection {
+    /// The section's name, over its row and in 編輯首頁: the one the reader gave it, else its
+    /// binding's. `sourceName` names a binding titled by its source (a feed, a category list
+    /// with none).
+    func displayTitle(sourceName: String) -> String {
+        if !title.isEmpty { return title }
+        switch binding {
         case .continueReading: return localized("繼續閱讀")
-        case .latest: return String(format: localized("%@・最新"), sourceName)
+        case .latest: return localized("最新")
         case .related: return localized("相關")
         case .sourceCategories(let categories): return categories.first?.title ?? sourceName
         case .gutenbergCollection(let id):
@@ -19,6 +21,17 @@ extension HomeModel.Row {
         case .aozoraIndex(let kind): return AozoraBrowseMode(rawValue: kind).map { localized($0.titleKey) } ?? sourceName
         case .opdsFeed, .gutenbergFeed, .myLibrary, .unknown: return sourceName
         }
+    }
+}
+
+extension HomeModel.Row {
+    /// The row's own title: the one the reader gave the section, else its binding's. 最新's
+    /// rows, one per source, are named by their source.
+    var title: String {
+        if section.title.isEmpty, case .latest = section.binding {
+            return String(format: localized("%@・最新"), sourceName)
+        }
+        return section.displayTitle(sourceName: sourceName)
     }
 
     /// The source under the title. None for rows that draw from every source, or whose title
@@ -71,6 +84,15 @@ struct HomeRowContent {
     }
 }
 
+/// What a section's name offers when long-pressed: the same edits as 編輯首頁 (5d-2).
+struct HomeSectionActions {
+    let hide: () -> Void
+    /// Pushes the section's page in 編輯首頁.
+    let openSettings: () -> Void
+    /// Asks first.
+    let delete: () -> Void
+}
+
 struct HomeRowView: View {
     let row: HomeModel.Row
     /// Nil until the row has loaded.
@@ -84,6 +106,8 @@ struct HomeRowView: View {
     /// A card was tapped; the row's other cards come along for the public-library carousel.
     let open: (HomeCardContent, [HomeCardContent]) -> Void
     let openLocation: (CollectionLocation) -> Void
+    /// The section's long press (5d-2, decision 14); none in a fixture.
+    var actions: HomeSectionActions?
 
     @ScaledMetric(relativeTo: .subheadline) private var scaledCoverWidth = DSLayout.homeCardCoverWidth
     @Environment(\.publicLibraryCoverFrames) private var coverFrames
@@ -137,11 +161,23 @@ struct HomeRowView: View {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityHint(localized("查看全部"))
                 .accessibilityIdentifier("home.row.header.\(row.id)")
+                .contextMenu { actionsMenu }
         } else {
             label
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("home.row.header.\(row.id)")
+                .contextMenu { actionsMenu }
+        }
+    }
+
+    /// Also the header's VoiceOver actions: a context menu's items are offered there.
+    @ViewBuilder
+    private var actionsMenu: some View {
+        if let actions {
+            Button(localized("隱藏"), systemImage: "eye.slash", action: actions.hide)
+            Button(localized("設定"), systemImage: "slider.horizontal.3", action: actions.openSettings)
+            Button(localized("刪除"), systemImage: "trash", role: .destructive, action: actions.delete)
         }
     }
 
