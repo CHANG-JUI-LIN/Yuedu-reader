@@ -817,3 +817,11 @@ Branch `unified-library/5d3h-home-sections`. Decision 21's home sections: the sa
 - **Before 探索 first opens** there is no saved home (`pageOrDefaults` needs the book-source library read); the page says so with `ContentUnavailableView` rather than making the home itself.
 - **Strings:** 首頁欄目, the footer, the empty state, in five languages.
 - **Tests (UI):** `AggregationSettingsUITests.testHomeSections` (new: empty before 探索 opens; then the sections are listed, and hiding the first from its page shows 已隱藏 on its row). iOS 27: `AggregationSettingsUITests` 4/4, `HomeEditorUITests` 3/3. Not run on iOS 17.5.
+
+### The catalog entry is gone (2026-10-11)
+
+Branch `unified-library/remove-catalog-entry`. The maintainer, after 5d-3h: 「不要瀏覽這個完整目錄了，要什麼自己添加不就好了」. This reverses decision 20's first half (5d-3b's entry).
+
+- **Removed:** the entry at the top of the home (瀏覽書庫 under 全部, 瀏覽完整目錄 under one library), its page and route (`HomeCatalogEntry.swift`: `HomeLibrariesPage`, `HomeLibrariesRoute`, `HomeCatalogEntryLabel`, `ExplorePushLink`), and the strings 瀏覽書庫, 瀏覽完整目錄 and 書庫. A reader adds the sections they want; a row's 查看全部 still opens the rest of what it shows (`ExplorePlace.page(of:)` stays for it). The empty home no longer passes touches through for the entry.
+- **書庫順序** now orders 範圍 and 最新's turns; its footer says so (the string changed in five languages).
+- **Tests (UI):** `testScopeFiltersTheHomeAndBack` and `testConnectionIsInScope` check there is no entry; `testLibraryOrder` checks 範圍 alone; `testHomeSections` waits for 精選's first card. iOS 27: `AggregationSettingsUITests` 4/4, `ExploreHomeUITests` 8/8, `HomeEditorUITests` 3/3.
