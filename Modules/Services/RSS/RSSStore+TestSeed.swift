@@ -7,7 +7,8 @@ extension RSSStore {
 
     /// A feed of two articles, both unread, the first the newest of all. Off, so no refresh
     /// ever fetches its address; the RSS tab and the home read its stored articles alike.
-    /// Run again, it marks them unread again, so each test starts from the same place.
+    /// Run again, it marks them unread again, so each test starts from the same place; a launch
+    /// without the argument removes it (`removeTestSeed`).
     func seedForTesting(now: Date = Date()) {
         if !sources.contains(where: { $0.url == Self.testSeedFeedURL }) {
             var source = RSSSource(name: "首頁訂閱測試", url: Self.testSeedFeedURL, sortOrder: 0)
@@ -25,6 +26,15 @@ extension RSSStore {
         ]
         mergeFetchedItems(items, for: source.id)
         for item in items { markRead(articleId: item.id, isRead: false) }
+    }
+
+    /// Takes the test feed away in a launch that did not ask for it, so a simulator a UI test
+    /// ran on shows no test feed or unread badge afterwards (as `WorkDetailUITests` deletes
+    /// its book). A no-op when it is not there.
+    func removeTestSeed() {
+        let ids = sources.filter { $0.url == Self.testSeedFeedURL }.map(\.id)
+        guard !ids.isEmpty else { return }
+        removeSources(ids: ids)
     }
 }
 #endif

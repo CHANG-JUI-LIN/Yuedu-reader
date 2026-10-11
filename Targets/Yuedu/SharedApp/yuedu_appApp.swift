@@ -102,6 +102,8 @@ struct yuedu_appApp: App {
         // A feed with two articles, for 訂閱的最新文章 (unified library 5g).
         if ProcessInfo.processInfo.arguments.contains("-seed-rss-articles") {
             RSSStore.shared.seedForTesting()
+        } else {
+            RSSStore.shared.removeTestSeed()
         }
         #endif
         // First launch only, and only once the library is read: the read runs off the main
