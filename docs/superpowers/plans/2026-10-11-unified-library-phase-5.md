@@ -502,7 +502,7 @@ Branch `unified-library/5c4-related`. Open decision 5 (cross-source too) and dec
 
 ### 5c-3: the home is 探索's root (2026-10-11)
 
-Branch `unified-library/5c3-root`. Steps 2, 3, 5 and 6 of Task 5c. **Not merged until the maintainer answers the look question** (5c-2's cards on a real build).
+Branch `unified-library/5c3-root`. Steps 2, 3, 5 and 6 of Task 5c. Merged after the maintainer approved the look on a real build (2026-10-11: keep it), and chose no shelf or shelf-group tiles in 我的書庫 for now.
 
 - **`ExploreHome`** is the root (`ExploreTabRoot`), behind the same 「source library read」 gate as before. One `NavigationStack` registers Explore's routes, the libraries' feed, folder and book pages, the store's pages, and the store's card carousel over all of it. Rows are `HomeRowView`s, tiles are `HomeLibraryTiles`.
 - **Defaults, saved once** (`HomePageStore.pageOrDefaults`): the first read saves `HomePageDefaults` for the reader's effective mode. It runs from the row-building task, never while drawing, and only after the library is read, so a reader with sources is never saved with the new-install order. The region is taken as it stands; a public-library section saved before the storefront is known simply has no row in China, where its provider is hidden.
@@ -521,3 +521,11 @@ Branch `unified-library/5c3-root`. Steps 2, 3, 5 and 6 of Task 5c. **Not merged 
   - UI `ExploreHomeUITests` (6, new): default sections on a new install; scope to Gutenberg and Aozora in place, kept across a relaunch, back to 全部; Gutenberg and Aozora tiles push their pages; a connection added in 設定 has a tile that pushes its library; China shows no public library in the home or 範圍; 使用舊版探索頁 on and off. All passed.
   - Updated, not deleted: `PublicLibraryStorefrontUITests` (4) now opens cards from the home's 精選 row and the store's pages from the Gutenberg tile; `PublicLibraryExploreUITests` (2) pins `-explore.classicRoot YES`, since the mode switch and its tip belong to the old roots; with `RemoteLibraryNavigationUITests` (1), 7 passed. `DetailReaderBackSwipeUITests` finds a source by its 我的書庫 tile. Its 23 tests: 13 passed and the same 10 failed as on main (edge back ×4, turn hides menu ×4, menu-up tap, shelf list label), each at the same assertion. Two more failed at first and passed when re-run, neither caused by 5c-3: one test still looked for the old root's tile (fixed), and one launch had restored a custom appearance theme's tab set over the test's (the simulator had been left on a theme pack).
   - `testConnectionTilePushesItsLibrary` now asserts its cleanup: a run that failed before it had left a connection behind on the simulator.
+
+### 5c-4b: 「相關」 from one seed (2026-10-11)
+
+Branch `unified-library/5c4b-related-seed`. The maintainer chose one seed: the copy opened most recently, 繼續閱讀's first card. The row is then about one book.
+
+- `RelatedWorks.pick(in:seed:continueReading:shown:limit:)`: the evidence (the work elsewhere, its series, its authors) is the seed's alone. Every copy 繼續閱讀 shows is still left out, as a whole work, so the two rows never repeat each other.
+- **Tests:** `RelatedWorksTests` +1 (`latestCopyOnly`: an older 繼續閱讀 copy's author brings nothing). The scale fixture now has 1,000 authors of 20 files each, not 2,000 of 10: with one seed, 10 files could not fill a row. With `RelatedRowTests` and `HomeModelTests`, 21 tests in 3 suites passed.
+- **Measured** (same test, simulator, Debug): first load 2,882 ms, next 316 ms, the pick 42 ms, longest main-actor stall 21.7 ms. That is level with 5c-4's 2,841, 307, 44 and 17.6 ms: the time is in building and reading the index, not in picking.
