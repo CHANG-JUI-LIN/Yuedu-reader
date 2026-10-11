@@ -3622,7 +3622,6 @@
 "從空白開始" = "Start Blank";
 "首頁配置裡的欄目會一起刪除。" = "Its sections are deleted with it.";
 "這個首頁配置還沒有欄目" = "This Home Configuration Has No Sections";
-"長按來源配置的分類，選擇「加入首頁配置」。" = "Touch and hold a source’s category, then choose Add to Home Configuration.";
 "在首頁顯示" = "Show on Home";
 "已隱藏" = "Hidden";
 "上移" = "Move Up";
@@ -3663,3 +3662,12 @@
 "首頁欄目" = "Home Sections";
 "和探索的編輯首頁是同一份。" = "The same as Edit Home in Explore.";
 "打開探索後，首頁欄目會列在這裡。" = "Open Explore and its home sections will be listed here.";
+
+/* Unified library 5d-5: the section form and 選擇內容來源 */
+"新增欄目" = "Add Section";
+"選擇內容來源" = "Choose Content Source";
+"資料來源" = "Data Source";
+"App 資料" = "App Data";
+"書庫" = "Libraries";
+"參數" = "Parameters";
+"來源配置要選一個分類代表它的最新，沒選的不會出現在最新。" = "A source appears in Latest only through a category you choose for it.";

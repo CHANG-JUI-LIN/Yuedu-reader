@@ -1,0 +1,476 @@
+import SwiftUI
+
+// Unified library 5d-5: one section's form (design §13.3, Rex's 「設定資料來源」; Phase 5 plan,
+// decision 23), for 新增欄目 and for a section already on the home, so there is one editor:
+// - 新增欄目 asks for a layout first, then shows this form (Rex's order), in a sheet; 新增
+//   puts the section at the end of the 首頁配置 shown, 取消 leaves it as it was.
+// - A section's card in 編輯首頁, and 設定 in its name's long press, push the same form.
+// - On top, a preview: one real page of the section in its layout, loaded as the home loads
+//   it. Then 標題 (empty follows what it shows), 呈現方式, 資料來源 (opens 選擇內容來源), and for
+//   a section on the home, 在首頁顯示 and 刪除.
+
+// MARK: - A section on the home
+
+struct HomeSectionPage: View {
+    let sectionID: UUID
+    @ObservedObject private var pageStore = HomePageStore.shared
+    @EnvironmentObject private var store: BookStore
+
+    var body: some View {
+        if let section = pageStore.page?.sections.first(where: { $0.id == sectionID }) {
+            HomeSectionFormHost(section: section, store: store)
+        } else {
+            // Deleted, here or from its long press: the page empties as it pops.
+            Color.clear.themedAppSurface(for: .explore)
+        }
+    }
+}
+
+/// Makes the form's editor once, with the shelf the preview reads.
+///
+/// It does not read `dismiss` (刪除 leaves the page, `HomeSectionDeleteButton`): on iOS 17.5, a host
+/// reading it while the form pushed 新增來源配置 froze the app, `_dismiss changed.` 13,830 times
+/// (5d-5), as the search page did (`Technotes/iOS17SearchWatchdogPostmortem.md`, guardrail 12).
+private struct HomeSectionFormHost: View {
+    @StateObject private var editor: HomeSectionEditor
+
+    init(section: HomeSection, store: BookStore) {
+        _editor = StateObject(wrappedValue: HomeSectionEditor(section: section, preview: .preview(shelf: store)))
+    }
+
+    var body: some View {
+        HomeSectionForm(editor: editor, isInSheet: false)
+    }
+}
+
+extension HomeModel {
+    /// The form's preview: a home of its own, served by the same sources as the home.
+    static func preview(shelf: BookStore) -> HomeModel {
+        HomeModel(providers: { SourceProviderRegistry.shared.homeProviders(shelf: shelf) },
+                  waitForSources: { await BookSourceStore.shared.waitUntilLoaded() })
+    }
+}
+
+// MARK: - 新增欄目
+
+/// 新增欄目, in a sheet over the home: a layout, then the form. The home closes it (`close`,
+/// and after `added`): nothing in it reads `dismiss`, which loops on iOS 17 under a form that
+/// pushes (`HomeSectionFormHost`).
+struct HomeNewSectionSheet: View {
+    /// The section 新增 put on the home; the home closes the sheet.
+    var added: (UUID) -> Void = { _ in }
+    /// 取消.
+    var close: () -> Void = {}
+    @EnvironmentObject private var store: BookStore
+
+    var body: some View {
+        HomeNewSectionFlow(store: store, added: added, close: close)
+    }
+}
+
+private struct HomeNewSectionFlow: View {
+    let store: BookStore
+    let added: (UUID) -> Void
+    let close: () -> Void
+    @State private var editor: HomeSectionEditor?
+    @State private var showsForm = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(HomeLayoutStyle.allCases) { style in
+                        Button {
+                            editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
+                            showsForm = true
+                        } label: {
+                            Label(localized(style.titleKey), systemImage: style.symbol)
+                                .foregroundStyle(DSColor.textPrimary)
+                        }
+                        .accessibilityIdentifier("homeNewSection.layout.\(style.rawValue)")
+                    }
+                } header: {
+                    Text(localized("呈現方式"))
+                }
+                .interfaceSectionSurface()
+            }
+            .navigationTitle(localized("新增欄目"))
+            .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .explore)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { close() } label: {
+                        Label(localized("取消"), systemImage: "xmark")
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showsForm) {
+                if let editor {
+                    HomeSectionForm(editor: editor, isInSheet: true, added: { added(editor.draft.id) })
+                }
+            }
+        }
+    }
+}
+
+// MARK: - The form
+
+/// What the form pushes.
+private enum HomeSectionFormPush: Hashable {
+    /// 選擇內容來源, when the form is a sheet already on iOS 17.
+    case picker
+    /// 最新's 新增來源配置.
+    case latestSources
+    /// The category a book source stands on in 最新, by source URL.
+    case latestCategory(String)
+    /// The section's category, picked again under other filters, by source URL.
+    case filters(String)
+}
+
+/// 刪除, which leaves the page once the reader confirms. The one view of the form that leaves
+/// its page itself, through `presentationMode` as `ReaderView` does, never `dismiss`: a view
+/// reading `dismiss` under a form that pushes loops on iOS 17 (`HomeSectionFormHost`). A leaf,
+/// so whatever it reads invalidates only itself.
+private struct HomeSectionDeleteButton: View {
+    let title: String
+    let delete: () -> Void
+    @Environment(\.presentationMode) private var presentationMode
+    @State private var confirms = false
+
+    var body: some View {
+        Button(localized("刪除"), role: .destructive) { confirms = true }
+            .accessibilityIdentifier("homeSection.delete")
+            .homeSectionDeleteConfirmation(isPresented: $confirms, title: title) {
+                presentationMode.wrappedValue.dismiss()
+                delete()
+            }
+    }
+}
+
+struct HomeSectionForm: View {
+    @ObservedObject var editor: HomeSectionEditor
+    /// In 新增欄目's sheet: 選擇內容來源 is pushed on iOS 17 rather than stacked (design §13.3).
+    let isInSheet: Bool
+    /// 新增 put the section on the home.
+    var added: () -> Void = {}
+
+    @ObservedObject private var preview: HomeModel
+    @ObservedObject private var aggregation = AggregationSettingsStore.shared
+    @ObservedObject private var sources = BookSourceStore.shared
+    @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
+    @EnvironmentObject private var store: BookStore
+    /// 選擇內容來源 as a sheet.
+    @State private var showsPicker = false
+    /// The one page the form pushes: one item destination, as on the search page
+    /// (`Technotes/iOS17SearchWatchdogPostmortem.md`, guardrail 12).
+    @State private var push: HomeSectionFormPush?
+
+    init(editor: HomeSectionEditor, isInSheet: Bool, added: @escaping () -> Void = {}) {
+        self.editor = editor
+        self.isInSheet = isInSheet
+        self.added = added
+        preview = editor.preview
+    }
+
+    private var draft: HomeSectionEditor.Draft { editor.draft }
+
+    /// What the section is called when the reader names it nothing.
+    private var defaultTitle: String {
+        guard let binding = draft.binding else { return localized("標題") }
+        return HomeSection(layout: draft.layout, binding: binding).editorTitle()
+    }
+
+    private var title: String {
+        draft.title.isEmpty ? defaultTitle : draft.title
+    }
+
+    /// 選擇內容來源 pushed rather than presented: a sheet already, on iOS 17.
+    private var pushesPicker: Bool {
+        if #available(iOS 18, *) { return false }
+        return isInSheet
+    }
+
+    var body: some View {
+        Form {
+            if let page = editor.previewPage {
+                Section {
+                    previewContent
+                        .listRowInsets(EdgeInsets(top: DSSpacing.md, leading: 0, bottom: DSSpacing.md, trailing: 0))
+                } header: {
+                    Text(localized("預覽"))
+                }
+                .interfaceSectionSurface()
+                .task(id: page) {
+                    await preview.sync(with: page, hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
+                    // The reader's own tap: the page loads whatever its source's policy.
+                    for row in preview.rows { preview.load(row.id) }
+                }
+            }
+            Section {
+                LabeledContent(localized("標題")) {
+                    TextField(localized("標題"), text: Binding(get: { draft.title }, set: { editor.setTitle($0) }),
+                              prompt: Text(defaultTitle))
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityIdentifier("homeSection.title")
+                }
+                layoutRows
+                sourceRow
+                if let category = filteredCategory { filtersRow(category) }
+            }
+            .interfaceSectionSurface()
+            if draft.binding == .latest { latestParameters }
+            if !editor.isNew {
+                Section {
+                    Toggle(localized("在首頁顯示"), isOn: Binding(get: { draft.isEnabled }, set: { editor.setEnabled($0) }))
+                }
+                .interfaceSectionSurface()
+                Section {
+                    HomeSectionDeleteButton(title: title) { editor.delete() }
+                }
+                .interfaceSectionSurface()
+            }
+        }
+        .navigationTitle(editor.isNew ? localized("新增欄目") : title)
+        .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .explore)
+        .toolbar {
+            if editor.isNew {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        if editor.add() { added() }
+                    } label: {
+                        Label(localized("新增"), systemImage: "checkmark")
+                    }
+                    .disabled(draft.binding == nil)
+                    .accessibilityIdentifier("homeSection.add")
+                }
+            }
+        }
+        .sheet(isPresented: $showsPicker) {
+            NavigationStack { picker(isPushed: false) }
+                .environmentObject(store)
+        }
+        .navigationDestination(item: $push) { destination in
+            switch destination {
+            case .picker:
+                picker(isPushed: true)
+            case .latestSources:
+                HomeSourceChoices(current: nil, parameters: draft.parameters) { choice in
+                    pickLatest(choice)
+                    push = nil
+                }
+            case .latestCategory(let url):
+                if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
+                    HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
+                                        current: editor.latestCategories.first { $0.sourceURL == url }.map { .sourceCategories([$0]) }) { choice in
+                        pickLatest(choice)
+                        push = nil
+                    }
+                }
+            case .filters(let url):
+                if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
+                    HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
+                                        current: draft.binding) { choice in
+                        editor.choose(choice.binding, parameters: choice.parameters, itemTitle: choice.itemTitle)
+                        push = nil
+                    }
+                }
+            }
+        }
+    }
+
+    /// 選擇內容來源: a sheet, or pushed when the form is a sheet already on iOS 17.
+    private func openPicker() {
+        if pushesPicker { push = .picker } else { showsPicker = true }
+    }
+
+    // MARK: 最新
+
+    /// 最新's parameters: the category each book source shows in it (design §13.3). A source
+    /// with none picked has no 最新 row; the libraries' are their own.
+    private var latestParameters: some View {
+        Section {
+            ForEach(editor.latestCategories) { reference in
+                let name = HomeContentOwner.bookSource(url: reference.sourceURL).name(sources: sources, connections: connections)
+                Button { push = .latestCategory(reference.sourceURL) } label: {
+                    LabeledContent(name, value: reference.title)
+                        .foregroundStyle(DSColor.textPrimary)
+                }
+                .swipeActions {
+                    Button(localized("移除"), role: .destructive) {
+                        editor.setLatestCategory(nil, forSourceURL: reference.sourceURL)
+                    }
+                }
+                .accessibilityAction(named: localized("移除")) {
+                    editor.setLatestCategory(nil, forSourceURL: reference.sourceURL)
+                }
+                .accessibilityIdentifier("homeSection.latest.\(name)")
+            }
+            Button { push = .latestSources } label: {
+                Label(localized("新增來源配置"), systemImage: "plus")
+            }
+            .accessibilityIdentifier("homeSection.latest.add")
+        } header: {
+            Text(localized("參數"))
+        } footer: {
+            Text(localized("來源配置要選一個分類代表它的最新，沒選的不會出現在最新。"))
+                .dsSectionFooter()
+        }
+        .interfaceSectionSurface()
+    }
+
+    private func pickLatest(_ choice: HomeContentChoice) {
+        guard case .sourceCategories(let references) = choice.binding, let reference = references.first else { return }
+        editor.setLatestCategory(reference, filterValues: choice.filterValues, forSourceURL: reference.sourceURL)
+    }
+
+    // MARK: Filters
+
+    /// The section's book source category, when it was picked under the source's filters.
+    private var filteredCategory: ExploreCategoryReference? {
+        guard case .sourceCategories(let references) = draft.binding, references.count == 1,
+              let reference = references.first,
+              !editor.filterValues(forSourceURL: reference.sourceURL).isEmpty else { return nil }
+        return reference
+    }
+
+    /// The section's own filter values, in the order of their keys; changing one picks the
+    /// category again under it, in the source's categories.
+    private func filtersRow(_ category: ExploreCategoryReference) -> some View {
+        let values = editor.filterValues(forSourceURL: category.sourceURL)
+        let summary = values.keys.sorted().compactMap { values[$0] }.joined(separator: " · ")
+        return Button { push = .filters(category.sourceURL) } label: {
+            LabeledContent(localized("篩選")) {
+                HStack(spacing: DSSpacing.xs) {
+                    Text(summary)
+                        .foregroundStyle(DSColor.textSecondary)
+                        .multilineTextAlignment(.trailing)
+                    Image(systemName: "chevron.right")
+                        .font(DSFont.footnote.weight(.semibold))
+                        .foregroundStyle(DSColor.textTertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .foregroundStyle(DSColor.textPrimary)
+        }
+        .accessibilityLabel(localized("篩選"))
+        .accessibilityValue(summary)
+        .accessibilityIdentifier("homeSection.filters")
+    }
+
+    // MARK: Rows
+
+    @ViewBuilder
+    private var layoutRows: some View {
+        Picker(localized("呈現方式"), selection: Binding(
+            get: { draft.layout.style },
+            set: { editor.setLayout(HomeSectionLayout(style: $0, ranked: draft.layout.showsRanks)) })) {
+            ForEach(HomeLayoutStyle.allCases) { style in
+                Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
+            }
+        }
+        .accessibilityIdentifier("homeSection.layout")
+        if draft.layout.style == .list {
+            Toggle(localized("顯示排名"), isOn: Binding(
+                get: { draft.layout.showsRanks },
+                set: { editor.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
+        }
+    }
+
+    private var sourceRow: some View {
+        Button { openPicker() } label: {
+            LabeledContent(localized("資料來源")) {
+                HStack(spacing: DSSpacing.xs) {
+                    Text(sourceDescription)
+                        .foregroundStyle(DSColor.textSecondary)
+                        .multilineTextAlignment(.trailing)
+                    Image(systemName: "chevron.right")
+                        .font(DSFont.footnote.weight(.semibold))
+                        .foregroundStyle(DSColor.textTertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .foregroundStyle(DSColor.textPrimary)
+        }
+        .accessibilityLabel(localized("資料來源"))
+        .accessibilityValue(sourceDescription)
+        .accessibilityIdentifier("homeSection.source")
+    }
+
+    /// 「來源 › 子項目」, as Rex's row reads; 未設定 before 選擇內容來源.
+    private var sourceDescription: String {
+        guard let binding = draft.binding, let owner = binding.contentOwner else { return localized("未設定") }
+        let item = HomeSection(layout: draft.layout, binding: binding).displayTitle(sourceName: "")
+        return [owner.name(sources: sources, connections: connections), item.isEmpty ? draft.title : item]
+            .filter { !$0.isEmpty }
+            .joined(separator: " › ")
+    }
+
+    private func picker(isPushed: Bool) -> some View {
+        HomeContentSourcePicker(current: draft.binding, parameters: draft.parameters, isPushed: isPushed) { choice in
+            editor.choose(choice.binding, parameters: choice.parameters, itemTitle: choice.itemTitle)
+            showsPicker = false
+            push = nil
+        } cancel: {
+            showsPicker = false
+            push = nil
+        }
+    }
+
+    // MARK: Preview
+
+    @ViewBuilder
+    private var previewContent: some View {
+        if !preview.isReady {
+            ProgressView().frame(maxWidth: .infinity)
+        } else if let group = preview.groups(in: nil, languages: aggregation.readingLanguages,
+                                             libraryOrder: aggregation.settings.libraryOrder).first,
+                  !group.isSettledEmpty {
+            HomeRowView(group: group, content: content(of: group),
+                        load: { for row in group.rows { preview.load(row.id) } },
+                        request: { for row in group.rows { if case .failed = row.state { preview.request(row.id) } } },
+                        open: { _, _ in }, openLocation: { _ in })
+        } else {
+            Text(localized("此目錄沒有內容"))
+                .font(DSFont.footnote)
+                .foregroundStyle(DSColor.textSecondary)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func content(of group: HomeSectionGroup) -> HomeRowContent? {
+        guard case .loaded(let entries) = group.state else { return nil }
+        return HomeRowContent(entries: entries, store: store)
+    }
+}
+
+extension HomeContentOwner {
+    /// The name 選擇內容來源 and the form's 資料來源 give it.
+    @MainActor
+    func name(sources: BookSourceStore, connections: RemoteLibraryConnectionStore) -> String {
+        switch self {
+        case .appData: localized("App 資料")
+        case .connection(let id): connections.connection(id: id)?.name ?? ""
+        case .gutenberg: localized("Project Gutenberg")
+        case .aozora: localized("青空文庫")
+        case .bookSource(let url): sources.sources.first { $0.bookSourceUrl == url }?.bookSourceName ?? url
+        }
+    }
+}
+
+#Preview("新增欄目") {
+    HomeNewSectionSheet()
+        .environmentObject(BookStore())
+}
+
+#Preview("欄目") {
+    NavigationStack {
+        HomeSectionForm(
+            editor: HomeSectionEditor(
+                section: HomeSection(layout: .row, binding: .gutenbergCollection(id: PublicLibraryCollection.chinese.id)),
+                store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
+                preview: .preview(shelf: BookStore())),
+            isInSheet: false)
+    }
+    .environmentObject(BookStore())
+}

@@ -3,7 +3,7 @@ import SwiftUI
 // Unified library 5d-3h: 聚合設定 → 首頁欄目 (Phase 5 plan, decision 21), Emby's home screen
 // sections. The same sections and the same edits as 探索's 編輯首頁: the 首頁配置 探索 shows
 // (`HomePageStore`, 5d-4), `moveEditable` to reorder, and each section's own page
-// (`HomeSectionPage`: 在首頁顯示, 刪除). No second copy of the home.
+// (`HomeSectionPage`, the section form since 5d-5). No second copy of the home.
 
 struct HomeSectionsSettingsView: View {
     @ObservedObject private var pageStore = HomePageStore.shared

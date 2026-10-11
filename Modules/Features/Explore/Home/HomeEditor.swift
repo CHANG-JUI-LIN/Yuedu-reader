@@ -3,9 +3,9 @@ import SwiftUI
 // Unified library 5d-2: editing the home in place (Phase 5 plan, 5d-2; decisions 14 and 18).
 // 編輯首頁, at the end of the home, turns every section into a card, as the maintainer's
 // reference (Rex's home editor) shows: the mark beside a card shows or hides it, a card is
-// dragged to reorder, and a tap pushes the section's own page (在首頁顯示, 刪除), where 5d-5's
-// section form will grow. Which libraries 最新 shows is 聚合設定's 顯示在最新 (5d-3f). 完成 ends it. A section name's long press offers
-// the same edits outside it. Every change goes through `HomePageStore.edit`, so the home
+// dragged to reorder, and a tap pushes the section's form (`HomeSectionForm`, 5d-5). ＋ and
+// the card after the sections open 新增欄目 (5d-5). Which libraries 最新 shows is 聚合設定's
+// 顯示在最新 (5d-3f). 完成 ends it. A section name's long press offers the same edits outside it. Every change goes through `HomePageStore.edit`, so the home
 // builds its rows again from the saved page.
 
 enum HomeEditRoute: Hashable {
@@ -39,7 +39,8 @@ extension HomeSection {
 
 // MARK: - The home, being edited
 
-/// The home's sections as cards, hidden ones included, then the 首頁配置's card and 範圍's.
+/// The home's sections as cards, hidden ones included, then 新增欄目, the 首頁配置's card and
+/// 範圍's.
 struct HomeEditingSections<RowContent: View>: View {
     /// `HomePage.editableSections`.
     let sections: [HomeSection]
@@ -51,17 +52,21 @@ struct HomeEditingSections<RowContent: View>: View {
     let openSettings: (UUID) -> Void
     /// Renaming or deleting the 首頁配置, asked by the home.
     let prompt: (HomeConfigurationPrompt) -> Void
+    /// 新增欄目, presented by the home.
+    let addSection: () -> Void
     @ObservedObject private var pageStore = HomePageStore.shared
     @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
 
     init(sections: [HomeSection], groups: [HomeSectionGroup], configuration: HomeConfigurationListing?,
          openSettings: @escaping (UUID) -> Void, prompt: @escaping (HomeConfigurationPrompt) -> Void,
+         addSection: @escaping () -> Void,
          @ViewBuilder rowContent: @escaping (HomeSectionGroup) -> RowContent) {
         self.sections = sections
         self.groups = groups
         self.configuration = configuration
         self.openSettings = openSettings
         self.prompt = prompt
+        self.addSection = addSection
         self.rowContent = rowContent
     }
 
@@ -69,6 +74,7 @@ struct HomeEditingSections<RowContent: View>: View {
         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
             card(section, at: index)
         }
+        addCard
         if let configuration { configurationCard(configuration) }
         scopeCard
     }
@@ -128,12 +134,31 @@ struct HomeEditingSections<RowContent: View>: View {
             .accessibilityIdentifier("homeEditor.section.\(section.id.uuidString)")
         }
         .padding(.trailing, DSSpacing.lg)
+        .id(section.id)
     }
 
     /// Puts a section where the card at `target` is now.
     private func move(_ id: UUID, to target: Int) {
         guard let from = sections.firstIndex(where: { $0.id == id }), from != target else { return }
         pageStore.edit { $0.moveEditable(fromOffsets: IndexSet(integer: from), toOffset: target > from ? target + 1 : target) }
+    }
+
+    /// 新增欄目 after the last card, where the bar's ＋ is out of reach: at the end of the home
+    /// iOS 27's minimized bar hides its buttons.
+    private var addCard: some View {
+        Button(action: addSection) {
+            Label(localized("新增欄目"), systemImage: "plus")
+                .font(DSFont.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(DSSpacing.lg)
+                .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(DSColor.accent)
+        .padding(.leading, DSLayout.minimumTapTarget + DSSpacing.sm)
+        .padding(.trailing, DSSpacing.lg)
+        .accessibilityIdentifier("homeEditor.addSection")
     }
 
     /// The 首頁配置 being edited: its name, and for the reader's own, 重新命名 and 刪除 (5d-4).
@@ -180,46 +205,8 @@ struct HomeEditingSections<RowContent: View>: View {
     }
 }
 
-// MARK: - One section
-
-struct HomeSectionPage: View {
-    let sectionID: UUID
-    @ObservedObject private var pageStore = HomePageStore.shared
-    @Environment(\.dismiss) private var dismiss
-    @State private var confirmsDelete = false
-
-    private var section: HomeSection? {
-        pageStore.page?.sections.first { $0.id == sectionID }
-    }
-
-    var body: some View {
-        Form {
-            if let section {
-                Section {
-                    Toggle(localized("在首頁顯示"), isOn: Binding(
-                        get: { section.isEnabled },
-                        set: { isEnabled in pageStore.edit { $0.setEnabled(isEnabled, section: sectionID) } }))
-                }
-                .interfaceSectionSurface()
-                Section {
-                    Button(localized("刪除"), role: .destructive) { confirmsDelete = true }
-                        .accessibilityIdentifier("homeSection.delete")
-                }
-                .interfaceSectionSurface()
-            }
-        }
-        .navigationTitle(section?.editorTitle() ?? "")
-        .toolbarTitleDisplayMode(.inline)
-        .themedAppSurface(for: .explore)
-        .homeSectionDeleteConfirmation(isPresented: $confirmsDelete, title: section?.editorTitle() ?? "") {
-            dismiss()
-            pageStore.edit { $0.removeSection(sectionID) }
-        }
-    }
-}
-
 extension View {
-    /// Deleting a section asks first: a default section cannot be added back until 新增欄目.
+    /// Deleting a section asks first.
     func homeSectionDeleteConfirmation(isPresented: Binding<Bool>, title: String,
                                        delete: @escaping () -> Void) -> some View {
         confirmationDialog(String(format: localized("刪除「%@」？"), title), isPresented: isPresented,
@@ -240,7 +227,7 @@ extension View {
         LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
             HomeEditingSections(sections: sections, groups: [],
                                 configuration: HomeConfigurationListing(id: HomeConfigurationID(UUID()), name: "週末"),
-                                openSettings: { _ in }, prompt: { _ in }) { _ in EmptyView() }
+                                openSettings: { _ in }, prompt: { _ in }, addSection: {}) { _ in EmptyView() }
         }
     }
 }
