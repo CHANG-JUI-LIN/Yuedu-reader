@@ -4,8 +4,8 @@ import StoreKitTest
 /// Prepare with scripts/navigation_swipe_fixture.py and serve localhost:18765.
 /// These tests deliver actual touches to the production Explore/detail/reader.
 /// Every launch pins 探索 to its book sources (`-explore.mode sources`): a public-library UI
-/// test run before these leaves its own mode saved on the simulator. Since unified library
-/// 5d-1 a source opens from 範圍, in place at Explore's root.
+/// test run before these leaves its own mode saved on the simulator. A source's book is reached
+/// from a section of Explore's home, which opens 作品詳情 (`openDiscoveredBook`).
 final class DetailReaderBackSwipeUITests: XCTestCase {
     private var storeKitSession: SKTestSession?
 
@@ -23,28 +23,64 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         storeKitSession = session
     }
 
-    /// 範圍 → Source → the source: its discover page, in place at Explore's root.
-    @MainActor
-    private func chooseSource(_ app: XCUIApplication, named name: String) {
-        let menu = app.buttons["explore.scopeMenu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 20), app.debugDescription)
-        menu.tap()
-        let sources = app.buttons["Source"].firstMatch
-        XCTAssertTrue(sources.waitForExistence(timeout: 5), app.debugDescription)
-        sources.tap()
-        let source = app.buttons[name].firstMatch
-        XCTAssertTrue(source.waitForExistence(timeout: 5), app.debugDescription)
-        source.tap()
-    }
+    /// Each fixture source's one discover category (scripts/navigation_swipe_fixture.py).
+    private static let categories = ["Navigation Swipe Fixture": "Navigation Test", "Navigation Manga Fixture": "Manga Test"]
 
-    /// The fixture's source opens its discover page, whose card opens the book. The source and
-    /// its book share a name, so the book is found by its own label.
+    /// The fixture source's book from Explore's home, as a reader reaches a book source there now:
+    /// 編輯首頁 → 新增欄目 → its discover category as a row (範圍 only filters the home since
+    /// unified library 5d-3b, and the source's own catalog entry went with 瀏覽完整目錄); the
+    /// row's card opens 作品詳情, which is the source's own page (5f-3).
     @MainActor
     private func openDiscoveredBook(_ app: XCUIApplication, named name: String) {
-        chooseSource(app, named: name)
-        let book = app.buttons["\(name), Regression"].firstMatch
-        XCTAssertTrue(book.waitForExistence(timeout: 20), app.debugDescription)
-        book.tap()
+        guard let category = Self.categories[name] else { return XCTFail("No fixture category for \(name)") }
+        // At the end of the home, drawn once scrolled to.
+        XCTAssertTrue(app.buttons["explore.scopeMenu"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<12 where !(edit.exists && edit.isHittable) { app.swipeUp() }
+        XCTAssertTrue(edit.waitForExistence(timeout: 5), app.debugDescription)
+        edit.tap()
+        let add = app.buttons["homeEditor.addSection"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<8 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        let layout = app.buttons["homeNewSection.layout.row"].firstMatch
+        XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)
+        layout.tap()
+        let source = app.buttons["homeSection.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 5), app.debugDescription)
+        source.tap()
+        let sources = app.buttons["homePicker.bookSources"].firstMatch
+        XCTAssertTrue(sources.waitForExistence(timeout: 5), app.debugDescription)
+        sources.tap()
+        let sourceRow = app.buttons["homePicker.source.\(name)"].firstMatch
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10), app.debugDescription)
+        sourceRow.tap()
+        let item = app.buttons["homePicker.item.\(category)"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription)
+        item.tap()
+        let confirm = app.buttons["homeSection.add"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
+        confirm.tap()
+        let done = app.buttons["home.editDone"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), app.debugDescription)
+        done.tap()
+        // The new section's card, not the same book in 繼續閱讀 from an earlier test: the first
+        // card under the section's title.
+        // A text, or a button where the title opens 查看全部.
+        let header = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH 'home.row.header.' AND label == %@", category)).firstMatch
+        for _ in 0..<12 where !(header.exists && header.isHittable) { app.swipeUp() }
+        XCTAssertTrue(header.waitForExistence(timeout: 5), app.debugDescription)
+        let cards = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH 'home.card.bookSource.' AND label BEGINSWITH %@", name))
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            cards.allElementsBoundByIndex.contains { $0.frame.minY > header.frame.maxY }
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 20), .completed, app.debugDescription)
+        let card = cards.allElementsBoundByIndex
+            .filter { $0.frame.minY > header.frame.maxY }
+            .min { $0.frame.minY < $1.frame.minY }
+        card?.tap()
     }
 
     /// The 搜索 tab finds the book across sources, and its result opens the detail. Explore's own
@@ -93,6 +129,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         }
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read Now", "Continue Reading"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
+        if !fromSearch { attachScreenshot(app, named: "作品詳情 - book source") }
         for _ in 0..<2 {
             read.tap()
             let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
@@ -105,6 +142,11 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             start.press(forDuration: 0.05, thenDragTo: end)
             XCTAssertTrue(read.waitForExistence(timeout: 8), app.debugDescription)
             XCTAssertFalse(content.exists)
+        }
+        if !fromSearch {
+            // 作品詳情 is one page: back from it is Explore's home.
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.buttons["explore.scopeMenu"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         }
     }
 
@@ -261,10 +303,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"]
         app.launch()
-        chooseSource(app, named: "Navigation Manga Fixture")
-        let discovered = app.buttons["Navigation Manga Fixture, Regression"].firstMatch
-        XCTAssertTrue(discovered.waitForExistence(timeout: 20), app.debugDescription)
-        discovered.tap()
+        openDiscoveredBook(app, named: "Navigation Manga Fixture")
         let add = app.buttons["Bookmarked"]
         let remove = app.buttons["Remove from Library"]
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Bookmarked", "Remove from Library"])).firstMatch.waitForExistence(timeout: 15))
@@ -741,10 +780,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                                "-yd_tts_use_system_voice", "YES",
                                "-yd_appearance_reader_interface", "classic"]
         app.launch()
-        chooseSource(app, named: "Navigation Swipe Fixture")
-        let book = app.buttons["Navigation Swipe Fixture, Regression"].firstMatch
-        XCTAssertTrue(book.waitForExistence(timeout: 20), app.debugDescription)
-        book.tap()
+        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read Now", "Continue Reading"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
         read.tap()

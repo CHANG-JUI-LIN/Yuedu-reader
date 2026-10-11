@@ -609,7 +609,7 @@ struct HomeView: View {
                     )
                         .environmentObject(store)
                 case .work(let route):
-                    WorkDetailView(route: route, host: WorkDetailHost(readerNavigator: readerCoordinator))
+                    WorkDetailView(route: route)
                         .environmentObject(store)
                 }
             }

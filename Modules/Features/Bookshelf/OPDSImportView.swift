@@ -37,7 +37,7 @@ private struct RemoteLibraryDestinations: ViewModifier {
                 WebDAVDirectoryView(route: route)
             }
             .navigationDestination(for: WorkDetailRoute.self) { route in
-                WorkDetailView(route: route, host: WorkDetailHost())
+                WorkDetailView(route: route)
             }
     }
 }

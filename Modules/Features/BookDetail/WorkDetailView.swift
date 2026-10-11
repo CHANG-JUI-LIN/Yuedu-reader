@@ -1,19 +1,16 @@
 import SwiftUI
 
-/// What 作品詳情 needs from the stack it is pushed on.
-struct WorkDetailHost {
-    /// The bookshelf's reader coordinator, for a book source's page; nil elsewhere.
-    var readerNavigator: ReaderNavigationCoordinator? = nil
-}
-
 /// What 作品詳情 pushes. One item, so the page has one destination (iOS 17 guardrail 12).
 private enum WorkDetailPush: Hashable {
-    /// A book-source version's own page: its chapter list and reader are not on this page yet
-    /// (unified library 5f-3).
-    case source(WorkDetailRoute)
     case reader(UUID)
     /// 編輯遠端資料, for the version shown.
     case editor
+}
+
+/// When 作品詳情 reads its versions: once no action runs, and again when asked.
+private struct VersionsLoad: Hashable {
+    let idle: Bool
+    let revision: Int
 }
 
 /// A Gutenberg book's catalog entry, read when its version is shown.
@@ -32,10 +29,11 @@ private enum GutenbergLoad {
 /// Each version acts through what its source already uses: a library item (OPDS, Calibre,
 /// WebDAV, and a Gutenberg book once its catalog entry is read) through
 /// `RemoteLibraryActionModel`, a 青空文庫 work through `AozoraLibraryDownloading`. A
-/// book-source result still opens its own page until 5f-3.
+/// book-source version is that source's own page, drawn here in place (5f-3): its chapter
+/// list, 換源, shelf and reader are `OnlineBookView`'s (or `AudiobookDetailView`'s), with the
+/// work's other versions first in its 換源 sheet.
 struct WorkDetailView: View {
     let route: WorkDetailRoute
-    let host: WorkDetailHost
     @EnvironmentObject private var store: BookStore
     @Environment(\.appDependencies) private var dependencies
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
@@ -58,9 +56,12 @@ struct WorkDetailView: View {
     @State private var offlineFileExists = false
     @State private var writeCapabilities: RemoteLibraryWriteCapabilities?
 
-    init(route: WorkDetailRoute, host: WorkDetailHost) {
+    /// Bumped when a book-source version's page takes its book off the shelf, so the versions
+    /// are read again without the copy.
+    @State private var versionsRevision = 0
+
+    init(route: WorkDetailRoute) {
         self.route = route
-        self.host = host
         _versions = State(initialValue: [route])
     }
 
@@ -68,6 +69,45 @@ struct WorkDetailView: View {
     private var author: String { route.summary.authors.joined(separator: "、") }
 
     var body: some View {
+        page
+            .task(id: VersionsLoad(idle: actions.action == nil, revision: versionsRevision)) {
+                // Again after each action: a book added to the shelf is a version of its own.
+                guard actions.action == nil else { return }
+                versions = await ShelfProvider(store: store).versions(of: route)
+                versionsLoaded = true
+                // A book-source page keeps its place once shown: the copy its 加入書架 makes would
+                // otherwise come first and take the page from under its reader.
+                if chosen == nil, let shown = selected, case .onlineBook = shown.opening { chosen = shown.nodeKey }
+            }
+            .task(id: selected?.nodeKey) { await prepare(selected) }
+            .task(id: offlineProbe) {
+                offlineFileExists = libraryCopy.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false
+            }
+            .onDisappear { actions.cancelForDisappearance() }
+    }
+
+    /// A book-source version is its source's own page; every other version is this one's.
+    /// Each has one item destination of its own (guardrail 12).
+    @ViewBuilder
+    private var page: some View {
+        if let version = selected, case .onlineBook(let frozen) = version.opening {
+            OnlineBookDetailDestination(
+                .book(frozen.book),
+                // The page stays when its book leaves the shelf: the version is still there.
+                onRemoveFromShelf: { versionsRevision += 1 },
+                workVersions: versionChoice(version)
+            )
+            .environmentObject(store)
+            // Never the shelf's card coordinator: closing a reader onto a pushed page through
+            // it left iOS 17's navigation bar off screen (5f-1).
+            .environment(\.readerNavigator, nil)
+            .id(version.nodeKey)
+        } else {
+            workPage
+        }
+    }
+
+    private var workPage: some View {
         BookDetailScaffold(title: route.summary.title, compactAction: primaryAction) {
             BookDetailHero(artworkShape: route.record.contentKind == .audio ? .square : .book,
                            cover: cover, title: route.summary.title, author: author,
@@ -95,11 +135,6 @@ struct WorkDetailView: View {
         }
         .navigationDestination(item: $pushed) { push in
             switch push {
-            case .source(let version):
-                if case .onlineBook(let frozen) = version.opening {
-                    OnlineBookDetailDestination(.book(frozen.book), textPageReaderNavigator: host.readerNavigator)
-                        .environmentObject(store)
-                }
             case .reader(let id):
                 // Pushed by this page on whichever stack it is on, as every detail page pushes
                 // its reader. Never the shelf's UIKit card driver: closing onto a pushed page,
@@ -120,17 +155,6 @@ struct WorkDetailView: View {
                 }
             }
         }
-        .task(id: actions.action == nil) {
-            // Again after each action: a book added to the shelf is a version of its own.
-            guard actions.action == nil else { return }
-            versions = await ShelfProvider(store: store).versions(of: route)
-            versionsLoaded = true
-        }
-        .task(id: selected?.nodeKey) { await prepare(selected) }
-        .task(id: offlineProbe) {
-            offlineFileExists = libraryCopy.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false
-        }
-        .onDisappear { actions.cancelForDisappearance() }
     }
 
     // MARK: Hero
@@ -151,8 +175,8 @@ struct WorkDetailView: View {
         }
         switch version.opening {
         case .onlineBook:
-            return BookDetailAction(title: localized("查看來源詳情"), systemImage: "book",
-                                    isEnabled: actions.action == nil, action: { pushed = .source(version) })
+            // Drawn by the source's own page instead (see `page`).
+            return BookDetailAction(title: localized("開始閱讀"), systemImage: "book", isEnabled: false, action: {})
         case .opdsEntry, .webDAVFile, .gutenberg:
             return BookDetailAction(title: localized(libraryCopy?.lastOpenedDate == nil ? "開始閱讀" : "繼續閱讀"),
                                     systemImage: "book",
@@ -247,18 +271,24 @@ struct WorkDetailView: View {
 
     /// 來源: the version shown, switched in place from its menu when the work has others.
     private func sourceItem(_ version: WorkDetailRoute) -> BookDetailInfoItem {
-        guard versions.count > 1 else {
+        guard let choice = versionChoice(version) else {
             return BookDetailInfoItem(id: "source", label: localized("來源"), value: sourceName(of: version))
         }
         return BookDetailInfoItem(
             id: "source", label: localized("來源"), value: sourceName(of: version), detail: localized("換源"),
-            choice: BookDetailInfoChoice(
-                options: versions.map { .init(id: $0.nodeKey.pickerID, title: optionTitle($0)) },
-                selection: Binding(get: { version.nodeKey.pickerID }, set: { id in
-                    chosen = versions.first { $0.nodeKey.pickerID == id }?.nodeKey
-                    actions.clearMessage()
-                })),
-            accessibilityInputLabels: [localized("換源")])
+            choice: choice, accessibilityInputLabels: [localized("換源")])
+    }
+
+    /// The work's versions, `version` selected; nil when it is the only one. A book-source
+    /// version's page lists the others in its 換源 sheet.
+    private func versionChoice(_ version: WorkDetailRoute) -> BookDetailInfoChoice? {
+        guard versions.count > 1 else { return nil }
+        return BookDetailInfoChoice(
+            options: versions.map { .init(id: $0.nodeKey.pickerID, title: optionTitle($0)) },
+            selection: Binding(get: { version.nodeKey.pickerID }, set: { id in
+                chosen = versions.first { $0.nodeKey.pickerID == id }?.nodeKey
+                actions.clearMessage()
+            }))
     }
 
     private func optionTitle(_ version: WorkDetailRoute) -> String {
@@ -470,7 +500,8 @@ struct WorkDetailView: View {
         case .opdsEntry, .webDAVFile, .gutenberg:
             begin(.read)
         case .onlineBook:
-            pushed = .source(version)
+            // Read from the source's own page (see `page`).
+            break
         }
     }
 
@@ -518,7 +549,7 @@ private struct WorkDetailActionRow: View {
 #Preview("作品詳情") {
     let book = PublicLibraryCollection.chinese.books[0]
     NavigationStack {
-        WorkDetailView(route: WorkDetailRoute(.gutenberg(book)), host: WorkDetailHost())
+        WorkDetailView(route: WorkDetailRoute(.gutenberg(book)))
     }
     .environmentObject(BookStore())
 }
@@ -528,7 +559,7 @@ private struct WorkDetailActionRow: View {
                                          isDirectory: false, size: 1_048_576, etag: nil, lastModified: nil)
     NavigationStack {
         if let route = WorkDetailRoute(webDAV: entry, connectionID: "preview", root: URL(string: "https://dav.example.com/books/")!) {
-            WorkDetailView(route: route, host: WorkDetailHost())
+            WorkDetailView(route: route)
         }
     }
     .environmentObject(BookStore())

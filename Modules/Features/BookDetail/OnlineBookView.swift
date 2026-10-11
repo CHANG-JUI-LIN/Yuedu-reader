@@ -17,6 +17,9 @@ struct OnlineBookView: View {
     /// which replaces this page with the audiobook detail page. `nil` for the
     /// reader-owned detail, which commits every switch to its open reader's book.
     private let onSourceKindChange: ((BookOrigin) -> Void)?
+    /// On 作品詳情, the work's versions: 換源 lists the others first, and picking one switches
+    /// the page to it (unified library 5f-3). `nil` elsewhere.
+    private let workVersions: BookDetailInfoChoice?
 
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
@@ -49,6 +52,8 @@ struct OnlineBookView: View {
     @State private var pendingOrigin: BookOrigin?
     /// A source of another content kind, waiting for the user's confirmation.
     @State private var kindMismatchOrigin: BookOrigin?
+    /// A version of the work chosen in the source sheet; applied once the sheet has dismissed.
+    @State private var pendingVersion: String?
     @State private var showChapterList = false
     @State private var confirmsRemoval = false
     @State private var showsSourceVariableEditor = false
@@ -64,13 +69,15 @@ struct OnlineBookView: View {
         sourceSwitchBookId: UUID? = nil,
         onRemoveFromShelf: (() -> Void)? = nil,
         onContinueReading: ((Int?) -> Void)? = nil,
-        onSourceKindChange: ((BookOrigin) -> Void)? = nil
+        onSourceKindChange: ((BookOrigin) -> Void)? = nil,
+        workVersions: BookDetailInfoChoice? = nil
     ) {
         self.searchBook = nil
         self.sourceSwitchBookId = sourceSwitchBookId
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onContinueReading = onContinueReading
         self.onSourceKindChange = onSourceKindChange
+        self.workVersions = workVersions
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
@@ -91,6 +98,7 @@ struct OnlineBookView: View {
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onContinueReading = onContinueReading
         self.onSourceKindChange = onSourceKindChange
+        self.workVersions = nil
         if let origin = initialOrigin ?? searchBook.origins.first {
             _currentBook = State(initialValue: OnlineBook(detailOrigin: origin, in: searchBook))
         } else {
@@ -284,6 +292,8 @@ struct OnlineBookView: View {
                         query: currentBook.name,
                         currentSourceId: currentBook.sourceId,
                         currentBookURL: currentBook.bookUrl,
+                        otherVersions: otherWorkVersions,
+                        onSelectVersion: { id in pendingVersion = id },
                         onSelectOrigin: { origin in pendingOrigin = origin }
                     )
                 }
@@ -467,6 +477,11 @@ struct OnlineBookView: View {
     /// Runs after the source sheet has dismissed, so the confirmation alert is not
     /// presented over a sheet that is still leaving.
     private func resolvePendingOrigin() {
+        if let version = pendingVersion {
+            pendingVersion = nil
+            workVersions?.selection.wrappedValue = version
+            return
+        }
         guard let origin = pendingOrigin else { return }
         pendingOrigin = nil
         if DetailSourceKind.kind(of: origin, in: searchBook)
@@ -475,6 +490,12 @@ struct OnlineBookView: View {
         } else {
             applyOrigin(origin)
         }
+    }
+
+    /// The work's versions besides the one this page shows.
+    private var otherWorkVersions: [BookDetailInfoChoice.Option] {
+        guard let workVersions else { return [] }
+        return workVersions.options.filter { $0.id != workVersions.selection.wrappedValue }
     }
 
     private func applyOrigin(_ origin: BookOrigin) {
@@ -897,6 +918,21 @@ struct OnlineBookView: View {
     )
     return NavigationStack {
         OnlineBookView(book: sample)
+            .environmentObject(BookStore())
+    }
+}
+
+#Preview("作品詳情的書源版本") {
+    let sample = OnlineBook(
+        name: "修仙聊天群", author: "世味煮作茶", intro: "", coverUrl: "",
+        bookUrl: "https://example.com/book/1", tocUrl: "https://example.com/book/1/toc",
+        wordCount: "34.8萬字", lastChapter: "第703章 大結局", kind: "都市", sourceId: UUID(), sourceName: "晴天小說"
+    )
+    // 換源 lists 書架 above the sources.
+    let versions = BookDetailInfoChoice(options: [.init(id: "source", title: "晴天小說"), .init(id: "copy", title: "書架 · 已讀 42%")],
+                                        selection: .constant("source"))
+    return NavigationStack {
+        OnlineBookView(book: sample, workVersions: versions)
             .environmentObject(BookStore())
     }
 }

@@ -19,6 +19,9 @@ struct AudiobookDetailView: View {
     /// Hands a confirmed switch to a non-audio source to `OnlineBookDetailDestination`,
     /// which replaces this page with the text detail page.
     private let onSourceKindChange: ((BookOrigin) -> Void)?
+    /// On 作品詳情, the work's versions: 換源 lists the others first, and picking one switches
+    /// the page to it (unified library 5f-3). `nil` elsewhere.
+    private let workVersions: BookDetailInfoChoice?
 
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
@@ -52,6 +55,8 @@ struct AudiobookDetailView: View {
     @State private var pendingOrigin: BookOrigin?
     /// A source of another content kind, waiting for the user's confirmation.
     @State private var kindMismatchOrigin: BookOrigin?
+    /// A version of the work chosen in the source sheet; applied once the sheet has dismissed.
+    @State private var pendingVersion: String?
 
     // MARK: Init
 
@@ -59,11 +64,13 @@ struct AudiobookDetailView: View {
     init(
         book: OnlineBook,
         onRemoveFromShelf: (() -> Void)? = nil,
-        onSourceKindChange: ((BookOrigin) -> Void)? = nil
+        onSourceKindChange: ((BookOrigin) -> Void)? = nil,
+        workVersions: BookDetailInfoChoice? = nil
     ) {
         self.searchBook = nil
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onSourceKindChange = onSourceKindChange
+        self.workVersions = workVersions
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
@@ -80,6 +87,7 @@ struct AudiobookDetailView: View {
         self.searchBook = searchBook
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onSourceKindChange = onSourceKindChange
+        self.workVersions = nil
         if let origin = initialOrigin
             ?? searchBook.preferredOrigin(for: .audio)
             ?? searchBook.origins.first {
@@ -258,6 +266,8 @@ struct AudiobookDetailView: View {
                         query: currentBook.name,
                         currentSourceId: currentBook.sourceId,
                         currentBookURL: currentBook.bookUrl,
+                        otherVersions: otherWorkVersions,
+                        onSelectVersion: { id in pendingVersion = id },
                         onSelectOrigin: { origin in pendingOrigin = origin }
                     )
                 }
@@ -428,6 +438,11 @@ struct AudiobookDetailView: View {
     /// Runs after the source sheet has dismissed, so the confirmation alert is not
     /// presented over a sheet that is still leaving.
     private func resolvePendingOrigin() {
+        if let version = pendingVersion {
+            pendingVersion = nil
+            workVersions?.selection.wrappedValue = version
+            return
+        }
         guard let origin = pendingOrigin else { return }
         pendingOrigin = nil
         if DetailSourceKind.kind(of: origin, in: searchBook)
@@ -436,6 +451,12 @@ struct AudiobookDetailView: View {
         } else {
             applyOrigin(origin)
         }
+    }
+
+    /// The work's versions besides the one this page shows.
+    private var otherWorkVersions: [BookDetailInfoChoice.Option] {
+        guard let workVersions else { return [] }
+        return workVersions.options.filter { $0.id != workVersions.selection.wrappedValue }
     }
 
     private func applyOrigin(_ origin: BookOrigin) {
