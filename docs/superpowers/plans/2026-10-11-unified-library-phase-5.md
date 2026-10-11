@@ -145,6 +145,12 @@
     - **新增欄目 is Rex's order:** a layout first, then the section's page (recommended option).
     - **No 外部服務 group** until Phase 3 gives it something (recommended option).
 
+24. **Answered 2026-10-11, starting 5d-6** (maintainer, by option; all four the recommended one). Decision 16's four kinds, against what 5d-5 already built:
+    - **古騰堡熱門** goes into a new install's 預設 only. A saved 預設 is the reader's home and is not changed; 新增欄目 → 書庫 → Project Gutenberg → 熱門 adds it.
+    - **最近加入書庫 is not a separate section:** 最新 already merges the libraries' newest (WebDAV's index by server date, OPDS/Calibre, Gutenberg, 青空文庫, the book sources' picked categories), and 聚合設定's 顯示在最新 can keep it to the libraries.
+    - **系列下一本 is built now,** only from books that record a series and its number (an imported book's metadata; the WebDAV index once it keeps the number). A book source's web novel has no series data and gets none.
+    - **書源的排行／最近更新 is not guessed from category names:** 5d-5's 新增欄目 already picks any source's ranking or recently-updated category.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -874,4 +880,5 @@ Decision 23. Branch `unified-library/5d5-section-form`.
 - **iOS 17 freeze, found by the UI test before merging:** on iOS 17.5, 最新's 新增來源配置 froze the app (XCUITest: 「Timed out while evaluating UI query」). `_logChanges`: `HomeSectionFormHost: _dismiss changed.` 13,830 times, the host reading `dismiss` while the form under it held four `navigationDestination`s — the search page's freeze (`Technotes/iOS17SearchWatchdogPostmortem.md`, guardrail 12). Now the form has one item destination (`HomeSectionFormPush`), nothing in the form or 新增欄目's sheet reads `dismiss` (the home closes the sheet by its binding), and only the leaf `HomeSectionDeleteButton` leaves the page, through `presentationMode` as `ReaderView` does. `testAddSections` now also deletes from the form.
 - **Strings:** +7 (新增欄目, 選擇內容來源, 資料來源, App 資料, 書庫, 參數, 來源配置要選一個分類代表它的最新，沒選的不會出現在最新。), −1 (長按來源配置的分類，選擇「加入首頁配置」。).
 - **Tests:** `HomeSectionEditorTests` (adds at the end; writes in place; the title follows the choice; 最新's categories with filters), `HomeSectionFilterTests` (lists under the section's values; a new 类型's platform; kept by source), `SourceVariableOverlayTests` (the rule reads the overlay through `getVariable` and `get`, the stored JSON unchanged byte for byte; a write-back keeps its keys and stores none of the overlay's; a non-object variable). Unit, with the explore/variable suites (`ModernParserBridgeExploreTests`, `LegadoSourceBridgeTests`, `DiscoverViewModelReloadTests`, `DiscoverKindsCacheTests`, `ExploreSourceFilterTests`): 11 suites, 75 tests, iOS 27. UI: `HomeEditorUITests.testAddSections` (a Gutenberg list as 固定封面網格 with its preview; a book source's category under its 頻道 filter set to 女, kept as 篩選; renaming; 最新's parameters; 刪除 from the form). iOS 27: `HomeEditorUITests` 4, `ExploreHomeUITests` 9, `AggregationSettingsUITests.testHomeSections`, all passed. iOS 17.5: `HomeEditorUITests` 4 passed.
+- **Added the same day (`unified-library/5d5-settings-configuration-name`, maintainer: 「要」):** 聚合設定 → 首頁欄目's first row names the 首頁配置 it edits (首頁配置 · 預設), since 範圍 chooses it elsewhere. No new string. `AggregationSettingsUITests.testHomeSections` checks it; passed on iOS 27.
 - **Not done:** 聚合設定 → 首頁欄目 has no 新增欄目. A section holding several categories (a migrated custom-page block) shows no 篩選 row; 資料來源 replaces them with one.
