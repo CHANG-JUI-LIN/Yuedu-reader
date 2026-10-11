@@ -71,6 +71,10 @@ enum HomeSectionBinding: Hashable, Sendable {
     /// 系列下一本 (5d-6b, decisions 24 and 25): the next numbered book of each series being
     /// read or read to the end, from the shelf and the WebDAV index (`NextInSeries`).
     case nextInSeries
+    /// 訂閱的最新文章 (5g, decision 26): the newest articles of the RSS subscriptions, as the RSS
+    /// tab stores them. Articles, never books: they open the article, not 作品詳情. A build
+    /// before 5g reads it as `.unknown` and writes it back as it came.
+    case subscriptionArticles
     /// A binding a later build wrote, kept exactly as it was read.
     case unknown(PreservedJSON)
 
@@ -88,6 +92,7 @@ extension HomeSectionBinding: Codable {
     private enum Kind: String {
         case myLibrary, continueReading, latest, sourceCategories, opdsFeed
         case gutenbergCollection, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related, nextInSeries
+        case subscriptionArticles
     }
 
     init(from decoder: Decoder) throws {
@@ -113,6 +118,7 @@ extension HomeSectionBinding: Codable {
         case .aozoraIndex: self = .aozoraIndex(kind: try container.decode(String.self, forKey: .kind))
         case .related: self = .related
         case .nextInSeries: self = .nextInSeries
+        case .subscriptionArticles: self = .subscriptionArticles
         }
     }
 
@@ -154,6 +160,8 @@ extension HomeSectionBinding: Codable {
             try container.encode(Kind.related.rawValue, forKey: .type)
         case .nextInSeries:
             try container.encode(Kind.nextInSeries.rawValue, forKey: .type)
+        case .subscriptionArticles:
+            try container.encode(Kind.subscriptionArticles.rawValue, forKey: .type)
         case .unknown:
             break
         }

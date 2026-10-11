@@ -359,6 +359,15 @@ enum DSLayout {
     static let homeListCoverWidth: CGFloat = 60
     /// 精簡閱讀卡片's cover (5d-3c), beside its text on the cover's colour.
     static let homeCompactReadingCardCoverWidth: CGFloat = 64
+    /// 訂閱的最新文章's card (5g) in the sideways layouts: wider than a cover, since an article's
+    /// picture is landscape. Scaled with Dynamic Type.
+    static let homeArticleCardWidth: CGFloat = 240
+    /// The widest an article card grows at accessibility text sizes, so one still fits a phone.
+    static let homeArticleCardMaxWidth: CGFloat = 340
+    /// An article card's picture, 16:9, as feeds' lead images mostly are.
+    static let homeArticleImageAspectRatio: CGFloat = 16.0 / 9.0
+    /// The dot an unread article carries, as the RSS tab's rows mark one.
+    static let homeArticleUnreadDot: CGFloat = 8
     /// 圖文資訊清單's rank badge at the default text size (scaled with Dynamic Type); two-digit
     /// ranks widen it.
     static let homeRankBadgeSize: CGFloat = 24

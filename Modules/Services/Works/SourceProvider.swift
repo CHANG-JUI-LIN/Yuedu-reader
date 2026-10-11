@@ -54,6 +54,9 @@ struct CollectionCursor: Hashable, Codable, Sendable {
 enum CollectionEntry: Hashable, Sendable {
     case location(CollectionLocation)
     case item(SourceRecord, WorkSummary, ItemOpening)
+    /// An RSS article (訂閱的最新文章, unified library 5g): not a work, so it has no record,
+    /// no summary and no 作品詳情 (design §13.8: articles are never made `Book`s).
+    case article(SubscriptionArticle)
 }
 
 /// What opening an item needs, frozen when the entry is made, so a destination never

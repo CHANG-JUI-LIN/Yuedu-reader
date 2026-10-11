@@ -16,6 +16,7 @@ extension HomeSection {
         case .latest: return localized("最新")
         case .related: return localized("相關")
         case .nextInSeries: return localized("系列下一本")
+        case .subscriptionArticles: return localized("訂閱的最新文章")
         case .sourceCategories(let categories): return categories.first?.title ?? sourceName
         case .gutenbergCollection(let id):
             return PublicLibraryCollection.all.first { $0.id == id }.map { localized($0.titleKey) } ?? sourceName
@@ -32,16 +33,20 @@ struct HomeRowContent {
     var cards: [HomeCardContent]
     /// Places inside the source (Aozora's index groups, an OPDS navigation feed), as chips.
     var locations: [CollectionLocation]
+    /// 訂閱的最新文章's articles (5g), drawn as articles, not as books.
+    var articles: [SubscriptionArticle] = []
 
-    var isEmpty: Bool { cards.isEmpty && locations.isEmpty }
+    var isEmpty: Bool { cards.isEmpty && locations.isEmpty && articles.isEmpty }
 
     @MainActor
     init(entries: [CollectionEntry], status: (SourceItemKey) -> CopyLookup.Status?, shelfBooks: [UUID: ReadingBook]) {
         var cards: [HomeCardContent] = []
         var locations: [CollectionLocation] = []
+        var articles: [SubscriptionArticle] = []
         for entry in entries {
             switch entry {
             case .location(let location): locations.append(location)
+            case .article(let article): articles.append(article)
             case .item:
                 if let card = HomeCardContent(entry, status: status, shelfBooks: shelfBooks) {
                     cards.append(card)
@@ -50,6 +55,7 @@ struct HomeRowContent {
         }
         self.cards = cards
         self.locations = locations
+        self.articles = articles
     }
 
     /// One pass over the shelf, for the copies this row shows.
@@ -90,6 +96,8 @@ struct HomeRowView: View {
     /// A card was tapped; the row's other cards come along for the public-library carousel.
     let open: (HomeCardContent, [HomeCardContent]) -> Void
     let openLocation: (CollectionLocation) -> Void
+    /// An article of 訂閱的最新文章 was tapped (5g); none in a fixture or the form's preview.
+    var openArticle: (SubscriptionArticle) -> Void = { _ in }
     /// The section's long press (5d-2, decision 14); none in a fixture.
     var actions: HomeSectionActions?
     /// A shelf copy's ••• on 精簡閱讀卡片 (5d-3c); none in a fixture.
@@ -194,6 +202,9 @@ struct HomeRowView: View {
             if let content {
                 if !content.locations.isEmpty { locationChips(content.locations) }
                 if !content.cards.isEmpty { cards(content.cards) }
+                if !content.articles.isEmpty {
+                    HomeArticleCards(layout: group.section.layout, articles: content.articles, open: openArticle)
+                }
             }
         }
     }

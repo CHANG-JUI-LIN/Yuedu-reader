@@ -99,6 +99,10 @@ struct yuedu_appApp: App {
         if ProcessInfo.processInfo.arguments.contains("-seed-custom-explore-page") {
             LegacyCustomExplorePages.seedForTesting()
         }
+        // A feed with two articles, for 訂閱的最新文章 (unified library 5g).
+        if ProcessInfo.processInfo.arguments.contains("-seed-rss-articles") {
+            RSSStore.shared.seedForTesting()
+        }
         #endif
         // First launch only, and only once the library is read: the read runs off the main
         // thread now, and evaluating `sources` here used to read the whole file inline on

@@ -126,8 +126,9 @@ enum HomeScopeFilter {
                 let kept = Self.entries(loaded, of: row, in: scope)
                 entries[row.id] = hidesRead ? kept.filter { !(readFilter?.isRead($0) ?? false) } : kept
             }
-            // 繼續閱讀 and 系列下一本 keep the order the books were opened in.
-            let ordered = [.continueReading, .nextInSeries].contains(section.binding) ? nil : languages
+            // 繼續閱讀 and 系列下一本 keep the order the books were opened in; 訂閱的最新文章, the
+            // newest first.
+            let ordered = [.continueReading, .nextInSeries, .subscriptionArticles].contains(section.binding) ? nil : languages
             return HomeSectionGroup(section: section, rows: rows, entries: entries, languages: ordered)
         }
     }
