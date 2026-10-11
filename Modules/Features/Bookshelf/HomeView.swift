@@ -146,11 +146,11 @@ final class BookshelfCoverFrameBox {
     var frame: CGRect = .zero
 }
 
+/// The bookshelf ＋'s ways of putting a book on the shelf. Browsing a library is Explore's
+/// (unified library 5c-5): its WebDAV, OPDS and Calibre entries left this menu.
 private enum BookshelfImportPresentationRoute: Hashable {
     case local
-    case webDAV
-    case opds
-    case calibre
+    case calibreWireless
 }
 
 private extension View {
@@ -176,9 +176,7 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var showAddSheet = false
-    @State private var showWebDAVImport = false
-    @State private var showOPDSImport = false
-    @State private var showCalibreLibrary = false
+    @State private var showCalibreWireless = false
     @State private var addSheetSessionID = UUID()
     @State private var showLegacyImportChooser = false
     @State private var legacyImportSequence =
@@ -564,19 +562,9 @@ struct HomeView: View {
                                 systemImage: "folder"
                             ),
                             DismissalSequencedAction(
-                                route: .webDAV,
-                                title: localized("WebDAV 書庫"),
-                                systemImage: "externaldrive.connected.to.line.below"
-                            ),
-                            DismissalSequencedAction(
-                                route: .opds,
-                                title: localized("OPDS 書庫"),
-                                systemImage: "books.vertical"
-                            ),
-                            DismissalSequencedAction(
-                                route: .calibre,
-                                title: localized("Calibre 書庫"),
-                                systemImage: "server.rack"
+                                route: .calibreWireless,
+                                title: localized("電腦傳書"),
+                                systemImage: "desktopcomputer"
                             ),
                         ],
                         onSelect: { legacyImportSequence.select($0) }
@@ -595,19 +583,11 @@ struct HomeView: View {
                     addSheetSessionID = UUID()
                 }
             }
-            .sheet(isPresented: $showWebDAVImport) {
+            .sheet(isPresented: $showCalibreWireless) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-                    WebDAVImportView().environmentObject(store)
-                }
-            }
-            .sheet(isPresented: $showOPDSImport) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-                    OPDSImportView().environmentObject(store)
-                }
-            }
-            .sheet(isPresented: $showCalibreLibrary) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-                    OPDSImportView(kind: .calibre).environmentObject(store)
+                    NavigationStack {
+                        CalibreWirelessView(store: store, service: appDependencies.calibreWireless)
+                    }
                 }
             }
             .navigationDestination(isPresented: $showBookshelfOrganizer) {
@@ -719,12 +699,8 @@ struct HomeView: View {
         case .local:
             addSheetSessionID = UUID()
             showAddSheet = true
-        case .webDAV:
-            showWebDAVImport = true
-        case .opds:
-            showOPDSImport = true
-        case .calibre:
-            showCalibreLibrary = true
+        case .calibreWireless:
+            showCalibreWireless = true
         }
     }
 
@@ -749,20 +725,9 @@ struct HomeView: View {
                     Label(localized("從本地匯入"), systemImage: "folder")
                 }
                 Button {
-                    showWebDAVImport = true
+                    showCalibreWireless = true
                 } label: {
-                    Label(localized("WebDAV 書庫"),
-                          systemImage: "externaldrive.connected.to.line.below")
-                }
-                Button {
-                    showOPDSImport = true
-                } label: {
-                    Label(localized("OPDS 書庫"), systemImage: "books.vertical")
-                }
-                Button {
-                    showCalibreLibrary = true
-                } label: {
-                    Label(localized("Calibre 書庫"), systemImage: "server.rack")
+                    Label(localized("電腦傳書"), systemImage: "desktopcomputer")
                 }
             } label: {
                 Image(systemName: "plus")
