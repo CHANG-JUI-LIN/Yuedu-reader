@@ -436,7 +436,7 @@ struct LibraryListing: Identifiable, Hashable {
 }
 
 /// 範圍, a picker in a menu (design §13.3), which opens nothing modal. Book sources sit in a
-/// submenu of their own: a reader can have thousands. Below them, the 首頁配置 picker (5d-4),
+/// submenu of their own: a reader can have thousands. Below them, the 首頁配置 submenu (5d-4),
 /// then the browser, which is presented rather than shown in place (5d-1).
 private struct ExploreScopeMenu: View {
     @Binding var scope: ExploreScope
@@ -471,12 +471,17 @@ private struct ExploreScopeMenu: View {
                     }
                 }
             }
-            Section(localized("首頁配置")) {
+            // A submenu, as 來源配置's: inline, its check mark read as a second 範圍 choice,
+            // and the section's title was not drawn. The current one is the subtitle.
+            Menu {
                 Picker(localized("首頁配置"), selection: $configuration) {
                     ForEach(configurations) { configuration in
                         Text(configuration.name).tag(configuration.id)
                     }
                 }
+            } label: {
+                Label(localized("首頁配置"), systemImage: "square.stack")
+                Text(configurations.first { $0.id == configuration }?.name ?? "")
             }
             if showsBrowser {
                 Section {
