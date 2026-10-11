@@ -53,8 +53,6 @@ private enum SearchPagePush: Hashable {
     /// A search result. Pushed this way on iOS 17 only; later systems push results by
     /// value from the list's `NavigationLink`.
     case result(BookSearchResultRoute)
-    /// Gutenberg's results for a submitted query, as the store's grid.
-    case gutenbergSearch(OPDSFeedRoute)
 }
 
 /// Resolves a push without capturing `BookSearchView` or its live `SearchAggregator`
@@ -66,8 +64,6 @@ private struct SearchPagePushDestination: View {
         switch push {
         case .result(let route):
             SearchResultDestination(route: route)
-        case .gutenbergSearch(let route):
-            PublicLibraryFeedView(route: route)
         }
     }
 }
@@ -201,6 +197,9 @@ struct BookSearchView: View {
     // this body (Technotes/iOS17ReaderNavigationWatchdog.md).
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The tab's stack, which Gutenberg's results are pushed onto. A reference that never
+    /// changes (postmortem guardrail 13).
+    @Environment(\.searchTabNavigation) private var tabNavigation
 
     @State private var query = ""
     @State private var errorMsg: String? = nil
@@ -233,9 +232,9 @@ struct BookSearchView: View {
     }
 
     /// Only the tab's root searches the public libraries too: its stack carries the store's
-    /// pages and its book carousel. Never in China.
+    /// pages and 作品詳情. Never in China.
     private var offersPublicLibraries: Bool {
-        isTabRoot && availability.isAvailable
+        isTabRoot && tabNavigation != nil && availability.isAvailable
     }
 
     /// One search for both (Phase 5 plan decision 17, as amended 2026-10-11): the sources'
@@ -624,7 +623,8 @@ struct BookSearchView: View {
         let q = trimmedQuery
         guard !q.isEmpty else { return }
         recentQueries = recentQueries.recording(q)
-        pushed = .gutenbergSearch(OPDSFeedRoute(
+        // By value, onto the path a book in it pushes 作品詳情 onto (see `SearchTabNavigation`).
+        tabNavigation?.path.append(OPDSFeedRoute(
             catalogID: PublicLibraryID.gutenberg.rawValue,
             url: PublicLibrary.gutenbergSearchURL(query: q).absoluteString,
             title: String(q.prefix(500)), presentation: .storefront))

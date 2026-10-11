@@ -155,7 +155,11 @@ When editing search or online detail presentation:
     `openPublicLibraryBooks`, which changes whenever the carousel does. `PublicLibrarySearchSection`
     (iOS 18+) and `IOS17SearchResults` (iOS 17) read it, so the page's body is not invalidated by
     it. On iOS 17 the section's rows are values in `IOS17SearchResultTableContent` and native
-    cells, like the results. Its Gutenberg search is a `SearchPagePush` case like a result.
+    cells, like the results. Its Gutenberg search was a `SearchPagePush` case like a result
+    until a book in it pushed 作品詳情 onto the tab's path (2026-10-11): back from 作品詳情 then
+    went to the root, guardrail 11's failure inside one page. Gutenberg's results are now pushed
+    by value onto that path, through `SearchTabNavigation`, a reference the page holds without
+    its body depending on the path.
 
 ## Relevant Files
 

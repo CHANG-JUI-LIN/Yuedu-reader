@@ -21,7 +21,8 @@ struct GutenbergHomePage: View {
 }
 
 /// The store's front page: Gutenberg's featured lists and shelves, and Aozora's 新着 where it
-/// is included. Inside a stack wearing `publicLibraryBookCarousel` and `publicLibraryDestinations`.
+/// is included. Inside a stack wearing `publicLibraryDestinations` and putting what a book opens
+/// in `openPublicLibraryBooks` (作品詳情 on 探索 and 搜索).
 struct PublicLibraryStorefront: View {
     let includesAozora: Bool
     @Environment(\.openPublicLibraryBooks) private var openBooks

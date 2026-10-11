@@ -41,8 +41,7 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
     }
 
     /// With no book source the 公有書庫 section is the whole result, and the keyboard's Search
-    /// asks Gutenberg; its results open in the tab's own stack, and a book opens the store's
-    /// carousel over it.
+    /// asks Gutenberg; its results open in the tab's own stack, and a book pushes 作品詳情 onto it.
     @MainActor
     func testNoSourcesSearchesThePublicLibraries() {
         let app = XCUIApplication()
@@ -72,11 +71,13 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         attach(app, "search-tab-gutenberg-results")
 
         result.tap()
-        let close = app.buttons["publicLibrary.closeSheet"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription)
-        attach(app, "search-tab-carousel")
-        close.tap()
-        XCTAssertTrue(close.waitForNonExistence(timeout: 10))
-        XCTAssertTrue(result.exists, "closing the carousel returns to the results")
+        let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(source.value as? String, "Project Gutenberg")
+        let intro = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "搜索分頁測試使用的書籍介紹")).firstMatch
+        XCTAssertTrue(intro.waitForExistence(timeout: 10), "作品詳情 loads the book's entry.\n\(app.debugDescription)")
+        attach(app, "search-tab-work-detail")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(result.waitForExistence(timeout: 10), "Back from 作品詳情 returns to the results")
     }
 }

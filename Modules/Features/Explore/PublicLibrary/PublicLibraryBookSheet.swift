@@ -79,6 +79,9 @@ extension EnvironmentValues {
 }
 
 extension View {
+    /// No stack wears it for now: 探索 and 搜索 push 作品詳情 instead (Phase 5 plan, decision 27
+    /// and its 搜索 follow-up). Kept as the maintainer asked.
+    ///
     /// Shows the book carousel over this view — inside the tab, so the tab bar stays
     /// over it as Apple Books keeps it — and lets every page below open it through
     /// `openPublicLibraryBooks`.
