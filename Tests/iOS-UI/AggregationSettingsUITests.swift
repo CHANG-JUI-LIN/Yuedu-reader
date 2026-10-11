@@ -2,7 +2,8 @@ import XCTest
 
 /// Unified library 5d-3d and 5d-3e: 設定 → 聚合設定 (Phase 5 plan, decision 21). 偏好閱讀語言
 /// starts as the interface language; a language added there leads Gutenberg's categories once
-/// moved first, and the choice survives a relaunch. 書庫順序 orders 範圍 and 瀏覽書庫.
+/// moved first, and the choice survives a relaunch. 書庫順序 orders 範圍 and 瀏覽書庫. 隱藏已讀
+/// starts on for 最新 and 相關.
 final class AggregationSettingsUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -28,6 +29,13 @@ final class AggregationSettingsUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["聚合設定"].waitForExistence(timeout: 8), app.debugDescription)
     }
 
+    /// Scrolls the page until `element` can be touched: the page's sections are built as they
+    /// come on screen.
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<4 where !element.isHittable { app.swipeUp() }
+    }
+
     @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -43,23 +51,31 @@ final class AggregationSettingsUITests: XCTestCase {
         openAggregationSettings(app)
 
         let chinese = app.staticTexts["aggregation.language.zh"].firstMatch
+        reveal(chinese, in: app)
         XCTAssertTrue(chinese.waitForExistence(timeout: 5), "the interface language to start with")
         XCTAssertEqual(chinese.value as? String, "第 1 優先")
-        XCTAssertTrue(app.buttons["優先推薦偏好語言"].firstMatch.isSelected)
+        let prefer = app.buttons["優先推薦偏好語言"].firstMatch
+        reveal(prefer, in: app)
+        XCTAssertTrue(prefer.isSelected)
 
         // 新增語言 adds 日本語 last; dragging it above 中文 moves it first.
-        app.buttons["aggregation.addLanguage"].firstMatch.tap()
+        let add = app.buttons["aggregation.addLanguage"].firstMatch
+        reveal(add, in: app)
+        add.tap()
         let offer = app.buttons["aggregation.offer.ja"].firstMatch
         XCTAssertTrue(offer.waitForExistence(timeout: 5), app.debugDescription)
         offer.tap()
         let japanese = app.staticTexts["aggregation.language.ja"].firstMatch
         XCTAssertTrue(japanese.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(japanese.value as? String, "第 2 優先")
+        reveal(japanese, in: app)
         japanese.press(forDuration: 1.0, thenDragTo: chinese)
         XCTAssertEqual(app.staticTexts["aggregation.language.ja"].firstMatch.value as? String, "第 1 優先")
 
-        app.buttons["只推薦偏好語言"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["只推薦偏好語言"].firstMatch.isSelected)
+        let only = app.buttons["只推薦偏好語言"].firstMatch
+        reveal(only, in: app)
+        only.tap()
+        XCTAssertTrue(only.isSelected)
         attach(app, "aggregation-settings")
 
         // Saved: a relaunch without the reset reads it back.
@@ -67,8 +83,10 @@ final class AggregationSettingsUITests: XCTestCase {
         let relaunched = application(fresh: false)
         relaunched.launch()
         openAggregationSettings(relaunched)
+        let rereadOnly = relaunched.buttons["只推薦偏好語言"].firstMatch
+        reveal(rereadOnly, in: relaunched)
         XCTAssertEqual(relaunched.staticTexts["aggregation.language.ja"].firstMatch.value as? String, "第 1 優先")
-        XCTAssertTrue(relaunched.buttons["只推薦偏好語言"].firstMatch.isSelected)
+        XCTAssertTrue(rereadOnly.isSelected)
         relaunched.terminate()
         // Leave the simulator as a new install has it, for the Explore tests after this one.
         application(fresh: true).launch()
@@ -122,6 +140,34 @@ final class AggregationSettingsUITests: XCTestCase {
 
         app.terminate()
         // Leave the simulator as a new install has it, for the Explore tests after this one.
+        application(fresh: true).launch()
+    }
+
+    @MainActor
+    func testHideReadSwitches() {
+        let app = application(fresh: true)
+        app.launch()
+        openAggregationSettings(app)
+        let latest = app.switches["aggregation.hideRead.latest"].firstMatch
+        let related = app.switches["aggregation.hideRead.related"].firstMatch
+        reveal(related, in: app)
+        XCTAssertTrue(related.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(latest.value as? String, "1")
+        XCTAssertEqual(related.value as? String, "1")
+        // The switch sits at the row's trailing end (the row is the element on iOS 17).
+        related.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
+        XCTAssertEqual(related.value as? String, "0")
+        attach(app, "aggregation-hide-read")
+
+        app.terminate()
+        let relaunched = application(fresh: false)
+        relaunched.launch()
+        openAggregationSettings(relaunched)
+        let reread = relaunched.switches["aggregation.hideRead.related"].firstMatch
+        reveal(reread, in: relaunched)
+        XCTAssertEqual(reread.value as? String, "0")
+        XCTAssertEqual(relaunched.switches["aggregation.hideRead.latest"].firstMatch.value as? String, "1")
+        relaunched.terminate()
         application(fresh: true).launch()
     }
 }

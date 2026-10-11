@@ -3681,3 +3681,5 @@
 "第 %d 個" = "Position %d";
 "範圍、瀏覽書庫和最新照這個順序；來源配置排在書庫之後，照它們自己的順序。" = "Range, Browse Libraries and Latest follow this order; sources come after the libraries, in their own order.";
 "顯示在最新" = "Show in Latest";
+"隱藏已讀" = "Hide Read";
+"讀到最後或標記為已讀完的書，任何一份都算。" = "Books read to the end or marked as finished, in any copy.";

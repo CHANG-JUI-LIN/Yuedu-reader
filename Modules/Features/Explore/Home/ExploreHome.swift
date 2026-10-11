@@ -91,8 +91,12 @@ private struct ExploreHomeRoot: View {
     /// The sections drawn: under 範圍, only the chosen source's books; in the reader's
     /// languages' order (聚合設定, 5d-3d).
     private var groups: [HomeSectionGroup] {
-        model.groups(in: scopeKey, languages: aggregation.readingLanguages,
-                     libraryOrder: aggregation.settings.libraryOrder)
+        let lookup = store.copyLookup()
+        return model.groups(in: scopeKey, languages: aggregation.readingLanguages,
+                            libraryOrder: aggregation.settings.libraryOrder,
+                            readFilter: HomeReadFilter(hidesInLatest: aggregation.hidesReadInLatest,
+                                                       hidesInRelated: aggregation.hidesReadInRelated,
+                                                       isRead: lookup.isRead))
     }
 
     /// The libraries in 書庫順序 (聚合設定, 5d-3e), as 範圍 and 瀏覽書庫 list them.
