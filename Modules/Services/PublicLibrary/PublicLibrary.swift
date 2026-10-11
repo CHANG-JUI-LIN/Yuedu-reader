@@ -165,4 +165,18 @@ struct GutenbergShelf: Identifiable {
         }
         return shelves
     }
+
+    /// One shelf by its id, its URL on the endpoint this build reads (unified library 5d-6a):
+    /// an Explore home section keeps the id, so a build on another endpoint reads the same
+    /// shelf. A language shelf is any ISO 639-1 code.
+    static func shelf(id: String, endpoint: GutenbergEndpoint = .current) -> Self? {
+        switch id {
+        case "popular": return shelves(languages: [], endpoint: endpoint)[0]
+        case "latest": return shelves(languages: [], endpoint: endpoint)[1]
+        default:
+            guard id.count == 2, id.allSatisfy({ $0.isASCII && $0.isLowercase }) else { return nil }
+            return Self(id: id, title: ReadingLanguage.name(of: id), symbol: "character.book.closed",
+                        url: endpoint.languageURL(id))
+        }
+    }
 }

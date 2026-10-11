@@ -20,6 +20,13 @@ final class ExploreHomeUITests: XCTestCase {
         </feed>
         """
         try Data(latest.utf8).write(to: sourceDirectory.appendingPathComponent("ebooks_search.opds.xml"))
+        // 熱門 (5d-6a), the same path by downloads: a book of its own, so a row shows its list.
+        let popular = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><title>Popular</title>
+        <entry><id>https://www.gutenberg.org/ebooks/84.opds</id><title>Fixture Popular</title><content>Fixture Author</content><link rel="subsection" type="application/atom+xml" href="/ebooks/84.opds"/></entry>
+        </feed>
+        """
+        try Data(popular.utf8).write(to: sourceDirectory.appendingPathComponent("ebooks_search.opds@sort_order=downloads.xml"))
     }
 
     override func tearDownWithError() throws {
@@ -94,6 +101,8 @@ final class ExploreHomeUITests: XCTestCase {
         app.launch()
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        // 古騰堡熱門, a new install's (decision 24), before 精選.
+        XCTAssertTrue(app.buttons["home.card.gutenberg.84"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts["我的書庫"].exists, "no 我的書庫 on the home")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.tile.")).firstMatch.exists)
         XCTAssertEqual(app.buttons["explore.scopeMenu"].value as? String, "全部")

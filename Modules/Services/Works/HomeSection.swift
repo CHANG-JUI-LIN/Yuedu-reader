@@ -61,6 +61,9 @@ enum HomeSectionBinding: Hashable, Sendable {
     case gutenbergCollection(id: String)
     /// A Gutenberg feed; loads when the home shows (Phase 5 plan, decision 15).
     case gutenbergFeed(url: String)
+    /// One of Gutenberg's shelves (`GutenbergShelf`: 熱門, 最新, a language), by id, resolved on
+    /// the endpoint this build reads (5d-6a, decision 24); loads when the home shows.
+    case gutenbergShelf(id: String)
     case aozoraNew
     case aozoraIndex(kind: String)
     /// 相關: same author and series from the shelf.
@@ -81,7 +84,7 @@ extension HomeSectionBinding: Codable {
 
     private enum Kind: String {
         case myLibrary, continueReading, latest, sourceCategories, opdsFeed
-        case gutenbergCollection, gutenbergFeed, aozoraNew, aozoraIndex, related
+        case gutenbergCollection, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related
     }
 
     init(from decoder: Decoder) throws {
@@ -102,6 +105,7 @@ extension HomeSectionBinding: Codable {
                              url: try container.decode(String.self, forKey: .url))
         case .gutenbergCollection: self = .gutenbergCollection(id: try container.decode(String.self, forKey: .id))
         case .gutenbergFeed: self = .gutenbergFeed(url: try container.decode(String.self, forKey: .url))
+        case .gutenbergShelf: self = .gutenbergShelf(id: try container.decode(String.self, forKey: .id))
         case .aozoraNew: self = .aozoraNew
         case .aozoraIndex: self = .aozoraIndex(kind: try container.decode(String.self, forKey: .kind))
         case .related: self = .related
@@ -134,6 +138,9 @@ extension HomeSectionBinding: Codable {
         case .gutenbergFeed(let url):
             try container.encode(Kind.gutenbergFeed.rawValue, forKey: .type)
             try container.encode(url, forKey: .url)
+        case .gutenbergShelf(let id):
+            try container.encode(Kind.gutenbergShelf.rawValue, forKey: .type)
+            try container.encode(id, forKey: .id)
         case .aozoraNew:
             try container.encode(Kind.aozoraNew.rawValue, forKey: .type)
         case .aozoraIndex(let kind):
@@ -216,6 +223,11 @@ enum HomePageDefaults {
         // 精簡閱讀卡片 since 5d-3c (Phase 5 plan, decision 20); 大型閱讀卡片 in 5d-3.
         let continueReading = HomeSection(id: makeID(), layout: .compactReadingCard, binding: .continueReading)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest)
+        // 古騰堡熱門, Gutenberg's download ranking, before 精選 (decisions 16 and 24). A new
+        // install's 預設 only: a saved 預設 is the reader's and is not changed.
+        let popular = publicLibrariesAvailable
+            ? [HomeSection(id: makeID(), layout: .row, binding: .gutenbergShelf(id: "popular"))]
+            : []
         // 精選: one section per bundled list, titled by the list (plan decision 11).
         let featured = publicLibrariesAvailable
             ? PublicLibraryCollection.all.map {
@@ -224,9 +236,9 @@ enum HomePageDefaults {
             : []
         switch mode {
         case .bookSources:
-            return HomePage(sections: [continueReading, latest] + featured)
+            return HomePage(sections: [continueReading, latest] + popular + featured)
         case .publicLibraries:
-            return HomePage(sections: [continueReading] + featured + [latest])
+            return HomePage(sections: [continueReading] + popular + featured + [latest])
         }
     }
 }

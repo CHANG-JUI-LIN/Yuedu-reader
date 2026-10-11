@@ -173,6 +173,11 @@ enum ExplorePlace {
             return .publicLibrary(.collection(id: id))
         case .gutenbergFeed(let url):
             return .feed(OPDSFeedRoute(catalogID: gutenbergID, url: url, title: row.section.displayTitle(sourceName: row.sourceName), presentation: .storefront))
+        case .gutenbergShelf(let id):
+            return GutenbergShelf.shelf(id: id).map {
+                .feed(OPDSFeedRoute(catalogID: gutenbergID, url: $0.url.absoluteString,
+                                    title: row.section.displayTitle(sourceName: row.sourceName), presentation: .storefront))
+            }
         case .aozoraNew:
             return aozoraIndex.map { .publicLibrary(.aozoraCatalog(.newest, $0)) }
         case .aozoraIndex(let kind):

@@ -14,6 +14,7 @@ struct HomeSectionTests {
             .sourceCategories([category]),
             .opdsFeed(connectionID: "c1", url: "https://opds.example/new"),
             .gutenbergCollection(id: "chinese"), .gutenbergFeed(url: "https://gutenberg.example/feed"),
+            .gutenbergShelf(id: "popular"),
             .aozoraNew, .aozoraIndex(kind: "authors"), .related,
         ]
     }
@@ -71,6 +72,7 @@ struct HomeSectionTests {
             case .continueReading: "continue"
             case .latest: "latest"
             case .gutenbergCollection: "featured"
+            case .gutenbergShelf("popular"): "popular"
             default: "other"
             }
         }
@@ -79,16 +81,16 @@ struct HomeSectionTests {
     private var featured: [String] { Array(repeating: "featured", count: PublicLibraryCollection.all.count) }
 
     // 我的書庫 left the defaults in 5d-1 (settled decision 12): 範圍 holds the libraries.
-    @Test("book-source readers start from 繼續閱讀 → 最新 → 精選")
+    @Test("book-source readers start from 繼續閱讀 → 最新 → 古騰堡熱門 → 精選")
     func bookSourceDefaults() {
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true)
-        #expect(kinds(page) == ["continue", "latest"] + featured)
+        #expect(kinds(page) == ["continue", "latest", "popular"] + featured)
     }
 
-    @Test("public-library readers and new installs start from 繼續閱讀 → 精選 → 最新")
+    @Test("public-library readers and new installs start from 繼續閱讀 → 古騰堡熱門 → 精選 → 最新")
     func publicLibraryDefaults() {
         let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true)
-        #expect(kinds(page) == ["continue"] + featured + ["latest"])
+        #expect(kinds(page) == ["continue", "popular"] + featured + ["latest"])
         let lists = page.sections.compactMap { section -> String? in
             if case .gutenbergCollection(let id) = section.binding { return id }
             return nil
@@ -96,11 +98,24 @@ struct HomeSectionTests {
         #expect(lists == PublicLibraryCollection.all.map(\.id))
     }
 
+    @Test("a Gutenberg shelf is kept by id and read on the endpoint this build uses")
+    func gutenbergShelf() {
+        for endpoint in [GutenbergEndpoint.xml, .opds2Development] {
+            #expect(GutenbergShelf.shelf(id: "popular", endpoint: endpoint)?.url == endpoint.popularURL)
+            #expect(GutenbergShelf.shelf(id: "latest", endpoint: endpoint)?.url == endpoint.latestURL)
+            #expect(GutenbergShelf.shelf(id: "ja", endpoint: endpoint)?.url == endpoint.languageURL("ja"))
+        }
+        #expect(GutenbergShelf.shelf(id: "Popular") == nil)
+        #expect(GutenbergShelf.shelf(id: "") == nil)
+        #expect(HomeSection(layout: .row, binding: .gutenbergShelf(id: "popular")).displayTitle(sourceName: "") == localized("熱門"))
+    }
+
     @Test("China gets no public-library section")
     func chinaDefaults() {
         for mode in ExploreMode.allCases {
             let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: false)
             #expect(!kinds(page).contains("featured"))
+            #expect(!kinds(page).contains("popular"))
         }
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false)
         #expect(kinds(page) == ["continue", "latest"])

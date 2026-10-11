@@ -151,6 +151,10 @@
     - **系列下一本 is built now,** only from books that record a series and its number (an imported book's metadata; the WebDAV index once it keeps the number). A book source's web novel has no series data and gets none.
     - **書源的排行／最近更新 is not guessed from category names:** 5d-5's 新增欄目 already picks any source's ranking or recently-updated category.
 
+25. **Answered 2026-10-11, starting 5d-6b** (maintainer, by option; both the recommended one):
+    - **Books imported before it are read again once, the local ones only:** a local EPUB copy's OPF is read again for its series and number, once, when 探索 opens. This amends Phase 1's decision 8 (no background scan of the shelf) for this one pass. WebDAV files get the number only when they are new or changed.
+    - **系列下一本 is in a new install's 預設,** under 繼續閱讀; it draws nothing while no book has a next volume. A saved 預設 is not changed.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -882,3 +886,14 @@ Decision 23. Branch `unified-library/5d5-section-form`.
 - **Tests:** `HomeSectionEditorTests` (adds at the end; writes in place; the title follows the choice; 最新's categories with filters), `HomeSectionFilterTests` (lists under the section's values; a new 类型's platform; kept by source), `SourceVariableOverlayTests` (the rule reads the overlay through `getVariable` and `get`, the stored JSON unchanged byte for byte; a write-back keeps its keys and stores none of the overlay's; a non-object variable). Unit, with the explore/variable suites (`ModernParserBridgeExploreTests`, `LegadoSourceBridgeTests`, `DiscoverViewModelReloadTests`, `DiscoverKindsCacheTests`, `ExploreSourceFilterTests`): 11 suites, 75 tests, iOS 27. UI: `HomeEditorUITests.testAddSections` (a Gutenberg list as 固定封面網格 with its preview; a book source's category under its 頻道 filter set to 女, kept as 篩選; renaming; 最新's parameters; 刪除 from the form). iOS 27: `HomeEditorUITests` 4, `ExploreHomeUITests` 9, `AggregationSettingsUITests.testHomeSections`, all passed. iOS 17.5: `HomeEditorUITests` 4 passed.
 - **Added the same day (`unified-library/5d5-settings-configuration-name`, maintainer: 「要」):** 聚合設定 → 首頁欄目's first row names the 首頁配置 it edits (首頁配置 · 預設), since 範圍 chooses it elsewhere. No new string. `AggregationSettingsUITests.testHomeSections` checks it; passed on iOS 27.
 - **Not done:** 聚合設定 → 首頁欄目 has no 新增欄目. A section holding several categories (a migrated custom-page block) shows no 篩選 row; 資料來源 replaces them with one.
+
+### 5d-6a: 古騰堡熱門 (2026-10-11)
+
+Decisions 16 and 24. Branch `unified-library/5d6a-gutenberg-popular`.
+
+- **A new install's 預設** gets 古騰堡熱門, Gutenberg's download ranking, before 精選 (book-source readers: after 最新). A saved 預設 is not changed. China gets none, as with every public-library section.
+- **Kept as a shelf, not a URL:** `HomeSectionBinding.gutenbergShelf(id:)` (`popular`, `latest`, or a language code), read through `GutenbergShelf.shelf(id:)` on the endpoint this build uses. A stored feed URL would point at the development endpoint for good once Gutenberg's official one replaces it. It names itself (熱門), loads with the home, and 查看全部 opens the shelf's storefront feed. An older build keeps it as an unknown binding.
+- **選擇內容來源 → Project Gutenberg** now lists the shelves first (熱門, 最新, the reader's languages, as the storefront does), then the bundled lists, then the catalog's feeds.
+- **UI-test fixtures:** the DEBUG fixture transport also looks for `<path>@<query>.xml` before `<path>.xml`, since 熱門 and 最新 share `ebooks/search.opds`. `HomeEditorUITests`' book-source category is renamed 排行榜, so it no longer shares 熱門's name.
+- **Tests:** `HomeSectionTests` (defaults in both modes and China; the shelf on both endpoints; round trip), `ExploreHomeTests`. Unit: 7 suites, 54 tests, iOS 27. UI: `ExploreHomeUITests.testNewInstallShowsTheDefaultSections` sees 熱門's fixture book.
+

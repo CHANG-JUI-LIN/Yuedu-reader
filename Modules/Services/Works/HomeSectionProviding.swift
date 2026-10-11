@@ -92,6 +92,7 @@ extension GutenbergProvider: HomeSectionProviding {
         switch section.binding {
         case .gutenbergCollection(let id): return PublicLibraryCollection.all.contains { $0.id == id } ? .local : nil
         case .gutenbergFeed: return .withHome
+        case .gutenbergShelf(let id): return GutenbergShelf.shelf(id: id) == nil ? nil : .withHome
         case .latest: return .withHome
         default: return nil
         }
@@ -104,6 +105,9 @@ extension GutenbergProvider: HomeSectionProviding {
             return collection.books.map(CollectionEntry.bundledGutenberg)
         case .gutenbergFeed(let url):
             return try await browse(CollectionLocation(id: url, title: ""), after: nil).items(limit: HomeRow.limit)
+        case .gutenbergShelf(let id):
+            guard let shelf = GutenbergShelf.shelf(id: id) else { return [] }
+            return try await browse(CollectionLocation(id: shelf.url.absoluteString, title: ""), after: nil).items(limit: HomeRow.limit)
         case .latest:
             let url = GutenbergEndpoint.current.latestURL.absoluteString
             return try await browse(CollectionLocation(id: url, title: ""), after: nil).items(limit: HomeRow.limit)

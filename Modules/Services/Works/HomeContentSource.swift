@@ -23,7 +23,7 @@ extension HomeSectionBinding {
         switch self {
         case .continueReading, .latest, .related: .appData
         case .opdsFeed(let connectionID, _): .connection(id: connectionID)
-        case .gutenbergCollection, .gutenbergFeed: .gutenberg
+        case .gutenbergCollection, .gutenbergFeed, .gutenbergShelf: .gutenberg
         case .aozoraNew, .aozoraIndex: .aozora
         case .sourceCategories(let references): references.first.map { .bookSource(url: $0.sourceURL) }
         case .myLibrary, .unknown: nil

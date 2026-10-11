@@ -18,6 +18,7 @@ extension HomeSection {
         case .sourceCategories(let categories): return categories.first?.title ?? sourceName
         case .gutenbergCollection(let id):
             return PublicLibraryCollection.all.first { $0.id == id }.map { localized($0.titleKey) } ?? sourceName
+        case .gutenbergShelf(let id): return GutenbergShelf.shelf(id: id)?.title ?? sourceName
         case .aozoraNew: return localized(AozoraBrowseMode.newest.titleKey)
         case .aozoraIndex(let kind): return AozoraBrowseMode(rawValue: kind).map { localized($0.titleKey) } ?? sourceName
         case .opdsFeed, .gutenbergFeed, .myLibrary, .unknown: return sourceName
