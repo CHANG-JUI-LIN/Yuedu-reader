@@ -56,30 +56,20 @@ struct HomeCatalogEntryLabel: View {
     }
 }
 
-/// 瀏覽書庫: every library and book source 範圍 offers, each opening its own page.
+/// 瀏覽書庫: every library and book source 範圍 offers, each opening its own page. The
+/// libraries are one section in 書庫順序 (5d-3e), which may put a public library before a
+/// remote one; book sources follow in 探索's order.
 struct HomeLibrariesPage: View {
-    let connections: [RemoteLibraryConnection]
-    let librariesAvailable: Bool
+    let libraries: [LibraryListing]
     let sources: [BookSource]
 
     var body: some View {
         List {
-            if !connections.isEmpty {
-                Section(localized("遠端書庫")) {
-                    ForEach(connections) { connection in
-                        let key = SourceInstanceKey(type: ProviderType(connection.kind), id: connection.id)
-                        row(key, name: connection.name,
-                            symbol: SourceKindSymbol.symbol(for: key.type) ?? "books.vertical")
+            if !libraries.isEmpty {
+                Section(localized("書庫")) {
+                    ForEach(libraries) { library in
+                        row(library.key, name: library.name, symbol: library.systemImage)
                     }
-                }
-                .interfaceSectionSurface()
-            }
-            if librariesAvailable {
-                Section(localized("公有書庫")) {
-                    row(SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue),
-                        name: localized("Project Gutenberg"), symbol: "building.columns")
-                    row(SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue),
-                        name: localized("青空文庫"), symbol: "building.columns")
                 }
                 .interfaceSectionSurface()
             }
@@ -115,6 +105,7 @@ struct HomeLibrariesPage: View {
 
 #Preview("瀏覽書庫") {
     NavigationStack {
-        HomeLibrariesPage(connections: [], librariesAvailable: true, sources: [])
+        HomeLibrariesPage(libraries: LibraryListing.ordered(connections: [], librariesAvailable: true, order: nil),
+                          sources: [])
     }
 }

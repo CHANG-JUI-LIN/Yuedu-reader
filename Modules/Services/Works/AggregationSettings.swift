@@ -2,16 +2,20 @@ import Combine
 import Foundation
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), mapped from the Emby user
-// settings that shape its aggregation. This step holds 偏好閱讀語言 and 推薦範圍; 書庫順序,
-// 顯示在最新 and 隱藏已讀 join it in 5d-3e to 5d-3g.
+// settings that shape its aggregation: 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e);
+// 顯示在最新 and 隱藏已讀 join it in 5d-3f and 5d-3g.
 
 struct AggregationSettings: Codable, Equatable, Sendable {
     /// Nil until the reader chooses: then `ReadingLanguagePreferences.initial`, which follows
     /// the interface language.
     var readingLanguages: ReadingLanguagePreferences?
+    /// 書庫順序 (`LibraryOrder`); nil until the reader orders them. Settings saved before
+    /// 5d-3e have no such field and read as nil.
+    var libraryOrder: [SourceInstanceKey]?
 
-    init(readingLanguages: ReadingLanguagePreferences? = nil) {
+    init(readingLanguages: ReadingLanguagePreferences? = nil, libraryOrder: [SourceInstanceKey]? = nil) {
         self.readingLanguages = readingLanguages
+        self.libraryOrder = libraryOrder
     }
 
     /// The languages in effect.
@@ -53,6 +57,11 @@ final class AggregationSettingsStore: ObservableObject {
 
     func setReadingLanguages(_ preferences: ReadingLanguagePreferences) {
         edit { $0.readingLanguages = preferences }
+    }
+
+    /// 書庫順序: the libraries there are now, in the order the reader gave them.
+    func setLibraryOrder(_ keys: [SourceInstanceKey]) {
+        edit { $0.libraryOrder = keys }
     }
 
     private func edit(_ change: (inout AggregationSettings) -> Void) {

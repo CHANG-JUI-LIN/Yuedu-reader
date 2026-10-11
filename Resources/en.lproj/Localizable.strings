@@ -3677,3 +3677,7 @@
 "排在前面的語言優先推薦。" = "Languages higher in the list come first.";
 "沒有標示語言的書（多數來源配置）一律保留，排在偏好語言之後。" = "Books with no language given (most sources) are always kept, after your languages.";
 "第 %d 優先" = "Priority %d";
+"書庫" = "Libraries";
+"書庫順序" = "Library Order";
+"第 %d 個" = "Position %d";
+"範圍、瀏覽書庫和最新照這個順序；來源配置排在書庫之後，照它們自己的順序。" = "Range, Browse Libraries and Latest follow this order; sources come after the libraries, in their own order.";
