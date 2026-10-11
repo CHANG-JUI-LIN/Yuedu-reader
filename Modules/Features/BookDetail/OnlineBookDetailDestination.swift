@@ -22,6 +22,8 @@ struct OnlineBookDetailDestination: View {
 
     private let entry: Entry
     private let onRemoveFromShelf: (() -> Void)?
+    /// On 作品詳情, the work's versions, which 換源 lists first (unified library 5f-3).
+    private let workVersions: BookDetailInfoChoice?
     /// The bookshelf's reader coordinator, given to the text page only: its reader
     /// opens through the coordinator, while the audiobook page's player does not.
     private let textPageReaderNavigator: ReaderNavigationCoordinator?
@@ -35,10 +37,12 @@ struct OnlineBookDetailDestination: View {
     init(
         _ entry: Entry,
         onRemoveFromShelf: (() -> Void)? = nil,
-        textPageReaderNavigator: ReaderNavigationCoordinator? = nil
+        textPageReaderNavigator: ReaderNavigationCoordinator? = nil,
+        workVersions: BookDetailInfoChoice? = nil
     ) {
         self.entry = entry
         self.onRemoveFromShelf = onRemoveFromShelf
+        self.workVersions = workVersions
         self.textPageReaderNavigator = textPageReaderNavigator
         let isAudio: Bool
         switch entry {
@@ -85,13 +89,15 @@ struct OnlineBookDetailDestination: View {
                 AudiobookDetailView(
                     book: shown,
                     onRemoveFromShelf: onRemoveFromShelf,
-                    onSourceKindChange: switchPage
+                    onSourceKindChange: switchPage,
+                    workVersions: workVersions
                 )
             } else {
                 OnlineBookView(
                     book: shown,
                     onRemoveFromShelf: onRemoveFromShelf,
-                    onSourceKindChange: switchPage
+                    onSourceKindChange: switchPage,
+                    workVersions: workVersions
                 )
                 .environment(\.readerNavigator, textPageReaderNavigator ?? inheritedReaderNavigator)
             }
