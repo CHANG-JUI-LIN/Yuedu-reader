@@ -1,69 +1,5 @@
 import SwiftUI
 
-/// The old 公有書庫 root, kept behind 使用舊版探索頁 for one version (Phase 5 plan, settled
-/// decision 9). The home shows the same storefront for Gutenberg's tile and scope.
-struct PublicLibraryHomeView: View {
-    var modeMenu: ExploreModeMenu? = nil
-    @State private var path = NavigationPath()
-    @State private var query = ""
-    @State private var selection: PublicLibraryBookSelection?
-    @State private var coverFrames = PublicLibraryCoverFrames()
-    @State private var showsSettings = false
-    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
-    @ObservedObject private var aozora = AozoraCatalogStore.shared
-
-    var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                if trimmedQuery.isEmpty {
-                    PublicLibraryStorefront(includesAozora: true)
-                } else {
-                    List {
-                        PublicLibrarySearchResults(query: trimmedQuery, index: aozora.catalog,
-                            submitGutenberg: submitSearch, select: { selection = $0 })
-                    }.listStyle(.plain)
-                }
-            }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: localized("搜尋公有書庫"))
-            .onSubmit(of: .search, submitSearch)
-            .remoteLibraryDestinations()
-            .publicLibraryDestinations()
-            .rootTabSearchScrollEdges()
-            .themedAppSurface(for: .explore)
-            .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink(value: PublicLibraryRoute.categories(aozora.catalog)) {
-                        Text(localized("分類"))
-                    }.accessibilityIdentifier("publicLibrary.categories")
-                }
-                if let modeMenu {
-                    ToolbarItem(placement: .topBarTrailing) { modeMenu }
-                }
-                // 使用舊版探索頁 is switched off in 探索設定, so this root needs its gear too.
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showsSettings = true } label: {
-                        Image(systemName: "gearshape")
-                            .accessibilityHidden(true)
-                    }
-                    .accessibilityLabel(localized("探索設定"))
-                }
-            }
-            .sheet(isPresented: $showsSettings) {
-                ExploreSettingsSheet(sources: DiscoverViewModel.exploreSources(in: BookSourceStore.shared))
-            }
-        }
-        .publicLibraryBookCarousel(path: $path, request: $selection, coverFrames: coverFrames)
-    }
-
-    private func submitSearch() {
-        guard !trimmedQuery.isEmpty else { return }
-        path.append(OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
-            url: PublicLibrary.gutenbergSearchURL(query: trimmedQuery).absoluteString,
-            title: String(trimmedQuery.prefix(500)), presentation: .storefront))
-    }
-}
-
 /// Gutenberg's front page, shown in place by the home's 範圍 (5c-3, 5d-1): the storefront
 /// without Aozora, which has a page of its own there.
 struct GutenbergHomePage: View {
@@ -357,9 +293,14 @@ struct PublicLibraryCategoriesView: View {
     }
 }
 
-#Preview { PublicLibraryHomeView().environmentObject(BookStore()) }
 #Preview("公有書庫分類選單") {
     NavigationStack {
         PublicLibraryCategoriesView(index: .preview).publicLibraryDestinations().remoteLibraryDestinations()
+    }.environmentObject(BookStore())
+}
+
+#Preview("公有書庫") {
+    NavigationStack {
+        PublicLibraryStorefront(includesAozora: true).publicLibraryDestinations().remoteLibraryDestinations()
     }.environmentObject(BookStore())
 }

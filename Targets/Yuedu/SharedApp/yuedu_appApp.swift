@@ -1,6 +1,5 @@
 import YueduCoreText
 import SwiftUI
-import TipKit
 import GoogleSignIn
 
 @main
@@ -73,25 +72,15 @@ struct yuedu_appApp: App {
         // `AppLogger` call from here on is captured for 設定 → 診斷與回報, and the
         // session record is what tells the next launch whether this one survived.
         DiagnosticLog.shared.beginSession()
-        do {
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-reset-tips") { try Tips.resetDatastore() }
-            #endif
-            try Tips.configure([.displayFrequency(.immediate)])
-        } catch {
-            AppLogger.error("Explore TipKit configuration failed: \(error)")
-        }
         #if DEBUG
         // Isolate first-install / upgrade UI cases without clearing the reader's books.
         if ProcessInfo.processInfo.arguments.contains("-reset-public-library-explore") {
-            for key in [ExploreSettings.modeKey, ExploreTabModel.everImportedKey, ExploreTabModel.pendingGuideKey] {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
+            UserDefaults.standard.removeObject(forKey: ExploreSettings.modeKey)
         }
-        // The home as a new install sees it: no saved sections, 範圍 全部, the home not the old
-        // roots. Before anything reads `HomePageStore.shared`.
+        // The home as a new install sees it: no saved sections, 範圍 全部. Before anything reads
+        // `HomePageStore.shared`.
         if ProcessInfo.processInfo.arguments.contains("-reset-explore-home") {
-            for key in [ExploreSettings.scopeKey, ExploreSettings.classicRootKey, ExploreSettings.showsBrowserKey] {
+            for key in [ExploreSettings.scopeKey, ExploreSettings.showsBrowserKey] {
                 UserDefaults.standard.removeObject(forKey: key)
             }
             let home = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json")

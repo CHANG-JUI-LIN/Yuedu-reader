@@ -1,8 +1,8 @@
 import XCTest
 
 /// Unified library 5c-3 and 5d-1: the Explore home as a new install sees it, its 範圍 menu
-/// with the libraries, custom pages and browser, the China storefront, and 使用舊版探索頁. Each launch starts from no saved
-/// home (`-reset-explore-home`) and an empty book-source library of its own.
+/// with the libraries, custom pages and browser, and the China storefront. Each launch starts
+/// from no saved home (`-reset-explore-home`) and an empty book-source library of its own.
 final class ExploreHomeUITests: XCTestCase {
     private var sourceDirectory: URL!
 
@@ -50,12 +50,6 @@ final class ExploreHomeUITests: XCTestCase {
         let option = app.buttons[title].firstMatch
         XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
         option.tap()
-    }
-
-    /// Taps a Toggle's switch, at the trailing end of its row.
-    @MainActor
-    private func flip(_ toggle: XCUIElement) {
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     }
 
     /// 精選's first list: a row of covers, so the home is drawn.
@@ -109,7 +103,7 @@ final class ExploreHomeUITests: XCTestCase {
     }
 
     /// 範圍 also opens the custom pages and the browser (unified library 5d-1). A custom page
-    /// deletes itself from its own ⋯; 探索設定 takes the browser out of 範圍.
+    /// deletes itself from its own ⋯. With the browser hidden (編輯首頁, 5d-2), 範圍 leaves it out.
     @MainActor
     func testScopeOpensCustomPagesAndTheBrowser() {
         let app = application()
@@ -158,19 +152,16 @@ final class ExploreHomeUITests: XCTestCase {
         app.buttons["關閉"].firstMatch.tap()
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10))
 
-        // 探索設定 takes it out of 範圍.
-        app.buttons["探索設定"].firstMatch.tap()
-        let shows = app.switches["explore.showsBrowser"].firstMatch
-        XCTAssertTrue(shows.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(shows.value as? String, "1")
-        flip(shows)
-        XCTAssertEqual(shows.value as? String, "0")
-        app.swipeDown(velocity: .fast)
-        XCTAssertTrue(shows.waitForNonExistence(timeout: 5))
-        menu.tap()
-        XCTAssertTrue(app.buttons["全部"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["瀏覽器"].exists, "hidden from 範圍")
-        attach(app, "explore-scope-no-browser")
+        // Hidden, it is not in 範圍. 編輯首頁 (5d-2) will hide it; until then the stored choice.
+        app.terminate()
+        let hidden = application(extra: ["-explore.showsBrowser", "NO"])
+        hidden.launch()
+        openExplore(hidden)
+        XCTAssertTrue(hidden.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15))
+        hidden.buttons["explore.scopeMenu"].firstMatch.tap()
+        XCTAssertTrue(hidden.buttons["全部"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(hidden.buttons["瀏覽器"].exists, "hidden from 範圍")
+        attach(hidden, "explore-scope-no-browser")
     }
 
     /// A connection added in 設定 → 遠端書庫 is in 範圍, which shows its library in place. The
@@ -242,31 +233,5 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Project Gutenberg"].exists)
         XCTAssertFalse(app.buttons["青空文庫"].exists)
         attach(app, "explore-home-china-scope")
-    }
-
-    /// 使用舊版探索頁 brings back the old root, whose own gear turns it off again. 探索設定 is the
-    /// page's sheet, so it closes as the switch replaces the page.
-    @MainActor
-    func testClassicRootSwitch() {
-        let app = application()
-        app.launch()
-        openExplore(app)
-        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15))
-
-        app.buttons["探索設定"].firstMatch.tap()
-        let toggle = app.switches["explore.classicRoot"].firstMatch
-        for _ in 0..<6 where !toggle.isHittable { app.swipeUp() }
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        flip(toggle)
-        XCTAssertTrue(toggle.waitForNonExistence(timeout: 5), "the sheet goes with the page that showed it")
-        XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10),
-                      "the old 公有書庫 root")
-        attach(app, "explore-classic-root")
-
-        app.buttons["探索設定"].firstMatch.tap()
-        for _ in 0..<6 where !toggle.isHittable { app.swipeUp() }
-        flip(toggle)
-        XCTAssertTrue(toggle.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), "back on the home")
     }
 }

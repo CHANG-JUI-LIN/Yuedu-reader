@@ -824,7 +824,6 @@
 "頻道" = "Channel";
 "平台" = "Platform";
 "尚未啟用支援發現的來源配置" = "No discover-enabled source";
-"前往來源配置管理" = "Go to Source Manager";
 "發現" = "Discover";
 "換一批" = "Refresh";
 "暫無發現內容" = "No discover content";
@@ -3243,7 +3242,6 @@
 "失敗 %d" = "%d failed";
 "將套用到 %d 本書" = "Will apply to %d book(s)";
 "將對 %d 個來源配置進行五階段驗證" = "%d source(s) will be validated in five stages";
-"已啟用 %d 個來源配置" = "%d source(s) enabled";
 "已抓取約 %d 字" = "About %d characters fetched";
 "已按域名分組 %d 個來源配置" = "Grouped %d source(s) by domain";
 "已複製 %d 個來源配置到剪貼簿" = "Copied %d source(s) to the clipboard";
@@ -3472,29 +3470,7 @@
 "清除最近搜索" = "Clear Recently Searched";
 "清除最近閱讀" = "Clear Recently Read";
 
-/* 探索設定 */
-"探索設定" = "Explore Settings";
-"探索頁" = "Explore Page";
-"來源配置頁佈局" = "Source Page Layout";
-"雜誌" = "Magazine";
-"列表是上方一排分類、下方所選分類的書；雜誌是每個分類一排書架或一欄榜單。" = "List shows the categories along the top and the chosen one's books below; Magazine shows each category as a shelf or a chart.";
-"首屏頁面" = "Start Page";
-"不啟用" = "Off";
-"設定後，打開探索時會直接進入這一頁。" = "Explore opens straight onto this page.";
-"豎排榜單關鍵詞" = "Chart Keywords";
-"新增關鍵詞" = "Add Keyword";
-"標題含任一關鍵詞的分類用豎排序號，其餘用橫滑封面。左滑可刪除。" = "Categories whose title contains any keyword show as numbered charts, the rest as sideways shelves of covers. Swipe left to delete.";
-"恢復預設關鍵詞" = "Restore Default Keywords";
-"榜單展示數量" = "Books Shown";
-"豎排展示數" = "In Each Chart";
-"橫滑展示數" = "On Each Shelf";
-"預加載" = "Preload";
-"預加載數量" = "Categories Ahead";
-"捲到某個分類時，順便排隊載入後面幾個分類。數字越大越少看到載入中，但排隊的來源配置請求也越多。" = "When a category comes into view, the next few queue up to load too. A higher number means fewer loading placeholders, but more requests queued to the source.";
-"封面並發" = "Cover Downloads";
-"封面並發數" = "At Once";
-"不限制" = "No Limit";
-"同時下載的封面上限，書架和書籍詳情的封面也算在內。數字越低捲動時越不容易發熱，但封面出現得慢一些。" = "The most covers downloading at once, counting those on the bookshelf and book details. Lower runs cooler while scrolling, but covers appear more slowly.";
+/* 來源配置頁篩選 */
 "%@：%@" = "%@: %@";
 
 /* 發現頁設定 */
@@ -3538,7 +3514,6 @@
 
 "公有書庫" = "Public Libraries";
 
-"切換探索內容" = "Switch Explore Content";
 
 "Project Gutenberg" = "Project Gutenberg";
 
@@ -3602,14 +3577,10 @@
 
 "編者" = "Editor";
 
-"搜尋公有書庫" = "Search Public Libraries";
 
 "在 Project Gutenberg 搜尋「%@」" = "Search Project Gutenberg for “%@”";
 
 // Explore first-import guide
-"可以切換探索內容" = "Switch what you explore";
-"來源配置已匯入，點這裡切換到來源配置探索。" = "Your sources are imported. Tap here to explore them.";
-"切換到來源配置" = "Switch to Sources";
 
 "中文書籍" = "Chinese Books";
 "小說與文學" = "Fiction & Literature";
@@ -3667,9 +3638,7 @@
 "%@・最新" = "Latest in %@";
 "載入" = "Load";
 "相關" = "Related";
-"使用舊版探索頁" = "Use Classic Explore";
 
 /* Unified library 5d-1: 範圍 holds the libraries */
-"在範圍選單顯示瀏覽器" = "Show Browser in Range Menu";
 "探索還沒有內容" = "Nothing to Explore Yet";
 "從右上角的範圍打開書庫或來源配置。" = "Open a library or source from Range at the top right.";

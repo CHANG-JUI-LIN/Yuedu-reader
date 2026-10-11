@@ -91,14 +91,6 @@ private struct CustomExploreShelfBlock: View {
     let onLoad: (UUID) -> Void
     let onRetry: (UUID) -> Void
 
-    /// 探索設定's 橫滑展示數; 0 shows the whole first page.
-    @AppStorage(ExploreSettings.shelfBookCountKey)
-    private var shelfBookCount = ExploreSettings.defaultShelfBookCount
-
-    private var books: [DiscoverBookDisplay] {
-        shelfBookCount > 0 ? Array(section.books.prefix(shelfBookCount)) : section.books
-    }
-
     var body: some View {
         CustomExploreCard {
             DiscoverSectionHeader(section: section, source: block.source, title: block.component.displayTitle)
@@ -112,7 +104,7 @@ private struct CustomExploreShelfBlock: View {
                     // Every card is the same height (its text lines reserve their space),
                     // so building them lazily cannot change the row's height.
                     LazyHStack(alignment: .top, spacing: DSSpacing.md) {
-                        ForEach(books) { display in
+                        ForEach(section.books) { display in
                             NavigationLink(value: ExploreNavigationRoute.book(display.book)) {
                                 card(display)
                             }

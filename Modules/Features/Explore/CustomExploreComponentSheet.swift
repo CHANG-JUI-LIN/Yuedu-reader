@@ -269,7 +269,7 @@ private struct CustomExploreSourcePicker: View {
     }
 
     private var visibleSources: [BookSource] {
-        ExploreHomeView.sources(
+        DiscoverViewModel.exploreSources(
             exploreSources,
             inGroup: nil,
             matching: query.trimmingCharacters(in: .whitespacesAndNewlines)

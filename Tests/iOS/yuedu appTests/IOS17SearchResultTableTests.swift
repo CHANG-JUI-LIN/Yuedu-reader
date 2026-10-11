@@ -154,6 +154,32 @@ struct IOS17SearchResultTableTests {
         #expect(changedLoadMore.requiresReload(comparedTo: original))
     }
 
+    @Test("the libraries' rows and the sources' notice reload the UIKit table as the query changes")
+    func libraryChangesReload() {
+        let work = IOS17SearchLibrarySection.Work(id: "000879", title: "羅生門", author: "芥川竜之介")
+        let typed = IOS17SearchResultTableContent(
+            rows: [], showsLoadMore: false,
+            library: IOS17SearchLibrarySection(query: "羅", works: [work])
+        )
+        let longer = IOS17SearchResultTableContent(
+            rows: [], showsLoadMore: false,
+            library: IOS17SearchLibrarySection(query: "羅生", works: [work])
+        )
+        let fewer = IOS17SearchResultTableContent(
+            rows: [], showsLoadMore: false,
+            library: IOS17SearchLibrarySection(query: "羅", works: [])
+        )
+        let searching = IOS17SearchResultTableContent(
+            rows: [], showsLoadMore: false, sourcesNotice: "搜索中…",
+            library: IOS17SearchLibrarySection(query: "羅", works: [work])
+        )
+
+        #expect(!typed.requiresReload(comparedTo: typed))
+        #expect(longer.requiresReload(comparedTo: typed), "the Gutenberg row names the query")
+        #expect(fewer.requiresReload(comparedTo: typed))
+        #expect(searching.requiresReload(comparedTo: typed))
+    }
+
     @Test("UIKit row maps only bounded search presentation values")
     @MainActor
     func rowUsesBoundedPresentation() {
