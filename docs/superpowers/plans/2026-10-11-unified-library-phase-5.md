@@ -50,6 +50,7 @@
 - **Unified search** (Phase 4) and the work page's 「尋找可用來源」, which needs it.
 - **Metadata identification and bibliographic databases** (Phase 3).
 - **Modules** (Phase 6).
+- **A discovery engine** (Phase 7, maintainer 2026-10-11). The first step is on device: 為你推薦, mixed from the discover pages of the reader's own sources, with source mixing, genre match, exploration, cross-source dedupe and a local cache. A server-side book index and regional recommendations come later. Draft in `Technotes/DiscoveryEngine-2026-10-11-draft.md`. Its recommendations reach the home as more section kinds.
 - **The stats tab's content** (§17 item 22, its own plan).
 - **The aggregation settings page** (§13.3 聚合設定). It configures search and metadata sources that do not exist before Phases 3 and 4. Phase 5 ships its one effective rule (prefer the current source) as the default, with no page.
 - **Changing `ReadingBook`** (D1).
@@ -101,6 +102,10 @@
     - **最近加入書庫:** indexed WebDAV, Calibre and OPDS books by when they were added; no section without a library.
     - **系列下一本:** the next volume of a series in 繼續閱讀, Emby's Next Up; only where the source records the series.
     - **書源的排行／最近更新:** only for a book source whose discover categories offer one; a search-only source gets neither.
+17. **Answered 2026-10-11, while starting 5d-1b:**
+    - **Gutenberg and 青空 search move into the 搜索 tab now,** ahead of Phase 4's unified search. Asked because the old 公有書庫 root's search field is the only place that searches them, and 5d-1b deletes that root. Built with the native search scopes (來源配置｜公有書庫) on the tab's root, so the iOS 17 result table stays as it is. Gutenberg still searches only on submit.
+    - **範圍 stays a menu,** with no search for a library of thousands of sources (asked; the maintainer kept the menu).
+    - **Amended the same day, after seeing it:** no scope bar and no text naming the search scope. 「搜索不應該有顯示搜索範圍的文字」: the scope bar, the hint's 「Project Gutenberg和青空文庫」 and the sources' 「已啟用 N 個來源配置」 all go. One search covers both. The sources' results come first, then a 公有書庫 section with 「在 Project Gutenberg 搜尋」 and 青空文庫's matches. With no book source, the keyboard's Search asks Gutenberg.
 
 ### Open, for the maintainer (each with a recommendation)
 
@@ -282,7 +287,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 
 **Re-split 2026-10-11 after settled decision 12**, each on its own branch and merged on its own, so main never offers a layout the home cannot draw and never has two editors:
 - **5d-1:** 我的書庫 leaves the home; 範圍 holds the libraries, the book sources, the custom pages and the browser.
-- **5d-1b:** 探索設定, the old roots and every global presentation setting are deleted (decision 13).
+- **5d-1b:** 探索設定, the old roots and every global presentation setting are deleted (decision 13); public-library search moves to the 搜索 tab first (decision 17).
 - **5d-1c:** Gutenberg's rows load with 探索, and its cards show Gutenberg's covers (decision 15).
 - **5d-2:** 編輯首頁: reorder, hide and remove sections, 最新's 排除的來源, and the browser's 隱藏 (store edits that keep unknown sections in place). A section's name, long-pressed, offers the same actions for that section (decision 14).
 - **5d-3:** the five layouts of decision 14, drawn by the home for any section, and chosen from the section name's long press. 繼續閱讀's default becomes 大型閱讀卡片.
@@ -595,3 +600,42 @@ Branch `unified-library/5d1-scope-entries`. Settled decision 12.
     - **The two known failures from 5c-1** (`testTapWithMenuUpOnlyPutsMenuAway`, `testShelfListExposesOneBookButtonAndOpensReader`), at the same assertions (lines moved by the new helper).
     - **Both manga reader tests** (`testDetailMangaReaderLoadsAndReturns`, `testSearchDetailMangaReaderLoadsAndReturns`) reach the reader, then fail on 「Page 1 / 3」: the reader opens on Page 2 / 3. The fixture manga is on this simulator's shelf with its last page saved (`testShelfMangaOpensOnThePage` adds it), so both routes resume there. Not caused by 5d-1; the test does not reset the book's progress.
 - **Not done, disclosed:** 範圍 has no search, which a library of thousands of sources will need; the RSS 「訂閱」 tile (5g) needs re-planning.
+
+### 5d-1b: no global 探索 settings, and the libraries are searched from 搜索 (2026-10-11)
+
+Branch `unified-library/5d1b-remove-explore-settings`. Settled decisions 13 and 17.
+
+- **Search first (decision 17, as amended).** On the 搜索 tab's root, once there is a query, the results are the sources' part and then a 公有書庫 section. The section is `PublicLibrarySearchResults`, the old root's, reshaped into one section: 「在 Project Gutenberg 搜尋」, then 青空文庫's matches as the query changes (50, then 顯示全部 on iOS 18+).
+  - **The sources' part** says 搜索中…, 已暫停 or 沒有找到 in a row while it has no result.
+  - **Keyboard Search:** it searches the sources; with none, it asks Gutenberg, but only once the source library is read, so a large library is never taken for none.
+  - **Navigation:** Gutenberg's results are a `SearchPagePush` case, so the page keeps its one item destination (postmortem guardrail 12). The tab is `SearchTabRoot`: a `NavigationPath` stack carrying the store's destinations and its book carousel.
+  - **The carousel's action** is read by `PublicLibrarySearchSection` and `IOS17SearchResults`, never by `BookSearchView` (new guardrail 13).
+  - **iOS 17** keeps every row native: `IOS17SearchResultTableContent` carries the section as values (`IOS17SearchLibrarySection`), and the table gains a second section with titled headers. It has no 顯示全部.
+  - **Not offered:** a pushed `SearchView` and the China storefront show no section, as before.
+  - **First try, dropped:** native search scopes. On iOS 27 they appeared only with `activation: .onSearchPresentation`, and the maintainer rejected them on sight.
+- **Deleted:**
+  - 探索設定 (`ExploreSettingsSheet`) and its gear on the home;
+  - the old roots: `ExploreHomeView`, `PublicLibraryHomeView`, 使用舊版探索頁, the mode menu, its first-import tip, `ExploreImportDetector`, and the app's TipKit setup, which no other tip used;
+  - every global presentation setting:
+    - 列表/雜誌 and `DiscoverListLayoutView`;
+    - the chart keywords (now the constant `ExploreSettings.rankedKeywords`);
+    - 豎排／橫滑展示數 (4 and the whole first page, the old defaults);
+    - 預加載 (0, the old default, so the queue code went);
+    - 格狀 and 每列欄數 (with `ExploreTile`'s grid, list and their tokens; `ExploreTileButtonStyle` stays);
+    - 首屏頁面;
+    - 封面並發數 (`CoverDownloadGate`).
+- **Kept:** `explore.mode`, read once for the home's default sections. `ExploreTabModel` is down to `isLoaded`/`hasSources`.
+- **首屏 migration:** `ExploreSettings.migrateLegacyLanding` runs once the library is read and before the home draws. A saved source becomes 範圍 only when no 範圍 was picked and the source still exists. A saved custom page stays saved for 5d-4's configurations, and no longer opens at launch until then; deleting that page clears it. Anything else is dropped.
+- **瀏覽器's 隱藏** has no switch until 編輯首頁 (5d-2); `explore.showsBrowser` keeps working.
+- **Strings:** −31 in each language (探索設定's, the tip's, the old root's search prompt, 已啟用 %d 個來源配置).
+- **Docs:** `CLAUDE.md`, `docs/design.md`, both `SKILL.md` copies and `AGENTS.md` list `ExploreHome` as 探索's only root. `docs/design.md`'s Discover row and `Technotes/PublicLibraries.md` describe 範圍 and the 搜索 scope.
+- **Tests (unit):**
+  - `ExploreSettingsTests` gains `legacyLandingMigrates`, and loses the keyword, landing and cover-gate tests.
+  - `ExploreHomeLogicTests` becomes `ExploreSourceFilterTests`.
+  - `ExploreModeTests` loses the import-detector and menu tests.
+  - Run with `HomeModelTests`, `ExploreHomeTests`, `CustomExplorePageTests`, `CustomExplorePageModelTests`, `DiscoverViewModelReloadTests`, `BookCoverLoaderHeaderTests`, `IOS17SearchResultTableTests`, `PublicLibraryStorefrontTests` and `SearchRecentsTests`: 79 of 80 passed. The failure is `SearchRecentsTests` 「English counts one source in the singular」, which got "1 sources". This branch touches neither that key, its `.stringsdict`, nor `localized()`.
+- **Tests (UI):**
+  - iOS 27 (iPhone 18 Pro), before the combined search: `ExploreHomeUITests` 5 of 5, `PublicLibraryStorefrontUITests` 4 of 4 and `BookSourceManagementUITests`' validation test passed.
+  - iOS 27, after the combined search: `PublicLibrarySearchTabUITests`, `DetailReaderBackSwipeUITests/testSearchTabMangaResultOpensEveryTime` and `testSearchDetailReaderLoadsAndReturns` passed. The unit rerun (`IOS17SearchResultTableTests`, `SearchRecentsTests`, `PublicLibraryStorefrontTests`) ran 35 tests with the same one failure as above.
+  - iOS 17.5 (iPhone 15 Pro), after the combined search: `PublicLibrarySearchTabUITests` (through `IOS17SearchResultTable`) and `testSearchTabMangaResultOpensEveryTime` passed. The 17.5 simulator needs `python3 scripts/navigation_swipe_fixture.py prepare --simulator <UDID>` first; without the fixture sources the manga test finds 「沒有找到…」 and fails.
+  - The English-plural failure is the simulator's region: both simulators run `zh_TW`, and `.stringsdict` picks plural rules by locale, which have no "one" for Chinese. Not this branch.

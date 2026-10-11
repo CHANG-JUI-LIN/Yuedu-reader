@@ -53,6 +53,8 @@ private enum SearchPagePush: Hashable {
     /// A search result. Pushed this way on iOS 17 only; later systems push results by
     /// value from the list's `NavigationLink`.
     case result(BookSearchResultRoute)
+    /// Gutenberg's results for a submitted query, as the store's grid.
+    case gutenbergSearch(OPDSFeedRoute)
 }
 
 /// Resolves a push without capturing `BookSearchView` or its live `SearchAggregator`
@@ -64,6 +66,8 @@ private struct SearchPagePushDestination: View {
         switch push {
         case .result(let route):
             SearchResultDestination(route: route)
+        case .gutenbergSearch(let route):
+            PublicLibraryFeedView(route: route)
         }
     }
 }
@@ -96,6 +100,72 @@ private struct SearchPageTitle: ViewModifier {
     }
 }
 
+/// The 公有書庫 section of the 搜索 tab's results (unified library 5d-1b, Phase 5 plan
+/// decision 17). A view of its own, so the search page never reads the store's carousel
+/// action, which changes whenever the carousel does (postmortem guardrail 13).
+private struct PublicLibrarySearchSection: View {
+    let query: String
+    let anchorsTitle: Bool
+    let submitGutenberg: () -> Void
+    @ObservedObject private var aozora = AozoraCatalogStore.shared
+    @Environment(\.openPublicLibraryBooks) private var openBooks
+
+    var body: some View {
+        PublicLibrarySearchResults(query: query, index: aozora.catalog, anchorsTitle: anchorsTitle,
+                                   submitGutenberg: submitGutenberg, select: { openBooks?($0) })
+    }
+}
+
+/// iOS 17's results in the native table, with the 公有書庫 rows under the sources' when the
+/// tab's root offers them. A view of its own for the same reason as `PublicLibrarySearchSection`.
+private struct IOS17SearchResults: View {
+    let rows: [IOS17SearchResultTableRow]
+    let showsLoadMore: Bool
+    let sourcesNotice: String?
+    /// The query the libraries are searched for; `nil` shows no library section.
+    let libraryQuery: String?
+    let onSelect: (UUID) -> Void
+    let onLoadMore: () -> Void
+    let submitGutenberg: () -> Void
+    @ObservedObject private var aozora = AozoraCatalogStore.shared
+    @Environment(\.openPublicLibraryBooks) private var openBooks
+
+    var body: some View {
+        let index = aozora.catalog
+        let matches = libraryQuery.flatMap { query in index?.search(query) } ?? []
+        IOS17SearchResultTable(
+            content: IOS17SearchResultTableContent(
+                rows: rows,
+                showsLoadMore: showsLoadMore,
+                sourcesNotice: sourcesNotice,
+                library: libraryQuery.map { query in
+                    IOS17SearchLibrarySection(
+                        query: query,
+                        works: index.map { index in
+                            matches.prefix(PublicLibrarySearchResults.visibleMatchCount).map { work in
+                                .init(id: work.id, title: work.title,
+                                      author: work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、"))
+                            }
+                        } ?? []
+                    )
+                }
+            ),
+            onSelect: onSelect,
+            onLoadMore: onLoadMore,
+            onSearchGutenberg: submitGutenberg,
+            onSelectWork: { id in
+                guard let index,
+                      let selection = PublicLibraryBookSelection(books: matches.map { .aozora($0, index) },
+                                                                 selectedID: "aozora:" + id) else {
+                    AppLogger.error("⟐ search tap found no Aozora work", context: ["id": id])
+                    return
+                }
+                openBooks?(selection)
+            }
+        )
+    }
+}
+
 /// The results' scroll edge: a tab root's under the 搜索 tab's minimizing bar, the app's
 /// soft edge where the page is pushed.
 private struct SearchResultsScrollEdges: ViewModifier {
@@ -125,6 +195,7 @@ struct BookSearchView: View {
     @StateObject private var aggregator = SearchAggregator()
     @StateObject private var scopeStore = SearchSourceScopeStore.shared
     @ObservedObject private var sourceStore = BookSourceStore.shared
+    @ObservedObject private var availability = PublicLibraryAvailability.shared
     // No `@Environment(\.dismiss)` here: iOS 17 replaces DismissAction over and over
     // while a result's detail is pushed above this page, and every replacement re-runs
     // this body (Technotes/iOS17ReaderNavigationWatchdog.md).
@@ -161,6 +232,27 @@ struct BookSearchView: View {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Only the tab's root searches the public libraries too: its stack carries the store's
+    /// pages and its book carousel. Never in China.
+    private var offersPublicLibraries: Bool {
+        isTabRoot && availability.isAvailable
+    }
+
+    /// One search for both (Phase 5 plan decision 17, as amended 2026-10-11): the sources'
+    /// results, then a 公有書庫 section, as soon as there is a query.
+    private var showsCombinedResults: Bool {
+        offersPublicLibraries && !trimmedQuery.isEmpty
+    }
+
+    /// What the sources' part says while it has no result.
+    private var sourcesNotice: String? {
+        guard aggregator.results.isEmpty else { return nil }
+        if aggregator.isSearching { return localized("搜索中…") }
+        if aggregator.isPaused { return localized("已暫停") }
+        if shouldShowEmptyResult { return String(format: localized("沒有找到「%@」"), submittedQuery) }
+        return nil
+    }
+
     private var shouldShowEmptyResult: Bool {
         !submittedQuery.isEmpty && trimmedQuery == submittedQuery
     }
@@ -176,7 +268,7 @@ struct BookSearchView: View {
                 }
 
                 ZStack {
-                    if !aggregator.results.isEmpty {
+                    if showsCombinedResults || !aggregator.results.isEmpty {
                         resultList
                     } else if aggregator.isSearching {
                         // Progress and the pause control sit in the scope row above.
@@ -236,7 +328,13 @@ struct BookSearchView: View {
                 onSave: applySearchSourceScope
             )
         }
-        .onSubmit(of: .search) { doSearch() }
+        .onSubmit(of: .search) { submit() }
+        .task(id: offersPublicLibraries) {
+            // 青空文庫's catalog may not have been read yet when 探索 was never opened.
+            if offersPublicLibraries, AozoraCatalogStore.shared.catalog == nil {
+                await AozoraCatalogStore.shared.load()
+            }
+        }
         .onChange(of: query) { _, newValue in
             // Mirror the old clear button: emptying the field resets the search.
             if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -335,34 +433,17 @@ struct BookSearchView: View {
     @available(iOS 18.0, *)
     private var modernResultList: some View {
         List {
-            ForEach(aggregator.results) { book in
-                resultLink(for: book)
-                .listRowInsets(EdgeInsets(
-                    top: 0,
-                    leading: DSLayout.searchListHorizontalInset,
-                    bottom: 0,
-                    trailing: DSLayout.searchListHorizontalInset
-                ))
-                .listRowBackground(Color.clear)
-                // No rule over the first result: the scope row above has none either.
-                .listRowSeparator(
-                    book.id == aggregator.results.first?.id ? .hidden : .automatic,
-                    edges: .top
-                )
-                .background {
-                    // The first result measures the list's scroll for the 搜索 tab's title.
-                    if book.id == aggregator.results.first?.id {
-                        Color.clear.rootTabTitleScrollAnchor()
-                    }
+            if showsCombinedResults {
+                if !aggregator.results.isEmpty || sourcesNotice != nil {
+                    Section(localized("來源配置")) { sourceRows }
                 }
-            }
-
-            // 載入更多: fetch the next result page from every source that
-            // answered the last round and hasn't been exhausted yet.
-            if canLoadMore {
-                loadMoreButton
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                PublicLibrarySearchSection(
+                    query: trimmedQuery,
+                    anchorsTitle: aggregator.results.isEmpty && sourcesNotice == nil,
+                    submitGutenberg: submitGutenberg
+                )
+            } else {
+                sourceRows
             }
         }
         .modifier(SearchResultsScrollEdges(isTabRoot: isTabRoot))
@@ -372,12 +453,55 @@ struct BookSearchView: View {
         .navigationLinkIndicatorVisibility(.hidden)
     }
 
+    /// The sources' results, 載入更多, and while there is no result what the search is doing.
+    @available(iOS 18.0, *)
+    @ViewBuilder
+    private var sourceRows: some View {
+        if let sourcesNotice {
+            Text(sourcesNotice)
+                .font(DSFont.subheadline)
+                .foregroundStyle(DSColor.textSecondary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden, edges: .top)
+                .background { Color.clear.rootTabTitleScrollAnchor() }
+        }
+        ForEach(aggregator.results) { book in
+            resultLink(for: book)
+            .listRowInsets(EdgeInsets(
+                top: 0,
+                leading: DSLayout.searchListHorizontalInset,
+                bottom: 0,
+                trailing: DSLayout.searchListHorizontalInset
+            ))
+            .listRowBackground(Color.clear)
+            // No rule over the first result: the scope row above has none either.
+            .listRowSeparator(
+                book.id == aggregator.results.first?.id ? .hidden : .automatic,
+                edges: .top
+            )
+            .background {
+                // The first result measures the list's scroll for the 搜索 tab's title.
+                if book.id == aggregator.results.first?.id {
+                    Color.clear.rootTabTitleScrollAnchor()
+                }
+            }
+        }
+
+        // 載入更多: fetch the next result page from every source that
+        // answered the last round and hasn't been exhausted yet.
+        if canLoadMore {
+            loadMoreButton
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        }
+    }
+
     private var iOS17ResultList: some View {
-        IOS17SearchResultTable(
-            content: IOS17SearchResultTableContent(
-                rows: aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
-                showsLoadMore: canLoadMore
-            ),
+        IOS17SearchResults(
+            rows: aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
+            showsLoadMore: canLoadMore,
+            sourcesNotice: showsCombinedResults ? sourcesNotice : nil,
+            libraryQuery: showsCombinedResults ? trimmedQuery : nil,
             onSelect: { id in
                 guard let book = aggregator.results.first(where: { $0.id == id }) else {
                     // The row on screen is no longer among the results, so the tap opens
@@ -392,7 +516,8 @@ struct BookSearchView: View {
             },
             onLoadMore: {
                 aggregator.loadMore()
-            }
+            },
+            submitGutenberg: submitGutenberg
         )
     }
 
@@ -434,7 +559,7 @@ struct BookSearchView: View {
 
     @ViewBuilder
     private var hintView: some View {
-        if enabledSources.isEmpty {
+        if enabledSources.isEmpty, !offersPublicLibraries {
             ContentUnavailableView {
                 UnavailableLabel(localized("尚未設置來源配置"), systemImage: "exclamationmark.triangle")
             } description: {
@@ -449,9 +574,6 @@ struct BookSearchView: View {
                         : localized("輸入書名或作者搜索"),
                     systemImage: "text.magnifyingglass"
                 )
-            } description: {
-                Text(String(format: localized("已啟用 %d 個來源配置"), enabledSources.count))
-                    .foregroundStyle(DSColor.textSecondary)
             }
         }
     }
@@ -486,10 +608,32 @@ struct BookSearchView: View {
         aggregator.search(query: q, sources: sources)
     }
 
+    /// The keyboard's Search: the sources, or with no source at all, Gutenberg. Ignored while
+    /// the source library is still being read, so a large library is not taken for none.
+    private func submit() {
+        if offersPublicLibraries, enabledSources.isEmpty {
+            guard sourceStore.isLoaded else { return }
+            submitGutenberg()
+        } else {
+            doSearch()
+        }
+    }
+
+    /// Gutenberg is asked only here, on an explicit submit (its terms; `PublicLibraries.md`).
+    private func submitGutenberg() {
+        let q = trimmedQuery
+        guard !q.isEmpty else { return }
+        recentQueries = recentQueries.recording(q)
+        pushed = .gutenbergSearch(OPDSFeedRoute(
+            catalogID: PublicLibraryID.gutenberg.rawValue,
+            url: PublicLibrary.gutenbergSearchURL(query: q).absoluteString,
+            title: String(q.prefix(500)), presentation: .storefront))
+    }
+
     /// 最近搜索: the same search again, as if typed and submitted.
     private func searchAgain(_ recent: String) {
         query = recent
-        doSearch()
+        submit()
     }
 
     /// 最近閱讀: back into the book where it was left, moved to the front of 最近閱讀

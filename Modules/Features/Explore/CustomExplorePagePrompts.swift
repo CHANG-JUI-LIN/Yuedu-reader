@@ -46,7 +46,7 @@ struct CustomExplorePageMenuItems: View {
 private struct CustomExplorePagePrompts: ViewModifier {
     @Binding var prompt: CustomExplorePagePrompt?
     @ObservedObject private var pageStore = CustomExplorePageStore.shared
-    @AppStorage(ExploreSettings.landingKey) private var landing = ExploreLanding.off.rawValue
+    @AppStorage(ExploreSettings.legacyLandingKey) private var legacyLanding: String?
     @State private var name = ""
 
     private var naming: CustomExplorePagePrompt? {
@@ -108,11 +108,9 @@ private struct CustomExplorePagePrompts: ViewModifier {
         }
     }
 
-    /// Deletes the page; 首屏配置 set to it goes back to off.
+    /// Deletes the page, and the old 首屏頁面 choice of it that waits for 5d-4's configurations.
     private func delete(_ page: CustomExplorePage) {
-        if ExploreLanding(rawValue: landing) == .customPage(id: page.id) {
-            landing = ExploreLanding.off.rawValue
-        }
+        if legacyLanding == "page:" + page.id.uuidString { legacyLanding = nil }
         pageStore.deletePage(id: page.id)
     }
 }

@@ -375,9 +375,7 @@ struct ContentView: View {
         case .settings:
             SettingsView()
         case .search:
-            NavigationStack {
-                SearchView(isTabRoot: true)
-            }
+            SearchTabRoot()
         }
     }
 

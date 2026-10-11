@@ -39,7 +39,6 @@ private struct ExploreHomeRoot: View {
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @AppStorage(ExploreSettings.scopeKey) private var storedScope = ExploreScope.all.rawValue
     @AppStorage(ExploreSettings.modeKey) private var storedMode = ExploreMode.publicLibraries.rawValue
-    @AppStorage(ExploreSettings.landingKey) private var landing = ExploreLanding.off.rawValue
     @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -48,10 +47,7 @@ private struct ExploreHomeRoot: View {
     @State private var coverFrames = PublicLibraryCoverFrames()
     @State private var exploreSources: [BookSource] = []
     @State private var browserPresentation: BrowserPresentation?
-    @State private var showsSettings = false
     @State private var pagePrompt: CustomExplorePagePrompt?
-    /// 首屏配置 opens its page once, the first time 探索 shows; going back stays here.
-    @State private var appliedLanding = false
 
     private struct BrowserPresentation: Identifiable {
         let id = UUID()
@@ -112,9 +108,6 @@ private struct ExploreHomeRoot: View {
                 }
             }
             .toolbar { toolbar }
-            .sheet(isPresented: $showsSettings) {
-                ExploreSettingsSheet(sources: exploreSources)
-            }
             .customExplorePagePrompts($pagePrompt)
             .fullScreenCover(item: $browserPresentation) { presentation in
                 NavigationStack {
@@ -134,11 +127,9 @@ private struct ExploreHomeRoot: View {
         .task { await aozora.load() }
         .onAppear {
             model.reloadLocal()
-            applyLandingIfNeeded()
         }
         .onReceive(sourceStore.sourcesPublisher) { _ in
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
-            applyLandingIfNeeded()
         }
         .onChange(of: storedScope) { _, _ in
             // Another source's page in place: what was pushed over the last one goes.
@@ -228,13 +219,6 @@ private struct ExploreHomeRoot: View {
                 }
                 .accessibilityLabel(localized("新增自訂頁"))
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showsSettings = true } label: {
-                    Image(systemName: "gearshape")
-                        .accessibilityHidden(true)
-                }
-                .accessibilityLabel(localized("探索設定"))
-            }
         }
     }
 
@@ -246,26 +230,6 @@ private struct ExploreHomeRoot: View {
 
     private func openBrowser(_ entry: BrowserEntry) {
         browserPresentation = BrowserPresentation(entry: entry)
-    }
-
-    /// 首屏配置: the page 探索 opens straight onto, pushed the first time 探索 shows, as the old
-    /// root did. A source's page waits for the sources, so it never opens on one that only
-    /// looks deleted because the list was not there yet.
-    private func applyLandingIfNeeded() {
-        guard !appliedLanding, path.isEmpty, scope == .all else { return }
-        switch ExploreLanding(rawValue: landing) {
-        case .off:
-            appliedLanding = true
-        case .customPage(let id):
-            appliedLanding = true
-            if customPages.page(id: id) != nil { path.append(ExploreNavigationRoute.customPage(id: id)) }
-        case .source(let url):
-            guard !exploreSources.isEmpty else { return }
-            appliedLanding = true
-            if exploreSources.contains(where: { $0.bookSourceUrl == url }) {
-                path.append(ExploreNavigationRoute.source(sourceURL: url))
-            }
-        }
     }
 }
 

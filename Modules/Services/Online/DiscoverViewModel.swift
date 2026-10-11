@@ -95,7 +95,7 @@ struct DiscoverBookDisplay: Identifiable {
 struct DiscoverShowcaseSection: Identifiable {
     let id: UUID
     let item: DiscoverCardItem
-    /// Read each time, so a change to 探索設定's chart keywords shows at once.
+    /// Charts are the categories whose title holds a chart word (`ExploreSettings.rankedKeywords`).
     var style: DiscoverSectionStyle { DiscoverViewModel.sectionStyle(for: item.title) }
     /// Cover request context, resolved once per reload. Rows used to re-derive
     /// it per render (a linear source scan + header-JSON parse each time).
@@ -198,6 +198,24 @@ final class DiscoverViewModel: ObservableObject {
             $0.enabledExplore
                 && !$0.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+    }
+
+    /// The sources in `group` (all of them when `nil`) whose name or group holds `query`:
+    /// Legado's explore search (`BookSourceDao.flowExplore(key)`).
+    nonisolated static func exploreSources(_ sources: [BookSource], inGroup group: String?, matching query: String) -> [BookSource] {
+        sources.filter { source in
+            if let group, !groupNames(of: source).contains(group) { return false }
+            return query.isEmpty
+                || source.bookSourceName.localizedStandardContains(query)
+                || source.bookSourceGroup.localizedStandardContains(query)
+        }
+    }
+
+    nonisolated static func groupNames(of source: BookSource) -> [String] {
+        source.bookSourceGroup
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     // MARK: - Source lifecycle
@@ -593,23 +611,11 @@ final class DiscoverViewModel: ObservableObject {
     /// fetch drives a JS runtime + shared login/cloud session, and firing several
     /// at once (LazyVStack renders multiple sections on first paint) can clobber
     /// that shared state. Sequential loading keeps each fetch deterministic.
-    ///
-    /// 探索設定's 預加載數量 queues that many of the categories after it too, so they are
-    /// ready by the time they scroll into view. Still one at a time, so a larger number
-    /// means a longer queue, never more requests at once. Preloading takes only
-    /// categories never tried: a failed one waits for its own retry button.
     func loadSection(_ id: UUID) {
         guard let index = sections.firstIndex(where: { $0.id == id }) else { return }
         let phase = sections[index].phase
         if phase != .loading, phase != .loaded, !sectionQueue.contains(id) {
             sectionQueue.append(id)
-        }
-        let ahead = ExploreSettings.preloadCount
-        if ahead > 0 {
-            for next in sections.indices.dropFirst(index + 1).prefix(ahead)
-            where sections[next].phase == .idle && !sectionQueue.contains(sections[next].id) {
-                sectionQueue.append(sections[next].id)
-            }
         }
         pumpSectionQueue()
     }
@@ -746,14 +752,10 @@ final class DiscoverViewModel: ObservableObject {
 
     /// Section render style derived from the source's category title. The book
     /// source owns the categories; this only chooses a faithful presentation.
-    /// A category whose title holds any of 探索設定's chart keywords is a numbered chart;
-    /// every other one is a shelf of covers.
+    /// A category whose title holds any of `ExploreSettings.rankedKeywords` is a numbered
+    /// chart; every other one is a shelf of covers.
     nonisolated static func sectionStyle(for title: String) -> DiscoverSectionStyle {
-        sectionStyle(for: title, rankedKeywords: ExploreSettings.rankedKeywords)
-    }
-
-    nonisolated static func sectionStyle(for title: String, rankedKeywords: [String]) -> DiscoverSectionStyle {
-        let ranked = rankedKeywords.contains { keyword in
+        let ranked = ExploreSettings.rankedKeywords.contains { keyword in
             !keyword.isEmpty && title.range(of: keyword, options: .caseInsensitive) != nil
         }
         return ranked ? .ranked : .featured

@@ -3,48 +3,41 @@ import Testing
 @testable import yuedu_app
 
 struct ExploreSettingsTests {
-    @Test("首屏配置 keeps its choice as a string and reads anything else as off")
-    func landingRoundTrips() {
-        for landing in [ExploreLanding.off, .customPage(id: UUID()), .source(url: "https://fanqienovel.com")] {
-            #expect(ExploreLanding(rawValue: landing.rawValue) == landing)
-        }
-        #expect(ExploreLanding(rawValue: "source:") == .off)
-        #expect(ExploreLanding(rawValue: "page:not-a-uuid") == .off)
-        #expect(ExploreLanding(rawValue: "something else") == .off)
-    }
-
-    @Test("chart keywords are stored one per line, blank lines dropped")
-    func keywordsRoundTrip() {
-        let keywords = ["榜", "排行", "top"]
-        #expect(ExploreSettings.decodeKeywords(ExploreSettings.encodeKeywords(keywords)) == keywords)
-        #expect(ExploreSettings.decodeKeywords("榜\n\n热门\n") == ["榜", "热门"])
-        #expect(ExploreSettings.decodeKeywords("").isEmpty)
-    }
-
-    @Test("a category is a chart when its title holds any keyword, whatever the letter case")
+    @Test("a category is a chart when its title holds a chart word, whatever the letter case")
     func sectionStyleFollowsKeywords() {
-        let defaults = ExploreSettings.defaultRankedKeywords
-        #expect(DiscoverViewModel.sectionStyle(for: "月票榜", rankedKeywords: defaults) == .ranked)
-        #expect(DiscoverViewModel.sectionStyle(for: "TOP 50", rankedKeywords: defaults) == .ranked)
-        #expect(DiscoverViewModel.sectionStyle(for: "精选推荐", rankedKeywords: defaults) == .featured)
-        // An edited list decides on its own.
-        #expect(DiscoverViewModel.sectionStyle(for: "精选推荐", rankedKeywords: ["推荐"]) == .ranked)
-        #expect(DiscoverViewModel.sectionStyle(for: "月票榜", rankedKeywords: []) == .featured)
+        #expect(DiscoverViewModel.sectionStyle(for: "月票榜") == .ranked)
+        #expect(DiscoverViewModel.sectionStyle(for: "TOP 50") == .ranked)
+        #expect(DiscoverViewModel.sectionStyle(for: "精选推荐") == .featured)
     }
 
-    @Test("the cover gate holds a download past the limit until one finishes")
-    func coverGateQueuesPastTheLimit() async {
-        let gate = CoverDownloadGate()
-        await gate.enter(limit: 2)
-        await gate.enter(limit: 2)
-        let third = Task { await gate.enter(limit: 2) }
-        while await gate.waitingCount == 0 { await Task.yield() }
-        #expect(await gate.runningCount == 2)
+    @Test("a saved 首屏 source becomes 範圍 once; a page waits for configurations; anything else goes")
+    func legacyLandingMigrates() throws {
+        let suite = "ExploreSettingsTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = ExploreSettings.legacyLandingKey
 
-        await gate.leave()
-        await third.value
-        #expect(await gate.waitingCount == 0)
-        #expect(await gate.runningCount == 2)
+        defaults.set("source:https://fanqienovel.com", forKey: key)
+        ExploreSettings.migrateLegacyLanding(sourceURLs: ["https://fanqienovel.com"], defaults: defaults)
+        #expect(defaults.string(forKey: ExploreSettings.scopeKey) == "bookSource:https://fanqienovel.com")
+        #expect(defaults.object(forKey: key) == nil)
+
+        // A scope the reader chose wins; a deleted source is dropped.
+        defaults.set("gutenberg:builtin.gutenberg", forKey: ExploreSettings.scopeKey)
+        defaults.set("source:https://fanqienovel.com", forKey: key)
+        ExploreSettings.migrateLegacyLanding(sourceURLs: ["https://fanqienovel.com"], defaults: defaults)
+        #expect(defaults.string(forKey: ExploreSettings.scopeKey) == "gutenberg:builtin.gutenberg")
+        #expect(defaults.object(forKey: key) == nil)
+        defaults.removeObject(forKey: ExploreSettings.scopeKey)
+        defaults.set("source:https://gone.example", forKey: key)
+        ExploreSettings.migrateLegacyLanding(sourceURLs: [], defaults: defaults)
+        #expect(defaults.object(forKey: ExploreSettings.scopeKey) == nil)
+        #expect(defaults.object(forKey: key) == nil)
+
+        let page = "page:" + UUID().uuidString
+        defaults.set(page, forKey: key)
+        ExploreSettings.migrateLegacyLanding(sourceURLs: [], defaults: defaults)
+        #expect(defaults.string(forKey: key) == page, "kept for 5d-4's configurations")
     }
 
     /// A source's explore list: two groups of categories with a filter and a page link
@@ -169,13 +162,5 @@ struct ExploreSettingsTests {
         next.bookSource = source
         #expect(next.exploreInfoMapValues() == ["关键词": "三体", "排序": "最新"])
         #expect(next.evaluate("infoMap.get('关键词')") == "三体")
-    }
-
-    @Test("with no limit every cover download goes straight through")
-    func coverGateWithoutLimit() async {
-        let gate = CoverDownloadGate()
-        for _ in 0..<5 { await gate.enter(limit: 0) }
-        #expect(await gate.runningCount == 5)
-        #expect(await gate.waitingCount == 0)
     }
 }

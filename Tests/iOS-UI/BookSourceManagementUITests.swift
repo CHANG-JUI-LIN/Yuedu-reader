@@ -150,6 +150,8 @@ final class BookSourceManagementUITests: XCTestCase {
         let firstSource = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH %@", "介面測試書源0")).firstMatch
         XCTAssertTrue(firstSource.waitForExistence(timeout: 15), "the fixture library should list")
+        XCTAssertFalse(app.navigationBars["來源配置管理"].buttons["關閉"].exists,
+                       "書源管理 is pushed: it leaves by back, with no close button")
 
         let more = app.navigationBars.buttons["更多"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 5), "the toolbar 更多 menu should exist")

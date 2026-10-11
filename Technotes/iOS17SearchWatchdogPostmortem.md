@@ -150,12 +150,18 @@ When editing search or online detail presentation:
     The page read `dismiss` only for a close button no caller ever showed; it is gone.
     Everything the page pushes by item goes through `SearchPagePush`. Regression:
     `DetailReaderBackSwipeUITests.testSearchTabMangaResultOpensEveryTime`.
+13. Read changing environment values in a child view, never in `BookSearchView`. The 公有書庫
+    section of the tab root's results (unified library 5d-1b) needs the store carousel's
+    `openPublicLibraryBooks`, which changes whenever the carousel does. `PublicLibrarySearchSection`
+    (iOS 18+) and `IOS17SearchResults` (iOS 17) read it, so the page's body is not invalidated by
+    it. On iOS 17 the section's rows are values in `IOS17SearchResultTableContent` and native
+    cells, like the results. Its Gutenberg search is a `SearchPagePush` case like a result.
 
 ## Relevant Files
 
 - `Modules/Features/Search/BookSearchView.swift`
 - `Modules/Features/Search/SearchResultRoute.swift`
-- `Modules/Features/Explore/ExploreHomeView.swift`
+- `Modules/Features/Search/SearchView.swift` (`SearchTabRoot`)
 - `Modules/Features/Explore/ExploreNavigationPath.swift`
 - `Modules/Features/Search/IOS17SearchResultTable.swift`
 - `Modules/Features/Search/SearchResultDetailIdentity.swift`

@@ -379,16 +379,6 @@ enum DSLayout {
     /// this much further on (書架, as Apple Music's and Books' home titles go).
     static let rootTabTitleFadeStart: CGFloat = 10
     static let rootTabTitleFadeDistance: CGFloat = 30
-    /// An 探索 tile two to a row: Apple Music's browse-category card, 16:9.
-    static let exploreTileAspectRatio: CGFloat = 16.0 / 9.0
-    /// The glyph on an 探索 tile at the default text size — two, three and four tiles
-    /// to a row. It follows Dynamic Type.
-    static let exploreTileArtworkSize: CGFloat = 40
-    static let exploreTileCompactArtworkSize: CGFloat = 28
-    static let exploreTileSmallArtworkSize: CGFloat = 22
-    /// The glyph on an 探索 list card, and the square it is centred in.
-    static let exploreRowArtworkSize: CGFloat = 24
-    static let exploreRowArtworkSide: CGFloat = 32
     /// Side of the square artwork at the top of an audiobook detail page — Podcasts'
     /// show artwork, a little narrower than a book jacket is tall.
     static let bookDetailSquareArtworkSide: CGFloat = 220
