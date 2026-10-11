@@ -16,11 +16,9 @@ extension HomeSection {
 
 extension HomeSection {
     /// Whether a row of this section loads what a row of `other` loads: the title and the
-    /// layout change only how it is drawn, and 最新's 排除的來源 only which sources have a row.
+    /// layout change only how it is drawn.
     func loadsSameContent(as other: HomeSection) -> Bool {
-        guard parameters == other.parameters else { return false }
-        if case .latest = binding, case .latest = other.binding { return true }
-        return binding == other.binding
+        parameters == other.parameters && binding == other.binding
     }
 }
 
@@ -54,12 +52,5 @@ extension HomePage {
 
     mutating func removeSection(_ id: UUID) {
         sections.removeAll { $0.id == id }
-    }
-
-    /// 最新's 排除的來源. Does nothing to another kind of section.
-    mutating func setExcluded(_ excluded: [SourceInstanceKey], section id: UUID) {
-        guard let index = sections.firstIndex(where: { $0.id == id }),
-              case .latest = sections[index].binding else { return }
-        sections[index].binding = .latest(excluded: excluded)
     }
 }

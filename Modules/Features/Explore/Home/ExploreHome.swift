@@ -104,7 +104,7 @@ private struct ExploreHomeRoot: View {
     /// What the rows are built from; any change builds them again.
     private var syncKey: [AnyHashable] {
         [pageStore.page, connections.catalogs.map(\.id), exploreSources.map(\.bookSourceUrl), availability.isAvailable,
-         aozora.catalog != nil]
+         aozora.catalog != nil, aggregation.settings.hiddenFromLatest]
     }
 
     /// Every section is settled with nothing in it, so the home would be blank: a China
@@ -127,7 +127,7 @@ private struct ExploreHomeRoot: View {
                 .environmentObject(store)
             }
             .exploreRouteDestinations(openBrowser: openBrowser)
-            .homeEditDestinations(model: model)
+            .homeEditDestinations()
             .navigationDestination(for: HomeLibrariesRoute.self) { _ in
                 HomeLibrariesPage(libraries: libraries, sources: exploreSources)
             }
@@ -137,7 +137,8 @@ private struct ExploreHomeRoot: View {
         .publicLibraryBookCarousel(path: $path, request: $selection, coverFrames: coverFrames)
         .task(id: syncKey) {
             // Saved here, not while drawing: the first read saves the defaults.
-            await model.sync(with: pageStore.pageOrDefaults(mode: mode, publicLibrariesAvailable: availability.isAvailable))
+            await model.sync(with: pageStore.pageOrDefaults(mode: mode, publicLibrariesAvailable: availability.isAvailable),
+                             hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
         }
         .task { await aozora.load() }
         .onAppear {

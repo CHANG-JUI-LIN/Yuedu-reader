@@ -50,8 +50,10 @@ enum HomeSectionBinding: Hashable, Sendable {
     case myLibrary
     /// 繼續閱讀, across every source.
     case continueReading
-    /// 最新: one row per source that has a 最新, except the excluded ones (plan decision 10).
-    case latest(excluded: [SourceInstanceKey])
+    /// 最新: one row per source that has a 最新 (plan decision 10), except those 聚合設定's
+    /// 顯示在最新 turns off (5d-3f, decision 21). Until 5d-3f the section kept its own
+    /// `excluded` list; `HomePageStore.legacyLatestExcluded` reads it for the move.
+    case latest
     /// Categories of one book source: today's custom-page block.
     case sourceCategories([ExploreCategoryReference])
     case opdsFeed(connectionID: String, url: String)
@@ -74,7 +76,7 @@ enum HomeSectionBinding: Hashable, Sendable {
 
 extension HomeSectionBinding: Codable {
     private enum CodingKeys: String, CodingKey {
-        case type, excluded, categories, connectionID, url, id, kind
+        case type, categories, connectionID, url, id, kind
     }
 
     private enum Kind: String {
@@ -92,8 +94,7 @@ extension HomeSectionBinding: Codable {
         switch kind {
         case .myLibrary: self = .myLibrary
         case .continueReading: self = .continueReading
-        case .latest:
-            self = .latest(excluded: try container.decodeIfPresent([SourceInstanceKey].self, forKey: .excluded) ?? [])
+        case .latest: self = .latest
         case .sourceCategories:
             self = .sourceCategories(try container.decode([ExploreCategoryReference].self, forKey: .categories))
         case .opdsFeed:
@@ -118,9 +119,8 @@ extension HomeSectionBinding: Codable {
             try container.encode(Kind.myLibrary.rawValue, forKey: .type)
         case .continueReading:
             try container.encode(Kind.continueReading.rawValue, forKey: .type)
-        case .latest(let excluded):
+        case .latest:
             try container.encode(Kind.latest.rawValue, forKey: .type)
-            try container.encode(excluded, forKey: .excluded)
         case .sourceCategories(let categories):
             try container.encode(Kind.sourceCategories.rawValue, forKey: .type)
             try container.encode(categories, forKey: .categories)
@@ -218,7 +218,7 @@ enum HomePageDefaults {
                      makeID: () -> UUID = UUID.init) -> HomePage {
         // 精簡閱讀卡片 since 5d-3c (Phase 5 plan, decision 20); 大型閱讀卡片 in 5d-3.
         let continueReading = HomeSection(id: makeID(), layout: .compactReadingCard, binding: .continueReading)
-        let latest = HomeSection(id: makeID(), layout: .row, binding: .latest(excluded: []))
+        let latest = HomeSection(id: makeID(), layout: .row, binding: .latest)
         // 精選: one section per bundled list, titled by the list (plan decision 11).
         let featured = publicLibrariesAvailable
             ? PublicLibraryCollection.all.map {

@@ -10,7 +10,7 @@ struct HomeSectionTests {
     private func allBindings() -> [HomeSectionBinding] {
         [
             .myLibrary, .continueReading,
-            .latest(excluded: [SourceInstanceKey(type: .opds, id: "c1"), SourceInstanceKey(type: .aozora, id: "aozora")]),
+            .latest,
             .sourceCategories([category]),
             .opdsFeed(connectionID: "c1", url: "https://opds.example/new"),
             .gutenbergCollection(id: "chinese"), .gutenbergFeed(url: "https://gutenberg.example/feed"),

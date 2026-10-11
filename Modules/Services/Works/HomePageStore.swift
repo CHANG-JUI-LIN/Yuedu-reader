@@ -23,6 +23,10 @@ final class HomePageStore: ObservableObject {
     /// from a newer build.
     private(set) var isReadOnly = false
 
+    /// The 最新 sections' 排除的來源 the file still holds from before 5d-3f, which
+    /// `AggregationSettingsStore` adopts as 顯示在最新. Read once, with the file.
+    private(set) var legacyLatestExcluded: [SourceInstanceKey] = []
+
     private let fileURL: URL
     private let queue = DispatchQueue(label: "com.yuedu.explore.home")
 
@@ -89,6 +93,26 @@ final class HomePageStore: ObservableObject {
 
     private struct Version: Decodable { var schemaVersion: Int }
 
+    /// The part of a pre-5d-3f file that `HomeSectionBinding` no longer reads.
+    private struct LegacyLatest: Decodable {
+        struct Section: Decodable {
+            struct Binding: Decodable {
+                var type: String
+                var excluded: [SourceInstanceKey]?
+            }
+            var binding: Binding
+        }
+        var sections: [Section]
+
+        var excluded: [SourceInstanceKey] {
+            var keys: [SourceInstanceKey] = []
+            for section in sections where section.binding.type == "latest" {
+                for key in section.binding.excluded ?? [] where !keys.contains(key) { keys.append(key) }
+            }
+            return keys
+        }
+    }
+
     /// A newer build's file: the sections that decode.
     private struct LenientPage: Decodable {
         var sections: [HomeSection]
@@ -137,9 +161,19 @@ final class HomePageStore: ObservableObject {
                 return
             }
             page = try JSONDecoder().decode(HomePage.self, from: data)
+            readLegacyLatestExcluded(data)
         } catch {
             AppLogger.cache("⟐ explore home could not be decoded", error: error)
             isReadOnly = !keepAside(data)
+        }
+    }
+
+    private func readLegacyLatestExcluded(_ data: Data) {
+        do {
+            legacyLatestExcluded = try JSONDecoder().decode(LegacyLatest.self, from: data).excluded
+        } catch {
+            // The page itself decoded; only the old list is lost, and with it nothing to move.
+            AppLogger.cache("⟐ explore home's old 排除的來源 could not be read", error: error)
         }
     }
 

@@ -96,6 +96,36 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-home-gutenberg-latest")
     }
 
+    /// 顯示在最新 (5d-3f): turned off for Gutenberg in 設定 → 聚合設定, Gutenberg's 最新 is not
+    /// asked for and its book is not on the home.
+    @MainActor
+    func testShowInLatestOff() {
+        let app = application()
+        app.launch()
+        let settingsTab = app.tabBars.buttons["設定"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 30))
+        settingsTab.tap()
+        let row = app.buttons["settings_aggregation"].firstMatch
+        for _ in 0..<4 where !row.exists { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        let toggle = app.switches["aggregation.latest.gutenberg.\(gutenbergID)"].firstMatch
+        for _ in 0..<3 where !toggle.isHittable { app.swipeUp() }
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(toggle.value as? String, "1")
+        // The switch sits at the row's trailing end; 30 pt in lands on it whether the element is
+        // the whole row (iOS 17) or the switch alone.
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
+        XCTAssertEqual(toggle.value as? String, "0")
+        attach(app, "aggregation-show-in-latest")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        openExplore(app)
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        for _ in 0..<6 { app.swipeUp() }
+        XCTAssertFalse(app.buttons["home.card.gutenberg.79760"].firstMatch.exists, "Gutenberg is off in 最新")
+    }
+
     /// 精簡閱讀卡片 (5d-3c), in the design fixture's 繼續閱讀: the ••• beside a shelf copy's card
     /// is a control of its own, reachable by touch and VoiceOver, and offers 從繼續閱讀移除 and
     /// 標記為已讀完.

@@ -60,7 +60,7 @@ extension ShelfProvider: HomeSectionProviding {
 extension OPDSProvider: HomeSectionProviding {
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
         switch section.binding {
-        case .latest(let excluded): excluded.contains(instance) ? nil : .parallel
+        case .latest: .parallel
         case .opdsFeed(let connectionID, _): connectionID == instance.id ? .parallel : nil
         default: nil
         }
@@ -92,7 +92,7 @@ extension GutenbergProvider: HomeSectionProviding {
         switch section.binding {
         case .gutenbergCollection(let id): return PublicLibraryCollection.all.contains { $0.id == id } ? .local : nil
         case .gutenbergFeed: return .withHome
-        case .latest(let excluded): return excluded.contains(instance) ? nil : .withHome
+        case .latest: return .withHome
         default: return nil
         }
     }
@@ -133,7 +133,7 @@ extension AozoraProvider: HomeSectionProviding {
         guard availability == .available else { return nil }
         switch section.binding {
         case .aozoraNew, .aozoraIndex: return .local
-        case .latest(let excluded): return excluded.contains(instance) ? nil : .local
+        case .latest: return .local
         default: return nil
         }
     }
@@ -156,7 +156,7 @@ extension AozoraProvider: HomeSectionProviding {
 extension WebDAVProvider: HomeSectionProviding {
     /// 「最新」 reads the 2d index, so a connection that has none serves no row.
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
-        guard case .latest(let excluded) = section.binding, !excluded.contains(instance), records != nil else { return nil }
+        guard case .latest = section.binding, records != nil else { return nil }
         return .local
     }
 
