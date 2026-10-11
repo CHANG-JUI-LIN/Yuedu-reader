@@ -52,8 +52,12 @@ struct SharedCustomizationImportTests {
             try await applyAppearance(document)
         } else {
             let savedTitle = ReaderConfig.shared.chapterTitleStyle
+            let savedGlobalTitle = GlobalSettings.shared.chapterTitleStyle
             let savedHighlights = GlobalSettings.shared.regexHighlightConfiguration
             defer {
+                // Both copies: ReaderConfig reaches GlobalSettings only after a 120 ms
+                // debounce, so restoring one leaves the next case starting with them apart.
+                GlobalSettings.shared.chapterTitleStyle = savedGlobalTitle
                 ReaderConfig.shared.chapterTitleStyle = savedTitle
                 GlobalSettings.shared.regexHighlightConfiguration = savedHighlights
             }
