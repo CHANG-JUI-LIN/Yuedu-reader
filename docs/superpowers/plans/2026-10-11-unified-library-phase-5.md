@@ -155,6 +155,15 @@
     - **Books imported before it are read again once, the local ones only:** a local EPUB copy's OPF is read again for its series and number, once, when 探索 opens. This amends Phase 1's decision 8 (no background scan of the shelf) for this one pass. WebDAV files get the number only when they are new or changed.
     - **系列下一本 is in a new install's 預設,** under 繼續閱讀; it draws nothing while no book has a next volume. A saved 預設 is not changed.
 
+26. **Answered 2026-10-11, after 5d-6b** (maintainer, by option):
+    - **5e is not built.** No 新增來源 page and no section added with a source: libraries are added from 設定 → 遠端書庫 and book sources from 書源管理, and the reader adds the sections they want (「要什麼自己添加」); a new library joins 最新 by itself.
+    - **5g becomes a section kind:** 「訂閱的最新文章」 in 新增欄目 → App 資料, which the reader adds or not. The RSS tab stays.
+    - **5h waits** until RSS's place is settled (open decision 1 stays open).
+
+27. **Answered 2026-10-11, starting 5f** (maintainer: 「照着 emby」, then by option):
+    - **Every Explore card opens 作品詳情 first,** 繼續閱讀's too, as Emby's posters open the item's page; reading starts from the page. A card's ••• stays. The bookshelf's tap still opens the book; its ••• gains 作品詳情 (design §14.1).
+    - **The store card carousel is taken off the home for now** (「这个轮播有问题先拿掉看看，保留代码先」): Gutenberg's and 青空's cards open 作品詳情 too. Its code stays.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
