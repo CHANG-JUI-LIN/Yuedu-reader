@@ -69,15 +69,19 @@ struct PublicLibraryRegistryTests {
         }
     }
 
-    @Test func shelvesFollowInterfaceLanguage() {
-        for (language, query) in [("zh-Hant", "l.zh"), ("zh-Hans", "l.zh"), ("ja", "l.ja"), ("ko", "l.ko")] {
-            let shelves = GutenbergShelf.shelves(language: language)
+    /// 偏好閱讀語言 (5d-3d): a shelf per reading language, in order, then English.
+    @Test func shelvesFollowReadingLanguages() {
+        for (language, query) in [("zh-Hant", "l.zh"), ("zh-Hans", "l.zh"), ("ja", "l.ja"), ("ko", "l.ko"), ("fr", "l.fr")] {
+            let shelves = GutenbergShelf.shelves(languages: [language])
             #expect(shelves.count == 4)
             #expect(URLComponents(url: shelves[2].url, resolvingAgainstBaseURL: false)?.queryItems?.contains(URLQueryItem(name: "query", value: query)) == true)
             #expect(shelves[2].url.absoluteString.contains("sort_order=downloads"))
+            #expect(shelves[3].id == "en")
         }
-        #expect(GutenbergShelf.shelves(language: "en").count == 3)
-        #expect(GutenbergShelf.shelves(language: "fr").count == 3)
+        #expect(GutenbergShelf.shelves(languages: ["en"]).map(\.id) == ["popular", "latest", "en"])
+        #expect(GutenbergShelf.shelves(languages: ["ja", "en", "zh"]).map(\.id) == ["popular", "latest", "ja", "en", "zh"])
+        #expect(GutenbergShelf.shelves(languages: ["ja"])[2].title == "日本語")
+        #expect(GutenbergShelf.shelves(languages: []).map(\.id) == ["popular", "latest", "en"])
     }
 
     @Test func testsAndReleaseUseTheXMLFeeds() {
@@ -102,7 +106,7 @@ struct PublicLibraryRegistryTests {
             #expect(url.path == "/opds/search")
             #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "query", value: query)])
         }
-        let shelves = GutenbergShelf.shelves(language: "zh-Hant", endpoint: endpoint)
+        let shelves = GutenbergShelf.shelves(languages: ["zh-Hant"], endpoint: endpoint)
         #expect(shelves.count == 4)
         #expect(shelves.allSatisfy { $0.url.host == "opds-test.pglaf.org" })
 

@@ -262,6 +262,7 @@ struct PublicLibraryShelf: View {
 
 struct PublicLibraryCategoriesView: View {
     let index: AozoraCatalogIndex?
+    @ObservedObject private var aggregation = AggregationSettingsStore.shared
     var body: some View {
         List {
             Section(localized("精選書單")) {
@@ -270,10 +271,10 @@ struct PublicLibraryCategoriesView: View {
                 }
             }.interfaceSectionSurface()
             Section(localized("Project Gutenberg")) {
-                ForEach(GutenbergShelf.shelves(language: Bundle.main.preferredLocalizations.first ?? "en")) { shelf in
+                ForEach(GutenbergShelf.shelves(languages: aggregation.readingLanguages.languages)) { shelf in
                     NavigationLink(value: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
-                        url: shelf.url.absoluteString, title: localized(shelf.titleKey), presentation: .storefront)) {
-                        Label(localized(shelf.titleKey), systemImage: shelf.symbol)
+                        url: shelf.url.absoluteString, title: shelf.title, presentation: .storefront)) {
+                        Label(shelf.title, systemImage: shelf.symbol)
                     }
                 }
             }.interfaceSectionSurface()

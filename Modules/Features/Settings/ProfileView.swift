@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Bindable private var gs = GlobalSettings.shared
     @State private var showSourceList = false
     @State private var showRemoteLibraries = false
+    @State private var showAggregationSettings = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
     @State private var showBackupSync = false
@@ -122,6 +123,15 @@ struct SettingsView: View {
                             action: { showRemoteLibraries = true }
                         )
                         .accessibilityIdentifier("settings_remote_libraries")
+
+                        // 聚合設定 (unified library 5d-3d, decision 21): here only, as Emby's
+                        // aggregation settings sit in its user settings.
+                        DSSettingsRow(
+                            icon: "square.stack.3d.up.fill",
+                            title: localized("聚合設定"),
+                            action: { showAggregationSettings = true }
+                        )
+                        .accessibilityIdentifier("settings_aggregation")
 
                         DSSettingsRow(
                             icon: "arrow.down.circle.fill",
@@ -243,6 +253,9 @@ struct SettingsView: View {
             .onAppear { gs.endAppearanceSlotPreview() }
             .navigationDestination(isPresented: $showRemoteLibraries) {
                 RemoteLibrarySettingsView()
+            }
+            .navigationDestination(isPresented: $showAggregationSettings) {
+                AggregationSettingsView()
             }
             // Pushed on every version (2026-10-10): its importers then always have a
             // first-level presenter, and it is configuration like 遠端書庫 beside it.

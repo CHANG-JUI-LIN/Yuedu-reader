@@ -3665,3 +3665,15 @@
 /* Unified library 5d-3b: the full catalogs from the top of the home */
 "瀏覽書庫" = "Browse Libraries";
 "瀏覽完整目錄" = "Browse Full Catalog";
+
+/* Unified library 5d-3d: 聚合設定 */
+"聚合設定" = "Aggregation";
+"偏好閱讀語言" = "Preferred Reading Languages";
+"新增語言" = "Add Language";
+"推薦範圍" = "Recommendations";
+"優先推薦偏好語言" = "Prefer These Languages";
+"只推薦偏好語言" = "Only These Languages";
+"不限制語言" = "Any Language";
+"排在前面的語言優先推薦。" = "Languages higher in the list come first.";
+"沒有標示語言的書（多數來源配置）一律保留，排在偏好語言之後。" = "Books with no language given (most sources) are always kept, after your languages.";
+"第 %d 優先" = "Priority %d";
