@@ -3683,3 +3683,6 @@
 "顯示在最新" = "Show in Latest";
 "隱藏已讀" = "Hide Read";
 "讀到最後或標記為已讀完的書，任何一份都算。" = "Books read to the end or marked as finished, in any copy.";
+"首頁欄目" = "Home Sections";
+"和探索的編輯首頁是同一份。" = "The same as Edit Home in Explore.";
+"打開探索後，首頁欄目會列在這裡。" = "Open Explore and its home sections will be listed here.";
