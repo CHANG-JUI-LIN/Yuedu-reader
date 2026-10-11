@@ -63,12 +63,13 @@ private extension HomeModel.RowState {
 @MainActor
 enum HomeDesignFixtureData {
     static let tiles: [HomeModel.Tile] = [
-        .init(source: .localLibrary, name: localized("書架")),
-        .init(source: SourceInstanceKey(type: .webDAV, id: "fixture-nas"), name: "NAS"),
-        .init(source: SourceInstanceKey(type: .calibre, id: "fixture-calibre"), name: "Calibre"),
-        .init(source: SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue), name: localized("Project Gutenberg")),
-        .init(source: SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue), name: localized("青空文庫")),
-        .init(source: SourceInstanceKey(type: .bookSource, id: "https://fixture.example"), name: "📚书山聚合"),
+        .browser,
+        .customPage(id: UUID(uuidString: "00000000-0000-0000-0000-00000000F001")!, name: "我的書單"),
+        .source(SourceInstanceKey(type: .webDAV, id: "fixture-nas"), name: "NAS"),
+        .source(SourceInstanceKey(type: .calibre, id: "fixture-calibre"), name: "Calibre"),
+        .source(SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue), name: localized("Project Gutenberg")),
+        .source(SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue), name: localized("青空文庫")),
+        .source(SourceInstanceKey(type: .bookSource, id: "https://fixture.example"), name: "📚书山聚合"),
     ]
 
     /// Made-up copies read to different points, for 繼續閱讀.

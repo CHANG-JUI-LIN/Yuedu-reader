@@ -4,7 +4,8 @@ import StoreKitTest
 /// Prepare with scripts/navigation_swipe_fixture.py and serve localhost:18765.
 /// These tests deliver actual touches to the production Explore/detail/reader.
 /// Every launch pins 探索 to its book sources (`-explore.mode sources`): a public-library UI
-/// test run before these leaves its own mode saved on the simulator.
+/// test run before these leaves its own mode saved on the simulator. Since unified library
+/// 5c-3 a source opens from its tile in the home's 我的書庫, which that mode puts first.
 final class DetailReaderBackSwipeUITests: XCTestCase {
     private var storeKitSession: SKTestSession?
 
@@ -22,11 +23,18 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         storeKitSession = session
     }
 
+    /// A book source's tile in 我的書庫.
+    @MainActor
+    private func sourceTile(_ app: XCUIApplication, named name: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "home.tile.bookSource.", name))
+            .firstMatch
+    }
+
     /// Explore lists sources as tiles: the fixture's tile opens its discover page, whose card
     /// opens the book. The source and its book share a name, so each is found by its own label.
     @MainActor
     private func openDiscoveredBook(_ app: XCUIApplication, named name: String) {
-        let source = app.buttons["explore.source.\(name)"]
+        let source = sourceTile(app, named: name)
         XCTAssertTrue(source.waitForExistence(timeout: 20), app.debugDescription)
         source.tap()
         let book = app.buttons["\(name), Regression"].firstMatch
@@ -49,7 +57,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
@@ -98,7 +106,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         let app = XCUIApplication()
         // Search starts from the text source's Explore, where only search can reach the manga.
         let discoverSource = fromSearch ? "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4" : "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", discoverSource]
         app.launch()
@@ -150,7 +158,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
                                "-yd_root_tab_visible_ids", "(bookshelf, explore, settings, search)"]
         app.launch()
         let searchTab = app.tabBars.buttons["搜索"]
@@ -232,11 +240,11 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"]
         app.launch()
-        let source = app.buttons["explore.source.Navigation Manga Fixture"]
+        let source = sourceTile(app, named: "Navigation Manga Fixture")
         XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
         source.tap()
         let discovered = app.buttons["Navigation Manga Fixture, Regression"].firstMatch
@@ -257,7 +265,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed)
         app.terminate()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings)", "-bookLayoutIsGrid", "NO"]
         app.launch()
         let book = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Navigation Manga Fixture")).firstMatch
@@ -440,7 +448,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"]
             + extraArguments
@@ -559,7 +567,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
                                "-yd_appearance_reader_interface", "classic",
@@ -608,7 +616,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
                                "-yd_appearance_reader_interface", "classic",
@@ -651,7 +659,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
                                "-yd_appearance_reader_interface", "classic",
@@ -680,7 +688,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4"]
         app.launch()
@@ -695,7 +703,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             XCTAssertTrue(remove.waitForExistence(timeout: 10), app.debugDescription)
         }
         app.terminate()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings)",
                                "-bookLayoutIsGrid", "NO", "-yd_appearance_reader_interface", "classic"]
         app.launch()
@@ -712,13 +720,13 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
                                "-yd_tts_use_system_voice", "YES",
                                "-yd_appearance_reader_interface", "classic"]
         app.launch()
-        let source = app.buttons["explore.source.Navigation Swipe Fixture"]
+        let source = sourceTile(app, named: "Navigation Swipe Fixture")
         XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
         source.tap()
         let book = app.buttons["Navigation Swipe Fixture, Regression"].firstMatch
@@ -773,7 +781,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
-        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
                                "-yd_page_turn_style", style, "-yd_scroll_mode", scroll ? "YES" : "NO"]

@@ -151,9 +151,15 @@ enum PublicLibraryRoute: Hashable {
     case collection(id: String)
     case aozoraWorks(title: String, works: [AozoraWork], index: AozoraCatalogIndex)
     case aozoraCatalog(AozoraBrowseMode, AozoraCatalogIndex)
+    /// Each library's own front page, as a 我的書庫 tile pushes it (5c-3): Gutenberg's lists
+    /// and shelves, and Aozora's 新着 and indexes.
+    case gutenbergHome
+    case aozoraHome
 
     private var key: [String] {
         switch self {
+        case .gutenbergHome: ["gutenbergHome"]
+        case .aozoraHome: ["aozoraHome"]
         case .categories: ["categories"]
         case .collection(let id): ["collection", id]
         case .aozoraWorks(let title, let works, _): ["aozoraWorks", title] + works.map(\.id)
@@ -239,6 +245,10 @@ private struct PublicLibraryDestinations: ViewModifier {
                     AozoraWorksView(index: index, works: works, title: title)
                 case .aozoraCatalog(let mode, let index):
                     AozoraCatalogView(index: index, mode: mode)
+                case .gutenbergHome:
+                    GutenbergHomePage()
+                case .aozoraHome:
+                    AozoraHomePage()
                 }
             }
             .navigationDestination(for: PublicLibraryReaderRoute.self) { route in

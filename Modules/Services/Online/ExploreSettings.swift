@@ -6,7 +6,14 @@ import Foundation
 enum ExploreSettings {
     // MARK: 探索頁
 
+    /// The old roots' 公有書庫／來源配置 choice. The home (unified library 5c) reads it once,
+    /// for its default sections, and the old roots behind 使用舊版探索頁 still use it.
     static let modeKey = "explore.mode"
+    /// The home's 範圍: 全部, or one source shown in place (`ExploreScope`).
+    static let scopeKey = "explore.scope"
+    /// 使用舊版探索頁: the roots from before the home, kept one version (Phase 5 plan,
+    /// settled decisions 9 and 10).
+    static let classicRootKey = "explore.classicRoot"
     static let showsGridKey = "explore.showsGrid"
     static let gridColumnCountKey = "explore.gridColumnCount"
 
@@ -82,6 +89,29 @@ enum ExploreMode: String, CaseIterable, Sendable {
     static func initializeIfNeeded(hasImportedSources: Bool, defaults: UserDefaults = .standard) {
         guard defaults.object(forKey: ExploreSettings.modeKey) == nil else { return }
         defaults.set(initialValue(hasImportedSources: hasImportedSources).rawValue, forKey: ExploreSettings.modeKey)
+    }
+}
+
+/// The home's 範圍 (design §13.3): 全部 shows the sections; one source shows its own page in
+/// place. Stored as a string; one this build cannot read is 全部.
+enum ExploreScope: Hashable, Sendable {
+    case all
+    case source(SourceInstanceKey)
+
+    init(rawValue: String) {
+        let parts = rawValue.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let type = ProviderType(rawValue: parts[0]), !parts[1].isEmpty else {
+            self = .all
+            return
+        }
+        self = .source(SourceInstanceKey(type: type, id: parts[1]))
+    }
+
+    var rawValue: String {
+        switch self {
+        case .all: ""
+        case .source(let key): key.type.rawValue + ":" + key.id
+        }
     }
 }
 

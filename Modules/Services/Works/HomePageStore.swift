@@ -14,6 +14,9 @@ import Foundation
 ///   never written over: writing it back would drop what this build cannot name.
 @MainActor
 final class HomePageStore: ObservableObject {
+    /// The app's home; the editor (5d) changes the same one the home draws.
+    static let shared = HomePageStore()
+
     @Published private(set) var page: HomePage?
 
     /// Whether saves stay in memory this launch, because the file could not be read or comes
@@ -26,6 +29,23 @@ final class HomePageStore: ObservableObject {
     init(fileURL: URL = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json")) {
         self.fileURL = fileURL
         load()
+    }
+
+    /// The saved home, or the defaults for this reader, saved now so they never change under
+    /// them (5a step 3).
+    ///
+    /// Call it only once the book-source library is read (`ExploreTabModel.isLoaded`): before
+    /// that `mode` cannot tell a reader with sources from a new install, and the wrong order
+    /// would be saved for good. The region is taken as it stands: a public-library section
+    /// saved before the region is known has no row in China, where its provider is hidden.
+    func pageOrDefaults(mode: ExploreMode, publicLibrariesAvailable: Bool) -> HomePage {
+        if let page { return page }
+        let defaults = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable)
+        save(defaults)
+        AppLogger.cache("⟐ explore home starts from its defaults", context: [
+            "mode": mode.rawValue, "publicLibraries": "\(publicLibrariesAvailable)", "sections": "\(defaults.sections.count)",
+        ])
+        return defaults
     }
 
     func save(_ page: HomePage) {

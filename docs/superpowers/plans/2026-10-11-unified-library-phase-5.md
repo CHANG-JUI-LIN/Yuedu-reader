@@ -257,6 +257,23 @@ Phase 1's and Phase 2's guardrails apply. In addition:
 
 **Branch:** `unified-library/5d-section-editor`. Design §13.3 (新增欄目, Rex order).
 
+- [ ] **Step 0: Strings, for the maintainer's review before any code** (proposed 2026-10-11). Reused as they are: 預覽, 隱藏, 顯示, 標題, 刪除, 移除, 目前, 全部, 來源配置, 最新.
+
+  | zh-Hant | zh-Hans | en | ja | ko | Where |
+  |---|---|---|---|---|---|
+  | 編輯首頁 | 编辑首页 | Edit Home | ホームを編集 | 홈 편집 | the home's bar and its page title |
+  | 新增欄目 | 新增栏目 | Add Section | セクションを追加 | 섹션 추가 | 編輯首頁's add row and the new section's page |
+  | 選擇內容來源 | 选择内容来源 | Choose Content Source | コンテンツのソースを選択 | 콘텐츠 소스 선택 | the source picker's title |
+  | 呈現方式 | 呈现方式 | Layout | 表示方法 | 표시 방식 | step 1 of 新增欄目 |
+  | 資料來源 | 数据来源 | Data Source | データソース | 데이터 소스 | the section page's source row |
+  | 參數 | 参数 | Parameters | パラメータ | 매개변수 | the section page's parameters header |
+  | 磚塊 | 砖块 | Tiles | タイル | 타일 | the 我的書庫 layout |
+  | 單列 | 单行 | Single Row | 1列 | 한 줄 | the row layout |
+  | App 資料 | App 数据 | App Data | アプリのデータ | 앱 데이터 | a source picker group |
+  | 書庫 | 书库 | Libraries | ライブラリ | 서재 | a source picker group |
+  | 外部服務 | 外部服务 | External Services | 外部サービス | 외부 서비스 | a source picker group (empty until Phase 3) |
+  | 排除的來源 | 排除的来源 | Excluded Sources | 除外するソース | 제외된 소스 | 最新's section page |
+
 - [ ] 編輯首頁: reorder, hide and remove sections; exclude sources from 最新.
 - [ ] 新增欄目:
   - choose a layout, then configure the section;
@@ -482,3 +499,25 @@ Branch `unified-library/5c4-related`. Open decision 5 (cross-source too) and dec
   - Longest main-actor stall during both loads: 17.6 ms.
 - **Tests:** `RelatedWorksTests` (3) and `RelatedRowTests` (6), with `WorkIndexTests`, `WorkIndexServiceTests`, `WorkIndexRemoteRecordsTests`, `WebDAVFillIntegrationTests`, `WebDAVMetadataFillerTests`, `MetadataResolverTests`, `HomeModelTests`, `LocalHomeRowTests`, `ShelfProviderTests` and `HomeCardTests`: 72 tests in 12 suites passed.
 - **For the maintainer:** whether 相關 grows from every 繼續閱讀 copy (as built) or only the latest one.
+
+### 5c-3: the home is 探索's root (2026-10-11)
+
+Branch `unified-library/5c3-root`. Steps 2, 3, 5 and 6 of Task 5c. **Not merged until the maintainer answers the look question** (5c-2's cards on a real build).
+
+- **`ExploreHome`** is the root (`ExploreTabRoot`), behind the same 「source library read」 gate as before. One `NavigationStack` registers Explore's routes, the libraries' feed, folder and book pages, the store's pages, and the store's card carousel over all of it. Rows are `HomeRowView`s, tiles are `HomeLibraryTiles`.
+- **Defaults, saved once** (`HomePageStore.pageOrDefaults`): the first read saves `HomePageDefaults` for the reader's effective mode. It runs from the row-building task, never while drawing, and only after the library is read, so a reader with sources is never saved with the new-install order. The region is taken as it stands; a public-library section saved before the storefront is known simply has no row in China, where its provider is hidden.
+- **When rows are rebuilt:** the page, the custom pages, the connections, the explore sources, the region or the Aozora catalog changing. Rows read from this device (繼續閱讀, 相關) load again when the home comes back into view (`HomeModel.reloadLocal`), never on a shelf change.
+- **我的書庫:** 瀏覽器, the custom pages, then each connection, Gutenberg, Aozora and each explore source. Browser and custom pages lead, as on the old root: with thousands of book sources they would otherwise sit below every one of them. Not the shelf: Explore has no page for it. Long-press keeps the old actions (rename or delete a custom page, Legado's source actions); ＋ 新增自訂頁 and the 分組 filter stay in the bar. The prompts are one modifier shared with the old root (`customExplorePagePrompts`).
+- **The search field** stays: it narrows 我的書庫's book sources, as the old root's did (「搜索來源配置」). The design does not mention it; dropping it would take away the only way to find one of thousands of sources.
+- **首屏配置** still opens its page on the home, as on the old root.
+- **What opens where** (`ExplorePlace`, one mapping): a tile pushes its source's own page (discover page, root feed, root folder, `GutenbergHomePage`, `AozoraHomePage`); 範圍 shows the same page in place; 查看全部 pushes the whole of a row (a bundled list, the picked category, the feed, Aozora's 新着 or index); chips open their feed, folder or index group. No 查看全部 for 繼續閱讀, 相關 or a WebDAV 最新 (no page lists newest files across folders).
+- **New store pages:** `GutenbergHomePage` (the storefront without Aozora, with 分類 in its bar) and `AozoraHomePage` (新着 and the three indexes). The old root's storefront is the same view (`PublicLibraryStorefront`), so there is one.
+- **範圍** (`explore.scope`, a new key; `explore.mode` stays for the defaults and the old roots): a picker in a menu, 全部, then connections, Gutenberg and Aozora (not in China), and the explore sources in a 來源配置 submenu. One source's page shows at the root with the tab bar; changing scope clears the stack. A stored scope whose source is gone reads as 全部. **Not measured at scale:** a menu holding thousands of sources.
+- **使用舊版探索頁** (`explore.classicRoot`) in 探索設定 brings back the old roots. The old 公有書庫 root had no gear, so it gained one: without it a reader could not switch back. 探索設定 is the page's sheet, so it closes as the switch replaces the page.
+- **DEBUG launch arguments:** `-reset-explore-home` (no saved home, 全部, the home) and `-debug-storefront-country CHN` (poses as a storefront instead of reading the App Store's).
+- **Shelf groups have no tiles yet.** Their page lives inside the shelf (`HomeView`'s pager and folder page, tied to its selection and edit mode); nothing outside the shelf can open one. Asked of the maintainer, not invented.
+- **Tests:**
+  - Unit: `ExploreHomeTests` (7: defaults per reader and saved once, China, scope encoding and availability, tile pages, 查看全部, chips), `HomeModelTests` (+1 `reloadLocal`; the tile test now covers browser, custom pages and no shelf), with `HomeCardTests`, `ExploreItemTargetTests`, `ExploreModeTests`, `CustomExplorePageTests`, `PublicLibraryAvailabilityTests`, `ExploreNavigationAndMetadataTests`: 45 tests in 8 suites passed.
+  - UI `ExploreHomeUITests` (6, new): default sections on a new install; scope to Gutenberg and Aozora in place, kept across a relaunch, back to 全部; Gutenberg and Aozora tiles push their pages; a connection added in 設定 has a tile that pushes its library; China shows no public library in the home or 範圍; 使用舊版探索頁 on and off. All passed.
+  - Updated, not deleted: `PublicLibraryStorefrontUITests` (4) now opens cards from the home's 精選 row and the store's pages from the Gutenberg tile; `PublicLibraryExploreUITests` (2) pins `-explore.classicRoot YES`, since the mode switch and its tip belong to the old roots; with `RemoteLibraryNavigationUITests` (1), 7 passed. `DetailReaderBackSwipeUITests` finds a source by its 我的書庫 tile. Its 23 tests: 13 passed and the same 10 failed as on main (edge back ×4, turn hides menu ×4, menu-up tap, shelf list label), each at the same assertion. Two more failed at first and passed when re-run, neither caused by 5c-3: one test still looked for the old root's tile (fixed), and one launch had restored a custom appearance theme's tab set over the test's (the simulator had been left on a theme pack).
+  - `testConnectionTilePushesItsLibrary` now asserts its cleanup: a run that failed before it had left a connection behind on the simulator.
