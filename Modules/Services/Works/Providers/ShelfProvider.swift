@@ -63,9 +63,9 @@ final class ShelfProvider: CollectionBrowsing {
         items(recentlyOpened(limit: limit))
     }
 
-    private func recentlyOpened(limit: Int) -> [ReadingBook] {
+    private func recentlyOpened(limit: Int, where included: (ReadingBook) -> Bool = \.isInContinueReading) -> [ReadingBook] {
         Array(store.books
-            .compactMap { book in book.isInContinueReading ? book.lastOpenedDate.map { (book, $0) } : nil }
+            .compactMap { book in included(book) ? book.lastOpenedDate.map { (book, $0) } : nil }
             .sorted { $0.1 > $1.1 }
             .prefix(limit)
             .map(\.0))
@@ -87,7 +87,43 @@ final class ShelfProvider: CollectionBrowsing {
         let picked = await Task.detached(priority: .userInitiated) {
             RelatedWorks.pick(in: index, seed: seed, continueReading: continueReading, shown: shown, limit: limit)
         }.value
+        let entries = entries(for: picked, shelf: shelf, files: files)
+        SourcePerfTrace.record("home.related", "continueReading=\(opened.count) works=\(index.works.count) shown=\(entries.count)",
+                               since: started, thresholdMs: 0)
+        return entries
+    }
 
+    /// 系列下一本 (unified library 5d-6b): what `NextInSeries` picks after each book being read
+    /// or read to the end, from the shelf and the WebDAV index. The first load reads the local
+    /// copies' series numbers once (`SeriesNumberBackfill`), so it waits for that pass.
+    func nextInSeries(limit: Int) async -> [CollectionEntry] {
+        let opened = recentlyOpened(limit: limit) { $0.isInContinueReading || $0.isReadToEnd }
+        guard !opened.isEmpty else { return [] }
+        await store.seriesNumberBackfill.runOnce()
+        let started = SourcePerfTrace.now
+        let index = await store.workIndex.current()
+        let files = store.workIndex.indexedFiles
+        // Read after the refresh, so a copy removed meanwhile is not offered.
+        let books = store.books
+        let shelf = Dictionary(books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let shown = Set(shelf.keys.map(SourceItemKey.copy)).union(files.keys)
+        let seeds = opened.map { SourceItemKey.copy($0.id) }
+        let continueReading = Set(books.filter(\.isInContinueReading).map { SourceItemKey.copy($0.id) })
+        let finished = Set(books.filter(\.isReadToEnd).map { SourceItemKey.copy($0.id) })
+        let picked = await Task.detached(priority: .userInitiated) {
+            NextInSeries.pick(in: index, seeds: seeds, continueReading: continueReading, finished: finished,
+                              shown: shown, limit: limit)
+        }.value
+        let entries = entries(for: picked, shelf: shelf, files: files)
+        SourcePerfTrace.record("home.nextInSeries", "seeds=\(seeds.count) works=\(index.works.count) shown=\(entries.count)",
+                               since: started, thresholdMs: 0)
+        return entries
+    }
+
+    /// The picked nodes as items: a shelf copy as the shelf shows it, an indexed file as its
+    /// connection does.
+    private func entries(for picked: [SourceItemKey], shelf: [UUID: ReadingBook],
+                         files: [SourceItemKey: IndexedFile]) -> [CollectionEntry] {
         let roots = webDAVRoots()
         let copies = Dictionary(items(picked.compactMap { key in
             UUID(uuidString: key.item).flatMap { key.instance == .localLibrary ? shelf[$0] : nil }
@@ -95,15 +131,12 @@ final class ShelfProvider: CollectionBrowsing {
             guard case .item(_, _, .copy(let id)) = entry else { return nil }
             return (.copy(id), entry)
         }, uniquingKeysWith: { first, _ in first })
-        let entries = picked.compactMap { key -> CollectionEntry? in
+        return picked.compactMap { key -> CollectionEntry? in
             if let copy = copies[key] { return copy }
             // A file whose connection was removed since the index was built has nowhere to open.
             guard let file = files[key], let root = roots[key.instance.id] else { return nil }
             return WebDAVProvider.item(for: file, root: root, connectionID: key.instance.id)
         }
-        SourcePerfTrace.record("home.related", "continueReading=\(opened.count) works=\(index.works.count) shown=\(entries.count)",
-                               since: started, thresholdMs: 0)
-        return entries
     }
 
     private static func cover(of book: ReadingBook) -> CoverReference {

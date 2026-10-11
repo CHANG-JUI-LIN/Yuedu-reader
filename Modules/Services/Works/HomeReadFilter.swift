@@ -16,6 +16,8 @@ struct HomeReadFilter {
         switch binding {
         case .latest: hidesInLatest
         case .related: hidesInRelated
+        // 系列下一本 never offers a book read to the end: it offers the one after it.
+        case .nextInSeries: false
         default: false
         }
     }

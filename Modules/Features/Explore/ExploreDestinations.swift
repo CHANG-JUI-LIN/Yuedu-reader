@@ -183,7 +183,7 @@ enum ExplorePlace {
         case .aozoraIndex(let kind):
             guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
-        case .myLibrary, .continueReading, .related, .unknown:
+        case .myLibrary, .continueReading, .related, .nextInSeries, .unknown:
             return nil
         }
     }

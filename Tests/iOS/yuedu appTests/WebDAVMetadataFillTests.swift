@@ -33,6 +33,8 @@ enum FillFixtures {
                 <dc:description>地球往事</dc:description>
                 <dc:subject>科幻</dc:subject>
                 <meta property="belongs-to-collection" id="series">地球往事三部曲</meta>
+                <meta refines="#series" property="collection-type">series</meta>
+                <meta refines="#series" property="group-position">1</meta>
               </metadata>
               <manifest>
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
@@ -136,6 +138,9 @@ struct WebDAVMetadataFillerTests {
         #expect(b.identifiers?.contains(.normalized(.isbn13, "9787536692930")!) == true)
         #expect(b.values?.contains { $0.field == .language && $0.value == .texts(["zh-Hans"]) } == true)
         #expect(b.values?.contains { $0.field == .authors && $0.value == .texts(["劉慈欣"]) } == true)
+        // 系列下一本 (5d-6b): the series and the number, from the one reading of the package.
+        #expect(b.values?.filter { $0.field == .series }.map(\.value) == [.text("地球往事三部曲")])
+        #expect(b.values?.contains { $0.field == .seriesIndex && $0.value == .number(1) } == true)
         let cover = try #require(b.cover)
         #expect(try Data(contentsOf: covers.appendingPathComponent(cover)) == FillFixtures.cover)
         #expect(result.records.first { $0.record.key.item == "c.pdf" }?.filled == nil)

@@ -63,15 +63,19 @@ struct WorkIndexEntry: Hashable, Codable, Sendable {
     /// `WorkMatchKey` of the series the record's metadata names, for 相關 (unified library
     /// 5c-4). It never merges works: two books of a series are two works.
     var seriesKey: String?
+    /// The record's number in that series, for 系列下一本 (5d-6b): from the same place as the
+    /// series name, so a name and a number never come from two different series.
+    var seriesIndex: Double?
 
     init(record: SourceRecord, extraIdentifiers: [ExternalIdentifier] = [], language: LanguageTag? = nil,
-         series: String? = nil) {
+         series: String? = nil, seriesIndex: Double? = nil) {
         self.record = record
         self.identifiers = Set(record.identifiers).union(extraIdentifiers).sorted { $0.sortKey < $1.sortKey }
         self.language = language
         self.titleKey = WorkMatchKey.title(record.title)
         self.authorKeys = record.authors.map(WorkMatchKey.author).filter { !$0.isEmpty }
         self.seriesKey = series.map(WorkMatchKey.title).flatMap { $0.isEmpty ? nil : $0 }
+        self.seriesIndex = seriesKey == nil ? nil : seriesIndex
     }
 
     /// The record's node in the index: a copy's own key, which is unique and does not change

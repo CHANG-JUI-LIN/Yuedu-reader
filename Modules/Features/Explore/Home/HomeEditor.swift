@@ -220,6 +220,7 @@ extension View {
 #Preview("編輯中的首頁") {
     let sections = [
         HomeSection(layout: .row, binding: .continueReading),
+        HomeSection(layout: .row, binding: .nextInSeries),
         HomeSection(layout: .row, binding: .gutenbergCollection(id: PublicLibraryCollection.chinese.id), isEnabled: false),
         HomeSection(layout: .row, binding: .related),
     ]

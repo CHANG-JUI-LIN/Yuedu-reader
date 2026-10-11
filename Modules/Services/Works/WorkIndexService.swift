@@ -268,9 +268,10 @@ final class WorkIndexService {
                     case .number, .date: nil
                     }
                 }.first
+                let series = series(in: file.values ?? [], for: file.record)
                 entries.append(WorkIndexEntry(record: file.record, extraIdentifiers: file.identifiers ?? [],
                                               language: language ?? LanguageTag(file.record.language),
-                                              series: series(in: file.values ?? [], for: file.record)))
+                                              series: series?.name, seriesIndex: series?.number))
             }
         }
 
@@ -289,25 +290,41 @@ final class WorkIndexService {
 
     /// A copy's entry: its record, plus the identifiers and language its sidecar holds.
     nonisolated static func entry(for record: SourceRecord, sidecar: ImportedMetadata?) -> WorkIndexEntry {
-        WorkIndexEntry(
+        let series = sidecar.flatMap { series(in: $0.values, for: record) }
+        return WorkIndexEntry(
             record: record,
             extraIdentifiers: sidecar?.identifiers ?? [],
             language: sidecar.flatMap { language(in: $0, for: record) } ?? LanguageTag(record.language),
-            series: sidecar.flatMap { series(in: $0.values, for: record) }
+            series: series?.name,
+            seriesIndex: series?.number
         )
     }
 
-    /// The series name the values give, by `MetadataResolver`'s precedence. The reader's
-    /// override and lock are left out, as they are from the whole index: they would rebuild it
-    /// on every lock.
-    nonisolated static func series(in values: [MetadataValue], for record: SourceRecord) -> String? {
+    /// The series name the values give, by `MetadataResolver`'s precedence, and the number the
+    /// same place gives beside it (5d-6b). A number is never taken from another place: an old
+    /// WebDAV fill and some Calibre books hold a name with no number, and another place's number
+    /// may be in another series. The reader's override and lock are left out, as they are from
+    /// the whole index: they would rebuild it on every lock.
+    nonisolated static func series(in values: [MetadataValue], for record: SourceRecord) -> (name: String, number: Double?)? {
         let resolved = MetadataResolver.resolve(.series, anchor: record.copyKey ?? record.key, copySource: record.key.instance,
                                                 copyValue: nil, values: values, decisions: [])
+        let name: String
         switch resolved?.value {
-        case .text(let name): return name
-        case .texts(let names): return names.first
+        case .text(let text): name = text
+        case .texts(let names):
+            guard let first = names.first else { return nil }
+            name = first
         case .number, .date, nil: return nil
         }
+        guard case .provider(let provider, let sourceItem, _) = resolved?.provenance else { return (name, nil) }
+        let number = values.lazy
+            .filter { $0.field == .seriesIndex && $0.provider == provider && $0.sourceItem == sourceItem }
+            .compactMap { value -> Double? in
+                if case .number(let number) = value.value, number.isFinite { return number }
+                return nil
+            }
+            .first
+        return (name, number)
     }
 
     /// One language per copy, by a fixed priority, never a union: what the copy's own file
@@ -362,9 +379,10 @@ final class WorkIndexService {
 
 /// `Works/index.json`.
 struct WorkIndexFile: Codable, Hashable, Sendable {
-    /// 2: `remoteInputs` (2d). 3: each entry's `seriesKey` (5c-4). A file of an older version is
-    /// discarded and rebuilt; the index is derived.
-    static let currentSchemaVersion = 3
+    /// 2: `remoteInputs` (2d). 3: each entry's `seriesKey` (5c-4). 4: each entry's
+    /// `seriesIndex` (5d-6b). A file of an older version is discarded and rebuilt; the index is
+    /// derived.
+    static let currentSchemaVersion = 4
 
     /// What each copy's entry was built from. A copy whose record and sidecar stamp are the
     /// same next time keeps its entry.

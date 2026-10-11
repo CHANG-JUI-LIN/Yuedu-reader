@@ -41,7 +41,7 @@ enum HomeRow {
 extension ShelfProvider: HomeSectionProviding {
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
         switch section.binding {
-        case .continueReading, .related: .local
+        case .continueReading, .related, .nextInSeries: .local
         default: nil
         }
     }
@@ -50,6 +50,7 @@ extension ShelfProvider: HomeSectionProviding {
         switch section.binding {
         case .continueReading: continueReading(limit: HomeRow.limit)
         case .related: await related(limit: HomeRow.limit)
+        case .nextInSeries: await nextInSeries(limit: HomeRow.limit)
         default: []
         }
     }
