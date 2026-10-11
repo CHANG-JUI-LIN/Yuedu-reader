@@ -3,8 +3,8 @@ import SwiftUI
 /// 探索's root since unified library 5c-3 (design §13.3): the reader's sections, in their order,
 /// across every source — Emby's model under Apple Books' covers (Phase 5 plan, settled
 /// decision 11). 範圍 narrows the same home to one source's books, as switching Emby's library
-/// does (5d-3b, decision 19), and holds every other way in: the custom pages and the browser
-/// (5d-1, settled decision 12, which took 我的書庫 off the home). There is no catalog entry at
+/// does (5d-3b, decision 19), and holds every other way in: the 首頁配置 (5d-4, decision 22) and
+/// the browser (5d-1, settled decision 12, which took 我的書庫 off the home). There is no catalog entry at
 /// the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
 /// they want, and a row's 查看全部 opens the rest of what it shows.
 ///
@@ -12,7 +12,7 @@ import SwiftUI
 ///   feeds, folders and books, the store's pages, and the store's card carousel over it all.
 /// - The page is read once the book-source library is read (`ExploreTabRoot` waits for
 ///   that), and the defaults are saved then, for good (`HomePageStore.pageOrDefaults`).
-/// - Rows are built again when the page, the sources, the connections, the custom pages or
+/// - Rows are built again when the page (or the 首頁配置 chosen), the sources, the connections or
 ///   the region change. Rows read from this device load again when the home comes back into
 ///   view, never on a shelf change: a page turn is one.
 /// - Books are searched from the 搜索 tab. The field that narrowed 我的書庫's book sources went
@@ -33,7 +33,6 @@ private struct ExploreHomeRoot: View {
 
     @StateObject private var model: HomeModel
     @ObservedObject private var pageStore = HomePageStore.shared
-    @ObservedObject private var customPages = CustomExplorePageStore.shared
     @ObservedObject private var sourceStore = BookSourceStore.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
@@ -50,7 +49,7 @@ private struct ExploreHomeRoot: View {
     @State private var coverFrames = PublicLibraryCoverFrames()
     @State private var exploreSources: [BookSource] = []
     @State private var browserPresentation: BrowserPresentation?
-    @State private var pagePrompt: CustomExplorePagePrompt?
+    @State private var configurationPrompt: HomeConfigurationPrompt?
     /// 編輯首頁: the sections drawn as cards to show, hide, reorder and open (5d-2).
     @State private var isEditing = false
 
@@ -113,9 +112,19 @@ private struct ExploreHomeRoot: View {
     }
 
     /// Every section is settled with nothing in it, so the home would be blank: a China
-    /// storefront with no source and nothing read yet, or a source no section draws from.
+    /// storefront with no source and nothing read yet, a source no section draws from, or a
+    /// 首頁配置 with no section shown.
     private var showsNothing: Bool {
         groups.allSatisfy(\.isSettledEmpty)
+    }
+
+    /// The selected 首頁配置 shows no section at all: 空白, or one whose sections are all hidden.
+    private var hasNoSections: Bool {
+        !(pageStore.page?.sections.contains { $0.isEnabled && $0.isEditable } ?? false)
+    }
+
+    private var selectedConfiguration: HomeConfigurationListing? {
+        pageStore.configurations.first { $0.id == pageStore.selectedConfiguration }
     }
 
     // MARK: Body
@@ -124,7 +133,7 @@ private struct ExploreHomeRoot: View {
         NavigationStack(path: $path) {
             home
             .toolbar { toolbar }
-            .customExplorePagePrompts($pagePrompt)
+            .homeConfigurationPrompts($configurationPrompt)
             .fullScreenCover(item: $browserPresentation) { presentation in
                 NavigationStack {
                     BrowserPage(browser: browser, entry: presentation.entry)
@@ -146,6 +155,10 @@ private struct ExploreHomeRoot: View {
         .onAppear {
             model.reloadLocal()
         }
+        // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
+        .onChange(of: pageStore.selectedConfiguration) { _, _ in
+            if isEditing { setEditing(false) }
+        }
         .onReceive(sourceStore.sourcesPublisher) { _ in
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
         }
@@ -159,13 +172,16 @@ private struct ExploreHomeRoot: View {
                 if isEditing {
                     // Every section, whatever 範圍 keeps: 編輯首頁 edits the home itself.
                     HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil, languages: aggregation.readingLanguages),
-                                        openSettings: { path.append(HomeEditRoute.section($0)) }) { group in
+                                        configuration: selectedConfiguration,
+                                        openSettings: { path.append(HomeEditRoute.section($0)) },
+                                        prompt: { configurationPrompt = $0 }) { group in
                         groupHost(group)
                     }
                 } else {
                     ForEach(groups) { group in groupHost(group) }
                 }
-                if model.isReady {
+                // Over a home with nothing drawn, the button is the empty state's own.
+                if model.isReady, isEditing || !showsNothing {
                     // At the end of the home (maintainer, 2026-10-11, decision 18).
                     Button(localized(isEditing ? "完成" : "編輯首頁")) { setEditing(!isEditing) }
                         .buttonStyle(.bordered)
@@ -182,11 +198,22 @@ private struct ExploreHomeRoot: View {
                 ProgressView()
             } else if showsNothing, !isEditing {
                 ContentUnavailableView {
-                    UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
+                    if hasNoSections {
+                        UnavailableLabel(localized("這個首頁配置還沒有欄目"), systemImage: "rectangle.stack")
+                    } else {
+                        UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
+                    }
                 } description: {
-                    if scopeKey == nil {
+                    if hasNoSections {
+                        // Until 新增欄目 (5d-5), the one way to fill a 首頁配置.
+                        Text(localized("長按來源配置的分類，選擇「加入首頁配置」。")).foregroundStyle(DSColor.textSecondary)
+                    } else if scopeKey == nil {
                         Text(localized("從右上角的範圍打開書庫或來源配置。")).foregroundStyle(DSColor.textSecondary)
                     }
+                } actions: {
+                    Button(localized("編輯首頁")) { setEditing(true) }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("home.edit")
                 }
             }
         }
@@ -234,18 +261,18 @@ private struct ExploreHomeRoot: View {
     private var scopeAndPageItems: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             ExploreScopeMenu(scope: Binding(get: { scope }, set: { storedScope = $0.rawValue }),
-                             libraries: libraries, sources: exploreSources, customPages: customPages.pages, showsBrowser: showsBrowser,
-                             openPage: { path.append(ExploreNavigationRoute.customPage(id: $0)) },
+                             libraries: libraries, sources: exploreSources,
+                             configuration: Binding(get: { pageStore.selectedConfiguration }, set: { pageStore.select($0) }),
+                             configurations: pageStore.configurations, showsBrowser: showsBrowser,
                              openBrowser: { openBrowser(.resume) })
         }
-        if scope == .all {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { pagePrompt = .create } label: {
-                    Image(systemName: "plus")
-                        .accessibilityHidden(true)
-                }
-                .accessibilityLabel(localized("新增自訂頁"))
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { configurationPrompt = .create } label: {
+                Image(systemName: "plus")
+                    .accessibilityHidden(true)
             }
+            .accessibilityLabel(localized("新增首頁配置"))
+            .accessibilityIdentifier("home.addConfiguration")
         }
     }
 
@@ -409,16 +436,16 @@ struct LibraryListing: Identifiable, Hashable {
 }
 
 /// 範圍, a picker in a menu (design §13.3), which opens nothing modal. Book sources sit in a
-/// submenu of their own: a reader can have thousands. Below the picker, what is pushed rather
-/// than shown in place: the custom pages and the browser (5d-1).
+/// submenu of their own: a reader can have thousands. Below them, the 首頁配置 picker (5d-4),
+/// then the browser, which is presented rather than shown in place (5d-1).
 private struct ExploreScopeMenu: View {
     @Binding var scope: ExploreScope
     /// In 書庫順序.
     let libraries: [LibraryListing]
     let sources: [BookSource]
-    let customPages: [CustomExplorePage]
+    @Binding var configuration: HomeConfigurationID
+    let configurations: [HomeConfigurationListing]
     let showsBrowser: Bool
-    let openPage: (UUID) -> Void
     let openBrowser: () -> Void
 
     var body: some View {
@@ -444,21 +471,17 @@ private struct ExploreScopeMenu: View {
                     }
                 }
             }
-            if !customPages.isEmpty || showsBrowser {
-                Section {
-                    if !customPages.isEmpty {
-                        Menu {
-                            ForEach(customPages) { page in
-                                Button(page.name) { openPage(page.id) }
-                            }
-                        } label: {
-                            Label(localized("自訂頁"), systemImage: "rectangle.3.group")
-                        }
+            Section(localized("首頁配置")) {
+                Picker(localized("首頁配置"), selection: $configuration) {
+                    ForEach(configurations) { configuration in
+                        Text(configuration.name).tag(configuration.id)
                     }
-                    if showsBrowser {
-                        Button(action: openBrowser) {
-                            Label(localized("瀏覽器"), systemImage: "safari")
-                        }
+                }
+            }
+            if showsBrowser {
+                Section {
+                    Button(action: openBrowser) {
+                        Label(localized("瀏覽器"), systemImage: "safari")
                     }
                 }
             }

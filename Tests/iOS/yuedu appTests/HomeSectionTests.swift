@@ -62,16 +62,6 @@ struct HomeSectionTests {
         #expect(section.binding == .continueReading)
     }
 
-    @Test("a custom-page block reads as a source-categories section with its own id, layout and title")
-    func componentAsSection() {
-        let component = CustomExploreComponent(kind: .ranking, title: "榜", categories: [category])
-        let section = HomeSection(component: component)
-        #expect(section.id == component.id)
-        #expect(section.layout.componentKind == .ranking)
-        #expect(section.title == "榜")
-        #expect(section.binding == .sourceCategories([category]))
-    }
-
     // MARK: - Defaults (design §13.3, lines 700–704)
 
     private func kinds(_ page: HomePage) -> [String] {
@@ -223,14 +213,13 @@ struct HomePageStoreTests {
         #expect(try Data(contentsOf: url) == Data(json.utf8))
     }
 
-    @Test("the custom-page file is not touched")
+    @Test("the custom-page file is read, never written")
     func customPagesUntouched() throws {
         let (folder, cleanup) = try makeFolder()
         defer { cleanup() }
         let pagesURL = folder.appendingPathComponent("custom_explore_pages.json")
-        let pages = CustomExplorePageStore(fileURL: pagesURL)
-        pages.createPage(named: "我的頁")
-        let before = try Data(contentsOf: pagesURL)
+        let before = try JSONEncoder().encode([CustomExplorePage(name: "我的頁")])
+        try before.write(to: pagesURL)
 
         let store = HomePageStore(fileURL: folder.appendingPathComponent("explore_home.json"))
         store.save(HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true))

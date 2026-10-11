@@ -133,6 +133,12 @@
     - **Entry: the 設定 tab only,** as Emby's are in its user settings.
     - Built as 5d-3d (the page and 偏好閱讀語言), then 5d-3e (書庫順序), 5d-3f (顯示在最新), 5d-3g (隱藏已讀).
 
+22. **Answered 2026-10-11, starting 5d-4** (maintainer, by option and in their own words):
+    - **Name: 首頁配置.** The 範圍 menu's section is 首頁配置, ＋ is 新增首頁配置, a category's long press is 加入首頁配置; a bare 「配置」 would read as 來源配置. The reader's own configurations replace 自訂頁, which goes as a name.
+    - **預設 is the home the reader has now,** edited since 5d-2, not a fresh copy of the defaults. Every configuration is edited the same way; 空白 only starts with no section.
+    - **The old custom page and its block editor are deleted now** (recommended option). Until 5d-5's form, a migrated section's category cannot be changed; its order, visibility, layout and removal can, and 加入首頁配置 adds a category.
+    - **新增首頁配置 asks where to start:** 「可以問是要從預設調還是空白」. One alert with the name field, 從預設開始 and 從空白開始.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -833,3 +839,18 @@ The maintainer: 「青空文庫一直連結不上」. `AozoraCatalogStore` reads
 - **Published** (maintainer's choice: the website repository, not a GitHub release): built from the official CSV (Last-Modified 2026-08-21), 17,344 works, `works.json` 9.4 MB, its SHA-256 matching the manifest's. Yuedu-website `4484749`, with a README note on updating it. Live and verified by hash.
 - **The home's pull to refresh now fetches the catalog again** (`aozora.load(forceRefresh:)`), as 青空文庫's own page does. A failed check counts toward the daily check, so a device that got the 404 today would otherwise wait up to a day. The daily check itself is unchanged; its comment's reason (the official site's outage) no longer applies now that the manifest is ours.
 - **Tests (UI, live, opt-in `AOZORA_CATALOG_LIVE_UI`):** `PublicLibraryLiveUITests.testAozoraCatalogFromTheWebsite`: a pull, then 範圍 → 青空文庫 shows its works from the website. Passed on iOS 27.
+
+### 5d-4: 首頁配置 (2026-10-11)
+
+Decision 22. Branch `unified-library/5d4-configurations`.
+
+- **`explore_home.json` is schema 2** (`HomeConfigurations`): 預設's sections stay under the top-level `sections`, beside `configurations` (空白 once edited, then the reader's own), `selected`, and `customPagesPending`. A build before 5d-4 reads a schema-2 file as a newer build's: 預設 only, never written over.
+- **`HomePageStore.page`, `edit` and `save` act on the selected 首頁配置**, so 編輯首頁, a section name's long press and 聚合設定 → 首頁欄目 all edit the one 範圍 shows. Choosing another one, or deleting the one being edited, ends 編輯首頁.
+- **範圍** has a 首頁配置 picker (預設, 空白, the reader's own) where the 自訂頁 submenu was; the browser stays last. ＋ is 新增首頁配置: one alert with the name, 從預設開始 (預設's sections copied under new ids) and 從空白開始. 編輯首頁 ends with a 首頁配置 card: its name, and for the reader's own, 重新命名 and 刪除 (asks first). 預設 and 空白 are neither renamed nor deleted.
+- **An empty 首頁配置** says 「這個首頁配置還沒有欄目」 and how to fill it until 5d-5 (長按來源配置的分類，選擇「加入首頁配置」). The empty state carries 編輯首頁 itself; it used to sit under the overlay.
+- **加入首頁配置** (a category's long press, the category page's menu) adds a 橫向單排書架 of the category to any 首頁配置, ticked where it is already.
+- **The custom pages move in once:** when a schema-1 file is read, or when the first home is made. Each page becomes a 首頁配置 under its own id; blocks map as decision 14 says (多分類排行榜 → one ranked list per category, each under a new id and titled by its category; 錯位瀑布流 → 固定封面網格, which no longer keeps loading; 推薦卡片 loses its intros). A block with too few categories, or of several sources, is logged and left out. The old 首屏頁面 choice of a page (`explore.landing = page:<uuid>`) selects that 首頁配置, then the key goes. A pages file that cannot be read sets `customPagesPending`, and the move is tried again on a later launch; the landing key waits for it. `custom_explore_pages.json` is read, never written or deleted, for older builds; a page such a build adds afterwards does not move in.
+- **Deleted:** the custom page, its editor and block sheet, `CustomExploreBlocks`, `CustomExplorePageModel` (the waterfall's paging), `CustomExplorePageStore` (now `LegacyCustomExplorePages`, read-only), the `customPage`/`customPageEditor` routes, three unused `DSLayout` tokens (the rank badge's became `homeRankBadgeSize`), and 29 strings in each language. Until 5d-5, a moved section's category cannot be changed.
+- **Strings:** +9 (首頁配置, 新增首頁配置, 加入首頁配置, 空白, 從預設開始, 從空白開始, 首頁配置裡的欄目會一起刪除。, 這個首頁配置還沒有欄目, 長按來源配置的分類，選擇「加入首頁配置」。), −29.
+- **Tests:** `HomeConfigurationTests` (mapping; moving from a schema-1 file with the landing; once only; an unreadable pages file waits; a first home; a newer build moves nothing; create, rename, delete and edits on the selected one). `HomeSectionTests`, `SectionPageLoaderTests` lose what tested deleted code. Unit: 16 suites, 86 tests, iOS 27. UI: `ExploreHomeUITests` (all 9, with the new `testConfigurationsAndTheBrowser` and `testCustomPageMovesIn` via `-seed-custom-explore-page`) and `AggregationSettingsUITests.testHomeSections`, on iOS 27 and iOS 17.5.
+- **Not done:** the menu's 首頁配置 section header is not drawn by either OS (the options are separated by a divider only); a newer build's file is read for 預設 alone.

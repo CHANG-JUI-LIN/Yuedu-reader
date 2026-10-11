@@ -433,7 +433,7 @@ struct HomeListRow: View {
                 .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
             VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 if let rank {
-                    CustomExploreRankBadge(rank: rank)
+                    HomeRankBadge(rank: rank)
                         .padding(.bottom, DSSpacing.xxs)
                 }
                 Text(content.title)
@@ -479,5 +479,35 @@ struct HomeListRow: View {
                 }
             }
         }
+    }
+}
+
+/// A rank in a small square: white on red, teal and orange for the top three, grey for
+/// the rest: 圖文資訊清單's ranks (5d-3), as custom pages' rankings had them.
+struct HomeRankBadge: View {
+    let rank: Int
+
+    @ScaledMetric(relativeTo: .caption) private var side = DSLayout.homeRankBadgeSize
+
+    private var fill: Color? {
+        switch rank {
+        case 1: DSColor.rankFirst
+        case 2: DSColor.rankSecond
+        case 3: DSColor.rankThird
+        default: nil
+        }
+    }
+
+    var body: some View {
+        Text(rank.formatted())
+            .font(DSFont.caption.weight(.bold))
+            .monospacedDigit()
+            .foregroundStyle(fill == nil ? DSColor.textSecondary : DSColor.textOnAccent)
+            .padding(.horizontal, DSSpacing.xs)
+            .frame(minWidth: side, minHeight: side)
+            .background(
+                RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous)
+                    .fill(fill ?? DSColor.neutralControlFill)
+            )
     }
 }

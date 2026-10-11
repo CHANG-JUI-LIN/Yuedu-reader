@@ -1,23 +1,40 @@
 import Combine
 import Foundation
 
-/// Unified library 5a: the Explore home, `explore_home.json` beside the custom pages
-/// (Phase 5 plan, decision 2).
+/// Unified library 5a: the Explore home, `explore_home.json`; since 5d-4 every 首頁配置 in it
+/// (`HomeConfigurations`, Phase 5 plan, decision 22).
 ///
-/// - It is read once, when the store is made. `page` is nil until something saves one; the
+/// - It is read once, when the store is made. `home` is nil until something saves one; the
 ///   home decides when to save `HomePageDefaults` (5c).
+/// - `page`, `edit` and `save` act on the selected configuration, so 編輯首頁, a section's long
+///   press and 聚合設定's 首頁欄目 edit whichever one 範圍 shows.
 /// - Writes replace the file atomically on one serial queue.
 /// - A file of this version that does not decode is copied aside
 ///   (`explore_home.corrupt-<mtime>.json`) before anything is written over it.
 /// - A file that cannot be read, or cannot be copied aside, is never written over.
 /// - A file from a newer build is read section by section, skipping what does not decode, and
 ///   never written over: writing it back would drop what this build cannot name.
+/// - The custom pages move in once (5d-4): when a file older than 5d-4 is read, or when the
+///   first home is made. `custom_explore_pages.json` is left where it is.
 @MainActor
 final class HomePageStore: ObservableObject {
     /// The app's home; the editor (5d) changes the same one the home draws.
     static let shared = HomePageStore()
 
-    @Published private(set) var page: HomePage?
+    /// Every configuration; nil until the home is first made.
+    @Published private(set) var home: HomeConfigurations?
+
+    /// The selected configuration's sections.
+    var page: HomePage? {
+        home.map { HomePage(sections: $0.sections(of: $0.selectedID)) }
+    }
+
+    var selectedConfiguration: HomeConfigurationID { home?.selectedID ?? .defaults }
+
+    /// 範圍's 首頁配置: 預設, 空白, then the reader's own.
+    var configurations: [HomeConfigurationListing] {
+        (home ?? HomeConfigurations(sections: [])).listings
+    }
 
     /// Whether saves stay in memory this launch, because the file could not be read or comes
     /// from a newer build.
@@ -28,15 +45,22 @@ final class HomePageStore: ObservableObject {
     private(set) var legacyLatestExcluded: [SourceInstanceKey] = []
 
     private let fileURL: URL
+    private let customPagesURL: URL
+    private let defaults: UserDefaults
     private let queue = DispatchQueue(label: "com.yuedu.explore.home")
 
-    init(fileURL: URL = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json")) {
+    /// - Parameter customPagesURL: the custom pages that move in; beside the home by default.
+    init(fileURL: URL = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json"),
+         customPagesURL: URL? = nil, defaults: UserDefaults = .standard) {
         self.fileURL = fileURL
+        self.customPagesURL = customPagesURL
+            ?? fileURL.deletingLastPathComponent().appendingPathComponent("custom_explore_pages.json")
+        self.defaults = defaults
         load()
     }
 
-    /// The saved home, or the defaults for this reader, saved now so they never change under
-    /// them (5a step 3).
+    /// The selected configuration, or the defaults for this reader as 預設, saved now so they
+    /// never change under them (5a step 3), with the custom pages moved in beside it.
     ///
     /// Call it only once the book-source library is read (`ExploreTabModel.isLoaded`): before
     /// that `mode` cannot tell a reader with sources from a new install, and the wrong order
@@ -44,27 +68,78 @@ final class HomePageStore: ObservableObject {
     /// saved before the region is known has no row in China, where its provider is hidden.
     func pageOrDefaults(mode: ExploreMode, publicLibrariesAvailable: Bool) -> HomePage {
         if let page { return page }
-        let defaults = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable)
-        save(defaults)
+        let defaultPage = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable)
+        var made = HomeConfigurations(sections: defaultPage.sections)
+        if !isReadOnly { moveCustomPages(into: &made) }
+        home = made
+        write()
         AppLogger.cache("⟐ explore home starts from its defaults", context: [
-            "mode": mode.rawValue, "publicLibraries": "\(publicLibrariesAvailable)", "sections": "\(defaults.sections.count)",
+            "mode": mode.rawValue, "publicLibraries": "\(publicLibrariesAvailable)", "sections": "\(defaultPage.sections.count)",
+            "configurations": "\(made.configurations.count)",
         ])
-        return defaults
+        return page ?? defaultPage
     }
 
-    /// 編輯首頁 and a section's long press (5d-2): changes the saved page. Nothing to change
-    /// before the home has read or made one.
+    /// 編輯首頁 and a section's long press (5d-2): changes the selected configuration. Nothing
+    /// to change before the home has read or made one.
     func edit(_ change: (inout HomePage) -> Void) {
         guard var page else { return }
         change(&page)
         save(page)
     }
 
+    /// Replaces the selected configuration's sections; before any home, makes one with them
+    /// as 預設.
     func save(_ page: HomePage) {
-        self.page = page
+        if var home {
+            home.setSections(page.sections, of: home.selectedID)
+            self.home = home
+        } else {
+            home = HomeConfigurations(sections: page.sections)
+        }
+        write()
+    }
+
+    // MARK: 首頁配置
+
+    func select(_ id: HomeConfigurationID) {
+        change { $0.selected = id == .defaults ? nil : id }
+    }
+
+    /// 新增首頁配置, from 預設 or 空白; the new one is selected.
+    func createConfiguration(named name: String, from start: HomeConfigurationID) {
+        change { _ = $0.create(named: name, from: start) }
+    }
+
+    func renameConfiguration(_ id: HomeConfigurationID, to name: String) {
+        change { $0.rename(id, to: name) }
+    }
+
+    func deleteConfiguration(_ id: HomeConfigurationID) {
+        change { $0.delete(id) }
+    }
+
+    /// 加入首頁配置.
+    func addCategory(_ reference: ExploreCategoryReference, to id: HomeConfigurationID) {
+        change { $0.addCategory(reference, to: id) }
+    }
+
+    func contains(_ reference: ExploreCategoryReference, in id: HomeConfigurationID) -> Bool {
+        home?.contains(reference, in: id) ?? false
+    }
+
+    private func change(_ body: (inout HomeConfigurations) -> Void) {
+        guard var home else { return }
+        body(&home)
+        self.home = home
+        write()
+    }
+
+    private func write() {
+        guard let home else { return }
         guard !isReadOnly else {
             AppLogger.cache("⟐ explore home not saved: the file is read-only this launch",
-                            context: ["sections": "\(page.sections.count)"])
+                            context: ["configurations": "\(home.configurations.count)"])
             return
         }
         let url = fileURL
@@ -72,12 +147,12 @@ final class HomePageStore: ObservableObject {
             do {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.sortedKeys]
-                let data = try encoder.encode(page)
+                let data = try encoder.encode(home)
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: url, options: .atomic)
             } catch {
                 AppLogger.cache("⟐ explore home could not be saved", error: error,
-                                context: ["sections": "\(page.sections.count)"])
+                                context: ["sections": "\(home.sections.count)"])
             }
         }
     }
@@ -88,6 +163,31 @@ final class HomePageStore: ObservableObject {
         queue.sync {}
     }
     #endif
+
+    // MARK: - Custom pages
+
+    /// The custom pages as configurations; the 首頁頁面 the reader had chosen, if a page,
+    /// becomes the selected one (the deleted setting, `ExploreSettings.legacyLandingKey`).
+    /// A file that could not be read is tried again on the next launch.
+    private func moveCustomPages(into home: inout HomeConfigurations) {
+        switch LegacyCustomExplorePages.read(customPagesURL) {
+        case .absent:
+            home.customPagesPending = false
+        case .unreadable:
+            home.customPagesPending = true
+            return
+        case .pages(let pages):
+            home.adopt(pages)
+            home.customPagesPending = false
+            AppLogger.cache("⟐ custom pages moved into 首頁配置", context: ["pages": "\(pages.count)"])
+        }
+        let pagePrefix = "page:"
+        if let landing = defaults.string(forKey: ExploreSettings.legacyLandingKey), landing.hasPrefix(pagePrefix) {
+            let id = UUID(uuidString: String(landing.dropFirst(pagePrefix.count))).map(HomeConfigurationID.init)
+            if home.selected == nil, let id, home.configurations.contains(where: { $0.id == id }) { home.selected = id }
+            defaults.removeObject(forKey: ExploreSettings.legacyLandingKey)
+        }
+    }
 
     // MARK: - File
 
@@ -153,15 +253,31 @@ final class HomePageStore: ObservableObject {
             let version = try JSONDecoder().decode(Version.self, from: data).schemaVersion
             if version > HomePage.currentSchemaVersion {
                 let lenient = try JSONDecoder().decode(LenientPage.self, from: data)
-                page = HomePage(sections: lenient.sections)
+                home = HomeConfigurations(sections: lenient.sections)
                 isReadOnly = true
                 AppLogger.cache("⟐ explore home comes from a newer build; reading it without writing", context: [
                     "schemaVersion": "\(version)", "sections": "\(lenient.sections.count)", "skipped": "\(lenient.skipped)",
                 ])
                 return
             }
-            page = try JSONDecoder().decode(HomePage.self, from: data)
-            readLegacyLatestExcluded(data)
+            var read: HomeConfigurations
+            if version < 2 {
+                // Before 5d-4: the one home, which becomes 預設, and the custom pages move in.
+                read = HomeConfigurations(sections: try JSONDecoder().decode(HomePage.self, from: data).sections)
+                readLegacyLatestExcluded(data)
+                moveCustomPages(into: &read)
+                home = read
+                write()
+                return
+            }
+            read = try JSONDecoder().decode(HomeConfigurations.self, from: data)
+            if read.customPagesPending {
+                moveCustomPages(into: &read)
+                home = read
+                if !read.customPagesPending { write() }
+                return
+            }
+            home = read
         } catch {
             AppLogger.cache("⟐ explore home could not be decoded", error: error)
             isReadOnly = !keepAside(data)

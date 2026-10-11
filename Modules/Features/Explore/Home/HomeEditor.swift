@@ -39,22 +39,29 @@ extension HomeSection {
 
 // MARK: - The home, being edited
 
-/// The home's sections as cards, hidden ones included, then 範圍's card.
+/// The home's sections as cards, hidden ones included, then the 首頁配置's card and 範圍's.
 struct HomeEditingSections<RowContent: View>: View {
     /// `HomePage.editableSections`.
     let sections: [HomeSection]
     /// The home's sections as drawn; a hidden section has none.
     let groups: [HomeSectionGroup]
+    /// The 首頁配置 being edited (5d-4).
+    let configuration: HomeConfigurationListing?
     let rowContent: (HomeSectionGroup) -> RowContent
     let openSettings: (UUID) -> Void
+    /// Renaming or deleting the 首頁配置, asked by the home.
+    let prompt: (HomeConfigurationPrompt) -> Void
     @ObservedObject private var pageStore = HomePageStore.shared
     @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
 
-    init(sections: [HomeSection], groups: [HomeSectionGroup], openSettings: @escaping (UUID) -> Void,
+    init(sections: [HomeSection], groups: [HomeSectionGroup], configuration: HomeConfigurationListing?,
+         openSettings: @escaping (UUID) -> Void, prompt: @escaping (HomeConfigurationPrompt) -> Void,
          @ViewBuilder rowContent: @escaping (HomeSectionGroup) -> RowContent) {
         self.sections = sections
         self.groups = groups
+        self.configuration = configuration
         self.openSettings = openSettings
+        self.prompt = prompt
         self.rowContent = rowContent
     }
 
@@ -62,6 +69,7 @@ struct HomeEditingSections<RowContent: View>: View {
         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
             card(section, at: index)
         }
+        if let configuration { configurationCard(configuration) }
         scopeCard
     }
 
@@ -126,6 +134,34 @@ struct HomeEditingSections<RowContent: View>: View {
     private func move(_ id: UUID, to target: Int) {
         guard let from = sections.firstIndex(where: { $0.id == id }), from != target else { return }
         pageStore.edit { $0.moveEditable(fromOffsets: IndexSet(integer: from), toOffset: target > from ? target + 1 : target) }
+    }
+
+    /// The 首頁配置 being edited: its name, and for the reader's own, 重新命名 and 刪除 (5d-4).
+    /// 預設 and 空白 keep theirs.
+    private func configurationCard(_ configuration: HomeConfigurationListing) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            Text(localized("首頁配置"))
+                .font(DSFont.headline)
+                .foregroundStyle(DSColor.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Text(configuration.name)
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textSecondary)
+            if !configuration.id.isBuiltIn {
+                HStack(spacing: DSSpacing.md) {
+                    Button(localized("重新命名")) { prompt(.rename(configuration)) }
+                        .accessibilityIdentifier("homeEditor.renameConfiguration")
+                    Button(localized("刪除"), role: .destructive) { prompt(.delete(configuration)) }
+                        .accessibilityIdentifier("homeEditor.deleteConfiguration")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(DSSpacing.lg)
+        .background(DSColor.surface, in: RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+        .padding(.leading, DSLayout.minimumTapTarget + DSSpacing.sm)
+        .padding(.trailing, DSSpacing.lg)
     }
 
     /// 範圍's own entries: the browser's switch (settled decision 13).
@@ -202,7 +238,9 @@ extension View {
     ]
     ScrollView {
         LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
-            HomeEditingSections(sections: sections, groups: [], openSettings: { _ in }) { _ in EmptyView() }
+            HomeEditingSections(sections: sections, groups: [],
+                                configuration: HomeConfigurationListing(id: HomeConfigurationID(UUID()), name: "週末"),
+                                openSettings: { _ in }, prompt: { _ in }) { _ in EmptyView() }
         }
     }
 }

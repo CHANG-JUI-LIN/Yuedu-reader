@@ -823,7 +823,6 @@
 "類型" = "Type";
 "頻道" = "Channel";
 "平台" = "Platform";
-"尚未啟用支援發現的來源配置" = "No discover-enabled source";
 "發現" = "Discover";
 "換一批" = "Refresh";
 "暫無發現內容" = "No discover content";
@@ -3479,36 +3478,8 @@
 "選擇想看的分區" = "Choose the sections you want to see";
 
 /* 自訂頁 */
-"自訂頁" = "Custom Page";
-"新增自訂頁" = "New Custom Page";
-"加入自訂頁" = "Add to Custom Page";
-"尚未建立自訂頁" = "No custom pages yet";
 "已加入「%@」" = "Added to “%@”";
-"這一頁已被刪除" = "This page was deleted";
-"頁面裡的元件會一起刪除。" = "Its blocks are deleted with it.";
-"還沒有元件" = "No Blocks Yet";
-"加入元件，選來源配置的分類和版面，組出自己的探索頁。" = "Add blocks, each a source's category in a layout you pick, to build your own explore page.";
-"新增元件" = "Add Block";
-"編輯元件" = "Edit Blocks";
-"錯位瀑布流會一直往下載入，固定在最後。" = "The waterfall keeps loading as you scroll, so it stays last.";
-"未選擇" = "None";
-"發現項" = "Discover Item";
-"至少選 2 個分類，在頁面上用標籤切換。" = "Pick at least 2 categories; the page switches between them with tabs.";
 "標題" = "Title";
-"推薦卡片" = "Featured Cards";
-"排行榜" = "Ranking";
-"宮格" = "Grid";
-"左右滑動" = "Carousel";
-"網絡排行榜" = "Paged Chart";
-"多分類排行榜" = "Tabbed Chart";
-"錯位瀑布流" = "Waterfall";
-"一排封面，附書名和簡介" = "A row of covers with titles and intros";
-"前五名的列表，可展開到前十名" = "The top five as a list, expandable to ten";
-"兩排、每排五本的封面" = "Two rows of five covers";
-"只有封面，左右滑動" = "Covers only, swiped sideways";
-"一個榜單分成每欄四本，左右翻頁" = "One chart in columns of four, paged sideways";
-"同一來源配置的幾個分類，用標籤切換" = "Several categories of one source, switched with tabs";
-"三欄卡片，往下捲會一直載入" = "Cards in three columns that keep loading as you scroll";
 
 "TXTEncodingUnsupported" = "Unable to reliably detect the TXT encoding. Save the file as UTF-8 and import it again.";
 
@@ -3643,6 +3614,15 @@
 
 /* Unified library 5d-2: 編輯首頁 */
 "編輯首頁" = "Edit Home";
+"首頁配置" = "Home Configuration";
+"新增首頁配置" = "New Home Configuration";
+"加入首頁配置" = "Add to Home Configuration";
+"空白" = "Blank";
+"從預設開始" = "Start from Default";
+"從空白開始" = "Start Blank";
+"首頁配置裡的欄目會一起刪除。" = "Its sections are deleted with it.";
+"這個首頁配置還沒有欄目" = "This Home Configuration Has No Sections";
+"長按來源配置的分類，選擇「加入首頁配置」。" = "Touch and hold a source’s category, then choose Add to Home Configuration.";
 "在首頁顯示" = "Show on Home";
 "已隱藏" = "Hidden";
 "上移" = "Move Up";

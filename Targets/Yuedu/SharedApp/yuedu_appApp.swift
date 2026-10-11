@@ -80,15 +80,22 @@ struct yuedu_appApp: App {
         // The home as a new install sees it: no saved sections, 範圍 全部, no 聚合設定. Before
         // anything reads `HomePageStore.shared` or `AggregationSettingsStore.shared`.
         if ProcessInfo.processInfo.arguments.contains("-reset-explore-home") {
-            for key in [ExploreSettings.scopeKey, ExploreSettings.showsBrowserKey, AggregationSettingsStore.defaultsKey] {
+            for key in [ExploreSettings.scopeKey, ExploreSettings.showsBrowserKey, AggregationSettingsStore.defaultsKey,
+                        ExploreSettings.legacyLandingKey] {
                 UserDefaults.standard.removeObject(forKey: key)
             }
-            let home = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json")
-            do {
-                if FileManager.default.fileExists(atPath: home.path) { try FileManager.default.removeItem(at: home) }
-            } catch {
-                AppLogger.error("Explore home reset failed: \(error)")
+            for name in ["explore_home.json", "custom_explore_pages.json"] {
+                let file = StorageLocations.applicationSupportRoot.appendingPathComponent(name)
+                do {
+                    if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+                } catch {
+                    AppLogger.error("Explore home reset failed: \(error)")
+                }
             }
+        }
+        // A custom page saved before 5d-4, chosen as the old 首屏頁面, for the move into 首頁配置.
+        if ProcessInfo.processInfo.arguments.contains("-seed-custom-explore-page") {
+            LegacyCustomExplorePages.seedForTesting()
         }
         #endif
         // First launch only, and only once the library is read: the read runs off the main

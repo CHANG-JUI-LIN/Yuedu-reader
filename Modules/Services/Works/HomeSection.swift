@@ -54,7 +54,7 @@ enum HomeSectionBinding: Hashable, Sendable {
     /// 顯示在最新 turns off (5d-3f, decision 21). Until 5d-3f the section kept its own
     /// `excluded` list; `HomePageStore.legacyLatestExcluded` reads it for the move.
     case latest
-    /// Categories of one book source: today's custom-page block.
+    /// Categories of one book source: 加入首頁配置's, and a custom page's block moved in (5d-4).
     case sourceCategories([ExploreCategoryReference])
     case opdsFeed(connectionID: String, url: String)
     /// A list bundled with the app (`PublicLibraryCollection`); sends no request.
@@ -147,7 +147,7 @@ extension HomeSectionBinding: Codable {
     }
 }
 
-/// One section of the home, or one block of a custom page read as a section.
+/// One section of the home.
 struct HomeSection: Codable, Hashable, Identifiable, Sendable {
     var id: UUID
     var layout: HomeSectionLayout
@@ -170,12 +170,6 @@ struct HomeSection: Codable, Hashable, Identifiable, Sendable {
         self.parameters = parameters
     }
 
-    /// A custom-page block, which stays stored in its own format (plan decision 2).
-    init(component: CustomExploreComponent) {
-        self.init(id: component.id, layout: HomeSectionLayout(component.kind), title: component.title,
-                  binding: .sourceCategories(component.categories))
-    }
-
     private enum CodingKeys: String, CodingKey {
         case id, layout, title, binding, isEnabled, parameters
     }
@@ -191,9 +185,12 @@ struct HomeSection: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-/// The home: its sections, in the reader's order.
+/// One 首頁配置's sections, in the reader's order. Before 5d-4 this was the whole file; the
+/// file is `HomeConfigurations` now, which keeps 預設's sections under the same key.
 struct HomePage: Codable, Hashable, Sendable {
-    static let currentSchemaVersion = 1
+    /// `explore_home.json`'s version: 2 since 5d-4's 首頁配置. A build before them reads a file
+    /// of 2 as a newer build's: 預設's sections, without writing.
+    static let currentSchemaVersion = 2
 
     var schemaVersion: Int
     var sections: [HomeSection]
