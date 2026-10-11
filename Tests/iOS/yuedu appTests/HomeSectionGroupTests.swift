@@ -46,7 +46,7 @@ struct HomeSectionGroupTests {
 
     @Test("最新's rows are one section, their books taking turns in provider order")
     func latestIsOneSection() {
-        let latest = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let latest = HomeSection(layout: .row, binding: .latest)
         let reading = HomeSection(layout: .readingCard, binding: .continueReading)
         let rows = [
             row(reading, .localLibrary, .loaded([])),
@@ -62,7 +62,7 @@ struct HomeSectionGroupTests {
 
     @Test("a section shows books as soon as one source has some; else it loads, fails, or takes no room")
     func mergedState() {
-        let latest = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let latest = HomeSection(layout: .row, binding: .latest)
         func state(_ states: [HomeModel.RowState]) -> HomeModel.RowState {
             let sources = [gutenberg, aozora, SourceInstanceKey(type: .opds, id: "c")]
             return HomeScopeFilter.groups(zip(sources, states).map { row(latest, $0, $1) }, in: nil)[0].state
@@ -79,7 +79,7 @@ struct HomeSectionGroupTests {
     func scopeFilters() {
         let reading = HomeSection(layout: .readingCard, binding: .continueReading)
         let featured = HomeSection(layout: .row, binding: .gutenbergCollection(id: "chinese"))
-        let latest = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let latest = HomeSection(layout: .row, binding: .latest)
         let rows = [
             row(reading, .localLibrary, .loaded([
                 shelfCopy(of: gutenberg, title: "紅樓夢"), shelfCopy(of: aozora, title: "こころ"),

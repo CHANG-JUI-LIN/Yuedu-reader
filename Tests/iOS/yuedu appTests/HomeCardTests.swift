@@ -29,8 +29,8 @@ struct HomeCardTests {
         }
         #expect(title(.continueReading) == localized("繼續閱讀"))
         // 最新 is one section whatever the sources (decision 19).
-        #expect(title(.latest(excluded: []), name: "NAS", rows: 2) == localized("最新"))
-        #expect(title(.latest(excluded: []), name: "NAS") == localized("最新"))
+        #expect(title(.latest, name: "NAS", rows: 2) == localized("最新"))
+        #expect(title(.latest, name: "NAS") == localized("最新"))
 
         let collection = PublicLibraryCollection.all[0]
         #expect(title(.gutenbergCollection(id: collection.id), name: "Project Gutenberg") == localized(collection.titleKey))

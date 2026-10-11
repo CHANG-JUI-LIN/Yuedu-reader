@@ -785,3 +785,15 @@ Branch `unified-library/5d3e-library-order`. Decision 21's `OrderedViews`.
 - **Strings:** 書庫, 書庫順序, 第 %d 個, the footer, in five languages.
 - **Tests (unit):** `LibraryOrderTests` (new, 5: the default order and China, the reader's order with one added and one gone, the shelf and book sources keeping their places, 最新's turns, old settings decoding and the store). With the home suites, `ReadingLanguagesTests` and `PublicLibraryRegistryTests`: 54/54 in 9 suites (iOS 27).
 - **Tests (UI):** `AggregationSettingsUITests.testLibraryOrder` (new: drags 青空文庫 above Gutenberg, then checks 瀏覽書庫 and 範圍 list it first). iOS 27: `AggregationSettingsUITests` 2/2, `ExploreHomeUITests` 7/7, `HomeEditorUITests` 3/3. iOS 17.5: `AggregationSettingsUITests` 2/2, `testScopeFiltersTheHomeAndBack`.
+
+### 5d-3f: 顯示在最新 (2026-10-11)
+
+Branch `unified-library/5d3f-show-in-latest`. Decision 21's `LatestItemsExcludes`, which replaces 最新's 排除的來源: one place, not two.
+
+- **聚合設定 → 顯示在最新:** a switch per library, in 書庫順序 (saved connections, Gutenberg, 青空文庫). Off: that library gets no 最新 row and is not asked for one. The home builds its rows again when a switch changes (`HomeModel.sync(with:hiddenFromLatest:)`).
+- **The 最新 section no longer has a list of its own.** `HomeSectionBinding.latest` has no `excluded` value, and the section's page in 編輯首頁 loses 排除的來源; the string is gone from the five tables.
+- **Moving the old list:** `HomePageStore` reads a pre-5d-3f file's `excluded` once (`legacyLatestExcluded`); `AggregationSettingsStore.shared` adopts its libraries as 顯示在最新 off, only while that was never set, and logs it. The file drops the list the next time it is saved; an older build reads such a file as nothing excluded.
+- **Book sources** are not listed: one serves 最新 only through the category picked for it in the section (`latestCategory`, which 5d-5's form will offer), so a book source in an old list is not moved.
+- **Not covered:** a WebDAV connection has a switch but no 最新 row until its books are indexed, as before.
+- **Tests (unit):** `ShowInLatestTests` (new, 3: an old home file reads, hands its list over and loses it once saved; the libraries move once and never over the reader's choice; the switch is saved). `HomeModelTests` now hide sources through `sync(hiddenFromLatest:)`; the 排除的來源 editing test is gone. With the home suites: 71/71 in 13 suites (iOS 27).
+- **Tests (UI):** `ExploreHomeUITests.testShowInLatestOff` (new: Gutenberg off in 聚合設定, then its fixture book is not on the home; `testGutenbergLatestLoadsWithTheHome` shows the same scroll finds it when on). iOS 27: `AggregationSettingsUITests` 2/2, `ExploreHomeUITests` 8/8, `HomeEditorUITests` 3/3. iOS 17.5: `testShowInLatestOff`, `AggregationSettingsUITests` 2/2, `HomeEditorUITests` 3/3.

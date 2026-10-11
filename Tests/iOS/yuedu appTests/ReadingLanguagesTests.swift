@@ -51,7 +51,7 @@ struct ReadingLanguagesTests {
 
     @Test("a section's books are ordered after 最新's turns; 繼續閱讀 keeps its recency")
     func sectionsOrdered() {
-        let latest = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let latest = HomeSection(layout: .row, binding: .latest)
         let reading = HomeSection(layout: .compactReadingCard, binding: .continueReading)
         let a = SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue)
         let b = SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue)

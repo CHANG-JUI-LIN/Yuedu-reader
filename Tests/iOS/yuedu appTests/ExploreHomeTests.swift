@@ -137,14 +137,14 @@ struct ExploreHomeTests {
         // A book source's 「最新」 is the category picked for it; none picked, no page.
         let source = SourceInstanceKey(type: .bookSource, id: "https://src.test")
         let category = ExploreCategoryReference(sourceURL: "https://src.test", title: "最新", url: "https://src.test/new")
-        var section = HomeSection(layout: .row, binding: .latest(excluded: []))
+        var section = HomeSection(layout: .row, binding: .latest)
         section.setLatestCategory(category, forSourceURL: "https://src.test")
-        #expect(ExplorePlace.showAll(row(.latest(excluded: []), source: source, parameters: section.parameters), aozoraIndex: nil)
+        #expect(ExplorePlace.showAll(row(.latest, source: source, parameters: section.parameters), aozoraIndex: nil)
                 == .explore(.sourceCategory(category)))
-        #expect(ExplorePlace.showAll(row(.latest(excluded: []), source: source), aozoraIndex: nil) == nil)
+        #expect(ExplorePlace.showAll(row(.latest, source: source), aozoraIndex: nil) == nil)
 
         // A WebDAV library's newest files come from every folder; no page lists them.
-        #expect(ExplorePlace.showAll(row(.latest(excluded: []), source: SourceInstanceKey(type: .webDAV, id: "d")),
+        #expect(ExplorePlace.showAll(row(.latest, source: SourceInstanceKey(type: .webDAV, id: "d")),
                                      aozoraIndex: nil) == nil)
         // Aozora's pages need its catalog.
         #expect(ExplorePlace.showAll(row(.aozoraNew, source: SourceInstanceKey(type: .aozora, id: "aozora")),
@@ -156,7 +156,7 @@ struct ExploreHomeTests {
         let opds = row(.opdsFeed(connectionID: "c", url: "https://feed.test/opds"), source: SourceInstanceKey(type: .opds, id: "c"))
         #expect(ExplorePlace.page(of: CollectionLocation(id: "https://feed.test/new", title: "新書"), in: opds, aozoraIndex: nil)
                 == .feed(OPDSFeedRoute(catalogID: "c", url: "https://feed.test/new", title: "新書")))
-        let dav = row(.latest(excluded: []), source: SourceInstanceKey(type: .webDAV, id: "d"))
+        let dav = row(.latest, source: SourceInstanceKey(type: .webDAV, id: "d"))
         #expect(ExplorePlace.page(of: CollectionLocation(id: "https://dav.test/books/", title: "books"), in: dav, aozoraIndex: nil)
                 == .folder(WebDAVDirectoryRoute(connectionID: "d", url: URL(string: "https://dav.test/books/")!, title: "books")))
         #expect(ExplorePlace.page(of: CollectionLocation(id: "group/小說", title: "小說"),

@@ -61,7 +61,9 @@ final class HomeModel: ObservableObject {
     ///   section's new title and layout (呈現方式, 5d-3).
     /// - A row whose content changed under the same id starts again at once if it had been
     ///   asked for: its view is the same view, so nothing else would ask again.
-    func sync(with page: HomePage) async {
+    /// - `hiddenFromLatest`: the libraries 聚合設定's 顯示在最新 turns off (5d-3f). They get
+    ///   no 最新 row, so they are not asked for one.
+    func sync(with page: HomePage, hiddenFromLatest: Set<SourceInstanceKey> = []) async {
         await waitForSources()
         let available = makeProviders()
         let existing = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -72,7 +74,7 @@ final class HomeModel: ObservableObject {
             if case .myLibrary = section.binding { continue }
             let serving: [any HomeSectionProviding]
             if case .latest = section.binding {
-                serving = available.filter { $0.loadPolicy(for: section) != nil }
+                serving = available.filter { $0.loadPolicy(for: section) != nil && !hiddenFromLatest.contains($0.instance) }
             } else {
                 serving = available.first { $0.loadPolicy(for: section) != nil }.map { [$0] } ?? []
             }
@@ -104,14 +106,6 @@ final class HomeModel: ObservableObject {
     private func isLatest(_ section: HomeSection) -> Bool {
         if case .latest = section.binding { return true }
         return false
-    }
-
-    /// The sources that serve 最新, excluded or not, by name: 排除的來源's choices (5d-2).
-    func latestSources() -> [(key: SourceInstanceKey, name: String)] {
-        let latest = HomeSection(layout: .row, binding: .latest(excluded: []))
-        return makeProviders()
-            .filter { $0.loadPolicy(for: latest) != nil }
-            .map { (key: $0.instance, name: $0.displayName) }
     }
 
     static func rowID(section: UUID, source: SourceInstanceKey) -> String {

@@ -10,7 +10,7 @@ struct HomePageEditingTests {
                                     binding: .unknown(.object(["type": .string("moduleFeed")])))
     private let library = HomeSection(layout: .tiles, binding: .myLibrary)
     private let reading = HomeSection(layout: .row, binding: .continueReading)
-    private let latest = HomeSection(layout: .row, binding: .latest(excluded: []))
+    private let latest = HomeSection(layout: .row, binding: .latest)
     private let related = HomeSection(layout: .row, binding: .related)
 
     @Test("the editor lists the sections a home draws, in order")
@@ -43,16 +43,6 @@ struct HomePageEditingTests {
         #expect(page.sections[1].isEnabled)
         page.removeSection(latest.id)
         #expect(page.sections.map(\.id) == [reading.id, related.id])
-    }
-
-    @Test("排除的來源 changes 最新 alone")
-    func excluded() {
-        let gutenberg = SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue)
-        var page = HomePage(sections: [reading, latest])
-        page.setExcluded([gutenberg], section: latest.id)
-        page.setExcluded([gutenberg], section: reading.id)
-        #expect(page.sections[1].binding == .latest(excluded: [gutenberg]))
-        #expect(page.sections[0].binding == .continueReading)
     }
 
     @Test("an edit saves the page, and does nothing before there is one")

@@ -3,8 +3,8 @@ import SwiftUI
 // Unified library 5d-2: editing the home in place (Phase 5 plan, 5d-2; decisions 14 and 18).
 // 編輯首頁, at the end of the home, turns every section into a card, as the maintainer's
 // reference (Rex's home editor) shows: the mark beside a card shows or hides it, a card is
-// dragged to reorder, and a tap pushes the section's own page (在首頁顯示, 最新's 排除的來源,
-// 刪除), where 5d-5's section form will grow. 完成 ends it. A section name's long press offers
+// dragged to reorder, and a tap pushes the section's own page (在首頁顯示, 刪除), where 5d-5's
+// section form will grow. Which libraries 最新 shows is 聚合設定's 顯示在最新 (5d-3f). 完成 ends it. A section name's long press offers
 // the same edits outside it. Every change goes through `HomePageStore.edit`, so the home
 // builds its rows again from the saved page.
 
@@ -14,10 +14,10 @@ enum HomeEditRoute: Hashable {
 
 extension View {
     /// A section's page, in the home's stack.
-    func homeEditDestinations(model: HomeModel) -> some View {
+    func homeEditDestinations() -> some View {
         navigationDestination(for: HomeEditRoute.self) { route in
             switch route {
-            case .section(let id): HomeSectionPage(sectionID: id, model: model)
+            case .section(let id): HomeSectionPage(sectionID: id)
             }
         }
     }
@@ -148,7 +148,6 @@ struct HomeEditingSections<RowContent: View>: View {
 
 struct HomeSectionPage: View {
     let sectionID: UUID
-    let model: HomeModel
     @ObservedObject private var pageStore = HomePageStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsDelete = false
@@ -166,9 +165,6 @@ struct HomeSectionPage: View {
                         set: { isEnabled in pageStore.edit { $0.setEnabled(isEnabled, section: sectionID) } }))
                 }
                 .interfaceSectionSurface()
-                if case .latest(let excluded) = section.binding {
-                    excludedSources(excluded)
-                }
                 Section {
                     Button(localized("刪除"), role: .destructive) { confirmsDelete = true }
                         .accessibilityIdentifier("homeSection.delete")
@@ -183,33 +179,6 @@ struct HomeSectionPage: View {
             dismiss()
             pageStore.edit { $0.removeSection(sectionID) }
         }
-    }
-
-    /// The sources that serve 最新; a checked one has no 最新 row. A source excluded and since
-    /// removed stays in the list, unseen, so it stays excluded if it comes back.
-    private func excludedSources(_ excluded: [SourceInstanceKey]) -> some View {
-        Section(localized("排除的來源")) {
-            ForEach(model.latestSources(), id: \.key) { source in
-                let isExcluded = excluded.contains(source.key)
-                Button {
-                    let changed = isExcluded ? excluded.filter { $0 != source.key } : excluded + [source.key]
-                    pageStore.edit { $0.setExcluded(changed, section: sectionID) }
-                } label: {
-                    HStack {
-                        Text(source.name).foregroundStyle(DSColor.textPrimary)
-                        Spacer()
-                        if isExcluded {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(DSColor.accent)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                }
-                .accessibilityAddTraits(isExcluded ? .isSelected : [])
-                .accessibilityIdentifier("homeSection.exclude.\(source.key.type.rawValue).\(source.key.id)")
-            }
-        }
-        .interfaceSectionSurface()
     }
 }
 

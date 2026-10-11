@@ -109,10 +109,10 @@ enum HomeDesignFixtureData {
                 name: localized("Project Gutenberg"), policy: .local, state: .loading),
             row(.aozoraIndex(kind: AozoraBrowseMode.authors.rawValue), source: aozora, name: localized("青空文庫"),
                 policy: .local, state: .loaded(authors)),
-            row(.latest(excluded: []), source: aozora, name: localized("青空文庫"), policy: .local, state: .loading),
-            row(.latest(excluded: []), source: gutenberg, name: localized("Project Gutenberg"), policy: .withHome,
+            row(.latest, source: aozora, name: localized("青空文庫"), policy: .local, state: .loading),
+            row(.latest, source: gutenberg, name: localized("Project Gutenberg"), policy: .withHome,
                 state: .loading),
-            row(.latest(excluded: []), source: SourceInstanceKey(type: .calibre, id: "fixture-calibre"), name: "Calibre",
+            row(.latest, source: SourceInstanceKey(type: .calibre, id: "fixture-calibre"), name: "Calibre",
                 policy: .parallel, state: .failed(URLError(.timedOut).localizedDescription)),
         ]
     }()

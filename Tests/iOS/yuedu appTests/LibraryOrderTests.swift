@@ -54,7 +54,7 @@ struct LibraryOrderTests {
 
     @Test("最新's books take turns in 書庫順序; book sources after")
     func latestTakesTurnsInOrder() {
-        let latest = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let latest = HomeSection(layout: .row, binding: .latest)
         func row(_ key: SourceInstanceKey, _ entries: [CollectionEntry]) -> HomeModel.Row {
             HomeModel.Row(id: HomeModel.rowID(section: latest.id, source: key), section: latest, source: key,
                           sourceName: "", policy: .parallel, state: .loaded(entries))

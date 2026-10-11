@@ -123,21 +123,17 @@ struct HomeModelTests {
         #expect(a.loads.count == 1)
     }
 
-    @Test("excluding one source from 最新 keeps the other sources' rows loaded")
+    @Test("turning 顯示在最新 off for one source keeps the other sources' rows loaded")
     func exclusionKeepsOtherRows() async {
         let a = FakeProvider("a") { _ in .parallel }
-        let b = FakeProvider("b", type: .opds) { section in
-            if case .latest(let excluded) = section.binding, !excluded.contains(SourceInstanceKey(type: .opds, id: "b")) { return .parallel }
-            return nil
-        }
+        let b = FakeProvider("b", type: .opds) { _ in .parallel }
         let home = model([a, b])
-        var section = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let section = HomeSection(layout: .row, binding: .latest)
         await home.sync(with: HomePage(sections: [section]))
         for row in rows(home) { home.load(row.id) }
         await until(home) { $0.allSatisfy { isLoaded($0.state) } }
 
-        section.binding = .latest(excluded: [b.instance])
-        await home.sync(with: HomePage(sections: [section]))
+        await home.sync(with: HomePage(sections: [section]), hiddenFromLatest: [b.instance])
         #expect(rows(home).map(\.source.id) == ["a"])
         #expect(isLoaded(rows(home)[0].state))
         #expect(a.loads.count == 1)
@@ -158,21 +154,17 @@ struct HomeModelTests {
         #expect(a.loads.count == 2)
     }
 
-    @Test("「最新」 is one row per source that serves it, in provider order, skipping the excluded")
+    @Test("「最新」 is one row per source that serves it, in provider order, skipping those 顯示在最新 turns off")
     func latestExpands() async {
         let a = FakeProvider("a") { _ in .serialPerSource }
-        let b = FakeProvider("b", type: .opds) { section in
-            if case .latest(let excluded) = section.binding, !excluded.contains(SourceInstanceKey(type: .opds, id: "b")) { return .parallel }
-            return nil
-        }
+        let b = FakeProvider("b", type: .opds) { _ in .parallel }
         let c = FakeProvider("c", type: .aozora) { _ in nil }
         let home = model([a, b, c])
-        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .latest(excluded: []))]))
+        let page = HomePage(sections: [HomeSection(layout: .row, binding: .latest)])
+        await home.sync(with: page)
         #expect(rows(home).map(\.source.id) == ["a", "b"])
 
-        await home.sync(with: HomePage(sections: [
-            HomeSection(layout: .row, binding: .latest(excluded: [SourceInstanceKey(type: .opds, id: "b")])),
-        ]))
+        await home.sync(with: page, hiddenFromLatest: [SourceInstanceKey(type: .opds, id: "b")])
         #expect(rows(home).map(\.source.id) == ["a"])
     }
 
@@ -314,7 +306,7 @@ struct HomeModelTests {
         let home = model([shelf, feed])
         await home.sync(with: HomePage(sections: [
             HomeSection(layout: .row, binding: .continueReading),
-            HomeSection(layout: .row, binding: .latest(excluded: [])),
+            HomeSection(layout: .row, binding: .latest),
         ]))
         home.reloadLocal()
         #expect(shelf.loads.isEmpty, "a row never shown is not loaded")
@@ -333,7 +325,7 @@ struct HomeModelTests {
         let a = FakeProvider("a", type: .opds) { _ in .parallel }
         a.failure = RowFailed()
         let home = model([a])
-        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .latest(excluded: []))]))
+        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .latest)]))
         let row = try #require(rows(home).first)
 
         home.load(row.id)
@@ -348,7 +340,7 @@ struct HomeModelTests {
     func syncKeepsRows() async throws {
         let a = FakeProvider("a", type: .opds) { _ in .parallel }
         let home = model([a])
-        let section = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let section = HomeSection(layout: .row, binding: .latest)
         await home.sync(with: HomePage(sections: [section]))
         let row = try #require(rows(home).first)
         home.load(row.id)
@@ -372,7 +364,7 @@ struct HomeModelTests {
         await home.sync(with: HomePage(sections: [
             HomeSection(layout: .row, binding: .gutenbergCollection(id: collection.id)),
             HomeSection(layout: .row, binding: .gutenbergFeed(url: "https://www.gutenberg.org/ebooks.opds/")),
-            HomeSection(layout: .row, binding: .latest(excluded: [])),
+            HomeSection(layout: .row, binding: .latest),
         ]))
         #expect(rows(home).map(\.policy) == [.local, .withHome, .withHome])
         home.load(rows(home)[0].id)
@@ -399,7 +391,7 @@ struct HomeModelTests {
         availability.receive(countryCode: "CHN")
         let gutenberg = GutenbergProvider(availability: availability) { _ in OPDSFeed() }
         #expect(gutenberg.loadPolicy(for: HomeSection(layout: .row, binding: .gutenbergCollection(id: "chinese"))) == nil)
-        #expect(gutenberg.loadPolicy(for: HomeSection(layout: .row, binding: .latest(excluded: []))) == nil)
+        #expect(gutenberg.loadPolicy(for: HomeSection(layout: .row, binding: .latest)) == nil)
     }
 }
 
@@ -445,7 +437,7 @@ struct HomeModelSchedulingTests {
                 ])))
             }
         }
-        sections.append(HomeSection(layout: .row, binding: .latest(excluded: books.map(\.instance) + [aozora.instance])))
+        sections.append(HomeSection(layout: .row, binding: .latest))
         for index in 1...3 {
             sections.append(HomeSection(layout: .row, binding: .opdsFeed(connectionID: "o", url: "https://o.test/\(index)")))
         }
@@ -540,20 +532,17 @@ struct BookSourceProviderTests {
         #expect(await calls.log == ["prime"])
     }
 
-    @Test("「最新」 is served only with a picked category, and not when excluded")
+    @Test("「最新」 is served only with a picked category")
     func latest() {
         let source = source()
         let provider = BookSourceProvider(source: source, pageLoader: SectionPageLoader { _, _, _ in [] }, primeCookies: { _ in })
-        var section = HomeSection(layout: .row, binding: .latest(excluded: []))
+        var section = HomeSection(layout: .row, binding: .latest)
         #expect(provider.loadPolicy(for: section) == nil)
 
         section.setLatestCategory(ExploreCategoryReference(sourceURL: source.bookSourceUrl, title: "最新", url: "/new"),
                                   forSourceURL: source.bookSourceUrl)
         #expect(provider.loadPolicy(for: section) == .serialPerSource)
         #expect(section.latestCategory(forSourceURL: source.bookSourceUrl)?.url == "/new")
-
-        section.binding = .latest(excluded: [provider.instance])
-        #expect(provider.loadPolicy(for: section) == nil)
     }
 
     @Test("another source's category is not this source's to serve")
@@ -615,7 +604,7 @@ struct LocalHomeRowTests {
         records.waitForPendingWritesForTesting()
 
         let provider = WebDAVProvider(connection: connection, records: records) { WebDAVBrowseClient(serverUrl: root.absoluteString, username: "", password: "") }
-        let section = HomeSection(layout: .row, binding: .latest(excluded: []))
+        let section = HomeSection(layout: .row, binding: .latest)
         #expect(provider.loadPolicy(for: section) == .local)
         let names = try await provider.load(section).compactMap { entry -> String? in
             if case .item(_, _, .webDAVFile(let file, let id)) = entry, id == connection.id { return file.name }
@@ -681,7 +670,7 @@ struct LocalHomeRowTests {
                 last = now
             }
         }
-        let entries = try await provider.load(HomeSection(layout: .row, binding: .latest(excluded: [])))
+        let entries = try await provider.load(HomeSection(layout: .row, binding: .latest))
         let elapsed = clock.now - start
         ticking.cancel()
         print("⏱ home.webdav.latest files=20000 elapsed=\(elapsed) mainActorLongestGap=\(longestGap)")

@@ -54,8 +54,8 @@ final class BookSourceProvider: HomeSectionProviding {
         switch section.binding {
         case .sourceCategories(let references):
             return references.first { $0.sourceURL == source.bookSourceUrl }
-        case .latest(let excluded):
-            return excluded.contains(instance) ? nil : section.latestCategory(forSourceURL: source.bookSourceUrl)
+        case .latest:
+            return section.latestCategory(forSourceURL: source.bookSourceUrl)
         default:
             return nil
         }
