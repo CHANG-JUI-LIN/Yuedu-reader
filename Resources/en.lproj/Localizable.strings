@@ -3695,3 +3695,8 @@
 "閱讀背景圖的透明度與模糊沒有對應設定，已以原圖套用。" = "The reading background's transparency and blur have no equivalent setting, so the original picture was applied.";
 "高亮規則" = "Highlight Rule";
 "高亮規則的下列樣式沒有對應設定，已略過：%@" = "These highlight rule styles have no equivalent setting and were skipped: %@";
+
+/* Unified library 5f: 作品詳情 */
+"作品詳情" = "Work Details";
+"目前沒有可閱讀的來源" = "No source to read this from";
+"查看來源詳情" = "View Source Details";

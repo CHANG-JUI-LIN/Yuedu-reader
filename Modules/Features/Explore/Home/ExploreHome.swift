@@ -45,8 +45,6 @@ private struct ExploreHomeRoot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var path = NavigationPath()
-    @State private var selection: PublicLibraryBookSelection?
-    @State private var coverFrames = PublicLibraryCoverFrames()
     @State private var exploreSources: [BookSource] = []
     @State private var browserPresentation: BrowserPresentation?
     @State private var configurationPrompt: HomeConfigurationPrompt?
@@ -153,7 +151,11 @@ private struct ExploreHomeRoot: View {
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
         }
-        .publicLibraryBookCarousel(path: $path, request: $selection, coverFrames: coverFrames)
+        // The store's card carousel is off the home for now (Phase 5 plan, decision 27): a store
+        // page's book opens 作品詳情 as the home's cards do. `PublicLibraryBookSheet` stays.
+        .environment(\.openPublicLibraryBooks) { selection in
+            if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
+        }
         .task(id: syncKey) {
             // Saved here, not while drawing: the first read saves the defaults.
             await model.sync(with: pageStore.pageOrDefaults(mode: mode, publicLibrariesAvailable: availability.isAvailable),
@@ -253,7 +255,7 @@ private struct ExploreHomeRoot: View {
 
     private func groupHost(_ group: HomeSectionGroup) -> some View {
         HomeRowHost(group: group, store: store, aozoraIndex: aozora.catalog, model: model,
-                    push: push, select: { selection = $0 },
+                    push: push,
                     openSettings: { path.append(HomeEditRoute.section(group.section.id)) })
     }
 
@@ -323,7 +325,6 @@ private struct HomeRowHost: View {
     let aozoraIndex: AozoraCatalogIndex?
     let model: HomeModel
     let push: (ExplorePush) -> Void
-    let select: (PublicLibraryBookSelection) -> Void
     let openSettings: () -> Void
     @State private var confirmsDelete = false
 
@@ -383,22 +384,11 @@ private struct HomeRowHost: View {
         return { push(target) }
     }
 
-    /// A card opens the page its source opens it on. A public-library book opens the store's
-    /// carousel, the row's other public-library books beside it.
+    /// Every card opens 作品詳情 first, 繼續閱讀's too, as Emby's posters open the item's page
+    /// (Phase 5 plan, decision 27); reading starts from there.
     private func open(_ card: HomeCardContent, _ cards: [HomeCardContent]) {
-        guard let target = ExploreItemTarget(card.opening, aozoraIndex: aozoraIndex) else { return }
-        switch target {
-        case .push(let page):
-            push(page)
-        case .publicLibraryBook(let book):
-            let books = cards.compactMap { other -> PublicLibraryBook? in
-                guard case .publicLibraryBook(let book) = ExploreItemTarget(other.opening, aozoraIndex: aozoraIndex) else {
-                    return nil
-                }
-                return book
-            }
-            PublicLibraryBookSelection(books: books, selectedID: book.id).map(select)
-        }
+        guard let route = card.route else { return }
+        push(.work(route))
     }
 }
 

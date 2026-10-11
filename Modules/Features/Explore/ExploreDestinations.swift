@@ -64,8 +64,10 @@ private struct ExploreRouteDestinations: ViewModifier {
     }
 }
 
-/// Where tapping a home item goes: the page that item's source already opens from its own
-/// screens, so the home adds no second detail page or reader entry.
+/// Where tapping a home item went before 作品詳情 (5f): the page that item's source opens it on
+/// from its own screens, and the store's carousel for a public-library book. Unused while
+/// every card opens 作品詳情 (Phase 5 plan, decision 27); kept with the carousel, which the
+/// maintainer asked to keep for now.
 enum ExploreItemTarget {
     /// Pushed on Explore's stack.
     case push(ExplorePush)
@@ -75,16 +77,15 @@ enum ExploreItemTarget {
 
     /// - Parameter aozoraIndex: the catalog an Aozora work is shown with; nil when it is not
     ///   read, and then an Aozora item opens nothing.
-    init?(_ opening: ItemOpening, aozoraIndex: AozoraCatalogIndex?) {
-        switch opening {
+    init?(_ route: WorkDetailRoute, aozoraIndex: AozoraCatalogIndex?) {
+        switch route.opening {
         case .copy(let id):
             // Explore's own reader route, as the storefront's cards push it (the shelf's card
             // transition belongs to the shelf's stack).
             self = .push(.reader(PublicLibraryReaderRoute(bookID: id)))
-        case .opdsEntry(let entry, let connectionID):
-            self = .push(.remoteBook(RemoteLibraryBookRoute(entry: entry, connectionID: connectionID)))
-        case .webDAVFile(let entry, let connectionID):
-            self = .push(.remoteBook(RemoteLibraryBookRoute(entry: entry, connectionID: connectionID)))
+        case .opdsEntry, .webDAVFile:
+            // A library item's own page is 作品詳情 since its list page went (decision 28).
+            self = .push(.work(route))
         case .gutenberg(let book):
             self = .publicLibraryBook(.gutenberg(book))
         case .aozora(let work):
@@ -98,8 +99,8 @@ enum ExploreItemTarget {
 
 /// A page pushed from the home, each registered on Explore's stack.
 enum ExplorePush: Hashable {
+    case work(WorkDetailRoute)
     case reader(PublicLibraryReaderRoute)
-    case remoteBook(RemoteLibraryBookRoute)
     case explore(ExploreNavigationRoute)
     case feed(OPDSFeedRoute)
     case folder(WebDAVDirectoryRoute)
@@ -108,8 +109,8 @@ enum ExplorePush: Hashable {
     /// Appends the route itself, so it reaches the destination registered for its type.
     func append(to path: inout NavigationPath) {
         switch self {
+        case .work(let route): path.append(route)
         case .reader(let route): path.append(route)
-        case .remoteBook(let route): path.append(route)
         case .explore(let route): path.append(route)
         case .feed(let route): path.append(route)
         case .folder(let route): path.append(route)

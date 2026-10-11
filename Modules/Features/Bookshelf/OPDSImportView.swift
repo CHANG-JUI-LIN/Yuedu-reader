@@ -17,7 +17,8 @@ struct OPDSFeedRoute: Hashable {
 }
 
 extension View {
-    /// The remote-library pages: a feed, a WebDAV folder and a book. Registered once per stack.
+    /// The remote-library pages: a feed, a WebDAV folder and 作品詳情, which every list's book
+    /// opens. Registered once per stack.
     func remoteLibraryDestinations() -> some View {
         modifier(RemoteLibraryDestinations())
     }
@@ -35,9 +36,25 @@ private struct RemoteLibraryDestinations: ViewModifier {
             .navigationDestination(for: WebDAVDirectoryRoute.self) { route in
                 WebDAVDirectoryView(route: route)
             }
-            .navigationDestination(for: RemoteLibraryBookRoute.self) { route in
-                RemoteLibraryBookDetailView(item: route.item)
+            .navigationDestination(for: WorkDetailRoute.self) { route in
+                WorkDetailView(route: route, host: WorkDetailHost())
             }
+    }
+}
+
+/// A remote list's book row, opening 作品詳情. An entry that is not an item (an OPDS entry with
+/// neither a format nor a feed, a file outside the connection's root) has nowhere to go and
+/// is shown as it is.
+struct RemoteLibraryWorkLink<Label: View>: View {
+    let route: WorkDetailRoute?
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        if let route {
+            NavigationLink(value: route, label: label)
+        } else {
+            label()
+        }
     }
 }
 
@@ -311,7 +328,8 @@ struct OPDSFeedView: View {
                 }
             }
         } else {
-            NavigationLink(value: RemoteLibraryBookRoute(entry: entry, connectionID: route.catalogID)) {
+            RemoteLibraryWorkLink(route: SourceProviderRegistry.shared.opdsProvider(catalogID: route.catalogID)
+                .flatMap { WorkDetailRoute(entry, provider: $0) }) {
                 HStack(spacing: DSSpacing.md) {
                     BookCoverImage(
                         coverURL: PublicLibrary.listCoverURL(for: entry, connectionID: route.catalogID)?.absoluteString ?? "",

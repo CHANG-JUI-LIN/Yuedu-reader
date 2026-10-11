@@ -52,9 +52,7 @@ final class WebDAVProvider: CollectionBrowsing {
             if entry.isDirectory {
                 entries.append(.location(CollectionLocation(id: entry.url.absoluteString, title: entry.name)))
             } else if let record = SourceRecord.derived(from: entry, connectionID: connectionID, root: root) {
-                entries.append(.item(record, WorkSummary(title: record.title, authors: [], cover: .generated(seed: record.title),
-                                                         blurb: nil, language: nil, contentKind: record.contentKind),
-                                     .webDAVFile(entry, connectionID: connectionID)))
+                entries.append(.item(record, .webDAV(record), .webDAVFile(entry, connectionID: connectionID)))
             }
         }
         return CollectionPage(entries: entries, next: nil)

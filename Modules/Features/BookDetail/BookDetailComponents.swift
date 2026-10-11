@@ -360,7 +360,8 @@ struct BookDetailHero<Cover: View>: View {
     let author: String
     let meta: String
     let primary: BookDetailAction
-    let secondary: BookDetailAction
+    /// None when the page has no second thing to do (作品詳情 of a book-source result).
+    let secondary: BookDetailAction?
     var authorActions: [BookDetailAuthorAction] = []
     var artworkHeight: CGFloat? = nil
     /// Taps a book source handles through its `callBackJs` (legado `SourceCallBack`); nil
@@ -546,6 +547,11 @@ struct BookDetailHero<Cover: View>: View {
 
     @ViewBuilder
     private var secondaryButton: some View {
+        if let secondary { secondaryButton(secondary) }
+    }
+
+    @ViewBuilder
+    private func secondaryButton(_ secondary: BookDetailAction) -> some View {
         if let tone = embedding?.tone {
             // Apple Books' 試讀: the card's ink over a light veil of itself.
             Button(action: secondary.action) {
@@ -649,8 +655,12 @@ struct BookDetailInfoItem: Identifiable {
     /// A second line under the value. Shown in the accent colour when the item acts.
     var detail: String?
     var action: (() -> Void)?
+    /// A choice made in place, from the item's own menu: 作品詳情's version and format.
+    var choice: BookDetailInfoChoice?
     var accessibilityHint: String?
     var accessibilityInputLabels: [String] = []
+
+    var isInteractive: Bool { action != nil || choice != nil }
 
     /// The current source, opening 換源. 來源 is what the item is, the source name its
     /// value, switching what activating it does; the visible 「換源」 stays reachable
@@ -666,6 +676,17 @@ struct BookDetailInfoItem: Identifiable {
             accessibilityInputLabels: [localized("換源")]
         )
     }
+}
+
+/// The options an information item picks among, shown as a native menu of one `Picker`.
+struct BookDetailInfoChoice {
+    struct Option: Identifiable {
+        let id: String
+        let title: String
+    }
+
+    let options: [Option]
+    let selection: Binding<String>
 }
 
 /// Apple Books' strip of short facts under the hero: equal columns separated by
@@ -717,11 +738,28 @@ struct BookDetailInfoStrip: View {
             .accessibilityHint(item.accessibilityHint ?? "")
             .accessibilityInputLabels(item.accessibilityInputLabels + [item.label])
             .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("detail.info.\(item.id)")
+        } else if let choice = item.choice {
+            Menu {
+                Picker(item.label, selection: choice.selection) {
+                    ForEach(choice.options) { Text($0.title).tag($0.id) }
+                }
+            } label: {
+                cellContent(item)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.label)
+            .accessibilityValue(item.value)
+            .accessibilityHint(item.accessibilityHint ?? "")
+            .accessibilityInputLabels(item.accessibilityInputLabels + [item.label])
+            .accessibilityIdentifier("detail.info.\(item.id)")
         } else {
             cellContent(item)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(item.label)
                 .accessibilityValue(item.value)
+                .accessibilityIdentifier("detail.info.\(item.id)")
         }
     }
 
@@ -737,13 +775,13 @@ struct BookDetailInfoStrip: View {
             if let detail = item.detail {
                 HStack(spacing: DSSpacing.xs) {
                     Text(detail)
-                    if item.action != nil {
-                        Image(systemName: "chevron.right")
+                    if item.isInteractive {
+                        Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
                             .font(DSFont.caption2.weight(.semibold))
                     }
                 }
                 .font(DSFont.caption)
-                .foregroundStyle(item.action == nil ? DSColor.textSecondary : DSColor.accent)
+                .foregroundStyle(item.isInteractive ? DSColor.accent : DSColor.textSecondary)
                 .lineLimit(1)
             }
         }

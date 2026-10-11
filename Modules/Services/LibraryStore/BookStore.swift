@@ -1485,7 +1485,9 @@ class BookStore: ObservableObject, BookProvider {
                 .map { CoverImageSource.bookCover(filename: $0) }
             CoverImagePipeline.shared.invalidate(Set(coverSources))
             records.remove(at: idx)
-            saveMeta()
+            // Its files are gone already: a debounced save lost to an app kill brought the
+            // record back with nothing behind it.
+            saveMetaImmediately()
         }
     }
 

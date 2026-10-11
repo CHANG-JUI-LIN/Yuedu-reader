@@ -1,0 +1,86 @@
+import SwiftUI
+import Combine
+
+/// Reading, shelving or downloading one remote library item, with its progress, its outcome
+/// and its cancellation. 書籍詳情 and 作品詳情 (unified library 5f) both act through it, so a
+/// library item is read one way wherever it is opened.
+@MainActor
+final class RemoteLibraryActionModel: ObservableObject {
+    enum Action {
+        case read, addToShelf, download
+
+        var progressTitle: String {
+            switch self {
+            case .read: localized("正在開啟書籍")
+            case .addToShelf: localized("加入書架")
+            case .download: localized("正在下載書籍")
+            }
+        }
+    }
+
+    @Published private(set) var action: Action?
+    @Published private(set) var message: String?
+    @Published private(set) var failed = false
+    private var task: Task<Void, Never>?
+
+    /// Starts `action` unless one is running. A read hands the copy it opened to `onRead`.
+    func begin(_ action: Action, item: RemoteLibraryItem, format: RemoteLibraryFormat,
+               service: any RemoteLibraryServing, store: BookStore, onRead: @escaping (UUID) -> Void) {
+        guard self.action == nil else { return }
+        begin(action) {
+            switch action {
+            case .read:
+                let book = try await service.read(item: item, format: format, store: store)
+                try Task.checkCancellation()
+                onRead(book.id)
+                return nil
+            case .addToShelf:
+                _ = try service.addToShelf(item: item, format: format, store: store)
+                return localized("已加入書架")
+            case .download:
+                _ = try await service.downloadOffline(item: item, format: format, store: store)
+                try Task.checkCancellation()
+                return localized("下載完成")
+            }
+        }
+    }
+
+    /// Runs `work` as `action`; what it returns is the message to show and announce. 作品詳情
+    /// reads a Gutenberg book's catalog entry inside it, so that wait shows as the action too.
+    func begin(_ action: Action, work: @escaping @MainActor () async throws -> String?) {
+        guard self.action == nil else { return }
+        self.action = action
+        message = nil
+        failed = false
+        task = Task { @MainActor in
+            do {
+                message = try await work()
+            } catch {
+                if Task.isCancelled {
+                    message = localized("已取消")
+                } else {
+                    failed = true
+                    message = error.localizedDescription
+                }
+            }
+            self.action = nil
+            if let message { UIAccessibility.post(notification: .announcement, argument: message) }
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        // Do not start another action until the cancelled service operation has
+        // completed its cleanup and the task above clears the active operation.
+        message = localized("正在取消")
+    }
+
+    /// The page is gone: whatever runs is cancelled, with nothing left to show.
+    func cancelForDisappearance() {
+        task?.cancel()
+    }
+
+    func clearMessage() {
+        message = nil
+    }
+}
