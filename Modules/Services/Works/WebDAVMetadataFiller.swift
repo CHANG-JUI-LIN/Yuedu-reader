@@ -88,17 +88,14 @@ struct WebDAVMetadataFiller: Sendable {
         let fields = ImportedMetadataCapture.epubFields(
             sourceItem: file.record.key, identifiers: package.identifiers, languages: metadata.languages,
             description: metadata.description, subjects: metadata.subjects.map(\.name),
-            publishers: metadata.publishers.map(\.name), published: metadata.published, now: now()
+            publishers: metadata.publishers.map(\.name), published: metadata.published,
+            series: ImportedMetadataCapture.EPUBSeries(metadata), now: now()
         )
         file.identifiers = fields.identifiers
         var values = fields.values
         let authors = metadata.authors.map(\.name).filter { !$0.isEmpty }
         if !authors.isEmpty {
             values.append(MetadataValue(field: .authors, value: .texts(authors), provider: file.record.key.instance,
-                                        sourceItem: file.record.key, fetchedAt: now()))
-        }
-        if let series = metadata.belongsToSeries.first {
-            values.append(MetadataValue(field: .series, value: .text(series.name), provider: file.record.key.instance,
                                         sourceItem: file.record.key, fetchedAt: now()))
         }
         file.values = values

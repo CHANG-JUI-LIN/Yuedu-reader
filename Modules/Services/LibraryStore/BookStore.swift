@@ -243,6 +243,11 @@ class BookStore: ObservableObject, BookProvider {
         store: self,
         directory: metadataFileURL.deletingLastPathComponent().appendingPathComponent("Works", isDirectory: true)
     )
+    /// Unified library 5d-6b: reads the local EPUB copies' series numbers once, for 系列下一本.
+    @MainActor lazy var seriesNumberBackfill = SeriesNumberBackfill(
+        store: self,
+        worksDirectory: metadataFileURL.deletingLastPathComponent().appendingPathComponent("Works", isDirectory: true)
+    )
     /// Whether the last load read both the shelf and the reading records. Only then may a
     /// book missing from `records` be taken as gone, and its list removed.
     private var recordsLoadedCompletely = false
@@ -827,7 +832,8 @@ class BookStore: ObservableObject, BookProvider {
                     description: metadata.description,
                     subjects: metadata.subjects.map(\.name),
                     publishers: metadata.publishers.map(\.name),
-                    published: metadata.published
+                    published: metadata.published,
+                    series: ImportedMetadataCapture.EPUBSeries(metadata)
                 ))
             }
             importTrace(

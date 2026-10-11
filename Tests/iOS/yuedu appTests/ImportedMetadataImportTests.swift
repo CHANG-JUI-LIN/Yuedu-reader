@@ -54,6 +54,9 @@ struct ImportedMetadataImportTests {
         #expect(sidecar.values.contains { $0.field == .language && $0.value == .texts(["zh-Hans"]) })
         #expect(sidecar.values.contains { $0.field == .intro && $0.value == .text("地球往事") })
         #expect(sidecar.values.contains { $0.field == .tags && $0.value == .texts(["科幻"]) })
+        // 系列下一本 (5d-6b): the series and the book's number in it.
+        #expect(sidecar.values.contains { $0.field == .series && $0.value == .text("地球往事") })
+        #expect(sidecar.values.contains { $0.field == .seriesIndex && $0.value == .number(1) })
     }
 
     @Test("deleting a copy removes its sidecar")
@@ -124,6 +127,67 @@ struct ImportedMetadataImportTests {
         #expect(store.importedMetadata.read(copyID: book.id)?.identifiers.contains(.normalized(.isbn13, "9787536692930")!) == true)
     }
 
+    /// Unified library 5d-6b (decision 25): a copy imported before series were read gets its
+    /// series and number from one pass over the shelf, which runs once.
+    @Test("the series pass reads a copy's number into its sidecar, keeps the rest, and runs once")
+    func seriesPassRunsOnce() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
+        let book = try await store.importEpub(url: try await makeEPUB())
+        defer { store.delete(bookId: book.id) }
+        store.importedMetadata.waitForPendingWritesForTesting()
+        // As imported before 5d-6b: the same sidecar without the series.
+        let imported = try #require(store.importedMetadata.read(copyID: book.id))
+        store.importedMetadata.remove(copyID: book.id)
+        var old = imported
+        old.values.removeAll { $0.field == .series || $0.field == .seriesIndex }
+        old.values.append(MetadataValue(field: .publisher, value: .text("另一處"), provider: SourceInstanceKey(type: .calibre, id: "c"),
+                                        sourceItem: nil, fetchedAt: Date()))
+        store.importedMetadata.write(old)
+        store.importedMetadata.waitForPendingWritesForTesting()
+
+        let works = directory.appendingPathComponent("Works", isDirectory: true)
+        let pass = SeriesNumberBackfill(store: store, worksDirectory: works)
+        #expect(!pass.isDone)
+        await pass.runOnce()
+        store.importedMetadata.waitForPendingWritesForTesting()
+        #expect(pass.isDone)
+        let sidecar = try #require(store.importedMetadata.read(copyID: book.id))
+        #expect(sidecar.values.contains { $0.field == .series && $0.value == .text("地球往事") })
+        #expect(sidecar.values.contains { $0.field == .seriesIndex && $0.value == .number(1) })
+        #expect(sidecar.values.contains { $0.field == .publisher && $0.value == .text("另一處") }, "another place's values stay")
+
+        var reread = 0
+        let again = SeriesNumberBackfill(store: store, worksDirectory: works) { _ in reread += 1; return true }
+        await again.runOnce()
+        #expect(reread == 0, "done is kept beside the shelf")
+    }
+
+    @Test("callers during the pass wait for it; it reads only local EPUB copies, and a failed one does not stop it")
+    func seriesPassSingleFlight() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
+        defer { store.waitForQueuedWrites() }
+        let local = [UUID(), UUID()].map {
+            ReadingBook(title: "書\($0)", author: "某", source: "local_epub", contentFilename: "\($0).epub")
+        }
+        let text = ReadingBook(title: "文字", author: "某", source: "local_txt", contentFilename: "\(UUID()).txt")
+        (local + [text]).forEach { store.saveReadingBook($0) }
+        var read: [UUID] = []
+        let pass = SeriesNumberBackfill(store: store, worksDirectory: directory.appendingPathComponent("Works")) { copy in
+            read.append(copy.id)
+            return copy.id != local[0].id
+        }
+        async let first: Void = pass.runOnce()
+        async let second: Void = pass.runOnce()
+        _ = await (first, second)
+        #expect(Set(read) == Set(local.map(\.id)))
+        #expect(read.count == 2, "one pass for both callers")
+        #expect(pass.isDone)
+    }
+
     // MARK: - Helpers
 
     private func hash(_ book: ReadingBook) -> String {
@@ -156,6 +220,9 @@ struct ImportedMetadataImportTests {
                 <dc:language>zh-Hans</dc:language>
                 <dc:description>地球往事</dc:description>
                 <dc:subject>科幻</dc:subject>
+                <meta property="belongs-to-collection" id="series">地球往事</meta>
+                <meta refines="#series" property="collection-type">series</meta>
+                <meta refines="#series" property="group-position">1</meta>
               </metadata>
               <manifest>
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>

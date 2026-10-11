@@ -68,6 +68,9 @@ enum HomeSectionBinding: Hashable, Sendable {
     case aozoraIndex(kind: String)
     /// 相關: same author and series from the shelf.
     case related
+    /// 系列下一本 (5d-6b, decisions 24 and 25): the next numbered book of each series being
+    /// read or read to the end, from the shelf and the WebDAV index (`NextInSeries`).
+    case nextInSeries
     /// A binding a later build wrote, kept exactly as it was read.
     case unknown(PreservedJSON)
 
@@ -84,7 +87,7 @@ extension HomeSectionBinding: Codable {
 
     private enum Kind: String {
         case myLibrary, continueReading, latest, sourceCategories, opdsFeed
-        case gutenbergCollection, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related
+        case gutenbergCollection, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related, nextInSeries
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +112,7 @@ extension HomeSectionBinding: Codable {
         case .aozoraNew: self = .aozoraNew
         case .aozoraIndex: self = .aozoraIndex(kind: try container.decode(String.self, forKey: .kind))
         case .related: self = .related
+        case .nextInSeries: self = .nextInSeries
         }
     }
 
@@ -148,6 +152,8 @@ extension HomeSectionBinding: Codable {
             try container.encode(kind, forKey: .kind)
         case .related:
             try container.encode(Kind.related.rawValue, forKey: .type)
+        case .nextInSeries:
+            try container.encode(Kind.nextInSeries.rawValue, forKey: .type)
         case .unknown:
             break
         }
@@ -222,6 +228,8 @@ enum HomePageDefaults {
                      makeID: () -> UUID = UUID.init) -> HomePage {
         // 精簡閱讀卡片 since 5d-3c (Phase 5 plan, decision 20); 大型閱讀卡片 in 5d-3.
         let continueReading = HomeSection(id: makeID(), layout: .compactReadingCard, binding: .continueReading)
+        // Under 繼續閱讀 (decision 25); empty, it takes no room.
+        let nextInSeries = HomeSection(id: makeID(), layout: .row, binding: .nextInSeries)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest)
         // 古騰堡熱門, Gutenberg's download ranking, before 精選 (decisions 16 and 24). A new
         // install's 預設 only: a saved 預設 is the reader's and is not changed.
@@ -236,9 +244,9 @@ enum HomePageDefaults {
             : []
         switch mode {
         case .bookSources:
-            return HomePage(sections: [continueReading, latest] + popular + featured)
+            return HomePage(sections: [continueReading, nextInSeries, latest] + popular + featured)
         case .publicLibraries:
-            return HomePage(sections: [continueReading] + popular + featured + [latest])
+            return HomePage(sections: [continueReading, nextInSeries] + popular + featured + [latest])
         }
     }
 }

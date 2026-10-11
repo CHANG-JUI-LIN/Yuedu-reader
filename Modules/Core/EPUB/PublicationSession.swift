@@ -663,6 +663,24 @@ final class PublicationSession {
                                      cover: cover, coverMediaType: coverMediaType)
     }
 
+    /// What a local EPUB says about itself (unified library 5d-6b): its metadata and
+    /// identifiers, read from the package as `remotePackageMetadata` reads a remote one. It
+    /// builds no session and writes no spine cache.
+    struct LocalPackageMetadata: @unchecked Sendable {
+        let metadata: Metadata
+        let identifiers: [OPFIdentifier]
+    }
+
+    static func localPackageMetadata(sourceURL: URL) async throws -> LocalPackageMetadata {
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+            throw PublicationSessionError.fileNotFound
+        }
+        let opened = try await openPackage(sourceURL: sourceURL, httpClient: DefaultHTTPClient())
+        defer { opened.publication.close() }
+        return LocalPackageMetadata(metadata: opened.publication.metadata,
+                                    identifiers: opfIdentifiers(in: opened.resources.opfXML))
+    }
+
     private static func makeSession(
         sourceURL: URL,
         opened: (publication: Publication, resources: EPUBPackageResources),

@@ -15,7 +15,7 @@ struct HomeSectionTests {
             .opdsFeed(connectionID: "c1", url: "https://opds.example/new"),
             .gutenbergCollection(id: "chinese"), .gutenbergFeed(url: "https://gutenberg.example/feed"),
             .gutenbergShelf(id: "popular"),
-            .aozoraNew, .aozoraIndex(kind: "authors"), .related,
+            .aozoraNew, .aozoraIndex(kind: "authors"), .related, .nextInSeries,
         ]
     }
 
@@ -73,6 +73,7 @@ struct HomeSectionTests {
             case .latest: "latest"
             case .gutenbergCollection: "featured"
             case .gutenbergShelf("popular"): "popular"
+            case .nextInSeries: "next"
             default: "other"
             }
         }
@@ -81,16 +82,16 @@ struct HomeSectionTests {
     private var featured: [String] { Array(repeating: "featured", count: PublicLibraryCollection.all.count) }
 
     // 我的書庫 left the defaults in 5d-1 (settled decision 12): 範圍 holds the libraries.
-    @Test("book-source readers start from 繼續閱讀 → 最新 → 古騰堡熱門 → 精選")
+    @Test("book-source readers start from 繼續閱讀 → 系列下一本 → 最新 → 古騰堡熱門 → 精選")
     func bookSourceDefaults() {
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true)
-        #expect(kinds(page) == ["continue", "latest", "popular"] + featured)
+        #expect(kinds(page) == ["continue", "next", "latest", "popular"] + featured)
     }
 
-    @Test("public-library readers and new installs start from 繼續閱讀 → 古騰堡熱門 → 精選 → 最新")
+    @Test("public-library readers and new installs start from 繼續閱讀 → 系列下一本 → 古騰堡熱門 → 精選 → 最新")
     func publicLibraryDefaults() {
         let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true)
-        #expect(kinds(page) == ["continue", "popular"] + featured + ["latest"])
+        #expect(kinds(page) == ["continue", "next", "popular"] + featured + ["latest"])
         let lists = page.sections.compactMap { section -> String? in
             if case .gutenbergCollection(let id) = section.binding { return id }
             return nil
@@ -118,7 +119,7 @@ struct HomeSectionTests {
             #expect(!kinds(page).contains("popular"))
         }
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false)
-        #expect(kinds(page) == ["continue", "latest"])
+        #expect(kinds(page) == ["continue", "next", "latest"])
     }
 
     @Test("every default section is enabled, untitled and has its own id")

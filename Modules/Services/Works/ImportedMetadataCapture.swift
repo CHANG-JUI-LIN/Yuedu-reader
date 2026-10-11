@@ -16,10 +16,11 @@ enum ImportedMetadataCapture {
         subjects: [String],
         publishers: [String],
         published: Date?,
+        series: EPUBSeries? = nil,
         now: Date = Date()
     ) -> ImportedMetadata {
         let read = epubFields(sourceItem: sourceItem, identifiers: identifiers, languages: languages, description: description,
-                              subjects: subjects, publishers: publishers, published: published, now: now)
+                              subjects: subjects, publishers: publishers, published: published, series: series, now: now)
         return ImportedMetadata(copyID: copy.id, sourceItem: sourceItem, identifiers: read.identifiers, values: read.values)
     }
 
@@ -33,6 +34,7 @@ enum ImportedMetadataCapture {
         subjects: [String],
         publishers: [String],
         published: Date?,
+        series: EPUBSeries? = nil,
         now: Date = Date()
     ) -> (identifiers: [ExternalIdentifier], values: [MetadataValue]) {
         var values: [MetadataValue] = []
@@ -45,7 +47,30 @@ enum ImportedMetadataCapture {
         add(.tags, texts(subjects))
         add(.publisher, text(publishers.first))
         add(.publishedDate, published.map(MetadataPayload.date))
+        // 系列下一本 (5d-6b) reads the number; one without a series name says nothing.
+        if let series, let name = text(series.name) {
+            add(.series, name)
+            if let position = series.position, position.isFinite { add(.seriesIndex, .number(position)) }
+        }
         return (unique(identifiers.compactMap { classify($0, in: identifiers) }), values)
+    }
+
+    /// The series an EPUB's package names first, and the book's number in it: Calibre's
+    /// `calibre:series`/`series_index`, or EPUB 3's `belongs-to-collection` with
+    /// `group-position`, as Readium reads them (`Metadata.belongsToSeries`).
+    struct EPUBSeries: Hashable, Sendable {
+        var name: String
+        var position: Double?
+
+        init(name: String, position: Double?) {
+            self.name = name
+            self.position = position
+        }
+
+        init?(_ metadata: Metadata) {
+            guard let first = metadata.belongsToSeries.first else { return nil }
+            self.init(name: first.name, position: first.position)
+        }
     }
 
     /// An OPF identifier as an `ExternalIdentifier`: ISBNs as `isbn13`, a Calibre book's uuid
@@ -219,37 +244,47 @@ enum ImportedMetadataCapture {
     }
 }
 
-// MARK: - On demand, for copies imported before 1b
+// MARK: - Reading a copy's package again
 
 extension ImportedMetadataCapture {
     /// Reads a local EPUB copy's OPF and writes its sidecar, when it has none yet. A later
-    /// work page calls this; nothing in Phase 1 does, so no shelf is ever scanned in the
-    /// background (Phase 1 plan, decision 8). Remote copies are skipped: the feed that
-    /// described them is not at hand.
+    /// work page calls this; nothing in Phase 1 does (Phase 1 plan, decision 8).
     @MainActor
     static func captureIfMissing(copy: ReadingBook, store: BookStore) async {
-        guard store.importedMetadata.read(copyID: copy.id) == nil,
-              copy.remoteSource == nil, copy.source == "local_epub" else { return }
+        guard store.importedMetadata.read(copyID: copy.id) == nil else { return }
+        await reread(copy: copy, store: store)
+    }
+
+    /// Reads a local EPUB copy's OPF again and merges what it says into the copy's sidecar
+    /// (`ImportedMetadataStore.write`: a value replaces the same field from the same place).
+    /// Remote copies are skipped: the feed that described them is not at hand. Returns whether
+    /// the package was read; a failure is logged.
+    @MainActor
+    @discardableResult
+    static func reread(copy: ReadingBook, store: BookStore) async -> Bool {
+        guard copy.remoteSource == nil, copy.source == "local_epub" else { return false }
         let url = StorageLocations.bookFile(copy.contentFilename)
-        let session: PublicationSession
+        let package: PublicationSession.LocalPackageMetadata
         do {
-            session = try await PublicationSession.open(sourceURL: url)
+            package = try await PublicationSession.localPackageMetadata(sourceURL: url)
         } catch {
-            AppLogger.cache("⟐ imported metadata: the copy's EPUB could not be opened", error: error,
+            AppLogger.cache("⟐ imported metadata: the copy's EPUB could not be read", error: error,
                             context: ["copy": copy.id.uuidString])
-            return
+            return false
         }
-        let metadata = session.publication.metadata
+        let metadata = package.metadata
         let sourceItem = SourceRecord.derived(from: copy, context: .live()).key
         store.importedMetadata.write(epub(
             copy: copy,
             sourceItem: sourceItem,
-            identifiers: session.opfIdentifiers,
+            identifiers: package.identifiers,
             languages: metadata.languages,
             description: metadata.description,
             subjects: metadata.subjects.map(\.name),
             publishers: metadata.publishers.map(\.name),
-            published: metadata.published
+            published: metadata.published,
+            series: EPUBSeries(metadata)
         ))
+        return true
     }
 }
