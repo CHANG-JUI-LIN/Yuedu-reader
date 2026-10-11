@@ -34,16 +34,7 @@ extension OPDSFeedProviding {
         var entries: [CollectionEntry] = []
         for entry in feed.entries {
             if let made = record(entry) {
-                let summary = WorkSummary(
-                    title: entry.title,
-                    authors: made.authors,
-                    cover: PublicLibrary.listCoverURL(for: entry, connectionID: connectionID)
-                        .map { .remote($0, headers: [:]) } ?? .generated(seed: entry.title),
-                    blurb: entry.summary.map { OPDSClient.plainMetadata($0, limit: WorkSummary.blurbLimit) },
-                    language: entry.language,
-                    contentKind: made.contentKind
-                )
-                entries.append(.item(made, summary, opening(entry)))
+                entries.append(.item(made, .opds(entry, record: made, connectionID: connectionID), opening(entry)))
             } else if let navigation = entry.navigationURL {
                 entries.append(.location(CollectionLocation(id: navigation.absoluteString, title: entry.title)))
             }
@@ -60,6 +51,21 @@ extension OPDSFeedProviding {
     var makeOpening: @Sendable (OPDSEntry) -> ItemOpening {
         let id = instance.id
         return { .opdsEntry($0, connectionID: id) }
+    }
+}
+
+extension WorkSummary {
+    /// What a card and 作品詳情 show of an OPDS item entry.
+    nonisolated static func opds(_ entry: OPDSEntry, record: SourceRecord, connectionID: String) -> WorkSummary {
+        WorkSummary(
+            title: entry.title,
+            authors: record.authors,
+            cover: PublicLibrary.listCoverURL(for: entry, connectionID: connectionID)
+                .map { .remote($0, headers: [:]) } ?? .generated(seed: entry.title),
+            blurb: entry.summary.map { OPDSClient.plainMetadata($0, limit: WorkSummary.blurbLimit) },
+            language: entry.language,
+            contentKind: record.contentKind
+        )
     }
 }
 

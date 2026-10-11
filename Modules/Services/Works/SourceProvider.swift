@@ -63,9 +63,9 @@ enum CollectionEntry: Hashable, Sendable {
 enum ItemOpening: Hashable, Sendable {
     /// A copy on the shelf.
     case copy(UUID)
-    /// An OPDS or Calibre entry: `RemoteLibraryBookRoute(entry:connectionID:)`.
+    /// An OPDS or Calibre entry; 作品詳情 reads it as `RemoteLibraryBookRoute(entry:connectionID:).item`.
     case opdsEntry(OPDSEntry, connectionID: String)
-    /// A WebDAV file: `RemoteLibraryBookRoute(entry:connectionID:)`.
+    /// A WebDAV file; 作品詳情 reads it as `RemoteLibraryBookRoute(entry:connectionID:).item`.
     case webDAVFile(WebDAVBrowseClient.Entry, connectionID: String)
     case gutenberg(GutenbergBook)
     case aozora(AozoraWork)

@@ -150,9 +150,6 @@ private struct ExploreHomeRoot: View {
             .homeEditDestinations()
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
-            .navigationDestination(for: WorkDetailRoute.self) { route in
-                WorkDetailView(route: route, host: WorkDetailHost())
-            }
         }
         // The store's card carousel is off the home for now (Phase 5 plan, decision 27): a store
         // page's book opens 作品詳情 as the home's cards do. `PublicLibraryBookSheet` stays.

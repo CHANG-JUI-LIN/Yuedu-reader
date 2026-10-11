@@ -164,6 +164,11 @@
     - **Every Explore card opens 作品詳情 first,** 繼續閱讀's too, as Emby's posters open the item's page; reading starts from the page. A card's ••• stays. The bookshelf's tap still opens the book; its ••• gains 作品詳情 (design §14.1).
     - **The store card carousel is taken off the home for now** (「这个轮播有问题先拿掉看看，保留代码先」): Gutenberg's and 青空's cards open 作品詳情 too. Its code stays.
 
+28. **Answered 2026-10-11, after 5f-1** (maintainer: 「這個書籍詳情真的很醜啊，你告訴我為什麼要兩個詳情啊」, then by option):
+    - **Only 作品詳情 stays.** A work has one page, as an Emby item has: 可用來源's rows pushed each source's own page, and a library item's was the old list-style 書籍詳情. The versions are switched in place from 來源, and what only the library page had (格式, 檔案大小, 下載供離線閱讀, 編輯遠端資料, Calibre 閱讀進度, 在書庫網站查看) moves onto 作品詳情.
+    - **The remote libraries' lists open 作品詳情 too** (OPDS, Calibre, WebDAV), and the list-style 書籍詳情 is deleted.
+    - **A book-source version is read from 作品詳情 as well,** not through its own page: a step of its own (5f-3), since the chapter list, 換源 and the reader live on `OnlineBookView`/`AudiobookDetailView` today.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -951,4 +956,23 @@ Decision 27 (「照着 emby」). Branch `unified-library/5f-work-page`.
 - **Strings:** 作品詳情, 可用來源, 目前沒有可閱讀的來源, 查看來源詳情 in five languages.
 - **Not covered:** reading a Gutenberg book or a library item from the page is not run by a test (fixtures carry no book file); the same service calls run under 書籍詳情's tests. Not seen with VoiceOver on a device.
 - **Tests (unit):** `WorkDetailVersionsTests` (order and dedup; a tapped copy once; data only; a bundled Gutenberg book counts as readable; a store book's route), `WorkDetailShelfVersionsTests` (a Gutenberg book reaches its WebDAV file through its shelf copy; the same from the copy), with `ExploreItemTargetTests`, `HomeCardTests`, `CopyLookupTests`: 5 suites, 21 tests, iOS 27.
-- **Tests (UI):** `PublicLibraryStorefrontUITests`: the carousel's three tests are skipped (decision 27); `testCardFromAPushedPageKeepsTheStack` became `testBookFromAPushedPageKeepsTheStack` (中文書籍 → 作品詳情 → Gutenberg's page → back three times); new `testHomeCardOpensWorkDetail`. New `WorkDetailUITests` (shelf ••• → 作品詳情 → reader → back → back; then 繼續閱讀's card → 作品詳情 → 繼續閱讀 → reader → back → back; the book is deleted at the end). iOS 17.5: all pass (the reader test failed first, on the navigation bar above). iOS 27: see below.
+- **Tests (UI):** `PublicLibraryStorefrontUITests`: the carousel's three tests are skipped (decision 27); `testCardFromAPushedPageKeepsTheStack` became `testBookFromAPushedPageKeepsTheStack` (中文書籍 → 作品詳情 → Gutenberg's page → back three times); new `testHomeCardOpensWorkDetail`. New `WorkDetailUITests` (shelf ••• → 作品詳情 → reader → back → back; then 繼續閱讀's card → 作品詳情 → 繼續閱讀 → reader → back → back; the book is deleted at the end). iOS 17.5: all pass (the reader test failed first, on the navigation bar above). iOS 27: `WorkDetailUITests` failed on the second run, which found the deletion bug below; the rest passed (`ExploreHomeUITests` 9, `HomeEditorUITests` 4, `AggregationSettingsUITests` 4).
+
+### 5f-1 follow-up: a deleted book stays deleted (2026-10-11)
+
+- **`BookStore.delete(bookId:)` removed the book's files at once but left the shelf record to the 2-second debounced save.** An app killed in between came back with the book on the shelf and no file behind it; opening it stopped at 「TXT 目錄修復未完成」. `WorkDetailUITests` hit it on iOS 27: its cleanup deletes the book, and XCTest terminates the app right after. The removal is now written at once (`saveMetaImmediately`, as the remote-reference branch of `delete` already did).
+- **Tests:** `BookDeletionPersistenceTests` (fails before the fix), with `BookChapterStorageTests`: 14 passed, iOS 27.
+
+### 5f-2: one page per work (2026-10-11)
+
+Decision 28. Branch `unified-library/5f-work-page`.
+
+- **作品詳情 is the only page for a library item.** 可用來源 and its rows are gone; **來源** in the information strip names the version shown and, when the work has others, is a native menu (`BookDetailInfoChoice`: one `Picker` in a `Menu`, labelled 換源 like the book-source page's) that switches the version in place. The buttons, the facts and the description follow the version shown (`WorkVersions.selected`: the one picked while it is listed, else the primary one, else the first).
+- **What the library page had moved onto it:** 格式 (a menu when there are several, 「· 不支援」 marked), 檔案大小, 開始閱讀/繼續閱讀 and 加入書架/已加入書架 per format, 下載供離線閱讀/已下載, 編輯遠端資料 (pushed; the editor no longer reads `dismiss`, its caller pops it), Calibre 閱讀進度, 在書庫網站查看, the footer, 此格式暫不支援閱讀, and the entry's description. 青空文庫's facts (公開日, 文字遣い種別, credits by role, 読み, subtitle, 底本, 出版社, its site) too.
+- **A Gutenberg book's catalog entry is read when its version is shown,** through `GutenbergBookPageModel` (one fetch path), with 重試 on failure; the buttons wait for it.
+- **The remote libraries' lists open 作品詳情** (OPDS and Calibre feeds, WebDAV folders), the route made by the feed's provider as the home's rows make it (`WorkDetailRoute(_:provider:)`, `WorkDetailRoute(webDAV:connectionID:root:)`; `WorkSummary.opds`/`.webDAV` shared with the providers). `remoteLibraryDestinations()` registers `WorkDetailRoute` once per stack (Explore's own registration went), and the `RemoteLibraryBookRoute` destination is gone. An OPDS entry that is not an item (no format and no feed) is no longer a link: it had nothing to open.
+- **The list-style 書籍詳情 is deleted** (`RemoteLibraryBookDetailView` keeps only the store card's page, used by the carousel whose code stays). `ExploreItemTarget` (kept, unused) maps a library item to 作品詳情; `ExplorePush.remoteBook` is gone.
+- **Not yet:** a book-source version still opens its own page through 查看來源詳情 (5f-3). The Gutenberg author buttons of the store card are not on 作品詳情 (they need the card).
+- **Strings:** 可用來源 removed (unused); nothing new.
+- **Tests (unit):** `WorkDetailVersionsTests` (+2: the selection; a remote list's rows make the home's routes, an entry outside the root or with no format makes none), `ExploreItemTargetTests` (a library item pushes 作品詳情), with `WorkDetailShelfVersionsTests`, `RemoteLibraryBrowsePresentationTests`, `OPDSProviderTests`, `WebDAVProviderTests`: 6 suites, 28 tests, iOS 27.
+- **Tests (UI):** `testBookFromAPushedPageKeepsTheStack` now checks the entry's 格式 (EPUB), 下載供離線閱讀 and description on 作品詳情, and that back goes straight to 中文書籍; `testHomeCardOpensWorkDetail` checks 來源 and that the main button enables once the entry is in; `WorkDetailUITests` checks 來源 is 書架. iOS 27: those 3 passed (3 carousel tests skipped) with `ExploreHomeUITests` 9. iOS 17.5: the 3 passed (`WorkDetailUITests` after removing a record left by a run before the deletion fix; after it, the book the test deletes stays deleted). No UI test opens a book from an OPDS or WebDAV list (no local server fixture).

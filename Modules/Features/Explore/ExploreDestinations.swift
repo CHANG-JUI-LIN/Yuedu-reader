@@ -77,16 +77,15 @@ enum ExploreItemTarget {
 
     /// - Parameter aozoraIndex: the catalog an Aozora work is shown with; nil when it is not
     ///   read, and then an Aozora item opens nothing.
-    init?(_ opening: ItemOpening, aozoraIndex: AozoraCatalogIndex?) {
-        switch opening {
+    init?(_ route: WorkDetailRoute, aozoraIndex: AozoraCatalogIndex?) {
+        switch route.opening {
         case .copy(let id):
             // Explore's own reader route, as the storefront's cards push it (the shelf's card
             // transition belongs to the shelf's stack).
             self = .push(.reader(PublicLibraryReaderRoute(bookID: id)))
-        case .opdsEntry(let entry, let connectionID):
-            self = .push(.remoteBook(RemoteLibraryBookRoute(entry: entry, connectionID: connectionID)))
-        case .webDAVFile(let entry, let connectionID):
-            self = .push(.remoteBook(RemoteLibraryBookRoute(entry: entry, connectionID: connectionID)))
+        case .opdsEntry, .webDAVFile:
+            // A library item's own page is 作品詳情 since its list page went (decision 28).
+            self = .push(.work(route))
         case .gutenberg(let book):
             self = .publicLibraryBook(.gutenberg(book))
         case .aozora(let work):
@@ -102,7 +101,6 @@ enum ExploreItemTarget {
 enum ExplorePush: Hashable {
     case work(WorkDetailRoute)
     case reader(PublicLibraryReaderRoute)
-    case remoteBook(RemoteLibraryBookRoute)
     case explore(ExploreNavigationRoute)
     case feed(OPDSFeedRoute)
     case folder(WebDAVDirectoryRoute)
@@ -113,7 +111,6 @@ enum ExplorePush: Hashable {
         switch self {
         case .work(let route): path.append(route)
         case .reader(let route): path.append(route)
-        case .remoteBook(let route): path.append(route)
         case .explore(let route): path.append(route)
         case .feed(let route): path.append(route)
         case .folder(let route): path.append(route)

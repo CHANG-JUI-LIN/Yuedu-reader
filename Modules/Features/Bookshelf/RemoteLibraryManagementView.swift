@@ -131,11 +131,13 @@ struct RemoteLibraryManagementView: View {
     }
 }
 
+/// 編輯遠端資料, pushed from 作品詳情.
 struct RemoteLibraryBookEditor: View {
     let item: RemoteLibraryItem
     let capabilities: RemoteLibraryWriteCapabilities
+    /// Takes the saved item, and the editor off the stack: a pushed page reading `dismiss`
+    /// beside its parent's destinations is what hung iOS 17 (guardrail 12).
     let onSaved: (RemoteLibraryItem) -> Void
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.appDependencies) private var dependencies
     @EnvironmentObject private var store: BookStore
     @State private var title: String
@@ -215,9 +217,8 @@ struct RemoteLibraryBookEditor: View {
                         coverURL: item.coverURL, formats: [RemoteLibraryFormat(url: url, fileExtension: original.fileExtension,
                             mimeType: original.mimeType, size: original.size)])
                 }
-                onSaved(updated)
                 UIAccessibility.post(notification: .announcement, argument: localized("遠端書庫已更新"))
-                dismiss()
+                onSaved(updated)
             } catch {
                 errorMessage = Task.isCancelled ? localized("操作已取消，請重新整理書庫確認伺服器狀態") : error.localizedDescription
             }

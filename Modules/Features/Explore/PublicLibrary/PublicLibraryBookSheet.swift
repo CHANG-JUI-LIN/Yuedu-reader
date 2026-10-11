@@ -792,7 +792,7 @@ private struct GutenbergBookDetailPage: View {
     var body: some View {
         Group {
             if let detail = model.detail, isSelected {
-                RemoteLibraryBookDetailView(item: detail.item, storefront: true, authors: detail.authors,
+                RemoteLibraryBookDetailView(item: detail.item, authors: detail.authors,
                                             artworkTitle: book.title, artworkAuthor: book.author,
                                             artworkCoverURL: book.coverURL)
             } else {

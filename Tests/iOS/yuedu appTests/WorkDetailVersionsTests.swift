@@ -66,6 +66,44 @@ struct WorkDetailVersionsTests {
         #expect(route.isReadable)
     }
 
+    @Test("來源 shows the version picked while it is listed, else the primary one, else the first")
+    func selection() {
+        let unreadable = file("三體.azw3", acquisitions: [])
+        let readable = file("三體.epub")
+        let shelf = copy()
+        let versions = [unreadable, shelf, readable]
+        #expect(WorkVersions.selected(in: versions, chosen: nil) == shelf)
+        #expect(WorkVersions.selected(in: versions, chosen: readable.nodeKey) == readable)
+        #expect(WorkVersions.selected(in: versions, chosen: unreadable.nodeKey) == unreadable, "a data-only version can be shown")
+        #expect(WorkVersions.selected(in: versions, chosen: copy().nodeKey) == shelf, "a version no longer listed")
+        #expect(WorkVersions.selected(in: [unreadable], chosen: nil) == unreadable)
+        #expect(WorkVersions.selected(in: [], chosen: nil) == nil)
+    }
+
+    @Test("a remote list's rows make the routes the home's rows make")
+    @MainActor
+    func remoteListRoutes() throws {
+        let root = URL(string: "https://dav.test/books/")!
+        let entry = WebDAVBrowseClient.Entry(url: root.appendingPathComponent("劉慈欣/三體.epub"), name: "三體.epub",
+                                             isDirectory: false, size: 1, etag: nil, lastModified: nil)
+        let fromList = try #require(WorkDetailRoute(webDAV: entry, connectionID: "dav", root: root))
+        #expect(fromList.record.key == SourceItemKey(instance: Self.dav, item: "劉慈欣/三體.epub"))
+        #expect(fromList.isReadable)
+        let outside = WebDAVBrowseClient.Entry(url: URL(string: "https://elsewhere.test/a.epub")!, name: "a.epub",
+                                               isDirectory: false, size: 1, etag: nil, lastModified: nil)
+        #expect(WorkDetailRoute(webDAV: outside, connectionID: "dav", root: root) == nil)
+
+        let catalog = OPDSCatalog(name: "Calibre", url: "https://calibre.test/opds", kind: .calibre)
+        let provider = OPDSProvider(connection: catalog) { OPDSClient(kind: .calibre) }
+        var book = OPDSEntry(id: "urn:calibre:7", title: "三體")
+        book.acquisitions = [OPDSAcquisition(url: URL(string: "https://calibre.test/get/epub/7")!, type: "application/epub+zip",
+                                             rel: "http://opds-spec.org/acquisition")]
+        let opds = try #require(WorkDetailRoute(book, provider: provider))
+        #expect(opds.opening == .opdsEntry(book, connectionID: catalog.id))
+        #expect(opds.record.key.instance.type == .calibre)
+        #expect(WorkDetailRoute(OPDSEntry(id: "urn:calibre:8", title: "沒有格式"), provider: provider) == nil)
+    }
+
     @Test("a store book's route is the item its row makes")
     func storeRoute() {
         let book = GutenbergBook(id: 24264, title: "三體", author: "劉慈欣")

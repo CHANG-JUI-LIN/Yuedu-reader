@@ -30,6 +30,21 @@ struct WorkDetailRoute: Hashable, Sendable {
         }
     }
 
+    /// An entry of an OPDS feed as its provider makes the item, the way the home's rows do;
+    /// nil for an entry that is not an item (no acquisition, and for Gutenberg no book).
+    @MainActor
+    init?(_ entry: OPDSEntry, provider: any OPDSFeedProviding) {
+        guard let record = provider.makeRecord(entry) else { return nil }
+        self.init(record: record, summary: .opds(entry, record: record, connectionID: provider.instance.id),
+                  opening: provider.makeOpening(entry))
+    }
+
+    /// A WebDAV file, as its folder lists it; nil outside the connection's root.
+    init?(webDAV entry: WebDAVBrowseClient.Entry, connectionID: String, root: URL) {
+        guard let record = SourceRecord.derived(from: entry, connectionID: connectionID, root: root) else { return nil }
+        self.init(record: record, summary: .webDAV(record), opening: .webDAVFile(entry, connectionID: connectionID))
+    }
+
     /// The node the work index knows the version by: a copy by its own key.
     var nodeKey: SourceItemKey { record.copyKey ?? record.key }
 
@@ -41,6 +56,14 @@ struct WorkDetailRoute: Hashable, Sendable {
         case .copy, .gutenberg, .aozora, .onlineBook: true
         case .opdsEntry, .webDAVFile: record.acquisitions.contains { $0 != .viewOnly }
         }
+    }
+}
+
+extension WorkSummary {
+    /// A WebDAV file has only its name until the index reads its metadata.
+    static func webDAV(_ record: SourceRecord) -> WorkSummary {
+        WorkSummary(title: record.title, authors: [], cover: .generated(seed: record.title),
+                    blurb: nil, language: nil, contentKind: record.contentKind)
     }
 }
 
@@ -86,8 +109,14 @@ enum WorkVersions {
         return versions
     }
 
-    /// The version 作品詳情's main button acts on: the first readable one.
+    /// The version 作品詳情's main button acts on until one is chosen: the first readable one.
     static func primary(in versions: [WorkDetailRoute]) -> WorkDetailRoute? {
         versions.first(where: \.isReadable)
+    }
+
+    /// The version 作品詳情 shows and acts on: the one chosen from its 來源 menu while it is
+    /// still listed, otherwise the primary one, otherwise the first (a page of data only).
+    static func selected(in versions: [WorkDetailRoute], chosen: SourceItemKey?) -> WorkDetailRoute? {
+        chosen.flatMap { key in versions.first { $0.nodeKey == key } } ?? primary(in: versions) ?? versions.first
     }
 }

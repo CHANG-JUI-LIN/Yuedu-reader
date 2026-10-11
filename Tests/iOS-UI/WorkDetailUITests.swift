@@ -83,9 +83,9 @@ final class WorkDetailUITests: XCTestCase {
         let menuItem = app.buttons["作品詳情"].firstMatch
         XCTAssertTrue(menuItem.waitForExistence(timeout: 5), app.debugDescription)
         menuItem.tap()
-        let versions = app.descendants(matching: .any)["work.versions"].firstMatch
+        let versions = app.descendants(matching: .any)["detail.info.source"].firstMatch
         XCTAssertTrue(versions.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.buttons["work.version.shelf"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(versions.value as? String, "書架", "The copy on the shelf is the version shown")
         screenshot(app, "work-detail-shelf")
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["開始閱讀", "繼續閱讀"])).firstMatch
         XCTAssertTrue(read.exists, app.debugDescription)

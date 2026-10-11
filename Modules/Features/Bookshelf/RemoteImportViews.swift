@@ -28,6 +28,11 @@ struct WebDAVDirectoryView: View {
         catalogStore.connection(id: route.connectionID)
     }
 
+    /// The connection's root, normalized as `WebDAVBrowseClient.rootURL` is.
+    private var root: URL? {
+        connection.flatMap { RemoteLibraryConnection.normalizedURL($0.url, kind: .webDAV) }
+    }
+
     private var visibleEntries: [WebDAVBrowseClient.Entry] {
         RemoteLibraryBrowsePresentation.filtered(entries, query: searchText)
     }
@@ -98,7 +103,7 @@ struct WebDAVDirectoryView: View {
                 Label(entry.name, systemImage: "folder.fill").foregroundStyle(DSColor.textPrimary)
             }
         } else {
-            NavigationLink(value: RemoteLibraryBookRoute(entry: entry, connectionID: route.connectionID)) {
+            RemoteLibraryWorkLink(route: root.flatMap { WorkDetailRoute(webDAV: entry, connectionID: route.connectionID, root: $0) }) {
                 HStack(spacing: DSSpacing.md) {
                     Image(systemName: entry.fileExtension == "pdf" ? "doc.richtext" : "book.closed")
                         .foregroundStyle(entry.isImportableBook ? DSColor.accent : DSColor.textSecondary)
@@ -129,8 +134,7 @@ struct WebDAVDirectoryView: View {
     /// 已加入書架 or 已下載, from `CopyLookup` (unified library 2c). The key is the path below
     /// the connection's root, as 1a derives it for the copy.
     private func shelfStatus(of entry: WebDAVBrowseClient.Entry) -> CopyLookup.Status? {
-        guard let root = connection.flatMap({ RemoteLibraryConnection.normalizedURL($0.url, kind: .webDAV) }),
-              let record = SourceRecord.derived(from: entry, connectionID: route.connectionID, root: root) else { return nil }
+        guard let root, let record = SourceRecord.derived(from: entry, connectionID: route.connectionID, root: root) else { return nil }
         return store.copyLookup(connections: catalogStore).status(for: record.key)
     }
 }
