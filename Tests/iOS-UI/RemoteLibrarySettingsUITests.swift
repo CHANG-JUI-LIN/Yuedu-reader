@@ -57,6 +57,42 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
         XCTAssertFalse(added.waitForExistence(timeout: 2), "swipe-delete removes it")
     }
 
+    /// Unified library 5c-5: OPDS's 範例目錄 moved here from the bookshelf's OPDS list. An
+    /// example adds an ordinary connection and leaves the list until that is removed.
+    @MainActor
+    func testExampleCatalogAddsAConnection() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        let notNow = app.buttons["Don’t Allow"]
+        if notNow.waitForExistence(timeout: 5) { notNow.tap() }
+        let settingsTab = app.tabBars.buttons["Settings"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 20))
+        settingsTab.tap()
+        let row = app.buttons["settings_remote_libraries"].firstMatch
+        for _ in 0..<4 where !row.exists { app.swipeUp() }
+        row.tap()
+        XCTAssertTrue(app.navigationBars["Remote Library"].waitForExistence(timeout: 8))
+
+        let example = app.buttons["remote_library_example"].firstMatch
+        for _ in 0..<3 where !example.isHittable { app.swipeUp() }
+        XCTAssertTrue(example.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(example.label, "Project Gutenberg")
+        example.tap()
+
+        let added = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "gutenberg.org/ebooks.opds")).firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: 5), "the example is now a connection")
+        XCTAssertFalse(example.exists, "an added example leaves the list")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "remote-library-example-added"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        added.swipeLeft()
+        app.buttons["Delete"].firstMatch.tap()
+        XCTAssertTrue(example.waitForExistence(timeout: 5), "removed, it is offered again")
+    }
+
     /// Unified library 2d, end to end against a real WebDAV server: a library added in
     /// Settings is indexed on its own, and its row says so. Opt-in, with
     /// `TEST_RUNNER_YUEDU_WEBDAV_BENCHMARK_URL` pointing at a server holding `t1k/`

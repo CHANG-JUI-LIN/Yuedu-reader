@@ -1,9 +1,5 @@
 import SwiftUI
 
-struct WebDAVImportView: View {
-    var body: some View { RemoteLibraryBrowserView(kind: .webDAV) }
-}
-
 struct WebDAVDirectoryRoute: Hashable {
     let connectionID: String
     let url: URL
@@ -137,10 +133,6 @@ struct WebDAVDirectoryView: View {
               let record = SourceRecord.derived(from: entry, connectionID: route.connectionID, root: root) else { return nil }
         return store.copyLookup(connections: catalogStore).status(for: record.key)
     }
-}
-
-#Preview {
-    WebDAVImportView().environmentObject(BookStore())
 }
 
 #Preview("WebDAV folder") {

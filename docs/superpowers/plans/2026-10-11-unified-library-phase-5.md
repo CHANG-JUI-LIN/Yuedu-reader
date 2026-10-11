@@ -251,7 +251,7 @@ Phase 1's and Phase 2's guardrails apply. In addition:
   - **UI** `ExploreHomeUITests`: the home shows its default sections (fixtures); a 我的書庫 tile pushes a WebDAV library, using the Phase 2 local-server opt-in; scope switches to one source and back; CHN shows no public libraries.
   - **Existing:** `PublicLibraryExploreUITests` and `DetailReaderBackSwipeUITests` are updated, not deleted. They assert the same behaviors through the new home.
   - One screenshot per screen.
-- [ ] **Step 7: Remove the bookshelf ＋ library entries**, now that browsing has an entry (settled decision 3). `RemoteLibraryNavigationUITests` changes to the new entry.
+- [x] **Step 7: Remove the bookshelf ＋ library entries** (5c-5), now that browsing has an entry (settled decision 3). `RemoteLibraryNavigationUITests` changes to the new entry.
 
 ## Task 5d: The section editor
 
@@ -529,3 +529,15 @@ Branch `unified-library/5c4b-related-seed`. The maintainer chose one seed: the c
 - `RelatedWorks.pick(in:seed:continueReading:shown:limit:)`: the evidence (the work elsewhere, its series, its authors) is the seed's alone. Every copy 繼續閱讀 shows is still left out, as a whole work, so the two rows never repeat each other.
 - **Tests:** `RelatedWorksTests` +1 (`latestCopyOnly`: an older 繼續閱讀 copy's author brings nothing). The scale fixture now has 1,000 authors of 20 files each, not 2,000 of 10: with one seed, 10 files could not fill a row. With `RelatedRowTests` and `HomeModelTests`, 21 tests in 3 suites passed.
 - **Measured** (same test, simulator, Debug): first load 2,882 ms, next 316 ms, the pick 42 ms, longest main-actor stall 21.7 ms. That is level with 5c-4's 2,841, 307, 44 and 17.6 ms: the time is in building and reading the index, not in picking.
+
+### 5c-5: the bookshelf ＋ keeps its books, not the libraries (2026-10-11)
+
+Branch `unified-library/5c5-entries`. Step 7 of Task 5c (settled decision 3). Two things lived only behind the removed entries; the maintainer chose where they go.
+
+- **＋ (添加書籍)** is 從本地匯入 and 電腦傳書. Both put a book on the shelf. 電腦傳書 (`CalibreWirelessView`) needs no server, so it stays here, now a sheet in its own stack with a leading close. The iOS 17 chooser lists the same two.
+- **OPDS's 範例目錄** moved to 設定 → 遠端書庫, a section under OPDS. It is shown while an example is not yet added. It still adds an ordinary connection with no region check (Phase 2 findings, item 2, still open).
+- **Removed:** `WebDAVImportView`, `OPDSImportView`, `RemoteLibraryBrowserView` (the per-kind sheets), and their two strings 「尚未加入書庫」「加入伺服器即可瀏覽書籍並開始閱讀。」. A library is browsed from 我的書庫 and set up in 設定 → 遠端書庫. `OPDSFeedView` and `WebDAVDirectoryView`, which those tiles push, stay.
+- **Tests (UI):**
+  - `RemoteLibraryNavigationUITests` now checks ＋: 從本地匯入 and 電腦傳書 only; 電腦傳書 opens its receiver and closes.
+  - `RemoteLibrarySettingsUITests` +1: an example becomes a connection, leaves the list, and returns when removed.
+  - With `testAddEditAndDeleteFromSettings` and `ExploreHomeUITests.testConnectionTilePushesItsLibrary`: 4 passed, and the opt-in WebDAV benchmark was skipped.

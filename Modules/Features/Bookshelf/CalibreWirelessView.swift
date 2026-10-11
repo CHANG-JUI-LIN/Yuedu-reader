@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Pushed inside the existing Calibre library navigation stack. Starting
-/// discovery is explicit so local-network permission is requested in context.
+/// The bookshelf ＋'s 電腦傳書, a sheet in its own stack (unified library 5c-5: it used to be
+/// pushed inside the Calibre library list, which left the ＋ menu). Starting discovery is
+/// explicit so local-network permission is requested in context.
 struct CalibreWirelessView: View {
     @ObservedObject var store: BookStore
     @ObservedObject var service: CalibreWirelessService
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     @AppStorage("calibreWirelessHost") private var host = ""
@@ -104,6 +106,13 @@ struct CalibreWirelessView: View {
         .navigationTitle(localized("電腦傳書"))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .bookshelf)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { dismiss() } label: {
+                    Label(localized("關閉"), systemImage: "xmark").labelStyle(.iconOnly)
+                }
+            }
+        }
         .onDisappear {
             service.stopDiscovery()
             service.disconnect()

@@ -2434,8 +2434,6 @@
 "OPDS 書庫" = "OPDS Library";
 "WebDAV 書庫" = "WebDAV Library";
 "Calibre 書庫" = "Calibre Library";
-"尚未加入書庫" = "No Libraries Yet";
-"加入伺服器即可瀏覽書籍並開始閱讀。" = "Add a server to browse books and start reading.";
 "新增伺服器" = "Add Server";
 "編輯伺服器" = "Edit Server";
 "伺服器名稱（選填）" = "Server Name (Optional)";
