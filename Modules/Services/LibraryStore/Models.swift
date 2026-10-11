@@ -304,6 +304,12 @@ struct ReadingBook: Identifiable, Codable {
     /// another device that its copy was regenerated when only this one was.
     var aozora: AozoraBookSource?
 
+    /// When 從繼續閱讀移除 or 標記為已讀完 last took the book out of 繼續閱讀 (unified library
+    /// 5d-3c). It stays out until it is opened again, as Apple Books' Continue does: see
+    /// `isInContinueReading`. Optional and encoded only when present, for the reason
+    /// `audioPlayMode` gives.
+    var continueReadingHiddenAt: Date?
+
     init(
         title: String, author: String = "未知作者",
         source: String = "local", contentFilename: String
@@ -394,6 +400,7 @@ struct ReadingBook: Identifiable, Codable {
         audioOpenCreditsSeconds = try? c.decode(Int.self, forKey: .audioOpenCreditsSeconds)
         audioCloseCreditsSeconds = try? c.decode(Int.self, forKey: .audioCloseCreditsSeconds)
         aozora = try c.decodeIfPresent(AozoraBookSource.self, forKey: .aozora)
+        continueReadingHiddenAt = try c.decodeIfPresent(Date.self, forKey: .continueReadingHiddenAt)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -408,6 +415,7 @@ struct ReadingBook: Identifiable, Codable {
         case audioChapterIndex, audioTimeSeconds
         case audioPlayMode, audioOpenCreditsSeconds, audioCloseCreditsSeconds
         case aozora
+        case continueReadingHiddenAt
     }
 
     /// Read only: where builds before `BookChapterStore` kept the table of contents.
@@ -441,6 +449,15 @@ struct ReadingBook: Identifiable, Codable {
             return .html
         }
         return .txt
+    }
+}
+
+extension ReadingBook {
+    /// Whether 繼續閱讀 lists it: opened, and not taken out since it was last opened.
+    var isInContinueReading: Bool {
+        guard let opened = lastOpenedDate else { return false }
+        guard let hidden = continueReadingHiddenAt else { return true }
+        return hidden < opened
     }
 }
 

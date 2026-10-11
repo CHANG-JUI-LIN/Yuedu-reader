@@ -22,6 +22,9 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     static let row = Self(rawValue: "row")
     /// 大型閱讀卡片 (5d-3).
     static let readingCard = Self(rawValue: "readingCard")
+    /// 精簡閱讀卡片 (5d-3c): a small cover and the title, author, kind and progress on the
+    /// cover's colour, as Apple Books' Continue.
+    static let compactReadingCard = Self(rawValue: "compactReadingCard")
     /// 多行橫向輪播 (5d-3).
     static let multiRow = Self(rawValue: "multiRow")
     /// 固定封面網格 (5d-3).
@@ -35,7 +38,7 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     var componentKind: CustomExploreComponent.Kind? { .init(rawValue: rawValue) }
 
     var isKnown: Bool {
-        componentKind != nil || [.tiles, .row, .readingCard, .multiRow, .coverGrid, .list, .rankedList].contains(self)
+        componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList].contains(self)
     }
 }
 
@@ -213,8 +216,8 @@ enum HomePageDefaults {
     ///   - publicLibrariesAvailable: false in China, where no public-library section is made.
     static func page(mode: ExploreMode, publicLibrariesAvailable: Bool,
                      makeID: () -> UUID = UUID.init) -> HomePage {
-        // 大型閱讀卡片 since 5d-3 (Phase 5 plan, decision 14).
-        let continueReading = HomeSection(id: makeID(), layout: .readingCard, binding: .continueReading)
+        // 精簡閱讀卡片 since 5d-3c (Phase 5 plan, decision 20); 大型閱讀卡片 in 5d-3.
+        let continueReading = HomeSection(id: makeID(), layout: .compactReadingCard, binding: .continueReading)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest(excluded: []))
         // 精選: one section per bundled list, titled by the list (plan decision 11).
         let featured = publicLibrariesAvailable

@@ -4,6 +4,8 @@ import SwiftUI
 // the maintainer's layout notes):
 // - 大型閱讀卡片: a large cover beside the title, author and how far it is read, one card to a
 //   phone's width (two on a wider screen), the next one showing past the edge.
+// - 精簡閱讀卡片 (5d-3c, decision 20): as Apple Books' Continue, a small cover beside the
+//   title, author and kind・progress, on the cover's colour, with a ••• for a shelf copy.
 // - 橫向單排書架: one row of covers that swipes sideways (5c's row).
 // - 多行橫向輪播: two rows of smaller covers, swiped sideways together.
 // - 固定封面網格: a fixed number of columns, read downwards.
@@ -20,6 +22,8 @@ struct HomeSectionCards: View {
     /// Whether the header leads to 查看全部.
     let hasShowAll: Bool
     let open: (HomeCardContent, [HomeCardContent]) -> Void
+    /// What a shelf copy's ••• offers on 精簡閱讀卡片; none in a fixture or a loading row.
+    var bookActions: HomeBookActions?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -28,6 +32,7 @@ struct HomeSectionCards: View {
     @ScaledMetric(relativeTo: .subheadline) private var compactCoverWidth = DSLayout.homeCompactCoverWidth
     @ScaledMetric(relativeTo: .headline) private var readingCoverWidth = DSLayout.homeReadingCardCoverWidth
     @ScaledMetric(relativeTo: .headline) private var listCoverWidth = DSLayout.homeListCoverWidth
+    @ScaledMetric(relativeTo: .headline) private var compactReadingCoverWidth = DSLayout.homeCompactReadingCardCoverWidth
     @State private var gridWidth: CGFloat = 0
 
     /// Rows the grid shows, and books the list shows, when 查看全部 has the rest.
@@ -41,6 +46,7 @@ struct HomeSectionCards: View {
         Group {
             switch style {
             case .readingCard: readingCards
+            case .compactReadingCard: compactReadingCards
             case .row: rail
             case .multiRow: multiRow
             case .coverGrid: grid
@@ -51,7 +57,7 @@ struct HomeSectionCards: View {
     }
 
     /// One card's button: the identifier the UI tests find it by, and the label VoiceOver reads.
-    private func button(_ index: Int, in shown: [HomeCardContent], rank: Int? = nil,
+    private func button(_ index: Int, in shown: [HomeCardContent], rank: Int? = nil, menu: [HomeCardMenuItem] = [],
                         @ViewBuilder label: () -> some View) -> some View {
         let card = shown[index]
         let rankText = rank.map { $0.formatted() }
@@ -66,6 +72,10 @@ struct HomeSectionCards: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel([rankText, card.accessibilityLabel].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(card.accessibilityValue)
+        // The ••• menu's items, also on the card for VoiceOver's actions rotor.
+        .accessibilityActions {
+            ForEach(menu) { item in Button(item.title, action: item.perform) }
+        }
         .accessibilityIdentifier("home.card.\(card.id.instance.type.rawValue).\(card.id.item)")
     }
 
@@ -97,6 +107,36 @@ struct HomeSectionCards: View {
                     }
                     .containerRelativeFrame(.horizontal) { length, _ in
                         // The next card shows past the edge when there is one.
+                        let peek = cards.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
+                        let gaps = DSSpacing.md * CGFloat(perScreen - 1)
+                        return max(0, (length - gaps - peek) / CGFloat(perScreen))
+                    }
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .modifier(HomeSidewaysScroll())
+    }
+
+    // MARK: 精簡閱讀卡片
+
+    private var compactReadingCards: some View {
+        let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                ForEach(cards.indices, id: \.self) { index in
+                    let card = cards[index]
+                    let menu = HomeCardMenuItem.items(for: card, actions: bookActions)
+                    button(index, in: cards, menu: menu) {
+                        HomeCompactReadingCard(content: card, coverWidth: compactReadingCoverWidth,
+                                               stacksVertically: dynamicTypeSize.isAccessibilitySize,
+                                               reservesMenuSpace: !menu.isEmpty)
+                    }
+                    // Beside the card's button, not in it: a menu inside a button is not reachable.
+                    .overlay(alignment: .bottomTrailing) {
+                        if !menu.isEmpty { HomeCardMenuButton(card: card, items: menu) }
+                    }
+                    .containerRelativeFrame(.horizontal) { length, _ in
                         let peek = cards.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
                         let gaps = DSSpacing.md * CGFloat(perScreen - 1)
                         return max(0, (length - gaps - peek) / CGFloat(perScreen))
@@ -248,6 +288,129 @@ struct HomeReadingCard: View {
         }
         .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - 精簡閱讀卡片
+
+/// What a shelf copy's ••• offers on 精簡閱讀卡片 (5d-3c, decision 20).
+struct HomeBookActions {
+    /// 從繼續閱讀移除; nil outside 繼續閱讀.
+    var removeFromContinueReading: ((ReadingBook) -> Void)?
+    let markFinished: (ReadingBook) -> Void
+}
+
+/// One item of a card's ••• menu, also one of its VoiceOver actions.
+struct HomeCardMenuItem: Identifiable {
+    let id: String
+    let title: String
+    let symbol: String
+    let perform: () -> Void
+
+    /// A shelf copy's items: 從繼續閱讀移除 in 繼續閱讀, and 標記為已讀完 unless it is finished.
+    /// Nothing for another source's book, so it has no •••.
+    static func items(for card: HomeCardContent, actions: HomeBookActions?) -> [HomeCardMenuItem] {
+        guard let actions, let book = card.shelfBook else { return [] }
+        var items: [HomeCardMenuItem] = []
+        if let remove = actions.removeFromContinueReading {
+            items.append(HomeCardMenuItem(id: "removeFromContinueReading", title: localized("從繼續閱讀移除"),
+                                          symbol: "minus.circle", perform: { remove(book) }))
+        }
+        if book.currentPosition < 0.99 {
+            items.append(HomeCardMenuItem(id: "markFinished", title: localized("標記為已讀完"),
+                                          symbol: "checkmark.circle", perform: { actions.markFinished(book) }))
+        }
+        return items
+    }
+}
+
+/// The ••• at a card's trailing bottom, as large as a tap target.
+struct HomeCardMenuButton: View {
+    let card: HomeCardContent
+    let items: [HomeCardMenuItem]
+
+    var body: some View {
+        Menu {
+            ForEach(items) { item in
+                Button(item.title, systemImage: item.symbol, action: item.perform)
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(DSFont.body.weight(.semibold))
+                .foregroundStyle(DSColor.textOnAccent)
+                .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(localized("更多"))
+        .accessibilityIdentifier("home.card.more.\(card.id.instance.type.rawValue).\(card.id.item)")
+    }
+}
+
+/// A small cover and, beside it, the title, author and kind・progress in white on the
+/// cover's main colour, darkened until white text on it is legible (4.5:1, 7:1 with
+/// 增加對比). All the text is white: a dimmed line would fall under that contrast. The text goes under the cover at accessibility text sizes.
+struct HomeCompactReadingCard: View {
+    let content: HomeCardContent
+    let coverWidth: CGFloat
+    var stacksVertically = false
+    /// Keeps the trailing bottom clear for the ••• drawn over the card.
+    var reservesMenuSpace = false
+
+    @Environment(\.colorSchemeContrast) private var contrast
+    /// The cover's average colour, once the cover has drawn.
+    @State private var coverColor: CoverTint.RGB?
+
+    private var coverSize: CGSize {
+        CGSize(width: coverWidth, height: coverWidth / DSLayout.discoverCoverAspectRatio)
+    }
+
+    private var ground: Color {
+        guard let coverColor else { return DSColor.coverTintPlaceholder }
+        return CoverTint.background(for: coverColor, minimumContrast: contrast == .increased ? 7 : 4.5).color
+    }
+
+    var body: some View {
+        let layout = stacksVertically
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.md))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: DSSpacing.md))
+        layout {
+            HomeCardCover(cover: content.cover, title: content.title, author: content.author, size: coverSize)
+                .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
+                .environment(\.coverImageObserver, { image in
+                    Task {
+                        let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
+                        if color != coverColor { coverColor = color }
+                    }
+                })
+            text
+        }
+        .padding(DSSpacing.md)
+        .frame(maxWidth: .infinity, minHeight: coverSize.height + DSSpacing.md * 2, alignment: .topLeading)
+        .background(ground, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .animation(DSAnimation.standard, value: coverColor)
+    }
+
+    private var text: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+            Text(content.title)
+                .font(DSFont.headline)
+                .lineLimit(2)
+            if !content.author.isEmpty {
+                Text(content.author)
+                    .font(DSFont.subheadline)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: DSSpacing.sm)
+            Text(content.kindAndDetail)
+                .font(DSFont.caption)
+                .lineLimit(1)
+                .padding(.trailing, reservesMenuSpace && !stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.md : 0)
+                .padding(.bottom, reservesMenuSpace && stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.md : 0)
+        }
+        .foregroundStyle(DSColor.textOnAccent)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, minHeight: stacksVertically ? nil : coverSize.height, alignment: .topLeading)
     }
 }
 

@@ -445,28 +445,8 @@ struct AudiobookReaderView: View {
     /// Average color of the cover, used to tint the player background. Returns nil
     /// when there is no cover so callers can fall back to the palette.
     static func dominantColor(from image: UIImage?) -> Color? {
-        guard let image, let cg = image.cgImage else { return nil }
-        let ciImage = CIImage(cgImage: cg)
-        let extent = ciImage.extent
-        guard let filter = CIFilter(
-            name: "CIAreaAverage",
-            parameters: [kCIInputImageKey: ciImage, kCIInputExtentKey: CIVector(cgRect: extent)]
-        ), let output = filter.outputImage else { return nil }
-
-        var bitmap = [UInt8](repeating: 0, count: 4)
-        let context = CIContext(options: [.workingColorSpace: NSNull()])
-        context.render(
-            output, toBitmap: &bitmap, rowBytes: 4,
-            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-            format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB()
-        )
         // Darken slightly so white controls stay legible on pale covers.
-        let scale = 0.82
-        return Color(
-            red: Double(bitmap[0]) / 255 * scale,
-            green: Double(bitmap[1]) / 255 * scale,
-            blue: Double(bitmap[2]) / 255 * scale
-        )
+        image.flatMap(CoverTint.average(of:))?.scaled(by: 0.82).color
     }
 }
 

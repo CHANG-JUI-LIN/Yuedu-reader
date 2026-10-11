@@ -305,7 +305,8 @@ private struct HomeRowHost: View {
                         },
                         hide: { HomePageStore.shared.edit { $0.setEnabled(false, section: group.section.id) } },
                         openSettings: openSettings,
-                        delete: { confirmsDelete = true }))
+                        delete: { confirmsDelete = true }),
+                    bookActions: bookActions)
             .homeSectionDeleteConfirmation(isPresented: $confirmsDelete, title: group.section.editorTitle()) {
                 HomePageStore.shared.edit { $0.removeSection(group.section.id) }
             }
@@ -314,6 +315,21 @@ private struct HomeRowHost: View {
     private var content: HomeRowContent? {
         guard case .loaded(let entries) = group.state else { return nil }
         return HomeRowContent(entries: entries, store: store)
+    }
+
+    /// A shelf copy's ••• (5d-3c). The shelf's rows load again at once, so the card leaves
+    /// 繼續閱讀 and 相關 sees the change.
+    private var bookActions: HomeBookActions {
+        let isContinueReading = group.section.binding == .continueReading
+        return HomeBookActions(
+            removeFromContinueReading: isContinueReading ? { book in
+                store.removeFromContinueReading(bookId: book.id)
+                model.reloadLocal()
+            } : nil,
+            markFinished: { book in
+                store.markFinished(bookId: book.id)
+                model.reloadLocal()
+            })
     }
 
     /// The page of a section of one source. 最新 across several has none: no one page lists

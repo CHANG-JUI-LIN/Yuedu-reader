@@ -987,6 +987,22 @@ class BookStore: ObservableObject, BookProvider {
         saveMeta()
     }
 
+    /// 從繼續閱讀移除 (unified library 5d-3c): out of 繼續閱讀 until the book is opened again.
+    /// The shelf, its 最近閱讀 order and the book's progress are untouched.
+    func removeFromContinueReading(bookId: UUID) {
+        guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        records[idx].continueReadingHiddenAt = Date()
+        saveMeta()
+    }
+
+    /// 標記為已讀完 (unified library 5d-3c): 已讀完 wherever progress shows, and out of 繼續閱讀,
+    /// as Apple Books' Mark as Finished. The reader keeps its own position, so opening the
+    /// book again resumes where it was and its next save writes the real progress back.
+    func markFinished(bookId: UUID) {
+        updatePosition(bookId: bookId, position: 1, forceSave: true)
+        removeFromContinueReading(bookId: bookId)
+    }
+
     func setRendererPreference(bookId: UUID, preference: BookRendererPreference) {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
         records[idx].rendererPreference = preference

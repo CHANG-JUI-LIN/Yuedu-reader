@@ -2,11 +2,11 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-/// Unified library 5d-3: the five layouts, what a stored layout draws, and 呈現方式's edit.
+/// Unified library 5d-3: the layouts (精簡閱讀卡片 since 5d-3c), what a stored layout draws, and 呈現方式's edit.
 @Suite("Home layout style")
 @MainActor
 struct HomeLayoutStyleTests {
-    @Test("each of the five layouts is written as its own value and read back as itself")
+    @Test("each layout is written as its own value and read back as itself")
     func roundTrip() throws {
         for style in HomeLayoutStyle.allCases {
             for ranked in [false, true] {
@@ -65,12 +65,12 @@ struct HomeLayoutStyleTests {
         #expect(page.sections[1].binding == .related)
     }
 
-    @Test("繼續閱讀 starts as 大型閱讀卡片; the other defaults as a row")
+    @Test("繼續閱讀 starts as 精簡閱讀卡片; the other defaults as a row")
     func defaults() {
         for mode in ExploreMode.allCases {
             let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true)
             for section in page.sections {
-                #expect(section.layout == (section.binding == .continueReading ? .readingCard : .row))
+                #expect(section.layout == (section.binding == .continueReading ? .compactReadingCard : .row))
             }
         }
     }

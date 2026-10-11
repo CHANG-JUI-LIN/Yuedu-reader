@@ -96,6 +96,24 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-home-gutenberg-latest")
     }
 
+    /// 精簡閱讀卡片 (5d-3c), in the design fixture's 繼續閱讀: the ••• beside a shelf copy's card
+    /// is a control of its own, reachable by touch and VoiceOver, and offers 從繼續閱讀移除 and
+    /// 標記為已讀完.
+    @MainActor
+    func testCompactCardMenu() {
+        let app = application(extra: ["-explore-home-fixture"])
+        app.launch()
+        let more = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.card.more.'")).firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertEqual(more.label, "更多")
+        XCTAssertTrue(more.isHittable)
+        attach(app, "home-compact-card")
+        more.tap()
+        XCTAssertTrue(app.buttons["從繼續閱讀移除"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["標記為已讀完"].firstMatch.exists)
+        attach(app, "home-compact-card-menu")
+    }
+
     /// 範圍 filters the same home to one library, as Emby's library switch does (5d-3b,
     /// decision 19), and the choice survives a relaunch. The library's whole catalog is its
     /// own page, from 瀏覽完整目錄 at the top; under 全部, 瀏覽書庫 lists every library

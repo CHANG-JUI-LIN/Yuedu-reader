@@ -90,6 +90,8 @@ struct HomeRowView: View {
     let openLocation: (CollectionLocation) -> Void
     /// The section's long press (5d-2, decision 14); none in a fixture.
     var actions: HomeSectionActions?
+    /// A shelf copy's ••• on 精簡閱讀卡片 (5d-3c); none in a fixture.
+    var bookActions: HomeBookActions?
 
     var body: some View {
         Group {
@@ -207,7 +209,8 @@ struct HomeRowView: View {
     }
 
     private func cards(_ cards: [HomeCardContent]) -> some View {
-        HomeSectionCards(layout: group.section.layout, cards: cards, rowID: group.id, hasShowAll: showAll != nil, open: open)
+        HomeSectionCards(layout: group.section.layout, cards: cards, rowID: group.id, hasShowAll: showAll != nil, open: open,
+                         bookActions: bookActions)
     }
 
     private func locationChips(_ locations: [CollectionLocation]) -> some View {

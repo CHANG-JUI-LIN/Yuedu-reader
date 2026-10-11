@@ -666,6 +666,7 @@ struct GeneratedBookCover: View {
             ) {
                 Image(uiImage: image)
                     .resizable()
+                    .reportsCoverImage(image)
             } else {
                 Color(.secondarySystemBackground)
             }

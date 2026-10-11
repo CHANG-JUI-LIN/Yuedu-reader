@@ -72,6 +72,7 @@ struct BookCoverImage: View {
                 GeneratedBookCover(title: title, author: author)
             }
         }
+        .reportsCoverImage(image.flatMap { forcesDefaultCover ? nil : $0 } ?? resolvedDefaultCover)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: LoadID(
