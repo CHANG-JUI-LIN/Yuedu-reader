@@ -84,8 +84,10 @@ struct HomeRowContent {
     }
 }
 
-/// What a section's name offers when long-pressed: the same edits as 編輯首頁 (5d-2).
+/// What a section's name offers when long-pressed: the same edits as 編輯首頁 (5d-2), and its
+/// 呈現方式 (5d-3).
 struct HomeSectionActions {
+    let setLayout: (HomeSectionLayout) -> Void
     let hide: () -> Void
     /// Pushes the section's page in 編輯首頁.
     let openSettings: () -> Void
@@ -108,11 +110,6 @@ struct HomeRowView: View {
     let openLocation: (CollectionLocation) -> Void
     /// The section's long press (5d-2, decision 14); none in a fixture.
     var actions: HomeSectionActions?
-
-    @ScaledMetric(relativeTo: .subheadline) private var scaledCoverWidth = DSLayout.homeCardCoverWidth
-    @Environment(\.publicLibraryCoverFrames) private var coverFrames
-
-    private var coverWidth: CGFloat { min(scaledCoverWidth, DSLayout.homeCardCoverMaxWidth) }
 
     var body: some View {
         Group {
@@ -175,6 +172,23 @@ struct HomeRowView: View {
     @ViewBuilder
     private var actionsMenu: some View {
         if let actions {
+            let layout = row.section.layout
+            Menu {
+                Picker(localized("呈現方式"), selection: Binding(
+                    get: { layout.style },
+                    set: { actions.setLayout(HomeSectionLayout(style: $0, ranked: layout.showsRanks)) })) {
+                    ForEach(HomeLayoutStyle.allCases) { style in
+                        Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
+                    }
+                }
+                if layout.style == .list {
+                    Toggle(localized("顯示排名"), isOn: Binding(
+                        get: { layout.showsRanks },
+                        set: { actions.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
+                }
+            } label: {
+                Label(localized("呈現方式"), systemImage: "rectangle.3.group")
+            }
             Button(localized("隱藏"), systemImage: "eye.slash", action: actions.hide)
             Button(localized("設定"), systemImage: "slider.horizontal.3", action: actions.openSettings)
             Button(localized("刪除"), systemImage: "trash", role: .destructive, action: actions.delete)
@@ -207,60 +221,20 @@ struct HomeRowView: View {
         }
     }
 
-    /// Blank covers the size of the real ones, so the page does not jump when they arrive.
-    /// Laid out as the loaded row is, in a scroll view that does not scroll.
+    /// The section's layout with blank cards, so the page does not jump when the books arrive.
     private var placeholder: some View {
-        ScrollView(.horizontal) {
-            HStack(alignment: .top, spacing: DSSpacing.md) {
-                ForEach(0..<4, id: \.self) { _ in
-                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                        RoundedRectangle(cornerRadius: DSRadius.searchListCover, style: .continuous)
-                            .fill(DSColor.neutralControlFill)
-                            .frame(width: coverWidth, height: coverWidth / DSLayout.discoverCoverAspectRatio)
-                            .padding(.bottom, DSSpacing.xs)
-                        Text(verbatim: "Placeholder").font(DSFont.subheadline.weight(.semibold)).lineLimit(1)
-                        Text(verbatim: "Author").font(DSFont.footnote).lineLimit(1)
-                    }
-                    .frame(width: coverWidth, alignment: .leading)
-                    .redacted(reason: .placeholder)
-                }
-            }
-        }
-        .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
-        .scrollDisabled(true)
-        .scrollIndicators(.hidden)
-        .overlay { ProgressView() }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(localized("載入中…"))
+        HomeSectionCards(layout: row.section.layout, cards: (0..<6).map(HomeCardContent.placeholder), rowID: row.id,
+                         hasShowAll: showAll != nil, open: { _, _ in })
+            .redacted(reason: .placeholder)
+            .scrollDisabled(true)
+            .allowsHitTesting(false)
+            .overlay { ProgressView() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(localized("載入中…"))
     }
 
     private func cards(_ cards: [HomeCardContent]) -> some View {
-        ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
-                // By position: a source can list one item twice.
-                ForEach(cards.indices, id: \.self) { index in
-                    let card = cards[index]
-                    Button {
-                        coverFrames?.activeScope = row.id
-                        open(card, cards)
-                    } label: {
-                        HomeBookCard(content: card, coverWidth: coverWidth)
-                    }
-                    .buttonStyle(ExploreTileButtonStyle())
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityLabel(card.accessibilityLabel)
-                    .accessibilityValue(card.accessibilityValue)
-                    .accessibilityIdentifier("home.card.\(card.id.instance.type.rawValue).\(card.id.item)")
-                }
-            }
-            .scrollTargetLayout()
-        }
-        .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
-        .scrollTargetBehavior(.viewAligned)
-        .scrollIndicators(.hidden)
-        .scrollClipDisabled()
-        .environment(\.publicLibraryCoverScope, row.id)
+        HomeSectionCards(layout: row.section.layout, cards: cards, rowID: row.id, hasShowAll: showAll != nil, open: open)
     }
 
     private func locationChips(_ locations: [CollectionLocation]) -> some View {

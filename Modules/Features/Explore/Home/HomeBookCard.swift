@@ -16,11 +16,15 @@ struct HomeCardContent: Identifiable {
         /// A shelf copy, drawn as the shelf draws it (預設封面, 強制使用預設封面).
         case shelf(ReadingBook)
         case reference(CoverReference?, session: URLSession?)
+        /// A blank cover while the row loads.
+        case placeholder
     }
 
     let id: SourceItemKey
     let title: String
     let author: String
+    /// The source's plain-text blurb, for the layouts with room for it; none for a shelf copy.
+    let blurb: String?
     let cover: Cover
     /// The Emby line: 已加入書架, 已下載, or a shelf copy's 新增 or how far it is read.
     let detail: String?
@@ -46,6 +50,7 @@ struct HomeCardContent: Identifiable {
         author = summary.authors.joined(separator: "、")
         if case .copy(let bookID) = opening, let book = shelfBooks[bookID] {
             cover = .shelf(book)
+            blurb = nil
             let read = book.currentPosition
             detail = BookshelfAccessibility.readingStatus(for: book)
             progress = read > 0 && read < 0.99 ? read : nil
@@ -55,11 +60,30 @@ struct HomeCardContent: Identifiable {
             return
         }
         cover = .reference(summary.cover, session: Self.session(for: opening, connections: connections))
+        blurb = summary.blurb
         let status = status(record.key)
         detail = status?.title
         progress = nil
         accessibilityLabel = summary.title
         accessibilityValue = [author, sourceName, status?.title ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    /// One of the blank cards a loading row shows, as long as a real one's text.
+    static func placeholder(_ index: Int) -> HomeCardContent {
+        HomeCardContent(placeholder: index)
+    }
+
+    private init(placeholder index: Int) {
+        id = SourceItemKey(instance: SourceInstanceKey(type: .library, id: "placeholder"), item: "\(index)")
+        title = "Placeholder title"
+        author = "Author"
+        blurb = "A blurb as long as a source's, over two lines of a card."
+        cover = .placeholder
+        detail = nil
+        progress = nil
+        accessibilityLabel = ""
+        accessibilityValue = ""
+        opening = .copy(UUID())
     }
 
     /// A library's covers come through its connection's session, which carries its sign-in;
@@ -89,6 +113,9 @@ struct HomeCardContent: Identifiable {
 struct HomeBookCard: View {
     let content: HomeCardContent
     let coverWidth: CGFloat
+    /// Keeps two title lines and the status line even when the text is shorter, so cards
+    /// stacked in 多行橫向輪播 and 固定封面網格 line up row by row.
+    var reservesTextSpace = false
 
     private var coverSize: CGSize {
         CGSize(width: coverWidth, height: coverWidth / DSLayout.discoverCoverAspectRatio)
@@ -98,26 +125,19 @@ struct HomeBookCard: View {
         VStack(alignment: .leading, spacing: DSSpacing.xxs) {
             HomeCardCover(cover: content.cover, title: content.title, author: content.author, size: coverSize)
                 .overlay(alignment: .bottom) {
-                    if let progress = content.progress { progressBar(progress) }
+                    if let progress = content.progress { HomeProgressBar(progress: progress) }
                 }
                 .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
                 .padding(.bottom, DSSpacing.sm)
-            Text(content.title)
-                .font(DSFont.subheadline.weight(.semibold))
-                .foregroundStyle(DSColor.textPrimary)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-            if !content.author.isEmpty {
-                Text(content.author)
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .lineLimit(1)
-            }
-            if let detail = content.detail {
-                Text(detail)
-                    .font(DSFont.caption)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .lineLimit(1)
+            if reservesTextSpace {
+                // The tallest text a card can have, unseen, holds the room; the card's own
+                // text sits at its top, so short text leaves the space below, not between lines.
+                ZStack(alignment: .topLeading) {
+                    text(title: "\n", author: " ", detail: " ").hidden()
+                    text(title: content.title, author: content.author, detail: content.detail)
+                }
+            } else {
+                text(title: content.title, author: content.author, detail: content.detail)
             }
         }
         // Cards in a row align at the top, as Apple Books' do, whatever each one's text runs to.
@@ -125,8 +145,36 @@ struct HomeBookCard: View {
         .contentShape(Rectangle())
     }
 
-    /// Hidden from VoiceOver: the card's label already says how far the book is read.
-    private func progressBar(_ progress: Double) -> some View {
+    private func text(title: String, author: String, detail: String?) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+            Text(title)
+                .font(DSFont.subheadline.weight(.semibold))
+                .foregroundStyle(DSColor.textPrimary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            if !author.isEmpty {
+                Text(author)
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .lineLimit(1)
+            }
+            if let detail {
+                Text(detail)
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+}
+
+/// How far a shelf copy is read, along its cover or under 大型閱讀卡片's text. Hidden from
+/// VoiceOver: the card's label already says it.
+struct HomeProgressBar: View {
+    let progress: Double
+
+    var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Rectangle().fill(DSColor.neutralControlFill)
@@ -139,7 +187,7 @@ struct HomeBookCard: View {
 }
 
 /// Registers a store book's cover, so its carousel card opens out of it; other covers have none.
-private struct PublicLibraryCoverAnchor: ViewModifier {
+struct PublicLibraryCoverAnchor: ViewModifier {
     let id: String?
 
     func body(content: Content) -> some View {
@@ -179,6 +227,8 @@ struct HomeCardCover: View {
             HomeFileCover(path: path, title: title, author: author, size: size)
         case .reference(.generated, _), .reference(nil, _):
             GeneratedBookCover(title: title, author: author)
+        case .placeholder:
+            DSColor.neutralControlFill
         }
     }
 }

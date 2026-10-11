@@ -278,8 +278,8 @@ private struct CustomExploreRankedRow: View {
 }
 
 /// A rank in a small square: white on red, teal and orange for the top three, grey for
-/// the rest.
-private struct CustomExploreRankBadge: View {
+/// the rest. Also the home's 圖文資訊清單 ranks (5d-3).
+struct CustomExploreRankBadge: View {
     let rank: Int
 
     @ScaledMetric(relativeTo: .caption) private var side = DSLayout.customExploreRankBadgeSize

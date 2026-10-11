@@ -295,6 +295,11 @@ private struct HomeRowHost: View {
                         ExplorePlace.page(of: location, in: row, aozoraIndex: aozoraIndex).map(push)
                     },
                     actions: HomeSectionActions(
+                        setLayout: { layout in
+                            withAnimation(DSAnimation.standard) {
+                                HomePageStore.shared.edit { $0.setLayout(layout, section: row.section.id) }
+                            }
+                        },
                         hide: { HomePageStore.shared.edit { $0.setEnabled(false, section: row.section.id) } },
                         openSettings: openSettings,
                         delete: { confirmsDelete = true }))

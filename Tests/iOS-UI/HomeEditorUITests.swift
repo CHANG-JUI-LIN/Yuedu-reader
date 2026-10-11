@@ -85,6 +85,41 @@ final class HomeEditorUITests: XCTestCase {
                                                         "home.row.header.", listTitle)).firstMatch.exists)
     }
 
+    /// 5d-3: 呈現方式, from the same long press, redraws the section: 圖文資訊清單 gives each book
+    /// the width of the screen, and 顯示排名 puts its rank first in what VoiceOver reads.
+    @MainActor
+    func testLongPressChangesTheLayout() {
+        let app = launchExplore()
+        let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                      "home.row.header.", listTitle)).firstMatch
+        let book = app.buttons[card].firstMatch
+        XCTAssertLessThan(book.frame.width, app.frame.width / 2, "橫向單排書架 shows several books to a screen")
+
+        header.press(forDuration: 1.0)
+        let layouts = app.buttons["呈現方式"].firstMatch
+        XCTAssertTrue(layouts.waitForExistence(timeout: 5), app.debugDescription)
+        layouts.tap()
+        let list = app.buttons["圖文資訊清單"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "home-section-layouts")
+        list.tap()
+        XCTAssertTrue(book.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, app.debugDescription)
+        XCTAssertFalse(book.label.first?.isNumber ?? true, "an unranked list reads no rank")
+        attach(app, "home-section-list")
+
+        header.press(forDuration: 1.0)
+        XCTAssertTrue(layouts.waitForExistence(timeout: 5))
+        layouts.tap()
+        let ranks = app.switches["顯示排名"].firstMatch.exists ? app.switches["顯示排名"].firstMatch : app.buttons["顯示排名"].firstMatch
+        XCTAssertTrue(ranks.waitForExistence(timeout: 5), app.debugDescription)
+        ranks.tap()
+        let ranked = NSPredicate(format: "label MATCHES %@", "^[0-9]+, .*")
+        expectation(for: ranked, evaluatedWith: book)
+        waitForExpectations(timeout: 5)
+        attach(app, "home-section-ranked-list")
+    }
+
     /// Long-pressing a section's name offers 隱藏, 設定 and 刪除; 刪除 asks first.
     @MainActor
     func testLongPressDeletesASection() {

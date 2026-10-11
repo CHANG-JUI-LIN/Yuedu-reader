@@ -114,6 +114,12 @@
     - **The browser's switch** is a 範圍 card at the end of the edited home (recommended option).
     - **A section name's long press** offers 隱藏, 設定 (that section's page) and 刪除, which asks first (recommended option). 5d-3 adds 呈現方式 to the same menu.
 
+19. **Answered 2026-10-11, during 5d-3** (maintainer: 「現在不應該顯示這是古騰堡的…你顯示來源就很不像 emby 的首頁聚合，而且 emby 應該是聚合的內容隨著切換的 emby 庫改變，而不會動到首屏頁面吧」, then by option):
+    - **範圍 filters the home; it does not replace it.** Choosing a library keeps every section, its order and its layout, and leaves only that library's books; a section with none of them is not drawn. A library's full catalog is reached from each section's 查看全部. This replaces 5d-1's 「a source's own page in place」.
+    - **The home names no source.** No source line under a section's title and none on a card; a book's source shows on its work page only.
+    - **最新 is one row.** Under 全部 it mixes every source, newest first; sources without dates take turns. Under one library it is that library's 最新. 排除的來源 stays. This replaces plan decision 10's 「one row per source」.
+    - **偏好閱讀語言 is its own step after these** (the maintainer's pasted notes): several languages, in order, default 「prefer, allow others」; Gutenberg's bundled lists tagged per book, 青空 as Japanese; the 全部 home sorts and filters by it; Gutenberg's categories follow it instead of the interface language. China's region rule still holds.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -686,3 +692,24 @@ Branch `unified-library/5d2-edit-home`. Settled decisions 13, 14 and 18.
 - **Not yet:** 新增欄目 and its ＋ (5d-5), so a deleted default section cannot be added back until then; 呈現方式 in the long press (5d-3).
 - **Tests (unit):** `HomePageEditingTests`, `HomeSectionTests`, `HomePageStoreTests`, `HomeModelTests`, `ExploreHomeTests` — 37/37 passed (iOS 27).
 - **Tests (UI):** `HomeEditorUITests` 2/2 on iOS 27 and iOS 17.5 (the long press's 刪除 → confirmation included); `ExploreHomeUITests` 6/6 on iOS 27. On iOS 27 the minimized bar hides its 完成 while the home is scrolled to the bottom, so the test checks the home's own 完成 there and the bar's after scrolling back up.
+
+### 5d-3: the five layouts (2026-10-11)
+
+Branch `unified-library/5d3-layouts`. From the maintainer's layout notes (decision 14), with their names: 大型閱讀卡片, 橫向單排書架, 多行橫向輪播, 固定封面網格, 圖文資訊清單.
+
+- **Stored as layout strings,** with no new field and no schema bump: `readingCard`, `row` (5c's row, unchanged), `multiRow`, `coverGrid`, `list` and `rankedList` (the list with ranks). `HomeSectionLayout.style` reads any stored layout as one of the five. A custom page's seven kinds map as decision 14 says, so 5d-4 reuses it. 磚塊 and a later build's layout draw as a row and are kept as they are.
+- **The app decides what is drawn:** at accessibility text sizes 多行橫向輪播 draws one row, and 大型閱讀卡片 and the list put their text under the cover.
+- **The layouts** (`HomeSectionCards`):
+  - 大型閱讀卡片 is a large cover beside the title, author, blurb or status, and the progress bar. One card fits a phone, two a regular width, and the next card shows past the edge.
+  - 多行橫向輪播 is two rows of 100 pt covers that swipe sideways together.
+  - 固定封面網格 has as many columns as fit at 100 pt, never fewer than two.
+  - 圖文資訊清單 is a 60 pt cover beside the title, author, blurb and status, with the custom pages' rank badge when ranked.
+  - The grid shows three rows and the list five when the section has 查看全部; without it they show everything, since nothing else would.
+  - A loading section draws its own layout with blank cards.
+  - Every card keeps its `home.card.*` identifier, its VoiceOver label (a ranked list reads the rank first) and the carousel's cover anchor.
+- **呈現方式** sits in the section name's long press: the five layouts as a picker, and 顯示排名 when the list is chosen. It is written through `HomePageStore.edit` (`setLayout`).
+- **繼續閱讀 defaults to 大型閱讀卡片.** A home saved before this keeps the 橫向單排書架 it was saved with.
+- **Fixed on the way, also a 5d-2 bug:** a sync made a row whose section changed in any way idle, and nothing loaded it again, because its view's `.task` had already run. A new layout left the row as blank cards for good, and so did 排除的來源 for 最新's other rows. Now a row whose content is unchanged keeps what it loaded and takes the new layout or title (`HomeSection.loadsSameContent`). A row whose content changed under the same id loads again by itself if it had loaded.
+- **Strings:** 呈現方式, 大型閱讀卡片, 橫向單排書架, 多行橫向輪播, 固定封面網格, 圖文資訊清單, 顯示排名, in five languages.
+- **Tests (unit):** `HomeLayoutStyleTests` (new, 6), with three new `HomeModelTests` (a layout keeps content, an exclusion keeps the other rows, changed content reloads). `syncKeepsRows` no longer expects a new title to rebuild the row. With `HomePageEditingTests`, `HomeSectionTests`, `HomePageStoreTests`, `HomeCardTests` and `ExploreHomeTests`: 51/51 passed (iOS 27).
+- **Tests (UI):** `HomeEditorUITests` 3/3 (new: `testLongPressChangesTheLayout`) on iOS 27 and iOS 17.5; `ExploreHomeUITests` 6/6 on iOS 27. The fixture (`-explore-home-fixture`, now a list in each layout) was checked on iOS 27 afterwards: stacked cards reserve their room below the text, not between title and author.

@@ -18,13 +18,25 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
 
     /// One tile per place (我的書庫, no longer drawn: see `HomeSectionBinding.myLibrary`).
     static let tiles = Self(rawValue: "tiles")
-    /// One row of covers that swipes sideways.
+    /// 橫向單排書架: one row of covers that swipes sideways.
     static let row = Self(rawValue: "row")
+    /// 大型閱讀卡片 (5d-3).
+    static let readingCard = Self(rawValue: "readingCard")
+    /// 多行橫向輪播 (5d-3).
+    static let multiRow = Self(rawValue: "multiRow")
+    /// 固定封面網格 (5d-3).
+    static let coverGrid = Self(rawValue: "coverGrid")
+    /// 圖文資訊清單 (5d-3), and the same with ranks: two values, so a rank needs no field of
+    /// its own, which would raise `HomePage.currentSchemaVersion`.
+    static let list = Self(rawValue: "list")
+    static let rankedList = Self(rawValue: "rankedList")
 
     /// The custom-page layout this is, if it is one.
     var componentKind: CustomExploreComponent.Kind? { .init(rawValue: rawValue) }
 
-    var isKnown: Bool { componentKind != nil || self == .tiles || self == .row }
+    var isKnown: Bool {
+        componentKind != nil || [.tiles, .row, .readingCard, .multiRow, .coverGrid, .list, .rankedList].contains(self)
+    }
 }
 
 /// What a section shows (design §13.4).
@@ -201,7 +213,8 @@ enum HomePageDefaults {
     ///   - publicLibrariesAvailable: false in China, where no public-library section is made.
     static func page(mode: ExploreMode, publicLibrariesAvailable: Bool,
                      makeID: () -> UUID = UUID.init) -> HomePage {
-        let continueReading = HomeSection(id: makeID(), layout: .row, binding: .continueReading)
+        // 大型閱讀卡片 since 5d-3 (Phase 5 plan, decision 14).
+        let continueReading = HomeSection(id: makeID(), layout: .readingCard, binding: .continueReading)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest(excluded: []))
         // 精選: one section per bundled list, titled by the list (plan decision 11).
         let featured = publicLibrariesAvailable

@@ -25,7 +25,7 @@ final class HomeModel: ObservableObject {
 
     struct Row: Identifiable, Equatable {
         let id: String
-        let section: HomeSection
+        var section: HomeSection
         let source: SourceInstanceKey
         let sourceName: String
         let policy: SectionLoadPolicy
@@ -56,13 +56,17 @@ final class HomeModel: ObservableObject {
 
     // MARK: - Building
 
-    /// Builds the rows for `page` as it now stands. A row whose section and source are
-    /// unchanged keeps what it loaded.
+    /// Builds the rows for `page` as it now stands.
+    /// - A row whose source and content are unchanged keeps what it loaded, and takes the
+    ///   section's new title and layout (呈現方式, 5d-3).
+    /// - A row whose content changed under the same id starts again at once if it had been
+    ///   asked for: its view is the same view, so nothing else would ask again.
     func sync(with page: HomePage) async {
         await waitForSources()
         let available = makeProviders()
         let existing = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var built: [Row] = []
+        var restarted: [String] = []
         var servedBy: [String: any HomeSectionProviding] = [:]
         for section in page.sections where section.isEnabled {
             if case .myLibrary = section.binding { continue }
@@ -79,9 +83,11 @@ final class HomeModel: ObservableObject {
                 guard let policy = provider.loadPolicy(for: section) else { continue }
                 let id = Self.rowID(section: section.id, source: provider.instance)
                 servedBy[id] = provider
-                if let kept = existing[id], kept.section == section, kept.policy == policy {
+                if var kept = existing[id], kept.section.loadsSameContent(as: section), kept.policy == policy {
+                    kept.section = section
                     built.append(kept)
                 } else {
+                    if existing[id] != nil, requested.contains(id) { restarted.append(id) }
                     requested.remove(id)
                     built.append(Row(id: id, section: section, source: provider.instance, sourceName: provider.displayName,
                                      policy: policy, state: .idle))
@@ -92,6 +98,7 @@ final class HomeModel: ObservableObject {
         requested.formIntersection(servedBy.keys)
         rows = built
         isReady = true
+        for id in restarted { load(id) }
     }
 
     private func isLatest(_ section: HomeSection) -> Bool {
@@ -176,7 +183,7 @@ final class HomeModel: ObservableObject {
             SourcePerfTrace.record("home.row", "source=\(row.source.type.rawValue) entries=\(entries.count)",
                                    since: started, thresholdMs: 0)
             // The row may have been removed or changed while this loaded.
-            guard self.row(rowID)?.section == row.section else { return }
+            guard self.row(rowID)?.section.loadsSameContent(as: row.section) == true else { return }
             setState(.loaded(entries), of: rowID)
         } catch is CancellationError {
             setState(.idle, of: rowID)
@@ -184,7 +191,7 @@ final class HomeModel: ObservableObject {
             AppLogger.network("⟐ home row failed", error: error, context: [
                 "source": "\(row.source.type.rawValue):\(row.source.id)", "section": row.section.id.uuidString,
             ])
-            guard self.row(rowID)?.section == row.section else { return }
+            guard self.row(rowID)?.section.loadsSameContent(as: row.section) == true else { return }
             setState(.failed(error.localizedDescription), of: rowID)
         }
     }

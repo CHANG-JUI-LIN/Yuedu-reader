@@ -14,6 +14,16 @@ extension HomeSection {
     }
 }
 
+extension HomeSection {
+    /// Whether a row of this section loads what a row of `other` loads: the title and the
+    /// layout change only how it is drawn, and 最新's 排除的來源 only which sources have a row.
+    func loadsSameContent(as other: HomeSection) -> Bool {
+        guard parameters == other.parameters else { return false }
+        if case .latest = binding, case .latest = other.binding { return true }
+        return binding == other.binding
+    }
+}
+
 extension HomePage {
     /// The sections 編輯首頁 lists, in the page's order.
     var editableSections: [HomeSection] {
@@ -34,6 +44,12 @@ extension HomePage {
     mutating func setEnabled(_ isEnabled: Bool, section id: UUID) {
         guard let index = sections.firstIndex(where: { $0.id == id }) else { return }
         sections[index].isEnabled = isEnabled
+    }
+
+    /// 呈現方式 (5d-3).
+    mutating func setLayout(_ layout: HomeSectionLayout, section id: UUID) {
+        guard let index = sections.firstIndex(where: { $0.id == id }) else { return }
+        sections[index].layout = layout
     }
 
     mutating func removeSection(_ id: UUID) {
