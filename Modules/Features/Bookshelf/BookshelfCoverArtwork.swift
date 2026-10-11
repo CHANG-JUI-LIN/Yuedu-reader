@@ -283,6 +283,7 @@ struct BookshelfCoverArtwork: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
+                .reportsCoverImage(image)
         case .placeholder:
             // Only while a file is being read. A neutral slot, not the generated
             // cover: that would read as this book's cover and then change.

@@ -43,7 +43,9 @@ private struct HomeDesignFixturePage: View {
                 ForEach(HomeScopeFilter.groups(HomeDesignFixtureData.rows, in: nil)) { group in
                     HomeRowView(group: group, content: HomeDesignFixtureData.content(for: group, store: store),
                                 load: {}, request: {}, showAll: group.state.isSettled ? {} : nil,
-                                open: { _, _ in }, openLocation: { _ in })
+                                open: { _, _ in }, openLocation: { _ in },
+                                // The ••• shows; its items do nothing to the made-up copies.
+                                bookActions: HomeBookActions(removeFromContinueReading: { _ in }, markFinished: { _ in }))
                 }
             }
             .padding(.vertical, DSSpacing.lg)
@@ -90,6 +92,8 @@ enum HomeDesignFixtureData {
             CollectionEntry.location(CollectionLocation(id: $0, title: $0))
         }
         return [
+            row(.continueReading, layout: .compactReadingCard, source: .localLibrary, name: localized("書架"), policy: .local,
+                state: .loaded([])),
             row(.continueReading, layout: .readingCard, source: .localLibrary, name: localized("書架"), policy: .local,
                 state: .loaded([])),
             // One list in each of the other layouts (5d-3).

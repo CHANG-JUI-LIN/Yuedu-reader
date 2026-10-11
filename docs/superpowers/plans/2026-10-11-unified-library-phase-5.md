@@ -731,3 +731,19 @@ Branch `unified-library/5d3b-aggregate`. Decisions 19 and 20.
 - **Strings:** 瀏覽書庫, 瀏覽完整目錄, in five languages.
 - **Tests (unit):** `HomeSectionGroupTests` (new, 3: 最新 is one section in turns, the merged state, the scope filter) and `HomeModelTests.homeAppearedFollowsScope`; `HomeCardTests` titles go through the groups. With the other home suites: 55/55 passed (iOS 27).
 - **Tests (UI):** `ExploreHomeUITests.testScopeFiltersTheHomeAndBack` replaces `testScopeShowsOneSourceInPlaceAndBack` (瀏覽書庫 lists the libraries; Gutenberg keeps the home with 瀏覽完整目錄 on top, which opens Gutenberg's page; the scope survives a relaunch; 青空文庫 drops Gutenberg's books; 全部 brings them back), and `testConnectionIsInScope` opens the connection from 瀏覽完整目錄. iOS 27: `ExploreHomeUITests` 6/6 and `HomeEditorUITests` 3/3. iOS 17.5: the scope test and `HomeEditorUITests` 3/3.
+
+### 5d-3c: 精簡閱讀卡片 (2026-10-11)
+
+Branch `unified-library/5d3c-compact-card`. Decision 20, from the maintainer's Apple Books 「繼續」 screenshot.
+
+- **A sixth layout, 精簡閱讀卡片** (`compactReadingCard`, a layout string like the others): a 64 pt cover beside the title, author and 「書籍・已讀 42%」 (漫畫, 有聲書 by the copy's kind), sized and swiped like 大型閱讀卡片. At accessibility text sizes the text goes under the cover.
+- **繼續閱讀 defaults to it on a new home;** 大型閱讀卡片 stays a choice. A saved home keeps the layout it was saved with.
+- **The card is the cover's colour.** The cover views (`BookCoverImage`, `BookshelfCoverArtwork`, `GeneratedBookCover`, the home's file cover) report the image they draw to a `coverImageObserver` when one is set, so the colour is the cover on screen, with no second load. `CoverTint` averages it (the audiobook player's average, moved there and shared) and darkens it only as far as white text needs: 4.5:1, 7:1 with 增加對比. All the card's text is white; until the cover draws, a dark neutral ground.
+- **••• on a shelf copy:** 從繼續閱讀移除 (in 繼續閱讀 only) and 標記為已讀完 (unless finished). The ••• sits beside the card's button, not in it, labelled 更多; the same items are the card's VoiceOver actions. A store book has none.
+  - 從繼續閱讀移除 writes `ReadingBook.continueReadingHiddenAt` (optional, encoded only when set, so untouched books keep their sync hash). 繼續閱讀 leaves the book out until it is opened again (`isInContinueReading`); the shelf, its 最近閱讀 order and the progress are untouched.
+  - 標記為已讀完 writes progress 1 (已讀完 wherever progress shows) and takes the book out of 繼續閱讀, as Apple Books does. The reader keeps its own position: opening the book resumes where it was, and its next save writes the real progress back.
+  - The shelf's rows load again at once, so the card leaves.
+- **Open question for the maintainer:** a book read to the end by itself stays in 繼續閱讀, as before; Apple Books drops finished books.
+- **Strings:** 精簡閱讀卡片, 書籍, 從繼續閱讀移除, 標記為已讀完, in five languages.
+- **Tests (unit):** `HomeCompactReadingCardTests` (new, 5: the ground's contrast, the menu's items and line, 移除 until reopened, 標記為已讀完, the field absent when unset); `HomeLayoutStyleTests.defaults` now expects 精簡閱讀卡片. With the home suites, `LocalHomeRowTests` and `AudiobookSettingsStorageTests`: 66/66 passed (iOS 27).
+- **Tests (UI):** `ExploreHomeUITests.testCompactCardMenu` (new, in the design fixture: ••• is its own hittable control labelled 更多 and offers both items). iOS 27: `ExploreHomeUITests` 7/7, `HomeEditorUITests` 3/3. iOS 17.5: `testCompactCardMenu`, `testNewInstallShowsTheDefaultSections`, `HomeEditorUITests` 3/3. The fixture's card was checked on screen: a pale generated cover gives (115, 119, 123).

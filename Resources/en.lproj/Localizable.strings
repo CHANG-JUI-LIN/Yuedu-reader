@@ -3652,6 +3652,10 @@
 /* Unified library 5d-3: the home's layouts */
 "呈現方式" = "Layout";
 "大型閱讀卡片" = "Featured Cards";
+"精簡閱讀卡片" = "Compact Reading Card";
+"書籍" = "Book";
+"從繼續閱讀移除" = "Remove from Continue Reading";
+"標記為已讀完" = "Mark as Finished";
 "橫向單排書架" = "Single Row";
 "多行橫向輪播" = "Multi-Row Carousel";
 "固定封面網格" = "Cover Grid";

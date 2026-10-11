@@ -28,6 +28,8 @@ struct HomeCardContent: Identifiable {
     let cover: Cover
     /// The Emby line: 已加入書架, 已下載, or a shelf copy's 新增 or how far it is read.
     let detail: String?
+    /// Book, comic or audiobook, for 精簡閱讀卡片's 書籍・已讀 42% line.
+    let kind: ContentKind
     /// How far a shelf copy is read, for the bar along its cover; nil when unread or finished.
     let progress: Double?
     let accessibilityLabel: String
@@ -46,6 +48,7 @@ struct HomeCardContent: Identifiable {
         guard case .item(let record, let summary, let opening) = entry else { return nil }
         id = record.key
         self.opening = opening
+        kind = record.contentKind
         title = summary.title
         author = summary.authors.joined(separator: "、")
         if case .copy(let bookID) = opening, let book = shelfBooks[bookID] {
@@ -81,6 +84,7 @@ struct HomeCardContent: Identifiable {
         blurb = "A blurb as long as a source's, over two lines of a card."
         cover = .placeholder
         detail = nil
+        kind = .text
         progress = nil
         accessibilityLabel = ""
         accessibilityValue = ""
@@ -99,6 +103,21 @@ struct HomeCardContent: Identifiable {
         default:
             return nil
         }
+    }
+
+    /// The shelf copy the card shows, whose ••• acts on it (5d-3c).
+    var shelfBook: ReadingBook? {
+        if case .shelf(let book) = cover { book } else { nil }
+    }
+
+    /// 精簡閱讀卡片's line: the kind, then the Emby line, as Apple Books' 書籍・12%.
+    var kindAndDetail: String {
+        let kindName = switch kind {
+        case .text: localized("書籍")
+        case .comic: localized("漫畫")
+        case .audio: localized("有聲書")
+        }
+        return [kindName, detail].compactMap { $0 }.joined(separator: "・")
     }
 
     /// The store book a Gutenberg or Aozora card opens in the carousel, whose cover it grows from.
@@ -253,7 +272,7 @@ private struct HomeFileCover: View {
     var body: some View {
         Group {
             if let image = image ?? request.flatMap(pipeline.cachedImage(for:)) {
-                Image(uiImage: image).resizable().scaledToFill()
+                Image(uiImage: image).resizable().scaledToFill().reportsCoverImage(image)
             } else {
                 GeneratedBookCover(title: title, author: author)
             }

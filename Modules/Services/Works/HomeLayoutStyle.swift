@@ -1,13 +1,14 @@
 import Foundation
 
-// Unified library 5d-3: the five layouts the home draws (Phase 5 plan, decision 14, from the
+// Unified library 5d-3: the layouts the home draws (Phase 5 plan, decision 14, from the
 // maintainer's layout notes): 大型閱讀卡片, 橫向單排書架, 多行橫向輪播, 固定封面網格 and
-// 圖文資訊清單, the last with ranks as an option. A stored layout may be anything a custom page
+// 圖文資訊清單, the last with ranks as an option; 精簡閱讀卡片 since 5d-3c (decision 20). A stored layout may be anything a custom page
 // or a later build wrote; the app decides what is drawn from it.
 
-/// One of the five layouts.
+/// One of the layouts.
 enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
     case readingCard
+    case compactReadingCard
     case row
     case multiRow
     case coverGrid
@@ -18,6 +19,7 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
     var titleKey: String {
         switch self {
         case .readingCard: "大型閱讀卡片"
+        case .compactReadingCard: "精簡閱讀卡片"
         case .row: "橫向單排書架"
         case .multiRow: "多行橫向輪播"
         case .coverGrid: "固定封面網格"
@@ -28,6 +30,7 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
     var symbol: String {
         switch self {
         case .readingCard: "rectangle.portrait.on.rectangle.portrait"
+        case .compactReadingCard: "rectangle.leadingthird.inset.filled"
         case .row: "rectangle.split.3x1"
         case .multiRow: "rectangle.grid.3x2"
         case .coverGrid: "square.grid.3x3"
@@ -43,6 +46,7 @@ extension HomeSectionLayout {
     var style: HomeLayoutStyle {
         switch self {
         case .readingCard: return .readingCard
+        case .compactReadingCard: return .compactReadingCard
         case .multiRow: return .multiRow
         case .coverGrid: return .coverGrid
         case .list, .rankedList: return .list
@@ -72,6 +76,7 @@ extension HomeSectionLayout {
     init(style: HomeLayoutStyle, ranked: Bool = false) {
         switch style {
         case .readingCard: self = .readingCard
+        case .compactReadingCard: self = .compactReadingCard
         case .row: self = .row
         case .multiRow: self = .multiRow
         case .coverGrid: self = .coverGrid

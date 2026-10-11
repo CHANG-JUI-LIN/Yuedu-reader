@@ -57,14 +57,15 @@ final class ShelfProvider: CollectionBrowsing {
         }
     }
 
-    /// 繼續閱讀: the copies opened most recently, newest first (design §13.3).
+    /// 繼續閱讀: the copies opened most recently, newest first (design §13.3), leaving out
+    /// those taken out since they were last opened (5d-3c).
     func continueReading(limit: Int) -> [CollectionEntry] {
         items(recentlyOpened(limit: limit))
     }
 
     private func recentlyOpened(limit: Int) -> [ReadingBook] {
         Array(store.books
-            .compactMap { book in book.lastOpenedDate.map { (book, $0) } }
+            .compactMap { book in book.isInContinueReading ? book.lastOpenedDate.map { (book, $0) } : nil }
             .sorted { $0.1 > $1.1 }
             .prefix(limit)
             .map(\.0))

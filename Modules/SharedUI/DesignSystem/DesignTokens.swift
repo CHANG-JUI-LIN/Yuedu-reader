@@ -42,6 +42,8 @@ enum DSColor {
     static var textPrimary: Color { themedText(\.primary, fallback: .label) }
     /// Text on strong functional fills.
     static let textOnAccent = Color.white
+    /// 精簡閱讀卡片's ground until its cover's colour is known: dark enough for white text.
+    static let coverTintPlaceholder = Color(red: 0.30, green: 0.31, blue: 0.33)
     /// Secondary text (captions, subtitles)
     static var textSecondary: Color { themedText(\.secondary, fallback: .secondaryLabel) }
     /// Third-level text (footnotes, metadata) — the level iOS calls `tertiaryLabel`.
@@ -358,6 +360,8 @@ enum DSLayout {
     static let homeCompactCoverWidth: CGFloat = 100
     /// A cover in 圖文資訊清單, beside its text.
     static let homeListCoverWidth: CGFloat = 60
+    /// 精簡閱讀卡片's cover (5d-3c), beside its text on the cover's colour.
+    static let homeCompactReadingCardCoverWidth: CGFloat = 64
     /// A custom explore page's rank badge at the default text size (scaled with
     /// Dynamic Type); two-digit ranks widen it.
     static let customExploreRankBadgeSize: CGFloat = 24
