@@ -41,8 +41,11 @@ enum NextInSeries {
         var pickedWorks: Set<Int> = []
         var pickedSeries: Set<String> = []
         for copy in seeds {
-            guard let position = entryAt[copy], let current = numbered(index.entries[position], in: index, workOf: workOf),
-                  !pickedSeries.contains(current.series), let candidates = bySeries[current.series] else { continue }
+            guard let position = entryAt[copy],
+                  let placement = index.seriesPlacement(of: index.entries[position], workOf: workOf),
+                  let number = placement.number, !pickedSeries.contains(placement.key),
+                  let candidates = bySeries[placement.key] else { continue }
+            let current = (series: placement.key, number: number, authorKeys: placement.authorKeys)
             let authors = Set(current.authorKeys)
             var best: Int?
             for candidate in candidates {
@@ -61,18 +64,6 @@ enum NextInSeries {
             if picked.count == limit { break }
         }
         return picked
-    }
-
-    /// The copy's series and number: its own, or else those of another member of its work
-    /// (a WebDAV file of the book whose package has the number the copy's sidecar lacks).
-    private static func numbered(_ entry: WorkIndexEntry, in index: WorkIndex,
-                                 workOf: [SourceItemKey: Int]) -> (series: String, number: Double, authorKeys: [String])? {
-        if let series = entry.seriesKey, let number = entry.seriesIndex { return (series, number, entry.authorKeys) }
-        guard let work = workOf[entry.nodeKey] else { return nil }
-        let members = index.entries(of: index.works[work]).sorted { $0.nodeKey.sortKey < $1.nodeKey.sortKey }
-        guard let member = members.first(where: { $0.seriesKey != nil && $0.seriesIndex != nil }),
-              let series = member.seriesKey, let number = member.seriesIndex else { return nil }
-        return (series, number, entry.authorKeys.isEmpty ? member.authorKeys : entry.authorKeys)
     }
 
     /// The smaller number first; for one number, a shelf copy before an indexed file, then key order.

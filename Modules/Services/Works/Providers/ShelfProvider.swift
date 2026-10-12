@@ -106,13 +106,61 @@ final class ShelfProvider: CollectionBrowsing {
         let shelf = Dictionary(store.books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let shown = Set(shelf.keys.map(SourceItemKey.copy)).union(files.keys)
         let excluding = Set(versions.map(\.nodeKey))
+        let pageNodes = versions.map(\.nodeKey)
         let picked = await Task.detached(priority: .userInitiated) {
-            RelatedWorks.byAuthors(in: index, authorKeys: authorKeys, excluding: excluding, shown: shown, limit: limit)
+            // 同系列 shows the page's series; this row leaves it out.
+            let series = SeriesWorks.placement(of: pageNodes, in: index, workOf: index.workPositions())?.placement.key
+            return RelatedWorks.byAuthors(in: index, authorKeys: authorKeys, excluding: excluding, shown: shown,
+                                          excludingSeries: series, limit: limit)
         }.value
         let entries = entries(for: picked, shelf: shelf, files: files)
         SourcePerfTrace.record("works.detail.authorWorks.shelf", "authors=\(authorKeys.count) shown=\(entries.count)",
                                since: started, thresholdMs: 0)
         return entries
+    }
+
+    /// 作品詳情's 同系列 (Editorial Minimalism, 2026-10-12): the series of the page's versions
+    /// and its volumes on the shelf and in the WebDAV index, by `SeriesWorks`; nil when no
+    /// version records a series. The series' name is read back from the metadata that named
+    /// it (a copy's sidecar, a file's package values), never its match key. Like 系列下一本, the
+    /// first load waits for the one pass that reads the local copies' series
+    /// (`SeriesNumberBackfill`): copies imported before 5d-6b recorded none.
+    func series(of versions: [WorkDetailRoute]) async -> WorkSeriesShelf? {
+        guard !versions.isEmpty else { return nil }
+        await store.seriesNumberBackfill.runOnce()
+        let started = SourcePerfTrace.now
+        let index = await store.workIndex.current()
+        let files = store.workIndex.indexedFiles
+        // Read after the refresh, so a copy removed meanwhile is not offered.
+        let shelf = Dictionary(store.books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let shown = Set(shelf.keys.map(SourceItemKey.copy)).union(files.keys)
+        let pageNodes = versions.map(\.nodeKey)
+        let metadata = store.importedMetadata
+        let found = await Task.detached(priority: .userInitiated) { () -> (name: String, number: Double?, volumes: [SeriesWorks.Volume])? in
+            let workOf = index.workPositions()
+            guard let (entry, placement) = SeriesWorks.placement(of: pageNodes, in: index, workOf: workOf) else { return nil }
+            let values: [MetadataValue]
+            if entry.record.copyID != nil, let id = UUID(uuidString: entry.nodeKey.item) {
+                values = metadata.read(copyID: id)?.values ?? []
+            } else {
+                values = files[entry.nodeKey]?.values ?? []
+            }
+            guard let name = WorkIndexService.series(in: values, for: entry.record)?.name else {
+                AppLogger.cache("⟐ a series in the work index has no name in its metadata",
+                                context: ["node": entry.nodeKey.sortKey])
+                return nil
+            }
+            let volumes = SeriesWorks.volumes(in: index, of: placement, pageNodes: Set(pageNodes), shown: shown, workOf: workOf)
+            return (name, placement.number, volumes)
+        }.value
+        guard let found else { return nil }
+        let volumes = found.volumes.compactMap { volume -> WorkSeriesShelf.Volume? in
+            entries(for: [volume.key], shelf: shelf, files: files).first.map {
+                WorkSeriesShelf.Volume(entry: $0, number: volume.number, isPageWork: volume.isPageWork)
+            }
+        }
+        SourcePerfTrace.record("works.detail.series", "volumes=\(volumes.count)", since: started, thresholdMs: 0)
+        return WorkSeriesShelf(name: found.name, number: found.number, volumes: volumes)
     }
 
     /// 系列下一本 (unified library 5d-6b): what `NextInSeries` picks after each book being read

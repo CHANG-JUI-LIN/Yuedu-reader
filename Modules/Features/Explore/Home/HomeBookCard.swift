@@ -22,7 +22,7 @@ struct HomeCardContent: Identifiable {
 
     let id: SourceItemKey
     let title: String
-    let author: String
+    private(set) var author: String
     /// The source's plain-text blurb, for the layouts with room for it; none for a shelf copy.
     let blurb: String?
     let cover: Cover
@@ -33,7 +33,7 @@ struct HomeCardContent: Identifiable {
     /// How far a shelf copy is read, for the bar along its cover; nil when unread or finished.
     let progress: Double?
     let accessibilityLabel: String
-    let accessibilityValue: String
+    private(set) var accessibilityValue: String
     let opening: ItemOpening
     /// 作品詳情's route, the item frozen as the row had it; none for a placeholder.
     let route: WorkDetailRoute?
@@ -73,6 +73,21 @@ struct HomeCardContent: Identifiable {
         accessibilityLabel = summary.title
         // No source, as on screen: the home names none (5d-3b, decision 19).
         accessibilityValue = [author, status?.title ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    /// The card in a series' row (同系列): its number in place of the author the series
+    /// shares, on screen and to VoiceOver. A volume with no number keeps its author.
+    func inSeries(_ number: String?) -> HomeCardContent {
+        guard let number else { return self }
+        var card = self
+        card.author = number
+        // A shelf copy's label already reads its title, author and progress.
+        if case .shelf = cover {
+            card.accessibilityValue = number
+        } else {
+            card.accessibilityValue = [number, detail ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+        }
+        return card
     }
 
     /// One of the blank cards a loading row shows, as long as a real one's text.

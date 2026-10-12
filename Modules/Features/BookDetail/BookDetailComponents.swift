@@ -31,6 +31,8 @@ struct BookDetailLink: Identifiable {
     let id: String
     let title: String
     let action: () -> Void
+    /// What VoiceOver says the link does; a genre's by default.
+    var hint: String? = nil
 }
 
 // MARK: - Page scaffold
@@ -649,7 +651,7 @@ struct BookDetailHero<Cover: View>: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint(localized("顯示這個分類的作品"))
+                .accessibilityHint(link.hint ?? localized("顯示這個分類的作品"))
                 .accessibilityIdentifier("detail.link.\(link.id)")
             }
         }
