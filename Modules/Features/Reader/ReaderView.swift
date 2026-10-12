@@ -553,22 +553,7 @@ struct ReaderView: View {
     var book: ReadingBook? { store.readingBook(id: bookId) }
 
     var onlineBookDetail: OnlineBook? {
-        guard let book, book.isOnline, let sourceId = book.bookSourceId else { return nil }
-        let source = BookSourceStore.shared.source(id: sourceId)
-        return OnlineBook(
-            name: book.title,
-            author: book.author,
-            intro: "",
-            coverUrl: book.coverUrl ?? "",
-            bookUrl: book.bookInfoURL ?? book.source,
-            tocUrl: book.tocURL ?? "",
-            wordCount: "",
-            lastChapter: book.latestChapterDisplayTitle ?? "",
-            kind: "",
-            sourceId: sourceId,
-            sourceName: source?.bookSourceName ?? "",
-            runtimeVariables: book.runtimeVariables
-        )
+        book.flatMap(OnlineBook.init(shelfCopy:))
     }
 
     var isEPUB: Bool {

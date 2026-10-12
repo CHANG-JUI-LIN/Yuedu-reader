@@ -737,6 +737,78 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Chapter 2"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
     }
 
+    /// A book-source book on the shelf has one page, 作品詳情, which is its source's own page with
+    /// its chapter list and 換源 (unified library 5f-4, decision 29): the ••• has no 書籍詳情.
+    /// Taking the book off the shelf from that page goes back to the shelf.
+    @MainActor
+    func testShelfOnlineBookOpensWorkDetail() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(explore, settings)"]
+        app.launch()
+        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
+        let remove = app.buttons["Remove from Library"]
+        let add = app.buttons["Bookmarked"]
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Bookmarked", "Remove from Library"])).firstMatch.waitForExistence(timeout: 15))
+        if add.exists {
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
+            XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
+            add.tap()
+            XCTAssertTrue(remove.waitForExistence(timeout: 10), app.debugDescription)
+        }
+        // The shelf is written when the app leaves the foreground, not on 加入書架's tap.
+        XCUIDevice.shared.press(.home)
+        let left = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.state == .runningBackground || app.state == .runningBackgroundSuspended
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed)
+        app.terminate()
+        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(bookshelf, settings)", "-bookLayoutIsGrid", "NO"]
+        app.launch()
+        let cell = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Navigation Swipe Fixture，")).firstMatch
+        XCTAssertTrue(cell.waitForExistence(timeout: 15), app.debugDescription)
+        let more = cell.buttons["More"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+        more.tap()
+        let work = app.buttons["Work Details"].firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["Book Detail"].exists, "作品詳情 is the book's one page.\n\(app.debugDescription)")
+        work.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["detail.info.chapters"].firstMatch.waitForExistence(timeout: 15),
+                      "作品詳情 is the source's own page, with its chapters.\n\(app.debugDescription)")
+        XCTAssertTrue(app.staticTexts["Contents"].firstMatch.exists, app.debugDescription)
+        XCTAssertTrue(remove.waitForExistence(timeout: 15), app.debugDescription)
+        attachScreenshot(app, named: "Work detail - shelf online book")
+        // The page's reader closes back onto it with its bar on screen (iOS 17 lost it once,
+        // through the shelf's card coordinator).
+        let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read Now", "Continue Reading"])).firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
+        read.tap()
+        let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
+        XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        XCTAssertTrue(remove.waitForExistence(timeout: 10), "The reader closes onto 作品詳情.\n\(app.debugDescription)")
+        // The back button, named after the shelf; only later systems give it an identifier.
+        XCTAssertTrue(app.navigationBars.buttons["Library"].firstMatch.isHittable, app.debugDescription)
+        attachScreenshot(app, named: "Work detail - after the reader")
+        let pageButton = remove.frame
+        remove.tap()
+        // The confirmation's own 移除書架: an action sheet below on iOS 17, a popover over the
+        // page's button on later systems, so it is told apart by where it is, not by order.
+        XCTAssertTrue(app.staticTexts["Remove This Book from the Shelf?"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        let confirm = app.buttons.matching(NSPredicate(format: "label == %@", "Remove from Library"))
+            .allElementsBoundByIndex.first { $0.frame != pageButton }
+        XCTAssertNotNil(confirm, app.debugDescription)
+        confirm?.tap()
+        XCTAssertTrue(app.tabBars.buttons["Library"].firstMatch.waitForExistence(timeout: 10),
+                      "Removing it goes back to the shelf.\n\(app.debugDescription)")
+        XCTAssertTrue(cell.waitForNonExistence(timeout: 10), "The book leaves the shelf.\n\(app.debugDescription)")
+    }
+
     @MainActor
     func testShelfListExposesOneBookButtonAndOpensReader() throws {
         continueAfterFailure = false
@@ -756,6 +828,12 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             add.tap()
             XCTAssertTrue(remove.waitForExistence(timeout: 10), app.debugDescription)
         }
+        // The shelf is written when the app leaves the foreground, not on 加入書架's tap.
+        XCUIDevice.shared.press(.home)
+        let left = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.state == .runningBackground || app.state == .runningBackgroundSuspended
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed)
         app.terminate()
         app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings)",

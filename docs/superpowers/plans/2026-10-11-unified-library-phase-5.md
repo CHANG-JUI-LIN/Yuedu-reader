@@ -173,7 +173,60 @@
     - **搜索's book-source results, the reader's 書籍詳情 and the shelf's 書籍詳情 open 作品詳情 too** (5f-4), finishing decision 28: a work has one page wherever it is opened from.
     - **探索's pull to refresh fetches the RSS feeds** when the home shows 訂閱的最新文章.
     - **訂閱的最新文章's 查看全部 switches to the RSS tab.**
-    - **The RSS tab stays** for now; 5h's order waits.
+    - **The RSS tab stays** for now; 5h's order waits. *(Overturned by decision 30.)*
+
+30. **Answered 2026-10-12, during 5f-4a** (maintainer, from a pasted proposal on Explore as a content page, then by option). Answers open decision 1 and gates 5h:
+    - **The tabs are 書架・探索・資源庫・搜尋・設定.** RSS is no longer a tab. 資源庫 (Sources / Libraries) is a new first-level tab. It holds every library and source: Gutenberg, 青空文庫, OPDS, Calibre, WebDAV, the book sources and the RSS feeds. It also holds their categories, the management of each, and 新增連線.
+    - **Three areas that do not overlap:**
+      - 書架 holds the works the reader has.
+      - 資源庫 holds every source.
+      - 探索 is the cross-source cover wall, with no library entries.
+    - **探索's toolbar is one `•••`.** 範圍 and 「＋」 (新增首頁配置) are merged into it. Its items:
+      - 編輯首頁
+      - 首頁配置
+      - 偏好閱讀語言
+      - 參與聚合的來源
+      - 重新整理
+      - 瀏覽器
+    - **範圍 leaves 探索; this overturns decision 28's 範圍 menu.** Browsing one library is done in 資源庫.
+    - **RSS feed management (新增, OPML, 編輯) moves into 資源庫.** The articles stay on 探索's 訂閱的最新文章 (5g).
+    - **書源管理 moves into 資源庫, and Settings loses it.** There is one entry.
+    - **Everyone gets the new tabs, with a notice on the first launch.** A reader's own hidden tabs and custom icons are kept.
+    - **閱讀統計 keeps its current entry.**
+    - **Two new layouts, both built:**
+      - 精選 (Featured): a large cover, the author, the category, a one-line description, and 查看作品.
+      - 專題集合 (Collection): a themed set with its own artwork.
+    - **Order:** 5f-4 finishes first, then 探索's toolbar, the layouts and 5h.
+
+31. **Answered 2026-10-12, right after decision 30** (maintainer, in their own words). The remote-library connections move into 資源庫 too.
+    - **The principle:**
+      - 探索 owns the recommendations.
+      - 資源庫 owns the sources.
+      - Each source's discover page owns how it is shown.
+      - Global settings own only app-wide behaviour.
+      - The old Explore root is not copied whole, and no reader's existing setting is deleted by the redesign.
+    - **資源庫's root:**
+      - It is grouped by kind: 公有書庫, 遠端書庫, 常用書源, 所有書源.
+      - It keeps the old root's source search, groups, source entries and Legado's long-press actions.
+      - It never lays thousands of sources flat on the root.
+      - 所有書源 is the full list. That page switches grid or list and the column count.
+      - The toolbar is at most one more menu, holding 新增來源, 來源管理 and the display options.
+    - **A book source's discover page:**
+      - It keeps its categories, charts, cover wall and search.
+      - 列表／雜誌, 豎排榜單關鍵詞, 展示數量 and 預加載 come back as that page's display or advanced settings. This supersedes the 10-11 "delete, do not move" for these four.
+      - They are global defaults for now. A per-source override may come later, and the reader is never asked to configure each source.
+      - `DiscoverPageSettingsSheet` keeps its category choice, quick actions and the source's own controls. Legado compatibility must not break.
+    - **探索's home:**
+      - It has no source-switching mode.
+      - It is always the cross-source cover wall.
+      - Its sections and preferences are its own settings, never 資源庫's layout settings.
+    - **Settings migration:**
+      - Stored `ExploreSettings` values are not deleted or reset. Values still meaningful move to their new page.
+      - 5d-1b deleted the code, but the keys stay in users' defaults: `explore.showsGrid`, `explore.gridColumnCount`, `explore.sourcePageLayout`, `explore.rankedKeywords`, `explore.chartBookCount`, `explore.shelfBookCount`, `explore.preloadCount` and `coverDownloadLimit`. The restored settings read these keys. `explore.landing` was already migrated and removed.
+      - The old 首屏 must not jump 探索 into a source again, and the old value stays compatible.
+      - 封面並發數 is a global network setting and goes to the network settings.
+      - Custom explore pages keep their data with a new entry. Verify how 5d-4's migration kept them before 5h removes anything else.
+      - The public libraries' regional limits stay.
 
 ### Open, for the maintainer (each with a recommendation)
 
@@ -1031,3 +1084,30 @@ Decision 29. Branch `unified-library/5g-refresh-and-show-all`.
 - **查看全部** switches to the RSS tab: `ContentView` gives 探索 `\.openRSSTab`, nil while the reader hides that tab, so the header then has no chevron. Nothing is pushed.
 - **Tests:** `testSubscriptionArticles` taps the header and finds the RSS tab selected; iOS 27 and iOS 17.5 passed. iOS 27: `ExploreHomeUITests` 9 and `WorkDetailUITests` passed. The pull to refresh's fetch is not covered by a UI test (the seed's feed is off and fetches nothing); it is the RSS tab's refresh, covered by `RSSBackgroundRefreshTests`.
 
+
+### 5f-4a: the shelf's online books have one page (2026-10-12)
+
+Decision 29. Branch `unified-library/5f4a-shelf-work`.
+
+- **作品詳情 draws an online shelf copy as its source's page:** a `.copy` version whose book is a book-source book (`isOnline` with a `bookSourceId`) is drawn in place as `OnlineBookDetailDestination(.book(...))`, the way 5f-3 draws a found book-source version. That means its chapter list, 換源 (with the work's other versions first), 加入/移除書架 and reader. Every other copy (EPUB, TXT, remote library) keeps the work page. The version shown is pinned once loaded, as 5f-3 pins a found one.
+- **One constructor:** `OnlineBook(shelfCopy:)` replaces the two copies of the same mapping in `HomeView.onlineBookDetail(for:)` (deleted) and `ReaderView.onlineBookDetail` (now calls it).
+- **The shelf's ••• has no 書籍詳情:** gone from the list row's and the grid cell's menus and from their VoiceOver actions. `ShelfBookDetail` (two cases), `canShowOnlineBookDetail` and `showOnlineBookDetail` are deleted. The shelf's one item destination is `shelfWork: WorkDetailRoute?`.
+- **移除書架 on that page goes back to the shelf:** `WorkDetailView(route:onRemoveFromShelf:)` pops through the shelf's binding when the copy it was opened for leaves the shelf. Otherwise it reads its versions again, as before. Explore's 繼續閱讀 card passes no closure, so an online copy removed there leaves 作品詳情 showing the work's other versions or 目前沒有可閱讀的來源.
+- **For the maintainer to veto:**
+  - The shelf's online page used to open its reader through the shelf's card coordinator (`textPageReaderNavigator: readerCoordinator`). It is now pushed on the shelf's stack with `readerNavigator` nil, as every 作品詳情 reader is since 5f-1. Opening from the page therefore has no card zoom from the cover. A tap on the shelf cell still opens through the coordinator, unchanged.
+  - Explore's 繼續閱讀 card for an online book now shows its source's page too (chapter list, 換源), instead of the plain work page whose 繼續閱讀 opened the reader.
+- **Not in this step:** the reader's 書籍詳情 (5f-4b) and 搜索's book-source results (5f-4c).
+- **Tests:**
+  - `DetailReaderBackSwipeUITests.testShelfOnlineBookOpensWorkDetail` adds the fixture book from Explore, then relaunches to the shelf list. It checks:
+    - the ••• has 作品詳情 and no 書籍詳情;
+    - 作品詳情 shows the chapters and 目錄;
+    - 繼續閱讀 opens the reader, and an edge swipe returns to the page with its bar on screen;
+    - 移除書架 → confirm returns to the shelf without the book.
+  - The test failed at the 書籍詳情 check against the code before this step (the production edits were stashed for that run).
+  - iOS 27: it, `testShelfListExposesOneBookButtonAndOpensReader`, `testDetailReaderLoadsAndReturns`, `WorkDetailUITests` and `ExploreHomeUITests` (9) passed.
+  - iOS 17.5: it and `WorkDetailUITests` passed.
+- **Test fixes on the way:**
+  - The new test first terminated the app right after 加入書架, before the shelf was written. It now presses Home and waits for the background state, as `testShelfMangaOpensOnThePage` does.
+  - On iOS 27 the removal confirmation is a popover over the page's button, so the confirm button is the one at a different frame, not the lowest.
+  - `testShelfListExposesOneBookButtonAndOpensReader` had the same flaw: it passed only when an earlier run had left the book on the shelf. This is the 「shelf list's label」 failure 5f-3 listed as predating Phase 5. It now waits for the background state too, and passes on a shelf without the book.
+  - Not changed: a book added to the shelf is written on the store's debounce or when the app leaves the foreground. An app killed within that window loses the add. Deletion writes at once since 5f-1.

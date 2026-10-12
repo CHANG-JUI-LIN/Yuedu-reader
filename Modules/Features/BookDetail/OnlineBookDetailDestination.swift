@@ -208,6 +208,26 @@ extension OnlineBook {
             runtimeVariables: origin.runtimeVariables
         )
     }
+
+    /// Detail-page book for a book-source book on the shelf: its source's page, as 作品詳情
+    /// and the reader show it. Nil for any other book.
+    init?(shelfCopy book: ReadingBook) {
+        guard book.isOnline, let sourceId = book.bookSourceId else { return nil }
+        self.init(
+            name: book.title,
+            author: book.author,
+            intro: "",
+            coverUrl: book.coverUrl ?? "",
+            bookUrl: book.bookInfoURL ?? book.source,
+            tocUrl: book.tocURL ?? "",
+            wordCount: "",
+            lastChapter: book.latestChapterDisplayTitle ?? "",
+            kind: "",
+            sourceId: sourceId,
+            sourceName: BookSourceStore.shared.source(id: sourceId)?.bookSourceName ?? "",
+            runtimeVariables: book.runtimeVariables
+        )
+    }
 }
 
 #Preview {
