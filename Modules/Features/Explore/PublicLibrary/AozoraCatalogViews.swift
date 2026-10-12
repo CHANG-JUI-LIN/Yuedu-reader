@@ -120,7 +120,8 @@ struct AozoraWorkDetailView: View {
     private var author: String { work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、") }
     private var readAction: BookDetailAction {
         BookDetailAction(title: localized(shelfBook == nil ? "開始閱讀" : "開啟"), systemImage: "book",
-            isBusy: action != nil, isEnabled: action == nil, action: {
+            isBusy: action != nil, isEnabled: action == nil,
+            detail: BookDetailResume.detail(chapterIndex: nil, progress: shelfBook?.currentPosition), action: {
                 if let book = shelfBook { openReader(book.id) }
                 else { addToShelf(openAfterImport: true) }
             })
@@ -150,9 +151,7 @@ struct AozoraWorkDetailView: View {
                     guard let person = index.personsByID[credit.person] else { return nil }
                     return BookDetailAuthorAction(id: person.id + credit.role, name: person.name,
                         action: { sheet?.openAuthor(.aozora(person, index)) })
-                }, artworkHeight: sheet?.artworkHeight,
-                progress: shelfBook?.currentPosition,
-                facts: BookDetailFacts(text: localized("青空文庫")))
+                }, artworkHeight: sheet?.artworkHeight)
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.lg) {
                 if action != nil {
@@ -165,9 +164,6 @@ struct AozoraWorkDetailView: View {
                 if failed { Button(localized("重試")) { addToShelf(openAfterImport: opensAfterImport) } }
                 if !work.yomi.isEmpty { Text(work.yomi).font(DSFont.subheadline).foregroundStyle(DSColor.textSecondary) }
                 if !work.subtitle.isEmpty { Text(work.subtitle).font(DSFont.body).foregroundStyle(DSColor.textPrimary) }
-                if let url = URL(string: work.card), url.scheme == "https", url.host == "www.aozora.gr.jp" {
-                    Link(localized("在青空文庫網站查看"), destination: url)
-                }
             }.padding(.horizontal, DSSpacing.lg)
             BookDetailInfoSection(items: infoItems)
         }
@@ -176,7 +172,7 @@ struct AozoraWorkDetailView: View {
 
     /// 作品資訊: the catalogue's record of the work, credits included.
     private var infoItems: [BookDetailInfoItem] {
-        var items: [BookDetailInfoItem] = []
+        var items = [BookDetailInfoItem(id: "library", label: localized("來源"), value: localized("青空文庫"))]
         for (offset, credit) in work.credits.enumerated() {
             if let person = index.personsByID[credit.person] {
                 items.append(BookDetailInfoItem(id: "credit\(offset)", label: localized(credit.role), value: person.name))

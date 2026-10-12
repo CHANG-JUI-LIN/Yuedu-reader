@@ -1,19 +1,18 @@
 import SwiftUI
 import Combine
 
-/// Reading, shelving or downloading one remote library item, with its progress, its outcome
-/// and its cancellation. 書籍詳情 and 作品詳情 (unified library 5f) both act through it, so a
+/// Reading or shelving one remote library item, with its progress, its outcome and its
+/// cancellation. 書籍詳情 and 作品詳情 (unified library 5f) both act through it, so a
 /// library item is read one way wherever it is opened.
 @MainActor
 final class RemoteLibraryActionModel: ObservableObject {
     enum Action {
-        case read, addToShelf, download
+        case read, addToShelf
 
         var progressTitle: String {
             switch self {
             case .read: localized("正在開啟書籍")
             case .addToShelf: localized("加入書架")
-            case .download: localized("正在下載書籍")
             }
         }
     }
@@ -44,12 +43,6 @@ final class RemoteLibraryActionModel: ObservableObject {
             begin(action) {
                 _ = try service.addToShelf(item: item, format: format, store: store)
                 return localized("已加入書架")
-            }
-        case .download:
-            begin(action) {
-                _ = try await service.downloadOffline(item: item, format: format, store: store)
-                try Task.checkCancellation()
-                return localized("下載完成")
             }
         }
     }

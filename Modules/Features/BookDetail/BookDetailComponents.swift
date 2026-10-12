@@ -2,11 +2,10 @@ import SwiftUI
 
 // MARK: - Book detail building blocks
 //
-// The online-book and audiobook detail pages are laid out as Apple Books lays out a
-// book and Apple Podcasts a show: the artwork large and centred over a wash of
-// itself, the title and author under it, the primary action directly beneath, then
-// an information strip, the description, and the chapter list. Both pages compose
-// these pieces; neither draws its own copy.
+// The detail pages are laid out as Apple Books lays out a book and Apple Podcasts a
+// show: the artwork centred over a faint wash of its hue, the title and author under it,
+// the primary action directly beneath, then the description, the chapter list and the
+// information strip. Every detail page composes these pieces; none draws its own copy.
 
 /// One action button on a detail page.
 struct BookDetailAction {
@@ -14,6 +13,9 @@ struct BookDetailAction {
     var systemImage: String
     var isBusy = false
     var isEnabled = true
+    /// Where reading resumes, in grey after the title: 「第 12 章」 or 「已讀 32%」
+    /// (`BookDetailResume`). Read by VoiceOver as the button's value.
+    var detail: String? = nil
     var action: () -> Void
 }
 
@@ -21,16 +23,6 @@ struct BookDetailAuthorAction: Identifiable {
     let id: String
     let name: String
     let action: () -> Void
-}
-
-/// The quiet line under a hero's actions: the copy's technical facts (chapters, where it
-/// is read from), findable without taking the page's centre from the work itself, and the
-/// one thing done with them most often (換源) beside them.
-struct BookDetailFacts {
-    var text: String
-    var actionTitle: String?
-    var action: (() -> Void)?
-    var accessibilityHint: String?
 }
 
 /// A genre, series or subject under the title, as plain text that leads somewhere: the
@@ -177,21 +169,34 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         if heroScrolledAway {
-                            Button(action: compactAction.action) {
-                                Text(compactAction.title)
-                                    .font(DSFont.subheadline.weight(.semibold))
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .buttonBorderShape(.capsule)
-                            .controlSize(.small)
-                            .tint(DSColor.accent)
-                            .disabled(!compactAction.isEnabled || compactAction.isBusy)
-                            .transition(.opacity)
+                            compactButton
+                                .disabled(!compactAction.isEnabled || compactAction.isBusy)
+                                .transition(.opacity)
                         }
                     }
                     ToolbarItemGroup(placement: .topBarTrailing) { actions }
                 }
                 .animation(reduceMotion ? nil : DSAnimation.fast, value: heroScrolledAway)
+        }
+    }
+
+    /// The hero's capsule, small: neutral, its words alone. From iOS 26 the bar already
+    /// draws a glass capsule around each item, so the words go in it bare — a capsule of
+    /// our own inside it read as one capsule in another (maintainer, 2026-10-12). Earlier
+    /// bars draw no background, so there the button is its own grey capsule.
+    @ViewBuilder
+    private var compactButton: some View {
+        let label = Text(compactAction.title)
+            .font(DSFont.subheadline.weight(.semibold))
+            .foregroundStyle(DSColor.textPrimary)
+        if #available(iOS 26.0, *) {
+            Button(action: compactAction.action) { label }
+        } else {
+            Button(action: compactAction.action) { label }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+                .tint(DSColor.textSecondary)
         }
     }
 
@@ -388,12 +393,16 @@ struct BookDetailHero<Cover: View>: View {
     /// Genres under the title that lead somewhere; replaces `meta` when present. A source
     /// that listens for label taps (`sourceGestures`) keeps them instead.
     var links: [BookDetailLink] = []
-    /// How far the shelf copy is read, 0…1; nil when the book is not on the shelf.
-    var progress: Double? = nil
-    var facts: BookDetailFacts? = nil
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.bookDetailEmbedding) private var embedding
+    @Bindable private var settings = GlobalSettings.shared
+    @ObservedObject private var subscriptions = SubscriptionStore.shared
+    /// The hue of the cover on screen, as its view reports it; nil until then, for a cover
+    /// with no bitmap (a generated one) and for a grey one (`CoverTint.wash`).
+    @State private var wash: CoverTint.Wash?
 
     private var artworkSize: CGSize {
         switch artworkShape {
@@ -412,14 +421,6 @@ struct BookDetailHero<Cover: View>: View {
                 .padding(.top, isCard ? DSLayout.cardCarouselCoverTitleSpacing : DSSpacing.lg)
             actions
                 .padding(.top, DSSpacing.lg)
-            if let progress, progress > 0, progress < 0.99 {
-                progressLine(progress)
-                    .padding(.top, DSSpacing.md)
-            }
-            if let facts {
-                factsLine(facts)
-                    .padding(.top, progress == nil ? DSSpacing.md : DSSpacing.xs)
-            }
         }
         .padding(.horizontal, DSSpacing.lg)
         // On a card the cover sits where Apple Books puts it, under the card's header.
@@ -456,6 +457,14 @@ struct BookDetailHero<Cover: View>: View {
     private var artwork: some View {
         let shape = RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
         return cover
+            .environment(\.coverImageObserver, { image in
+                Task {
+                    let found = await Task.detached(priority: .utility) {
+                        CoverTint.average(of: image).flatMap(CoverTint.wash(for:))
+                    }.value
+                    if found != wash { wash = found }
+                }
+            })
             .frame(width: artworkSize.width, height: artworkSize.height)
             .clipShape(shape)
             .overlay(shape.stroke(DSColor.separator, lineWidth: 0.5))
@@ -471,7 +480,7 @@ struct BookDetailHero<Cover: View>: View {
     private var titleBlock: some View {
         VStack(spacing: DSSpacing.xs) {
             Text(title)
-                .font(DSFont.title2.weight(.bold))
+                .font(DSFont.title2.weight(.semibold))
                 .foregroundStyle(primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -509,7 +518,8 @@ struct BookDetailHero<Cover: View>: View {
                     // does; the tap target keeps its height, overlapping the text around it.
                     .padding(.vertical, isCard ? -DSSpacing.md : 0)
                     .buttonStyle(.plain)
-                    .foregroundStyle(embedding?.tone.ink ?? DSColor.accent)
+                    // Quiet, as the author line is when it leads nowhere; the chevron says it does.
+                    .foregroundStyle(secondaryText)
                     .accessibilityIdentifier("publicLibrary.author.\(author.id)")
                 }
             }
@@ -543,14 +553,13 @@ struct BookDetailHero<Cover: View>: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// One action leads (Editorial Minimalism, 2026-10-12): the reading capsule takes the
-    /// row, and the second thing to do — the shelf, or a download — is a round icon button
-    /// beside it, as Apple Books puts ＋ beside 取得. Always one row, at every text size: a
-    /// circle fits where a second label did not, and stacking them (until 2026-10-12 at
-    /// accessibility sizes, before that whenever both labels did not fit) is what the
-    /// maintainer rejected. VoiceOver reads the circle's full title.
+    /// One action leads (Editorial Minimalism, 2026-10-12): a quiet grey capsule carrying
+    /// only its words, and where reading resumes in grey after them; the second thing to do
+    /// (the shelf) is plain text beside it, as the maintainer's 方案 A draws them. Always one
+    /// row, at every text size: stacking them is what the maintainer rejected. The second
+    /// label keeps its width and the capsule's truncates first.
     private var actions: some View {
-        HStack(spacing: DSSpacing.md) {
+        HStack(spacing: DSSpacing.lg) {
             primaryButton
             secondaryButton
         }
@@ -568,13 +577,16 @@ struct BookDetailHero<Cover: View>: View {
             .disabled(!primary.isEnabled || primary.isBusy)
         } else {
             Button(action: primary.action) {
-                BookDetailActionLabel(action: primary, progressTint: DSColor.textOnAccent)
+                BookDetailCalmActionLabel(action: primary)
             }
-            .buttonStyle(.borderedProminent)
+            // Neutral, not the accent: the page's colour belongs to the book.
+            .buttonStyle(.bordered)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
-            .tint(DSColor.accent)
+            .tint(DSColor.textSecondary)
             .disabled(!primary.isEnabled || primary.isBusy)
+            .accessibilityLabel(primary.title)
+            .accessibilityValue(primary.detail ?? "")
         }
     }
 
@@ -596,15 +608,23 @@ struct BookDetailHero<Cover: View>: View {
             .accessibilityLabel(secondary.title)
         } else {
             Button(action: secondary.action) {
-                BookDetailActionIcon(action: secondary, progressTint: DSColor.textPrimary)
+                HStack(spacing: DSSpacing.xs) {
+                    if secondary.isBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(secondary.title)
+                        .lineLimit(1)
+                }
+                .font(DSFont.body)
+                .frame(minHeight: DSLayout.minimumTapTarget)
+                .contentShape(Rectangle())
             }
-            // Neutral and low in contrast: the accent belongs to the one primary action.
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.circle)
-            .controlSize(.large)
-            .tint(DSColor.textSecondary)
+            .buttonStyle(.borderless)
+            .tint(DSColor.textPrimary)
+            .fixedSize()
+            .layoutPriority(1)
             .disabled(!secondary.isEnabled || secondary.isBusy)
-            .accessibilityLabel(secondary.title)
         }
     }
 
@@ -637,86 +657,31 @@ struct BookDetailHero<Cover: View>: View {
         .padding(.vertical, -DSSpacing.md)
     }
 
-    /// The shelf copy's progress: a hairline and a short figure under the actions.
-    private func progressLine(_ progress: Double) -> some View {
-        let percent = Int((progress * 100).rounded())
-        return HStack(spacing: DSSpacing.sm) {
-            HomeProgressBar(progress: progress)
-                .clipShape(Capsule())
-            Text(String(format: localized("已讀 %d%%"), percent))
-                .font(DSFont.caption)
-                .foregroundStyle(secondaryText)
-                .monospacedDigit()
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(format: localized("已讀 %d%%"), percent))
-        .accessibilityIdentifier("detail.progress")
-    }
-
-    @ViewBuilder
-    private func factsLine(_ facts: BookDetailFacts) -> some View {
-        let label = HStack(spacing: DSSpacing.xs) {
-            Text(facts.text)
-                .foregroundStyle(secondaryText)
-                .lineLimit(1)
-            if let actionTitle = facts.actionTitle, facts.action != nil {
-                HStack(spacing: 2) {
-                    Text(actionTitle)
-                    Image(systemName: "chevron.right")
-                        .font(DSFont.caption2.weight(.semibold))
-                        .accessibilityHidden(true)
-                }
-                .foregroundStyle(embedding?.tone.ink ?? DSColor.accent)
-                .layoutPriority(1)
-            }
-        }
-        .font(DSFont.footnote)
-        .frame(minHeight: DSLayout.minimumTapTarget)
-
-        if let action = facts.action {
-            Button(action: action) { label.contentShape(Rectangle()) }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(facts.text)
-                .accessibilityHint(facts.accessibilityHint ?? "")
-                .accessibilityInputLabels([facts.actionTitle].compactMap { $0 })
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier("detail.facts")
-        } else {
-            label
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("detail.facts")
-        }
-    }
-
-    /// The artwork blurred into a wash behind the hero, as Apple Books does. It runs
-    /// up past the hero's own top edge, under the navigation and status bars, so the
-    /// bars float over the wash instead of the page background showing through them
-    /// as a band. Purely decorative; Reduce Transparency drops it and the page
-    /// background shows instead.
+    /// The cover's hue as a faint wash behind the hero, fading into the page: never the
+    /// cover itself blurred, which turned a dull cover into grey haze. It runs up past the
+    /// hero's own top edge, under the navigation and status bars, so the bars float over it
+    /// instead of ending it as a band. A cover with no hue — a generated one, a grey one —
+    /// leaves the page background as it is, and so do a theme's page picture (it owns the
+    /// background), Reduce Transparency and Increase Contrast.
     @ViewBuilder
     private var backdrop: some View {
-        if !reduceTransparency {
+        if let wash, !reduceTransparency, contrast != .increased,
+           PageBackgroundView.slice(for: .global, colorScheme: colorScheme, settings: settings,
+                                    subscriptions: subscriptions) == nil {
             GeometryReader { proxy in
                 let extensionHeight = DSLayout.bookDetailBackdropTopExtension
-                cover
-                    .frame(width: proxy.size.width, height: proxy.size.height + extensionHeight)
-                    .blur(radius: DSLayout.bookCoverHeroBackdropBlur, opaque: true)
-                    .clipped()
-                    .saturation(DSLayout.bookDetailBackdropSaturation)
-                    .opacity(DSLayout.bookDetailBackdropOpacity)
-                    .mask {
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black, location: 0),
-                                .init(color: .black, location: DSLayout.bookDetailBackdropFadeStart),
-                                .init(color: .clear, location: 1),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    }
-                    .offset(y: -extensionHeight)
+                LinearGradient(
+                    stops: [
+                        .init(color: wash.color(dark: colorScheme == .dark), location: 0),
+                        .init(color: wash.color(dark: colorScheme == .dark),
+                              location: DSLayout.bookDetailBackdropFadeStart),
+                        .init(color: .clear, location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height + extensionHeight)
+                .offset(y: -extensionHeight)
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -775,6 +740,41 @@ private struct BookDetailActionLabel: View {
     private var title: some View {
         Text(action.title)
             .lineLimit(1)
+    }
+}
+
+/// A detail page's primary action as 方案 A draws it: its words alone, no icon, and where
+/// reading resumes in grey after them — 「繼續閱讀　第 12 章」. The resume point goes first
+/// when both do not fit; the title then truncates. Busy, a spinner takes the icon's place.
+private struct BookDetailCalmActionLabel: View {
+    let action: BookDetailAction
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row(showsDetail: true)
+            row(showsDetail: false)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func row(showsDetail: Bool) -> some View {
+        HStack(spacing: DSSpacing.sm) {
+            if action.isBusy {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            Text(action.title)
+                .font(DSFont.body.weight(.semibold))
+                .foregroundStyle(isEnabled ? DSColor.textPrimary : DSColor.textTertiary)
+            if showsDetail, let detail = action.detail {
+                Text(detail)
+                    .font(DSFont.body)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .monospacedDigit()
+            }
+        }
+        .lineLimit(1)
     }
 }
 
@@ -1319,11 +1319,9 @@ extension View {
                 title: "斗羅大陸",
                 author: "唐家三少",
                 meta: "",
-                primary: BookDetailAction(title: "繼續閱讀", systemImage: "book.fill", action: {}),
+                primary: BookDetailAction(title: "繼續閱讀", systemImage: "book.fill", detail: "第 12 章", action: {}),
                 secondary: BookDetailAction(title: "移除書架", systemImage: "checkmark", action: {}),
-                links: ["玄幻", "東方玄幻", "熱血", "穿越", "系統流", "爽文"].map { BookDetailLink(id: $0, title: $0, action: {}) },
-                progress: 0.32,
-                facts: BookDetailFacts(text: "1,450 章 · 示範來源配置", actionTitle: "換源", action: {})
+                links: ["玄幻", "東方玄幻", "熱血", "穿越", "系統流", "爽文"].map { BookDetailLink(id: $0, title: $0, action: {}) }
             )
         } content: {
             BookDetailIntroSection(
@@ -1364,6 +1362,29 @@ extension View {
             )
         } content: {
             EmptyView()
+        }
+    }
+}
+
+/// The design's baseline (maintainer, 2026-10-12): a book with nothing but its title and author —
+/// no cover, no genres, no description — must still look finished.
+#Preview("詳情頁・最少資料") {
+    NavigationStack {
+        BookDetailScaffold(
+            title: "無名之書",
+            compactAction: BookDetailAction(title: "開始閱讀", systemImage: "book", action: {})
+        ) {
+            BookDetailHero(
+                artworkShape: .book,
+                cover: GeneratedBookCover(title: "無名之書", author: "佚名"),
+                title: "無名之書",
+                author: "佚名",
+                meta: "",
+                primary: BookDetailAction(title: "開始閱讀", systemImage: "book", action: {}),
+                secondary: BookDetailAction(title: "加入書架", systemImage: "plus", action: {})
+            )
+        } content: {
+            BookDetailInfoSection(items: [.source(name: "示範來源配置") {}])
         }
     }
 }

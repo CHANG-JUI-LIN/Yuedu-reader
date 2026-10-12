@@ -44,6 +44,42 @@ enum CoverTint {
         return RGB(red: Double(bitmap[0]) / 255, green: Double(bitmap[1]) / 255, blue: Double(bitmap[2]) / 255)
     }
 
+    /// A cover's hue as a detail page's hero washes it in: the hue alone, drawn at the page's
+    /// own lightness, so a muddy average cannot turn the wash grey.
+    struct Wash: Equatable, Sendable {
+        var hue: Double
+        var saturation: Double
+
+        /// Pale over a light page, deep over a dark one, faint in both.
+        func color(dark: Bool) -> Color {
+            Color(hue: hue, saturation: saturation,
+                  brightness: dark ? DSLayout.bookDetailWashDarkBrightness : DSLayout.bookDetailWashLightBrightness)
+                .opacity(dark ? DSLayout.bookDetailWashDarkOpacity : DSLayout.bookDetailWashLightOpacity)
+        }
+    }
+
+    /// The wash for an average colour; nil when the cover is close to grey, which would only
+    /// lay a haze over the page (black, white and grey covers, the Moby Dick kind of brown).
+    static func wash(for rgb: RGB) -> Wash? {
+        let high = max(rgb.red, rgb.green, rgb.blue)
+        let low = min(rgb.red, rgb.green, rgb.blue)
+        guard high > 0 else { return nil }
+        let saturation = (high - low) / high
+        guard saturation >= DSLayout.bookDetailWashMinimumSaturation else { return nil }
+        var hue: Double
+        let delta = high - low
+        if high == rgb.red {
+            hue = (rgb.green - rgb.blue) / delta
+        } else if high == rgb.green {
+            hue = (rgb.blue - rgb.red) / delta + 2
+        } else {
+            hue = (rgb.red - rgb.green) / delta + 4
+        }
+        hue /= 6
+        if hue < 0 { hue += 1 }
+        return Wash(hue: hue, saturation: min(saturation, DSLayout.bookDetailWashMaximumSaturation))
+    }
+
     /// WCAG relative luminance of an sRGB colour.
     static func luminance(_ rgb: RGB) -> Double {
         func linear(_ channel: Double) -> Double {
