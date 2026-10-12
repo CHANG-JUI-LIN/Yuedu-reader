@@ -173,9 +173,9 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "home-compact-card-menu")
     }
 
-    /// 範圍 shows one library's own page in place of the home, as choosing an Emby library does
-    /// (decision 35, 2026-10-12: filtering the home left 青空文庫 with 最新 alone), and the choice
-    /// survives a relaunch. No catalog entry sits at the top of the home (removed 2026-10-11).
+    /// 範圍 shows one library in place of the home, as choosing an Emby library does (decision
+    /// 35, 2026-10-12: filtering the home left 青空文庫 with 最新 alone): a public library's own
+    /// content in the home's sections, not its store page's list. The choice survives a relaunch. No catalog entry sits at the top of the home (removed 2026-10-11).
     @MainActor
     func testScopeShowsTheLibrarysOwnPage() {
         let app = application()
@@ -185,12 +185,15 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Project Gutenberg"].exists, "the home names no source")
         XCTAssertFalse(app.buttons["home.libraries"].exists, "no catalog entry at the top")
 
-        // Gutenberg's storefront, not the home.
+        // Gutenberg's own sections, drawn as the home draws its own (decision 35 as revised,
+        // 2026-10-12): its shelves and bundled lists, under its name.
         chooseScope(app, "Project Gutenberg")
         XCTAssertEqual(app.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg")
-        let storefront = app.buttons["publicLibrary.featured.chinese"].firstMatch
-        XCTAssertTrue(storefront.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.buttons["publicLibrary.categories"].firstMatch.exists, "its own 分類")
+        XCTAssertTrue(app.staticTexts["Project Gutenberg"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        let shelfCover = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.gutenberg.")).firstMatch
+        XCTAssertTrue(shelfCover.waitForExistence(timeout: 15), "its shelves' covers")
+        XCTAssertTrue(app.buttons["熱門"].firstMatch.exists, "its shelves are the home's sections")
+        XCTAssertFalse(app.buttons["OverflowBarButtonItem"].exists, "範圍 stays in the bar, not under 更多")
         XCTAssertFalse(app.buttons["home.addConfiguration"].exists, "a library's page has no 首頁配置 to add")
         XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "the page is the tab's root")
         attach(app, "explore-home-scope-gutenberg")
@@ -199,21 +202,23 @@ final class ExploreHomeUITests: XCTestCase {
         let relaunched = application(reset: false)
         relaunched.launch()
         openExplore(relaunched)
-        XCTAssertTrue(relaunched.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 15),
+        XCTAssertTrue(relaunched.staticTexts["Project Gutenberg"].firstMatch.waitForExistence(timeout: 15),
                       relaunched.debugDescription)
         XCTAssertEqual(relaunched.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg", "the scope is kept")
 
-        // 青空文庫: its own page — 新上架作品 and its three indexes once its catalog is read, or
-        // 重試 when it cannot be.
+        // 青空文庫: 新上架作品 as a row of covers and its three indexes, once its catalog is read,
+        // or 重試 when it cannot be.
         chooseScope(relaunched, "青空文庫")
-        XCTAssertTrue(relaunched.navigationBars["青空文庫"].firstMatch.waitForExistence(timeout: 10), relaunched.debugDescription)
-        XCTAssertFalse(relaunched.buttons[featuredCard].exists, "not the home")
+        XCTAssertTrue(relaunched.staticTexts["青空文庫"].firstMatch.waitForExistence(timeout: 10), relaunched.debugDescription)
+        XCTAssertFalse(relaunched.buttons[featuredCard].exists, "not Gutenberg's books")
         let newest = relaunched.buttons["新上架作品"].firstMatch
         let retry = relaunched.buttons["重試"].firstMatch
         let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in newest.exists || retry.exists }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 30), .completed, relaunched.debugDescription)
         if newest.exists {
-            for index in ["依作家", "依作品名", "依分類"] { XCTAssertTrue(relaunched.buttons[index].exists, index) }
+            let cover = relaunched.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
+            XCTAssertTrue(cover.waitForExistence(timeout: 10), "新上架作品's covers")
+            XCTAssertTrue(relaunched.buttons["依作家"].firstMatch.exists, "an index is a section of chips")
         }
         attach(relaunched, "explore-home-scope-aozora")
 
