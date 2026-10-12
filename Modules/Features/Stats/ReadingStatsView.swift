@@ -293,9 +293,9 @@ struct ReadingStatsView: View {
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         if hours > 0 {
-            return localized("\(hours) 小時 \(minutes) 分鐘")
+            return String(format: localized("%1$d 小時 %2$d 分鐘"), hours, minutes)
         } else {
-            return localized("\(minutes) 分鐘")
+            return String(format: localized("%d 分鐘"), minutes)
         }
     }
 }
