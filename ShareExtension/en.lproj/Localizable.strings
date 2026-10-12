@@ -1,6 +1,6 @@
-"無法讀取分享連結" = "Unable to read the shared link";
-"無法儲存分享連結" = "Unable to save the shared link";
-"連結已儲存，下次開啟閱讀時匯入。" = "Link saved. It will be imported the next time you open Yuedu.";
-"連結已儲存" = "Link saved";
-"匯入失敗" = "Import failed";
-"關閉" = "Close";
+"無法讀取分享連結" = "The shared link couldn't be read.";
+"無法儲存分享連結" = "The shared link couldn't be saved.";
+"連結已儲存，下次開啟閱讀時匯入。" = "It will be imported the next time you open Yuedu.";
+"連結已儲存" = "Link Saved";
+"匯入失敗" = "Couldn't Import Link";
+"關閉" = "OK";

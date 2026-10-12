@@ -58,7 +58,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         read.tap()
         // The hero also says Project Gutenberg. Wait for the actual book text,
         // so a still-running range request cannot be mistaken for reader readiness.
-        let footer = app.otherElements["頁腳"].firstMatch
+        let footer = app.otherElements["頁尾"].firstMatch
         XCTAssertTrue(footer.waitForExistence(timeout: 90), app.debugDescription)
         XCTAssertTrue(app.buttons["publicLibrary.closeSheet"].firstMatch.waitForNonExistence(timeout: 10))
         // This edition begins with an image-only cover. Scroll into its text.

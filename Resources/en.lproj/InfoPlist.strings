@@ -5,6 +5,6 @@
 /* UTTypeDescription for exported diagnostic and book-source debug log files. */
 "Yuedu Log File" = "Yuedu Log File";
 
-"NSLocalNetworkUsageDescription" = "Connect to local book libraries, receive books from Calibre, and use local speech services.";
+"NSLocalNetworkUsageDescription" = "Yuedu connects to libraries and speech services on your local network, and receives books sent from Calibre.";
 
-"NSPhotoLibraryAddUsageDescription" = "Save book covers and shared reading images to your photo library.";
+"NSPhotoLibraryAddUsageDescription" = "Yuedu saves book covers and the reading images you share to your photo library.";

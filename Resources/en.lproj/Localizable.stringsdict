@@ -6,8 +6,8 @@
 	<key>%d 源</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string>%#@sources@</string>
-		<key>sources</key>
+		<string>%#@n@</string>
+		<key>n</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>
 			<string>NSStringPluralRuleType</string>
@@ -22,8 +22,8 @@
 	<key>%d 本</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string>%#@books@</string>
-		<key>books</key>
+		<string>%#@n@</string>
+		<key>n</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>
 			<string>NSStringPluralRuleType</string>
@@ -33,6 +33,993 @@
 			<string>%d book</string>
 			<key>other</key>
 			<string>%d books</string>
+		</dict>
+	</dict>
+	<key>已匯入 %d 條替換規則</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Imported %d replacement rule.</string>
+			<key>other</key>
+			<string>Imported %d replacement rules.</string>
+		</dict>
+	</dict>
+	<key>%d 欄</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Column</string>
+			<key>other</key>
+			<string>%d Columns</string>
+		</dict>
+	</dict>
+	<key>已載入 %d 個語音源</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Loaded %d voice engine</string>
+			<key>other</key>
+			<string>Loaded %d voice engines</string>
+		</dict>
+	</dict>
+	<key>已匯入 %d 個訂閱源</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Imported %d feed.</string>
+			<key>other</key>
+			<string>Imported %d feeds.</string>
+		</dict>
+	</dict>
+	<key>自動顯示前 %d 個分區</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Showing the first %d section automatically</string>
+			<key>other</key>
+			<string>Showing the first %d sections automatically</string>
+		</dict>
+	</dict>
+	<key>已自訂 %d 個分區</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d section customized</string>
+			<key>other</key>
+			<string>%d sections customized</string>
+		</dict>
+	</dict>
+	<key>已解析漫畫，共 %d 頁</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Comic loaded: %d page</string>
+			<key>other</key>
+			<string>Comic loaded: %d pages</string>
+		</dict>
+	</dict>
+	<key>已解析有聲書，共 %d 章</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Audiobook loaded: %d chapter</string>
+			<key>other</key>
+			<string>Audiobook loaded: %d chapters</string>
+		</dict>
+	</dict>
+	<key>最多可下載 %d 章</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Up to %d chapter can be downloaded.</string>
+			<key>other</key>
+			<string>Up to %d chapters can be downloaded.</string>
+		</dict>
+	</dict>
+	<key>共 %d 章</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d chapter</string>
+			<key>other</key>
+			<string>%d chapters</string>
+		</dict>
+	</dict>
+	<key>成功匯入 %d 個來源配置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Imported %d source.</string>
+			<key>other</key>
+			<string>Imported %d sources.</string>
+		</dict>
+	</dict>
+	<key>%d pages left in chapter</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d page left in chapter</string>
+			<key>other</key>
+			<string>%d pages left in chapter</string>
+		</dict>
+	</dict>
+	<key>已匯入 %d 個主題。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Imported %d theme.</string>
+			<key>other</key>
+			<string>Imported %d themes.</string>
+		</dict>
+	</dict>
+	<key>%d 章失敗</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Chapter Failed</string>
+			<key>other</key>
+			<string>%d Chapters Failed</string>
+		</dict>
+	</dict>
+	<key>已選 %d 個來源配置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Source Selected</string>
+			<key>other</key>
+			<string>%d Sources Selected</string>
+		</dict>
+	</dict>
+	<key>%d 個主題</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d theme</string>
+			<key>other</key>
+			<string>%d themes</string>
+		</dict>
+	</dict>
+	<key>%d 個 Tab 圖示</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d tab icon</string>
+			<key>other</key>
+			<string>%d tab icons</string>
+		</dict>
+	</dict>
+	<key>%d 張啟動圖</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d launch image</string>
+			<key>other</key>
+			<string>%d launch images</string>
+		</dict>
+	</dict>
+	<key>%d 個引用</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d reference</string>
+			<key>other</key>
+			<string>%d references</string>
+		</dict>
+	</dict>
+	<key>命中 %d 處</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Match</string>
+			<key>other</key>
+			<string>%d Matches</string>
+		</dict>
+	</dict>
+	<key>已解析 PDF，共 %d 頁</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Parsed PDF with %d page</string>
+			<key>other</key>
+			<string>Parsed PDF with %d pages</string>
+		</dict>
+	</dict>
+	<key>偵測到 %d 個非預期行為</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Unexpected Behavior Detected</string>
+			<key>other</key>
+			<string>%d Unexpected Behaviors Detected</string>
+		</dict>
+	</dict>
+	<key>%d 句</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d line</string>
+			<key>other</key>
+			<string>%d lines</string>
+		</dict>
+	</dict>
+	<key>已索引 %d 個片段</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d chunk indexed</string>
+			<key>other</key>
+			<string>%d chunks indexed</string>
+		</dict>
+	</dict>
+	<key>引用 %d 筆原文</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Cites %d passage</string>
+			<key>other</key>
+			<string>Cites %d passages</string>
+		</dict>
+	</dict>
+	<key>%d 筆經歷記錄</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d history entry</string>
+			<key>other</key>
+			<string>%d history entries</string>
+		</dict>
+	</dict>
+	<key>約 %d 字</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>About %d character</string>
+			<key>other</key>
+			<string>About %d characters</string>
+		</dict>
+	</dict>
+	<key>將移動 %d 本書。關掉的書維持原樣，分組名稱可以直接改。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d book will be moved. Books you turn off stay where they are, and you can rename groups directly.</string>
+			<key>other</key>
+			<string>%d books will be moved. Books you turn off stay where they are, and you can rename groups directly.</string>
+		</dict>
+	</dict>
+	<key>%d 個來源配置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d source</string>
+			<key>other</key>
+			<string>%d sources</string>
+		</dict>
+	</dict>
+	<key>%d 個項目匯入失敗</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d item couldn't be imported</string>
+			<key>other</key>
+			<string>%d items couldn't be imported</string>
+		</dict>
+	</dict>
+	<key>%d 分鐘前</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d minute ago</string>
+			<key>other</key>
+			<string>%d minutes ago</string>
+		</dict>
+	</dict>
+	<key>%d 天前</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d day ago</string>
+			<key>other</key>
+			<string>%d days ago</string>
+		</dict>
+	</dict>
+	<key>%d 小時前</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d hour ago</string>
+			<key>other</key>
+			<string>%d hours ago</string>
+		</dict>
+	</dict>
+	<key>%d 章</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d chapter</string>
+			<key>other</key>
+			<string>%d chapters</string>
+		</dict>
+	</dict>
+	<key>偵測到章節目錄：%d 章，將以線上書模式導入</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Contents detected (%d chapter). Importing as an online book.</string>
+			<key>other</key>
+			<string>Contents detected (%d chapters). Importing as an online book.</string>
+		</dict>
+	</dict>
+	<key>共偵測到 %d 章，選擇開始閱讀的章節</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d chapter detected. Choose a chapter to start reading.</string>
+			<key>other</key>
+			<string>%d chapters detected. Choose a chapter to start reading.</string>
+		</dict>
+	</dict>
+	<key>將套用到 %d 本書</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Will apply to %d book</string>
+			<key>other</key>
+			<string>Will apply to %d books</string>
+		</dict>
+	</dict>
+	<key>將對 %d 個來源配置進行五階段驗證</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d source will be validated in five stages.</string>
+			<key>other</key>
+			<string>%d sources will be validated in five stages.</string>
+		</dict>
+	</dict>
+	<key>已抓取約 %d 字</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>About %d character fetched</string>
+			<key>other</key>
+			<string>About %d characters fetched</string>
+		</dict>
+	</dict>
+	<key>已按域名分組 %d 個來源配置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Grouped %d source by domain.</string>
+			<key>other</key>
+			<string>Grouped %d sources by domain.</string>
+		</dict>
+	</dict>
+	<key>已複製 %d 個來源配置到剪貼簿</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Copied %d source to the clipboard.</string>
+			<key>other</key>
+			<string>Copied %d sources to the clipboard.</string>
+		</dict>
+	</dict>
+	<key>已複製全部 %d 個來源配置到剪貼簿</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Copied all %d source to the clipboard.</string>
+			<key>other</key>
+			<string>Copied all %d sources to the clipboard.</string>
+		</dict>
+	</dict>
+	<key>成功匯入 %d 個項目</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Imported %d item.</string>
+			<key>other</key>
+			<string>Imported %d items.</string>
+		</dict>
+	</dict>
+	<key>確定要刪除 %d 本書嗎？</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Delete %d book?</string>
+			<key>other</key>
+			<string>Delete %d books?</string>
+		</dict>
+	</dict>
+	<key>確定要刪除選中的 %d 個來源配置嗎？</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Delete the %d selected source?</string>
+			<key>other</key>
+			<string>Delete the %d selected sources?</string>
+		</dict>
+	</dict>
+	<key>已匯入 %d 個語音源</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Imported %d voice engine</string>
+			<key>other</key>
+			<string>Imported %d voice engines</string>
+		</dict>
+	</dict>
+	<key>%d 個圖示</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d icon</string>
+			<key>other</key>
+			<string>%d icons</string>
+		</dict>
+	</dict>
+	<key>%d 張</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d image</string>
+			<key>other</key>
+			<string>%d images</string>
+		</dict>
+	</dict>
+	<key>%d 項跟隨主題</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d item follows theme</string>
+			<key>other</key>
+			<string>%d items follow theme</string>
+		</dict>
+	</dict>
+	<key>正在建立索引（%d 本）</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Indexing %d book…</string>
+			<key>other</key>
+			<string>Indexing %d books…</string>
+		</dict>
+	</dict>
+	<key>已建立索引（%d 本）</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Indexed %d book</string>
+			<key>other</key>
+			<string>Indexed %d books</string>
+		</dict>
+	</dict>
+	<key>已達上限（%d 本）</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Limit Reached (%d book)</string>
+			<key>other</key>
+			<string>Limit Reached (%d books)</string>
+		</dict>
+	</dict>
+	<key>第 %d 到 %d 章，共 %d 章</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Chapters %1$d–%2$d (%3$#@c@)</string>
+		<key>c</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d chapter</string>
+			<key>other</key>
+			<string>%d chapters</string>
+		</dict>
+	</dict>
+	<key>「%@」目前有 %d 個引用（%@）。強制刪除後，這些樣式會移除對該圖片的設定。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>“%1$@” is used in %2$#@p@ (%3$@). If you delete it anyway, it will be removed from those styles.</string>
+		<key>p</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d place</string>
+			<key>other</key>
+			<string>%d places</string>
+		</dict>
+	</dict>
+	<key>章節標題的淺色版有 %d 個圖層、深色版有 %d 個，已以淺色版為準，配不到的圖層沿用淺色樣式。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>The chapter title has %1$#@l@ in the light version and %2$d in the dark version. The light version was used, and layers without a match keep the light styling.</string>
+		<key>l</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d layer</string>
+			<key>other</key>
+			<string>%d layers</string>
+		</dict>
+	</dict>
+	<key>%1$d 張人物卡、%2$d 個別名</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@a@, %2$#@b@</string>
+		<key>a</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d character card</string>
+			<key>other</key>
+			<string>%d character cards</string>
+		</dict>
+		<key>b</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d alias</string>
+			<key>other</key>
+			<string>%d aliases</string>
+		</dict>
+	</dict>
+	<key>另有 %1$d 本已在建議的分組、%2$d 本 AI 沒有把握，維持不動。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@a@, and the AI wasn't sure about %2$d, so they won't be moved.</string>
+		<key>a</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d more book is already in its suggested group</string>
+			<key>other</key>
+			<string>%d more books are already in their suggested groups</string>
+		</dict>
+	</dict>
+	<key>%1$@ · %2$d 個來源配置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$#@b@</string>
+		<key>b</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d source</string>
+			<key>other</key>
+			<string>%d sources</string>
+		</dict>
+	</dict>
+	<key>共 %1$d 個來源配置，通過 %2$d 個</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@a@ total, %2$d passed</string>
+		<key>a</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d source</string>
+			<key>other</key>
+			<string>%d sources</string>
+		</dict>
+	</dict>
+	<key>成功匯入 %1$d 個項目，%2$d 個失敗</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Imported %1$#@a@. %2$d couldn't be imported.</string>
+		<key>a</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d item</string>
+			<key>other</key>
+			<string>%d items</string>
+		</dict>
+	</dict>
+	<key>確定要刪除分組「%1$@」及其中的 %2$d 個來源配置嗎？</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Delete the group “%1$@” and the %2$#@b@ in it?</string>
+		<key>b</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d source</string>
+			<key>other</key>
+			<string>%d sources</string>
 		</dict>
 	</dict>
 </dict>
