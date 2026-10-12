@@ -173,11 +173,11 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "home-compact-card-menu")
     }
 
-    /// 範圍 filters the same home to one library, as Emby's library switch does (5d-3b,
-    /// decision 19), and the choice survives a relaunch. No catalog entry sits at the top,
-    /// under 全部 or one library (removed 2026-10-11).
+    /// 範圍 shows one library's own page in place of the home, as choosing an Emby library does
+    /// (decision 35, 2026-10-12: filtering the home left 青空文庫 with 最新 alone), and the choice
+    /// survives a relaunch. No catalog entry sits at the top of the home (removed 2026-10-11).
     @MainActor
-    func testScopeFiltersTheHomeAndBack() {
+    func testScopeShowsTheLibrarysOwnPage() {
         let app = application()
         app.launch()
         openExplore(app)
@@ -185,24 +185,36 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Project Gutenberg"].exists, "the home names no source")
         XCTAssertFalse(app.buttons["home.libraries"].exists, "no catalog entry at the top")
 
-        // The same home, with Gutenberg's books alone.
+        // Gutenberg's storefront, not the home.
         chooseScope(app, "Project Gutenberg")
         XCTAssertEqual(app.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg")
-        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), "the home stays, filtered")
-        XCTAssertTrue(app.navigationBars["探索"].exists || app.tabBars.buttons["探索"].firstMatch.isHittable)
-        XCTAssertFalse(app.buttons["home.catalog"].exists, "no catalog entry at the top")
+        let storefront = app.buttons["publicLibrary.featured.chinese"].firstMatch
+        XCTAssertTrue(storefront.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["publicLibrary.categories"].firstMatch.exists, "its own 分類")
+        XCTAssertFalse(app.buttons["home.addConfiguration"].exists, "a library's page has no 首頁配置 to add")
+        XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "the page is the tab's root")
         attach(app, "explore-home-scope-gutenberg")
 
         app.terminate()
         let relaunched = application(reset: false)
         relaunched.launch()
         openExplore(relaunched)
-        XCTAssertTrue(relaunched.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), relaunched.debugDescription)
+        XCTAssertTrue(relaunched.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 15),
+                      relaunched.debugDescription)
         XCTAssertEqual(relaunched.buttons["explore.scopeMenu"].value as? String, "Project Gutenberg", "the scope is kept")
 
-        // 青空文庫: no Gutenberg book stays on the home.
+        // 青空文庫: its own page — 新上架作品 and its three indexes once its catalog is read, or
+        // 重試 when it cannot be.
         chooseScope(relaunched, "青空文庫")
-        XCTAssertTrue(relaunched.buttons[featuredCard].firstMatch.waitForNonExistence(timeout: 10), relaunched.debugDescription)
+        XCTAssertTrue(relaunched.navigationBars["青空文庫"].firstMatch.waitForExistence(timeout: 10), relaunched.debugDescription)
+        XCTAssertFalse(relaunched.buttons[featuredCard].exists, "not the home")
+        let newest = relaunched.buttons["新上架作品"].firstMatch
+        let retry = relaunched.buttons["重試"].firstMatch
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in newest.exists || retry.exists }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 30), .completed, relaunched.debugDescription)
+        if newest.exists {
+            for index in ["依作家", "依作品名", "依分類"] { XCTAssertTrue(relaunched.buttons[index].exists, index) }
+        }
         attach(relaunched, "explore-home-scope-aozora")
 
         chooseScope(relaunched, "全部")
@@ -315,7 +327,7 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-custom-page-editing")
     }
 
-    /// A connection added in 設定 → 遠端書庫 is in 範圍; its catalog opens from the top of the
+    /// A connection added in 設定 → 遠端書庫 is in 範圍, which shows its catalog in place of the
     /// home. The server does not exist; the page is shown whether or not it loads.
     @MainActor
     func testConnectionIsInScope() {
@@ -347,10 +359,10 @@ final class ExploreHomeUITests: XCTestCase {
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         chooseScope(app, host)
-        // The home, filtered to a library no section draws from yet.
+        // The library's own catalog in place of the home.
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForNonExistence(timeout: 10))
         XCTAssertEqual(app.buttons["explore.scopeMenu"].value as? String, host)
-        XCTAssertFalse(app.buttons["home.catalog"].exists, "no catalog entry at the top")
+        XCTAssertFalse(app.buttons["home.addConfiguration"].exists, "a library's page has no 首頁配置 to add")
         attach(app, "explore-home-connection-scope")
         chooseScope(app, "全部")
 

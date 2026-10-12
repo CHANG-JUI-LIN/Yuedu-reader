@@ -2,8 +2,9 @@ import SwiftUI
 
 /// 探索's root since unified library 5c-3 (design §13.3): the reader's sections, in their order,
 /// across every source — Emby's model under Apple Books' covers (Phase 5 plan, settled
-/// decision 11). 範圍 narrows the same home to one source's books, as switching Emby's library
-/// does (5d-3b, decision 19), and holds every other way in: the 首頁配置 (5d-4, decision 22) and
+/// decision 11). 範圍 shows one library or source's own page in its place, as choosing an Emby
+/// library shows that library (decision 35, 2026-10-12, which overturned decision 19's filtered
+/// home: 青空文庫 kept only 最新), and holds every other way in: the 首頁配置 (5d-4, decision 22) and
 /// the browser (5d-1, settled decision 12, which took 我的書庫 off the home). There is no catalog entry at
 /// the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
 /// they want, and a row's 查看全部 opens the rest of what it shows.
@@ -90,11 +91,10 @@ private struct ExploreHomeRoot: View {
         return nil
     }
 
-    /// The sections drawn: under 範圍, only the chosen source's books; in the reader's
-    /// languages' order (聚合設定, 5d-3d).
+    /// The sections drawn, in the reader's languages' order (聚合設定, 5d-3d).
     private var groups: [HomeSectionGroup] {
         let lookup = store.copyLookup()
-        return model.groups(in: scopeKey, languages: aggregation.readingLanguages,
+        return model.groups(in: nil, languages: aggregation.readingLanguages,
                             libraryOrder: aggregation.settings.libraryOrder,
                             readFilter: HomeReadFilter(hidesInLatest: aggregation.hidesReadInLatest,
                                                        hidesInRelated: aggregation.hidesReadInRelated,
@@ -133,7 +133,7 @@ private struct ExploreHomeRoot: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            home
+            root
             .toolbar { toolbar }
             .homeConfigurationPrompts($configurationPrompt)
             .sheet(isPresented: $addsSection) {
@@ -162,12 +162,55 @@ private struct ExploreHomeRoot: View {
                              hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
         }
         .task { await aozora.load() }
+        .onChange(of: storedScope) { _, _ in
+            // Another page in place: what was pushed over the last one goes, and so does 編輯首頁.
+            path = NavigationPath()
+            isEditing = false
+        }
         // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
         .onChange(of: pageStore.selectedConfiguration) { _, _ in
             if isEditing { setEditing(false) }
         }
         .onReceive(sourceStore.sourcesPublisher) { _ in
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
+        }
+    }
+
+    // MARK: One library
+
+    /// 範圍's library or source: its own page, the one its 查看全部 and the store open, in
+    /// place of the home (decision 35).
+    @ViewBuilder
+    private var root: some View {
+        if let key = scopeKey,
+           let place = ExplorePlace.page(of: key, name: ExploreHomeScope.name(of: key, sources: sourceStore.sources,
+                                                                              connections: connections)) {
+            placePage(place)
+                .id(key)
+                .showsRootTabBarOnlyHere()
+        } else {
+            home
+        }
+    }
+
+    @ViewBuilder
+    private func placePage(_ place: ExplorePush) -> some View {
+        switch place {
+        case .explore(.source(let sourceURL)):
+            if let source = sourceStore.sources.first(where: { $0.bookSourceUrl == sourceURL }) {
+                ExploreSourcePage(source: source) { address in openBrowser(.open(address)) }
+            }
+        case .feed(let route):
+            OPDSFeedView(route: route)
+        case .folder(let route):
+            WebDAVDirectoryView(route: route)
+        case .publicLibrary(.gutenbergHome):
+            GutenbergHomePage()
+        case .publicLibrary(.aozoraHome):
+            AozoraHomePage()
+        default:
+            // `ExplorePlace.page(of:name:)` names no other page.
+            EmptyView()
         }
     }
 
@@ -178,7 +221,6 @@ private struct ExploreHomeRoot: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
                 if isEditing {
-                    // Every section, whatever 範圍 keeps: 編輯首頁 edits the home itself.
                     HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil, languages: aggregation.readingLanguages),
                                         configuration: selectedConfiguration,
                                         openSettings: { path.append(HomeEditRoute.section($0)) },
@@ -219,7 +261,7 @@ private struct ExploreHomeRoot: View {
                         UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
                     }
                 } description: {
-                    if !hasNoSections, scopeKey == nil {
+                    if !hasNoSections {
                         Text(localized("從右上角的範圍打開書庫或來源配置。")).foregroundStyle(DSColor.textSecondary)
                     }
                 } actions: {
@@ -245,9 +287,8 @@ private struct ExploreHomeRoot: View {
             if availability.isAvailable { await aozora.load(forceRefresh: true) }
             await feeds
         }
-        // Again when a sync changes the rows (a Gutenberg row added while the home shows), or
-        // 範圍 brings other rows in.
-        .task(id: [AnyHashable(model.rows.map(\.id)), AnyHashable(scopeKey)]) { model.homeAppeared(in: scopeKey) }
+        // Again when a sync changes the rows: a Gutenberg row added while the home shows.
+        .task(id: model.rows.map(\.id)) { model.homeAppeared(in: nil) }
         // On the stack's root, not the stack: coming back from a page the home pushed is coming
         // back into view too. An article read there reads as read; a book read from 作品詳情
         // moves in 繼續閱讀.
@@ -308,13 +349,16 @@ private struct ExploreHomeRoot: View {
                              configurations: pageStore.configurations, showsBrowser: showsBrowser,
                              openBrowser: { openBrowser(.resume) })
         }
-        ToolbarItem(placement: .topBarTrailing) {
-            Button { configurationPrompt = .create } label: {
-                Image(systemName: "plus")
-                    .accessibilityHidden(true)
+        // A 首頁配置 is a home's: a library's own page has none to add to.
+        if scopeKey == nil {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { configurationPrompt = .create } label: {
+                    Image(systemName: "plus")
+                        .accessibilityHidden(true)
+                }
+                .accessibilityLabel(localized("新增首頁配置"))
+                .accessibilityIdentifier("home.addConfiguration")
             }
-            .accessibilityLabel(localized("新增首頁配置"))
-            .accessibilityIdentifier("home.addConfiguration")
         }
     }
 
