@@ -608,16 +608,12 @@ struct BookDetailHero<Cover: View>: View {
         }
     }
 
-    /// Genres as one line of plain text, each one its own button, separated by a dot.
+    /// Genres as centred plain text, each one its own button, wrapping onto more lines.
     private var linkLine: some View {
-        WrappingFlowLayout(spacing: DSSpacing.xs, alignment: .center) {
-            ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
-                if index > 0 {
-                    Text(verbatim: "·")
-                        .font(DSFont.footnote)
-                        .foregroundStyle(secondaryText)
-                        .accessibilityHidden(true)
-                }
+        // Each link's chevron ends it, so space alone separates them; a separator of its own
+        // could be left at the end or start of a wrapped row.
+        WrappingFlowLayout(spacing: DSSpacing.md, alignment: .center) {
+            ForEach(links) { link in
                 // Plain, quiet text with the chevron that says it leads somewhere.
                 Button(action: link.action) {
                     HStack(spacing: DSSpacing.xxs) {
@@ -1320,7 +1316,7 @@ extension View {
                 meta: "",
                 primary: BookDetailAction(title: "繼續閱讀", systemImage: "book.fill", action: {}),
                 secondary: BookDetailAction(title: "移除書架", systemImage: "checkmark", action: {}),
-                links: ["玄幻", "東方玄幻", "熱血"].map { BookDetailLink(id: $0, title: $0, action: {}) },
+                links: ["玄幻", "東方玄幻", "熱血", "穿越", "系統流", "爽文"].map { BookDetailLink(id: $0, title: $0, action: {}) },
                 progress: 0.32,
                 facts: BookDetailFacts(text: "1,450 章 · 示範來源配置", actionTitle: "換源", action: {})
             )
