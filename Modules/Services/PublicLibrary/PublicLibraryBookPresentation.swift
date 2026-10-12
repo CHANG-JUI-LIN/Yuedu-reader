@@ -117,9 +117,54 @@ struct PublicLibraryBookSelection: Identifiable {
 }
 
 struct GutenbergAuthor: Identifiable, Hashable {
+    /// As the catalog lists it, 「Austen, Jane」.
     let name: String
     let url: URL
+    /// The record's label for what the person did (Author, Illustrator, Commentator…); nil
+    /// when the record names none.
+    var role: String? = nil
     var id: String { url.absoluteString }
+
+    /// The person wrote the book, rather than illustrating, translating or introducing it.
+    var isAuthor: Bool { role == nil || role == "Author" }
+
+    var displayName: String { Self.displayName(name) }
+
+    /// The localization key of the role, for its row in 作品詳情's 作品資訊.
+    var roleKey: String {
+        switch role {
+        case "Translator": "翻訳者"
+        case "Editor": "編者"
+        case "Illustrator": "插畫"
+        case "Commentator": "評註"
+        default: "貢獻者"
+        }
+    }
+
+    /// 「Austen, Jane」 as it is read, 「Jane Austen」, without the full name a catalog adds in
+    /// parentheses. A name of any other shape (「King, Martin Luther, Jr.」, 「Lu Xun」) as listed.
+    static func displayName(_ catalogName: String) -> String {
+        let name = catalogName.replacingOccurrences(of: #"\s*\([^)]*\)"#, with: "", options: .regularExpression)
+        let parts = name.split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return name }
+        return parts[1] + " " + parts[0]
+    }
+}
+
+extension [GutenbergAuthor] {
+    /// Who wrote the book: those the record calls Author, everyone when it gives no roles,
+    /// the first when it calls no one Author.
+    var mainAuthors: [GutenbergAuthor] {
+        let writers = filter(\.isAuthor)
+        return writers.isEmpty ? Array(prefix(1)) : writers
+    }
+
+    /// Everyone else the record credits: commentators, illustrators, translators…
+    var contributors: [GutenbergAuthor] {
+        let main = Set(mainAuthors.map(\.id))
+        return filter { !main.contains($0.id) }
+    }
 }
 
 enum PublicLibraryAuthorDestination: Hashable {
@@ -139,6 +184,9 @@ enum PublicLibraryAuthorDestination: Hashable {
 struct GutenbergBookDetail {
     let item: RemoteLibraryItem
     let authors: [GutenbergAuthor]
+
+    var mainAuthors: [GutenbergAuthor] { authors.mainAuthors }
+    var contributors: [GutenbergAuthor] { authors.contributors }
 
     init(feed: OPDSFeed, endpoint: GutenbergEndpoint = .current) throws {
         let editions = feed.entries.filter(\.isBook)
@@ -160,12 +208,29 @@ struct GutenbergBookDetail {
         if endpoint == .xml { combined.summary = Self.recordSummary(preferred.summary) }
         item = RemoteLibraryBookRoute(entry: combined, connectionID: PublicLibraryID.gutenberg.rawValue).item
         var seenAuthors = Set<URL>()
+        let credits = endpoint == .xml ? Self.recordCredits(preferred.summary) : []
         authors = editions.flatMap(\.relatedLinks).compactMap { link in
             guard endpoint.isAuthorCatalog(link.url), seenAuthors.insert(link.url).inserted else { return nil }
             let name = preferred.authorNames.first { link.title.contains($0) }
                 ?? link.title.replacingOccurrences(of: "By ", with: "", options: .anchored)
                     .trimmingCharacters(in: CharacterSet(charactersIn: ".…"))
-            return GutenbergAuthor(name: name, url: link.url)
+            let role = credits.first { $0.value == name || $0.value.hasPrefix(name + ",") }?.label
+            return GutenbergAuthor(name: name, url: link.url, role: role)
+        }
+    }
+
+    /// The record's people, one field each: 「Illustrator: Thomson, Hugh, 1860-1920」. A label
+    /// is one or a few words; a field such as Summary or Contents is not a credit.
+    static func recordCredits(_ record: String?) -> [(label: String, value: String)] {
+        guard let record else { return [] }
+        let labels: Set<String> = ["Author", "Editor", "Translator", "Illustrator", "Commentator", "Contributor",
+                                   "Compiler", "Annotator", "Adapter", "Photographer", "Composer", "Arranger",
+                                   "Author of introduction, etc.", "Author of afterword, colophon, etc."]
+        return record.split(separator: "\n").compactMap { line in
+            guard let colon = line.range(of: ": ") else { return nil }
+            let label = String(line[..<colon.lowerBound]).trimmingCharacters(in: .whitespaces)
+            guard labels.contains(label) else { return nil }
+            return (label, String(line[colon.upperBound...]).trimmingCharacters(in: .whitespaces))
         }
     }
 

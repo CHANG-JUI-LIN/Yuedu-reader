@@ -108,7 +108,7 @@ struct PublicLibraryAuthorPage: View {
         switch destination {
         case .gutenberg(let author):
             PublicLibraryFeedView(route: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
-                url: author.url.absoluteString, title: author.name, presentation: .storefront))
+                url: author.url.absoluteString, title: author.displayName, presentation: .storefront))
         case .aozora(let author, let index):
             AozoraWorksView(index: index, works: index.works(forPerson: author.id), title: author.name)
         }

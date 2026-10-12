@@ -40,6 +40,54 @@ struct PublicLibraryStorefrontTests {
         #expect(detail.authors.map(\.url.lastPathComponent) == ["1.opds", "2.opds"])
     }
 
+    /// 2026-10-12: the illustrated Sense and Sensibility drew three author lines in 作品詳情's
+    /// hero, its commentator and illustrator among them, as 「Austen, Jane」. The record says
+    /// who did what; the hero names the author, as Apple Books does.
+    @Test func recordRolesTellTheAuthorFromTheOtherContributors() throws {
+        let detail = try GutenbergBookDetail(feed: fixture("21839"))
+        #expect(detail.authors.map(\.name) == ["Austen, Jane", "Dobson, Austin", "Thomson, Hugh"])
+        #expect(detail.authors.map(\.role) == ["Author", "Commentator", "Illustrator"])
+        #expect(detail.mainAuthors.map(\.displayName) == ["Jane Austen"])
+        #expect(detail.contributors.map(\.displayName) == ["Austin Dobson", "Hugh Thomson"])
+        #expect(detail.contributors.map(\.roleKey) == ["評註", "插畫"])
+    }
+
+    @Test func catalogNamesReadInNaturalOrder() {
+        #expect(GutenbergAuthor.displayName("Austen, Jane") == "Jane Austen")
+        #expect(GutenbergAuthor.displayName("Wells, H. G. (Herbert George)") == "H. G. Wells")
+        #expect(GutenbergAuthor.displayName("King, Martin Luther, Jr.") == "King, Martin Luther, Jr.")
+        #expect(GutenbergAuthor.displayName("Lu Xun") == "Lu Xun")
+        #expect(GutenbergAuthor.displayName("Homer") == "Homer")
+    }
+
+    @Test func aozoraHeroNamesTheAuthorAndListsTheTranslator() {
+        var work = AozoraWork(id: "000001", title: "作品", yomi: "", sortYomi: "", subtitle: "",
+                              kanaStyle: "", ndc: "", published: "", updated: "", card: "", text: "",
+                              textUpdated: "", credits: [.init(person: "001", role: "著者"), .init(person: "002", role: "翻訳者")],
+                              source: "", sourcePublisher: "")
+        #expect(work.authorCredits.map(\.person) == ["001"])
+        #expect(work.otherCredits.map(\.person) == ["002"])
+        work.credits = [.init(person: "003", role: "編者"), .init(person: "004", role: "校訂者")]
+        #expect(work.authorCredits.map(\.person) == ["003"], "no 著者: the first credit")
+        #expect(work.otherCredits.map(\.person) == ["004"])
+    }
+
+    /// Without roles (a record that lists none, or OPDS 2), every person is an author.
+    @Test func withoutRolesEveryoneIsAnAuthor() throws {
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><entry><id>one</id><title>Book</title>
+        <author><name>Last, First</name></author><author><name>Other, Person</name></author>
+        <link rel="http://opds-spec.org/acquisition" href="https://www.gutenberg.org/book.epub" type="application/epub+zip"/>
+        <link rel="related" type="application/atom+xml" title="By Last, First…" href="https://www.gutenberg.org/ebooks/author/1.opds"/>
+        <link rel="related" type="application/atom+xml" title="By Other, Person…" href="https://www.gutenberg.org/ebooks/author/2.opds"/>
+        </entry></feed>
+        """
+        let detail = try GutenbergBookDetail(feed: OPDSClient.parseFeed(data: Data(xml.utf8),
+                                                                        feedURL: URL(string: PublicLibrary.gutenberg.url)!))
+        #expect(detail.mainAuthors.count == 2)
+        #expect(detail.contributors.isEmpty)
+    }
+
     /// Gutenberg's Atom content is its bibliographic record, one `<p>` per field (Title,
     /// Credits, Summary, EBook No., Downloads, Subject, Rights…). 簡介 is its Summary field
     /// alone, and nothing when the book has none: the record is never the description.

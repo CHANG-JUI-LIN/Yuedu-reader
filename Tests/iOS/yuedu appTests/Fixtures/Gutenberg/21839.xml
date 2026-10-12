@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/">
+<id>http://www.gutenberg.org/ebooks/21839.opds</id>
+<updated>2026-10-12T14:18:37Z</updated>
+<title>Sense and Sensibility by Jane Austen</title>
+<subtitle>Free eBooks since 1971.</subtitle>
+<author>
+<name>Project Gutenberg</name>
+<uri>https://www.gutenberg.org</uri>
+<email>webmaster@gutenberg.org</email>
+</author>
+<icon>https://www.gutenberg.org/gutenberg/favicon.ico</icon>
+<link rel="search" type="application/opensearchdescription+xml" title="Project Gutenberg Catalog Search" href="https://www.gutenberg.org/catalog/osd-books.xml"/>
+<link rel="self" title="This Page" type="application/atom+xml;profile=opds-catalog" href="/ebooks/21839.opds"/>
+<link rel="alternate" type="text/html" title="HTML Page" href="/ebooks/21839"/>
+<link rel="start" title="Start Page" type="application/atom+xml;profile=opds-catalog" href="/ebooks.opds/"/>
+<opensearch:itemsPerPage>25</opensearch:itemsPerPage>
+<opensearch:startIndex>1</opensearch:startIndex>
+<entry>
+<updated>2026-10-12T14:18:37Z</updated>
+<title>Sense and Sensibility</title>
+<content type="xhtml">
+<div xmlns="http://www.w3.org/1999/xhtml">
+<p>This edition had all images removed.</p>
+<p>
+Title:
+Sense and Sensibility
+</p>
+<p>
+Note:
+Wikipedia page about this book: https:<a href="//en.wikipedia.org/wiki/Sense_and_Sensibility">//en.wikipedia.org/wiki/Sense_and_Sensibility</a>
+</p>
+<p>
+Credits:
+Fritz Ohrenschall and Sankar Viswanathan
+</p>
+<p>
+Summary:
+"Sense and Sensibility" by Jane Austen is a novel published in 1811. When the Dashwood sisters are forced from their family estate into reduced circumstances, two very different personalities face the trials of love and heartbreak. Elinor embodies prudent sense while Marianne follows passionate sensibility. As romantic attachments form and unravel, both sisters must navigate social expectations, financial realities, and the painful gap between appearance and truth in matters of the heart. (This is an automatically generated summary.)
+</p>
+<p>
+Reading Level:
+Reading ease score: 66.2 (8th &amp; 9th grade). Neither easy nor difficult to read.
+</p>
+<p>Author: Austen, Jane, 1775-1817</p><p>Commentator: Dobson, Austin, 1840-1921</p><p>Illustrator: Thomson, Hugh, 1860-1920</p>
+<p>EBook No.: 21839</p>
+<p>Published: Jun 15, 2007</p>
+<p>Downloads: 12516</p>
+<p>Language: English</p>
+<p>Subject: England -- Social life and customs -- 19th century -- Fiction</p><p>Subject: Inheritance and succession -- Fiction</p><p>Subject: England -- Fiction</p><p>Subject: Young women -- Fiction</p><p>Subject: Love stories</p><p>Subject: Sisters -- Fiction</p><p>Subject: Domestic fiction</p><p>Subject: Mate selection -- Fiction</p><p>Subject: Social classes -- Fiction</p><p>Subject: Gentry -- England -- Fiction</p><p>Subject: Regency fiction</p>
+<p>LoCC: Language and Literatures: English literature</p>
+<p>Category: Text</p>
+<p>Rights: Public domain in the USA.</p>
+</div>
+</content>
+<id>urn:gutenberg:21839:2</id>
+<published>2007-06-15T00:00:00+00:00</published>
+<rights>Public domain in the USA.</rights>
+<contributor>
+<name>Thomson, Hugh</name>
+</contributor>
+<contributor>
+<name>Dobson, Austin</name>
+</contributor>
+<author>
+<name>Austen, Jane</name>
+</author>
+<category scheme="http://purl.org/dc/terms/LCSH" term="England -- Social life and customs -- 19th century -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Inheritance and succession -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="England -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Young women -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Love stories"/><category scheme="http://purl.org/dc/terms/LCSH" term="Sisters -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Domestic fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Mate selection -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Social classes -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Gentry -- England -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Regency fiction"/>
+<category scheme="http://purl.org/dc/terms/LCC" term="PR" label="Language and Literatures: English literature"/>
+<category scheme="http://purl.org/dc/terms/DCMIType" term="Text"/>
+<dcterms:language>en</dcterms:language>
+<relevance:score>1</relevance:score>
+<link type="application/epub+zip" rel="http://opds-spec.org/acquisition" title="EPUB (older e-readers, no images)" length="423604" href="https://www.gutenberg.org/ebooks/21839.epub.noimages"/>
+<link type="application/x-mobipocket-ebook" rel="http://opds-spec.org/acquisition" title="Kindle (no images)" length="594611" href="https://www.gutenberg.org/ebooks/21839.kindle.noimages"/>
+<link type="image/jpeg" rel="http://opds-spec.org/image" href="https://www.gutenberg.org/cache/epub/21839/pg21839.cover.medium.jpg"/>
+<link type="image/jpeg" rel="http://opds-spec.org/image/thumbnail" href="https://www.gutenberg.org/cache/epub/21839/pg21839.cover.small.jpg"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/author/68.opds" title="By Austen, Jane…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/author/2155.opds" title="By Dobson, Austin…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/author/24921.opds" title="By Thomson, Hugh…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/104.opds" title="On England -- Social life and customs -- 19th century -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/1699.opds" title="On Inheritance and succession -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/1702.opds" title="On England -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2481.opds" title="On Young women -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2487.opds" title="On Love stories…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2489.opds" title="On Sisters -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2514.opds" title="On Domestic fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2545.opds" title="On Mate selection -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2906.opds" title="On Social classes -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/18493.opds" title="On Gentry -- England -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/18494.opds" title="On Regency fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/639.opds" title="In Category: Romance…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/645.opds" title="In Category: Novels…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/649.opds" title="In Category: Classics of Literature…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/653.opds" title="In Category: British Literature…"/>
+</entry>
+<entry>
+<updated>2026-10-12T14:18:37Z</updated>
+<title>Sense and Sensibility</title>
+<content type="xhtml">
+<div xmlns="http://www.w3.org/1999/xhtml">
+<p>This edition has images.</p>
+<p>
+Title:
+Sense and Sensibility
+</p>
+<p>
+Note:
+Wikipedia page about this book: https:<a href="//en.wikipedia.org/wiki/Sense_and_Sensibility">//en.wikipedia.org/wiki/Sense_and_Sensibility</a>
+</p>
+<p>
+Credits:
+Fritz Ohrenschall and Sankar Viswanathan
+</p>
+<p>
+Summary:
+"Sense and Sensibility" by Jane Austen is a novel published in 1811. When the Dashwood sisters are forced from their family estate into reduced circumstances, two very different personalities face the trials of love and heartbreak. Elinor embodies prudent sense while Marianne follows passionate sensibility. As romantic attachments form and unravel, both sisters must navigate social expectations, financial realities, and the painful gap between appearance and truth in matters of the heart. (This is an automatically generated summary.)
+</p>
+<p>
+Reading Level:
+Reading ease score: 66.2 (8th &amp; 9th grade). Neither easy nor difficult to read.
+</p>
+<p>Author: Austen, Jane, 1775-1817</p><p>Commentator: Dobson, Austin, 1840-1921</p><p>Illustrator: Thomson, Hugh, 1860-1920</p>
+<p>EBook No.: 21839</p>
+<p>Published: Jun 15, 2007</p>
+<p>Downloads: 12516</p>
+<p>Language: English</p>
+<p>Subject: England -- Social life and customs -- 19th century -- Fiction</p><p>Subject: Inheritance and succession -- Fiction</p><p>Subject: England -- Fiction</p><p>Subject: Young women -- Fiction</p><p>Subject: Love stories</p><p>Subject: Sisters -- Fiction</p><p>Subject: Domestic fiction</p><p>Subject: Mate selection -- Fiction</p><p>Subject: Social classes -- Fiction</p><p>Subject: Gentry -- England -- Fiction</p><p>Subject: Regency fiction</p>
+<p>LoCC: Language and Literatures: English literature</p>
+<p>Category: Text</p>
+<p>Rights: Public domain in the USA.</p>
+</div>
+</content>
+<id>urn:gutenberg:21839:3</id>
+<published>2007-06-15T00:00:00+00:00</published>
+<rights>Public domain in the USA.</rights>
+<contributor>
+<name>Thomson, Hugh</name>
+</contributor>
+<contributor>
+<name>Dobson, Austin</name>
+</contributor>
+<author>
+<name>Austen, Jane</name>
+</author>
+<category scheme="http://purl.org/dc/terms/LCSH" term="England -- Social life and customs -- 19th century -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Inheritance and succession -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="England -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Young women -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Love stories"/><category scheme="http://purl.org/dc/terms/LCSH" term="Sisters -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Domestic fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Mate selection -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Social classes -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Gentry -- England -- Fiction"/><category scheme="http://purl.org/dc/terms/LCSH" term="Regency fiction"/>
+<category scheme="http://purl.org/dc/terms/LCC" term="PR" label="Language and Literatures: English literature"/>
+<category scheme="http://purl.org/dc/terms/DCMIType" term="Text"/>
+<dcterms:language>en</dcterms:language>
+<relevance:score>1</relevance:score>
+<link type="application/epub+zip" rel="http://opds-spec.org/acquisition" title="EPUB3 (E-readers incl. Send-to-Kindle)" length="2109097" href="https://www.gutenberg.org/ebooks/21839.epub3.images"/>
+<link type="application/epub+zip" rel="http://opds-spec.org/acquisition" title="EPUB (older e-readers)" length="2123210" href="https://www.gutenberg.org/ebooks/21839.epub.images"/>
+<link type="application/x-mobipocket-ebook" rel="http://opds-spec.org/acquisition" title="Kindles (kf8)" length="2371446" href="https://www.gutenberg.org/ebooks/21839.kf8.images"/>
+<link type="application/x-mobipocket-ebook" rel="http://opds-spec.org/acquisition" title="Older Kindles" length="2284096" href="https://www.gutenberg.org/ebooks/21839.kindle.images"/>
+<link type="image/jpeg" rel="http://opds-spec.org/image" href="https://www.gutenberg.org/cache/epub/21839/pg21839.cover.medium.jpg"/>
+<link type="image/jpeg" rel="http://opds-spec.org/image/thumbnail" href="https://www.gutenberg.org/cache/epub/21839/pg21839.cover.small.jpg"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/author/68.opds" title="By Austen, Jane…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/author/2155.opds" title="By Dobson, Austin…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/author/24921.opds" title="By Thomson, Hugh…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/104.opds" title="On England -- Social life and customs -- 19th century -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/1699.opds" title="On Inheritance and succession -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/1702.opds" title="On England -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2481.opds" title="On Young women -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2487.opds" title="On Love stories…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2489.opds" title="On Sisters -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2514.opds" title="On Domestic fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2545.opds" title="On Mate selection -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/2906.opds" title="On Social classes -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/18493.opds" title="On Gentry -- England -- Fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/subject/18494.opds" title="On Regency fiction…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/639.opds" title="In Category: Romance…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/645.opds" title="In Category: Novels…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/649.opds" title="In Category: Classics of Literature…"/>
+<link type="application/atom+xml;profile=opds-catalog" rel="related" href="/ebooks/bookshelf/653.opds" title="In Category: British Literature…"/>
+</entry>
+</feed>

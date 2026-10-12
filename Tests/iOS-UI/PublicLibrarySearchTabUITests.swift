@@ -87,4 +87,52 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(result.waitForExistence(timeout: 10), "Back from 作品詳情 returns to the results")
     }
+
+    /// 2026-10-12: the illustrated Sense and Sensibility (#21839) drew three author lines in the
+    /// hero — its commentator and illustrator too, as 「Austen, Jane」. The hero names the
+    /// author; the others are 作品資訊's rows, by what they did. The book's entry is Gutenberg's
+    /// own, saved with the unit tests' fixtures.
+    @MainActor
+    func testHeroNamesTheAuthorAndInfoListsTheOthers() throws {
+        let search = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><title>Search</title>
+        <entry><id>https://www.gutenberg.org/ebooks/21839.opds</id><title>Sense and Sensibility</title><content>Austen, Jane</content><link rel="subsection" type="application/atom+xml" href="/ebooks/21839.opds"/></entry>
+        </feed>
+        """
+        try Data(search.utf8).write(to: fixtureDirectory.appendingPathComponent("ebooks_search.opds.xml"))
+        let entry = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("iOS/yuedu appTests/Fixtures/Gutenberg/21839.xml")
+        try FileManager.default.copyItem(at: entry, to: fixtureDirectory.appendingPathComponent("ebooks_21839.opds.xml"))
+
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+                               "-yd_source_disclaimer_accepted", "YES",
+                               "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path]
+        app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path
+        app.launch()
+        let tab = app.tabBars.buttons["搜尋"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 30))
+        tab.tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("Sense and Sensibility\n")
+        let result = app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/21839.opds"].firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 15), app.debugDescription)
+        result.tap()
+
+        let author = app.buttons["publicLibrary.author.https://www.gutenberg.org/ebooks/author/68.opds"].firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(author.label.hasPrefix("Jane Austen"), author.label)
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'publicLibrary.author.'")).count, 1,
+                       "the hero names the author alone")
+        let illustrator = app.descendants(matching: .any).matching(NSPredicate(format: "label == '插畫' AND value == 'Hugh Thomson'")).firstMatch
+        for _ in 0..<4 where !illustrator.exists { app.swipeUp() }
+        XCTAssertTrue(illustrator.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == '評註' AND value == 'Austin Dobson'"))
+            .firstMatch.exists, app.debugDescription)
+        attach(app, "work-detail-contributors")
+        illustrator.tap()
+        XCTAssertTrue(app.navigationBars["Hugh Thomson"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+    }
 }
