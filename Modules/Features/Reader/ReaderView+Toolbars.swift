@@ -550,17 +550,14 @@ extension ReaderView {
         }
     }
 
+    /// The close button. A book not on the shelf is offered to it by the page the reader closes
+    /// onto (`readerShelvePrompt`), which a swipe back reaches too.
     func closeReader() {
-        if let snap = snapshotBook, snap.isOnline, book == nil {
-            showAddToShelfAlert = true
-        } else {
-            dismissReaderPresentation()
-        }
+        dismissReaderPresentation()
     }
 
-    /// Complete an already-confirmed exit without re-opening the add-to-shelf
-    /// prompt. All pushed-reader exits must pass through the coordinator so
-    /// the custom close animator, UIKit stack, and retained reader state agree.
+    /// All pushed-reader exits must pass through the coordinator so the custom close
+    /// animator, UIKit stack, and retained reader state agree.
     func dismissReaderPresentation() {
         // Only the chapter on screen was worth translating; what finished is kept.
         AIChapterTranslationService.shared.cancel(book: bookId)

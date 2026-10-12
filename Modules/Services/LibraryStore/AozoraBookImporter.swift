@@ -42,7 +42,7 @@ enum AozoraBookImporter {
     /// Converts and imports an Aozora `.txt`, or a zip whose text the detector
     /// accepts. Returns nil for a zip that holds no Aozora text, so its caller can
     /// try the next importer; a conversion failure throws, with no TXT fallback.
-    static func importBook(at url: URL, title: String?, store: BookStore) async throws -> ReadingBook? {
+    static func importBook(at url: URL, title: String?, store: BookStore, isInBookshelf: Bool = true) async throws -> ReadingBook? {
         let isZip = url.pathExtension.lowercased() == "zip"
         let result = try await Task.detached(priority: .userInitiated) {
             try await SourcePerfTrace.spanAsync("aozora.import.convert", url.pathExtension.lowercased()) {
@@ -53,7 +53,8 @@ enum AozoraBookImporter {
         defer { remove(converted.workDirectory, reason: "work folder") }
         try Task.checkCancellation()
 
-        var book = try await store.importEpub(url: converted.epub, title: title, requireValidPublication: true)
+        var book = try await store.importEpub(url: converted.epub, title: title, requireValidPublication: true,
+                                              isInBookshelf: isInBookshelf)
         let original = (book.contentFilename as NSString).deletingPathExtension + ".aozora." + (isZip ? "zip" : "txt")
         let originalURL = StorageLocations.bookFile(original)
         do {
@@ -66,7 +67,7 @@ enum AozoraBookImporter {
             store.saveReadingBook(book)
             return book
         } catch {
-            // The book is on the shelf already; take it off with its files.
+            // The book is recorded already; take it off with its files.
             store.delete(bookId: book.id)
             remove(originalURL, reason: "original")
             throw error

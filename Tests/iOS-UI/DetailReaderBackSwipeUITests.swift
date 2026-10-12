@@ -267,6 +267,15 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         attachScreenshot(app, named: "導覽列 繼續閱讀")
     }
 
+    /// Back from reading a book not on the shelf, by a swipe or Back, the detail asks
+    /// 「加入書架？」 (2026-10-13); these tests leave it off the shelf.
+    @MainActor
+    private func declineShelvePrompt(_ app: XCUIApplication, _ decline: String) {
+        let button = app.alerts.buttons[decline].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "the detail asks to keep the book read\n\(app.debugDescription)")
+        button.tap()
+    }
+
     @MainActor
     private func exerciseNativeEntry(fromSearch: Bool) throws {
         continueAfterFailure = false
@@ -284,6 +293,10 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read", "Resume"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
         if !fromSearch { attachScreenshot(app, named: "作品詳情 - book source") }
+        // An earlier test may have added the book; only one off the shelf is asked about.
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch
+            .waitForExistence(timeout: 15), app.debugDescription)
+        let offShelf = app.buttons["Add to Library"].firstMatch.exists
         for _ in 0..<2 {
             read.tap()
             let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
@@ -294,6 +307,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
             start.press(forDuration: 0.05, thenDragTo: end)
+            if offShelf { declineShelvePrompt(app, "Don't Add") }
             XCTAssertTrue(read.waitForExistence(timeout: 8), app.debugDescription)
             XCTAssertFalse(content.exists)
         }
@@ -333,6 +347,10 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read", "Resume"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
         let progress = app.sliders["Reading Progress"]
+        // An earlier test may have added the book; only one off the shelf is asked about.
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch
+            .waitForExistence(timeout: 15), app.debugDescription)
+        let offShelf = app.buttons["Add to Library"].firstMatch.exists
         for entry in 1...2 {
             // Read Now stays disabled until the detail has loaded the contents.
             let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: read)
@@ -355,6 +373,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
                 showMangaControls(app, expecting: "Page 2 of 3")
             }
             app.navigationBars.buttons["Back"].tap()
+            if offShelf { declineShelvePrompt(app, "Don't Add") }
             XCTAssertTrue(read.waitForExistence(timeout: 8), "Back must return to the same detail.\n\(app.debugDescription)")
             let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: progress)
             XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 8), .completed, app.debugDescription)

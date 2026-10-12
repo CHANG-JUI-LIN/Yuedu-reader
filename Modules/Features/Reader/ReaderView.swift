@@ -313,7 +313,6 @@ struct ReaderView: View {
     /// Snapshot of the book at reader launch, so we can re-add it to the shelf
     /// if it was deleted during the reading session.
     @State var snapshotBook: ReadingBook?
-    @State var showAddToShelfAlert = false
 
     // Source change state managed by ViewModel, exposed via computed properties to avoid duplicate state in the view.
     var changeSourceOrigins: [BookOrigin] { readerViewModel.changeSourceOrigins }
@@ -2019,27 +2018,6 @@ struct ReaderView: View {
             Button(localized("確定"), role: .cancel) { setReaderChromeVisible(true) }
         } message: {
             Text(localized("為避免閱讀進度或書籤錯移，尚未套用新目錄。原有位置資料已保留。請保留原始 TXT，並匯出診斷記錄以供檢查。"))
-        }
-        .alert(String(format: localized("將「%@」加入書架？"), snapshotBook?.title ?? ""), isPresented: $showAddToShelfAlert) {
-            Button(localized("加入書架")) {
-                if let snap = snapshotBook {
-                    let shelved = store.addOnlineBook(
-                        name: snap.title,
-                        author: snap.author,
-                        sourceId: snap.bookSourceId ?? UUID(),
-                        bookInfoURL: snap.bookInfoURL ?? "",
-                        tocURL: snap.tocURL,
-                        coverUrl: snap.coverUrl ?? "",
-                        runtimeVariables: snap.runtimeVariables,
-                        chapters: snap.onlineChapters ?? []
-                    )
-                    SourceCallBackService.notify(.addBookShelf, book: shelved)
-                }
-                dismissReaderPresentation()
-            }
-            Button(localized("不加入"), role: .cancel) {
-                dismissReaderPresentation()
-            }
         }
         )
         let lifecycleLayers = AnyView(

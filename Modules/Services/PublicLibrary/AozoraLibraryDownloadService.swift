@@ -2,7 +2,11 @@ import Foundation
 
 @MainActor
 protocol AozoraLibraryDownloading {
+    /// 加入書架: the work's copy, made if there is none, on the shelf.
     func addToShelf(work: AozoraWork, store: BookStore) async throws -> ReadingBook
+    /// The copy the work is read from: the one there is, on the shelf or not, or a new one
+    /// off the shelf, which joins it only when the reader adds it.
+    func readingCopy(work: AozoraWork, store: BookStore) async throws -> ReadingBook
 }
 
 enum AozoraLibraryDownloadError: LocalizedError, Equatable {
@@ -32,7 +36,18 @@ final class AozoraLibraryDownloadService: AozoraLibraryDownloading {
     }
 
     func addToShelf(work: AozoraWork, store: BookStore) async throws -> ReadingBook {
-        if let book = store.copyLookup().copies(for: SourceRecord.derived(from: work).key).first(where: \.isInBookshelf) { return book }
+        let copy = try await readingCopy(work: work, store: store)
+        if copy.isInBookshelf { return copy }
+        // Nothing runs between the two on the main actor, so the copy is still recorded.
+        guard let shelved = store.addReadingBookToShelf(id: copy.id) else { throw RemoteLibraryError.missingBook }
+        return shelved
+    }
+
+    /// Until 2026-10-13 reading a work put it on the shelf; the maintainer: a book read
+    /// without 加入書架 is not on the shelf, and leaving the reader asks.
+    func readingCopy(work: AozoraWork, store: BookStore) async throws -> ReadingBook {
+        let copies = store.copyLookup().copies(for: SourceRecord.derived(from: work).key)
+        if let book = copies.first(where: \.isInBookshelf) ?? copies.first { return book }
         if let operation = operations[work.id] { return try await operation.value }
         let operation = Task { try await importWork(work, store: store) }
         operations[work.id] = operation
@@ -61,7 +76,8 @@ final class AozoraLibraryDownloadService: AozoraLibraryDownloading {
             let file = folder.appendingPathComponent("work.zip")
             try await download(url, file)
             try Task.checkCancellation()
-            guard var book = try await AozoraBookImporter.importBook(at: file, title: work.title, store: store) else {
+            guard var book = try await AozoraBookImporter.importBook(at: file, title: work.title, store: store,
+                                                                     isInBookshelf: false) else {
                 throw AozoraLibraryDownloadError.notAozoraText
             }
             // The EPUB importer treats its title argument as a metadata fallback.

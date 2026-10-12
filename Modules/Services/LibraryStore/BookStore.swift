@@ -705,7 +705,10 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Import EPUB File
 
     @discardableResult
-    func importEpub(url: URL, title: String? = nil, author: String? = nil, requireValidPublication: Bool = false) async throws -> ReadingBook {
+    /// - Parameter isInBookshelf: false for a copy made to be read, which joins the shelf only
+    ///   when the reader adds it (a 青空文庫 work read from its 作品詳情).
+    func importEpub(url: URL, title: String? = nil, author: String? = nil, requireValidPublication: Bool = false,
+                    isInBookshelf: Bool = true) async throws -> ReadingBook {
         let importStartUptime = ProcessInfo.processInfo.systemUptime
         func importTrace(_ message: String) {
             let line = "[ImportTrace][BookStore.importEpub] \(message)"
@@ -812,6 +815,7 @@ class BookStore: ObservableObject, BookProvider {
                 book.contentPipelineKind = .epub
             }
             book.coverImagePath = coverFilename
+            book.isInBookshelf = isInBookshelf
             let finalBook = book
 
             try Task.checkCancellation()

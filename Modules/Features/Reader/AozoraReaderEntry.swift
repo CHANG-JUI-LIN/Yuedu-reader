@@ -28,11 +28,12 @@ struct AozoraReaderEntry: View {
         }
     }
 
-    /// The same use case as 加入書架: the work joins the shelf, then opens.
+    /// The work's reading copy, off the shelf: the page the reader closes onto asks whether to
+    /// add it (2026-10-13; until then reading put the work on the shelf).
     private func importWork() async {
         error = nil
         do {
-            bookID = try await dependencies.aozoraLibrary.addToShelf(work: work, store: store).id
+            bookID = try await dependencies.aozoraLibrary.readingCopy(work: work, store: store).id
         } catch is CancellationError {
             // The reader was closed; nothing to show.
         } catch {
