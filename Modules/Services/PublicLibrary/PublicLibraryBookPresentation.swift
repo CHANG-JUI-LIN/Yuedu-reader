@@ -169,12 +169,27 @@ struct GutenbergBookDetail {
         }
     }
 
+    /// The record's Summary field. The parser keeps one field per line. Before d7aa65ab it
+    /// flattened the record to one line, and copies imported then hold that in their sidecar
+    /// (`BookStore.copyIntroValues`): there the field ends where the next field's label starts.
     static func recordSummary(_ record: String?) -> String? {
         let label = "Summary:"
-        guard let field = record?.split(separator: "\n").first(where: { $0.hasPrefix(label) }) else { return nil }
-        let text = field.dropFirst(label.count).trimmingCharacters(in: .whitespaces)
+        guard let record else { return nil }
+        let field: Substring
+        if record.contains("\n") {
+            guard let line = record.split(separator: "\n").first(where: { $0.hasPrefix(label) }) else { return nil }
+            field = line.dropFirst(label.count)
+        } else {
+            guard let start = record.range(of: label) else { return nil }
+            let rest = record[start.upperBound...]
+            field = rest.range(of: flattenedNextField, options: .regularExpression).map { rest[..<$0.lowerBound] } ?? rest
+        }
+        let text = field.trimmingCharacters(in: .whitespaces)
         return text.isEmpty ? nil : text
     }
+
+    /// The labels Gutenberg's record writes after Summary, in a flattened record.
+    private static let flattenedNextField = #"\s(?:Reading Level|Author|Editor|Translator|Illustrator|Contributor|Commentator|Compiler|Language|EBook No\.|Release Date|Published|Original Publication|LoC No\.|LoCC|Subject|Category|Rights|Downloads|Copyright Status|Most Recently Updated):"#
 
     private static func officialPage(_ identifier: String) -> URL? {
         guard let url = URL(string: identifier), url.scheme == "https", url.host == "www.gutenberg.org",

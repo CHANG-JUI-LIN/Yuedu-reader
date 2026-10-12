@@ -310,6 +310,13 @@ struct ReadingBook: Identifiable, Codable {
     /// `audioPlayMode` gives.
     var continueReadingHiddenAt: Date?
 
+    /// The description the reader wrote in 編輯資訊 (unified library 5f-4d-2, decision 33). It
+    /// comes before every place's (`CopyMetadata`), and nothing but the reader writes it, so
+    /// a source refresh never replaces it. Kept here, not in `Works/decisions.json`, so that it
+    /// syncs as the title does (maintainer, 2026-10-12). Optional and encoded only when present,
+    /// for the reason `audioPlayMode` gives.
+    var customIntro: String?
+
     init(
         title: String, author: String = "未知作者",
         source: String = "local", contentFilename: String
@@ -401,6 +408,7 @@ struct ReadingBook: Identifiable, Codable {
         audioCloseCreditsSeconds = try? c.decode(Int.self, forKey: .audioCloseCreditsSeconds)
         aozora = try c.decodeIfPresent(AozoraBookSource.self, forKey: .aozora)
         continueReadingHiddenAt = try c.decodeIfPresent(Date.self, forKey: .continueReadingHiddenAt)
+        customIntro = try c.decodeIfPresent(String.self, forKey: .customIntro)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -416,6 +424,7 @@ struct ReadingBook: Identifiable, Codable {
         case audioPlayMode, audioOpenCreditsSeconds, audioCloseCreditsSeconds
         case aozora
         case continueReadingHiddenAt
+        case customIntro
     }
 
     /// Read only: where builds before `BookChapterStore` kept the table of contents.

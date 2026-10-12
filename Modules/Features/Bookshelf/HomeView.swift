@@ -610,18 +610,20 @@ struct HomeView: View {
             // for book-source management.
             .navigationDestination(item: pushedEditingBookId) { bookId in
                 if let book = store.books.first(where: { $0.id == bookId }) {
-                    EditBookSheet(book: book, presentation: .push) { newTitle, newAuthor, newGroup in
+                    EditBookSheet(book: book, presentation: .push) { newTitle, newAuthor, newGroup, newIntro in
                         store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
                         store.setGroup(newGroup, for: book.id)
+                        store.setCustomIntro(newIntro, for: book.id)
                     }
                     .environmentObject(store)
                 }
             }
             .sheet(item: sheetEditingBook) { book in
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
-                    EditBookSheet(book: book) { newTitle, newAuthor, newGroup in
+                    EditBookSheet(book: book) { newTitle, newAuthor, newGroup, newIntro in
                         store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
                         store.setGroup(newGroup, for: book.id)
+                        store.setCustomIntro(newIntro, for: book.id)
                     }
                     .environmentObject(store)
                 }
@@ -1279,9 +1281,11 @@ enum BookInfoEditPresentation {
 struct EditBookSheet: View {
     let book: ReadingBook
     var presentation: BookInfoEditPresentation = .sheet
-    let onSave: (String, String, String) -> Void
+    /// Title, author, group and the reader's own description (`ReadingBook.customIntro`).
+    let onSave: (String, String, String, String) -> Void
 
     @State private var titleInput: String
+    @State private var introInput: String
     @State private var authorInput: String
     @State private var groupInput: String
     @State private var coverUrlInput: String
@@ -1294,7 +1298,7 @@ struct EditBookSheet: View {
     init(
         book: ReadingBook,
         presentation: BookInfoEditPresentation = .sheet,
-        onSave: @escaping (String, String, String) -> Void
+        onSave: @escaping (String, String, String, String) -> Void
     ) {
         self.book = book
         self.presentation = presentation
@@ -1302,6 +1306,8 @@ struct EditBookSheet: View {
         _titleInput = State(initialValue: book.title)
         _authorInput = State(initialValue: book.author)
         _groupInput = State(initialValue: book.group)
+        // Only the reader's own: empty, the page shows the book's or its source's.
+        _introInput = State(initialValue: book.customIntro ?? "")
         // The remote address currently in effect: the user's own if they set one,
         // otherwise whatever the source gave us, so the field starts truthful.
         let customUrl = book.customCoverUrl == ReadingBook.localCustomCoverMarker
@@ -1345,7 +1351,7 @@ struct EditBookSheet: View {
     private var saveToolbarItem: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             Button {
-                onSave(titleInput, authorInput, groupInput)
+                onSave(titleInput, authorInput, groupInput, introInput)
                 dismiss.wrappedValue.dismiss()
             } label: {
                 Image(systemName: "checkmark")
@@ -1396,6 +1402,12 @@ struct EditBookSheet: View {
                                 }
                             }
                         }
+                    }
+                    .interfaceSectionSurface()
+                    Section(header: Text(localized("簡介")).foregroundStyle(DSColor.textSecondary)) {
+                        TextField(localized("簡介"), text: $introInput, axis: .vertical)
+                            .lineLimit(3...10)
+                            .accessibilityIdentifier("bookInfo.intro")
                     }
                     .interfaceSectionSurface()
                     Section(header: Text(localized("閱讀進度")).foregroundStyle(DSColor.textSecondary)) {
@@ -2497,7 +2509,7 @@ private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
 }
 
 #Preview("書籍資訊 – 封面區") {
-    EditBookSheet(book: previewOnlineBook(hasUpdate: false)) { _, _, _ in }
+    EditBookSheet(book: previewOnlineBook(hasUpdate: false)) { _, _, _, _ in }
         .environmentObject(BookStore())
 }
 #endif

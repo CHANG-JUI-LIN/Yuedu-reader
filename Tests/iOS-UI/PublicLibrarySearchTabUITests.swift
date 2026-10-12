@@ -21,7 +21,14 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         let book = """
         <feed xmlns="http://www.w3.org/2005/Atom"><title>紅樓夢</title>
         <entry><id>urn:gutenberg:24264:3</id><title>紅樓夢</title><author><name>曹雪芹</name></author>
-        <summary>搜索分頁測試使用的書籍介紹。</summary>
+        <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">
+        <p>
+        Summary:
+        搜索分頁測試使用的書籍介紹。
+        </p>
+        <p>EBook No.: 24264</p>
+        <p>Rights: Public domain in the USA.</p>
+        </div></content>
         <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.gutenberg.org/ebooks/24264.epub3.images" length="1000"/>
         </entry></feed>
         """

@@ -370,6 +370,7 @@ struct BookDetailHero<Cover: View>: View {
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.bookDetailEmbedding) private var embedding
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var artworkSize: CGSize {
         switch artworkShape {
@@ -510,16 +511,18 @@ struct BookDetailHero<Cover: View>: View {
 
     /// Side by side as Apple Books shows them; stacked once the text size no longer
     /// leaves room for both labels on one line.
+    /// Side by side and of equal width, as Apple Books lays out 取得 and 試讀, whatever the
+    /// labels' length: a long label loses its icon, then truncates (`BookDetailActionLabel`).
+    /// Stacked only at accessibility text sizes, where two labels cannot share a row. Until
+    /// 2026-10-12 a `ViewThatFits` stacked them whenever both full labels did not fit, which
+    /// English labels, a narrow phone or a larger text size each did.
     private var actions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: DSSpacing.md) {
-                primaryButton
-                secondaryButton
-            }
-            VStack(spacing: DSSpacing.sm) {
-                primaryButton
-                secondaryButton
-            }
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: DSSpacing.sm))
+            : AnyLayout(HStackLayout(spacing: DSSpacing.md))
+        return layout {
+            primaryButton
+            secondaryButton
         }
     }
 
@@ -628,20 +631,36 @@ private struct BookDetailActionLabel: View {
     let progressTint: Color
 
     var body: some View {
-        HStack(spacing: DSSpacing.sm) {
-            if action.isBusy {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(progressTint)
-            } else {
-                Image(systemName: action.systemImage)
-                    .accessibilityHidden(true)
+        // The icon goes first when the title does not fit beside it; the title then truncates.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DSSpacing.sm) {
+                leading
+                title
             }
-            Text(action.title)
-                .lineLimit(1)
+            HStack(spacing: DSSpacing.sm) {
+                if action.isBusy { leading }
+                title
+            }
         }
         .font(DSFont.body.weight(.semibold))
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        if action.isBusy {
+            ProgressView()
+                .controlSize(.small)
+                .tint(progressTint)
+        } else {
+            Image(systemName: action.systemImage)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var title: some View {
+        Text(action.title)
+            .lineLimit(1)
     }
 }
 
@@ -840,6 +859,10 @@ struct BookDetailIntroSection: View {
     var baseURL: String?
     /// Runs a `<usehtml>` intro's button or image script.
     var onAction: ((BookIntroAction) -> Void)?
+    /// Whether `text` is a book source's own description, whose Legado formats (`<usehtml>`,
+    /// `<md>`, `<useweb>`) are read. Any other text, such as the reader's own or a library's,
+    /// is shown as it is (decision 33).
+    var readsSourceFormats = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var webContentHeight: CGFloat = 0
@@ -851,7 +874,7 @@ struct BookDetailIntroSection: View {
     /// Roughly four lines of CJK body text at the default text size on a phone.
     private static let collapsedCharacterEstimate = 80
 
-    private var content: BookIntroContent { BookIntroContent(text) }
+    private var content: BookIntroContent { readsSourceFormats ? BookIntroContent(text) : .plain(text) }
 
     private var mayOverflow: Bool {
         switch content {
