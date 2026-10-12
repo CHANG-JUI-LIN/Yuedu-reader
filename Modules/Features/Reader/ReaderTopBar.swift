@@ -17,7 +17,7 @@ struct ReaderTopBar: View {
     /// AI 助手 and AI 翻譯, the 三橫線 menu's first rows. A locked one (no Pro) is marked
     /// and its action opens the paywall.
     let menuActions: [ReaderSecondaryAction]
-    /// 書籍詳情, the menu's last row — online books only.
+    /// 作品詳情, the menu's last row (5f-4b): every book has it.
     let onOpenBookDetail: (() -> Void)?
 
     @Bindable private var settings = GlobalSettings.shared
@@ -157,7 +157,7 @@ struct ReaderTopBar: View {
                 }
                 if let onOpenBookDetail {
                     Button(action: onOpenBookDetail) {
-                        Label(localized("書籍詳情"), systemImage: "info.circle")
+                        Label(localized("作品詳情"), systemImage: "info.circle")
                     }
                 }
             } label: {
@@ -187,7 +187,7 @@ struct ReaderTopBar: View {
         if onOpenBookDetail != nil {
             actions.append(DismissalSequencedAction(
                 route: .bookDetail,
-                title: localized("書籍詳情"),
+                title: localized("作品詳情"),
                 systemImage: "info.circle"
             ))
         }

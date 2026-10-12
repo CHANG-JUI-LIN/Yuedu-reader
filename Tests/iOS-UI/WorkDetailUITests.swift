@@ -72,7 +72,8 @@ final class WorkDetailUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-reset-explore-home",
                                "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,
-                               "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+                               "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO",
+                               "-yd_appearance_reader_interface", "classic"]
         app.launch()
         let shelfTab = app.tabBars.buttons["書架"].firstMatch
         XCTAssertTrue(shelfTab.waitForExistence(timeout: 30))
@@ -114,6 +115,33 @@ final class WorkDetailUITests: XCTestCase {
         XCTAssertTrue(versions.waitForExistence(timeout: 10), "The reader closes onto 作品詳情.\n\(app.debugDescription)")
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(card.waitForExistence(timeout: 10), "Back from 作品詳情 returns to the home")
+
+        // The reader's own 選單 → 作品詳情 (5f-4b): a local book has it too, and 繼續閱讀 there
+        // returns to the reader it came from rather than opening a second one.
+        shelfTab.tap()
+        shelfBook(app).tap()
+        let reader = waitForReader(app)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let menu = app.buttons["選單"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 5), app.debugDescription)
+        menu.tap()
+        let fromReader = app.buttons["作品詳情"].firstMatch
+        XCTAssertTrue(fromReader.waitForExistence(timeout: 5), app.debugDescription)
+        fromReader.tap()
+        XCTAssertTrue(versions.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(versions.value as? String, "書架", "The book being read is the version shown")
+        screenshot(app, "work-detail-from-reader")
+        let back = app.buttons["繼續閱讀"].firstMatch
+        XCTAssertTrue(back.exists, app.debugDescription)
+        back.tap()
+        XCTAssertTrue(reader.waitForExistence(timeout: 10), "繼續閱讀 returns to the reader.\n\(app.debugDescription)")
+        // The reader comes back with its controls as they were left: up.
+        let close = app.buttons["reader_back_button"].firstMatch
+        if !close.waitForExistence(timeout: 2) { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription)
+        close.tap()
+        XCTAssertTrue(shelfBook(app).waitForExistence(timeout: 10), "Back from the reader is the shelf.\n\(app.debugDescription)")
+        XCTAssertTrue(shelfTab.isHittable, app.debugDescription)
 
         // The book leaves the shelf, so the next run starts from the same place.
         shelfTab.tap()

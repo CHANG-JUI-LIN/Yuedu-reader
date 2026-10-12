@@ -92,8 +92,8 @@ extension ReaderView {
                 toggleCurrentPageBookmark()
             },
             menuActions: readerSecondaryActions.filter { !(ReaderChromeActionItem($0.id)?.isClassicCircle ?? false) },
-            onOpenBookDetail: onlineBookDetail == nil ? nil : {
-                openOnlineBookDetail()
+            onOpenBookDetail: book == nil ? nil : {
+                openWorkDetail()
             }
         )
     }
@@ -325,7 +325,7 @@ extension ReaderView {
                 modernBookCardPresentation.select(.search)
                 showModernBookCard = false
             },
-            onOpenDetail: onlineBookDetail == nil ? nil : {
+            onOpenDetail: book == nil ? nil : {
                 modernBookCardPresentation.select(.bookDetail)
                 showModernBookCard = false
             }
@@ -337,7 +337,7 @@ extension ReaderView {
         guard let route = modernBookCardPresentation.consumeAfterDismissal() else { return }
         switch route {
         case .bookDetail:
-            openOnlineBookDetail()
+            openWorkDetail()
         case .secondary(let id):
             readerSecondaryActions.first { $0.id == id }?.action()
         case .search:

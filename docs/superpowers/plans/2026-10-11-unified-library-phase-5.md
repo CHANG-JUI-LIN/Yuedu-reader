@@ -228,6 +228,35 @@
       - Custom explore pages keep their data with a new entry. Verify how 5d-4's migration kept them before 5h removes anything else.
       - The public libraries' regional limits stay.
 
+32. **Answered 2026-10-12, starting 5f-4b** (maintainer, in their own words). 作品, 版本 and 閱讀來源 are different levels and must not be mixed: the Legado sources that carry the same web novel are reading sources of it, not versions.
+    - **From the reader, 作品詳情 is `WorkDetailView`,** with no reader-only detail page.
+      - It shows the book being read and its source, and keeps the reader instance, the progress and the navigation stack.
+      - Closing it returns to that same reader.
+      - Every book's reader offers it, local books included (EPUB, TXT, remote-library copies).
+    - **Metadata precedence:**
+      1. the reader's own edits;
+      2. confirmed official or licensed metadata;
+      3. a metadata provider the reader chose;
+      4. the current source's data.
+      - Nothing guesses which third-party source is authoritative. A longer description or a sharper cover is no evidence.
+      - Tiers 2 and 3 do not exist in the app yet. `MetadataResolver` (Phase 1) already encodes "the copy's own title, authors and cover first".
+    - **尋找其他閱讀來源** lists only sources that are known, or confirmed as matching by a search the reader started. 作品詳情 never searches every source on open.
+    - **其他版本 appears only with reliable data** (a different translation, edition or revision). With none, it is hidden.
+    - **Switching the reading source** asks first and maps the chapter. It must never reset the progress or open a second reader.
+    - **Incomplete data is fine.** The page's structure is the same everywhere, but it never depends on official APIs that do not exist, never merges unverified metadata, and never invents relations between works.
+    - **Conflicts with merged work:**
+      - Since 5f-3, the 換源 sheet's 其他版本 section and 作品詳情's 來源 picker list other book sources and work-index matches as versions.
+      - Since 5f-4a, the shelf's online 作品詳情 prefers the source's title, author and cover over the copy's.
+      - 5f-4c as planned (adding `workVersions` to search results) would add more of the first; it is not built as written.
+    - **Answered the same day** (by option, both the recommended one):
+      - **其他版本 becomes 已知的閱讀來源,** listing only sources the reader has read from or put on the shelf. Automatic matches (same title and author) the reader never opened are left out. 作品詳情's 來源 menu follows the same rule.
+      - **The copy's own title, author and cover win on the shelf's online 作品詳情** (custom cover included), through `MetadataResolver`. The description falls through to the source's when the copy has none. Tiers 2 and 3 are not built.
+    - **Steps:**
+      - 5f-4b: the reader opens 作品詳情.
+      - 5f-4d: the copy's own metadata first.
+      - 5f-5: 已知的閱讀來源.
+      - 5f-4c: search results, redone after 5f-5.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -1111,3 +1140,34 @@ Decision 29. Branch `unified-library/5f4a-shelf-work`.
   - On iOS 27 the removal confirmation is a popover over the page's button, so the confirm button is the one at a different frame, not the lowest.
   - `testShelfListExposesOneBookButtonAndOpensReader` had the same flaw: it passed only when an earlier run had left the book on the shelf. This is the 「shelf list's label」 failure 5f-3 listed as predating Phase 5. It now waits for the background state too, and passes on a shelf without the book.
   - Not changed: a book added to the shelf is written on the store's debounce or when the app leaves the foreground. An app killed within that window loses the add. Deletion writes at once since 5f-1.
+
+### 5f-4b: the reader opens 作品詳情 (2026-10-12)
+
+Decisions 29 and 32. Branch `unified-library/5f4b-reader-work`.
+
+- **The reader's 書籍詳情 is 作品詳情, for every book:**
+  - The classic 選單's last row and the modern book card's detail both open it. Local books (EPUB, TXT, remote-library copies) have it too; only online books had it before.
+  - The route is the shelf's own, `ShelfProvider.items([book])`, frozen when the page opens. A 試讀 book not on the shelf gets one too: `copyLookup` holds every record.
+  - When `items` returns nothing, the miss is logged; nothing falls back.
+- **`WorkDetailView(route:readerContext:)`** with `WorkDetailReaderContext` (the book's id, back to the reader at an optional chapter, closes when the book leaves the shelf):
+  - **Only the book being read is shown.** It is pinned at init, and the versions are not read, so there is no 來源 menu and no versions in 換源 (decision 32: the work's other copies are not versions of it, and reading one would stack a reader).
+  - **An online book is drawn as `OnlineBookView`,** as the old reader detail drew it, with `sourceSwitchBookId`. 換源 rebinds this copy and the reader maps the chapter (`ChapterAlignment`, legado's `getDurChapter`).
+  - **A local book is the work page.** Its 繼續閱讀, and every read that would open this copy, return to the reader instead of pushing a second one.
+  - The reader's own navigator stays in the environment. The non-reader branch still forces it to nil.
+- **Both reader hosts are kept:**
+  - The shelf's card coordinator uses `ReaderDetailHostingController`, now titled 作品詳情.
+  - SwiftUI-pushed or modal readers use `navigationDestination(isPresented:)`.
+  - `onlineBookDetail` and its snapshot are deleted, replaced by `openWorkDetail()` and `workDetailSnapshot`.
+  - The reader's `.navigationTitle("書籍詳情")` is gone. The page's own title, the book's, shows instead.
+- **Unchanged:** the modern interface's cover and title buttons keep the accessibility label 書籍詳情. They open the book card popover, not the page.
+- **Checked against decision 32:**
+  - Opening the page sends no search: through all of this step's runs the fixture served the table of contents and chapters, and no search request at all.
+  - 換源 is chosen in the sheet, and a source of another kind asks first. There is no further confirmation.
+  - The official-metadata and metadata-provider tiers do not exist. 5f-4d makes the copy's own title, author and cover win.
+- **Tests:**
+  - `DetailReaderBackSwipeUITests.testReaderOpensWorkDetailAndReturnsToIt` covers two paths:
+    - 探索 → 作品詳情 → reader → 選單 → 作品詳情 (no 書籍詳情) → 繼續閱讀 → the same reader → back to 探索's 作品詳情 → back to the home;
+    - the shelf's card coordinator → reader → 作品詳情 → 繼續閱讀 → the reader's back is the shelf.
+  - `WorkDetailUITests` adds a TXT's reader → 作品詳情 (來源 書架) → 繼續閱讀 → back to the shelf.
+  - Both failed at the reader menu's 作品詳情 before the change. Both passed on iOS 27 and iOS 17.5.
+  - iOS 27 regression: `testShelfOnlineBookOpensWorkDetail`, `testClassicReaderControlsFromExploreAreAccessible` and `testDetailReaderLoadsAndReturns` passed.

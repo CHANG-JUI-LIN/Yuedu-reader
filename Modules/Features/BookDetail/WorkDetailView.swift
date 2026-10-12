@@ -21,6 +21,17 @@ private enum GutenbergLoad {
     var isLoading: Bool { if case .loading = self { true } else { false } }
 }
 
+/// 作品詳情 opened from a reader (5f-4b, decision 32): the book being read, and the way back to
+/// that same reader. Never a second reader over it.
+struct WorkDetailReaderContext {
+    /// The book the reader has open; a book-source page switches this book's source.
+    let bookId: UUID
+    /// Back to the reader, at a chapter when one was picked on the page.
+    let continueReading: (Int?) -> Void
+    /// The book left the shelf from the page; the reader closes with it.
+    let removedFromShelf: () -> Void
+}
+
 /// 作品詳情 (unified library 5f, design §14.1): the one page of a work, as Emby has one page
 /// per item (Phase 5 plan, decisions 27 and 28). Every Explore card, the bookshelf's ••• and
 /// the remote libraries' lists open it. 來源 switches between the versions this device knows
@@ -38,6 +49,9 @@ struct WorkDetailView: View {
     /// Takes the page off its stack when the shelf copy it was opened for leaves the shelf
     /// from its source's page; without it the page stays and reads its versions again.
     let onRemoveFromShelf: (() -> Void)?
+    /// Set when a reader opened the page: only the version it reads is shown (decision 32:
+    /// the work's other copies are not versions of it, and reading one would stack a reader).
+    let readerContext: WorkDetailReaderContext?
     @EnvironmentObject private var store: BookStore
     @Environment(\.appDependencies) private var dependencies
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
@@ -64,10 +78,12 @@ struct WorkDetailView: View {
     /// are read again without the copy.
     @State private var versionsRevision = 0
 
-    init(route: WorkDetailRoute, onRemoveFromShelf: (() -> Void)? = nil) {
+    init(route: WorkDetailRoute, onRemoveFromShelf: (() -> Void)? = nil, readerContext: WorkDetailReaderContext? = nil) {
         self.route = route
         self.onRemoveFromShelf = onRemoveFromShelf
+        self.readerContext = readerContext
         _versions = State(initialValue: [route])
+        if readerContext != nil { _chosen = State(initialValue: route.nodeKey) }
     }
 
     private var selected: WorkDetailRoute? { WorkVersions.selected(in: versions, chosen: chosen) }
@@ -78,6 +94,10 @@ struct WorkDetailView: View {
             .task(id: VersionsLoad(idle: actions.action == nil, revision: versionsRevision)) {
                 // Again after each action: a book added to the shelf is a version of its own.
                 guard actions.action == nil else { return }
+                guard readerContext == nil else {
+                    versionsLoaded = true
+                    return
+                }
                 versions = await ShelfProvider(store: store).versions(of: route)
                 versionsLoaded = true
                 // A book-source page keeps its place once shown: the copy its 加入書架 makes would
@@ -95,7 +115,16 @@ struct WorkDetailView: View {
     /// version is this one's. Each has one item destination of its own (guardrail 12).
     @ViewBuilder
     private var page: some View {
-        if let version = selected, let book = onlineBook(of: version) {
+        if let readerContext, let version = selected, let book = onlineBook(of: version) {
+            // The reader's own book as text, as its reader reads it: no page-kind switch, and
+            // 換源 rebinds this copy (`sourceSwitchBookId`), mapping the chapter.
+            OnlineBookView(book: book, sourceSwitchBookId: readerContext.bookId,
+                           onRemoveFromShelf: readerContext.removedFromShelf,
+                           onContinueReading: readerContext.continueReading)
+                .environmentObject(store)
+                // The reader's own navigator, unlike the other branch: its detail returns to it.
+                .id(version.nodeKey)
+        } else if let version = selected, let book = onlineBook(of: version) {
             OnlineBookDetailDestination(
                 .book(book),
                 onRemoveFromShelf: { leftShelf(version) },
@@ -538,6 +567,11 @@ struct WorkDetailView: View {
     }
 
     private func openCopy(_ id: UUID) {
+        // From a reader, its own book is read in that reader.
+        if let readerContext, id == readerContext.bookId {
+            readerContext.continueReading(nil)
+            return
+        }
         pushed = .reader(id)
     }
 
