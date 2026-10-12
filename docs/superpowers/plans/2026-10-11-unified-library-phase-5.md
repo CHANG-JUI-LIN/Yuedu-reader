@@ -1344,3 +1344,11 @@ Convention chosen: a new key is `情境：原字` (e.g. `狀態：關閉`), its 
 | 章節 | Chapters (count label) | format `章節 %d` = "Chapter %d"; singular fallback | LocalAudiobookArchive:223, :238 (HealthChecker:1064 is a fragment, with the fragment work) |
 
 Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否 in BookSourceEditView's discard alert (answers to its question).
+
+#### What landed — a library item's copy folds into the item (2026-10-12)
+
+- **Bug (maintainer's screenshot):** back from reading 和蘭人形 from 青空文庫, its 作品詳情 showed only 作品資訊 → 來源 書架 / 換源. Reading had put a copy on the shelf; `WorkVersions.merge` lists copies first, so the copy led, and a copy version draws none of its item's data (no 青空文庫 details, author link, 公開日). Gutenberg books and remote-library items degraded the same way.
+- **Decision (maintainer):** 書架那份併進原來源. `WorkVersions.merge` puts a listed library item (`readsItsCopies`: 青空文庫, Gutenberg, OPDS entry, WebDAV file) in the place of every copy taken from it (same `record.key`), so the item leads when its copy was opened last and 換源 never lists the book twice. A book source's version keeps its copy apart (its own page reads the shelf copy).
+- **Page:** a Gutenberg version now reads, resumes and says 已加入書架 from its shelf copy found by key, like 青空文庫, rather than through the catalog entry it fetches — so a folded copy still opens offline. An OPDS/WebDAV version shows the format of its shelf copy unless another is picked, so the copy it stands for is the one 繼續閱讀 opens.
+- **Not covered:** a copy opened from 書架 or 繼續閱讀 whose item is not in the work index (青空文庫, Gutenberg) still lists only itself; listing its item there would need the catalog loaded for the route. An 青空文庫 copy imported before `catalogWorkID` keeps its own key and does not fold.
+- **Tests:** `WorkDetailVersionsTests.copyFoldsIntoItsItem` (new); `order` and `WorkDetailShelfVersionsTests.throughCopy` updated to the fold. iOS 27: 9 tests in 2 suites passed; UI `PublicLibraryLiveUITests.testAozoraWorkKeepsItsPageAfterReading` (live, `AOZORA_CATALOG_LIVE_UI=1`: 來源 青空文庫, 繼續閱讀, 已加入書架, 底本／出版社／公開日 after reading) and `WorkDetailUITests` passed.

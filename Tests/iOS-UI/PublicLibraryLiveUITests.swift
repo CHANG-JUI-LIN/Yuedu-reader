@@ -130,4 +130,45 @@ final class PublicLibraryLiveUITests: XCTestCase {
         menu.tap()
         app.buttons["全部"].firstMatch.tap()
     }
+
+    /// 2026-10-12: back from reading a 青空文庫 work, its 作品詳情 listed the copy the reading
+    /// made as 「書架」 and lost the work's details. The work stands for its copy now.
+    @MainActor
+    func testAozoraWorkKeepsItsPageAfterReading() throws {
+        guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+                               "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
+                               "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+        app.launch()
+        let tab = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 30))
+        tab.tap()
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        menu.tap()
+        let aozora = app.buttons["青空文庫"].firstMatch
+        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
+        aozora.tap()
+        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
+        work.tap()
+
+        let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
+        let read = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 30), app.debugDescription)
+        read.tap()
+        let footer = app.otherElements["頁尾"].firstMatch
+        XCTAssertTrue(footer.waitForExistence(timeout: 90), app.debugDescription)
+        let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+
+        XCTAssertTrue(source.waitForExistence(timeout: 15), "The reader closes onto 作品詳情.\n\(app.debugDescription)")
+        XCTAssertNotEqual(source.value as? String, "書架", "The work, not its copy, is the version shown")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH '繼續閱讀'")).firstMatch.waitForExistence(timeout: 10),
+                      app.debugDescription)
+        XCTAssertTrue(app.buttons["已加入書架"].firstMatch.exists, app.debugDescription)
+        screenshot(app, "aozora-detail-after-reading")
+    }
 }

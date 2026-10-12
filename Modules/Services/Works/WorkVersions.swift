@@ -48,6 +48,15 @@ struct WorkDetailRoute: Hashable, Sendable {
     /// The node the work index knows the version by: a copy by its own key.
     var nodeKey: SourceItemKey { record.copyKey ?? record.key }
 
+    /// Whether this version's page finds the copies taken from it by its key, and reads them:
+    /// a library item's does; a book source's own page keeps its copy apart.
+    var readsItsCopies: Bool {
+        switch opening {
+        case .aozora, .gutenberg, .opdsEntry, .webDAVFile: true
+        case .copy, .onlineBook: false
+        }
+    }
+
     /// Whether this version can be read at all. A Gutenberg book of a bundled list carries no
     /// formats until its catalog entry is read, so it counts; an OPDS entry or a WebDAV file
     /// with no format the app reads is the one kind that has only its data (design §6).
@@ -85,15 +94,25 @@ enum WorkVersions {
     /// 3. the other members of its work in the index (shelf copies and WebDAV files), in the
     ///    index's order.
     ///
+    /// A copy taken from a listed library item (青空文庫, Gutenberg, an OPDS entry, a WebDAV
+    /// file) is that item's version, not one of its own: the item stands in its place, and its
+    /// page reads the copy, shows its progress and says 已加入書架 (2026-10-12: read from 青空文庫,
+    /// the copy led as 「書架」 and the page lost the work's details).
+    ///
     /// - Parameters:
     ///   - copies: the copies `CopyLookup` finds for the tapped item, and the tapped copy.
     ///   - members: the members of the works those belong to.
     static func merge(tapped: WorkDetailRoute, copies: [(WorkDetailRoute, Date?)],
                       members: [WorkDetailRoute]) -> [WorkDetailRoute] {
+        var origins: [SourceItemKey: WorkDetailRoute] = [:]
+        for version in [tapped] + members where version.readsItsCopies && origins[version.record.key] == nil {
+            origins[version.record.key] = version
+        }
         var seen = Set<SourceItemKey>()
         var versions: [WorkDetailRoute] = []
         func add(_ version: WorkDetailRoute) {
-            if seen.insert(version.nodeKey).inserted { versions.append(version) }
+            let listed = version.record.copyID == nil ? version : origins[version.record.key] ?? version
+            if seen.insert(listed.nodeKey).inserted { versions.append(listed) }
         }
         let opened = copies.enumerated().sorted { lhs, rhs in
             switch (lhs.element.1, rhs.element.1) {
