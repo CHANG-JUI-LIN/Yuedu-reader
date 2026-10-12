@@ -29,6 +29,9 @@ final class LocalizationScreenshotUITests: XCTestCase {
             tabs.buttons.element(boundBy: 3).tap()
             XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
             screenshot(app, "\(language)-settings")
+            // The language footer names the app as iOS Settings lists it: its display name.
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "YueduReader")).firstMatch.exists,
+                           "\(language): the footer must name 閱讀, not the bundle name")
             app.terminate()
         }
     }

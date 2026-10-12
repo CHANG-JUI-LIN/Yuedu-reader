@@ -32,6 +32,15 @@ struct LocalizationIdiomTests {
         #expect(try text("默認", "zh-Hant") == "預設")
     }
 
+    /// The reader's cover opens a menu (Emby's in-player ⋯), one of whose items is 作品詳情;
+    /// VoiceOver must not hear both as the same name.
+    @Test func readerBookMenuIsNotTheDetailPage() throws {
+        for language in ["zh-Hant", "zh-Hans", "en", "ja", "ko"] {
+            #expect(try text("書本選單", language) != text("作品詳情", language), "\(language)")
+        }
+        #expect(try text("書本選單", "en") == "Book Menu")
+    }
+
     /// The plural rule is the formatting locale's: the app formats in its own language, and the
     /// test host runs in zh-Hant, whose only category is "other" — so the test names English.
     @Test func englishCountsAgree() throws {

@@ -212,7 +212,7 @@ extension ReaderView {
                 ? modernBookTitle
                 : "\(modernBookTitle), \(modernBookAuthor)"
         )
-        .accessibilityHint(localized("書籍詳情"))
+        .accessibilityHint(localized("書本選單"))
     }
 
     private var modernCoverButton: some View {
@@ -225,7 +225,7 @@ extension ReaderView {
         // would draw its own circle and inset the artwork inside it, which is the
         // small-square-in-a-circle look this replaces.
         .buttonStyle(.plain)
-        .accessibilityLabel(localized("書籍詳情"))
+        .accessibilityLabel(localized("書本選單"))
         // Arrow on the thumbnail's bottom edge, so the card hangs under the cover it
         // belongs to rather than covering it.
         .popover(isPresented: $showModernBookCard, arrowEdge: .bottom) {
