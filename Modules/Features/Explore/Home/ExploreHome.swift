@@ -236,10 +236,14 @@ private struct ExploreHomeRoot: View {
         }
         .refreshable {
             model.reload()
+            // 訂閱的最新文章 shows what the RSS tab stored; pulling down fetches the feeds too, as
+            // the RSS tab's own refresh does (decision 29), then reads them again.
+            async let feeds: Void = refreshSubscriptions()
             // 青空文庫's rows are read from its catalog. Pulling down checks for it again, as
             // 青空文庫's own page does, instead of waiting out the daily check: a device that
             // found none (the catalog went unpublished until 2026-10-11) would wait a day.
             if availability.isAvailable { await aozora.load(forceRefresh: true) }
+            await feeds
         }
         // Again when a sync changes the rows (a Gutenberg row added while the home shows), or
         // 範圍 brings other rows in.
@@ -260,6 +264,13 @@ private struct ExploreHomeRoot: View {
         HomeRowHost(group: group, store: store, aozoraIndex: aozora.catalog, model: model,
                     push: push,
                     openSettings: { path.append(HomeEditRoute.section(group.section.id)) })
+    }
+
+    /// Only when a section the home shows reads the feeds: a home without one sends nothing.
+    private func refreshSubscriptions() async {
+        guard groups.contains(where: { $0.section.binding == .subscriptionArticles }) else { return }
+        await RSSFeedRefreshService.refreshAll()
+        model.reloadLocal()
     }
 
     private func setEditing(_ editing: Bool) {
@@ -329,6 +340,7 @@ private struct HomeRowHost: View {
     let model: HomeModel
     let push: (ExplorePush) -> Void
     let openSettings: () -> Void
+    @Environment(\.openRSSTab) private var openRSSTab
     @State private var confirmsDelete = false
 
     var body: some View {
@@ -381,8 +393,11 @@ private struct HomeRowHost: View {
     }
 
     /// The page of a section of one source. 最新 across several has none: no one page lists
-    /// them all.
+    /// them all. 訂閱的最新文章's is the RSS tab itself (decision 29), when it is shown.
     private var showAll: (() -> Void)? {
+        if group.section.binding == .subscriptionArticles {
+            return openRSSTab.map { open in { open() } }
+        }
         guard group.rows.count == 1,
               let target = ExplorePlace.showAll(group.rows[0], aozoraIndex: aozoraIndex) else { return nil }
         return { push(target) }

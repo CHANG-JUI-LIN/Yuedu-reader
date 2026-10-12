@@ -169,6 +169,12 @@
     - **The remote libraries' lists open 作品詳情 too** (OPDS, Calibre, WebDAV), and the list-style 書籍詳情 is deleted.
     - **A book-source version is read from 作品詳情 as well,** not through its own page: a step of its own (5f-3), since the chapter list, 換源 and the reader live on `OnlineBookView`/`AudiobookDetailView` today.
 
+29. **Answered 2026-10-12, after 5g** (maintainer, by option; all four the recommended one):
+    - **搜索's book-source results, the reader's 書籍詳情 and the shelf's 書籍詳情 open 作品詳情 too** (5f-4), finishing decision 28: a work has one page wherever it is opened from.
+    - **探索's pull to refresh fetches the RSS feeds** when the home shows 訂閱的最新文章.
+    - **訂閱的最新文章's 查看全部 switches to the RSS tab.**
+    - **The RSS tab stays** for now; 5h's order waits.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -1016,3 +1022,12 @@ Decision 26. Branch `unified-library/5g-rss-section`.
 - **Tests:** `SubscriptionArticlesSectionTests` (the binding round-trips as its own type; newest first across feeds, in `allArticles()`' order, with feed names, read state and the https picture; empty with no feed; serves no other section, 最新 included; keeps its order under 只推薦 and leaves under a library's 範圍; drawn as articles, not cards); `HomeSectionTests` round-trips it with every binding. Unit: 8 suites, 53 tests, iOS 27. UI: `HomeEditorUITests.testSubscriptionArticles` (新增欄目 → 圖文資訊清單 → App 資料 → 訂閱的最新文章 with its preview; on the home, label and 未讀; tapping opens the article page, not 作品詳情; back, it reads as read; 橫向單排書架 draws narrow cards). iOS 27: `HomeEditorUITests` 5, `ExploreHomeUITests` 9, `WorkDetailUITests`, `AggregationSettingsUITests.testHomeSections`, all 16 passed. iOS 17.5: `HomeEditorUITests` 5 and `WorkDetailUITests` passed.
 - **Measured:** the section's `home.row` span read 0 ms on the iOS 27 simulator, which held only the seed's two articles. A store of thousands of articles was not measured: `allArticles()` applies statuses and sorts every stored article on the main actor, as the RSS tab's smart feeds already do.
 - **Follow-up the same day (`unified-library/5g-seed-cleanup`):** the seed was left on the simulator after a run, with one unread article and so an RSS badge (the 「作品詳情測試」 residue's kind). A DEBUG launch without `-seed-rss-articles` now removes the test feed and its articles (`RSSStore.removeTestSeed`). Nothing was uploaded meanwhile: Firestore data sync is off (`FirestoreSyncManager.dataSyncEnabled`), and iCloud carries no RSS. `SubscriptionArticlesSectionTests.testSeedIsRemoved`; the suite, 7 tests, and `testSubscriptionArticles` on iOS 27 and iOS 17.5 passed; both simulators launched once without it and hold no test feed.
+
+### 5g follow-up: 探索 refreshes the feeds; 查看全部 is the RSS tab (2026-10-12)
+
+Decision 29. Branch `unified-library/5g-refresh-and-show-all`.
+
+- **Pull to refresh** on 探索 runs `RSSFeedRefreshService.refreshAll()` (the RSS tab's own refresh: enabled feeds that are not web pages, new-article notifications included) when a section the home shows is 訂閱的最新文章, alongside the rows' reload and 青空文庫's catalog check, then reads the stored articles again. A home without the section sends nothing.
+- **查看全部** switches to the RSS tab: `ContentView` gives 探索 `\.openRSSTab`, nil while the reader hides that tab, so the header then has no chevron. Nothing is pushed.
+- **Tests:** `testSubscriptionArticles` taps the header and finds the RSS tab selected; iOS 27 and iOS 17.5 passed. iOS 27: `ExploreHomeUITests` 9 and `WorkDetailUITests` passed. The pull to refresh's fetch is not covered by a UI test (the seed's feed is off and fetches nothing); it is the RSS tab's refresh, covered by `RSSBackgroundRefreshTests`.
+
