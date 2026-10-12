@@ -53,6 +53,36 @@ struct LocalizationIdiomTests {
         #expect(String(format: mixed, locale: english, "Gutenberg", 2) == "Gutenberg · 2 sources")
     }
 
+    /// One Chinese word, two meanings (關閉 a sheet / a setting that is 關閉): the second meaning
+    /// has its own key, 「情境：原字」, so English, Japanese and Korean can say each. Traditional
+    /// Chinese reads the same either way.
+    @Test func splitKeysSayTheOtherMeaning() throws {
+        let splits: [(base: String, split: String, english: String)] = [
+            ("關閉", "狀態：關閉", "Off"),
+            ("開啟", "動作：開啟", "Open"),
+            ("新增", "動作：新增", "Add"),
+            ("啟用", "動作：啟用", "Enable"),
+            ("隱藏", "動作：隱藏", "Hide"),
+            ("顯示", "狀態：顯示", "Shown"),
+            ("複製", "動作：建立副本", "Duplicate"),
+            ("繼續", "播放：繼續", "Resume"),
+            ("重新整理", "網頁：重新整理", "Reload"),
+            ("重新驗證", "會員：重新驗證", "Verify Again"),
+            ("編輯規則", "提示：編輯規則", "Edits the rule."),
+            ("作品詳情", "提示：作品詳情", "Opens Book Details."),
+        ]
+        for pair in splits {
+            #expect(try text(pair.split, "en") == pair.english, "\(pair.split)")
+            #expect(try text(pair.split, "en") != text(pair.base, "en"), "\(pair.split)")
+            #expect(try text(pair.split, "zh-Hant") == text(pair.base, "zh-Hant"), "\(pair.split)")
+        }
+        #expect(try text("簡介：更多", "ja") == "続きを読む")
+        #expect(try text("值：是", "ja") == "あり")
+        #expect(try text("值：否", "ko") == "없음")
+        #expect(String(format: try text("章節 %d", "en"), 3) == "Chapter 3")
+        #expect(try text("標題：章節", "en") == "Chapter")
+    }
+
     /// 「來源配置」 stands in for 書源 on purpose: no language may say it.
     @Test func noLanguageSaysBookSource() throws {
         for language in ["zh-Hant", "zh-Hans", "en", "ja", "ko"] {

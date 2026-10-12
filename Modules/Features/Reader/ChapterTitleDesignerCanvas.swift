@@ -391,7 +391,7 @@ private extension View {
             .accessibilityAction(named: localized("向前移動")) { perform(.moveForward) }
             .accessibilityAction(named: localized("向後移動")) { perform(.moveBackward) }
             .accessibilityAction(named: localized("編輯")) { perform(.edit) }
-            .accessibilityAction(named: localized("複製")) { perform(.duplicate) }
+            .accessibilityAction(named: localized("動作：建立副本")) { perform(.duplicate) }
             .accessibilityAction(named: localized("刪除")) { perform(.delete) }
     }
 }

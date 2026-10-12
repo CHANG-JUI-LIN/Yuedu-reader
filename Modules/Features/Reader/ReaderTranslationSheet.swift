@@ -24,7 +24,7 @@ struct ReaderTranslationSheet: View {
             List {
                 Section {
                     Picker(localized("顯示方式"), selection: $presentation.mode) {
-                        Text(localized("關閉")).tag(ReaderTranslationPresentation.Mode.off)
+                        Text(localized("狀態：關閉")).tag(ReaderTranslationPresentation.Mode.off)
                         Text(localized("雙語對照")).tag(ReaderTranslationPresentation.Mode.bilingual)
                         Text(localized("只看譯文")).tag(ReaderTranslationPresentation.Mode.translationOnly)
                     }

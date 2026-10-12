@@ -258,7 +258,7 @@ struct RegexHighlightSettingsView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(rule.name)
             .accessibilityValue(rule.pattern)
-            .accessibilityHint(localized("編輯規則"))
+            .accessibilityHint(localized("提示：編輯規則"))
             .accessibilityAddTraits(.isButton)
 
             Button {

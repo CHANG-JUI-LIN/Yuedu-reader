@@ -115,7 +115,7 @@ final class RSSNotificationManager {
     private func registerCategories() {
         let openAction = UNNotificationAction(
             identifier: Constants.openActionIdentifier,
-            title: localized("開啟"),
+            title: localized("動作：開啟"),
             options: [.foreground]
         )
         let markReadAction = UNNotificationAction(

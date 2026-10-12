@@ -36,7 +36,7 @@ struct ChapterTitleLayerListView: View {
                                     model.setVisible(!layer.isVisible, id: layer.id)
                                 } label: {
                                     Label(
-                                        localized(layer.isVisible ? "隱藏" : "顯示"),
+                                        localized(layer.isVisible ? "動作：隱藏" : "顯示"),
                                         systemImage: layer.isVisible ? "eye.slash" : "eye"
                                     )
                                 }
@@ -54,12 +54,12 @@ struct ChapterTitleLayerListView: View {
                                     Label(localized("刪除"), systemImage: "trash")
                                 }
                                 Button { model.duplicate(id: layer.id) } label: {
-                                    Label(localized("複製"), systemImage: "plus.square.on.square")
+                                    Label(localized("動作：建立副本"), systemImage: "plus.square.on.square")
                                 }
                             }
                             .contextMenu {
                                 Button { model.duplicate(id: layer.id) } label: {
-                                    Label(localized("複製"), systemImage: "plus.square.on.square")
+                                    Label(localized("動作：建立副本"), systemImage: "plus.square.on.square")
                                 }
                                 Button { move(layer, offset: 1) } label: {
                                     Label(localized("向前移動"), systemImage: "square.2.layers.3d.top.filled")
@@ -93,7 +93,7 @@ struct ChapterTitleLayerListView: View {
     private func layerAccessibilityValue(_ layer: ChapterTitleLayer) -> String {
         [
             localized(layer.kind.titleKey),
-            localized(layer.isVisible ? "顯示" : "隱藏"),
+            localized(layer.isVisible ? "狀態：顯示" : "隱藏"),
             localized(layer.isLocked ? "已鎖定" : "未鎖定"),
         ].joined(separator: localized("、"))
     }

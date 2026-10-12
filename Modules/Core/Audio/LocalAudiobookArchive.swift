@@ -220,7 +220,7 @@ enum LocalAudiobookArchive {
             let duration = end.map { max(0, $0 - entry.start) }
             let title = firstNonEmpty(
                 stringValue(in: entry.group.items, commonKey: .commonKeyTitle),
-                "\(localized("章節")) \(index + 1)"
+                String(format: localized("章節 %d"), index + 1)
             )
 
             return LocalAudiobookChapterSeed(
@@ -235,7 +235,7 @@ enum LocalAudiobookArchive {
         let cleaned = title
             .replacingOccurrences(of: "_", with: " ")
             .trimmingCharacters(in: CharacterSet(charactersIn: " \t\r\n-,"))
-        return cleaned.isEmpty ? localized("章節") : cleaned
+        return cleaned.isEmpty ? localized("標題：章節") : cleaned
     }
 
     private static func chapterMetadataGroups(for asset: AVAsset) async throws -> [AVTimedMetadataGroup] {

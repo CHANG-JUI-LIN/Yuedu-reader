@@ -1302,7 +1302,13 @@ Decisions 29 and 32. Branch `unified-library/5f4b-reader-work`.
 - **Results, iOS 17.5 (iPhone 15 Pro):** UI: `testBareBookDetailLooksFinished`, `testReadButtonCarriesTheResumeChapter` (both screenshots: 「繼續閱讀　第 3 章」, and the bar's grey 繼續閱讀 capsule once the hero scrolls away), `testDetailReaderLoadsAndReturns`, `testShelfOnlineBookOpensWorkDetail`, `testGenreLinkAndRelatedWorksOpenTheSourcesCategory`, `WorkDetailUITests` passed. The genre test first ended with "Restarting after unexpected exit" in the home editor, before the detail page (the runner kill noted in the previous step); it passed when rerun.
 - **Nav-bar fix, rechecked:** after the iOS 26+ bare-text change, iOS 27 shows one glass group holding ••• and 繼續閱讀; the three new tests passed again in light and dark on iOS 27.
 
-### Key-split inventory (2026-10-12, paused for the detail page; not started)
+### Key splits (2026-10-12)
+
+- **Landed:** every row of the inventory below except 章節 in `BookSourceHealthChecker:1064` (a sentence built from fragments; it goes with the fragment rewrites). 18 new keys, appended to the five tables under one comment; the 28 call sites point at them. Traditional Chinese reads exactly as before at every site, with one exception: the chapter-title inspector's slider now reuses the existing `不透明度` key (the bar layout editor's opacity slider already used it; value 1 is opaque), so it reads 不透明度 instead of 透明度. Simplified Chinese changes where its old text had the other meaning: 打开 (RSS notification, 青空 card), 添加 (home section form).
+- **Translations:** 狀態：關閉 Off/オフ/끔; 動作：開啟 Open/開く/열기; 動作：新增 Add/追加/추가; 動作：啟用 Enable; 動作：隱藏 Hide/非表示にする/숨기기; 狀態：顯示 Shown/表示/표시됨; 動作：建立副本 Duplicate/複製を作成/복제; 播放：繼續 Resume/再開/재개; 簡介：更多 More/続きを読む/더 보기; 網頁：重新整理 Reload/再読み込み/새로 고침; 值：是／否 Yes/No, あり/なし, 있음/없음; 會員：重新驗證 Verify Again/再確認/다시 확인; hints 提示：編輯規則／隱藏已讀／作品詳情 as sentences; `章節 %d` Chapter %d/第%d章/챕터 %d and 標題：章節 Chapter (local audiobook chapter titles).
+- **Tests:** `LocalizationIdiomTests.splitKeysSayTheOtherMeaning` (each split differs from its base in English, equals it in zh-Hant; the ja/ko answers; the chapter format). iOS 27: `LocalizationIdiomTests` (7) passed, `check_localizations.rb` OK.
+
+#### Inventory (2026-10-12)
 
 Convention chosen: a new key is `情境：原字` (e.g. `狀態：關閉`), its zh-Hant value the same text, so only the other languages diverge. The base key keeps the majority meaning.
 

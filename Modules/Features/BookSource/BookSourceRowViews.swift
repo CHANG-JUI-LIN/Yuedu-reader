@@ -275,7 +275,7 @@ struct BookSourceRow: View {
                 actions.toggleEnabled(source.id)
             } label: {
                 Label(
-                    localized(source.enabled ? "停用" : "啟用"),
+                    localized(source.enabled ? "停用" : "動作：啟用"),
                     systemImage: source.enabled ? "pause.circle" : "play.circle")
             }
             Button {

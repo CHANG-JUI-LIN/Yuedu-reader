@@ -58,7 +58,7 @@ struct SourceLoginWebView: View {
                     }
                     .toggleStyle(.button)
                     .accessibilityLabel(localized("電腦版網頁"))
-                    .accessibilityValue(usesDesktopSite ? localized("開啟") : localized("關閉"))
+                    .accessibilityValue(usesDesktopSite ? localized("開啟") : localized("狀態：關閉"))
                     .accessibilityHint(localized("網站只給手機版下載頁時改用電腦版"))
                     .disabled(isSyncing)
                 }
@@ -68,7 +68,7 @@ struct SourceLoginWebView: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .accessibilityLabel(localized("重新整理"))
+                    .accessibilityLabel(localized("網頁：重新整理"))
                     .disabled(isSyncing)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
