@@ -38,7 +38,8 @@ struct BookDetailAuthorWorksSection: View {
     private var content: some View {
         switch state {
         case .loaded(let entries):
-            shelf(HomeRowContent(entries: entries, store: store).cards)
+            BookDetailCoverShelf(cards: HomeRowContent(entries: entries, store: store).cards,
+                                 identifier: "detail.authorWorks.book", onSelect: onSelect)
         case .failed:
             Button(action: onRetry) {
                 Label(localized("載入失敗，點按重試"), systemImage: "arrow.clockwise")
@@ -52,8 +53,17 @@ struct BookDetailAuthorWorksSection: View {
             EmptyView()
         }
     }
+}
 
-    private func shelf(_ cards: [HomeCardContent]) -> some View {
+/// A row of covers under a section header of 作品詳情 (作者其他作品, 同系列), as Explore's
+/// home draws one.
+struct BookDetailCoverShelf: View {
+    let cards: [HomeCardContent]
+    /// The UI tests' name for each book.
+    let identifier: String
+    let onSelect: (WorkDetailRoute) -> Void
+
+    var body: some View {
         ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: DSSpacing.md) {
                 // By position: a source can list one item twice.
@@ -68,7 +78,7 @@ struct BookDetailAuthorWorksSection: View {
                         .accessibilityAddTraits(.isButton)
                         .accessibilityLabel(card.accessibilityLabel)
                         .accessibilityValue(card.accessibilityValue)
-                        .accessibilityIdentifier("detail.authorWorks.book")
+                        .accessibilityIdentifier(identifier)
                     }
                 }
             }

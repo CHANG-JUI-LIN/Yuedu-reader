@@ -74,20 +74,20 @@ extension RelatedWorks {
     /// - Parameters:
     ///   - excluding: the page's versions; their works are left out whole.
     ///   - shown: the nodes a card may stand for, as `pick` takes them.
+    ///   - excludingSeries: the page's series, whose volumes 同系列 shows; the two rows never
+    ///     repeat each other.
     static func byAuthors(in index: WorkIndex, authorKeys: [String], excluding: Set<SourceItemKey>,
-                          shown: Set<SourceItemKey>, limit: Int) -> [SourceItemKey] {
+                          shown: Set<SourceItemKey>, excludingSeries: String? = nil, limit: Int) -> [SourceItemKey] {
         let authors = Set(authorKeys.filter { !$0.isEmpty })
         guard limit > 0, !authors.isEmpty else { return [] }
-        var workOf: [SourceItemKey: Int] = [:]
-        for (position, work) in index.works.enumerated() {
-            for member in work.members { workOf[member] = position }
-        }
+        let workOf = index.workPositions()
         let excludedWorks = Set(excluding.compactMap { workOf[$0] })
         var choice: [Int: Int] = [:]
         var unindexed: [Int] = []
         for (position, entry) in index.entries.enumerated()
         where shown.contains(entry.nodeKey) && !excluding.contains(entry.nodeKey)
             && !authors.isDisjoint(with: entry.authorKeys) {
+            if let excludingSeries, index.seriesPlacement(of: entry, workOf: workOf)?.key == excludingSeries { continue }
             guard let work = workOf[entry.nodeKey] else {
                 unindexed.append(position)
                 continue

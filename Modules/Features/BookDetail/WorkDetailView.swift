@@ -9,8 +9,15 @@ private enum WorkDetailPush: Hashable {
     case editor
     /// A public library's author page, from the author's name or 作者其他作品's 查看全部.
     case author(PublicLibraryAuthorDestination)
-    /// Another work, from 作者其他作品.
+    /// Another work, from 作者其他作品 or 同系列.
     case work(WorkDetailRoute)
+    /// The series page, from the hero's link or 同系列's 查看全部.
+    case series(WorkSeriesShelf)
+}
+
+/// When 作品詳情 reads its series: for the versions read, again when they change.
+private struct SeriesLoad: Hashable {
+    let versions: [SourceItemKey]
 }
 
 /// When 作品詳情 reads its versions: once no action runs, and again when asked.
@@ -64,6 +71,8 @@ struct WorkDetailView: View {
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @StateObject private var actions = RemoteLibraryActionModel()
     @StateObject private var authorWorks = AuthorWorksModel()
+    /// The series a version on this device belongs to (同系列); nil while read, or when none.
+    @State private var series: WorkSeriesShelf?
     @State private var versions: [WorkDetailRoute]
     @State private var versionsLoaded = false
     /// The version picked from 來源; nil shows the primary one.
@@ -115,6 +124,13 @@ struct WorkDetailView: View {
             .task(id: selected?.nodeKey) { await prepare(selected) }
             .task(id: shownCopy?.id) { copySidecar = shownCopy.map(store.copyIntroValues(of:)) ?? [] }
             .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: store) }
+            .task(id: seriesLoad) {
+                guard let seriesLoad else {
+                    series = nil
+                    return
+                }
+                series = await ShelfProvider(store: store).series(of: versions.filter { seriesLoad.versions.contains($0.nodeKey) })
+            }
             .onDisappear { actions.cancelForDisappearance() }
     }
 
@@ -152,7 +168,7 @@ struct WorkDetailView: View {
             BookDetailHero(artworkShape: route.record.contentKind == .audio ? .square : .book,
                            cover: cover, title: route.summary.title, author: author,
                            meta: "", primary: primaryAction, secondary: secondaryAction,
-                           authorActions: authorLinks)
+                           authorActions: authorLinks, links: heroLinks)
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
                 status
@@ -174,6 +190,10 @@ struct WorkDetailView: View {
                     aozoraDetails(work)
                 }
                 BookDetailInfoSection(items: infoItems)
+                if let series {
+                    BookDetailSeriesSection(series: series, onShowAll: { pushed = .series(series) },
+                                            onSelect: { pushed = .work($0) })
+                }
                 BookDetailAuthorWorksSection(
                     state: authorWorks.state,
                     onShowAll: authorWorksRequest?.authorPage.map { page in { pushed = .author(page) } },
@@ -212,6 +232,8 @@ struct WorkDetailView: View {
                 WorkDetailAuthorPage(destination: destination).environmentObject(store)
             case .work(let route):
                 WorkDetailView(route: route).environmentObject(store)
+            case .series(let series):
+                WorkDetailSeriesPage(series: series).environmentObject(store)
             }
         }
     }
@@ -258,6 +280,29 @@ struct WorkDetailView: View {
         case .copy, .opdsEntry, .webDAVFile, .onlineBook:
             return []
         }
+    }
+
+    // MARK: Series
+
+    /// Which versions 同系列 reads: the shelf's copies and the libraries' files, which carry a
+    /// series in their metadata; none on the page a reader opened, where another book could
+    /// open a second reader (decision 32), and none for a book source's page.
+    private var seriesLoad: SeriesLoad? {
+        guard readerContext == nil, versionsLoaded, let selected, onlineBook(of: selected) == nil else { return nil }
+        let keys = versions.filter { version in
+            switch version.opening {
+            case .copy, .opdsEntry, .webDAVFile: true
+            case .gutenberg, .aozora, .onlineBook: false
+            }
+        }.map(\.nodeKey)
+        return keys.isEmpty ? nil : SeriesLoad(versions: keys)
+    }
+
+    /// The hero's link to the series page: 「三體 · 第 2 冊 ›」.
+    private var heroLinks: [BookDetailLink] {
+        guard let series else { return [] }
+        return [BookDetailLink(id: "series", title: series.line, action: { pushed = .series(series) },
+                               hint: localized("顯示這個系列的作品"))]
     }
 
     /// Where 作者其他作品 reads from for the version shown: its library's record of the author,

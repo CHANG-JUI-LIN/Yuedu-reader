@@ -1371,6 +1371,27 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
 - **Not changed:** a connection (OPDS, Calibre, WebDAV) and a book source still show their own page (root feed, folder, discover page). WebDAV serves only 最新, and a book source's categories need a discover fetch per source. `GutenbergHomePage` / `AozoraHomePage` stay for the store's routes. `HomeScopeFilter`'s `scope` is in use again: the library page passes its key, which keeps only that library's rows.
 - **Tests:** `LibraryHomePageTests` (new: sections per library, stable ids, connections and sources keep their pages). `ExploreHomeUITests.testScopeShowsTheLibrarysOwnPage` now asserts section headers and covers. The live Aozora tests tap 新上架作品's first cover. iOS 27: 11 unit tests in 2 suites passed. `testScopeShowsTheLibrarysOwnPage`, `testConnectionIsInScope`, and live `testAozoraCatalogFromTheWebsite` + `testAozoraWorkKeepsItsPageAfterReading` passed. The first run read another checkout's build, installed on the same simulator at the same time; the rerun confirmed the installed binary first.
 
+#### What landed — 同系列 on 作品詳情 (2026-10-12)
+
+- **Decision (maintainer):** 同系列: a link in the hero plus a section near the end of the page, with the other volumes in series order.
+  - The hero shows 「系列名 · 第 N 冊 ›」 (the name alone when there is no number). It opens the series page: every volume, the page's own included, as a cover grid under the series' name.
+  - The 同系列 section shows the other volumes as a cover shelf with 查看全部, placed after 作品資訊 and before 作者其他作品.
+  - Each card says 「第 N 冊」 where the author would be, since the series shares its author. VoiceOver reads the card's usual label, then the number as its value.
+  - A volume opens its own 作品詳情.
+- **Where it reads from:**
+  - `ShelfProvider.series(of:)` reads the work index once per page. Volumes come from shelf copies and the WebDAV index.
+  - A work takes its series and number from itself or another member of its work (`WorkIndex.seriesPlacement`), shared with 系列下一本: `NextInSeries` now uses it in place of its own copy.
+  - 作者其他作品 leaves out the page's series (`excludingSeries`), so the two rows never repeat each other.
+- **Not shown:**
+  - on the reader's own page;
+  - on an online version;
+  - for a work with no copy, OPDS or WebDAV version (a public-library item has no series metadata).
+- **Strings:** 同系列, 第 %@ 冊, 顯示這個系列的作品 in all five tables. `BookDetailLink` gains an optional VoiceOver hint.
+- **Tests:**
+  - Unit: `SeriesWorksTests`, `SeriesCardsTests` (numbered cards; its catalog was the one-work preview, which crashed on `works[1]`).
+  - UI: `WorkDetailSeriesUITests` (new). It writes three EPUB 3 files in one series (`belongs-to-collection` + `group-position`), imports them, and checks volume 2's hero link, 同系列's volumes 1 and 3, the series page, and that volume 3 opens 第 3 冊. It deletes the books afterwards.
+  - Results on iOS 27: 38 unit tests in 10 suites passed (with `NextInSeries*`, `AuthorWorks*`, `HomeCardTests`, `WorkDetail*VersionsTests`); the UI test passed.
+
 #### What landed — the hero names the author; other contributors are 作品資訊 rows (2026-10-12)
 
 - **Report (maintainer's screenshot):** the illustrated Sense and Sensibility (Gutenberg #21839) drew three author lines in 作品詳情's hero (Austen, Dobson, Thomson), each as 「Last, First」. Gutenberg links every credited person; the page listed each as an author.
