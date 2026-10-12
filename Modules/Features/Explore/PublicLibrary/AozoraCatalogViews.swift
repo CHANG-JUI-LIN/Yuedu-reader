@@ -142,7 +142,7 @@ struct AozoraWorkDetailView: View {
     private var detailContent: some View {
         BookDetailScaffold(title: work.title, compactAction: readAction) {
             BookDetailHero(artworkShape: .book, cover: GeneratedBookCover(title: work.title, author: author),
-                title: work.title, author: author, meta: localized("青空文庫"), primary: readAction,
+                title: work.title, author: author, meta: "", primary: readAction,
                 secondary: BookDetailAction(title: localized(shelfBook == nil ? "加入書架" : "已加入書架"),
                     systemImage: shelfBook == nil ? "plus" : "checkmark", isBusy: action != nil,
                     isEnabled: action == nil && shelfBook == nil, action: { addToShelf() }),
@@ -150,12 +150,10 @@ struct AozoraWorkDetailView: View {
                     guard let person = index.personsByID[credit.person] else { return nil }
                     return BookDetailAuthorAction(id: person.id + credit.role, name: person.name,
                         action: { sheet?.openAuthor(.aozora(person, index)) })
-                }, artworkHeight: sheet?.artworkHeight)
+                }, artworkHeight: sheet?.artworkHeight,
+                progress: shelfBook?.currentPosition,
+                facts: BookDetailFacts(text: localized("青空文庫")))
         } content: {
-            BookDetailInfoStrip(items: [
-                BookDetailInfoItem(id: "published", label: localized("公開日"), value: work.published),
-                BookDetailInfoItem(id: "kana", label: localized("文字遣い種別"), value: work.kanaStyle),
-            ])
             VStack(alignment: .leading, spacing: DSSpacing.lg) {
                 if action != nil {
                     ProgressView(localized("正在加入書架"))
@@ -166,20 +164,31 @@ struct AozoraWorkDetailView: View {
                 }
                 if failed { Button(localized("重試")) { addToShelf(openAfterImport: opensAfterImport) } }
                 if !work.yomi.isEmpty { Text(work.yomi).font(DSFont.subheadline).foregroundStyle(DSColor.textSecondary) }
-                ForEach(Array(work.credits.enumerated()), id: \.offset) { _, credit in
-                    if let person = index.personsByID[credit.person] {
-                        ThemedLabeledContent(localized(credit.role), value: person.name)
-                    }
-                }
                 if !work.subtitle.isEmpty { Text(work.subtitle).font(DSFont.body).foregroundStyle(DSColor.textPrimary) }
-                if !work.source.isEmpty { ThemedLabeledContent(localized("底本"), value: work.source) }
-                if !work.sourcePublisher.isEmpty { ThemedLabeledContent(localized("出版社"), value: work.sourcePublisher) }
                 if let url = URL(string: work.card), url.scheme == "https", url.host == "www.aozora.gr.jp" {
                     Link(localized("在青空文庫網站查看"), destination: url)
                 }
             }.padding(.horizontal, DSSpacing.lg)
+            BookDetailInfoSection(items: infoItems)
         }
         .onDisappear { action?.cancel() }
+    }
+
+    /// 作品資訊: the catalogue's record of the work, credits included.
+    private var infoItems: [BookDetailInfoItem] {
+        var items: [BookDetailInfoItem] = []
+        for (offset, credit) in work.credits.enumerated() {
+            if let person = index.personsByID[credit.person] {
+                items.append(BookDetailInfoItem(id: "credit\(offset)", label: localized(credit.role), value: person.name))
+            }
+        }
+        items.append(BookDetailInfoItem(id: "published", label: localized("公開日"), value: work.published))
+        items.append(BookDetailInfoItem(id: "kana", label: localized("文字遣い種別"), value: work.kanaStyle))
+        if !work.source.isEmpty { items.append(BookDetailInfoItem(id: "source", label: localized("底本"), value: work.source)) }
+        if !work.sourcePublisher.isEmpty {
+            items.append(BookDetailInfoItem(id: "publisher", label: localized("出版社"), value: work.sourcePublisher))
+        }
+        return items
     }
 
     private func openReader(_ id: UUID) {

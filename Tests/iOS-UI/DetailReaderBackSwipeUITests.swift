@@ -24,7 +24,8 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
     }
 
     /// Each fixture source's one discover category (scripts/navigation_swipe_fixture.py).
-    private static let categories = ["Navigation Swipe Fixture": "Navigation Test", "Navigation Manga Fixture": "Manga Test"]
+    private static let categories = ["Navigation Swipe Fixture": "Navigation Test", "Navigation Manga Fixture": "Manga Test",
+                                      "Navigation Audio Fixture": "Audio Test"]
 
     /// The fixture source's book from Explore's home, as a reader reaches a book source there now:
     /// 編輯首頁 → 新增欄目 → its discover category as a row (範圍 only filters the home since
@@ -111,6 +112,74 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
     @MainActor
     func testSearchDetailReaderLoadsAndReturns() throws {
         try exerciseNativeEntry(fromSearch: true)
+    }
+
+    /// 作品詳情 · Editorial Minimalism: the book's genre is a link to the source's category of
+    /// that name, and 同題材 shows that category's other books; both open a book's detail.
+    @MainActor
+    func testGenreLinkAndRelatedWorksOpenTheSourcesCategory() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(explore, settings, search)"]
+        app.launch()
+        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
+
+        let genre = app.buttons["detail.link.Related"].firstMatch
+        XCTAssertTrue(genre.waitForExistence(timeout: 15), app.debugDescription)
+        attachScreenshot(app, named: "作品詳情 - genre link")
+        genre.tap()
+        let categoryTitle = app.navigationBars.staticTexts["Related"].firstMatch
+        XCTAssertTrue(categoryTitle.waitForExistence(timeout: 15), app.debugDescription)
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Navigation Related Fixture")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 15), app.debugDescription)
+        row.tap()
+        // The related book's own page: only it has the related book's description.
+        let relatedIntro = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reached from a genre")).firstMatch
+        XCTAssertTrue(relatedIntro.waitForExistence(timeout: 15), app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(categoryTitle.waitForExistence(timeout: 10), app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(genre.waitForExistence(timeout: 10), app.debugDescription)
+
+        let header = app.staticTexts["More in This Genre"].firstMatch
+        for _ in 0..<8 where !(header.exists && header.isHittable) { app.swipeUp() }
+        XCTAssertTrue(header.waitForExistence(timeout: 15), app.debugDescription)
+        attachScreenshot(app, named: "作品詳情 - 同題材")
+        let cards = app.buttons.matching(identifier: "detail.related.book")
+        let card = cards.matching(NSPredicate(format: "label CONTAINS %@", "Navigation Related Fixture")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(cards.count, 1, "同題材 must leave out the book on the page.\n\(app.debugDescription)")
+        card.tap()
+        XCTAssertTrue(relatedIntro.waitForExistence(timeout: 15), app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
+    }
+
+    /// The audiobook detail page pushes a genre's category too, and comes back to itself: its
+    /// dismissal is the stable `presentationMode`, never iOS 17's ever-replaced DismissAction.
+    @MainActor
+    func testAudiobookGenreLinkOpensTheSourcesCategory() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(explore, settings, search)"]
+        app.launch()
+        openDiscoveredBook(app, named: "Navigation Audio Fixture")
+
+        let genre = app.buttons["detail.link.Related"].firstMatch
+        XCTAssertTrue(genre.waitForExistence(timeout: 15), app.debugDescription)
+        attachScreenshot(app, named: "有聲書詳情 - genre link")
+        genre.tap()
+        let categoryTitle = app.navigationBars.staticTexts["Related"].firstMatch
+        XCTAssertTrue(categoryTitle.waitForExistence(timeout: 15), app.debugDescription)
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Navigation Related Fixture")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 15), app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(genre.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(categoryTitle.exists, app.debugDescription)
     }
 
     @MainActor

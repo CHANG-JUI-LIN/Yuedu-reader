@@ -8,6 +8,14 @@ private let audioRouteLog = Logger(
 
 // MARK: - Audiobook Detail (unified audiobook landing page)
 
+/// Everything an audiobook detail page pushes, through its one `navigationDestination`.
+private enum AudiobookDetailPush: Hashable {
+    /// A genre link's category, or 同題材's 查看全部.
+    case category(ExploreCategoryReference)
+    /// A 同題材 book.
+    case book(OnlineBook)
+}
+
 /// Dedicated detail page for audiobooks. Audiobooks must NOT fall into the text-book
 /// `OnlineBookView`; this is the single UI every audiobook lands on regardless of
 /// whether the signal comes from `bookSourceType == 1` or a per-book aggregate-source
@@ -24,8 +32,13 @@ struct AudiobookDetailView: View {
     private let workVersions: BookDetailInfoChoice?
 
     @State private var currentBook: OnlineBook
+    @State private var pushed: AudiobookDetailPush?
+    @StateObject private var genres = SourceGenreLinks()
     @EnvironmentObject var bookStore: BookStore
-    @Environment(\.dismiss) private var dismiss
+    // DismissAction is repeatedly replaced by iOS 17 while a page is pushed above this
+    // detail (a genre's category, a 同題材 book). Its stable binding avoids a navigation
+    // layout loop, as on `OnlineBookView`.
+    @Environment(\.presentationMode) private var presentationMode
     @Environment(\.appDependencies) private var dependencies
     private var gs: GlobalSettings { GlobalSettings.shared }
     private var source: BookSource? { BookSourceStore.shared.source(id: currentBook.sourceId) }
@@ -215,10 +228,13 @@ struct AudiobookDetailView: View {
                 meta: tags.joined(separator: " · "),
                 primary: playAction,
                 secondary: shelfAction,
-                sourceGestures: sourceCallBacks?.gestures
+                authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
+                sourceGestures: sourceCallBacks?.gestures,
+                links: sourceCallBacks == nil ? sourceLinks.links(for: tags) : [],
+                progress: shelvedCopy?.currentPosition,
+                facts: facts
             )
         } content: {
-            BookDetailInfoStrip(items: infoItems)
             if let intro = shown.intro {
                 BookDetailIntroSection(
                     text: intro.text,
@@ -245,6 +261,16 @@ struct AudiobookDetailView: View {
                     action: { play(chapterIndex: offset) }
                 )
             }
+            BookDetailInfoSection(items: infoItems)
+            BookDetailRelatedSection(
+                related: genres.related,
+                onShowAll: { pushed = .category($0) },
+                onSelect: { pushed = .book($0) },
+                onRetry: {
+                    guard let key = genreLoadKey else { return }
+                    Task { await genres.retryRelated(key: key, source: source, tags: tags, book: currentBook) }
+                }
+            )
         }
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))
         .toolbar {
@@ -313,6 +339,16 @@ struct AudiobookDetailView: View {
                 )
             }
         }
+        .navigationDestination(item: $pushed) { push in
+            switch push {
+            case .category(let reference):
+                BookDetailCategoryPage(reference: reference)
+                    .environmentObject(bookStore)
+            case .book(let book):
+                BookDetailRelatedBookDestination(book: book)
+                    .environmentObject(bookStore)
+            }
+        }
         .fullScreenCover(isPresented: $showPlayer) {
             if let bid = activePlayerBookId {
                 if bookStore.books.contains(where: { $0.id == bid }) {
@@ -327,6 +363,25 @@ struct AudiobookDetailView: View {
             if chapters.isEmpty, loadError == nil { load() }
         }
         .task(id: shelvedCopy?.id) { copySidecar = shelvedCopy.map(bookStore.copyIntroValues(of:)) ?? [] }
+        .task(id: genreLoadKey) {
+            guard let key = genreLoadKey else { return }
+            await genres.load(key: key, source: source, tags: tags, book: currentBook)
+        }
+    }
+
+    // MARK: Genres and author
+
+    /// What the genre links and 同題材 are read for: the source, the genres and the book. Nil
+    /// until the chapters have loaded or failed: the source's categories are read after them,
+    /// never in the way of the page's own loading, and with the genres the detail gives.
+    private var genreLoadKey: String? {
+        guard !(loading || (chapters.isEmpty && loadError == nil)) else { return nil }
+        return ([source?.bookSourceUrl ?? "", currentBook.bookUrl] + tags).joined(separator: "\u{1F}")
+    }
+
+    /// The genre and author taps, for a source that does not take them itself.
+    private var sourceLinks: BookDetailSourceLinks {
+        BookDetailSourceLinks(source: source, genres: genres, openCategory: { pushed = .category($0) })
     }
 
     // MARK: Hero
@@ -369,12 +424,23 @@ struct AudiobookDetailView: View {
             title: alreadyInShelf
                 ? localized("移除書架")
                 : (addingToShelf ? localized("加入中…") : localized("加入書架")),
-            systemImage: alreadyInShelf ? "minus" : "plus",
+            systemImage: alreadyInShelf ? "checkmark" : "plus",
             isBusy: addingToShelf,
             isEnabled: !chapters.isEmpty,
             action: {
                 if alreadyInShelf { confirmsRemoval = true } else { addToShelfOnly() }
             }
+        )
+    }
+
+    /// 「N 章 · 來源」 under the actions, with 換源 beside it.
+    private var facts: BookDetailFacts {
+        let parts = (chapters.isEmpty ? [] : [String(format: localized("%d 章"), chapters.count)]) + [sourceName]
+        return BookDetailFacts(
+            text: parts.joined(separator: " · "),
+            actionTitle: localized("換源"),
+            action: { showSourcePicker = true },
+            accessibilityHint: localized("點兩下切換來源配置")
         )
     }
 
@@ -603,7 +669,7 @@ struct AudiobookDetailView: View {
         if let onRemoveFromShelf {
             onRemoveFromShelf()
         } else {
-            dismiss()
+            presentationMode.wrappedValue.dismiss()
         }
         if let shelved = bookStore.readingBook(id: bookId) {
             SourceCallBackService.notify(.delBookShelf, book: shelved)

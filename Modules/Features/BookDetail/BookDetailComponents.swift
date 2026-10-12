@@ -23,6 +23,24 @@ struct BookDetailAuthorAction: Identifiable {
     let action: () -> Void
 }
 
+/// The quiet line under a hero's actions: the copy's technical facts (chapters, where it
+/// is read from), findable without taking the page's centre from the work itself, and the
+/// one thing done with them most often (換源) beside them.
+struct BookDetailFacts {
+    var text: String
+    var actionTitle: String?
+    var action: (() -> Void)?
+    var accessibilityHint: String?
+}
+
+/// A genre, series or subject under the title, as plain text that leads somewhere: the
+/// way Apple Books' editorial pages link, not a row of coloured tags.
+struct BookDetailLink: Identifiable {
+    let id: String
+    let title: String
+    let action: () -> Void
+}
+
 // MARK: - Page scaffold
 
 /// Set by a container that scrolls the detail page itself — the public-library card
@@ -367,16 +385,21 @@ struct BookDetailHero<Cover: View>: View {
     /// Taps a book source handles through its `callBackJs` (legado `SourceCallBack`); nil
     /// for every book whose source does not listen, which keeps the title block as it was.
     var sourceGestures: BookDetailSourceGestures? = nil
+    /// Genres under the title that lead somewhere; replaces `meta` when present. A source
+    /// that listens for label taps (`sourceGestures`) keeps them instead.
+    var links: [BookDetailLink] = []
+    /// How far the shelf copy is read, 0…1; nil when the book is not on the shelf.
+    var progress: Double? = nil
+    var facts: BookDetailFacts? = nil
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.bookDetailEmbedding) private var embedding
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var artworkSize: CGSize {
         switch artworkShape {
         case .book:
-            CGSize(width: artworkHeight.map { $0 * DSLayout.discoverCoverAspectRatio } ?? DSLayout.bookCoverHeroWidth,
-                   height: artworkHeight ?? DSLayout.bookCoverHeroHeight)
+            CGSize(width: artworkHeight.map { $0 * DSLayout.discoverCoverAspectRatio } ?? DSLayout.bookDetailCoverWidth,
+                   height: artworkHeight ?? DSLayout.bookDetailCoverHeight)
         case .square:
             CGSize(width: DSLayout.bookDetailSquareArtworkSide, height: DSLayout.bookDetailSquareArtworkSide)
         }
@@ -389,6 +412,14 @@ struct BookDetailHero<Cover: View>: View {
                 .padding(.top, isCard ? DSLayout.cardCarouselCoverTitleSpacing : DSSpacing.lg)
             actions
                 .padding(.top, DSSpacing.lg)
+            if let progress, progress > 0, progress < 0.99 {
+                progressLine(progress)
+                    .padding(.top, DSSpacing.md)
+            }
+            if let facts {
+                factsLine(facts)
+                    .padding(.top, progress == nil ? DSSpacing.md : DSSpacing.xs)
+            }
         }
         .padding(.horizontal, DSSpacing.lg)
         // On a card the cover sits where Apple Books puts it, under the card's header.
@@ -429,9 +460,9 @@ struct BookDetailHero<Cover: View>: View {
             .clipShape(shape)
             .overlay(shape.stroke(DSColor.separator, lineWidth: 0.5))
             .shadow(
-                color: DSColor.coverHeroShadow,
-                radius: DSLayout.bookCoverHeroShadowRadius,
-                y: DSLayout.bookCoverHeroShadowOffsetY
+                color: DSColor.bookDetailCoverShadow,
+                radius: DSLayout.bookDetailCoverShadowRadius,
+                y: DSLayout.bookDetailCoverShadowOffsetY
             )
             // The title below names the book; the artwork would only repeat it.
             .accessibilityHidden(true)
@@ -484,7 +515,7 @@ struct BookDetailHero<Cover: View>: View {
             }
             if let gestures = sourceGestures, !gestures.labels.isEmpty {
                 // One tappable label each, so the source learns which one (legado `clickBookLabel`).
-                WrappingFlowLayout(spacing: DSSpacing.sm) {
+                WrappingFlowLayout(spacing: DSSpacing.sm, alignment: .center) {
                     ForEach(gestures.labels, id: \.self) { label in
                         Text(label)
                             .font(DSFont.footnote)
@@ -497,6 +528,9 @@ struct BookDetailHero<Cover: View>: View {
                     }
                 }
                 .padding(.top, isCard ? DSSpacing.md : 0)
+            } else if !links.isEmpty {
+                linkLine
+                    .padding(.top, isCard ? DSSpacing.md : 0)
             } else if !meta.isEmpty {
                 Text(meta)
                     .font(DSFont.footnote)
@@ -509,18 +543,14 @@ struct BookDetailHero<Cover: View>: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Side by side as Apple Books shows them; stacked once the text size no longer
-    /// leaves room for both labels on one line.
-    /// Side by side and of equal width, as Apple Books lays out 取得 and 試讀, whatever the
-    /// labels' length: a long label loses its icon, then truncates (`BookDetailActionLabel`).
-    /// Stacked only at accessibility text sizes, where two labels cannot share a row. Until
-    /// 2026-10-12 a `ViewThatFits` stacked them whenever both full labels did not fit, which
-    /// English labels, a narrow phone or a larger text size each did.
+    /// One action leads (Editorial Minimalism, 2026-10-12): the reading capsule takes the
+    /// row, and the second thing to do — the shelf, or a download — is a round icon button
+    /// beside it, as Apple Books puts ＋ beside 取得. Always one row, at every text size: a
+    /// circle fits where a second label did not, and stacking them (until 2026-10-12 at
+    /// accessibility sizes, before that whenever both labels did not fit) is what the
+    /// maintainer rejected. VoiceOver reads the circle's full title.
     private var actions: some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(spacing: DSSpacing.sm))
-            : AnyLayout(HStackLayout(spacing: DSSpacing.md))
-        return layout {
+        HStack(spacing: DSSpacing.md) {
             primaryButton
             secondaryButton
         }
@@ -556,22 +586,110 @@ struct BookDetailHero<Cover: View>: View {
     @ViewBuilder
     private func secondaryButton(_ secondary: BookDetailAction) -> some View {
         if let tone = embedding?.tone {
-            // Apple Books' 試讀: the card's ink over a light veil of itself.
+            // Apple Books' card: the card's ink over a light veil of itself.
             Button(action: secondary.action) {
-                BookDetailActionLabel(action: secondary, progressTint: tone.ink)
+                BookDetailActionIcon(action: secondary, progressTint: tone.ink)
+                    .frame(width: DSLayout.cardActionHeight, height: DSLayout.cardActionHeight)
             }
             .buttonStyle(BookDetailCardActionStyle(fill: tone.ink.opacity(DSLayout.cardSecondaryActionFillOpacity), label: tone.ink))
             .disabled(!secondary.isEnabled || secondary.isBusy)
+            .accessibilityLabel(secondary.title)
         } else {
             Button(action: secondary.action) {
-                BookDetailActionLabel(action: secondary, progressTint: DSColor.textPrimary)
+                BookDetailActionIcon(action: secondary, progressTint: DSColor.textPrimary)
             }
-            // Neutral, so the accent belongs to the one primary action beside it.
+            // Neutral and low in contrast: the accent belongs to the one primary action.
             .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
+            .buttonBorderShape(.circle)
             .controlSize(.large)
-            .tint(DSColor.textPrimary)
+            .tint(DSColor.textSecondary)
             .disabled(!secondary.isEnabled || secondary.isBusy)
+            .accessibilityLabel(secondary.title)
+        }
+    }
+
+    /// Genres as one line of plain text, each one its own button, separated by a dot.
+    private var linkLine: some View {
+        WrappingFlowLayout(spacing: DSSpacing.xs, alignment: .center) {
+            ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
+                if index > 0 {
+                    Text(verbatim: "·")
+                        .font(DSFont.footnote)
+                        .foregroundStyle(secondaryText)
+                        .accessibilityHidden(true)
+                }
+                // Plain, quiet text with the chevron that says it leads somewhere.
+                Button(action: link.action) {
+                    HStack(spacing: DSSpacing.xxs) {
+                        Text(link.title)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.right")
+                            .font(DSFont.caption2.weight(.semibold))
+                            .accessibilityHidden(true)
+                    }
+                    .font(DSFont.footnote)
+                    .foregroundStyle(secondaryText)
+                    .frame(minHeight: DSLayout.minimumTapTarget)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(localized("顯示這個分類的作品"))
+                .accessibilityIdentifier("detail.link.\(link.id)")
+            }
+        }
+        // The 44pt tap targets would push the line apart; the text keeps its rhythm.
+        .padding(.vertical, -DSSpacing.md)
+    }
+
+    /// The shelf copy's progress: a hairline and a short figure under the actions.
+    private func progressLine(_ progress: Double) -> some View {
+        let percent = Int((progress * 100).rounded())
+        return HStack(spacing: DSSpacing.sm) {
+            HomeProgressBar(progress: progress)
+                .clipShape(Capsule())
+            Text(String(format: localized("已讀 %d%%"), percent))
+                .font(DSFont.caption)
+                .foregroundStyle(secondaryText)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(format: localized("已讀 %d%%"), percent))
+        .accessibilityIdentifier("detail.progress")
+    }
+
+    @ViewBuilder
+    private func factsLine(_ facts: BookDetailFacts) -> some View {
+        let label = HStack(spacing: DSSpacing.xs) {
+            Text(facts.text)
+                .foregroundStyle(secondaryText)
+                .lineLimit(1)
+            if let actionTitle = facts.actionTitle, facts.action != nil {
+                HStack(spacing: 2) {
+                    Text(actionTitle)
+                    Image(systemName: "chevron.right")
+                        .font(DSFont.caption2.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(embedding?.tone.ink ?? DSColor.accent)
+                .layoutPriority(1)
+            }
+        }
+        .font(DSFont.footnote)
+        .frame(minHeight: DSLayout.minimumTapTarget)
+
+        if let action = facts.action {
+            Button(action: action) { label.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(facts.text)
+                .accessibilityHint(facts.accessibilityHint ?? "")
+                .accessibilityInputLabels([facts.actionTitle].compactMap { $0 })
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("detail.facts")
+        } else {
+            label
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("detail.facts")
         }
     }
 
@@ -589,13 +707,13 @@ struct BookDetailHero<Cover: View>: View {
                     .frame(width: proxy.size.width, height: proxy.size.height + extensionHeight)
                     .blur(radius: DSLayout.bookCoverHeroBackdropBlur, opaque: true)
                     .clipped()
-                    .saturation(DSLayout.bookCoverHeroBackdropSaturation)
-                    .opacity(DSLayout.bookCoverHeroBackdropOpacity)
+                    .saturation(DSLayout.bookDetailBackdropSaturation)
+                    .opacity(DSLayout.bookDetailBackdropOpacity)
                     .mask {
                         LinearGradient(
                             stops: [
                                 .init(color: .black, location: 0),
-                                .init(color: .black, location: 0.55),
+                                .init(color: .black, location: DSLayout.bookDetailBackdropFadeStart),
                                 .init(color: .clear, location: 1),
                             ],
                             startPoint: .top,
@@ -664,7 +782,27 @@ private struct BookDetailActionLabel: View {
     }
 }
 
-// MARK: - Information strip
+/// The icon of a secondary action drawn as a circle; the title is its accessibility label.
+private struct BookDetailActionIcon: View {
+    let action: BookDetailAction
+    let progressTint: Color
+
+    var body: some View {
+        Group {
+            if action.isBusy {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(progressTint)
+            } else {
+                Image(systemName: action.systemImage)
+                    .font(DSFont.body.weight(.semibold))
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - 作品資訊
 
 /// One column of the information strip.
 struct BookDetailInfoItem: Identifiable {
@@ -708,46 +846,33 @@ struct BookDetailInfoChoice {
     let selection: Binding<String>
 }
 
-/// Apple Books' strip of short facts under the hero: equal columns separated by
-/// hairlines, scrolling sideways only once the text size no longer fits them.
-struct BookDetailInfoStrip: View {
+/// 作品資訊: the copy's facts as Apple Books lists a book's Information — a titled section
+/// at the foot of the page, one label and value per row, hairlines between. It replaced the
+/// strip of columns under the hero (Editorial Minimalism, 2026-10-12), which gave chapter
+/// counts and source names the weight of the work itself.
+struct BookDetailInfoSection: View {
     let items: [BookDetailInfoItem]
 
     var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            ViewThatFits(in: .horizontal) {
-                row(equalWidths: true)
-                ScrollView(.horizontal) {
-                    row(equalWidths: false)
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                BookDetailSectionHeader(title: localized("作品資訊"))
+                VStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 { Divider() }
+                        cell(item)
+                    }
                 }
-                .scrollIndicators(.hidden)
             }
-            .padding(.vertical, DSSpacing.md)
-            Divider()
+            .padding(.horizontal, DSSpacing.lg)
         }
-        .padding(.horizontal, DSSpacing.lg)
-    }
-
-    private func row(equalWidths: Bool) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                if index > 0 {
-                    Divider()
-                }
-                cell(item)
-                    .frame(maxWidth: equalWidths ? .infinity : nil)
-                    .padding(.horizontal, DSSpacing.sm)
-            }
-        }
-        .fixedSize(horizontal: !equalWidths, vertical: true)
     }
 
     @ViewBuilder
     private func cell(_ item: BookDetailInfoItem) -> some View {
         if let action = item.action {
             Button(action: action) {
-                cellContent(item)
+                row(item)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -764,7 +889,7 @@ struct BookDetailInfoStrip: View {
                     ForEach(choice.options) { Text($0.title).tag($0.id) }
                 }
             } label: {
-                cellContent(item)
+                row(item)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -774,7 +899,7 @@ struct BookDetailInfoStrip: View {
             .accessibilityInputLabels(item.accessibilityInputLabels + [item.label])
             .accessibilityIdentifier("detail.info.\(item.id)")
         } else {
-            cellContent(item)
+            row(item)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(item.label)
                 .accessibilityValue(item.value)
@@ -782,28 +907,38 @@ struct BookDetailInfoStrip: View {
         }
     }
 
-    private func cellContent(_ item: BookDetailInfoItem) -> some View {
-        VStack(spacing: DSSpacing.xs) {
+    private func row(_ item: BookDetailInfoItem) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DSSpacing.md) {
             Text(item.label)
-                .font(DSFont.caption)
                 .foregroundStyle(DSColor.textSecondary)
-            Text(item.value)
-                .font(DSFont.headline)
-                .foregroundStyle(DSColor.textPrimary)
-                .lineLimit(1)
-            if let detail = item.detail {
-                HStack(spacing: DSSpacing.xs) {
-                    Text(detail)
-                    if item.isInteractive {
-                        Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
-                            .font(DSFont.caption2.weight(.semibold))
+            Spacer(minLength: DSSpacing.md)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(item.value)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+                if let detail = item.detail {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(detail)
+                        if item.isInteractive {
+                            Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
+                                .font(DSFont.caption2.weight(.semibold))
+                                .accessibilityHidden(true)
+                        }
                     }
+                    .font(DSFont.footnote)
+                    .foregroundStyle(item.isInteractive ? DSColor.accent : DSColor.textSecondary)
+                    .lineLimit(1)
+                } else if item.isInteractive {
+                    Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
+                        .font(DSFont.caption2.weight(.semibold))
+                        .foregroundStyle(DSColor.textSecondary)
+                        .accessibilityHidden(true)
                 }
-                .font(DSFont.caption)
-                .foregroundStyle(item.isInteractive ? DSColor.accent : DSColor.textSecondary)
-                .lineLimit(1)
             }
         }
+        .font(DSFont.subheadline)
+        .padding(.vertical, DSSpacing.sm)
         .frame(minHeight: DSLayout.minimumTapTarget)
     }
 }
@@ -1182,20 +1317,23 @@ extension View {
                 cover: BookCoverImage(coverURL: "", title: "斗羅大陸", author: "唐家三少"),
                 title: "斗羅大陸",
                 author: "唐家三少",
-                meta: "玄幻 · 東方玄幻 · 熱血",
-                primary: BookDetailAction(title: "立即閱讀", systemImage: "book.fill", action: {}),
-                secondary: BookDetailAction(title: "加入書架", systemImage: "plus", action: {})
+                meta: "",
+                primary: BookDetailAction(title: "繼續閱讀", systemImage: "book.fill", action: {}),
+                secondary: BookDetailAction(title: "移除書架", systemImage: "checkmark", action: {}),
+                links: ["玄幻", "東方玄幻", "熱血"].map { BookDetailLink(id: $0, title: $0, action: {}) },
+                progress: 0.32,
+                facts: BookDetailFacts(text: "1,450 章 · 示範來源配置", actionTitle: "換源", action: {})
             )
         } content: {
-            BookDetailInfoStrip(items: [
-                BookDetailInfoItem(id: "wordCount", label: "字數", value: "298萬字"),
-                BookDetailInfoItem(id: "chapters", label: "章節", value: "1,450"),
-                .source(name: "示範來源配置") {},
-            ])
             BookDetailIntroSection(
                 text: "唐門外門弟子唐三，因偷學內門絕學為唐門所不容，跳崖明志卻來到了另一個世界——斗羅大陸。這裡沒有魔法，沒有鬥氣，沒有武術，卻有神奇的武魂。",
                 isExpanded: .constant(false)
             )
+            BookDetailInfoSection(items: [
+                BookDetailInfoItem(id: "wordCount", label: "字數", value: "298萬字"),
+                BookDetailInfoItem(id: "chapters", label: "章節", value: "1,450"),
+                .source(name: "示範來源配置") {},
+            ])
         }
     }
 }

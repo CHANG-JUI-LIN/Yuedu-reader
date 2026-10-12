@@ -93,6 +93,28 @@ final class ShelfProvider: CollectionBrowsing {
         return entries
     }
 
+    /// 作品詳情's 作者其他作品 (Editorial Minimalism, 2026-10-12): what `RelatedWorks.byAuthors`
+    /// picks for the authors of the page's versions, from the shelf and the WebDAV index,
+    /// leaving out the works of those versions.
+    func otherWorks(byAuthorsOf versions: [WorkDetailRoute], limit: Int) async -> [CollectionEntry] {
+        let authorKeys = Array(Set(versions.flatMap(\.summary.authors).map(WorkMatchKey.author)))
+        guard !authorKeys.isEmpty else { return [] }
+        let started = SourcePerfTrace.now
+        let index = await store.workIndex.current()
+        let files = store.workIndex.indexedFiles
+        // Read after the refresh, so a copy removed meanwhile is not offered.
+        let shelf = Dictionary(store.books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let shown = Set(shelf.keys.map(SourceItemKey.copy)).union(files.keys)
+        let excluding = Set(versions.map(\.nodeKey))
+        let picked = await Task.detached(priority: .userInitiated) {
+            RelatedWorks.byAuthors(in: index, authorKeys: authorKeys, excluding: excluding, shown: shown, limit: limit)
+        }.value
+        let entries = entries(for: picked, shelf: shelf, files: files)
+        SourcePerfTrace.record("works.detail.authorWorks.shelf", "authors=\(authorKeys.count) shown=\(entries.count)",
+                               since: started, thresholdMs: 0)
+        return entries
+    }
+
     /// 系列下一本 (unified library 5d-6b): what `NextInSeries` picks after each book being read
     /// or read to the end, from the shelf and the WebDAV index. The first load reads the local
     /// copies' series numbers once (`SeriesNumberBackfill`), so it waits for that pass.

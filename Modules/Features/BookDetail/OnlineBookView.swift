@@ -2,6 +2,20 @@ import SwiftUI
 
 // MARK: - Online Book Detail + TOC
 
+/// Everything a book-source detail page pushes, through its one `navigationDestination`.
+private enum OnlineBookDetailPush: Hashable {
+    case reader(UUID)
+    /// A genre link's category, or 同題材's 查看全部.
+    case category(ExploreCategoryReference)
+    /// A 同題材 book.
+    case book(OnlineBook)
+
+    var readerID: UUID? {
+        if case .reader(let id) = self { return id }
+        return nil
+    }
+}
+
 struct OnlineBookView: View {
     /// The aggregated search book, when opened from search — enables source switching (換源).
     /// `nil` when opened from a single-source context (e.g. Discover).
@@ -27,7 +41,8 @@ struct OnlineBookView: View {
     // above this detail. Its stable binding avoids a navigation layout loop.
     @Environment(\.presentationMode) private var presentationMode
     @Environment(\.appDependencies) private var dependencies
-    @State private var readerRoute: DetailReaderRoute?
+    @State private var pushed: OnlineBookDetailPush?
+    @StateObject private var genres = SourceGenreLinks()
     @State private var pendingChapterSelection: Int?
 
     private var gs: GlobalSettings { GlobalSettings.shared }
@@ -242,10 +257,13 @@ struct OnlineBookView: View {
                 meta: tags.joined(separator: " · "),
                 primary: readAction,
                 secondary: shelfAction,
-                sourceGestures: sourceCallBacks?.gestures
+                authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
+                sourceGestures: sourceCallBacks?.gestures,
+                links: linksGenres ? sourceLinks.links(for: tags) : [],
+                progress: shelvedCopy?.currentPosition,
+                facts: facts
             )
         } content: {
-            BookDetailInfoStrip(items: infoItems)
             if let intro = shown.intro {
                 BookDetailIntroSection(
                     text: intro.text,
@@ -269,6 +287,18 @@ struct OnlineBookView: View {
                     isLocked: chapter.isVip || chapter.isPay,
                     trailing: .disclosure,
                     action: { openReader(chapterIndex: chapter.index) }
+                )
+            }
+            BookDetailInfoSection(items: infoItems)
+            if onContinueReading == nil {
+                BookDetailRelatedSection(
+                    related: genres.related,
+                    onShowAll: { pushed = .category($0) },
+                    onSelect: { pushed = .book($0) },
+                    onRetry: {
+                        guard let key = genreLoadKey else { return }
+                        Task { await genres.retryRelated(key: key, source: source, tags: tags, book: currentBook) }
+                    }
                 )
             }
         }
@@ -323,20 +353,29 @@ struct OnlineBookView: View {
         }
         .sourceKindMismatchAlert(origin: $kindMismatchOrigin, onConfirm: applyOrigin)
         .removeFromShelfConfirmation(isPresented: $confirmsRemoval, onConfirm: removeFromShelf)
-        .navigationDestination(item: $readerRoute) { route in
-            BookReaderView(bookId: route.id)
-                .environmentObject(bookStore)
-                // SwiftUI owns this destination and its return path. Never attach
-                // the shelf's UIKit card driver to an Explore/Search route.
-                .environment(\.readerNavigator, nil)
-                .environment(\.readerUsesParentNavigationStack, true)
-                .navigationBarBackButtonHidden(true)
-                .reservingNavigationBackSwipe()
-                .onDisappear {
-                    // Opening details above this reader also makes it disappear;
-                    // only a removed reader route releases the trial book.
-                    if readerRoute == nil { readerDidClose() }
-                }
+        .navigationDestination(item: $pushed) { push in
+            switch push {
+            case .reader(let id):
+                BookReaderView(bookId: id)
+                    .environmentObject(bookStore)
+                    // SwiftUI owns this destination and its return path. Never attach
+                    // the shelf's UIKit card driver to an Explore/Search route.
+                    .environment(\.readerNavigator, nil)
+                    .environment(\.readerUsesParentNavigationStack, true)
+                    .navigationBarBackButtonHidden(true)
+                    .reservingNavigationBackSwipe()
+                    .onDisappear {
+                        // Opening details above this reader also makes it disappear;
+                        // only a removed reader route releases the trial book.
+                        if pushed?.readerID == nil { readerDidClose() }
+                    }
+            case .category(let reference):
+                BookDetailCategoryPage(reference: reference)
+                    .environmentObject(bookStore)
+            case .book(let book):
+                BookDetailRelatedBookDestination(book: book)
+                    .environmentObject(bookStore)
+            }
         }
         .fullScreenCover(isPresented: $showReader, onDismiss: readerDidClose) {
             // Audiobooks keep their dedicated modal player.
@@ -367,6 +406,30 @@ struct OnlineBookView: View {
             if chapters.isEmpty { Task { await loadTOC() } }
         }
         .task(id: shelvedCopy?.id) { copySidecar = shelvedCopy.map(bookStore.copyIntroValues(of:)) ?? [] }
+        .task(id: genreLoadKey) {
+            guard let key = genreLoadKey else { return }
+            await genres.load(key: key, source: source, tags: tags, book: currentBook)
+        }
+    }
+
+    // MARK: Genres and author
+
+    /// What the genre links and 同題材 are read for: the source, the genres and the book. Nil
+    /// until the chapters have loaded or failed: the source's categories are read after them,
+    /// never in the way of the page's own loading, and with the genres the detail gives.
+    private var genreLoadKey: String? {
+        guard onContinueReading == nil, !(loadingTOC || (chapters.isEmpty && tocError == nil)) else { return nil }
+        return ([source?.bookSourceUrl ?? "", currentBook.bookUrl] + tags).joined(separator: "\u{1F}")
+    }
+
+    /// Whether the genres are links: not for a source that takes label taps itself, and not on
+    /// the page a reader opened, where another book's page could open a second reader
+    /// (decision 32). That page has no 同題材 either.
+    private var linksGenres: Bool { sourceCallBacks == nil && onContinueReading == nil }
+
+    /// The genre and author taps, for a source that does not take them itself.
+    private var sourceLinks: BookDetailSourceLinks {
+        BookDetailSourceLinks(source: source, genres: genres, openCategory: { pushed = .category($0) })
     }
 
     // MARK: Hero
@@ -378,7 +441,7 @@ struct OnlineBookView: View {
         if let copy = shelvedCopy {
             HomeCoverArtwork(cover: .shelf(copy), title: shown.name,
                              author: shown.author == localized("未知作者") ? "" : shown.author,
-                             size: CGSize(width: DSLayout.bookCoverHeroWidth, height: DSLayout.bookCoverHeroHeight))
+                             size: CGSize(width: DSLayout.bookDetailCoverWidth, height: DSLayout.bookDetailCoverHeight))
         } else {
             sourceCoverArtwork
         }
@@ -411,12 +474,23 @@ struct OnlineBookView: View {
             title: alreadyInShelf
                 ? localized("移除書架")
                 : (addingToShelf ? localized("加入中…") : localized("加入書架")),
-            systemImage: alreadyInShelf ? "minus" : "plus",
+            systemImage: alreadyInShelf ? "checkmark" : "plus",
             isBusy: addingToShelf,
             isEnabled: !chapters.isEmpty,
             action: {
                 if alreadyInShelf { confirmsRemoval = true } else { addToShelfOnly() }
             }
+        )
+    }
+
+    /// 「N 章 · 來源」 under the actions, with 換源 beside it.
+    private var facts: BookDetailFacts {
+        let parts = (chapters.isEmpty ? [] : [String(format: localized("%d 章"), chapters.count)]) + [sourceName]
+        return BookDetailFacts(
+            text: parts.joined(separator: " · "),
+            actionTitle: localized("換源"),
+            action: { showSourcePicker = true },
+            accessibilityHint: localized("點兩下切換來源配置")
         )
     }
 
@@ -862,7 +936,7 @@ struct OnlineBookView: View {
             onContinueReading(chapterIndex)
             return
         }
-        guard readerRoute == nil, !showReader else { return }
+        guard pushed?.readerID == nil, !showReader else { return }
         openingReader = true
 
         var targetBookId: UUID
@@ -930,7 +1004,7 @@ struct OnlineBookView: View {
                 showReader = true
                 return
             }
-            readerRoute = DetailReaderRoute(id: targetBookId)
+            pushed = .reader(targetBookId)
             openingReader = false
         }
     }
