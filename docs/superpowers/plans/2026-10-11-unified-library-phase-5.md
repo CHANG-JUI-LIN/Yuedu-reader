@@ -1435,3 +1435,29 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
 - **Tests:**
   - Unit: `WorkDetailShelfVersionsTests.aozoraCopyFromShelf` (new) and `throughCopy`, which now expects the Gutenberg book in place of the copy. iOS 27: 10 tests in 2 suites passed.
   - Live UI: `testAozoraWorkKeepsItsPageAfterReading` now also relaunches, opens the book's 作品詳情 from 書架, and checks 來源 青空文庫 and 底本. It passed.
+
+#### What landed — reading does not shelve; leaving the reader asks 「加入書架？」 (2026-10-13)
+
+- **Report (maintainer):** the add-to-shelf alert never appears. Half way through a swipe back, 作品詳情 says 已加入書架 though nothing was added.
+- **Causes:**
+  1. Reading a 青空文庫 work put it on the shelf (`AozoraReaderEntry` → `addToShelf`, `importEpub` shelving by default). This reverses the 2026-10-12 design, where the work joined the shelf and then opened.
+  2. The reader's own 「將「%@」加入書架？」 asked only when `book == nil`. Since 2026-10-04 a book read without adding has been an off-shelf record in the store (`readingBook(id:)` finds it), so it never asked, for any book.
+  3. A swipe back never reaches the close button, so it could never ask either.
+- **Decision (maintainer):** after a swipe back, ask on the detail page. The reader no longer asks at all; the page it closes onto asks, for the close button and a swipe alike, for online and library books alike.
+- **Changes:**
+  - `AozoraLibraryDownloading.readingCopy(work:store:)` returns the existing copy (on the shelf or not) or imports one off the shelf (`importEpub(…, isInBookshelf: false)`). `addToShelf` is that copy put on the shelf, with no second download. `AozoraReaderEntry` reads the reading copy.
+  - `ReaderShelvePrompt` + `View.readerShelvePrompt(_:onAdd:onDecline:)` ask about a copy that is off the shelf and was opened (`lastOpenedDate`). A copy made ahead of reading is never asked about.
+  - `WorkDetailView` asks when its pushed reader (`.reader` / `.aozoraReader`) is gone. 加入書架 calls `addReadingBookToShelf`; 不加入 leaves the copy off the shelf, with its place kept, and 開始／繼續閱讀 reads it again (`readCopy(of:)`). 已加入書架 shows only for a shelved copy.
+  - `OnlineBookView.readerDidClose` asks instead of deleting the trial book. 加入書架 shelves that record with its progress; the old reader alert made a second record through `addOnlineBook`. 不加入 deletes it, as before.
+  - `ReaderView`'s alert and `showAddToShelfAlert` are deleted; `closeReader()` just closes.
+- **Not changed:** the store sheet's `AozoraWorkDetailView`, which no longer opens any work, still shelves when reading.
+- **Tests:**
+  - Unit: `AozoraLibraryDownloadServiceTests.readingCopyStaysOffTheShelfUntilAdded` (new). iOS 27: 25 tests in 4 suites passed.
+  - Live UI: `testAozoraWorkKeepsItsPageAfterReading` now starts with the work off the shelf, reads, and swipes back. It checks that 不加入 keeps 加入書架 and 繼續閱讀, that 加入書架 gives 已加入書架, and then the 書架 leg. It passed.
+  - `DetailReaderBackSwipeUITests`:
+    - the native and manga entry tests decline the prompt when the book was off the shelf;
+    - 21/31 passed;
+    - the 9 page-turn gesture tests failed at the assertions recorded as failing before Phase 5;
+    - `testSearchDetailReaderLoadsAndReturns` passed on rerun once it no longer expected a prompt for a book an earlier test had shelved;
+    - `testDetailMangaReaderLoadsAndReturns` fails when run after the full suite, because a shelved copy resumes on page 2. That is test-order state, the same before this change.
+  - `WorkDetailUITests` passed.

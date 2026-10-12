@@ -82,6 +82,8 @@ struct WorkDetailView: View {
     /// The version picked from 來源; nil shows the primary one.
     @State private var chosen: SourceItemKey?
     @State private var pushed: WorkDetailPush?
+    /// The copy just read without adding, while 「加入書架？」 asks about it.
+    @State private var shelvePrompt: ReadingBook?
     @State private var introExpanded = false
     /// The sidecar values of the shelf copy shown (`shownCopy`), read once per copy.
     @State private var copySidecar: [MetadataValue] = []
@@ -212,6 +214,12 @@ struct WorkDetailView: View {
                 BookDetailInfoSection(items: infoItems)
             }
         }
+        .onChange(of: pushed) { previous, current in
+            // Back from a reader, by its close button or a swipe: offer what was read to the shelf.
+            guard current == nil, let previous, let id = readCopyID(previous) else { return }
+            shelvePrompt = ReaderShelvePrompt.copy(id, in: store)
+        }
+        .readerShelvePrompt($shelvePrompt, onAdd: { _ = store.addReadingBookToShelf(id: $0.id) })
         .navigationDestination(item: $pushed) { push in
             switch push {
             case .reader(let id):
@@ -631,11 +639,27 @@ struct WorkDetailView: View {
         guard let version = selected else { return nil }
         switch version.opening {
         case .copy(let id): return copy(id)
-        case .aozora: return shelfCopy(of: version)
+        case .aozora: return readCopy(of: version.record.key)
         case .gutenberg: return shelfCopy(of: version) ?? libraryCopy
         case .opdsEntry, .webDAVFile: return libraryCopy
         case .onlineBook: return nil
         }
+    }
+
+    /// The copy a reader pushed from this page reads.
+    private func readCopyID(_ push: WorkDetailPush) -> UUID? {
+        switch push {
+        case .reader(let id): id
+        case .aozoraReader(let work): readCopy(of: SourceRecord.derived(from: work).key)?.id
+        case .editor, .author, .work, .series, .aozoraClassification: nil
+        }
+    }
+
+    /// The copy a version is read from, on the shelf or not: one read without adding stays
+    /// off the shelf and is read again (2026-10-13).
+    private func readCopy(of key: SourceItemKey) -> ReadingBook? {
+        let copies = store.copyLookup().copies(for: key)
+        return copies.first(where: \.isInBookshelf) ?? copies.first
     }
 
     private func shelfCopy(of version: WorkDetailRoute) -> ReadingBook? {
@@ -735,7 +759,7 @@ struct WorkDetailView: View {
         case .copy(let id):
             openCopy(id)
         case .aozora(let work):
-            if let book = shelfCopy(of: version) {
+            if let book = readCopy(of: version.record.key) {
                 openCopy(book.id)
                 return
             }

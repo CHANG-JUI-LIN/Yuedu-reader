@@ -61,6 +61,33 @@ struct AozoraLibraryDownloadServiceTests {
         #expect(!FileManager.default.fileExists(atPath: try #require(temporary).path))
     }
 
+    /// 2026-10-13 (maintainer): reading a work does not put it on the shelf; 加入書架 later
+    /// shelves the copy that was read, not a second download.
+    @Test func readingCopyStaysOffTheShelfUntilAdded() async throws {
+        let (store, root, work) = try environment()
+        let zip = try await fixtureZip(root)
+        var downloads = 0
+        let service = AozoraLibraryDownloadService(temporaryDirectory: root, download: { _, destination in
+            downloads += 1
+            try FileManager.default.copyItem(at: zip, to: destination)
+        })
+        let read = try await service.readingCopy(work: work, store: store)
+        defer {
+            store.delete(bookId: read.id)
+            clean(store, root)
+        }
+        #expect(!read.isInBookshelf)
+        #expect(store.books.isEmpty, "not on the shelf")
+        #expect(store.readingBook(id: read.id)?.isInBookshelf == false)
+        #expect(try await service.readingCopy(work: work, store: store).id == read.id)
+
+        let shelved = try await service.addToShelf(work: work, store: store)
+        #expect(shelved.id == read.id)
+        #expect(shelved.isInBookshelf)
+        #expect(store.books.map(\.id) == [read.id])
+        #expect(downloads == 1)
+    }
+
     @Test func noAozoraTextReportsErrorAndCleansTemporaryFile() async throws {
         let (store, root, work) = try environment()
         defer { clean(store, root) }

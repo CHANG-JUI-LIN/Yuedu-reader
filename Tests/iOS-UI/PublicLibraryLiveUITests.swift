@@ -184,6 +184,8 @@ final class PublicLibraryLiveUITests: XCTestCase {
 
     /// 2026-10-12: back from reading a 青空文庫 work, its 作品詳情 listed the copy the reading
     /// made as 「書架」 and lost the work's details. The work stands for its copy now.
+    /// 2026-10-13: reading no longer puts the work on the shelf; back from the reader — here by
+    /// a swipe — the page asks 「加入書架？」: 不加入 leaves it off the shelf, 加入書架 adds it.
     @MainActor
     func testAozoraWorkKeepsItsPageAfterReading() throws {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
@@ -206,35 +208,55 @@ final class PublicLibraryLiveUITests: XCTestCase {
         XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
         screenshot(app, "aozora-scope-page")
         let title = String(work.label.split(whereSeparator: { "，、,".contains($0) }).first ?? "")
+        // A run before this one may have added it: start with it off the shelf.
+        let shelfTab = app.tabBars.buttons["書架"].firstMatch
+        shelfTab.tap()
+        let cell = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title + "，")).firstMatch
+        if cell.waitForExistence(timeout: 5) {
+            openShelfMenu(app, cell)
+            let delete = app.buttons["刪除書籍"].firstMatch
+            XCTAssertTrue(delete.waitForExistence(timeout: 5), app.debugDescription)
+            delete.tap()
+            let confirm = app.alerts.buttons["刪除"].firstMatch
+            XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
+            confirm.tap()
+            XCTAssertTrue(cell.waitForNonExistence(timeout: 10))
+        }
+        tab.tap()
+        XCTAssertTrue(work.waitForExistence(timeout: 15), app.debugDescription)
         work.tap()
 
         let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
         XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
-        let read = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch
-        XCTAssertTrue(read.waitForExistence(timeout: 30), app.debugDescription)
-        read.tap()
-        let footer = app.otherElements["頁尾"].firstMatch
-        XCTAssertTrue(footer.waitForExistence(timeout: 90), app.debugDescription)
-        let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
-        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        let add = app.buttons["加入書架"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
 
+        // 不加入: still off the shelf, and the page says so.
+        readAndSwipeBack(app)
+        let prompt = app.alerts["將「\(title)」加入書架？"].firstMatch
+        XCTAssertTrue(prompt.waitForExistence(timeout: 10), "a swipe back asks\n\(app.debugDescription)")
+        screenshot(app, "aozora-shelve-prompt")
+        prompt.buttons["不加入"].tap()
         XCTAssertTrue(source.waitForExistence(timeout: 15), "The reader closes onto 作品詳情.\n\(app.debugDescription)")
         XCTAssertNotEqual(source.value as? String, "書架", "The work, not its copy, is the version shown")
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH '繼續閱讀'")).firstMatch.waitForExistence(timeout: 10),
-                      app.debugDescription)
-        XCTAssertTrue(app.buttons["已加入書架"].firstMatch.exists, app.debugDescription)
+                      "the copy read keeps its place\n\(app.debugDescription)")
+        XCTAssertTrue(add.exists, "not added\n\(app.debugDescription)")
+
+        // 加入書架: on the shelf.
+        readAndSwipeBack(app)
+        XCTAssertTrue(prompt.waitForExistence(timeout: 10), app.debugDescription)
+        prompt.buttons["加入書架"].tap()
+        XCTAssertTrue(app.buttons["已加入書架"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         screenshot(app, "aozora-detail-after-reading")
 
         // From 書架, the same page: the copy is the work's (2026-10-12: it showed 來源 書架 alone).
         app.terminate()
         app.launch()
-        let shelfTab = app.tabBars.buttons["書架"].firstMatch
         XCTAssertTrue(shelfTab.waitForExistence(timeout: 30))
         shelfTab.tap()
-        let cell = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title + "，")).firstMatch
         XCTAssertTrue(cell.waitForExistence(timeout: 15), "\(title)\n\(app.debugDescription)")
-        let more = cell.buttons["更多"].firstMatch
-        if more.exists { more.tap() } else { cell.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.96)).tap() }
+        openShelfMenu(app, cell)
         let detailItem = app.buttons["作品詳情"].firstMatch
         XCTAssertTrue(detailItem.waitForExistence(timeout: 5), app.debugDescription)
         detailItem.tap()
@@ -245,5 +267,23 @@ final class PublicLibraryLiveUITests: XCTestCase {
         for _ in 0..<6 where !basis.exists { app.swipeUp() }
         XCTAssertTrue(basis.waitForExistence(timeout: 10), "the work's bibliography\n\(app.debugDescription)")
         screenshot(app, "aozora-detail-from-shelf")
+    }
+
+    @MainActor
+    private func readAndSwipeBack(_ app: XCUIApplication) {
+        let read = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 30), app.debugDescription)
+        read.tap()
+        let footer = app.otherElements["頁尾"].firstMatch
+        XCTAssertTrue(footer.waitForExistence(timeout: 90), app.debugDescription)
+        let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+    }
+
+    /// A shelf cell's •••, in the grid and the list alike.
+    @MainActor
+    private func openShelfMenu(_ app: XCUIApplication, _ cell: XCUIElement) {
+        let more = cell.buttons["更多"].firstMatch
+        if more.exists { more.tap() } else { cell.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.96)).tap() }
     }
 }

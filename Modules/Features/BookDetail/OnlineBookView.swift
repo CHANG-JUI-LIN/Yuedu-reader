@@ -62,6 +62,8 @@ struct OnlineBookView: View {
     /// The chapter the shelf copy's reader left off in, for 「繼續閱讀　第 N 章」.
     @State private var resumeChapterIndex: Int?
     @State private var temporaryReaderBookId: UUID? = nil
+    /// The book just read without adding, while 「加入書架？」 asks about it.
+    @State private var shelvePrompt: ReadingBook?
     @State private var detailInfo: OnlineBook? = nil
     @State private var tocRuntimeVariables: [String: String]? = nil
     @State private var pendingShelfSourceSwitch = false
@@ -378,6 +380,7 @@ struct OnlineBookView: View {
                     .environmentObject(bookStore)
             }
         }
+        .readerShelvePrompt($shelvePrompt, onAdd: keepReadBook, onDecline: { discardTemporaryReaderBook($0.id) })
         .fullScreenCover(isPresented: $showReader, onDismiss: readerDidClose) {
             // Audiobooks keep their dedicated modal player.
             if let bid = addedBookId {
@@ -912,18 +915,35 @@ struct OnlineBookView: View {
         bookStore.books.contains { $0.id == bookId }
     }
 
+    /// A book read without adding is offered to the shelf (`readerShelvePrompt`); until
+    /// 2026-10-13 a swipe back removed it without asking.
     private func readerDidClose() {
         guard let tempId = temporaryReaderBookId else { return }
         if shouldKeepTemporaryReaderBook(tempId) {
             temporaryReaderBookId = nil
             addedBookId = tempId
             alreadyInShelf = true
+        } else if let book = ReaderShelvePrompt.copy(tempId, in: bookStore) {
+            shelvePrompt = book
         } else {
-            bookStore.delete(bookId: tempId)
-            temporaryReaderBookId = nil
-            if addedBookId == tempId { addedBookId = nil }
-            checkAlreadyInShelf()
+            discardTemporaryReaderBook(tempId)
         }
+    }
+
+    /// 加入書架 after reading: the record read joins the shelf, with where it was read to.
+    private func keepReadBook(_ book: ReadingBook) {
+        guard let shelved = bookStore.addReadingBookToShelf(id: book.id) else { return }
+        temporaryReaderBookId = nil
+        addedBookId = shelved.id
+        alreadyInShelf = true
+        SourceCallBackService.notify(.addBookShelf, book: shelved)
+    }
+
+    private func discardTemporaryReaderBook(_ tempId: UUID) {
+        bookStore.delete(bookId: tempId)
+        if temporaryReaderBookId == tempId { temporaryReaderBookId = nil }
+        if addedBookId == tempId { addedBookId = nil }
+        checkAlreadyInShelf()
     }
 
     /// Ensure the book is on the shelf before opening, so the reader has a valid bookId.
