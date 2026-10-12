@@ -126,7 +126,7 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
         XCTAssertTrue(app.switches["Index Books in Background"].firstMatch.exists, "the toggle is there, on by default")
         app.navigationBars["Add Server"].buttons["Save"].tap()
 
-        let indexed = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Indexed (1000 books)")).firstMatch
+        let indexed = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Indexed 1000 books")).firstMatch
         let found = indexed.waitForExistence(timeout: 120)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "webdav-indexed"

@@ -16,17 +16,17 @@ final class RemoteLibraryNavigationUITests: XCTestCase {
         XCTAssertEqual(add.label, "Add Book")
 
         add.tap()
-        XCTAssertTrue(app.buttons["Import from Local"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Import from Files…"].firstMatch.waitForExistence(timeout: 5))
         for title in ["WebDAV Library", "OPDS Library", "Calibre Library"] {
             XCTAssertFalse(app.buttons[title].exists, "\(title) is browsed from Explore now")
         }
-        let receiver = app.buttons["Receive from computer"].firstMatch
+        let receiver = app.buttons["Receive from Computer"].firstMatch
         XCTAssertTrue(receiver.exists, "Receiving needs no server, so it stays on ＋")
         receiver.tap()
 
-        let page = app.navigationBars["Receive from computer"]
+        let page = app.navigationBars["Receive from Computer"]
         XCTAssertTrue(page.waitForExistence(timeout: 5))
-        let host = app.textFields["Computer IP or hostname"]
+        let host = app.textFields["Computer IP Address or Host Name"]
         for _ in 0..<3 where !host.isHittable { app.swipeUp() }
         XCTAssertTrue(host.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Connect"].exists)
