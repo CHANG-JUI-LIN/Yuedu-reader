@@ -840,6 +840,10 @@ struct BookDetailIntroSection: View {
     var baseURL: String?
     /// Runs a `<usehtml>` intro's button or image script.
     var onAction: ((BookIntroAction) -> Void)?
+    /// Whether `text` is a book source's own description, whose Legado formats (`<usehtml>`,
+    /// `<md>`, `<useweb>`) are read. Any other text, such as the reader's own or a library's,
+    /// is shown as it is (decision 33).
+    var readsSourceFormats = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var webContentHeight: CGFloat = 0
@@ -851,7 +855,7 @@ struct BookDetailIntroSection: View {
     /// Roughly four lines of CJK body text at the default text size on a phone.
     private static let collapsedCharacterEstimate = 80
 
-    private var content: BookIntroContent { BookIntroContent(text) }
+    private var content: BookIntroContent { readsSourceFormats ? BookIntroContent(text) : .plain(text) }
 
     private var mayOverflow: Bool {
         switch content {

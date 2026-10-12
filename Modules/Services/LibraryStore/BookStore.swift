@@ -1350,6 +1350,16 @@ class BookStore: ObservableObject, BookProvider {
         }
     }
 
+    /// The reader's own description, from 編輯資訊; empty clears it, and the page shows the
+    /// book's own again.
+    func setCustomIntro(_ text: String, for bookId: UUID) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let intro = trimmed.isEmpty ? nil : trimmed
+        guard let idx = records.firstIndex(where: { $0.id == bookId }), records[idx].customIntro != intro else { return }
+        records[idx].customIntro = intro
+        saveMeta()
+    }
+
     // MARK: Bookshelf Grouping
 
     var allGroups: [String] {

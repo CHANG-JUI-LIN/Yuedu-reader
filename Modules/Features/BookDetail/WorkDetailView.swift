@@ -63,6 +63,8 @@ struct WorkDetailView: View {
     @State private var chosen: SourceItemKey?
     @State private var pushed: WorkDetailPush?
     @State private var introExpanded = false
+    /// The sidecar values of the shelf copy shown (`shownCopy`), read once per copy.
+    @State private var copySidecar: [MetadataValue] = []
     /// Library items by version that are not in the version itself: a Gutenberg book's from
     /// its catalog entry, and one edited through 編輯遠端資料 as saved.
     @State private var items: [SourceItemKey: RemoteLibraryItem] = [:]
@@ -105,6 +107,7 @@ struct WorkDetailView: View {
                 if chosen == nil, let shown = selected, onlineBook(of: shown) != nil { chosen = shown.nodeKey }
             }
             .task(id: selected?.nodeKey) { await prepare(selected) }
+            .task(id: shownCopy?.id) { copySidecar = shownCopy.map(store.copyIntroValues(of:)) ?? [] }
             .task(id: offlineProbe) {
                 offlineFileExists = libraryCopy.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false
             }
@@ -159,7 +162,9 @@ struct WorkDetailView: View {
                     libraryActions(selected, item: item)
                 }
                 if let intro {
-                    BookDetailIntroSection(text: intro, isExpanded: $introExpanded)
+                    // Never a book source's own description: a book-source version draws its
+                    // own page. Legado's formats are not read here (decision 33).
+                    BookDetailIntroSection(text: intro, isExpanded: $introExpanded, readsSourceFormats: false)
                 }
                 if let selected, case .aozora(let work) = selected.opening {
                     aozoraDetails(work)
@@ -388,10 +393,23 @@ struct WorkDetailView: View {
         .padding(.horizontal, DSSpacing.lg)
     }
 
-    /// The description of the version shown: a library item's own, else what the card had.
+    /// The description of the version shown (decision 33): a shelf copy's, by `CopyMetadata`
+    /// (the reader's own, its file's, then its library's, the item's newest), else the library
+    /// item's own, else what the card had.
     private var intro: String? {
-        let text = selected.flatMap(libraryItem(of:))?.summary ?? route.summary.blurb
+        let itemText = selected.flatMap(libraryItem(of:))?.summary
+        if let copy = shownCopy {
+            return store.copyMetadata(of: copy, sidecar: copySidecar, liveIntro: itemText).intro?.text
+        }
+        let text = itemText ?? route.summary.blurb
         return text.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// The shelf copy of the version shown: the copy itself, or a library item's copy.
+    private var shownCopy: ReadingBook? {
+        guard let selected else { return nil }
+        if case .copy(let id) = selected.opening { return copy(id) }
+        return shelfCopy(of: selected)
     }
 
     @ViewBuilder

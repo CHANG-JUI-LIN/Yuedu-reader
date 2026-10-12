@@ -155,7 +155,8 @@ struct RemoteLibraryBookDetailView: View {
                     .dsSectionFooter().padding(.horizontal, DSSpacing.lg)
             }
             if let summary = item.summary, !summary.isEmpty {
-                BookDetailIntroSection(text: summary, isExpanded: $introExpanded)
+                // A library's description, not a book source's: Legado's formats are not read.
+                BookDetailIntroSection(text: summary, isExpanded: $introExpanded, readsSourceFormats: false)
             }
             if let url = item.alternateURL {
                 Link(localized("在書庫網站查看"), destination: url)

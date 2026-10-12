@@ -865,6 +865,14 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         titleField.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
         // Into the focused field: once edited, the query by its old value finds nothing.
         app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Navigation Swipe Fixture".count + 4) + edited)
+        // 簡介 (5f-4d-2): the reader's own, written as a Legado format to show it is read as text.
+        let ownIntro = "<md>**Written on the shelf**"
+        let introField = app.textFields["bookInfo.intro"].firstMatch.exists ? app.textFields["bookInfo.intro"].firstMatch
+            : app.textViews["bookInfo.intro"].firstMatch
+        for _ in 0..<6 where !(introField.exists && introField.isHittable) { app.swipeUp() }
+        XCTAssertTrue(introField.waitForExistence(timeout: 5), app.debugDescription)
+        introField.tap()
+        app.typeText(ownIntro)
         let save = app.buttons.matching(NSPredicate(format: "label IN %@", ["Save", "Done"])).firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 5), app.debugDescription)
         save.tap()
@@ -880,6 +888,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Contents"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         attachScreenshot(app, named: "Work detail - edited title")
         XCTAssertTrue(app.staticTexts[edited].firstMatch.exists, "The copy's own title is shown.\n\(app.debugDescription)")
+        XCTAssertTrue(app.staticTexts[ownIntro].firstMatch.exists, "The reader's own 簡介, as plain text.\n\(app.debugDescription)")
         // The fixture's source has the book's name too; only its 來源 cell may show it.
         let sourceCell = app.descendants(matching: .any)["detail.info.source"].firstMatch.frame
         let sourceTitles = app.staticTexts.matching(NSPredicate(format: "label == %@", "Navigation Swipe Fixture")).allElementsBoundByIndex

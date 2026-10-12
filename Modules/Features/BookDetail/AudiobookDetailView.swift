@@ -41,6 +41,8 @@ struct AudiobookDetailView: View {
     @State private var sourceCallBackTap: SourceCallBackTapRequest?
     @State private var activePlayerBookId: UUID? = nil
     @State private var alreadyInShelf = false
+    /// The shelved copy's sidecar values, read once per copy for its description.
+    @State private var copySidecar: [MetadataValue] = []
     @State private var openingPlayer = false
     @State private var showPlayer = false
     @State private var showSourcePicker = false
@@ -155,12 +157,16 @@ struct AudiobookDetailView: View {
         return bookStore.shelfRecord(id: id)
     }
 
-    /// The title and author the page shows: a shelved copy's own (5f-4d, decision 32: the
-    /// reader's edits come first), else the source's. `displayName` and `displayAuthor` stay
-    /// the source's, for its scripts and for what a shelf add writes.
-    private var shownMetadata: (name: String, author: String) {
-        let copy = shelvedCopy.map(bookStore.copyMetadata(of:))
-        return (copy?.title ?? displayName, copy?.author ?? displayAuthor)
+    /// What the page shows of the book: a shelved copy's own title, author and description
+    /// (5f-4d, decisions 32–33: the reader's edits come first), else the source's.
+    /// `displayName`, `displayAuthor` and `displayIntro` stay the source's, for its scripts
+    /// and for what a shelf add writes.
+    private var shownMetadata: (name: String, author: String, intro: CopyMetadata.Intro?) {
+        guard let copy = shelvedCopy.map({ bookStore.copyMetadata(of: $0, sidecar: copySidecar, liveIntro: displayIntro) }) else {
+            let intro = displayIntro.isEmpty ? nil : CopyMetadata.Intro(text: displayIntro, isEdited: false, isSourcesOwn: true)
+            return (displayName, displayAuthor, intro)
+        }
+        return (copy.title ?? displayName, copy.author ?? displayAuthor, copy.intro)
     }
 
     private var displayIntro: String {
@@ -213,12 +219,13 @@ struct AudiobookDetailView: View {
             )
         } content: {
             BookDetailInfoStrip(items: infoItems)
-            if !displayIntro.isEmpty {
+            if let intro = shown.intro {
                 BookDetailIntroSection(
-                    text: displayIntro,
+                    text: intro.text,
                     isExpanded: $introExpanded,
-                    baseURL: currentBook.bookUrl,
-                    onAction: requestIntroAction
+                    baseURL: intro.isSourcesOwn ? currentBook.bookUrl : nil,
+                    onAction: intro.isSourcesOwn ? requestIntroAction : nil,
+                    readsSourceFormats: intro.isSourcesOwn
                 )
             }
             BookDetailChapterSection(
@@ -319,6 +326,7 @@ struct AudiobookDetailView: View {
             checkAlreadyInShelf()
             if chapters.isEmpty, loadError == nil { load() }
         }
+        .task(id: shelvedCopy?.id) { copySidecar = shelvedCopy.map(bookStore.copyIntroValues(of:)) ?? [] }
     }
 
     // MARK: Hero
@@ -326,7 +334,7 @@ struct AudiobookDetailView: View {
     /// A shelved copy's own artwork, custom cover included, as the shelf draws it; else the
     /// source's cover.
     @ViewBuilder
-    private func coverArtwork(_ shown: (name: String, author: String)) -> some View {
+    private func coverArtwork(_ shown: (name: String, author: String, intro: CopyMetadata.Intro?)) -> some View {
         if let copy = shelvedCopy {
             HomeCoverArtwork(cover: .shelf(copy), title: shown.name,
                              author: shown.author == localized("未知作者") ? "" : shown.author,

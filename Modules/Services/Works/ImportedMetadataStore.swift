@@ -33,6 +33,27 @@ final class ImportedMetadataStore: @unchecked Sendable {
         }
     }
 
+    /// Rewrites a sidecar's values in place, unmerged: `write` merges, so it cannot remove one.
+    /// Nothing happens when there is no sidecar or `transform` changes nothing.
+    func rewriteValues(copyID: UUID, _ transform: @escaping @Sendable ([MetadataValue]) -> [MetadataValue]) {
+        queue.async { [self] in
+            let url = fileURL(for: copyID)
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
+            do {
+                var metadata = try JSONDecoder.imported.decode(ImportedMetadata.self, from: Data(contentsOf: url))
+                let values = transform(metadata.values)
+                guard values != metadata.values else { return }
+                metadata.values = values
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys]
+                encoder.dateEncodingStrategy = .iso8601
+                try encoder.encode(metadata).write(to: url, options: .atomic)
+            } catch {
+                AppLogger.cache("⟐ imported metadata could not be rewritten", error: error, context: ["copy": copyID.uuidString])
+            }
+        }
+    }
+
     func read(copyID: UUID) -> ImportedMetadata? {
         queue.sync {
             let url = fileURL(for: copyID)
