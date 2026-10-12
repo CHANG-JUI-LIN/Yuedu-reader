@@ -1399,3 +1399,24 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
 - **Not changed:** a generated cover still prints the card's catalog name (「Austen, Jane」); the store's carousel sheet (`RemoteLibraryBookDetailView`) still lists every person.
 - **Strings:** 插畫, 評註, 貢獻者 added in all five tables.
 - **Tests:** `PublicLibraryStorefrontTests` `recordRolesTellTheAuthorFromTheOtherContributors` (fixture `Fixtures/Gutenberg/21839.xml`, Gutenberg's own entry), `catalogNamesReadInNaturalOrder`, `withoutRolesEveryoneIsAnAuthor`, `aozoraHeroNamesTheAuthorAndListsTheTranslator`. UI `PublicLibrarySearchTabUITests.testHeroNamesTheAuthorAndInfoListsTheOthers`. iOS 27: 31 unit tests in 3 suites passed; both search-tab UI tests and live `testAozoraWorkKeepsItsPageAfterReading` passed.
+
+#### What landed — 作品詳情's order: Hero → 簡介 → 作品關聯 → 作品資訊 (2026-10-12)
+
+- **Request (maintainer):** the first half of the page serves reading and finding more; looking things up comes at the end. The order is Hero → 簡介 → 目錄/閱讀進度 → 作品關聯 → 作品資訊. The hero carries the work's 分類 and 系列 under the author, and both are clickable. A section without data is left out, never filled. The author is not repeated in 作品資訊.
+- **作品詳情 (`WorkDetailView`):** 簡介, then 同系列, then 作者其他作品, then 作品資訊.
+  - 青空文庫's bibliography block, which sat under 簡介, became 作品資訊 rows. The rows are 副標題, 讀音, 底本, 出版社, 公開日 and 文字遣い種別, and empty ones are left out. 底本's id is `basis`, so it does not collide with 來源's `source`.
+- **Hero:** under the author, a 青空文庫 work shows its 分類 (`AozoraCatalogIndex.classificationGroups(of:)`, the 依分類 groups minus 「其他」), then the series link.
+  - A 分類 opens that group's works (`WorkDetailAozoraWorksPage`). Each work opens its 作品詳情 on the same stack, through the shared `opensWorkDetail()` that the author page now uses as well.
+  - A work whose NDC is still empty has no 分類 link. This is usual for newly added works: 647 of the 17344 in the catalog.
+- **Online and audiobook detail pages:** 作品資訊 moved after 相關推薦. Their 目錄 already follows 簡介.
+- **Not done:**
+  - Gutenberg has no 分類 link, because `GutenbergBookDetail` carries no subjects.
+  - 作品詳情 has no 目錄 section of its own.
+- **Strings:** 副標題 in all five tables.
+- **Tests:**
+  - Unit: `WorkDetailLayoutTests` (new, for classification groups).
+  - Live UI: `PublicLibraryLiveUITests.testAozoraWorkDetailOrder` (new). It opens a work from 依分類's 小說・故事, checks the hero's 分類 link, checks that 作者其他作品 sits above 作品資訊's 底本, and checks that the link opens 「小說・故事」.
+  - iOS 27 results:
+    - 24 unit tests in 7 suites passed (with `WorkDetail*VersionsTests`, `SeriesWorksTests`, `SeriesCardsTests`, `AuthorWorksTests`, `LibraryHomePageTests`);
+    - the live test passed;
+    - `WorkDetailSeriesUITests` and `WorkDetailUITests` passed.

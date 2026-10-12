@@ -259,7 +259,6 @@ struct AudiobookDetailView: View {
                     action: { play(chapterIndex: offset) }
                 )
             }
-            BookDetailInfoSection(items: infoItems)
             BookDetailRelatedSection(
                 related: genres.related,
                 onShowAll: { pushed = .category($0) },
@@ -269,6 +268,8 @@ struct AudiobookDetailView: View {
                     Task { await genres.retryRelated(key: key, source: source, tags: tags, book: currentBook) }
                 }
             )
+            // 作品資訊 last: the first half serves reading and finding more (2026-10-12).
+            BookDetailInfoSection(items: infoItems)
         }
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))
         .toolbar {

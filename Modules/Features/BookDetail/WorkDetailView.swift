@@ -13,6 +13,8 @@ private enum WorkDetailPush: Hashable {
     case work(WorkDetailRoute)
     /// The series page, from the hero's link or 同系列's 查看全部.
     case series(WorkSeriesShelf)
+    /// A 青空文庫 分類's works (依分類's group, by id), from the hero's link.
+    case aozoraClassification(String)
 }
 
 /// When 作品詳情 reads its series: for the versions read, again when they change.
@@ -181,15 +183,13 @@ struct WorkDetailView: View {
                 if let selected, let item = libraryItem(of: selected) {
                     libraryActions(selected, item: item)
                 }
+                // Hero → 簡介 → 作品關聯 → 作品資訊 (maintainer, 2026-10-12): the first half serves
+                // reading and finding more, the end looking things up. No section without data.
                 if let intro {
                     // Never a book source's own description: a book-source version draws its
                     // own page. Legado's formats are not read here (decision 33).
                     BookDetailIntroSection(text: intro, isExpanded: $introExpanded, readsSourceFormats: false)
                 }
-                if let selected, case .aozora(let work) = selected.opening {
-                    aozoraDetails(work)
-                }
-                BookDetailInfoSection(items: infoItems)
                 if let series {
                     BookDetailSeriesSection(series: series, onShowAll: { pushed = .series(series) },
                                             onSelect: { pushed = .work($0) })
@@ -200,6 +200,7 @@ struct WorkDetailView: View {
                     onSelect: { pushed = .work($0) },
                     onRetry: { Task { await authorWorks.retry(authorWorksRequest, store: store) } }
                 )
+                BookDetailInfoSection(items: infoItems)
             }
         }
         .navigationDestination(item: $pushed) { push in
@@ -234,6 +235,12 @@ struct WorkDetailView: View {
                 WorkDetailView(route: route).environmentObject(store)
             case .series(let series):
                 WorkDetailSeriesPage(series: series).environmentObject(store)
+            case .aozoraClassification(let id):
+                if let index = aozora.catalog, let group = index.classificationGroups.first(where: { $0.id == id }) {
+                    WorkDetailAozoraWorksPage(title: localized(group.titleKey),
+                                              works: group.ids.compactMap { index.worksByID[$0] }, index: index)
+                        .environmentObject(store)
+                }
             }
         }
     }
@@ -298,11 +305,21 @@ struct WorkDetailView: View {
         return keys.isEmpty ? nil : SeriesLoad(versions: keys)
     }
 
-    /// The hero's link to the series page: 「三體 · 第 2 冊 ›」.
+    /// The links under the author: a 青空文庫 work's 分類, which open 依分類's list, then the
+    /// series page: 「三體 · 第 2 冊 ›」. Only what the version shown has.
     private var heroLinks: [BookDetailLink] {
-        guard let series else { return [] }
-        return [BookDetailLink(id: "series", title: series.line, action: { pushed = .series(series) },
-                               hint: localized("顯示這個系列的作品"))]
+        var links: [BookDetailLink] = []
+        if let selected, case .aozora(let work) = selected.opening, let index = aozora.catalog {
+            links += index.classificationGroups(of: work).map { group in
+                BookDetailLink(id: "classification.\(group.id)", title: localized(group.titleKey),
+                               action: { pushed = .aozoraClassification(group.id) })
+            }
+        }
+        if let series {
+            links.append(BookDetailLink(id: "series", title: series.line, action: { pushed = .series(series) },
+                                        hint: localized("顯示這個系列的作品")))
+        }
+        return links
     }
 
     /// Where 作者其他作品 reads from for the version shown: its library's record of the author,
@@ -462,8 +479,15 @@ struct WorkDetailView: View {
             }
         }
         if case .aozora(let work) = version.opening {
-            result.append(BookDetailInfoItem(id: "published", label: localized("公開日"), value: work.published))
-            result.append(BookDetailInfoItem(id: "kana", label: localized("文字遣い種別"), value: work.kanaStyle))
+            // 青空文庫's bibliography, which stood under 簡介 until it moved here (2026-10-12).
+            let bibliography: [(id: String, label: String, value: String)] = [
+                ("subtitle", localized("副標題"), work.subtitle), ("yomi", localized("讀音"), work.yomi),
+                ("basis", localized("底本"), work.source), ("publisher", localized("出版社"), work.sourcePublisher),
+                ("published", localized("公開日"), work.published), ("kana", localized("文字遣い種別"), work.kanaStyle),
+            ]
+            result += bibliography.filter { !$0.value.isEmpty }.map {
+                BookDetailInfoItem(id: $0.id, label: $0.label, value: $0.value)
+            }
         }
         return result
     }
@@ -543,17 +567,6 @@ struct WorkDetailView: View {
         guard let selected else { return nil }
         if case .copy(let id) = selected.opening { return copy(id) }
         return shelfCopy(of: selected)
-    }
-
-    @ViewBuilder
-    private func aozoraDetails(_ work: AozoraWork) -> some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            if !work.yomi.isEmpty { Text(work.yomi).font(DSFont.subheadline).foregroundStyle(DSColor.textSecondary) }
-            if !work.subtitle.isEmpty { Text(work.subtitle).font(DSFont.body).foregroundStyle(DSColor.textPrimary) }
-            if !work.source.isEmpty { ThemedLabeledContent(localized("底本"), value: work.source) }
-            if !work.sourcePublisher.isEmpty { ThemedLabeledContent(localized("出版社"), value: work.sourcePublisher) }
-        }
-        .padding(.horizontal, DSSpacing.lg)
     }
 
     // MARK: Versions

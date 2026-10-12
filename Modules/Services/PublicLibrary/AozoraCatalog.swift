@@ -118,6 +118,12 @@ struct AozoraCatalogIndex: Sendable {
 
     func works(forPerson id: String) -> [AozoraWork] { personWorks[id] ?? [] }
 
+    /// The work's 分類 as 依分類 groups them, in its order; 「其他」 is no 分類 and is left out.
+    func classificationGroups(of work: AozoraWork) -> [AozoraIndexGroup] {
+        let keys = Set(Self.classifications(work.ndc))
+        return classificationGroups.filter { $0.id != "other" && keys.contains($0.id) }
+    }
+
     func search(_ query: String) -> [AozoraWork] {
         let query = Self.normalized(query.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !query.isEmpty else { return [] }
