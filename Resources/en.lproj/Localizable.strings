@@ -3736,3 +3736,6 @@
 "失敗類型：" = "Failure Type:";
 "已選取 %d 個書籤" = "%d Bookmarks Selected";
 "已選取 %d 個重點" = "%d Highlights Selected";
+
+/* 編輯資訊 · 簡介 footer */
+"留空時顯示書本或來源提供的簡介。" = "Leave blank to show the description from the book or its source.";

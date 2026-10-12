@@ -1302,6 +1302,11 @@ Decisions 29 and 32. Branch `unified-library/5f4b-reader-work`.
 - **Results, iOS 17.5 (iPhone 15 Pro):** UI: `testBareBookDetailLooksFinished`, `testReadButtonCarriesTheResumeChapter` (both screenshots: 「繼續閱讀　第 3 章」, and the bar's grey 繼續閱讀 capsule once the hero scrolls away), `testDetailReaderLoadsAndReturns`, `testShelfOnlineBookOpensWorkDetail`, `testGenreLinkAndRelatedWorksOpenTheSourcesCategory`, `WorkDetailUITests` passed. The genre test first ended with "Restarting after unexpected exit" in the home editor, before the detail page (the runner kill noted in the previous step); it passed when rerun.
 - **Nav-bar fix, rechecked:** after the iOS 26+ bare-text change, iOS 27 shows one glass group holding ••• and 繼續閱讀; the three new tests passed again in light and dark on iOS 27.
 
+### 編輯資訊 · 簡介 footer (2026-10-12)
+
+- **Landed (the footer 5f-4d-2 deferred):** the 簡介 section of 編輯資訊 has a native footer, 「留空時顯示書本或來源提供的簡介。」 ("Leave blank to show the description from the book or its source."). The field holds only the reader's own text, so it is empty for a book whose page does show a description; the footer says where that one comes from. One new key in all five tables.
+- **Tests:** `DetailReaderBackSwipeUITests.testWorkDetailShowsTheShelfCopysEditedTitle` asserts the footer under the field and attaches a screenshot of it (iOS 27, passed; screenshot checked).
+
 ### Key splits (2026-10-12)
 
 - **Landed:** every row of the inventory below except 章節 in `BookSourceHealthChecker:1064` (a sentence built from fragments; it goes with the fragment rewrites). 18 new keys, appended to the five tables under one comment; the 28 call sites point at them. Traditional Chinese reads exactly as before at every site, with one exception: the chapter-title inspector's slider now reuses the existing `不透明度` key (the bar layout editor's opacity slider already used it; value 1 is opaque), so it reads 不透明度 instead of 透明度. Simplified Chinese changes where its old text had the other meaning: 打开 (RSS notification, 青空 card), 添加 (home section form).
