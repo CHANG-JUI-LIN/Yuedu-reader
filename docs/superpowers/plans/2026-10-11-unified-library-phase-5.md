@@ -1461,3 +1461,40 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
     - `testSearchDetailReaderLoadsAndReturns` passed on rerun once it no longer expected a prompt for a book an earlier test had shelved;
     - `testDetailMangaReaderLoadsAndReturns` fails when run after the full suite, because a shelved copy resumes on page 2. That is test-order state, the same before this change.
   - `WorkDetailUITests` passed.
+
+#### What landed — 作品詳情 reads its 目錄 as it opens (2026-10-13)
+
+- **Decision (maintainer):** "不管是古騰堡還是青空文庫給我預抓目錄". 目錄 is read as soon as the page opens, from the copy reading uses, for Gutenberg, 青空文庫 and the remote libraries (OPDS, Calibre, WebDAV). A Gutenberg/library EPUB is read in ranges, as reading does. A copy made ahead of reading is kept. The UI is the book-source page's: the first 5 chapters after 簡介, then 查看全部 → `BookDetailChapterListSheet`, with 「載入目錄…」 and 重試. A chapter opens the reader there, and back on the page 「加入書架？」 asks.
+- **Order:** Hero → 簡介 → 目錄 → 作品關聯 → 作品資訊.
+- **Changes:**
+  - `WorkTableOfContents` (Services/Works) gets the chapters by the reader's own paths:
+    - EPUB: `EPUBBookService.openSession` → `ReaderTOCChapterMapper`, falling back to the spine as the reader does.
+    - TXT: `TXTReaderPreparationService` → `TXTReaderIndexMigrationService.indexForListing`.
+    - A chapter's `index` is where a reading position points: the spine item, or the TXT chapter.
+  - A library copy is held through `ReadingResourceUsage` like a reader, and released only when no reader still holds it. That way a reader opened meanwhile keeps its session.
+  - `TXTReaderIndexMigrationService.indexForListing` returns the published index. For a book never read nor annotated, it publishes the first index through the same journal/commit as `complete`, so a position saved at its chapter is one the reader opens. It returns nil when publishing needs the reader: a journal to replay, or locations to map.
+  - `WorkTableOfContentsModel` holds the loading, loaded and failed states. Generation-guarded, so a version moved on from never sets the state. Errors are logged.
+  - `WorkDetailView`:
+    - reads 目錄 once the versions are known, for the version and format shown;
+    - for 青空文庫, uses `aozoraLibrary.readingCopy`;
+    - for Gutenberg and libraries, uses `remoteLibrary.readingCopy` on the item and format;
+    - for a shelf copy, uses the copy itself;
+    - reads nothing for a book-source version, which is its own page, or on the page a reader opened.
+    - A chapter saves `CoreTextReadingPosition(spineIndex:charOffset: 0)`, awaited as `OnlineBookView` does, then opens the copy.
+- **Off-shelf audit:** a copy now exists before reading. Everything that reads shelf state uses `isInBookshelf` or `lastOpenedDate`: 加入書架/已加入書架, 開始/繼續閱讀, 來源's status, versions, 繼續閱讀 on 書架, and 「加入書架？」. The one exception was Calibre's 閱讀進度 row. It now shows only for a copy on the shelf or one that was read.
+- **Limits (disclosed):**
+  - No 目錄 for a PDF, Markdown, comic or audiobook; their readers open the whole file.
+  - No 目錄 for a TXT whose old index or interrupted migration still waits on its reader.
+  - **A TOC entry with a `#fragment` opens at the start of its spine item.** 青空文庫 entries are whole spine items and land exactly (live test: 底本 opens on 底本). Gutenberg EPUBs keep most chapters in one spine file, so tapping a chapter lands near the book's start. Measured: Pride and Prejudice's 「CHAPTER II.」 opened at 本章頁碼 1/141 on the licence page.
+    - The reader resolves an anchor only once its spine item is laid out (`ReaderView.tocPosition`, which falls back to offset 0).
+    - A one-shot anchor in the paged opening restore (`applyInitialProgressIfNeeded`, after `preloadChapter`) was tried and taken out unproven: the reader opened in scroll mode (`scrollpos.restore`), whose restore never runs that branch.
+    - Follow-up: once the opening restore has the target spine laid out or in the scroll window, call the reader's own `jumpToTOCEntry` once, on the real signal, never a delay.
+- **Tests:**
+  - Unit: `WorkTableOfContentsTests` (new: EPUB chapters at spine items with the copy left unread, unprompted and out of 繼續閱讀; library session released once / kept while a reader holds it; unread TXT publishes an index the reader opens with the saved chapter; TXT with a position waits; PDF/MD have none). Regression: 74 tests in 11 suites passed on iOS 27.
+  - Live UI:
+    - `testAozoraWorkListsItsChapters` (new): rows appear, the 查看全部 sheet opens, and a later chapter (底本) opens the reader on its text. The swipe back returns to the page.
+    - `testGutenbergWorkListsItsChapters` (new): Pride and Prejudice's 目錄 is read through the range session. A chapter opens the reader with its text loaded, and the swipe back is asked 「加入書架？」 → 不加入. 開始閱讀 then prepares the released book again, its text loads, and the prompt asks again. Also passed: `testAozoraWorkDetailOrder`, `testAozoraWorkKeepsItsPageAfterReading`, `WorkDetailUITests`, `WorkDetailSeriesUITests`.
+  - `DetailReaderBackSwipeUITests`: 18/31 passed.
+    - The 9 page-turn gesture tests failed at the assertions recorded before Phase 5.
+    - 4 manga tests failed: `testDetailMangaReaderLoadsAndReturns`, `testSearchDetailMangaReaderLoadsAndReturns`, `testShelfMangaOpensOnThePage`, `testMangaPageZoomsWithPinchAndDoubleTap`. A 5th, `testWebtoonStripZoomsAndPansSideways`, failed the same way. All expected "Page 1 of 3" but got the page or mode left by earlier runs: the shelved fixture manga resumes on page 2, and reran alone it opens in webtoon mode.
+    - These tests go through a book source's page and the manga reader. Neither reads 目錄: a book-source version has no copy here, and `.manga` is not listed. This is the test-order state recorded before, which now persists on the simulator.

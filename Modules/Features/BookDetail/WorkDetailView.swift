@@ -22,6 +22,13 @@ private struct SeriesLoad: Hashable {
     let versions: [SourceItemKey]
 }
 
+/// What 作品詳情's 目錄 is read for: a version in a format, once its library item is known.
+private struct TOCLoad: Hashable {
+    let version: SourceItemKey
+    let formatID: String?
+    let hasItem: Bool
+}
+
 /// When 作品詳情 reads its versions: once no action runs, again when asked, and again once
 /// 青空文庫's catalog is read, which a 青空文庫 copy's work comes from.
 private struct VersionsLoad: Hashable {
@@ -75,6 +82,10 @@ struct WorkDetailView: View {
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @StateObject private var actions = RemoteLibraryActionModel()
     @StateObject private var authorWorks = AuthorWorksModel()
+    @StateObject private var toc = WorkTableOfContentsModel()
+    @State private var showChapterList = false
+    /// The chapter picked from 查看全部, opened once its sheet is gone.
+    @State private var pendingChapter: OnlineChapterRef?
     /// The series a version on this device belongs to (同系列); nil while read, or when none.
     @State private var series: WorkSeriesShelf?
     @State private var versions: [WorkDetailRoute]
@@ -135,6 +146,10 @@ struct WorkDetailView: View {
                 if chosen == nil, let shown = selected, onlineBook(of: shown) != nil { chosen = shown.nodeKey }
             }
             .task(id: selected?.nodeKey) { await prepare(selected) }
+            .task(id: tocLoad) {
+                await toc.load(copy: tocLoad.flatMap { _ in selected.flatMap(tocCopy(of:)) }, store: store,
+                               remoteLibrary: dependencies.remoteLibrary, positions: dependencies.readingPositionStore)
+            }
             .task(id: shownCopy?.id) { copySidecar = shownCopy.map(store.copyIntroValues(of:)) ?? [] }
             .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: store) }
             .task(id: seriesLoad) {
@@ -201,6 +216,7 @@ struct WorkDetailView: View {
                     // own page. Legado's formats are not read here (decision 33).
                     BookDetailIntroSection(text: intro, isExpanded: $introExpanded, readsSourceFormats: false)
                 }
+                tableOfContents
                 if let series {
                     BookDetailSeriesSection(series: series, onShowAll: { pushed = .series(series) },
                                             onSelect: { pushed = .work($0) })
@@ -220,6 +236,20 @@ struct WorkDetailView: View {
             shelvePrompt = ReaderShelvePrompt.copy(id, in: store)
         }
         .readerShelvePrompt($shelvePrompt, onAdd: { _ = store.addReadingBookToShelf(id: $0.id) })
+        .sheet(isPresented: $showChapterList, onDismiss: {
+            guard let chapter = pendingChapter else { return }
+            pendingChapter = nil
+            openChapter(chapter)
+        }) {
+            if case .loaded(_, let chapters) = toc.state {
+                NavigationStack {
+                    BookDetailChapterListSheet(chapters: chapters, trailing: .disclosure, onSelect: { offset in
+                        pendingChapter = chapters[offset]
+                        showChapterList = false
+                    })
+                }
+            }
+        }
         .navigationDestination(item: $pushed) { push in
             switch push {
             case .reader(let id):
@@ -259,6 +289,70 @@ struct WorkDetailView: View {
                         .environmentObject(store)
                 }
             }
+        }
+    }
+
+    // MARK: 目錄
+
+    /// The chapters of the copy the version is read from, read as the page opens (maintainer,
+    /// 2026-10-13), as a book source's page lists its own: the first few, then 查看全部.
+    @ViewBuilder
+    private var tableOfContents: some View {
+        let chapters: [OnlineChapterRef] = if case .loaded(_, let chapters) = toc.state { chapters } else { [] }
+        let failure: String? = if case .failed(let message) = toc.state { message } else { nil }
+        if toc.state != .none {
+            BookDetailChapterSection(
+                title: localized("目錄"), chapters: chapters, isLoading: toc.state == .loading, errorMessage: failure,
+                latestChapter: "", onRetry: { reloadTOC() }, onShowAll: { showChapterList = true }
+            ) { offset, chapter in
+                BookDetailChapterRow(title: BookDetailChapterTitle.display(chapter, offset: offset), isLocked: false,
+                                     trailing: .disclosure, action: { openChapter(chapter) })
+                    .accessibilityIdentifier("detail.toc.\(offset)")
+            }
+        }
+    }
+
+    /// What 目錄 is read for: the version shown, once the work's versions are known, in its
+    /// format, once a Gutenberg book's item is read. None on the page a reader opened.
+    private var tocLoad: TOCLoad? {
+        guard readerContext == nil, versionsLoaded, let version = selected else { return nil }
+        return TOCLoad(version: version.nodeKey, formatID: selectedFormat(of: version)?.id,
+                       hasItem: libraryItem(of: version) != nil)
+    }
+
+    /// The copy the version is read from, as 開始閱讀 reads it; nil for a version with none
+    /// (a book source's, drawn by its own page) or a format that does not read.
+    private func tocCopy(of version: WorkDetailRoute) -> (() async throws -> ReadingBook)? {
+        switch version.opening {
+        case .copy(let id):
+            guard let book = copy(id) else { return nil }
+            return { book }
+        case .aozora(let work):
+            return { [dependencies, store] in try await dependencies.aozoraLibrary.readingCopy(work: work, store: store) }
+        case .gutenberg, .opdsEntry, .webDAVFile:
+            guard let item = libraryItem(of: version), let format = selectedFormat(of: version), format.isSupported else {
+                return nil
+            }
+            return { [dependencies, store] in try dependencies.remoteLibrary.readingCopy(item: item, format: format, store: store) }
+        case .onlineBook:
+            return nil
+        }
+    }
+
+    private func reloadTOC() {
+        Task {
+            await toc.load(copy: selected.flatMap(tocCopy(of:)), store: store,
+                           remoteLibrary: dependencies.remoteLibrary, positions: dependencies.readingPositionStore)
+        }
+    }
+
+    /// Opens the copy at `chapter`, its position saved first so the reader restores to it.
+    private func openChapter(_ chapter: OnlineChapterRef) {
+        guard case .loaded(let bookID, _) = toc.state else { return }
+        Task {
+            await dependencies.readingPositionStore.save(CoreTextReadingPosition(spineIndex: chapter.index, charOffset: 0),
+                                                         for: bookID.uuidString)
+            openCopy(bookID)
         }
     }
 
@@ -545,7 +639,9 @@ struct WorkDetailView: View {
         let unsupported = selectedFormat(of: version)?.isSupported != true
         let editable = writeCapabilities.map { $0.canEditMetadata || $0.canMove } ?? false
         let syncedCopy: ReadingBook? = if connections.connection(id: item.connectionID)?.syncProgress == true,
-                                          selectedFormat(of: version)?.fileExtension == "epub" { libraryCopy } else { nil }
+                                          selectedFormat(of: version)?.fileExtension == "epub",
+                                          // Not the copy 目錄 made ahead of reading: nothing of it was read.
+                                          let copy = libraryCopy, copy.isInBookshelf || copy.lastOpenedDate != nil { copy } else { nil }
         if unsupported || editable || syncedCopy != nil {
             VStack(alignment: .leading, spacing: 0) {
                 if unsupported {

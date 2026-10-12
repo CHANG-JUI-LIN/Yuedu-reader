@@ -269,6 +269,135 @@ final class PublicLibraryLiveUITests: XCTestCase {
         screenshot(app, "aozora-detail-from-shelf")
     }
 
+    /// 2026-10-13: 作品詳情 reads a work's 目錄 as it opens, as a book source's page lists its
+    /// chapters: the first few under 簡介, all of them under 查看全部, each opening the reader there.
+    @MainActor
+    func testAozoraWorkListsItsChapters() throws {
+        guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+                               "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
+                               "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+        app.launch()
+        let tab = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 30))
+        tab.tap()
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        menu.tap()
+        let aozora = app.buttons["青空文庫"].firstMatch
+        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
+        aozora.tap()
+        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
+        work.tap()
+
+        let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
+        let offShelf = app.buttons["加入書架"].firstMatch.waitForExistence(timeout: 10)
+        let first = app.buttons["detail.toc.0"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 60), "目錄 is read as the page opens\n\(app.debugDescription)")
+        for _ in 0..<4 where !first.isHittable { app.swipeUp() }
+        XCTAssertTrue(first.isHittable, app.debugDescription)
+        screenshot(app, "aozora-detail-toc")
+        // Read ahead of reading, the copy is not one that was read.
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch.exists)
+        if offShelf { XCTAssertTrue(app.buttons["加入書架"].firstMatch.exists, "making the copy did not shelve it") }
+
+        let all = app.buttons["查看全部"].firstMatch
+        if all.exists, all.isHittable {
+            all.tap()
+            XCTAssertTrue(app.navigationBars["目錄"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+            screenshot(app, "aozora-toc-sheet")
+            app.navigationBars["目錄"].buttons["關閉"].firstMatch.tap()
+            XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
+        }
+
+        // A later chapter, so landing there is not where 開始閱讀 would land anyway.
+        openChapterAndSwipeBack(app, row: app.buttons["detail.toc.1"].exists ? 1 : 0, offShelf: offShelf, landsOnTitle: true)
+        XCTAssertTrue(first.waitForExistence(timeout: 15), "back on 作品詳情 with its 目錄\n\(app.debugDescription)")
+    }
+
+    /// A Gutenberg book's 目錄 comes from its EPUB read in ranges, as reading does; the session
+    /// it opened is released, and reading afterwards prepares the book again.
+    @MainActor
+    func testGutenbergWorkListsItsChapters() throws {
+        guard enabled("PUBLIC_LIBRARY_LIVE_UI") else { throw XCTSkip("Explicit live Gutenberg release check") }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+                               "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
+                               "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+        app.launch()
+        let tab = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 30))
+        tab.tap()
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        menu.tap()
+        let gutenberg = app.buttons["Project Gutenberg"].firstMatch
+        XCTAssertTrue(gutenberg.waitForExistence(timeout: 5), app.debugDescription)
+        gutenberg.tap()
+        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.gutenberg.")).firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
+        work.tap()
+
+        let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 30), app.debugDescription)
+        let offShelf = app.buttons["加入書架"].firstMatch.waitForExistence(timeout: 30)
+        let first = app.buttons["detail.toc.0"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 120), "目錄 is read as the page opens\n\(app.debugDescription)")
+        for _ in 0..<4 where !first.isHittable { app.swipeUp() }
+        screenshot(app, "gutenberg-detail-toc")
+        if offShelf { XCTAssertTrue(app.buttons["加入書架"].firstMatch.exists, "making the copy did not shelve it") }
+
+        let row = app.buttons["detail.toc.2"].exists ? 2 : app.buttons["detail.toc.1"].exists ? 1 : 0
+        // Its chapters share spine files, and an entry's #anchor opens at its file's start (not
+        // yet resolved from outside the reader), so only the opening is checked.
+        openChapterAndSwipeBack(app, row: row, offShelf: offShelf, landsOnTitle: false)
+        XCTAssertTrue(first.waitForExistence(timeout: 15), app.debugDescription)
+        // The session 目錄 opened is gone; reading prepares the book again.
+        for _ in 0..<4 where !app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch.isHittable {
+            app.swipeDown()
+        }
+        let read = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch
+        read.tap()
+        XCTAssertTrue(app.otherElements["頁尾"].firstMatch.waitForExistence(timeout: 90), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["載入中…"].firstMatch.waitForNonExistence(timeout: 90), "read again\n\(app.debugDescription)")
+        screenshot(app, "gutenberg-read-again")
+        let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        if offShelf {
+            let prompt = app.alerts.firstMatch
+            XCTAssertTrue(prompt.waitForExistence(timeout: 10), app.debugDescription)
+            prompt.buttons["不加入"].tap()
+        }
+        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
+    }
+
+    /// Opens `row` of 目錄, checks the reader is at that chapter, and swipes back to the page,
+    /// declining 「加入書架？」 for a copy off the shelf.
+    @MainActor
+    private func openChapterAndSwipeBack(_ app: XCUIApplication, row: Int, offShelf: Bool, landsOnTitle: Bool) {
+        let entry = app.buttons["detail.toc.\(row)"].firstMatch
+        for _ in 0..<4 where !entry.isHittable { app.swipeUp() }
+        let chapter = entry.label.trimmingCharacters(in: .whitespaces)
+        entry.tap()
+        XCTAssertTrue(app.otherElements["頁尾"].firstMatch.waitForExistence(timeout: 90), "\(chapter)\n\(app.debugDescription)")
+        XCTAssertTrue(app.staticTexts["載入中…"].firstMatch.waitForNonExistence(timeout: 90), "\(chapter)\n\(app.debugDescription)")
+        if landsOnTitle, row > 0 {
+            let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", chapter)).firstMatch
+            XCTAssertTrue(text.waitForExistence(timeout: 30), "the reader opens at 「\(chapter)」\n\(app.debugDescription)")
+        }
+        screenshot(app, "reader-at-chapter-\(row)")
+        let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        if offShelf {
+            let prompt = app.alerts.firstMatch
+            XCTAssertTrue(prompt.waitForExistence(timeout: 10), "the copy read is asked about\n\(app.debugDescription)")
+            prompt.buttons["不加入"].tap()
+        }
+    }
+
     @MainActor
     private func readAndSwipeBack(_ app: XCUIApplication) {
         let read = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch
