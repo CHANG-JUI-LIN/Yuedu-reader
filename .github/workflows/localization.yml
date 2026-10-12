@@ -6,6 +6,8 @@ on:
     paths:
       - "Resources/**/*.strings"
       - "ShareExtension/**/*.strings"
+      - "Modules/**/*.swift"
+      - "Targets/**/*.swift"
       - "scripts/check_localizations.rb"
       - ".github/workflows/localization.yml"
   push:
@@ -14,6 +16,8 @@ on:
     paths:
       - "Resources/**/*.strings"
       - "ShareExtension/**/*.strings"
+      - "Modules/**/*.swift"
+      - "Targets/**/*.swift"
       - "scripts/check_localizations.rb"
       - ".github/workflows/localization.yml"
 

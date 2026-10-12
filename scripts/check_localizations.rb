@@ -9,15 +9,28 @@
 # reaches its users untranslated. That is how ja and ko showed the
 # photo-library permission prompt in English.
 #
+# It also checks that every key the Swift code asks for exists. Agreeing tables
+# say nothing about a key no table has: the EPUB media overlay called
+# localized("段落"), which no table contained, so every language showed the raw
+# Chinese key while the tables agreed. Every localized("…") under the source
+# folders whose argument is a string literal, or a ternary choosing between two
+# literals, must be a key of the zh-Hant Localizable.strings (the tables above
+# keep the other languages in step with it). Arguments built at run time
+# (variables, interpolation) can't be checked here and are skipped.
+#
 # Usage: scripts/check_localizations.rb [root ...]
 # Tables are read with plutil, so this runs on macOS only.
 
 require "json"
 require "open3"
+require "set"
 
 # Keep in step with the paths filters in .github/workflows/localization.yml,
 # or edits to a root's tables never run this check.
 DEFAULT_ROOTS = %w[Resources ShareExtension].freeze
+# The same goes for these: the workflow runs on edits to their Swift files.
+CODE_SOURCES = %w[Modules Targets].freeze
+CODE_TABLE = "Resources/zh-Hant.lproj/Localizable.strings"
 
 def parse_table(path)
   json, stderr, status = Open3.capture3("plutil", "-convert", "json", "-o", "-", path)
@@ -72,6 +85,66 @@ def check_table(pattern, expected, files)
   true
 end
 
+# A Swift string literal's body: no unescaped quote, no line break.
+SWIFT_LITERAL = /"((?:[^"\\\n]|\\.)*)"/.source
+CALL_PREFIX = /(?<![\w.])localized\(\s*/.source
+# localized("key") and localized(condition ? "key" : "key"), spanning lines.
+LITERAL_CALL = /#{CALL_PREFIX}#{SWIFT_LITERAL}\s*[,)]/m
+TERNARY_CALL = /#{CALL_PREFIX}[^"()]*?\?\s*#{SWIFT_LITERAL}\s*:\s*#{SWIFT_LITERAL}\s*[,)]/m
+SWIFT_ESCAPES = { "n" => "\n", "t" => "\t", "r" => "\r", "0" => "\0" }.freeze
+
+# The key a literal's body spells, or nil when it interpolates.
+def swift_literal_value(body)
+  return nil if body.include?("\\(")
+
+  body.gsub(/\\u\{(\h+)\}|\\(.)/) { $1 ? [$1.hex].pack("U") : SWIFT_ESCAPES.fetch($2, $2) }
+end
+
+# Every literal key the code passes to localized, mapped to "file:line" sites.
+def code_keys(sources)
+  sites = Hash.new { |hash, key| hash[key] = [] }
+  Dir.glob(sources.map { |dir| File.join(dir, "**", "*.swift") }).sort.each do |path|
+    text = File.read(path, encoding: "UTF-8")
+    [LITERAL_CALL, TERNARY_CALL].each do |pattern|
+      text.scan(pattern) do
+        match = Regexp.last_match
+        line_start = text.rindex("\n", match.begin(0)).to_i
+        next if text[line_start..match.begin(0)].lstrip.start_with?("//")
+
+        line = text[0...match.begin(0)].count("\n") + 1
+        match.captures.compact.each do |body|
+          key = swift_literal_value(body)
+          sites[key] << "#{path}:#{line}" if key
+        end
+      end
+    end
+  end
+  sites
+end
+
+# Reports each literal key the code uses that the table lacks; returns whether
+# there were none.
+def check_code_keys(sources, table)
+  strings = parse_table(table)
+  return false if strings.nil?
+
+  sites = code_keys(sources)
+  known = strings.keys.to_set
+  missing = sites.reject { |key, _| known.include?(key) }
+  unless missing.empty?
+    warn "#{table}: keys used in code but missing from the table"
+    missing.sort.each do |key, places|
+      warn "    #{key.gsub("\n", "\\n")}"
+      places.uniq.each { |place| warn "      #{place}" }
+    end
+    return false
+  end
+
+  count = sites.size
+  puts "Localization OK: #{sources.join(", ")} use #{count} literal #{count == 1 ? "key" : "keys"}, all in #{table}"
+  true
+end
+
 failed = false
 
 (ARGV.empty? ? DEFAULT_ROOTS : ARGV).each do |root|
@@ -88,5 +161,7 @@ failed = false
     failed = true unless check_table(File.join(root, "*.lproj", table), expected, files)
   end
 end
+
+failed = true unless check_code_keys(CODE_SOURCES, CODE_TABLE)
 
 exit 1 if failed
