@@ -799,11 +799,8 @@ private struct GutenbergBookDetailPage: View {
                     BookDetailHero(artworkShape: .book,
                         cover: PublicLibraryCoverArtwork(title: book.title, author: book.author, coverURL: book.coverURL),
                         title: book.title, author: book.author, meta: "",
-                        primary: loadingAction,
-                        secondary: BookDetailAction(title: localized("下載"), systemImage: "arrow.down",
-                                                    isEnabled: false, action: {}),
-                        artworkHeight: sheet?.artworkHeight,
-                        facts: BookDetailFacts(text: localized("Project Gutenberg")))
+                        primary: loadingAction, secondary: nil,
+                        artworkHeight: sheet?.artworkHeight)
                 } content: {
                     VStack(spacing: DSSpacing.lg) {
                         if model.isLoading { ProgressView(localized("正在載入書庫")) }

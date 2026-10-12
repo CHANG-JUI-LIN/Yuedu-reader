@@ -158,7 +158,8 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         let format = app.descendants(matching: .any)["detail.info.format"].firstMatch
         XCTAssertTrue(format.waitForExistence(timeout: 10), "The catalog entry is read on the page.\n\(app.debugDescription)")
         XCTAssertEqual(format.value as? String, "EPUB")
-        XCTAssertTrue(app.buttons["下載供離線閱讀"].firstMatch.exists, app.debugDescription)
+        // The page is where the book is read: no download or library-website rows (2026-10-12).
+        XCTAssertFalse(app.buttons["下載供離線閱讀"].firstMatch.exists, app.debugDescription)
         // Gutenberg's content is the book's record; the description is its Summary field alone.
         let description = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '書店互動測試'")).firstMatch
         XCTAssertTrue(description.exists, "The entry's description.\n\(app.debugDescription)")

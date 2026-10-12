@@ -399,7 +399,7 @@ enum DSLayout {
     static let rootTabTitleFadeDistance: CGFloat = 30
     /// Side of the square artwork at the top of an audiobook detail page — Podcasts'
     /// show artwork, a little narrower than a book jacket is tall.
-    static let bookDetailSquareArtworkSide: CGFloat = 196
+    static let bookDetailSquareArtworkSide: CGFloat = 168
     /// How far a detail page's cover wash runs above the hero, under the status and
     /// navigation bars — taller than both together at the largest text size, so even a
     /// pull-down overscroll does not uncover the page background behind the bars.
@@ -438,17 +438,23 @@ enum DSLayout {
     static let bookCoverHeroShadowRadius: CGFloat = 18
     /// Drop-shadow vertical offset under the hero cover.
     static let bookCoverHeroShadowOffsetY: CGFloat = 10
-    /// A detail page's hero (Editorial Minimalism, 2026-10-12): a smaller jacket than
-    /// 書籍資訊's, so the page has room around it; 2:3 like the shelf grid.
-    static let bookDetailCoverWidth: CGFloat = 148
-    static let bookDetailCoverHeight: CGFloat = 222
+    /// A detail page's hero (Editorial Minimalism, 2026-10-12): a small jacket, so the title
+    /// and the reading action carry the page; 2:3 like the shelf grid.
+    static let bookDetailCoverWidth: CGFloat = 128
+    static let bookDetailCoverHeight: CGFloat = 192
     static let bookDetailCoverShadowRadius: CGFloat = 12
     static let bookDetailCoverShadowOffsetY: CGFloat = 6
-    /// The cover's wash behind a detail page's hero: desaturated and faint, fading from a
-    /// third of the hero's height so it melts into the page instead of ending as a band.
-    static let bookDetailBackdropOpacity: Double = 0.4
-    static let bookDetailBackdropSaturation: Double = 0.85
+    /// The cover's hue washed behind a detail page's hero (`CoverTint.Wash`): faint, and
+    /// fading from a third of the hero's height so it melts into the page instead of ending
+    /// as a band. A cover less saturated than the minimum gets no wash; the maximum keeps a
+    /// loud cover's wash calm.
     static let bookDetailBackdropFadeStart: Double = 0.3
+    static let bookDetailWashMinimumSaturation: Double = 0.18
+    static let bookDetailWashMaximumSaturation: Double = 0.45
+    static let bookDetailWashLightBrightness: Double = 0.92
+    static let bookDetailWashLightOpacity: Double = 0.5
+    static let bookDetailWashDarkBrightness: Double = 0.45
+    static let bookDetailWashDarkOpacity: Double = 0.35
     /// Gap between a shelf-grid cover and the title under it.
     static let bookshelfGridCoverTitleSpacing: CGFloat = 6
     /// A group's folder on the shelf, as shares of its width: the margin around its four

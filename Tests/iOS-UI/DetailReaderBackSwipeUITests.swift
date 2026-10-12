@@ -25,7 +25,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
 
     /// Each fixture source's one discover category (scripts/navigation_swipe_fixture.py).
     private static let categories = ["Navigation Swipe Fixture": "Navigation Test", "Navigation Manga Fixture": "Manga Test",
-                                      "Navigation Audio Fixture": "Audio Test"]
+                                      "Navigation Audio Fixture": "Audio Test", "Navigation Bare Fixture": "Bare Test"]
 
     /// The fixture source's book from Explore's home, as a reader reaches a book source there now:
     /// 編輯首頁 → 新增欄目 → its discover category as a row (範圍 only filters the home since
@@ -180,6 +180,91 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(genre.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(categoryTitle.exists, app.debugDescription)
+    }
+
+    /// The detail page's design baseline (Editorial Minimalism, 2026-10-12): a book with only a
+    /// title, an author and its chapters looks finished. Nothing waits to appear — no section
+    /// header over a spinner, no 簡介 — and the actions are 方案 A's: a text-only reading capsule
+    /// and 加入書架 as plain text beside it. Run in light, in dark and with Pro and a theme pack.
+    @MainActor
+    func testBareBookDetailLooksFinished() throws {
+        try exerciseBareBook(pro: false)
+    }
+
+    @MainActor
+    func testBareBookDetailLooksFinishedWithPro() throws {
+        try exerciseBareBook(pro: true)
+    }
+
+    @MainActor
+    private func exerciseBareBook(pro: Bool) throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(zh-Hant)",
+                               "-AppleLocale", "zh_TW", "-yd_root_tab_visible_ids", "(explore, settings)"]
+        if pro { app.launchArguments.append("-debug-force-pro") }
+        app.launch()
+        // A theme pack brings its own tab bar, which can open on 書架.
+        let explore = app.tabBars.buttons["探索"].firstMatch
+        if explore.waitForExistence(timeout: 10), !explore.isSelected { explore.tap() }
+        openDiscoveredBook(app, named: "Navigation Bare Fixture")
+        let read = app.buttons["立即閱讀"].firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
+        let add = app.buttons["加入書架"].firstMatch
+        XCTAssertTrue(add.exists, app.debugDescription)
+        XCTAssertEqual(abs(add.frame.midY - read.frame.midY) < 2, true, "One row: \(read.frame) \(add.frame)")
+        XCTAssertTrue(app.descendants(matching: .any)["detail.info.chapters"].firstMatch.waitForExistence(timeout: 15),
+                      app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["detail.facts"].exists, "Chapters and source are in 作品資訊 only")
+        XCTAssertFalse(app.staticTexts["同題材作品"].exists, app.debugDescription)
+        XCTAssertFalse(app.staticTexts["簡介"].exists, app.debugDescription)
+        attachScreenshot(app, named: pro ? "最少資料 - Pro" : "最少資料")
+    }
+
+    /// 繼續閱讀 carries where reading resumes (方案 A, 2026-10-12): after reading chapter 3 of a
+    /// shelved book, its reading button reads 「繼續閱讀」 with 「第 3 章」 as its value.
+    @MainActor
+    func testReadButtonCarriesTheResumeChapter() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(zh-Hant)",
+                               "-AppleLocale", "zh_TW", "-yd_root_tab_visible_ids", "(explore, settings)",
+                               "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+        app.launch()
+        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
+        let add = app.buttons["加入書架"].firstMatch
+        let resume = app.buttons["繼續閱讀"].firstMatch
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["加入書架", "移除書架"])).firstMatch
+            .waitForExistence(timeout: 15), app.debugDescription)
+        if add.exists {
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
+            XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
+            add.tap()
+        }
+        XCTAssertTrue(resume.waitForExistence(timeout: 10), app.debugDescription)
+        let chapter = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Chapter 3")).firstMatch
+        for _ in 0..<4 where !(chapter.exists && chapter.isHittable) { app.swipeUp() }
+        XCTAssertTrue(chapter.waitForExistence(timeout: 10), app.debugDescription)
+        chapter.tap()
+        let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Chapter 3 paragraph")).firstMatch
+        XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        XCTAssertTrue(resume.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<4 where !resume.isHittable { app.swipeDown() }
+        let value = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "第 3 章"), object: resume)
+        XCTAssertEqual(XCTWaiter.wait(for: [value], timeout: 10), .completed,
+                       "value: \(String(describing: resume.value))\n\(app.debugDescription)")
+        attachScreenshot(app, named: "繼續閱讀 第 3 章")
+        // Scrolled away, the action follows into the bar: on iOS 26 the bar's own glass is
+        // its only capsule.
+        app.swipeUp()
+        app.swipeUp()
+        let compact = app.navigationBars.buttons["繼續閱讀"].firstMatch
+        XCTAssertTrue(compact.waitForExistence(timeout: 5), app.debugDescription)
+        attachScreenshot(app, named: "導覽列 繼續閱讀")
     }
 
     @MainActor

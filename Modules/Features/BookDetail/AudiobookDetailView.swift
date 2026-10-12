@@ -230,9 +230,7 @@ struct AudiobookDetailView: View {
                 secondary: shelfAction,
                 authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
                 sourceGestures: sourceCallBacks?.gestures,
-                links: sourceCallBacks == nil ? sourceLinks.links(for: tags) : [],
-                progress: shelvedCopy?.currentPosition,
-                facts: facts
+                links: sourceCallBacks == nil ? sourceLinks.links(for: tags) : []
             )
         } content: {
             if let intro = shown.intro {
@@ -415,6 +413,7 @@ struct AudiobookDetailView: View {
             systemImage: "play.fill",
             isBusy: openingPlayer,
             isEnabled: !chapters.isEmpty && !addingToShelf,
+            detail: resumeChapterIndex > 0 ? BookDetailResume.detail(chapterIndex: resumeChapterIndex, progress: nil) : nil,
             action: { play(chapterIndex: resumeChapterIndex) }
         )
     }
@@ -430,17 +429,6 @@ struct AudiobookDetailView: View {
             action: {
                 if alreadyInShelf { confirmsRemoval = true } else { addToShelfOnly() }
             }
-        )
-    }
-
-    /// 「N 章 · 來源」 under the actions, with 換源 beside it.
-    private var facts: BookDetailFacts {
-        let parts = (chapters.isEmpty ? [] : [String(format: localized("%d 章"), chapters.count)]) + [sourceName]
-        return BookDetailFacts(
-            text: parts.joined(separator: " · "),
-            actionTitle: localized("換源"),
-            action: { showSourcePicker = true },
-            accessibilityHint: localized("點兩下切換來源配置")
         )
     }
 

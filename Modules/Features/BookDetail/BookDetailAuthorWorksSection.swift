@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// 作者其他作品 at the foot of 作品詳情: the author's other works as a shelf of covers, drawn as
-/// Explore's home draws a row of them. Not shown when the version's data names no other work
-/// (`AuthorWorksModel.State.hidden`).
+/// Explore's home draws a row of them. Not shown at all until the works are read — no header
+/// over a spinner that could then vanish and move the page — nor when there is no other work
+/// (`AuthorWorksModel.State.hidden`). A failed read keeps its retry.
 struct BookDetailAuthorWorksSection: View {
     let state: AuthorWorksModel.State
     /// The author's page, for the libraries that have one.
@@ -11,8 +12,16 @@ struct BookDetailAuthorWorksSection: View {
     let onRetry: () -> Void
     @EnvironmentObject private var store: BookStore
 
+    private var isShown: Bool {
+        switch state {
+        case .loaded(let entries): !entries.isEmpty
+        case .failed: true
+        case .loading, .hidden: false
+        }
+    }
+
     var body: some View {
-        if state != .hidden {
+        if isShown {
             VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 BookDetailSectionHeader(
                     title: localized("作者其他作品"),
@@ -40,8 +49,7 @@ struct BookDetailAuthorWorksSection: View {
             .buttonStyle(.plain)
             .padding(.horizontal, DSSpacing.lg)
         case .loading, .hidden:
-            ProgressView()
-                .frame(maxWidth: .infinity, minHeight: DSLayout.discoverShelfCoverHeight)
+            EmptyView()
         }
     }
 

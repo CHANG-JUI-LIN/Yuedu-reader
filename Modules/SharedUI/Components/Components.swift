@@ -111,11 +111,22 @@ struct PageBackgroundView: View {
     var body: some View {
         ZStack {
             DSColor.groupedBackground
-            if subscriptionStore.hasAccess(.readerThemePacks),
-               let slice = gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme) {
+            if let slice = Self.slice(for: scope, colorScheme: colorScheme, settings: gs,
+                                      subscriptions: subscriptionStore) {
                 AppearancePageBackgroundLayerView(slice: slice)
             }
         }
+    }
+
+    /// The theme's picture this background draws over the page colour, if any. A view that
+    /// must stand aside for it (a detail page's cover wash) asks the same question.
+    @MainActor
+    static func slice(
+        for scope: AppearancePageBackgroundScope, colorScheme: ColorScheme,
+        settings: GlobalSettings, subscriptions: SubscriptionStore
+    ) -> AppearancePageBackgroundSlice? {
+        guard subscriptions.hasAccess(.readerThemePacks) else { return nil }
+        return settings.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme)
     }
 }
 

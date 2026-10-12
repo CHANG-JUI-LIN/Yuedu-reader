@@ -5,8 +5,11 @@ Two books on one server: "Navigation Swipe Fixture" (text) and "Navigation Manga
 Fixture" (image pages, opened in the fixed-page reader). The text book's genre names the
 source's second category, "Related" (one word: the detail page splits genres on spaces and
 drops long ones), which also lists "Navigation Related Fixture": the detail page's genre
-link and its 同題材 section lead there. "Navigation Audio Fixture" (an audiobook source) has the
-same genre and category, for the audiobook detail page's links.
+link and its 同題材 section lead there. The text book has a solid blue cover, for the detail
+page's cover wash. "Navigation Audio Fixture" (an audiobook source) has the
+same genre and category, for the audiobook detail page's links. "Navigation Bare Fixture" has
+nothing but a title, an author and one chapter — no cover, genre or description — the detail
+page's design baseline (Editorial Minimalism, 2026-10-12).
 
 The app must be installed on the selected, booted simulator. Stop the app before
 prepare/clean. Only records belonging to these fixture source UUIDs are changed.
@@ -23,12 +26,14 @@ import zlib
 SOURCE_ID = "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4"
 MANGA_SOURCE_ID = "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"
 AUDIO_SOURCE_ID = "8B0E6A52-3C1F-4D7A-9E25-6F4C2B1D9A73"
-SOURCE_IDS = {SOURCE_ID, MANGA_SOURCE_ID, AUDIO_SOURCE_ID}
+BARE_SOURCE_ID = "E3A1C0D2-7B54-4F0E-9A86-1D2C3B4A5F60"
+SOURCE_IDS = {SOURCE_ID, MANGA_SOURCE_ID, AUDIO_SOURCE_ID, BARE_SOURCE_ID}
 ROOT = Path("/tmp/yuedu-back-swipe-fixture")
 BASE = "http://localhost:18765"
 MANGA_BASE = BASE + "/manga"
 RELATED_BASE = BASE + "/related"
 AUDIO_BASE = BASE + "/audio"
+BARE_BASE = BASE + "/bare"
 RELATED_CATEGORY = "Related"
 # One colour per page. Chapter 1 has three pages and chapter 2 two, so the reader's
 # page indicator also tells the chapters apart.
@@ -80,11 +85,17 @@ def catalog_entry(base, title):
             f'<a href="{base}/book.html">Read</a><span class="author">Regression</span></div>')
 
 
-def write_book(directory, base, title, intro, chapters, kind=""):
+def write_book(directory, base, title, intro, chapters, kind="", cover=None):
+    """`cover`, an RGB colour, gives the book a solid cover (cover.png): the detail page's wash
+    is taken from it."""
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "catalog.html").write_text(catalog_entry(base, title))
+    image = ""
+    if cover:
+        (directory / "cover.png").write_bytes(png(120, 180, cover))
+        image = f'<img class="cover" src="{base}/cover.png">'
     (directory / "book.html").write_text(
-        f'<h1>{title}</h1><div class="author">Regression</div><div class="kind">{kind}</div>'
+        f'<h1>{title}</h1><div class="author">Regression</div><div class="kind">{kind}</div>{image}'
         f'<div class="intro">{intro}</div><a class="toc" href="{base}/toc.html">Contents</a>')
     (directory / "toc.html").write_text(''.join(
         f'<a class="chapter" href="{base}/chapter{i}.html">Chapter {i+1}</a>' for i in range(len(chapters))))
@@ -103,7 +114,8 @@ def source(source_id, name, base, category, extra_categories=(), **fields):
         "ruleSearch": book_list,
         "ruleExplore": book_list,
         "ruleBookInfo": {"name": "h1@text", "author": ".author@text", "kind": ".kind@text",
-                         "intro": ".intro@text", "tocUrl": ".toc@href"},
+                         "intro": ".intro@text", "tocUrl": ".toc@href",
+                         "coverUrl": ".cover@src"},
         "ruleToc": {"chapterList": "a.chapter", "chapterName": "text", "chapterUrl": "href"},
         "ruleContent": {"content": "#content@html"},
         **fields,
@@ -114,7 +126,7 @@ def prepare(simulator):
     write_book(ROOT, BASE, "Navigation Swipe Fixture", "Edge swipe regression", [''.join(
         f'<p>Chapter {i+1} paragraph {j}. Reserved edge navigation must return to the original detail. '
         'Regular page turning remains available inside the reading surface.</p>' for j in range(60)) for i in range(3)],
-        kind=RELATED_CATEGORY)
+        kind=RELATED_CATEGORY, cover=(58, 96, 160))
     write_book(ROOT / "related", RELATED_BASE, "Navigation Related Fixture", "Reached from a genre",
                ['<p>The related book.</p>'])
     (ROOT / "related.html").write_text(catalog_entry(BASE, "Navigation Swipe Fixture")
@@ -123,6 +135,7 @@ def prepare(simulator):
                ['<p>Track one.</p>'], kind=RELATED_CATEGORY)
     (ROOT / "audio" / "related.html").write_text(catalog_entry(AUDIO_BASE, "Navigation Audio Fixture")
                                                  + catalog_entry(RELATED_BASE, "Navigation Related Fixture"))
+    write_book(ROOT / "bare", BARE_BASE, "Navigation Bare Fixture", "", ['<p>The only chapter.</p>'])
     # MangaChapterParser reads the pages from the chapter's <img> tags.
     write_book(ROOT / "manga", MANGA_BASE, "Navigation Manga Fixture", "Image pages opened from a book detail", [''.join(
         f'<img src="{MANGA_BASE}/chapter{i}-page{j}.png">' for j in range(len(pages))) for i, pages in enumerate(MANGA_PAGES)])
@@ -138,6 +151,7 @@ def prepare(simulator):
         # bookSourceType 1 (audio) opens AudiobookDetailView.
         source(AUDIO_SOURCE_ID, "Navigation Audio Fixture", AUDIO_BASE, "Audio Test",
                extra_categories=[{"title": RELATED_CATEGORY, "url": AUDIO_BASE + "/related.html"}], bookSourceType=1),
+        source(BARE_SOURCE_ID, "Navigation Bare Fixture", BARE_BASE, "Bare Test"),
     ]
     update_records(support(simulator) / "book_sources.json", lambda r: r.get("id") not in SOURCE_IDS, sources)
     drop_cached_pages(simulator)

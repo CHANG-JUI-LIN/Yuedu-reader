@@ -59,6 +59,8 @@ struct OnlineBookView: View {
     @State private var alreadyInShelf = false
     /// The shelved copy's sidecar values, read once per copy for its description.
     @State private var copySidecar: [MetadataValue] = []
+    /// The chapter the shelf copy's reader left off in, for 「繼續閱讀　第 N 章」.
+    @State private var resumeChapterIndex: Int?
     @State private var temporaryReaderBookId: UUID? = nil
     @State private var detailInfo: OnlineBook? = nil
     @State private var tocRuntimeVariables: [String: String]? = nil
@@ -259,9 +261,7 @@ struct OnlineBookView: View {
                 secondary: shelfAction,
                 authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
                 sourceGestures: sourceCallBacks?.gestures,
-                links: linksGenres ? sourceLinks.links(for: tags) : [],
-                progress: shelvedCopy?.currentPosition,
-                facts: facts
+                links: linksGenres ? sourceLinks.links(for: tags) : []
             )
         } content: {
             if let intro = shown.intro {
@@ -406,6 +406,11 @@ struct OnlineBookView: View {
             if chapters.isEmpty { Task { await loadTOC() } }
         }
         .task(id: shelvedCopy?.id) { copySidecar = shelvedCopy.map(bookStore.copyIntroValues(of:)) ?? [] }
+        // Read again when the reader moves the copy on, so coming back shows the new chapter.
+        .task(id: shelvedCopy.map { "\($0.id)|\($0.currentPosition)" }) {
+            guard let id = shelvedCopy?.id else { resumeChapterIndex = nil; return }
+            resumeChapterIndex = await dependencies.readingPositionStore.load(for: id.uuidString)?.spineIndex
+        }
         .task(id: genreLoadKey) {
             guard let key = genreLoadKey else { return }
             await genres.load(key: key, source: source, tags: tags, book: currentBook)
@@ -465,6 +470,8 @@ struct OnlineBookView: View {
             systemImage: "book.fill",
             isBusy: openingReader,
             isEnabled: !chapters.isEmpty && !addingToShelf,
+            detail: openingReader ? nil : BookDetailResume.detail(chapterIndex: resumeChapterIndex,
+                                                                  progress: shelvedCopy?.currentPosition),
             action: { openReader() }
         )
     }
@@ -480,17 +487,6 @@ struct OnlineBookView: View {
             action: {
                 if alreadyInShelf { confirmsRemoval = true } else { addToShelfOnly() }
             }
-        )
-    }
-
-    /// 「N 章 · 來源」 under the actions, with 換源 beside it.
-    private var facts: BookDetailFacts {
-        let parts = (chapters.isEmpty ? [] : [String(format: localized("%d 章"), chapters.count)]) + [sourceName]
-        return BookDetailFacts(
-            text: parts.joined(separator: " · "),
-            actionTitle: localized("換源"),
-            action: { showSourcePicker = true },
-            accessibilityHint: localized("點兩下切換來源配置")
         )
     }
 

@@ -142,7 +142,8 @@ struct BookReaderView: View {
 
 /// Preparation happens before the format reader installs its toolbar. These
 /// actions stay visible even when the caller hides the navigation back button.
-private struct RemoteReaderOpeningView: View {
+/// `AozoraReaderEntry` shows it too, while a 青空文庫 work is imported.
+struct RemoteReaderOpeningView: View {
     let error: String?
     var onRetry: () -> Void
     var onClose: () -> Void

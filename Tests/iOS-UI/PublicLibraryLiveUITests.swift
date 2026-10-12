@@ -50,10 +50,8 @@ final class PublicLibraryLiveUITests: XCTestCase {
         XCTAssertTrue(read.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(read.isEnabled)
         let alreadyShelved = app.buttons["已加入書架"].firstMatch.exists
-        let alreadyOffline = app.buttons["已下載"].firstMatch.exists
         XCTAssertTrue(alreadyShelved || app.buttons["加入書架"].firstMatch.isEnabled)
-        XCTAssertTrue(alreadyOffline || app.buttons["下載"].firstMatch.isEnabled)
-        print("Existing state: shelved=\(alreadyShelved), offline=\(alreadyOffline)")
+        print("Existing state: shelved=\(alreadyShelved)")
         screenshot(app, "nonpro-detail")
         read.tap()
         // The hero also says Project Gutenberg. Wait for the actual book text,
@@ -75,9 +73,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
             add.tap()
         }
         XCTAssertTrue(app.buttons["已加入書架"].firstMatch.waitForExistence(timeout: 10))
-        if !alreadyOffline { app.buttons["下載"].firstMatch.tap() }
-        XCTAssertTrue(app.buttons["已下載"].firstMatch.waitForExistence(timeout: 120), app.debugDescription)
-        screenshot(app, "nonpro-shelved-and-downloaded")
+        screenshot(app, "nonpro-shelved")
     }
 
     @MainActor

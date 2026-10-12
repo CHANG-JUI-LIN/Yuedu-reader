@@ -3,6 +3,8 @@ import SwiftUI
 /// What 作品詳情 pushes. One item, so the page has one destination (iOS 17 guardrail 12).
 private enum WorkDetailPush: Hashable {
     case reader(UUID)
+    /// A 青空文庫 work not on the shelf yet: the reader imports it under its own 正在開啟書籍.
+    case aozoraReader(AozoraWork)
     /// 編輯遠端資料, for the version shown.
     case editor
     /// A public library's author page, from the author's name or 作者其他作品's 查看全部.
@@ -78,9 +80,6 @@ struct WorkDetailView: View {
     @State private var gutenbergAuthors: [SourceItemKey: [GutenbergAuthor]] = [:]
     /// The format picked per version; absent, the preferred one.
     @State private var formatIDs: [SourceItemKey: String] = [:]
-    /// Whether the shown copy's offline file exists, checked when the copy or its file changes
-    /// rather than on every body evaluation.
-    @State private var offlineFileExists = false
     @State private var writeCapabilities: RemoteLibraryWriteCapabilities?
 
     /// Bumped when a book-source version's page takes its book off the shelf, so the versions
@@ -115,9 +114,6 @@ struct WorkDetailView: View {
             }
             .task(id: selected?.nodeKey) { await prepare(selected) }
             .task(id: shownCopy?.id) { copySidecar = shownCopy.map(store.copyIntroValues(of:)) ?? [] }
-            .task(id: offlineProbe) {
-                offlineFileExists = libraryCopy.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false
-            }
             .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: store) }
             .onDisappear { actions.cancelForDisappearance() }
     }
@@ -156,9 +152,7 @@ struct WorkDetailView: View {
             BookDetailHero(artworkShape: route.record.contentKind == .audio ? .square : .book,
                            cover: cover, title: route.summary.title, author: author,
                            meta: "", primary: primaryAction, secondary: secondaryAction,
-                           authorActions: authorLinks,
-                           progress: readingCopy?.currentPosition,
-                           facts: selected.map { BookDetailFacts(text: sourceName(of: $0)) })
+                           authorActions: authorLinks)
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
                 status
@@ -195,6 +189,12 @@ struct WorkDetailView: View {
                 // its reader. Never the shelf's UIKit card driver: closing onto a pushed page,
                 // it left iOS 17's navigation bar off screen.
                 BookReaderView(bookId: id).environmentObject(store)
+                    .environment(\.readerNavigator, nil)
+                    .environment(\.readerUsesParentNavigationStack, true)
+                    .navigationBarBackButtonHidden(true)
+                    .reservingNavigationBackSwipe()
+            case .aozoraReader(let work):
+                AozoraReaderEntry(work: work).environmentObject(store)
                     .environment(\.readerNavigator, nil)
                     .environment(\.readerUsesParentNavigationStack, true)
                     .navigationBarBackButtonHidden(true)
@@ -302,12 +302,19 @@ struct WorkDetailView: View {
             return BookDetailAction(title: localized(libraryCopy?.lastOpenedDate == nil ? "開始閱讀" : "繼續閱讀"),
                                     systemImage: "book",
                                     isBusy: actions.action == .read || gutenbergLoads[version.nodeKey]?.isLoading == true,
-                                    isEnabled: canActOnLibraryItem, action: { begin(.read) })
+                                    isEnabled: canActOnLibraryItem, detail: resumeDetail,
+                                    action: { begin(.read) })
         case .copy, .aozora:
             return BookDetailAction(title: localized(hasBeenOpened(version) ? "繼續閱讀" : "開始閱讀"), systemImage: "book",
-                                    isBusy: actions.action == .read, isEnabled: actions.action == nil,
-                                    action: { read(version) })
+                                    isEnabled: actions.action == nil,
+                                    detail: resumeDetail, action: { read(version) })
         }
+    }
+
+    /// How far the copy 繼續閱讀 opens is read. Every version this page draws itself is a
+    /// file (EPUB, TXT, PDF) whose spine items are not its chapters, so it is a share.
+    private var resumeDetail: String? {
+        BookDetailResume.detail(chapterIndex: nil, progress: readingCopy?.currentPosition)
     }
 
     /// 加入書架 for the version shown; 已加入書架 once its copy is on the shelf.
@@ -416,43 +423,36 @@ struct WorkDetailView: View {
         [sourceName(of: version), status(of: version)].compactMap { $0 }.joined(separator: " · ")
     }
 
-    /// 下載供離線閱讀, 編輯遠端資料 and the library's own page: what a library item offers
-    /// besides reading and shelving.
+    /// What a library item offers besides reading and shelving: 編輯遠端資料, and the library's
+    /// record of where the reader is. 下載供離線閱讀, the library's own web page and the note on
+    /// what reading and shelving do were taken off on 2026-10-12 (maintainer: this page is where
+    /// the book is read, not the library's control panel).
+    /// Nothing at all when the item offers none of them, so no empty gap is left in the page.
+    @ViewBuilder
     private func libraryActions(_ version: WorkDetailRoute, item: RemoteLibraryItem) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if selectedFormat(of: version)?.isSupported != true {
-                Label(localized("此格式暫不支援閱讀"), systemImage: "doc.badge.ellipsis")
-                    .font(DSFont.body)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .frame(minHeight: DSLayout.minimumTapTarget)
-            }
-            let isOffline = libraryCopy != nil && offlineFileExists
-            WorkDetailActionRow(title: localized(isOffline ? "已下載" : "下載供離線閱讀"),
-                                systemImage: isOffline ? "checkmark.circle" : "arrow.down.circle") { begin(.download) }
-                .disabled(!canActOnLibraryItem || isOffline)
-            if let capabilities = writeCapabilities, capabilities.canEditMetadata || capabilities.canMove {
-                Divider()
-                WorkDetailActionRow(title: localized("編輯遠端資料"), systemImage: "pencil") { pushed = .editor }
-                    .disabled(actions.action != nil)
-            }
-            if let url = item.alternateURL {
-                Divider()
-                Link(destination: url) {
-                    Label(localized("在書庫網站查看"), systemImage: "safari")
+        let unsupported = selectedFormat(of: version)?.isSupported != true
+        let editable = writeCapabilities.map { $0.canEditMetadata || $0.canMove } ?? false
+        let syncedCopy: ReadingBook? = if connections.connection(id: item.connectionID)?.syncProgress == true,
+                                          selectedFormat(of: version)?.fileExtension == "epub" { libraryCopy } else { nil }
+        if unsupported || editable || syncedCopy != nil {
+            VStack(alignment: .leading, spacing: 0) {
+                if unsupported {
+                    Label(localized("此格式暫不支援閱讀"), systemImage: "doc.badge.ellipsis")
                         .font(DSFont.body)
-                        .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget, alignment: .leading)
+                        .foregroundStyle(DSColor.textSecondary)
+                        .frame(minHeight: DSLayout.minimumTapTarget)
+                }
+                if editable {
+                    WorkDetailActionRow(title: localized("編輯遠端資料"), systemImage: "pencil") { pushed = .editor }
+                        .disabled(actions.action != nil)
+                }
+                if let book = syncedCopy {
+                    CalibreProgressStatusView(bookID: book.id, service: dependencies.calibreProgress)
+                        .padding(.top, editable || unsupported ? DSSpacing.md : 0)
                 }
             }
-            Text(localized("閱讀不會自動加入書架；加入書架不會下載整本書。"))
-                .dsSectionFooter()
-                .padding(.top, DSSpacing.xs)
-            if let connection = connections.connection(id: item.connectionID), connection.syncProgress,
-               let book = libraryCopy, selectedFormat(of: version)?.fileExtension == "epub" {
-                CalibreProgressStatusView(bookID: book.id, service: dependencies.calibreProgress)
-                    .padding(.top, DSSpacing.md)
-            }
+            .padding(.horizontal, DSSpacing.lg)
         }
-        .padding(.horizontal, DSSpacing.lg)
     }
 
     /// The description of the version shown (decision 33): a shelf copy's, by `CopyMetadata`
@@ -488,9 +488,6 @@ struct WorkDetailView: View {
             if !work.subtitle.isEmpty { Text(work.subtitle).font(DSFont.body).foregroundStyle(DSColor.textPrimary) }
             if !work.source.isEmpty { ThemedLabeledContent(localized("底本"), value: work.source) }
             if !work.sourcePublisher.isEmpty { ThemedLabeledContent(localized("出版社"), value: work.sourcePublisher) }
-            if let url = URL(string: work.card), url.scheme == "https", url.host == "www.aozora.gr.jp" {
-                Link(localized("在青空文庫網站查看"), destination: url)
-            }
         }
         .padding(.horizontal, DSSpacing.lg)
     }
@@ -571,10 +568,6 @@ struct WorkDetailView: View {
         return dependencies.remoteLibrary.book(for: item, format: format, store: store)
     }
 
-    private var offlineProbe: String {
-        "\(libraryCopy?.id.uuidString ?? "")|\(libraryCopy?.remoteSource?.offlineFilename ?? "")"
-    }
-
     private var canActOnLibraryItem: Bool {
         guard let version = selected else { return false }
         return selectedFormat(of: version)?.isSupported == true && actions.action == nil
@@ -637,12 +630,7 @@ struct WorkDetailView: View {
                 openCopy(book.id)
                 return
             }
-            actions.begin(.read) { [dependencies, store] in
-                let book = try await dependencies.aozoraLibrary.addToShelf(work: work, store: store)
-                try Task.checkCancellation()
-                openCopy(book.id)
-                return nil
-            }
+            pushed = .aozoraReader(work)
         case .opdsEntry, .webDAVFile, .gutenberg:
             begin(.read)
         case .onlineBook:
@@ -667,7 +655,7 @@ struct WorkDetailView: View {
         pushed = .reader(id)
     }
 
-    /// Reads, shelves or downloads the shown library item in the shown format.
+    /// Reads or shelves the shown library item in the shown format.
     private func begin(_ action: RemoteLibraryActionModel.Action) {
         guard canActOnLibraryItem, let version = selected, let item = libraryItem(of: version),
               let format = selectedFormat(of: version) else { return }
@@ -681,7 +669,7 @@ private extension SourceItemKey {
     var pickerID: String { "\(instance.type.rawValue)|\(instance.id)|\(item)" }
 }
 
-/// One of a library item's further actions under the information strip.
+/// One of a library item's further actions on its 作品詳情 (編輯遠端資料).
 private struct WorkDetailActionRow: View {
     let title: String
     let systemImage: String

@@ -84,9 +84,6 @@ struct RemoteLibraryBookDetailView: View {
     @State private var selectedFormatID: String
     @StateObject private var actions = RemoteLibraryActionModel()
     @State private var introExpanded = false
-    /// Whether the copy's offline file exists, checked when the copy or its file changes
-    /// rather than on every body evaluation (unified library 2c).
-    @State private var offlineFileExists = false
     @Environment(\.publicLibrarySheet) private var sheet
 
     init(item: RemoteLibraryItem, authors: [GutenbergAuthor] = [],
@@ -105,8 +102,6 @@ struct RemoteLibraryBookDetailView: View {
     }
     /// The copy comes from `CopyLookup`, so whether it is on the shelf is its own field.
     private var isOnShelf: Bool { book?.isInBookshelf ?? false }
-    private var isOffline: Bool { book != nil && offlineFileExists }
-    private var offlineProbe: String { "\(book?.id.uuidString ?? "")|\(book?.remoteSource?.offlineFilename ?? "")" }
     private var action: RemoteLibraryActionModel.Action? { actions.action }
     private var message: String? { actions.message }
     private var actionFailed: Bool { actions.failed }
@@ -115,15 +110,14 @@ struct RemoteLibraryBookDetailView: View {
     var body: some View {
         storefrontBody
             .onChange(of: selectedFormatID) { _, _ in actions.clearMessage() }
-            .task(id: offlineProbe) {
-                offlineFileExists = book.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false
-            }
             .onDisappear { actions.cancelForDisappearance() }
     }
 
     private var readAction: BookDetailAction {
         BookDetailAction(title: localized(book?.lastOpenedDate == nil ? "開始閱讀" : "繼續閱讀"), systemImage: "book",
-                         isBusy: action == .read, isEnabled: canAct, action: { begin(.read) })
+                         isBusy: action == .read, isEnabled: canAct,
+                         detail: BookDetailResume.detail(chapterIndex: nil, progress: book?.currentPosition),
+                         action: { begin(.read) })
     }
 
     private var storefrontBody: some View {
@@ -132,36 +126,29 @@ struct RemoteLibraryBookDetailView: View {
                 cover: PublicLibraryCoverArtwork(title: artworkTitle ?? item.title, author: artworkAuthor ?? item.author,
                                                  coverURL: artworkCoverURL),
                 title: item.title, author: item.author ?? "", meta: "",
-                primary: readAction,
-                secondary: BookDetailAction(title: localized(isOffline ? "已下載" : "下載"),
-                    systemImage: isOffline ? "checkmark" : "arrow.down",
-                    isBusy: action == .download, isEnabled: canAct && !isOffline, action: { begin(.download) }),
+                // 加入書架 is the card header's; 下載 was taken off on 2026-10-12 with the rest of
+                // the library's own actions (maintainer: the page is where the book is read).
+                primary: readAction, secondary: nil,
                 authorActions: authors.map { author in
                     BookDetailAuthorAction(id: author.id, name: author.name, action: { sheet?.openAuthor(.gutenberg(author)) })
-                }, artworkHeight: sheet?.artworkHeight,
-                progress: book?.currentPosition,
-                facts: BookDetailFacts(text: localized("Project Gutenberg")))
+                }, artworkHeight: sheet?.artworkHeight)
         } content: {
-            Section {
-                if let action {
-                    ProgressView(action.progressTitle)
-                    Button(localized("取消"), role: .cancel) { cancelAction() }
+            if action != nil || message != nil {
+                VStack(spacing: DSSpacing.sm) {
+                    if let action {
+                        ProgressView(action.progressTitle)
+                        Button(localized("取消"), role: .cancel) { cancelAction() }
+                    }
+                    if let message {
+                        Text(message).font(DSFont.subheadline)
+                            .foregroundStyle(actionFailed ? DSColor.destructive : DSColor.textSecondary)
+                    }
                 }
-                if let message {
-                    Text(message).font(DSFont.subheadline)
-                        .foregroundStyle(actionFailed ? DSColor.destructive : DSColor.textSecondary)
-                }
-            } footer: {
-                Text(localized("閱讀不會自動加入書架；加入書架不會下載整本書。"))
-                    .dsSectionFooter().padding(.horizontal, DSSpacing.lg)
+                .frame(maxWidth: .infinity)
             }
             if let summary = item.summary, !summary.isEmpty {
                 // A library's description, not a book source's: Legado's formats are not read.
                 BookDetailIntroSection(text: summary, isExpanded: $introExpanded, readsSourceFormats: false)
-            }
-            if let url = item.alternateURL {
-                Link(localized("在書庫網站查看"), destination: url)
-                    .font(DSFont.subheadline).padding(.horizontal, DSSpacing.lg)
             }
             BookDetailInfoSection(items: infoItems)
         } actions: {
@@ -180,7 +167,8 @@ struct RemoteLibraryBookDetailView: View {
     }
 
     private var infoItems: [BookDetailInfoItem] {
-        var result = [BookDetailInfoItem(id: "format", label: localized("格式"), value: selectedFormat?.displayName ?? "")]
+        var result = [BookDetailInfoItem(id: "source", label: localized("來源"), value: localized("Project Gutenberg")),
+                      BookDetailInfoItem(id: "format", label: localized("格式"), value: selectedFormat?.displayName ?? "")]
         if let size = selectedFormat?.size, size > 0 {
             result.append(BookDetailInfoItem(id: "size", label: localized("檔案大小"),
                 value: ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))

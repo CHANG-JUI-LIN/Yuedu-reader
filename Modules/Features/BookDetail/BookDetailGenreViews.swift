@@ -110,10 +110,13 @@ struct BookDetailRelatedSection: View {
         }
     }
 
+    /// Only once the books are read (or their read failed, to retry): a header over a
+    /// spinner that could then vanish would move the page under the reader.
     private var reference: ExploreCategoryReference? {
         switch related {
-        case .hidden: return nil
-        case .loading(let reference), .loaded(let reference, _), .failed(let reference, _): return reference
+        case .hidden, .loading: return nil
+        case .loaded(let reference, let section): return section.books.isEmpty ? nil : reference
+        case .failed(let reference, _): return reference
         }
     }
 
@@ -132,8 +135,7 @@ struct BookDetailRelatedSection: View {
             .buttonStyle(.plain)
             .padding(.horizontal, DSSpacing.lg)
         case .loading, .hidden:
-            ProgressView()
-                .frame(maxWidth: .infinity, minHeight: DSLayout.discoverShelfCoverHeight)
+            EmptyView()
         }
     }
 
