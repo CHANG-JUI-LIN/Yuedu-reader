@@ -3738,3 +3738,8 @@
 
 /* 編輯資訊 · 簡介 footer */
 "留空時顯示書本或來源提供的簡介。" = "Leave blank to show the description from the book or its source.";
+
+/* 作品詳情 · 其他貢獻者（作品資訊的角色列） */
+"插畫" = "Illustrator";
+"評註" = "Commentator";
+"貢獻者" = "Contributor";

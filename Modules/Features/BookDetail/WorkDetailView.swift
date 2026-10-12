@@ -226,14 +226,34 @@ struct WorkDetailView: View {
         switch selected.opening {
         case .aozora(let work):
             guard let index = aozora.catalog else { return [] }
-            return work.credits.compactMap { credit in
+            return work.authorCredits.compactMap { credit in
                 guard let person = index.personsByID[credit.person] else { return nil }
                 return BookDetailAuthorAction(id: person.id + credit.role, name: person.name,
                                               action: { pushed = .author(.aozora(person, index)) })
             }
         case .gutenberg:
-            return (gutenbergAuthors[selected.nodeKey] ?? []).map { author in
-                BookDetailAuthorAction(id: author.id, name: author.name, action: { pushed = .author(.gutenberg(author)) })
+            return (gutenbergAuthors[selected.nodeKey] ?? []).mainAuthors.map { author in
+                BookDetailAuthorAction(id: author.id, name: author.displayName, action: { pushed = .author(.gutenberg(author)) })
+            }
+        case .copy, .opdsEntry, .webDAVFile, .onlineBook:
+            return []
+        }
+    }
+
+    /// Those the hero leaves out, each a row of 作品資訊 by what they did, opening their page.
+    private func contributorItems(_ version: WorkDetailRoute) -> [BookDetailInfoItem] {
+        switch version.opening {
+        case .aozora(let work):
+            guard let index = aozora.catalog else { return [] }
+            return work.otherCredits.enumerated().compactMap { offset, credit in
+                guard let person = index.personsByID[credit.person] else { return nil }
+                return BookDetailInfoItem(id: "credit\(offset)", label: localized(credit.role), value: person.name,
+                                          action: { pushed = .author(.aozora(person, index)) })
+            }
+        case .gutenberg:
+            return (gutenbergAuthors[version.nodeKey] ?? []).contributors.map { author in
+                BookDetailInfoItem(id: "credit.\(author.id)", label: localized(author.roleKey), value: author.displayName,
+                                   action: { pushed = .author(.gutenberg(author)) })
             }
         case .copy, .opdsEntry, .webDAVFile, .onlineBook:
             return []
@@ -249,7 +269,7 @@ struct WorkDetailView: View {
         case .aozora(let work):
             return aozora.catalog.map { .aozora(work, $0) }
         case .gutenberg(let book):
-            return gutenbergAuthors[selected.nodeKey]?.first.map { .gutenberg($0, excluding: book) }
+            return gutenbergAuthors[selected.nodeKey]?.mainAuthors.first.map { .gutenberg($0, excluding: book) }
         case .copy, .opdsEntry, .webDAVFile:
             return .shelf(versions: versions)
         case .onlineBook:
@@ -381,7 +401,7 @@ struct WorkDetailView: View {
 
     private var infoItems: [BookDetailInfoItem] {
         guard let version = selected else { return [] }
-        var result = [sourceItem(version)]
+        var result = [sourceItem(version)] + contributorItems(version)
         if let item = libraryItem(of: version), let format = selectedFormat(of: version) {
             result.append(BookDetailInfoItem(
                 id: "format", label: localized("格式"), value: formatLabel(format),
@@ -484,13 +504,6 @@ struct WorkDetailView: View {
     private func aozoraDetails(_ work: AozoraWork) -> some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
             if !work.yomi.isEmpty { Text(work.yomi).font(DSFont.subheadline).foregroundStyle(DSColor.textSecondary) }
-            if let index = aozora.catalog {
-                ForEach(Array(work.credits.enumerated()), id: \.offset) { _, credit in
-                    if let person = index.personsByID[credit.person] {
-                        ThemedLabeledContent(localized(credit.role), value: person.name)
-                    }
-                }
-            }
             if !work.subtitle.isEmpty { Text(work.subtitle).font(DSFont.body).foregroundStyle(DSColor.textPrimary) }
             if !work.source.isEmpty { ThemedLabeledContent(localized("底本"), value: work.source) }
             if !work.sourcePublisher.isEmpty { ThemedLabeledContent(localized("出版社"), value: work.sourcePublisher) }

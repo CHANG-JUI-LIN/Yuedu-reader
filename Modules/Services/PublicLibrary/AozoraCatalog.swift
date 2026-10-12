@@ -53,6 +53,21 @@ struct AozoraWork: Codable, Hashable, Identifiable, Sendable {
     var sourcePublisher: String
 }
 
+extension AozoraWork {
+    /// Who wrote the work, as 作品詳情's hero names them: its 著者, or its first credit when it
+    /// names none.
+    var authorCredits: [Credit] {
+        let writers = credits.filter { $0.role == "著者" }
+        return writers.isEmpty ? Array(credits.prefix(1)) : writers
+    }
+
+    /// Everyone else the work credits (翻訳者, 編者, 校訂者…), in 作品詳情's 作品資訊.
+    var otherCredits: [Credit] {
+        let authors = authorCredits
+        return credits.filter { !authors.contains($0) }
+    }
+}
+
 struct AozoraIndexGroup: Identifiable, Sendable {
     let id: String
     let titleKey: String
