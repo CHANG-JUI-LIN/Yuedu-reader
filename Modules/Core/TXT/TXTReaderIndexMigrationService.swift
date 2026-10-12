@@ -133,6 +133,35 @@ enum TXTReaderIndexMigrationService {
         return try await commit(journal, preparation: preparation, store: store, positions: positions, url: journalURL)
     }
 
+    /// The index a page outside the reader may list (作品詳情's 目錄): the published one, or
+    /// the first one of a book neither read nor annotated, published as `complete` publishes
+    /// it, so a position saved at one of its chapters is one the reader can open. nil when
+    /// publishing needs the reader: a journal to replay, or locations to map onto a new index.
+    static func indexForListing(
+        _ preparation: TXTReaderPreparation,
+        store: BookStore,
+        positions: any ReadingPositionStore
+    ) async throws -> [TXTMappedChapterIndex]? {
+        let journalURL = StorageLocations.readingPosition
+            .appendingPathComponent("\(preparation.bookId.uuidString).txt-reindex.json")
+        guard !FileManager.default.fileExists(atPath: journalURL.path) else { return nil }
+        if let current = preparation.cachedChapterIndexes { return current }
+        guard preparation.previousChapterIndexes == nil, let book = store.readingBook(id: preparation.bookId),
+              book.bookmarks.isEmpty, positions.loadSync(for: preparation.bookId.uuidString) == nil else { return nil }
+        let indexes = await Task.detached(priority: .userInitiated) {
+            TXTReaderPreparationService.buildChapterIndexes(for: preparation)
+        }.value
+        // A reader opened meanwhile owns the publication from here.
+        guard !FileManager.default.fileExists(atPath: journalURL.path),
+              store.readingBook(id: preparation.bookId)?.bookmarks.isEmpty == true,
+              positions.loadSync(for: preparation.bookId.uuidString) == nil else { return nil }
+        let journal = Journal(version: 2, bookId: preparation.bookId, fingerprint: preparation.fingerprint,
+                              fileSize: preparation.fileSize, encoding: preparation.encoding.rawValue, indexes: indexes,
+                              originalPosition: nil, position: nil, originalBookmarks: [], bookmarks: [])
+        try JSONEncoder().encode(journal).write(to: journalURL, options: .atomic)
+        return try await commit(journal, preparation: preparation, store: store, positions: positions, url: journalURL).indexes
+    }
+
     private static func commit(_ journal: Journal, preparation: TXTReaderPreparation, store: BookStore,
                                positions: any ReadingPositionStore, url: URL) async throws -> Result {
         let current = positions.loadSync(for: journal.bookId.uuidString)

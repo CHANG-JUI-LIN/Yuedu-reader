@@ -269,6 +269,64 @@ final class PublicLibraryLiveUITests: XCTestCase {
         screenshot(app, "aozora-detail-from-shelf")
     }
 
+    /// 2026-10-13: 作品詳情 reads a work's 目錄 as it opens, as a book source's page lists its
+    /// chapters: the first few under 簡介, all of them under 查看全部, each opening the reader there.
+    @MainActor
+    func testAozoraWorkListsItsChapters() throws {
+        guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+                               "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
+                               "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+        app.launch()
+        let tab = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 30))
+        tab.tap()
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        menu.tap()
+        let aozora = app.buttons["青空文庫"].firstMatch
+        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
+        aozora.tap()
+        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
+        work.tap()
+
+        let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
+        let offShelf = app.buttons["加入書架"].firstMatch.waitForExistence(timeout: 10)
+        let first = app.buttons["detail.toc.0"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 60), "目錄 is read as the page opens\n\(app.debugDescription)")
+        for _ in 0..<4 where !first.isHittable { app.swipeUp() }
+        XCTAssertTrue(first.isHittable, app.debugDescription)
+        screenshot(app, "aozora-detail-toc")
+        // Read ahead of reading, the copy is not one that was read.
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch.exists)
+        if offShelf { XCTAssertTrue(app.buttons["加入書架"].firstMatch.exists, "making the copy did not shelve it") }
+
+        let all = app.buttons["查看全部"].firstMatch
+        if all.exists, all.isHittable {
+            all.tap()
+            XCTAssertTrue(app.navigationBars["目錄"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+            screenshot(app, "aozora-toc-sheet")
+            app.navigationBars["目錄"].buttons["關閉"].firstMatch.tap()
+            XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
+        }
+
+        let chapter = first.label
+        first.tap()
+        XCTAssertTrue(app.otherElements["頁尾"].firstMatch.waitForExistence(timeout: 90), "\(chapter)\n\(app.debugDescription)")
+        screenshot(app, "aozora-reader-at-chapter")
+        let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        if offShelf {
+            let prompt = app.alerts.firstMatch
+            XCTAssertTrue(prompt.waitForExistence(timeout: 10), "the copy read is asked about\n\(app.debugDescription)")
+            prompt.buttons["不加入"].tap()
+        }
+        XCTAssertTrue(first.waitForExistence(timeout: 15), "back on 作品詳情 with its 目錄\n\(app.debugDescription)")
+    }
+
     @MainActor
     private func readAndSwipeBack(_ app: XCUIApplication) {
         let read = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch
