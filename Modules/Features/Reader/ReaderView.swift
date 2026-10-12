@@ -220,8 +220,8 @@ struct ReaderView: View {
     @State var aiGatherTask: Task<Void, Never>?
     @State var aiCitationError: String?
     @State var showDownloadOptions = false
-    @State var showOnlineBookDetail = false
-    @State var onlineBookDetailSnapshot: OnlineBook?
+    @State var showWorkDetail = false
+    @State var workDetailSnapshot: WorkDetailRoute?
     @State var pendingDetailChapterIndex: Int?
     /// 現代 interface: the card hanging off the cover thumbnail in the top bar.
     @State var showModernBookCard = false
@@ -551,10 +551,6 @@ struct ReaderView: View {
 
     // ── Derived Properties ──
     var book: ReadingBook? { store.readingBook(id: bookId) }
-
-    var onlineBookDetail: OnlineBook? {
-        book.flatMap(OnlineBook.init(shelfCopy:))
-    }
 
     var isEPUB: Bool {
         book?.resolvedPipelineKind == .epub
@@ -2567,11 +2563,11 @@ struct ReaderView: View {
         // Activating an inner SwiftUI destination there previously reconciled
         // the reader off the shelf stack. SwiftUI-owned readers use this route.
         .navigationDestination(isPresented: Binding(
-            get: { readerNavigator == nil && showOnlineBookDetail },
-            set: { showOnlineBookDetail = $0 }
+            get: { readerNavigator == nil && showWorkDetail },
+            set: { showWorkDetail = $0 }
         )) {
-            if let detail = onlineBookDetailSnapshot {
-                onlineBookDetailDestination(detail)
+            if let route = workDetailSnapshot {
+                workDetailDestination(route)
             }
         }
         .sheet(isPresented: $showTOC) {

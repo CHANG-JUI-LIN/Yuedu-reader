@@ -59,7 +59,7 @@ struct ReaderModernBookCard: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(author.isEmpty ? bookTitle : "\(bookTitle), \(author)")
-            .accessibilityHint(localized("書籍詳情"))
+            .accessibilityHint(localized("作品詳情"))
         } else {
             identityContent
                 .accessibilityElement(children: .combine)

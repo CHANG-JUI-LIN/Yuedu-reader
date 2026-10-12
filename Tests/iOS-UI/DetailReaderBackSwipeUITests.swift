@@ -809,6 +809,94 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(cell.waitForNonExistence(timeout: 10), "The book leaves the shelf.\n\(app.debugDescription)")
     }
 
+    /// The classic reader's 選單 → 作品詳情 (5f-4b, decision 32), which shows the book being read.
+    @MainActor
+    private func openWorkDetailFromReader(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let menu = app.buttons["Menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 5), app.debugDescription)
+        menu.tap()
+        let work = app.buttons["Work Details"].firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["Book Detail"].exists, "The reader's detail is 作品詳情.\n\(app.debugDescription)")
+        work.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["detail.info.chapters"].firstMatch.waitForExistence(timeout: 15),
+                      "作品詳情 shows the source's page of the book being read.\n\(app.debugDescription)")
+    }
+
+    /// 作品詳情 from the reader returns to that same reader: 繼續閱讀 goes back to it, and the
+    /// reader's own back then leaves it, with no second reader under it. Both ways a reader opens:
+    /// the shelf's card coordinator (a UIKit-hosted detail) and 探索's 作品詳情 (SwiftUI's stack).
+    @MainActor
+    func testReaderOpensWorkDetailAndReturnsToIt() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(explore, settings)", "-yd_appearance_reader_interface", "classic",
+                               "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+        app.launch()
+        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
+        let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read Now", "Continue Reading"])).firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
+        let add = app.buttons["Bookmarked"]
+        if add.exists {
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
+            XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
+            add.tap()
+            XCTAssertTrue(app.buttons["Remove from Library"].waitForExistence(timeout: 10), app.debugDescription)
+        }
+        let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
+        let edgeBack = {
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        }
+
+        // 探索 → 作品詳情 → the reader → 作品詳情 → 繼續閱讀 → the same reader → back → 探索's 作品詳情.
+        read.tap()
+        XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
+        openWorkDetailFromReader(app)
+        attachScreenshot(app, named: "Work detail from the reader - explore")
+        let resume = app.buttons["Continue Reading"].firstMatch
+        XCTAssertTrue(resume.waitForExistence(timeout: 10), app.debugDescription)
+        resume.tap()
+        XCTAssertTrue(content.waitForExistence(timeout: 15), "繼續閱讀 returns to the reader.\n\(app.debugDescription)")
+        edgeBack()
+        XCTAssertTrue(content.waitForNonExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(read.waitForExistence(timeout: 10), "Back from the reader is 探索's 作品詳情.\n\(app.debugDescription)")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["explore.scopeMenu"].firstMatch.waitForExistence(timeout: 10),
+                      "One 作品詳情 under the reader, then the home.\n\(app.debugDescription)")
+
+        // The shelf: its card coordinator opens the reader, whose 作品詳情 is hosted by UIKit.
+        XCUIDevice.shared.press(.home)
+        let left = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.state == .runningBackground || app.state == .runningBackgroundSuspended
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed)
+        app.terminate()
+        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(bookshelf, settings)", "-bookLayoutIsGrid", "NO",
+                               "-yd_appearance_reader_interface", "classic", "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+        app.launch()
+        let cell = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Navigation Swipe Fixture，")).firstMatch
+        XCTAssertTrue(cell.waitForExistence(timeout: 15), app.debugDescription)
+        cell.tap()
+        XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
+        openWorkDetailFromReader(app)
+        attachScreenshot(app, named: "Work detail from the reader - shelf")
+        XCTAssertTrue(resume.waitForExistence(timeout: 10), app.debugDescription)
+        resume.tap()
+        XCTAssertTrue(content.waitForExistence(timeout: 15), "繼續閱讀 returns to the reader.\n\(app.debugDescription)")
+        // The reader comes back with its controls as they were left: up.
+        let back = app.buttons["reader_back_button"].firstMatch
+        if !back.waitForExistence(timeout: 2) { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        back.tap()
+        XCTAssertTrue(cell.waitForExistence(timeout: 10), "Back from the reader is the shelf.\n\(app.debugDescription)")
+        XCTAssertTrue(app.tabBars.buttons["Library"].firstMatch.isHittable, app.debugDescription)
+    }
+
     @MainActor
     func testShelfListExposesOneBookButtonAndOpensReader() throws {
         continueAfterFailure = false

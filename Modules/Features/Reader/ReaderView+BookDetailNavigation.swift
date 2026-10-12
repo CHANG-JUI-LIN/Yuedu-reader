@@ -1,27 +1,41 @@
 import SwiftUI
 
 extension ReaderView {
-    func openOnlineBookDetail() {
-        // Freeze source-controlled data at the navigation boundary. In particular,
-        // do not re-resolve a pushed detail from a changing source/search result.
-        guard let detail = onlineBookDetail else { return }
+    /// 作品詳情 for the book being read (unified library 5f-4b, decision 32): every book has
+    /// it, local ones included, and it shows only this copy.
+    func openWorkDetail() {
+        // Freeze the route at the navigation boundary: the page never re-resolves it from
+        // the reader's changing state.
+        guard let book, let route = ShelfProvider(store: store).items([book]).first.flatMap(WorkDetailRoute.init) else {
+            AppLogger.info("⟐ workDetail no route bookID=\(bookId)")
+            return
+        }
         if let navigator = readerNavigator {
             navigator.showDetail(ReaderDetailHostingController(
-                content: AnyView(onlineBookDetailDestination(detail))
+                content: AnyView(workDetailDestination(route))
             ))
         } else {
             // SwiftUI-pushed readers use their parent stack; modal readers use
             // their own stack. Both routes remain owned by SwiftUI.
-            onlineBookDetailSnapshot = detail
-            showOnlineBookDetail = true
+            workDetailSnapshot = route
+            showWorkDetail = true
         }
     }
 
-    func onlineBookDetailDestination(_ detail: OnlineBook) -> some View {
-        OnlineBookView(
-            book: detail,
-            sourceSwitchBookId: bookId,
-            onRemoveFromShelf: {
+    func workDetailDestination(_ route: WorkDetailRoute) -> some View {
+        WorkDetailView(route: route, readerContext: WorkDetailReaderContext(
+            bookId: bookId,
+            continueReading: { chapterIndex in
+                if let navigator = readerNavigator {
+                    navigator.returnFromDetail {
+                        if let chapterIndex { jumpToChapter(chapterIndex) }
+                    }
+                } else {
+                    pendingDetailChapterIndex = chapterIndex
+                    showWorkDetail = false
+                }
+            },
+            removedFromShelf: {
                 if let navigator = readerNavigator {
                     // Close the detail first; only then run the reader's book
                     // close animation and release its presentation identity.
@@ -29,25 +43,14 @@ extension ReaderView {
                 } else {
                     dismissReaderPresentation()
                 }
-            },
-            onContinueReading: { chapterIndex in
-                if let navigator = readerNavigator {
-                    navigator.returnFromDetail {
-                        if let chapterIndex { jumpToChapter(chapterIndex) }
-                    }
-                } else {
-                    pendingDetailChapterIndex = chapterIndex
-                    showOnlineBookDetail = false
-                }
             }
-        )
+        ))
         .environmentObject(store)
         .environment(\.appDependencies, dependencies)
         .environment(\.readerNavigator, readerNavigator)
         // Above 書架's reader the detail gets its own hosting controller, which starts a
         // new environment; without this it could hide only 書架's tab bar.
         .environment(\.rootTabBarVisibility, rootTabBarVisibility)
-        .navigationTitle(localized("書籍詳情"))
         .toolbarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(false)
         .toolbar(.visible, for: .navigationBar)
