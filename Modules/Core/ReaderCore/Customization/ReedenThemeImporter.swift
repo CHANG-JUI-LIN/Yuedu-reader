@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 import UIKit
 
 /// Reads Reeden's `.red` app-theme packs and translates them into the same `QiThemeImport`
@@ -106,7 +107,7 @@ enum ReedenThemeImporter {
         await applyTabIcons(light: light, dark: dark, root: root, into: &result, notes: &notes)
         applyCovers(light: light, dark: dark, root: root, into: &result)
         applySplash(light: light, dark: dark, root: root, into: &result, notes: &notes)
-        applyReaderSchemas(light: light, dark: dark, root: root, into: &result, notes: &notes)
+        await applyReaderSchemas(light: light, dark: dark, root: root, into: &result, notes: &notes)
         appendUnmappedAppearanceNotes(light: light, dark: dark, to: &notes)
 
         result.notes = notes
@@ -481,7 +482,7 @@ enum ReedenThemeImporter {
         root: URL,
         into result: inout QiThemeImport,
         notes: inout [String]
-    ) {
+    ) async {
         guard let lightID = light.readerColorSchemaId,
               let lightSchema = readerSchema(id: lightID, root: root) else {
             return
@@ -533,11 +534,12 @@ enum ReedenThemeImporter {
             ) ?? title
         }
         result.chapterTitleStyle = title
-        result.highlightRules = highlightRules(
-            lightSchema.boundHighlightRules ?? [],
+        result.highlightRules = await highlightRules(
+            (lightSchema.boundHighlightRules ?? []).compactMap(\.rule),
             light: lightSchema,
             dark: darkSchema,
             bodySize: config.fontSize,
+            assetStore: .shared,
             notes: &notes
         )
 
@@ -672,16 +674,28 @@ enum ReedenThemeImporter {
         for raw in source.split(separator: ";") {
             guard let colon = raw.firstIndex(of: ":") else { continue }
             let name = raw[..<colon].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            var value = raw[raw.index(after: colon)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = raw[raw.index(after: colon)...].trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, !value.isEmpty else { continue }
-            if convertsEm, let bodySize { value = emToPixels(value, bodySize: bodySize) }
             declarations.append((name, value))
         }
-        return declarations
+        guard convertsEm, let bodySize else { return declarations }
+        // CSS `em`: a `font-size` is relative to the paragraph (the body size); every other
+        // length is relative to the element's own size. Reeden's frames rely on it — their
+        // padding is the artwork's content window measured in the rule's font size.
+        let elementSize: Double = {
+            guard let raw = declarations.last(where: { $0.name == "font-size" })?.value else { return bodySize }
+            let pixels = emToPixels(raw, bodySize: bodySize)
+            guard pixels.hasSuffix("px"), let size = Double(pixels.dropLast(2)) else { return bodySize }
+            return size
+        }()
+        return declarations.map { declaration in
+            let base = declaration.name == "font-size" ? bodySize : elementSize
+            return (declaration.name, emToPixels(declaration.value, bodySize: base))
+        }
     }
 
-    /// `0.9688em` → `14.53px` against the body size. The regex-highlight codec takes
-    /// absolute lengths only; Reeden's `em` is the paragraph's, i.e. the body size.
+    /// `0.9688em` → `14.53px` against `bodySize`, the size `em` refers to. The
+    /// regex-highlight codec takes absolute lengths only.
     private static func emToPixels(_ value: String, bodySize: Double) -> String {
         value.split(separator: " ", omittingEmptySubsequences: false).map { token -> String in
             let text = String(token)
@@ -698,29 +712,28 @@ enum ReedenThemeImporter {
     // MARK: - Highlight rules
 
     /// A rule's style is CSS; the parts the regex-highlight codec reads are kept and the rest
-    /// is named in a note. Rules that depend on what cannot be reproduced — artwork carried
-    /// in `backgroundImageData`, floated drop caps, nine-slice frames, title-only matching —
-    /// are skipped whole rather than imported half-drawn.
+    /// is named in a note. Artwork travels in `backgroundImageData` and is stored as a style
+    /// asset, its nine-slice frame carried over. Rules that depend on what cannot be
+    /// reproduced — floated drop caps, title-only matching — are skipped whole rather than
+    /// imported half-drawn.
     static func highlightRules(
-        _ bound: [ReedenBoundHighlightRule],
+        _ source: [ReedenHighlightRule],
         light: ReedenReaderSchema,
         dark: ReedenReaderSchema?,
         bodySize: Double?,
+        assetStore: ReaderStyleAssetStore,
         notes: inout [String]
-    ) -> [RegexHighlightRule] {
+    ) async -> [RegexHighlightRule] {
         var rules: [RegexHighlightRule] = []
         var skipped: [String] = []
+        var unreadableArtwork: [String] = []
         var dropped: Set<String> = []
-        for entry in bound {
-            guard let rule = entry.rule else { continue }
+        for rule in source {
             let name = rule.name?.trimmedNonEmpty ?? localized("高亮規則")
             let css = rule.styleCssText ?? ""
-            let needsArtwork = rule.backgroundImageData != nil
-                || css.contains("background-image") || css.contains("float:")
-                || css.contains("reeden-background-nine-slice")
             let titleOnly = rule.titleOnly == true || rule.target == "title"
             guard let keyword = rule.keyword, !keyword.isEmpty,
-                  !needsArtwork, !titleOnly, (rule.styleMode ?? "advanced") == "advanced" else {
+                  !css.contains("float:"), !titleOnly, (rule.styleMode ?? "advanced") == "advanced" else {
                 skipped.append(name)
                 continue
             }
@@ -734,9 +747,21 @@ enum ReedenThemeImporter {
                 skipped.append(name)
                 continue
             }
-            let lightStyle = highlightStyle(css, schema: light, bodySize: bodySize, dropped: &dropped)
+            var artwork: HighlightArtwork?
+            if css.contains("background-image") {
+                do {
+                    artwork = try await highlightArtwork(rule, css: css, name: name, assetStore: assetStore)
+                } catch {
+                    AppLogger.parse("⟐ red highlight artwork unreadable", error: error, context: ["rule": name])
+                    unreadableArtwork.append(name)
+                    continue
+                }
+            }
+            let lightStyle = highlightStyle(
+                css, schema: light, bodySize: bodySize, artwork: artwork, dropped: &dropped
+            )
             let darkStyle = dark.map {
-                highlightStyle(css, schema: $0, bodySize: bodySize, dropped: &dropped)
+                highlightStyle(css, schema: $0, bodySize: bodySize, artwork: artwork, dropped: &dropped)
             } ?? lightStyle
             rules.append(RegexHighlightRule(
                 id: UUID().uuidString,
@@ -751,8 +776,14 @@ enum ReedenThemeImporter {
         }
         if !skipped.isEmpty {
             notes.append(String(
-                format: localized("下列高亮規則需要圖片、首字下沉或只套用於標題，本 App 無法重現，已略過：%@"),
+                format: localized("下列高亮規則需要首字下沉或只套用於標題，本 App 無法重現，已略過：%@"),
                 skipped.joined(separator: localized("、"))
+            ))
+        }
+        if !unreadableArtwork.isEmpty {
+            notes.append(String(
+                format: localized("下列高亮規則的背景圖片無法讀取，已略過：%@"),
+                unreadableArtwork.joined(separator: localized("、"))
             ))
         }
         if !dropped.isEmpty {
@@ -764,37 +795,103 @@ enum ReedenThemeImporter {
         return rules
     }
 
+    struct HighlightArtwork: Equatable {
+        var assetID: UUID
+        var slices: ReaderStyleImageSlices?
+    }
+
+    enum HighlightArtworkError: Error {
+        case missingImageData
+        case notBase64
+        case notAnImage
+    }
+
+    /// The rule's picture — base64 of a gzip member holding the image file — stored as a
+    /// style asset, with its nine-slice frame as fractions of the picture's own size.
+    private static func highlightArtwork(
+        _ rule: ReedenHighlightRule,
+        css: String,
+        name: String,
+        assetStore: ReaderStyleAssetStore
+    ) async throws -> HighlightArtwork {
+        guard let encoded = rule.backgroundImageData else { throw HighlightArtworkError.missingImageData }
+        guard let packed = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters) else {
+            throw HighlightArtworkError.notBase64
+        }
+        let image = GzipDecoder.isGzip(packed)
+            ? try GzipDecoder.decompress(packed, maximumBytes: ReaderStyleAssetStore.maximumInputBytes)
+            : packed
+        guard let source = CGImageSourceCreateWithData(image as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else {
+            throw HighlightArtworkError.notAnImage
+        }
+        let asset = try await assetStore.importImage(data: image, suggestedName: name)
+        return HighlightArtwork(
+            assetID: asset.id,
+            slices: nineSlice(css, imageSize: CGSize(width: width, height: height))
+        )
+    }
+
+    /// `reeden-background-nine-slice: x1 y1 x2 y2 / W H [/ content rect]` — the stretchable
+    /// centre as a rectangle in a `W`×`H` picture. The `--reeden-…` custom property beside
+    /// it in some packs is an editor leftover; only the unprefixed one is read.
+    static func nineSlice(_ css: String, imageSize: CGSize) -> ReaderStyleImageSlices? {
+        let declaration = css.split(separator: ";").compactMap { raw -> String? in
+            guard let colon = raw.firstIndex(of: ":"),
+                  raw[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+                    == "reeden-background-nine-slice" else { return nil }
+            return String(raw[raw.index(after: colon)...])
+        }.last
+        guard let declaration else { return nil }
+        let groups = declaration.split(separator: "/").map {
+            $0.split(separator: " ").compactMap { Double($0) }
+        }
+        guard let centre = groups.first, centre.count == 4 else { return nil }
+        var size = imageSize
+        if groups.count > 1, groups[1].count == 2, groups[1][0] > 0, groups[1][1] > 0 {
+            size = CGSize(width: groups[1][0], height: groups[1][1])
+        }
+        return ReaderStyleImageSlices(
+            pixelsTop: centre[1],
+            right: Double(size.width) - centre[2],
+            bottom: Double(size.height) - centre[3],
+            left: centre[0],
+            of: size
+        )
+    }
+
     private static func highlightStyle(
         _ css: String,
         schema: ReedenReaderSchema,
         bodySize: Double?,
+        artwork: HighlightArtwork?,
         dropped: inout Set<String>
     ) -> ReaderStyleRuleStyle {
-        let allowed = ReaderStyleCSSCodec.sharedProperties.union(ReaderStyleCSSCodec.regexOnlyProperties)
         var declarations = resolvedCSS(css, schema: schema, bodySize: bodySize, convertsEm: true)
         // The weight was picked for the Reeden font named beside it; on our font it would
         // draw a different face (100 is hairline in the system font), so it goes with it.
         let usesReedenFont = declarations.contains { $0.name == "font-family" && isReedenFont($0.value) }
         declarations.removeAll { declaration in
-            let unusable = !allowed.contains(declaration.name)
-                || (declaration.name == "font-family" && isReedenFont(declaration.value))
+            let unusable = (declaration.name == "font-family" && isReedenFont(declaration.value))
                 || (usesReedenFont && declaration.name == "font-weight")
             if unusable { dropped.insert(declaration.name) }
-            return unusable
+            // Carried by `artwork` instead.
+            return unusable || declaration.name.hasSuffix("reeden-background-nine-slice")
         }
-        // An unparseable value costs that declaration, not the rule.
-        while true {
-            let source = declarations.map { "\($0.name): \($0.value);" }.joined(separator: " ")
-            do {
-                return try ReaderStyleCSSCodec.decodeDeclarations(source, context: .regexHighlight)
-            } catch ReaderStyleCSSCodecError.invalidValue(let property, _, _, _) {
-                dropped.insert(property)
-                declarations.removeAll { $0.name == property }
-            } catch {
-                AppLogger.parse("⟐ red highlight CSS unreadable", error: error)
-                return ReaderStyleRuleStyle(text: .init(), decoration: .init(shadows: []))
+        if let artwork {
+            declarations = declarations.map { declaration in
+                guard declaration.name == "background-image" else { return declaration }
+                return (declaration.name, "url(yuedu-asset://\(artwork.assetID.uuidString.lowercased()))")
+            }
+            if let slices = artwork.slices {
+                let values = [slices.top, slices.right, slices.bottom, slices.left]
+                    .map { String(format: "%.4f%%", $0 * 100) }
+                declarations.append(("-yuedu-background-slice", values.joined(separator: " ")))
             }
         }
+        return ReaderStyleCSSCodec.decodeLeniently(declarations, context: .regexHighlight, dropped: &dropped)
     }
 
     // MARK: - Title style
@@ -905,7 +1002,8 @@ enum ReedenThemeImporter {
     }
 }
 
-private extension String {
+/// Shared by the Reeden and highlight-pack importers.
+extension String {
     var trimmedNonEmpty: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed

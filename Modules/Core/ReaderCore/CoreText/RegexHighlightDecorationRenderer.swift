@@ -237,7 +237,7 @@ enum RegexHighlightDecorationRenderer {
         paint(fragments: fragments, writingMode: writingMode, context: context)
     }
 
-    private static func paint(
+    static func paint(
         fragments: [Fragment],
         writingMode: ReaderWritingMode,
         context: CGContext
@@ -247,7 +247,7 @@ enum RegexHighlightDecorationRenderer {
 
         for fragment in drawable { drawShadows(for: fragment, context: context) }
         for fragment in drawable { drawBackground(for: fragment, context: context) }
-        for fragment in drawable { drawImage(for: fragment, context: context) }
+        for fragment in drawable { drawImage(for: fragment, writingMode: writingMode, context: context) }
         for fragment in drawable {
             drawBorders(for: fragment, writingMode: writingMode, context: context)
         }
@@ -298,7 +298,11 @@ enum RegexHighlightDecorationRenderer {
         context.restoreGState()
     }
 
-    private static func drawImage(for fragment: Fragment, context: CGContext) {
+    private static func drawImage(
+        for fragment: Fragment,
+        writingMode: ReaderWritingMode,
+        context: CGContext
+    ) {
         let style = fragment.decoration.style
         guard let presentation = style.backgroundImage,
               let image = fragment.decoration.cachedBackgroundImage,
@@ -315,6 +319,29 @@ enum RegexHighlightDecorationRenderer {
         context.addPath(roundedPath(rect: fragment.rect, radius: style.cornerRadius))
         context.clip()
         context.interpolationQuality = .high
+
+        if let slices = presentation.nineSlice {
+            // The whole artwork is drawn for the padded box of one line, so its height
+            // maps onto the fragment's block-axis thickness: Reeden's frames carry a
+            // content window whose margins equal the rule's padding at exactly this scale.
+            let thickness = writingMode.isVertical ? fragment.rect.width : fragment.rect.height
+            let width = CGFloat(cgImage.width)
+            let height = CGFloat(cgImage.height)
+            NineSliceImageDrawing.draw(
+                cgImage,
+                slices: .init(
+                    top: CGFloat(slices.top) * height,
+                    right: CGFloat(slices.right) * width,
+                    bottom: CGFloat(slices.bottom) * height,
+                    left: CGFloat(slices.left) * width
+                ),
+                scale: height > 0 ? thickness / height : 0,
+                in: fragment.rect,
+                context: context
+            )
+            context.restoreGState()
+            return
+        }
 
         switch presentation.contentMode {
         case .tile:

@@ -45,6 +45,8 @@ struct RegexHighlightRuleEditorView: View {
     @State private var cssSource = ""
     @State private var showingAssets = false
     @State private var confirmLowContrast = false
+    /// The chosen frame image, loaded for 九宮格's slice lines.
+    @State private var sliceImage: (id: UUID, image: UIImage)?
 
     init(rule: RegexHighlightRule, onSave: @escaping (RegexHighlightRule) throws -> Void) {
         _model = StateObject(wrappedValue: RegexHighlightRuleEditorModel(rule: rule, onSave: onSave))
@@ -221,7 +223,10 @@ struct RegexHighlightRuleEditorView: View {
         } header: {
             Text(localized("背景"))
         } footer: {
-            if activeStyle.decoration.backgroundImage != nil {
+            if activeStyle.decoration.backgroundImage?.nineSlice != nil {
+                Text(localized("拖曳四條切線：線外的四角原樣繪製，四邊沿文字延伸，中間填滿。圖片依文字高度縮放；位移只移動底圖。"))
+                    .dsSectionFooter()
+            } else if activeStyle.decoration.backgroundImage != nil {
                 Text(localized("圖片位移只移動底圖：X 正值向右、Y 正值向下，負值反向；文字、邊框與陰影留在原位。裁切焦點只選擇圖內範圍，不會移動整張底圖。"))
                     .dsSectionFooter()
             }
@@ -241,8 +246,45 @@ struct RegexHighlightRuleEditorView: View {
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
-        stylePreviewSection
+        if activeStyle.decoration.backgroundImage?.nineSlice != nil {
+            framePreviewSection
+        } else {
+            stylePreviewSection
+        }
         contrastWarningSection
+    }
+
+    @ViewBuilder
+    private func sliceGuides(for assetID: UUID) -> some View {
+        Group {
+            if let sliceImage, sliceImage.id == assetID {
+                NineSliceGuideEditor(image: sliceImage.image, slices: nineSliceBinding)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .task(id: assetID) {
+            do {
+                let image = try await ReaderStyleAssetStore.shared.loadCachedImage(for: assetID)
+                sliceImage = (assetID, image)
+            } catch {
+                AppLogger.render("nine-slice editor image load failed", error: error, context: ["asset": assetID.uuidString])
+            }
+        }
+    }
+
+    /// 九宮格 is judged on a short quote and a long one, not on the rule's test text.
+    private var framePreviewSection: some View {
+        Section(localized("預覽")) {
+            highlightedPreview {
+                try model.framePreviewAttributedString(
+                    appearance: appearance,
+                    baseTextColor: UIColor(previewTheme.previewTextColor)
+                )
+            }
+        }
+        .interfaceSectionSurface()
     }
 
     @ViewBuilder
@@ -403,9 +445,13 @@ struct RegexHighlightRuleEditorView: View {
         }
         if let image = activeStyle.decoration.backgroundImage {
             Picker(localized("圖片填充方式"), selection: imageModeBinding) {
+                Text(localized("九宮格")).tag(ReaderStyleImageContentMode?.none)
                 ForEach(ReaderStyleImageContentMode.allCases, id: \.self) { mode in
-                    Text(localized(mode.editorTitleKey)).tag(mode)
+                    Text(localized(mode.editorTitleKey)).tag(Optional(mode))
                 }
+            }
+            if image.nineSlice != nil {
+                sliceGuides(for: image.assetID)
             }
             metricSlider(localized("圖片位移 X"), value: styleDoubleBinding(\.decoration.backgroundImageOffsetX, fallback: 0), range: ReaderStyleDecorationStyle.imageOffsetRange, step: 1, unit: "pt")
             metricSlider(localized("圖片位移 Y"), value: styleDoubleBinding(\.decoration.backgroundImageOffsetY, fallback: 0), range: ReaderStyleDecorationStyle.imageOffsetRange, step: 1, unit: "pt")
@@ -413,7 +459,7 @@ struct RegexHighlightRuleEditorView: View {
                 metricSlider(localized("圖片焦點 X"), value: imageDoubleBinding(\.focalX, image.focalX), range: 0...1, step: 0.05, unit: "%", multiplier: 100)
                 metricSlider(localized("圖片焦點 Y"), value: imageDoubleBinding(\.focalY, image.focalY), range: 0...1, step: 0.05, unit: "%", multiplier: 100)
             }
-            .disabled(image.contentMode == .stretch)
+            .disabled(image.contentMode == .stretch || image.nineSlice != nil)
             metricSlider(localized("圖片不透明度"), value: imageDoubleBinding(\.opacity, image.opacity), range: 0...1, step: 0.05, unit: "%", multiplier: 100)
         } else {
             Text(localized("請從共用素材庫選擇或匯入圖片。"))
@@ -454,14 +500,18 @@ struct RegexHighlightRuleEditorView: View {
             + max(0, edges.top, edges.leading, edges.bottom, edges.trailing))
     }
 
-    @ViewBuilder
     private var highlightedPreview: some View {
-        switch Result(catching: {
+        highlightedPreview {
             try model.previewAttributedString(
                 appearance: appearance,
                 baseTextColor: UIColor(previewTheme.previewTextColor)
             )
-        }) {
+        }
+    }
+
+    @ViewBuilder
+    private func highlightedPreview(_ build: () throws -> NSAttributedString) -> some View {
+        switch Result(catching: build) {
         case .success(let attributed):
             RegexHighlightLivePreview(attributed: attributed, contentInset: previewImageInset)
                 .frame(minHeight: DSLayout.minimumTapTarget * 3 + previewImageInset * 2)
@@ -471,7 +521,7 @@ struct RegexHighlightRuleEditorView: View {
                     in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
                 )
                 .padding(.vertical, DSSpacing.sm)
-                .accessibilityLabel(model.testText)
+                .accessibilityLabel(attributed.string)
         case .failure(let error):
             Label(localized("預覽失敗"), systemImage: "exclamationmark.triangle")
                 .foregroundStyle(DSColor.warning)
@@ -535,10 +585,31 @@ struct RegexHighlightRuleEditorView: View {
         )
     }
 
-    private var imageModeBinding: Binding<ReaderStyleImageContentMode> {
+    /// `nil` is 九宮格: the image's slices, which outrank its content mode.
+    private var imageModeBinding: Binding<ReaderStyleImageContentMode?> {
         Binding(
-            get: { activeStyle.decoration.backgroundImage?.contentMode ?? .fill },
-            set: { value in mutateStyle { $0.decoration.backgroundImage?.contentMode = value } }
+            get: {
+                guard let image = activeStyle.decoration.backgroundImage else { return .fill }
+                return image.nineSlice == nil ? image.contentMode : nil
+            },
+            set: { value in
+                mutateStyle {
+                    guard $0.decoration.backgroundImage != nil else { return }
+                    if let value {
+                        $0.decoration.backgroundImage?.contentMode = value
+                        $0.decoration.backgroundImage?.nineSlice = nil
+                    } else if $0.decoration.backgroundImage?.nineSlice == nil {
+                        $0.decoration.backgroundImage?.nineSlice = NineSliceGuide.defaultSlices
+                    }
+                }
+            }
+        )
+    }
+
+    private var nineSliceBinding: Binding<ReaderStyleImageSlices> {
+        Binding(
+            get: { activeStyle.decoration.backgroundImage?.nineSlice ?? NineSliceGuide.defaultSlices },
+            set: { value in mutateStyle { $0.decoration.backgroundImage?.nineSlice = value } }
         )
     }
 

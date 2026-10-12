@@ -358,9 +358,9 @@ enum ReaderDialogueBubbleRenderer {
         return path
     }
 
-    /// Nine-patch: the corners keep a fixed size, the edges stretch along one
-    /// axis and the centre along both. Slice sizes are source pixels; their
-    /// destination size follows the reader's font.
+    /// Nine-patch drawing lives in `NineSliceImageDrawing`, shared with regex highlights.
+    /// The scale is the bubble's own: the artwork's full height stands for one line
+    /// of text, so the corners land where the artist drew them at any type size.
     private static func drawNineSlice(
         _ image: CGImage,
         skin: ReaderDialogueBubbleSkin,
@@ -368,106 +368,22 @@ enum ReaderDialogueBubbleRenderer {
         in rect: CGRect,
         context: CGContext
     ) {
-        let sourceWidth = CGFloat(image.width)
-        let sourceHeight = CGFloat(image.height)
-        guard sourceWidth > 0, sourceHeight > 0 else { return }
-
-        // The artwork is drawn for a single-line bubble: its full height stands
-        // for one line. Tying the scale to the line height (not to a fixed em
-        // multiple) is what puts the corners where the artist drew them at any
-        // type size — scaling each axis on its own instead squashes the corners
-        // and leaves the banded, mis-assembled look.
-        let source = Insets(
-            top: CGFloat(skin.sliceTop),
-            right: CGFloat(skin.sliceRight),
-            bottom: CGFloat(skin.sliceBottom),
-            left: CGFloat(skin.sliceLeft)
-        ).fitted(within: CGSize(width: sourceWidth - 1, height: sourceHeight - 1))
-        let baseScale = lineHeight
-            * CGFloat(skin.targetHeightScale)
-            * CGFloat(skin.cornerScale)
-            / sourceHeight
-        let neededWidth = (source.left + source.right) * baseScale
-        let neededHeight = (source.top + source.bottom) * baseScale
-        // Both axes shrink by the *same* factor when the corners do not fit, so
-        // the artwork keeps its proportions.
-        let fit = min(
-            1,
-            neededWidth > 0 ? rect.width / neededWidth : 1,
-            neededHeight > 0 ? rect.height / neededHeight : 1
+        guard image.height > 0 else { return }
+        NineSliceImageDrawing.draw(
+            image,
+            slices: NineSliceImageDrawing.Insets(
+                top: CGFloat(skin.sliceTop),
+                right: CGFloat(skin.sliceRight),
+                bottom: CGFloat(skin.sliceBottom),
+                left: CGFloat(skin.sliceLeft)
+            ),
+            scale: lineHeight
+                * CGFloat(skin.targetHeightScale)
+                * CGFloat(skin.cornerScale)
+                / CGFloat(image.height),
+            in: rect,
+            context: context
         )
-        let scale = baseScale * max(0, fit)
-        let destination = Insets(
-            top: source.top * scale,
-            right: source.right * scale,
-            bottom: source.bottom * scale,
-            left: source.left * scale
-        )
-
-        // Top-down source columns/rows, y-up destination columns/rows.
-        let sourceX: [CGFloat] = [0, source.left, sourceWidth - source.right, sourceWidth]
-        let sourceY: [CGFloat] = [0, source.top, sourceHeight - source.bottom, sourceHeight]
-        let destinationX: [CGFloat] = [
-            rect.minX,
-            rect.minX + destination.left,
-            rect.maxX - destination.right,
-            rect.maxX,
-        ]
-        let destinationY: [CGFloat] = [
-            rect.maxY,
-            rect.maxY - destination.top,
-            rect.minY + destination.bottom,
-            rect.minY,
-        ]
-
-        for row in 0..<3 {
-            for column in 0..<3 {
-                let sourceRect = CGRect(
-                    x: sourceX[column],
-                    y: sourceY[row],
-                    width: sourceX[column + 1] - sourceX[column],
-                    height: sourceY[row + 1] - sourceY[row]
-                )
-                let destinationRect = CGRect(
-                    x: destinationX[column],
-                    y: destinationY[row + 1],
-                    width: destinationX[column + 1] - destinationX[column],
-                    height: destinationY[row] - destinationY[row + 1]
-                )
-                guard sourceRect.width >= 1, sourceRect.height >= 1,
-                      destinationRect.width > 0.1, destinationRect.height > 0.1,
-                      let piece = image.cropping(to: sourceRect) else {
-                    continue
-                }
-                drawUpright(piece, in: destinationRect, context: context)
-            }
-        }
-    }
-
-    private struct Insets {
-        var top: CGFloat
-        var right: CGFloat
-        var bottom: CGFloat
-        var left: CGFloat
-
-        /// Opposite slices that together exceed the box would overlap; shrink
-        /// the pair proportionally instead, the way a platform nine-patch does.
-        func fitted(within size: CGSize) -> Insets {
-            var result = self
-            let horizontal = left + right
-            if horizontal > size.width, horizontal > 0 {
-                let factor = size.width / horizontal
-                result.left *= factor
-                result.right *= factor
-            }
-            let vertical = top + bottom
-            if vertical > size.height, vertical > 0 {
-                let factor = size.height / vertical
-                result.top *= factor
-                result.bottom *= factor
-            }
-            return result
-        }
     }
 
     /// Draws a CGImage the right way up.

@@ -179,7 +179,7 @@ enum ReaderStyleCSSCodec {
     ]
 
     static let regexOnlyProperties: Set<String> = [
-        "-yuedu-background-offset-x", "-yuedu-background-offset-y"
+        "-yuedu-background-offset-x", "-yuedu-background-offset-y", "-yuedu-background-slice"
     ]
 
     static let chapterOnlyProperties: Set<String> = [
@@ -204,7 +204,8 @@ enum ReaderStyleCSSCodec {
                     column: declaration.column
                 )
             }
-            if ["background-size", "background-position", "background-repeat"].contains(declaration.name) {
+            if ["background-size", "background-position", "background-repeat", "-yuedu-background-slice"]
+                .contains(declaration.name) {
                 deferredImageDeclarations.append(declaration)
                 continue
             }
@@ -214,6 +215,46 @@ enum ReaderStyleCSSCodec {
             try apply(declaration, to: &style, context: context)
         }
         return style
+    }
+
+    /// CSS written by another app: what this codec cannot read costs that declaration,
+    /// not the rule. Each dropped property name is added to `dropped` so the import can
+    /// say what was lost.
+    static func decodeLeniently(
+        _ declarations: [(name: String, value: String)],
+        context: ReaderStyleCSSContext,
+        dropped: inout Set<String>
+    ) -> ReaderStyleRuleStyle {
+        let allowed = sharedProperties.union(context == .chapterLayer ? chapterOnlyProperties : regexOnlyProperties)
+        var remaining: [(name: String, value: String)] = declarations.filter { declaration in
+            let usable = allowed.contains(declaration.name)
+            if !usable { dropped.insert(declaration.name) }
+            return usable
+        }.map { (name: $0.name, value: opaqueRGBA($0.value)) }
+        while true {
+            let source = remaining.map { "\($0.name): \($0.value);" }.joined(separator: " ")
+            do {
+                return try decodeDeclarations(source, context: context)
+            } catch ReaderStyleCSSCodecError.invalidValue(let property, _, _, _) {
+                dropped.insert(property)
+                remaining.removeAll { $0.name == property }
+            } catch {
+                AppLogger.parse("⟐ imported highlight CSS unreadable", error: error)
+                return ReaderStyleRuleStyle(text: .init(), decoration: .init(shadows: []))
+            }
+        }
+    }
+
+    /// `rgba(r, g, b, 1)` → `rgb(r, g, b)`. Other apps write every colour as `rgba`; the
+    /// opaque ones are plain colours, while a translucent one has no equivalent here and
+    /// stays unreadable, so its declaration is reported as dropped.
+    static func opaqueRGBA(_ value: String) -> String {
+        let pattern = #"rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(?:1|1\.0+)\s*\)"#
+        return value.replacingOccurrences(
+            of: pattern,
+            with: "rgb($1, $2, $3)",
+            options: [.regularExpression, .caseInsensitive]
+        )
     }
 
     static func encodeDeclarations(
@@ -448,6 +489,14 @@ enum ReaderStyleCSSCodec {
             default: throw invalid()
             }
             style.decoration.backgroundImage = image
+        case "-yuedu-background-slice":
+            // Nine-slice cap insets, top right bottom left, as percentages of the image.
+            let parts = normalizedWhitespace(value).split(separator: " ").map { parsePercentage(String($0)) }
+            guard var image = style.decoration.backgroundImage, parts.count == 4,
+                  let top = parts[0], let right = parts[1], let bottom = parts[2], let left = parts[3],
+                  [top, right, bottom, left].allSatisfy({ (0...1).contains($0) }) else { throw invalid() }
+            image.nineSlice = ReaderStyleImageSlices(top: top, right: right, bottom: bottom, left: left)
+            style.decoration.backgroundImage = image
         case "-yuedu-background-offset-x", "-yuedu-background-offset-y":
             guard let offset = parseLength(value),
                   ReaderStyleDecorationStyle.imageOffsetRange.contains(offset) else { throw invalid() }
@@ -585,6 +634,11 @@ enum ReaderStyleCSSCodec {
             result.append("background-image: linear-gradient(\(formatNumber(gradient.angleDegrees))deg, \(stops));")
         }
         if context == .regexHighlight {
+            if let slices = style.decoration.backgroundImage?.nineSlice {
+                let values = [slices.top, slices.right, slices.bottom, slices.left]
+                    .map { "\(formatNumber($0 * 100))%" }
+                result.append("-yuedu-background-slice: \(values.joined(separator: " "));")
+            }
             if let x = style.decoration.backgroundImageOffsetX {
                 result.append("-yuedu-background-offset-x: \(formatLength(x));")
             }

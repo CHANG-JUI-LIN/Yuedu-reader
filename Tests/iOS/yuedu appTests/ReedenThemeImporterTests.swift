@@ -98,7 +98,7 @@ struct ReedenThemeImporterTests {
     private let schema = ReedenReaderSchema(textColor: "#FF000000", primaryColor: "#FFE08C75")
 
     @Test("a highlight rule keeps the CSS the codec reads, with placeholders and em resolved")
-    func convertsHighlightRule() throws {
+    func convertsHighlightRule() async throws {
         // 薄绿 - 维尼's dialogue rule, verbatim.
         let rule = ReedenHighlightRule(
             name: "对话高亮（普通）",
@@ -109,10 +109,12 @@ struct ReedenThemeImporterTests {
             styleMode: "advanced",
             styleCssText: "font-family: \"reeden-font:F982E6CF1B4F84A68F5392A140E3A7BA\"; color: {primaryColor}; font-weight: 100; reeden-font-bold: 1; font-size: 0.9688em; -webkit-text-stroke-width: 0.5px; -webkit-text-stroke-color: {primaryColor}; letter-spacing: 0px; border-radius: 0px; padding-left: 0px;"
         )
+        let root = try readerStyleTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
         var notes: [String] = []
-        let rules = ReedenThemeImporter.highlightRules(
-            [ReedenBoundHighlightRule(id: "x", rule: rule)],
-            light: schema, dark: nil, bodySize: 15, notes: &notes
+        let rules = await ReedenThemeImporter.highlightRules(
+            [rule], light: schema, dark: nil, bodySize: 15,
+            assetStore: ReaderStyleAssetStore(rootURL: root), notes: &notes
         )
         let imported = try #require(rules.first)
         #expect(imported.pattern == "“[^”]+”|「[^」]+」")
@@ -129,8 +131,8 @@ struct ReedenThemeImporterTests {
         #expect(droppedNote.contains("reeden-font-bold"))
     }
 
-    @Test("rules needing artwork, drop caps or title matching are skipped and named")
-    func skipsUnreproducibleRules() {
+    @Test("rules needing drop caps or title matching are skipped and named")
+    func skipsUnreproducibleRules() async throws {
         let artwork = ReedenHighlightRule(
             name: "春水漾", keyword: "^.", isRegex: true, target: "all", enabled: false,
             styleMode: "advanced", styleCssText: "float: left; background-image: url(\"03CD\");",
@@ -140,27 +142,32 @@ struct ReedenThemeImporterTests {
             name: "疏影", keyword: "x", isRegex: false, target: "title", titleOnly: true,
             enabled: true, styleMode: "advanced", styleCssText: "color: red;"
         )
+        let root = try readerStyleTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
         var notes: [String] = []
-        let rules = ReedenThemeImporter.highlightRules(
-            [ReedenBoundHighlightRule(rule: artwork), ReedenBoundHighlightRule(rule: title)],
-            light: schema, dark: nil, bodySize: 15, notes: &notes
+        let rules = await ReedenThemeImporter.highlightRules(
+            [artwork, title], light: schema, dark: nil, bodySize: 15,
+            assetStore: ReaderStyleAssetStore(rootURL: root), notes: &notes
         )
         #expect(rules.isEmpty)
         #expect(notes == [String(
-            format: localized("下列高亮規則需要圖片、首字下沉或只套用於標題，本 App 無法重現，已略過：%@"),
+            format: localized("下列高亮規則需要首字下沉或只套用於標題，本 App 無法重現，已略過：%@"),
             "春水漾" + localized("、") + "疏影"
         )])
     }
 
     @Test("a plain keyword is matched literally")
-    func escapesPlainKeyword() throws {
+    func escapesPlainKeyword() async throws {
         let rule = ReedenHighlightRule(
             name: "literal", keyword: "a.b", isRegex: false, target: "all", enabled: true,
             styleMode: "advanced", styleCssText: "color: #FF0000;"
         )
+        let root = try readerStyleTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
         var notes: [String] = []
-        let imported = try #require(ReedenThemeImporter.highlightRules(
-            [ReedenBoundHighlightRule(rule: rule)], light: schema, dark: nil, bodySize: 15, notes: &notes
+        let imported = try #require(await ReedenThemeImporter.highlightRules(
+            [rule], light: schema, dark: nil, bodySize: 15,
+            assetStore: ReaderStyleAssetStore(rootURL: root), notes: &notes
         ).first)
         #expect(imported.pattern == "a\\.b")
     }
@@ -170,20 +177,20 @@ struct ReedenThemeImporterTests {
     func mergesHighlightConfiguration() {
         let pack = RegexHighlightRule.custom(name: "pack", pattern: "x")
         let on = RegexHighlightConfiguration(isEnabled: true, rules: RegexHighlightRule.builtIns, customRules: [])
-        let merged = QiThemeImportService.highlightConfiguration(adding: [pack], to: on)
+        let merged = on.addingImported([pack])
         #expect(merged.isEnabled)
         #expect(merged.rules.map(\.isEnabled) == RegexHighlightRule.builtIns.map(\.isEnabled))
         #expect(merged.customRules.map(\.name) == ["pack"])
 
         let off = RegexHighlightConfiguration.disabled
-        let switched = QiThemeImportService.highlightConfiguration(adding: [pack], to: off)
+        let switched = off.addingImported([pack])
         #expect(switched.isEnabled)
         #expect(switched.rules.allSatisfy { !$0.isEnabled })
         #expect(switched.customRules.map(\.isEnabled) == [true])
 
         // A second import of the same pack (fresh ids) replaces its rules, not stacks them.
         let reparsed = RegexHighlightRule.custom(name: "pack", pattern: "x")
-        let again = QiThemeImportService.highlightConfiguration(adding: [reparsed], to: merged)
+        let again = merged.addingImported([reparsed])
         #expect(again.customRules.count == 1)
     }
 

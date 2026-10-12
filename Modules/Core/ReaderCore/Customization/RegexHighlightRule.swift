@@ -355,3 +355,51 @@ enum RegexHighlightMigration {
         )
     }
 }
+
+extension RegexHighlightConfiguration {
+    /// The user's rules as they stand, plus imported ones (decided 2026-10-11): Reeden layers
+    /// a theme's bound rules over its global ones. A user with highlighting switched off had
+    /// no rule showing, so in that case their rules stay off and only the imported ones show.
+    ///
+    /// `replacingSamePattern` is a highlight pack's import (decided 2026-10-12): the pack is
+    /// imported to be worn, so an existing rule matching the same text is switched off rather
+    /// than painted under it.
+    func addingImported(
+        _ rules: [RegexHighlightRule],
+        replacingSamePattern: Bool = false
+    ) -> RegexHighlightConfiguration {
+        var configuration = self
+        // Importing the same pack again replaces its rules rather than stacking a second
+        // copy (ids are fresh per parse, so compare what the rule does).
+        configuration.customRules.removeAll { existing in
+            rules.contains { $0.hasSameEffect(as: existing) }
+        }
+        if !isEnabled, rules.contains(where: \.isEnabled) {
+            configuration.isEnabled = true
+            for index in configuration.rules.indices { configuration.rules[index].isEnabled = false }
+            for index in configuration.customRules.indices {
+                configuration.customRules[index].isEnabled = false
+            }
+        }
+        if replacingSamePattern {
+            let worn = Set(rules.filter(\.isEnabled).map(\.pattern))
+            for index in configuration.rules.indices where worn.contains(configuration.rules[index].pattern) {
+                configuration.rules[index].isEnabled = false
+            }
+            for index in configuration.customRules.indices
+            where worn.contains(configuration.customRules[index].pattern) {
+                configuration.customRules[index].isEnabled = false
+            }
+        }
+        configuration.customRules += rules
+        return configuration.sanitized()
+    }
+}
+
+extension RegexHighlightRule {
+    /// Same name, pattern, options and both styles — id and on/off state aside.
+    func hasSameEffect(as other: RegexHighlightRule) -> Bool {
+        name == other.name && pattern == other.pattern && options == other.options
+            && lightStyle == other.lightStyle && darkStyle == other.darkStyle
+    }
+}

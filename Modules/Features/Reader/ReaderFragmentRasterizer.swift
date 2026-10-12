@@ -55,6 +55,8 @@ final class ReaderFragmentRasterizer: @unchecked Sendable {
         let fragment: BrowserPaintFragment
         let skipBackground: Bool
         let spine: Int
+        /// Highlight line boxes in document space; the fragment holds only part of a line.
+        let highlightSpans: HighlightLineSpans
     }
 
     enum Content {
@@ -159,7 +161,9 @@ final class ReaderFragmentRasterizer: @unchecked Sendable {
             return renderer.image { context in
                 ReaderDisplayListDrawer.draw(list, in: context.cgContext,
                     skipAuthoredBackgroundPaint: browser.skipBackground,
-                    textPaintPhase: browser.fragment.textPaintPhase)
+                    textPaintPhase: browser.fragment.textPaintPhase,
+                    highlightSpans: browser.highlightSpans,
+                    origin: browser.fragment.renderingRect.origin)
             }.cgImage
         }
     }

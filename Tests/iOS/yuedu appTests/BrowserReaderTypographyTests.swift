@@ -210,6 +210,73 @@ struct BrowserReaderTypographyTests {
         }
     }
 
+    /// A quote crossing inline boxes (ruby base, `<strong>`) is several display items on one
+    /// line; its frame must still be one box, as the legacy engine draws it. Measured
+    /// 2026-10-12: 和蘭人形's 「卑怯者、な、名乗れ」 drew three overlapping frames.
+    @Test(arguments: [
+        "<p>前「甲<strong>乙</strong>丙」後</p>",
+        "<p>前「甲<ruby>乙<rt>おつ</rt></ruby>丙」後</p>",
+    ])
+    func highlightCrossingInlineBoxesPaintsOneBoxPerLine(html: String) async throws {
+        let red = ReaderStyleBorder(width: 2, colorHex: 0xFF0000)
+        let style = ReaderStyleRuleStyle(decoration: ReaderStyleDecorationStyle(
+            borders: [.leading: red, .trailing: red]
+        ))
+        let config = BrowserLayoutConfig(textTransform: BrowserReaderAttributes.transform(
+            configuration: configuration(pattern: "「[^」]*」", style: style), appearance: .light, assetRevision: 0
+        ))
+        let document = BrowserLayoutDocument(html: html, cssTexts: [css], config: config)
+        let pages = try await document.renderPages(containerSize: size)
+        let list = DisplayListBuilder.build(for: try #require(pages.first), sourceText: document.lastSourceText)
+        let highlighted = list.items.filter { item in
+            guard case .text(let text) = item else { return false }
+            let attributed = text.attributedText
+            var found = false
+            attributed.enumerateAttribute(RegexHighlightDecoration.attributeKey,
+                                          in: NSRange(location: 0, length: attributed.length)) { value, _, stop in
+                if value != nil { found = true; stop.pointee = true }
+            }
+            return found
+        }
+        #expect(highlighted.count >= 3, "the quote should span several display items")
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { r in
+            UIColor.white.setFill(); r.fill(CGRect(origin: .zero, size: size))
+            ReaderDisplayListDrawer.draw(list, in: r.cgContext)
+        }
+        // One box has one leading and one trailing border on every row it covers.
+        #expect(try maximumRedRunsPerRow(image) == 2)
+    }
+
+    private func maximumRedRunsPerRow(_ image: UIImage) throws -> Int {
+        let cgImage = try #require(image.cgImage)
+        let width = cgImage.width
+        let height = cgImage.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        try bytes.withUnsafeMutableBytes { pointer in
+            let context = try #require(CGContext(
+                data: pointer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        return (0..<height).map { y in
+            var runs = 0
+            var inRun = false
+            for x in 0..<width {
+                let i = (y * width + x) * 4
+                let isRed = bytes[i] > 200 && bytes[i + 1] < 60 && bytes[i + 2] < 60
+                if isRed, !inRun { runs += 1 }
+                inRun = isRed
+            }
+            return runs
+        }.max() ?? 0
+    }
+
     private func configuration(
         pattern: String, style: ReaderStyleRuleStyle, options: RegexHighlightOptions = []
     ) -> RegexHighlightConfiguration {

@@ -139,25 +139,66 @@ enum ReaderStyleImageContentMode: String, Codable, CaseIterable, Sendable {
     case stretch
 }
 
+/// Nine-slice cap insets, as a **fraction of the image's own size**: the asset
+/// store downsamples large artwork, so pixel insets recorded at import would
+/// point at the wrong band once the file shrank.
+struct ReaderStyleImageSlices: Codable, Equatable, Sendable {
+    var top: Double
+    var right: Double
+    var bottom: Double
+    var left: Double
+
+    init(top: Double, right: Double, bottom: Double, left: Double) {
+        self.top = Self.unit(top)
+        self.right = Self.unit(right)
+        self.bottom = Self.unit(bottom)
+        self.left = Self.unit(left)
+    }
+
+    /// Insets in pixels of an image of `size`.
+    init?(pixelsTop top: Double, right: Double, bottom: Double, left: Double, of size: CGSize) {
+        guard size.width > 0, size.height > 0,
+              [top, right, bottom, left].allSatisfy({ $0.isFinite && $0 >= 0 }) else { return nil }
+        self.init(
+            top: top / size.height,
+            right: right / size.width,
+            bottom: bottom / size.height,
+            left: left / size.width
+        )
+    }
+
+    private static func unit(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        return min(max(value, 0), 1)
+    }
+}
+
 struct ReaderStyleImagePresentation: Codable, Equatable, Sendable {
     var assetID: UUID
     var contentMode: ReaderStyleImageContentMode
     var focalX: Double
     var focalY: Double
     var opacity: Double
+    /// When set, the image is drawn as a nine-slice frame and `contentMode` is not
+    /// used. Optional, not a content-mode case: reading settings sync to older builds,
+    /// which would fail to decode the whole configuration on an unknown enum case but
+    /// simply draw a stretched image when this field is missing.
+    var nineSlice: ReaderStyleImageSlices?
 
     init(
         assetID: UUID,
         contentMode: ReaderStyleImageContentMode = .fill,
         focalX: Double = 0.5,
         focalY: Double = 0.5,
-        opacity: Double = 1
+        opacity: Double = 1,
+        nineSlice: ReaderStyleImageSlices? = nil
     ) {
         self.assetID = assetID
         self.contentMode = contentMode
         self.focalX = Self.unit(focalX, fallback: 0.5)
         self.focalY = Self.unit(focalY, fallback: 0.5)
         self.opacity = Self.unit(opacity, fallback: 1)
+        self.nineSlice = nineSlice
     }
 
     private static func unit(_ value: Double, fallback: Double) -> Double {

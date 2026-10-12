@@ -5,8 +5,11 @@ import Foundation
 enum SharedCustomizationKind: Equatable {
     case appearanceJSON
     case nativePackage
-    /// A foreign theme pack: QiReader `.qitheme` or Reeden `.red`.
+    /// A foreign theme pack: QiReader `.qitheme` or Reeden `.red`. A `.red` can also be a
+    /// highlight-rule pack — the extension is shared, so `load` reads the header.
     case qiTheme
+    /// A QiReader `.qihighlight` highlight-rule pack.
+    case highlightPack
 
     static func isAppearanceJSON(_ root: Any) -> Bool {
         if let object = root as? [String: Any], let format = object["format"] as? String {
@@ -62,7 +65,16 @@ enum SharedCustomizationImportService {
         case .appearanceJSON:
             return .appearance(document.data)
         case .qiTheme:
+            if HighlightPackImporter.isReedenHighlightPack(document.data) {
+                return .reader(try await HighlightPackImportService.plan(
+                    document.data, format: .reeden, fallbackName: nil
+                ))
+            }
             return .qiTheme(try await QiThemeImportService.load(document.data))
+        case .highlightPack:
+            return .reader(try await HighlightPackImportService.plan(
+                document.data, format: .qiReader, fallbackName: nil
+            ))
         case .nativePackage:
             let payload = try await ReaderStylePackage.import(document.data, assetStore: .shared)
             if payload.kind == .appearance {

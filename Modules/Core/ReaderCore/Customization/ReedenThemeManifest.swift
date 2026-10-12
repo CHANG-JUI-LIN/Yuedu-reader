@@ -145,6 +145,8 @@ struct ReedenHighlightRule: Decodable {
     var styleMode: String?
     var styleCssText: String?
     var backgroundImageData: String?
+    /// The folder the rule sits in on Reeden's 高亮 page; a standalone pack's name.
+    var groupName: String?
 }
 
 struct ReedenTitleStyle: Decodable {

@@ -48,6 +48,8 @@ final class ReaderViewportFragmentHost: UIView {
         var scale: CGFloat = 0
         var query = CGRect.null
         var fragments: [BrowserPaintFragment] = []
+        /// Highlight line boxes around `query`, in document space.
+        var highlightSpans = HighlightLineSpans([DisplayItem]())
         init(_ owner: BrowserScrollChapter) {
             self.owner = owner
             view.isUserInteractionEnabled = false
@@ -268,6 +270,14 @@ final class ReaderViewportFragmentHost: UIView {
                 state.query = demand.insetBy(dx: 0, dy: -viewport.height * 0.5)
                 state.fragments = input.chapter.document.paintFragments(in: state.query, scale: scale,
                     textDecorationBounds: Self.decorationBounds)
+                // A line's pieces can land in different fragments, each painted alone; the
+                // spans see every item of every line those fragments draw. The margin takes
+                // in a line that only grazes the query.
+                let lines = state.query.insetBy(dx: 0, dy: -viewport.height)
+                state.highlightSpans = HighlightLineSpans(input.chapter.document.displayList.items.lazy.filter { item in
+                    guard case .text(let text) = item else { return false }
+                    return text.rect.rawValue.maxY >= lines.minY && text.rect.rawValue.minY <= lines.maxY
+                })
                 Self.signposter.endInterval("viewport.paintPrepare", prepare,
                     "fragments=\(state.fragments.count)")
                 state.revision = input.chapter.layoutRevision
@@ -289,7 +299,8 @@ final class ReaderViewportFragmentHost: UIView {
                     want(entry, key: key,
                          identity: RasterIdentity(content: .browser(revision: entry.contentRevision), scale: scale),
                          renderingRect: fragment.renderingRect, global: global) {
-                        .browser(.init(fragment: fragment, skipBackground: skipBackground, spine: spine))
+                        .browser(.init(fragment: fragment, skipBackground: skipBackground, spine: spine,
+                                       highlightSpans: state.highlightSpans))
                     }
                 }
             }
@@ -478,7 +489,10 @@ final class ReaderViewportFragmentHost: UIView {
                 let spread = fragment.decoration.style.shadows.map {
                     max(8, CGFloat($0.radius) * 4 + abs(CGFloat($0.x)) + abs(CGFloat($0.y)))
                 }.max() ?? 0
-                return result.union(fragment.rect.insetBy(dx: -spread, dy: -spread))
+                // Reaching along the line lets a piece paint its share of a line box
+                // that spans several fragments (`HighlightLineSpans`).
+                let reach = HighlightLineSpans.inlineReach(of: fragment.rect)
+                return result.union(fragment.rect.insetBy(dx: -max(spread, reach), dy: -spread))
             }
     }
 }

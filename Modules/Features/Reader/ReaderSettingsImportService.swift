@@ -62,6 +62,14 @@ enum ReaderSettingsImportService {
     static func loadReaderSettings(from url: URL) async throws -> ReaderSettingsImportPlan {
         guard url.pathExtension.lowercased() == "yuedustyle" else {
             let data = try Data(contentsOf: url)
+            // Another reader's highlight-rule pack: only its rules, merged into the user's.
+            if let format = HighlightPackImporter.format(fileExtension: url.pathExtension, data: data) {
+                return try await HighlightPackImportService.plan(
+                    data,
+                    format: format,
+                    fallbackName: url.deletingPathExtension().lastPathComponent
+                )
+            }
             // Checked before the chapter-title probe: a Lottie document shares
             // none of its keys, but both end up as a 章節標題樣式 and only one
             // decoder can be right for a given file.

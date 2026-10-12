@@ -220,8 +220,7 @@ enum QiThemeImportService {
         var reading = readingPlan(theme, notes: &outcome.notes).readingSettings
         if let readerFontPostScript { reading.fontPostScript = readerFontPostScript }
         if !theme.highlightRules.isEmpty {
-            reading.regexHighlights = highlightConfiguration(adding: theme.highlightRules,
-                                                             to: settings.regexHighlightConfiguration)
+            reading.regexHighlights = settings.regexHighlightConfiguration.addingImported(theme.highlightRules)
         }
         if let bubble = theme.bubble {
             settings.storeCommentBubbleCustomStyle(bubble.style)
@@ -264,30 +263,6 @@ enum QiThemeImportService {
             reading.followsSystemTheme = false
         }
         return reading.isEmpty ? nil : reading
-    }
-
-    /// The user's rules as they stand, plus the pack's (decided 2026-10-11): Reeden layers a
-    /// theme's bound rules over its global ones. A user with highlighting switched off had
-    /// no rule showing, so in that case their rules stay off and only the pack's show.
-    static func highlightConfiguration(
-        adding rules: [RegexHighlightRule],
-        to base: RegexHighlightConfiguration
-    ) -> RegexHighlightConfiguration {
-        var configuration = base
-        // Importing the same pack again replaces its rules rather than stacking a second
-        // copy (ids are fresh per parse, so compare what the rule does).
-        configuration.customRules.removeAll { existing in
-            rules.contains { $0.hasSameEffect(as: existing) }
-        }
-        if !base.isEnabled, rules.contains(where: \.isEnabled) {
-            configuration.isEnabled = true
-            for index in configuration.rules.indices { configuration.rules[index].isEnabled = false }
-            for index in configuration.customRules.indices {
-                configuration.customRules[index].isEnabled = false
-            }
-        }
-        configuration.customRules += rules
-        return configuration.sanitized()
     }
 
     /// A saved background named after the pack, in the list with the user's own: the
@@ -536,13 +511,5 @@ enum QiThemeImportService {
             format: localized("章節標題使用的字型未隨外觀包附帶：%@，已改用閱讀字型顯示。"),
             missing.sorted().joined(separator: localized("、"))
         ))
-    }
-}
-
-private extension RegexHighlightRule {
-    /// Same name, pattern, options and both styles — id and on/off state aside.
-    func hasSameEffect(as other: RegexHighlightRule) -> Bool {
-        name == other.name && pattern == other.pattern && options == other.options
-            && lightStyle == other.lightStyle && darkStyle == other.darkStyle
     }
 }

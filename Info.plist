@@ -35,6 +35,7 @@
 				<string>app.yuedu.reader-style</string>
 				<string>app.yuedu.qitheme</string>
 				<string>app.yuedu.reeden-theme</string>
+				<string>app.yuedu.qihighlight</string>
 			</array>
 		</dict>
 	</array>
@@ -53,6 +54,19 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array><string>qitheme</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>app.yuedu.qihighlight</string>
+			<key>UTTypeDescription</key>
+			<string>QiReader Highlight Rules</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>qihighlight</string></array>
 			</dict>
 		</dict>
 		<dict>

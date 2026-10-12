@@ -117,6 +117,55 @@ struct BrowserViewportFragmentTests {
         try await compare(doc, size: CGSize(width: 320, height: 2220), name: "tall-image-seams")
     }
 
+    /// Scroll mode paints a ruby line in several bitmaps — the annotation's baseline cuts
+    /// the line's run of items — so a quote around a ruby word drew one frame per bitmap
+    /// (和蘭人形, 2026-10-12). Each bitmap now paints its share of one box, seamlessly.
+    @Test func highlightAroundRubyIsOneBoxAcrossFragments() async throws {
+        let red = ReaderStyleBorder(width: 2, colorHex: 0xFF0000)
+        let style = ReaderStyleRuleStyle(decoration: ReaderStyleDecorationStyle(
+            padding: .init(top: 2, leading: 6, bottom: 2, trailing: 6),
+            borders: [.leading: red, .trailing: red]
+        ))
+        let rules = RegexHighlightConfiguration(isEnabled: true, rules: [], customRules: [RegexHighlightRule(
+            id: "ruby-frame", name: "frame", pattern: "「[^」]*」", isEnabled: true, isBuiltIn: false,
+            options: [], lightStyle: style, darkStyle: style
+        )])
+        let config = BrowserLayoutConfig(textTransform: BrowserReaderAttributes.transform(
+            configuration: rules, appearance: .light, assetRevision: 0
+        ))
+        // A paragraph follows: the chapter view clips at the content height, which would
+        // cut the padding of a box on the chapter's last line in either rendering.
+        let html = "<body style='margin:0'><p style='margin:20px'>前「<ruby>卑怯者<rt>ひきょうもの</rt></ruby>、な、名乗れ」後</p><p>次</p></body>"
+        let pipeline = try BrowserLayoutDocument(html: html, cssTexts: [], config: config)
+            .makeLayout(containerSize: CGSize(width: 320, height: 200))
+        let doc = BrowserScrollDocument.make(pipeline: pipeline, contentWidth: 320, contentInsets: .zero)
+        let size = CGSize(width: 320, height: ceil(doc.contentHeight + 4))
+        // 前「卑怯者 | ひきょうもの | 、な、名乗れ」後 | 次: the annotation cuts the quote's line.
+        let glyphs = doc.paintFragments(in: CGRect(origin: .zero, size: size), scale: 3)
+            .filter { $0.textPaintPhase == .glyphs }
+        #expect(glyphs.count >= 4, "the ruby must split the line into several fragments")
+
+        #expect(try maximumRedRunsPerRow(await renderedHost(doc, size: size)) == 2)
+        // The bitmaps meet without a seam: the same pixels as one whole-page draw.
+        try await compare(doc, size: size, name: "ruby-highlight-box")
+    }
+
+    private func maximumRedRunsPerRow(_ image: UIImage) throws -> Int {
+        let pixels = try bytes(image)
+        let width = try #require(image.cgImage).width
+        return stride(from: 0, to: pixels.count, by: width * 4).map { row in
+            var runs = 0
+            var inRun = false
+            for x in 0..<width {
+                let i = row + x * 4
+                let isRed = pixels[i] > 200 && pixels[i + 1] < 60 && pixels[i + 2] < 60
+                if isRed, !inRun { runs += 1 }
+                inRun = isRed
+            }
+            return runs
+        }.max() ?? 0
+    }
+
     @Test func overlappingRuleDecorationsStayUnderAllGlyphsIncludingShadows() async throws {
         let font = UIFont.systemFont(ofSize: 22)
         let style = ReaderStyleDecorationStyle(backgroundColorHex: 0xFFCC66,

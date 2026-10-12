@@ -1913,6 +1913,7 @@
 "圓角" = "Corner Radius";
 "圖層" = "Layers";
 "圖片填充方式" = "Image Fit";
+"九宮格" = "Nine-Slice";
 "圖片焦點 X" = "Image Focal Point X";
 "圖片焦點 Y" = "Image Focal Point Y";
 "圖片透明度" = "Image Opacity";
@@ -3655,7 +3656,13 @@
 
 /* Reeden .red theme import */
 "Reeden 主題包" = "Reeden Theme Pack";
-"下列高亮規則需要圖片、首字下沉或只套用於標題，本 App 無法重現，已略過：%@" = "These highlight rules require images, drop caps, or title-only matching, which this app can't reproduce, so they were skipped: %@";
+"下列高亮規則需要首字下沉或只套用於標題，本 App 無法重現，已略過：%@" = "These highlight rules require drop caps or title-only matching, which this app can't reproduce, so they were skipped: %@";
+"下列高亮規則的背景圖片無法讀取，已略過：%@" = "The background images of these highlight rules couldn't be read, so they were skipped: %@";
+"這不是可讀取的高亮規則包。" = "This isn't a readable highlight rule pack.";
+"下列高亮規則的正則無法使用，已略過：%@" = "The patterns of these highlight rules can't be used, so they were skipped: %@";
+"高亮規則使用的字型未安裝：%@，已改用閱讀字型顯示。" = "The fonts these highlight rules use aren't installed: %@. The reading font is used instead.";
+"高亮背景圖的縮放比例沒有對應設定，已依文字高度縮放。" = "Highlight background image scaling has no matching setting; images are scaled to the text height.";
+"這個高亮規則包裡沒有本 App 能使用的規則。" = "This highlight rule pack has no rules this app can use.";
 "主題動態特效" = "animated theme effects";
 "主題包只記錄了 Reeden 字型庫的編號，沒有附帶字型檔，正文與標題仍使用原本的字型。" = "The theme pack only references fonts by ID from Reeden's font library and doesn't include the font files, so body text and titles keep their current fonts.";
 "主題設定的「無動畫」翻頁無法隨排版匯入，已保留原本的翻頁方式。" = "The theme's \"No Animation\" page turn can't be imported with the layout, so your current page turn style was kept.";
@@ -3743,3 +3750,13 @@
 "插畫" = "Illustrator";
 "評註" = "Commentator";
 "貢獻者" = "Contributor";
+"上切線" = "Top Slice";
+"下切線" = "Bottom Slice";
+"左切線" = "Left Slice";
+"右切線" = "Right Slice";
+"拖曳四條切線：線外的四角原樣繪製，四邊沿文字延伸，中間填滿。圖片依文字高度縮放；位移只移動底圖。" = "Drag the four slice lines: the corners outside them are drawn as they are, the edges stretch along the text, and the middle fills. The image scales to the text height; offsets move only the image.";
+"他說：「好。」\n她回答：「我知道你一定會回來，所以一直在這裡等著，從天亮等到天黑。」" = "He said, “Fine.”\nShe answered, “I knew you would come back, so I waited here all day, from dawn until dark.”";
+"填滿" = "Fill";
+"適應" = "Fit";
+"平鋪" = "Tile";
+"拉伸" = "Stretch";

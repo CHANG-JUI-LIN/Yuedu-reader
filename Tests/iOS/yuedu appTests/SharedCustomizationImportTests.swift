@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @Suite("Shared theme and style imports", .serialized)
 @MainActor
 struct SharedCustomizationImportTests {
-    @Test("Native, QiReader and Reeden packages advertise the system Open In entry", arguments: ["yuedustyle", "qitheme", "red"])
+    @Test("Native, QiReader and Reeden packages advertise the system Open In entry", arguments: ["yuedustyle", "qitheme", "red", "qihighlight"])
     func registration(ext: String) throws {
         let type = try #require(UTType(filenameExtension: ext))
         #expect(!type.isDynamic)
@@ -119,6 +119,35 @@ struct SharedCustomizationImportTests {
 
         settings.appearanceThemeID = GlobalSettings.defaultAppearanceThemeID
         #expect(settings.readerBarLayout == saved)
+    }
+
+    /// Both routes — shared in from Files, and 正則高亮's 匯入規則 — read a pack the same way,
+    /// and neither asks anything: it only adds rules.
+    @Test("Reeden and QiReader highlight packs become 正則高亮 rules on both routes", arguments: ["red", "qihighlight"])
+    func highlightPacks(ext: String) async throws {
+        let data = ext == "red"
+            ? try HighlightPackFixtures.reedenPack()
+            : try await HighlightPackFixtures.qiPack()
+        let document = try await receive(data, extension: ext)
+        #expect(document.kind == (ext == "red" ? .qiTheme : .highlightPack))
+        let plan = try await SharedCustomizationImportService.load(document)
+        #expect(plan.prompt == nil)
+        guard case .reader(let shared) = plan else { Issue.record("Pack routed to a theme"); return }
+        #expect(shared.layout == nil)
+        let rule = try #require(shared.regexHighlights?.customRules.last)
+        #expect(rule.isEnabled)
+        #expect(rule.lightStyle.decoration.backgroundImage?.nineSlice != nil)
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("Pack.\(ext)")
+        try data.write(to: url)
+        let picked = ReaderStyleImportRoute.regexHighlights.scoped(
+            try await ReaderSettingsImportService.loadReaderSettings(from: url)
+        )
+        #expect(picked.regexHighlights?.customRules.last?.name == rule.name)
+        #expect(picked.regexHighlights?.customRules.last?.lightStyle == rule.lightStyle)
     }
 
     @Test("Broken packages report failure instead of becoming a book", arguments: ["qitheme", "yuedustyle"])
