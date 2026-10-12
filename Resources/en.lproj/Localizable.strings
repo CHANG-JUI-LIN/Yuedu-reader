@@ -74,7 +74,6 @@
 "全部" = "All";
 "全部停用" = "Disable All";
 "全部啟用" = "Enable All";
-"共 \\(fetcher.imageUrls.count) 頁" = "\\(fetcher.imageUrls.count) pages";
 "分組" = "Group";
 "分鐘" = "min";
 "刪除" = "Delete";

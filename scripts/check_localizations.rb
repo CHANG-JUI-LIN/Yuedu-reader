@@ -15,8 +15,11 @@
 # Chinese key while the tables agreed. Every localized("…") under the source
 # folders whose argument is a string literal, or a ternary choosing between two
 # literals, must be a key of the zh-Hant Localizable.strings (the tables above
-# keep the other languages in step with it). Arguments built at run time
-# (variables, interpolation) can't be checked here and are skipped.
+# keep the other languages in step with it). A literal that interpolates fails
+# outright: the key it builds ("5 分鐘") is in no table, so the reading-stats
+# durations and the WebDAV conflict message showed Chinese everywhere; format
+# a key instead (String(format: localized("%d 分鐘"), n)). Variables can't be
+# checked here and are skipped.
 #
 # Usage: scripts/check_localizations.rb [root ...]
 # Tables are read with plutil, so this runs on macOS only.
@@ -93,16 +96,16 @@ LITERAL_CALL = /#{CALL_PREFIX}#{SWIFT_LITERAL}\s*[,)]/m
 TERNARY_CALL = /#{CALL_PREFIX}[^"()]*?\?\s*#{SWIFT_LITERAL}\s*:\s*#{SWIFT_LITERAL}\s*[,)]/m
 SWIFT_ESCAPES = { "n" => "\n", "t" => "\t", "r" => "\r", "0" => "\0" }.freeze
 
-# The key a literal's body spells, or nil when it interpolates.
+# The key a literal's body spells; the caller rules out interpolation.
 def swift_literal_value(body)
-  return nil if body.include?("\\(")
-
   body.gsub(/\\u\{(\h+)\}|\\(.)/) { $1 ? [$1.hex].pack("U") : SWIFT_ESCAPES.fetch($2, $2) }
 end
 
-# Every literal key the code passes to localized, mapped to "file:line" sites.
+# Every literal key the code passes to localized, mapped to "file:line" sites,
+# and the "file:line" sites whose literal interpolates.
 def code_keys(sources)
   sites = Hash.new { |hash, key| hash[key] = [] }
+  interpolated = []
   Dir.glob(sources.map { |dir| File.join(dir, "**", "*.swift") }).sort.each do |path|
     text = File.read(path, encoding: "UTF-8")
     [LITERAL_CALL, TERNARY_CALL].each do |pattern|
@@ -113,13 +116,16 @@ def code_keys(sources)
 
         line = text[0...match.begin(0)].count("\n") + 1
         match.captures.compact.each do |body|
-          key = swift_literal_value(body)
-          sites[key] << "#{path}:#{line}" if key
+          if body.include?("\\(")
+            interpolated << "#{path}:#{line}"
+          else
+            sites[swift_literal_value(body)] << "#{path}:#{line}"
+          end
         end
       end
     end
   end
-  sites
+  [sites, interpolated.uniq]
 end
 
 # Reports each literal key the code uses that the table lacks; returns whether
@@ -128,7 +134,7 @@ def check_code_keys(sources, table)
   strings = parse_table(table)
   return false if strings.nil?
 
-  sites = code_keys(sources)
+  sites, interpolated = code_keys(sources)
   known = strings.keys.to_set
   missing = sites.reject { |key, _| known.include?(key) }
   unless missing.empty?
@@ -137,8 +143,12 @@ def check_code_keys(sources, table)
       warn "    #{key.gsub("\n", "\\n")}"
       places.uniq.each { |place| warn "      #{place}" }
     end
-    return false
   end
+  unless interpolated.empty?
+    warn "localized() keys built by interpolation, which no table can hold; format a key instead:"
+    interpolated.each { |place| warn "    #{place}" }
+  end
+  return false unless missing.empty? && interpolated.empty?
 
   count = sites.size
   puts "Localization OK: #{sources.join(", ")} use #{count} literal #{count == 1 ? "key" : "keys"}, all in #{table}"
