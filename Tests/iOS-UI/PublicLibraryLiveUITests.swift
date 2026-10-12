@@ -205,6 +205,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
         XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
         screenshot(app, "aozora-scope-page")
+        let title = String(work.label.split(whereSeparator: { "，、,".contains($0) }).first ?? "")
         work.tap()
 
         let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
@@ -223,5 +224,26 @@ final class PublicLibraryLiveUITests: XCTestCase {
                       app.debugDescription)
         XCTAssertTrue(app.buttons["已加入書架"].firstMatch.exists, app.debugDescription)
         screenshot(app, "aozora-detail-after-reading")
+
+        // From 書架, the same page: the copy is the work's (2026-10-12: it showed 來源 書架 alone).
+        app.terminate()
+        app.launch()
+        let shelfTab = app.tabBars.buttons["書架"].firstMatch
+        XCTAssertTrue(shelfTab.waitForExistence(timeout: 30))
+        shelfTab.tap()
+        let cell = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title + "，")).firstMatch
+        XCTAssertTrue(cell.waitForExistence(timeout: 15), "\(title)\n\(app.debugDescription)")
+        let more = cell.buttons["更多"].firstMatch
+        if more.exists { more.tap() } else { cell.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.96)).tap() }
+        let detailItem = app.buttons["作品詳情"].firstMatch
+        XCTAssertTrue(detailItem.waitForExistence(timeout: 5), app.debugDescription)
+        detailItem.tap()
+        XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
+        let named = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "青空文庫"), object: source)
+        XCTAssertEqual(XCTWaiter.wait(for: [named], timeout: 30), .completed, app.debugDescription)
+        let basis = app.descendants(matching: .any)["detail.info.basis"].firstMatch
+        for _ in 0..<6 where !basis.exists { app.swipeUp() }
+        XCTAssertTrue(basis.waitForExistence(timeout: 10), "the work's bibliography\n\(app.debugDescription)")
+        screenshot(app, "aozora-detail-from-shelf")
     }
 }

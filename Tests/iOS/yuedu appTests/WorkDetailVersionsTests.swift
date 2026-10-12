@@ -173,13 +173,54 @@ struct WorkDetailShelfVersionsTests {
 
         let provider = ShelfProvider(store: store, webDAVRoots: { [instance.id: root] })
         let tapped = WorkDetailRoute(.gutenberg(gutenberg))
-        let versions = await provider.versions(of: tapped)
+        let versions = await provider.versions(of: tapped, aozora: nil)
         // The copy was taken from the Gutenberg book, whose page reads it.
         #expect(versions.map(\.nodeKey) == [tapped.nodeKey, fileRecord.key])
         #expect(WorkVersions.primary(in: versions) == tapped)
 
-        // Tapped as the shelf shows it, the copy finds the same work.
+        // Tapped as the shelf shows it, the copy finds the same work, and the Gutenberg book
+        // stands for it there too (2026-10-12: opened from 書架, the copy led as 「書架」).
         let fromShelf = try #require(provider.items([copy]).first.flatMap(WorkDetailRoute.init))
-        #expect(await provider.versions(of: fromShelf).map(\.nodeKey) == [.copy(copy.id), fileRecord.key])
+        let shelfVersions = await provider.versions(of: fromShelf, aozora: nil)
+        #expect(shelfVersions.map(\.nodeKey) == [tapped.nodeKey, fileRecord.key])
+        guard case .gutenberg(let book) = shelfVersions.first?.opening else {
+            Issue.record("the Gutenberg book leads: \(shelfVersions)")
+            return
+        }
+        #expect(book.id == gutenberg.id)
+    }
+
+    /// 2026-10-12 (maintainer's screenshot): ホノルル opened from 書架 showed only 來源 書架. The
+    /// copy's key names its 青空文庫 work, which no work index lists; the catalog has it.
+    @Test("a 青空文庫 copy opened from the shelf is shown as its work")
+    func aozoraCopyFromShelf() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("WorkDetail-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = BookStore(metadataFileURL: folder.appendingPathComponent("books_meta.json"))
+        defer {
+            WorkIndexService.waitForPendingSavesForTesting()
+            store.waitForQueuedWrites()
+        }
+        let person = AozoraPerson(id: "001569", name: "中谷 宇吉郎", yomi: "", sortYomi: "", born: "", died: "")
+        let work = AozoraWork(id: "061517", title: "ホノルル", yomi: "ホノルル", sortYomi: "ほのるる", subtitle: "", kanaStyle: "",
+                              ndc: "", published: "", updated: "", card: "", text: "", textUpdated: "",
+                              credits: [.init(person: person.id, role: "著者")], source: "百日物語", sourcePublisher: "文藝春秋新社")
+        let index = AozoraCatalogIndex(catalog: AozoraCatalog(schemaVersion: 1, persons: [person], works: [work]))
+        var copy = ReadingBook(title: "ホノルル", author: "中谷宇吉郎", source: "local", contentFilename: "\(UUID().uuidString).epub")
+        copy.aozora = AozoraBookSource(originalFilename: "61517.zip", sourceEncoding: 0, catalogWorkID: work.id)
+        store.saveReadingBook(copy)
+
+        let provider = ShelfProvider(store: store)
+        let fromShelf = try #require(provider.items([copy]).first.flatMap(WorkDetailRoute.init))
+        let versions = await provider.versions(of: fromShelf, aozora: index)
+        guard versions.count == 1, case .aozora(let shown) = versions[0].opening else {
+            Issue.record("the work stands for its copy: \(versions)")
+            return
+        }
+        #expect(shown.id == work.id)
+
+        // Without the catalog (not read yet, or offline with no cache) the copy is all there is.
+        #expect(await provider.versions(of: fromShelf, aozora: nil).map(\.nodeKey) == [.copy(copy.id)])
     }
 }
