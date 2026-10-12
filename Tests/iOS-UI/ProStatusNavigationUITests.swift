@@ -37,7 +37,7 @@ final class ProStatusNavigationUITests: XCTestCase {
         defer { session.clearTransactions() }
         try session.buyProduct(productIdentifier: Self.monthlyID)
 
-        let app = openProRow(expectsPro: true, subtitle: "Subscribed — thank you!")
+        let app = openProRow(expectsPro: true, subtitle: "Subscribed. Thanks for your support!")
         assertStatusPage(app)
         XCTAssertTrue(
             app.buttons["pro_status_plan_action"].label.hasPrefix("Upgrade to Lifetime"),
@@ -57,7 +57,7 @@ final class ProStatusNavigationUITests: XCTestCase {
         defer { session.clearTransactions() }
         try session.buyProduct(productIdentifier: Self.lifetimeID)
 
-        let app = openProRow(expectsPro: true, subtitle: "Lifetime member — thank you!")
+        let app = openProRow(expectsPro: true, subtitle: "Lifetime member. Thanks for your support!")
         assertStatusPage(app)
         XCTAssertTrue(reveal(app.buttons["pro_status_restore"], in: app), "restore should stay available")
         // Same section as restore, so it would be materialized if it were shown.
@@ -73,7 +73,7 @@ final class ProStatusNavigationUITests: XCTestCase {
         try session.buyProduct(productIdentifier: Self.monthlyID)
         try session.buyProduct(productIdentifier: Self.lifetimeID)
 
-        let app = openProRow(expectsPro: true, subtitle: "Lifetime member — thank you!")
+        let app = openProRow(expectsPro: true, subtitle: "Lifetime member. Thanks for your support!")
         assertStatusPage(app)
         XCTAssertFalse(app.buttons["pro_status_plan_action"].exists)
         XCTAssertTrue(
@@ -81,7 +81,7 @@ final class ProStatusNavigationUITests: XCTestCase {
             "monthly held next to lifetime still needs a way to cancel"
         )
         XCTAssertTrue(
-            app.staticTexts["Remember to cancel the monthly plan after upgrading, or it will keep billing."].exists
+            app.staticTexts["After upgrading, remember to cancel your monthly subscription, or you'll continue to be charged."].exists
         )
         attach("pro-status-monthly-and-lifetime")
     }
@@ -114,13 +114,13 @@ final class ProStatusNavigationUITests: XCTestCase {
         defer { session.clearTransactions() }
         try session.buyProduct(productIdentifier: Self.monthlyID)
 
-        let app = openProRow(expectsPro: true, subtitle: "Subscribed — thank you!")
+        let app = openProRow(expectsPro: true, subtitle: "Subscribed. Thanks for your support!")
         assertStatusPage(app)
         purchase(tapping: app.buttons["pro_status_plan_action"], in: app)
 
         assertThankYouPage(app)
         XCTAssertTrue(
-            app.staticTexts["Cancel your monthly plan"].waitForExistence(timeout: 5),
+            app.staticTexts["Cancel Your Monthly Subscription"].waitForExistence(timeout: 5),
             "the monthly plan keeps billing after the upgrade; the thank-you page has to say so"
         )
         attach("pro-upgrade-celebration")
@@ -133,7 +133,7 @@ final class ProStatusNavigationUITests: XCTestCase {
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: button)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 20), .completed, "the product should load")
         button.tap()
-        let guest = app.alerts.buttons["Purchase Without Signing In"]
+        let guest = app.alerts.buttons["Buy Without Signing In"]
         XCTAssertTrue(guest.waitForExistence(timeout: 10), "a signed-out purchase asks how to buy")
         guest.tap()
     }
@@ -142,7 +142,7 @@ final class ProStatusNavigationUITests: XCTestCase {
     private func assertThankYouPage(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let title = app.staticTexts["pro_status_summary"].firstMatch
         let unlocked = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label == %@", "Yuedu Pro unlocked"),
+            predicate: NSPredicate(format: "label == %@", "Yuedu Pro Unlocked"),
             object: title
         )
         XCTAssertEqual(

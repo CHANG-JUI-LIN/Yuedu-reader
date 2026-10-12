@@ -27,7 +27,7 @@ final class EdgeTTSSettingsUITests: XCTestCase {
         let imported = app.descendants(matching: .any)["tts_imported_fixture-account"].firstMatch
         XCTAssertTrue(imported.exists)
         XCTAssertFalse(app.staticTexts["@js:fixture-account"].exists)
-        XCTAssertFalse(app.staticTexts["Requires Login"].exists)
+        XCTAssertFalse(app.staticTexts["Account Required"].exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "sent to Microsoft")).firstMatch.exists)
         let builtInCell = app.cells.containing(.button, identifier: "tts_edge_source").firstMatch
         let importedCell = app.cells.containing(.any, identifier: "tts_imported_fixture-account").firstMatch
@@ -88,7 +88,7 @@ final class EdgeTTSSettingsUITests: XCTestCase {
         let settings = app.tabBars.buttons.matching(NSPredicate(format: "label IN %@", ["Settings", "設定"])).firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 20))
         settings.tap()
-        let entry = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["TTS Settings", "語音朗讀設定"])).firstMatch
+        let entry = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["Read Aloud", "語音朗讀設定"])).firstMatch
         for _ in 0..<6 where !entry.isHittable { app.swipeUp() }
         XCTAssertTrue(entry.waitForExistence(timeout: 5))
         entry.tap()
