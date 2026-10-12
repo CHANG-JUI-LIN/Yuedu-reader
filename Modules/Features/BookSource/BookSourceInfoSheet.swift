@@ -46,7 +46,7 @@ struct BookSourceInfoSheet: View {
                         value: localized(source.enabled ? "已啟用" : "已停用"))
                     infoRow(
                         localized("支持發現"),
-                        value: localized(supportsExplore ? "是" : "否"))
+                        value: localized(supportsExplore ? "值：是" : "值：否"))
                     if let validation {
                         infoRow(localized("驗證結果"), value: validationText(validation))
                     }

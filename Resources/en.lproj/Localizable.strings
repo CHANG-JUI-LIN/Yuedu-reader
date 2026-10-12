@@ -3691,3 +3691,23 @@
 "顯示這個分類的作品" = "Shows works in this category.";
 "同題材作品" = "More in This Genre";
 "作者其他作品" = "More by This Author";
+
+/* 詞條拆分：同一個中文字在不同情境的另一個意思（key 為「情境：原字」） */
+"狀態：關閉" = "Off";
+"動作：開啟" = "Open";
+"動作：新增" = "Add";
+"動作：啟用" = "Enable";
+"動作：隱藏" = "Hide";
+"狀態：顯示" = "Shown";
+"動作：建立副本" = "Duplicate";
+"播放：繼續" = "Resume";
+"簡介：更多" = "More";
+"網頁：重新整理" = "Reload";
+"值：是" = "Yes";
+"值：否" = "No";
+"會員：重新驗證" = "Verify Again";
+"提示：編輯規則" = "Edits the rule.";
+"提示：隱藏已讀" = "Hides books you’ve finished.";
+"提示：作品詳情" = "Opens Book Details.";
+"章節 %d" = "Chapter %d";
+"標題：章節" = "Chapter";

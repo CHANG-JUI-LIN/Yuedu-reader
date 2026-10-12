@@ -132,10 +132,10 @@ struct JsBridgeBrowserView: View {
                             Button {
                                 bridge.reload?()
                             } label: {
-                                Label(localized("重新整理"), systemImage: "arrow.clockwise")
+                                Label(localized("網頁：重新整理"), systemImage: "arrow.clockwise")
                                     .labelStyle(.iconOnly)
                             }
-                            .accessibilityLabel(localized("重新整理"))
+                            .accessibilityLabel(localized("網頁：重新整理"))
                             .disabled(isSyncing)
                         }
                         ToolbarItem(placement: .navigationBarTrailing) {

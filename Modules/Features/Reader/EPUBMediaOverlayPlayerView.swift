@@ -87,7 +87,7 @@ struct EPUBMediaOverlayPlayerView: View {
         case .playing:
             return localized("暫停")
         case .paused:
-            return localized("繼續")
+            return localized("播放：繼續")
         case .stopped:
             return localized("播放")
         }

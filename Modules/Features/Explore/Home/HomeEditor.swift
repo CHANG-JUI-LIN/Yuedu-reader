@@ -94,7 +94,7 @@ struct HomeEditingSections<RowContent: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(title)
-            .accessibilityValue(localized(section.isEnabled ? "顯示" : "已隱藏"))
+            .accessibilityValue(localized(section.isEnabled ? "狀態：顯示" : "已隱藏"))
             .accessibilityIdentifier("homeEditor.toggle.\(section.id.uuidString)")
 
             VStack(alignment: .leading, spacing: DSSpacing.xl) {

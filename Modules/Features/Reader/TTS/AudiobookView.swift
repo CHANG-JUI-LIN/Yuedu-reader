@@ -395,7 +395,7 @@ struct AudiobookReaderView: View {
     }
 
     private var skipCreditsValue: String {
-        guard skipsCredits else { return localized("關閉") }
+        guard skipsCredits else { return localized("狀態：關閉") }
         return String(
             format: localized("片頭 %d 秒，片尾 %d 秒"),
             player.openingCreditsSeconds,
@@ -512,7 +512,7 @@ struct AudiobookSleepTimerView: View {
     var body: some View {
         NavigationStack {
             List {
-                option(localized("關閉"), isSelected: player.sleepOption == .off) {
+                option(localized("狀態：關閉"), isSelected: player.sleepOption == .off) {
                     player.setSleepOption(.off)
                 }
                 option(localized("本章結束"), isSelected: player.sleepOption == .endOfChapter) {

@@ -134,7 +134,7 @@ struct TestFlightMembershipGate: View {
                         .dsSectionFooter()
                 }
                 Section {
-                    Button(localized("重新驗證")) {
+                    Button(localized("會員：重新驗證")) {
                         Task { await TestFlightAccessController.shared.refresh() }
                     }
                     .disabled(state == .checking)

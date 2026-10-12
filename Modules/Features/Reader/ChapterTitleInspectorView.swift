@@ -332,7 +332,7 @@ struct ChapterTitleInspectorView: View {
                 }
             }
             metricSlider(
-                localized("透明度"),
+                localized("不透明度"),
                 value: doubleBinding(
                     get: { appearanceStyle(selectedLayer ?? layer).ruleStyle.decoration.opacity ?? 1 },
                     set: { value in mutateStyle(layer) { $0.ruleStyle.decoration.opacity = value } }

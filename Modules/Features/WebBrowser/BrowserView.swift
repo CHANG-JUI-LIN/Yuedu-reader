@@ -1090,7 +1090,7 @@ struct BrowserPage: View {
                         .foregroundStyle(DSColor.textPrimary)
                         .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
                 }
-                .accessibilityLabel(browser.isLoading ? localized("停止") : localized("重新整理"))
+                .accessibilityLabel(browser.isLoading ? localized("停止") : localized("網頁：重新整理"))
                 // Over the start page there is no page to reload; the slot stays so the
                 // address keeps its place in the middle.
                 .opacity(showsPage ? 1 : 0)

@@ -174,7 +174,7 @@ struct HomeRowView: View {
             } label: {
                 Label(localized("呈現方式"), systemImage: "rectangle.3.group")
             }
-            Button(localized("隱藏"), systemImage: "eye.slash", action: actions.hide)
+            Button(localized("動作：隱藏"), systemImage: "eye.slash", action: actions.hide)
             Button(localized("設定"), systemImage: "slider.horizontal.3", action: actions.openSettings)
             Button(localized("刪除"), systemImage: "trash", role: .destructive, action: actions.delete)
         }

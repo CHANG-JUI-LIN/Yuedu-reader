@@ -239,7 +239,7 @@ struct HomeSectionForm: View {
                     Button {
                         if editor.add() { added() }
                     } label: {
-                        Label(localized("新增"), systemImage: "checkmark")
+                        Label(localized("動作：新增"), systemImage: "checkmark")
                     }
                     .disabled(draft.binding == nil)
                     .accessibilityIdentifier("homeSection.add")

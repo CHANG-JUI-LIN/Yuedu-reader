@@ -119,7 +119,7 @@ struct AozoraWorkDetailView: View {
     }
     private var author: String { work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、") }
     private var readAction: BookDetailAction {
-        BookDetailAction(title: localized(shelfBook == nil ? "開始閱讀" : "開啟"), systemImage: "book",
+        BookDetailAction(title: localized(shelfBook == nil ? "開始閱讀" : "動作：開啟"), systemImage: "book",
             isBusy: action != nil, isEnabled: action == nil,
             detail: BookDetailResume.detail(chapterIndex: nil, progress: shelfBook?.currentPosition), action: {
                 if let book = shelfBook { openReader(book.id) }

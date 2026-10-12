@@ -78,11 +78,11 @@ struct AggregationSettingsView: View {
                 Toggle(localized("最新"), isOn: Binding(get: { store.hidesReadInLatest },
                                                        set: { store.setHidesReadInLatest($0) }))
                     // The switch alone reads 「最新」; the section says what it does.
-                    .accessibilityHint(localized("隱藏已讀"))
+                    .accessibilityHint(localized("提示：隱藏已讀"))
                     .accessibilityIdentifier("aggregation.hideRead.latest")
                 Toggle(localized("相關"), isOn: Binding(get: { store.hidesReadInRelated },
                                                        set: { store.setHidesReadInRelated($0) }))
-                    .accessibilityHint(localized("隱藏已讀"))
+                    .accessibilityHint(localized("提示：隱藏已讀"))
                     .accessibilityIdentifier("aggregation.hideRead.related")
             } header: {
                 Text(localized("隱藏已讀"))

@@ -1033,7 +1033,7 @@ struct BookDetailIntroSection: View {
                         isExpanded.toggle()
                     }
                 } label: {
-                    Text(isExpanded ? localized("收合") : localized("更多"))
+                    Text(isExpanded ? localized("收合") : localized("簡介：更多"))
                         .font(DSFont.subheadline.weight(.semibold))
                         .foregroundStyle(DSColor.accent)
                         .frame(minHeight: DSLayout.minimumTapTarget)
