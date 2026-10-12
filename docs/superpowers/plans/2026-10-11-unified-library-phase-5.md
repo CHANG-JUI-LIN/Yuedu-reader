@@ -1485,10 +1485,15 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
 - **Limits (disclosed):**
   - No 目錄 for a PDF, Markdown, comic or audiobook; their readers open the whole file.
   - No 目錄 for a TXT whose old index or interrupted migration still waits on its reader.
-  - A TOC entry with a fragment opens at the start of its spine item.
+  - **A TOC entry with a `#fragment` opens at the start of its spine item.** 青空文庫 entries are whole spine items and land exactly (live test: 底本 opens on 底本). Gutenberg EPUBs keep most chapters in one spine file, so tapping a chapter lands near the book's start. Measured: Pride and Prejudice's 「CHAPTER II.」 opened at 本章頁碼 1/141 on the licence page.
+    - The reader resolves an anchor only once its spine item is laid out (`ReaderView.tocPosition`, which falls back to offset 0).
+    - A one-shot anchor in the paged opening restore (`applyInitialProgressIfNeeded`, after `preloadChapter`) was tried and taken out unproven: the reader opened in scroll mode (`scrollpos.restore`), whose restore never runs that branch.
+    - Follow-up: once the opening restore has the target spine laid out or in the scroll window, call the reader's own `jumpToTOCEntry` once, on the real signal, never a delay.
 - **Tests:**
   - Unit: `WorkTableOfContentsTests` (new: EPUB chapters at spine items with the copy left unread, unprompted and out of 繼續閱讀; library session released once / kept while a reader holds it; unread TXT publishes an index the reader opens with the saved chapter; TXT with a position waits; PDF/MD have none). Regression: 74 tests in 11 suites passed on iOS 27.
-  - Live UI: `testAozoraWorkListsItsChapters` (new: rows appear, 查看全部 sheet, a chapter opens the reader, back to the page). Also passed: `testAozoraWorkDetailOrder`, `testAozoraWorkKeepsItsPageAfterReading`, `WorkDetailUITests`, `WorkDetailSeriesUITests`.
+  - Live UI:
+    - `testAozoraWorkListsItsChapters` (new): rows appear, the 查看全部 sheet opens, and a later chapter (底本) opens the reader on its text. The swipe back returns to the page.
+    - `testGutenbergWorkListsItsChapters` (new): Pride and Prejudice's 目錄 is read through the range session. A chapter opens the reader with its text loaded, and the swipe back is asked 「加入書架？」 → 不加入. 開始閱讀 then prepares the released book again, its text loads, and the prompt asks again. Also passed: `testAozoraWorkDetailOrder`, `testAozoraWorkKeepsItsPageAfterReading`, `WorkDetailUITests`, `WorkDetailSeriesUITests`.
   - `DetailReaderBackSwipeUITests`: 18/31 passed.
     - The 9 page-turn gesture tests failed at the assertions recorded before Phase 5.
     - 4 manga tests failed: `testDetailMangaReaderLoadsAndReturns`, `testSearchDetailMangaReaderLoadsAndReturns`, `testShelfMangaOpensOnThePage`, `testMangaPageZoomsWithPinchAndDoubleTap`. A 5th, `testWebtoonStripZoomsAndPansSideways`, failed the same way. All expected "Page 1 of 3" but got the page or mode left by earlier runs: the shelved fixture manga resumes on page 2, and reran alone it opens in webtoon mode.

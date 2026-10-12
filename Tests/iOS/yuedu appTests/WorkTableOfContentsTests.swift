@@ -68,11 +68,11 @@ struct WorkTableOfContentsTests {
             </package>
             """.utf8),
             "OPS/nav.xhtml": Data(EPUBTestFixtures.xhtml(title: "Nav", body: """
-            <nav epub:type="toc"><ol><li><a href="ch1.xhtml">一</a></li><li><a href="ch2.xhtml">二</a></li></ol></nav>
+            <nav epub:type="toc"><ol><li><a href="ch1.xhtml">一</a></li><li><a href="ch2.xhtml">二</a></li><li><a href="ch2.xhtml#later">三</a></li></ol></nav>
             """).utf8),
             "OPS/cover.xhtml": Data(EPUBTestFixtures.xhtml(title: "表紙", body: "<p>表紙</p>").utf8),
             "OPS/ch1.xhtml": Data(EPUBTestFixtures.xhtml(title: "一", body: "<p>本文一</p>").utf8),
-            "OPS/ch2.xhtml": Data(EPUBTestFixtures.xhtml(title: "二", body: "<p>本文二</p>").utf8),
+            "OPS/ch2.xhtml": Data(EPUBTestFixtures.xhtml(title: "二", body: #"<p>本文二</p><h2 id="later">三</h2><p>本文三</p>"#).utf8),
         ])
     }
 
@@ -85,8 +85,8 @@ struct WorkTableOfContentsTests {
 
         let chapters = try #require(try await WorkTableOfContents.chapters(of: book, store: store, remoteLibrary: library,
                                                                            positions: Positions()))
-        #expect(chapters.map(\.title) == ["一", "二"])
-        #expect(chapters.map(\.index) == [1, 2], "a position opens the spine item the entry points at")
+        #expect(chapters.map(\.title) == ["一", "二", "三"])
+        #expect(chapters.map(\.index) == [1, 2, 2], "a position opens the spine item the entry points at")
         #expect(library.released == 0, "a copy on this device holds no library session")
 
         let after = try #require(store.readingBook(id: book.id))
@@ -111,7 +111,7 @@ struct WorkTableOfContentsTests {
         let library = Library(copy: book, session: try await PublicationSession.open(sourceURL: try await epub()))
         let chapters = try await WorkTableOfContents.chapters(of: book, store: try store(), remoteLibrary: library,
                                                               positions: Positions())
-        #expect(chapters?.count == 2)
+        #expect(chapters?.count == 3)
         #expect(library.released == 1)
         #expect(!ReadingResourceUsage.shared.isInUse(bookID: book.id))
     }
