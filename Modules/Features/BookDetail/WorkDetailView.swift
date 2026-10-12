@@ -22,10 +22,12 @@ private struct SeriesLoad: Hashable {
     let versions: [SourceItemKey]
 }
 
-/// When 作品詳情 reads its versions: once no action runs, and again when asked.
+/// When 作品詳情 reads its versions: once no action runs, again when asked, and again once
+/// 青空文庫's catalog is read, which a 青空文庫 copy's work comes from.
 private struct VersionsLoad: Hashable {
     let idle: Bool
     let revision: Int
+    let hasAozoraCatalog: Bool
 }
 
 /// A Gutenberg book's catalog entry, read when its version is shown.
@@ -110,15 +112,22 @@ struct WorkDetailView: View {
 
     var body: some View {
         page
-            .task(id: VersionsLoad(idle: actions.action == nil, revision: versionsRevision)) {
+            .task(id: VersionsLoad(idle: actions.action == nil, revision: versionsRevision,
+                                   hasAozoraCatalog: aozora.catalog != nil)) {
                 // Again after each action: a book added to the shelf is a version of its own.
                 guard actions.action == nil else { return }
                 guard readerContext == nil else {
                     versionsLoaded = true
                     return
                 }
-                versions = await ShelfProvider(store: store).versions(of: route)
+                versions = await ShelfProvider(store: store).versions(of: route, aozora: aozora.catalog)
                 versionsLoaded = true
+                // A 青空文庫 copy stands for itself until the catalog is read; reading it changes
+                // this task's id, and the versions are read again with the work.
+                if aozora.catalog == nil,
+                   versions.contains(where: { $0.record.copyID != nil && $0.record.key.instance.type == .aozora }) {
+                    await aozora.load()
+                }
                 // A book-source page keeps its place once shown: the copy its 加入書架 makes would
                 // otherwise come first and take the page from under its reader.
                 if chosen == nil, let shown = selected, onlineBook(of: shown) != nil { chosen = shown.nodeKey }
@@ -573,12 +582,26 @@ struct WorkDetailView: View {
 
     private func sourceName(of version: WorkDetailRoute) -> String {
         switch version.opening {
-        case .copy: localized("書架")
+        case .copy(let id): copySourceName(version.record.key, copy: copy(id))
         case .opdsEntry(_, let id), .webDAVFile(_, let id):
             connections.connection(id: id)?.name ?? id
         case .gutenberg: localized("Project Gutenberg")
         case .aozora: localized("青空文庫")
         case .onlineBook(let frozen): frozen.book.sourceName
+        }
+    }
+
+    /// Where a copy on the shelf came from: 「書架」 names only a book that is the copy alone
+    /// (an imported file), never one taken from a library or a source (maintainer, 2026-10-12).
+    private func copySourceName(_ key: SourceItemKey, copy: ReadingBook?) -> String {
+        switch key.instance.type {
+        case .aozora: localized("青空文庫")
+        case .gutenberg: localized("Project Gutenberg")
+        case .opds, .calibre, .webDAV: connections.connection(id: key.instance.id)?.name ?? localized("書架")
+        case .bookSource:
+            copy?.bookSourceId.flatMap { BookSourceStore.shared.source(id: $0)?.bookSourceName }
+                .flatMap { $0.isEmpty ? nil : $0 } ?? localized("書架")
+        case .library, .bibliographic: localized("書架")
         }
     }
 

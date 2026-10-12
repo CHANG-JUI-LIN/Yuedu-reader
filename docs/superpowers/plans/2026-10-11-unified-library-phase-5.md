@@ -1420,3 +1420,18 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
     - 24 unit tests in 7 suites passed (with `WorkDetail*VersionsTests`, `SeriesWorksTests`, `SeriesCardsTests`, `AuthorWorksTests`, `LibraryHomePageTests`);
     - the live test passed;
     - `WorkDetailSeriesUITests` and `WorkDetailUITests` passed.
+
+#### What landed — a public-library copy opened from 書架 is its book (2026-10-13)
+
+- **Report (maintainer's screenshot):** ホノルル opened from 書架 showed only 作品資訊 → 來源 書架. Maintainer: the page is the same whether or not the book is on the shelf; 來源 follows the version chosen; 「書架」 only for a book that really is local.
+- **Cause:** the fold (`WorkVersions.merge`) only replaced a copy with an item that something else listed. Opened from 書架 or 繼續閱讀, a 青空文庫 or Gutenberg book's work holds no library item, because the work index lists only shelf copies and WebDAV files. This was the gap the previous entry left "not covered".
+- **Fix:** `ShelfProvider.versions(of:aozora:)` adds the public-library book each copy was taken from when no version lists it:
+  - a Gutenberg book by the number in its key;
+  - a 青空文庫 work from the catalog.
+  
+  `WorkDetailView` passes the catalog and reads the versions again once the catalog is read, loading it when a 青空文庫 copy is listed. That re-read is the task id's `hasAozoraCatalog`; there is no wait.
+- **Degraded case (disclosed):** without a catalog (none cached and offline), a 青空文庫 copy still stands for itself, now named 青空文庫.
+- **來源's name for a copy:** 「書架」 only for a copy that is all there is, such as an imported file. A copy taken from somewhere names that place: 青空文庫, Project Gutenberg, the remote library connection, or the 來源配置. 「書架」 is used only if that connection or source has since been removed.
+- **Tests:**
+  - Unit: `WorkDetailShelfVersionsTests.aozoraCopyFromShelf` (new) and `throughCopy`, which now expects the Gutenberg book in place of the copy. iOS 27: 10 tests in 2 suites passed.
+  - Live UI: `testAozoraWorkKeepsItsPageAfterReading` now also relaunches, opens the book's 作品詳情 from 書架, and checks 來源 青空文庫 and 底本. It passed.

@@ -194,7 +194,13 @@ final class ShelfProvider: CollectionBrowsing {
     /// of the works those belong to in the index (`WorkVersions.merge`). Only shelf copies and
     /// WebDAV files are indexed, so a library or public-library book reaches its work through a
     /// copy of it.
-    func versions(of tapped: WorkDetailRoute) async -> [WorkDetailRoute] {
+    ///
+    /// A copy taken from a public library is listed as the library's book even when nothing
+    /// else lists it — opened from 書架 or 繼續閱讀, its work holds no public-library item
+    /// (2026-10-12: ホノルル from 書架 showed only 來源 書架).
+    /// - Parameter aozora: 青空文庫's catalog, which a 青空文庫 copy's work is read from; without
+    ///   it (not read yet, or no cache offline) the copy stands for itself.
+    func versions(of tapped: WorkDetailRoute, aozora: AozoraCatalogIndex?) async -> [WorkDetailRoute] {
         let started = SourcePerfTrace.now
         var copies = store.copyLookup().copies(for: tapped.record.key).filter(\.isInBookshelf)
         if case .copy(let id) = tapped.opening, !copies.contains(where: { $0.id == id }),
@@ -214,13 +220,40 @@ final class ShelfProvider: CollectionBrowsing {
             members += index.entries(of: work).map(\.nodeKey)
         }
         let copyRoutes = items(copies).compactMap(WorkDetailRoute.init)
+        let memberRoutes = entries(for: members, shelf: shelf, files: files).compactMap(WorkDetailRoute.init)
         let versions = WorkVersions.merge(
             tapped: tapped,
             copies: zip(copyRoutes, copies.map(\.lastOpenedDate)).map { ($0, $1) },
-            members: entries(for: members, shelf: shelf, files: files).compactMap(WorkDetailRoute.init))
+            members: memberRoutes + Self.publicLibraryOrigins(of: [tapped] + copyRoutes + memberRoutes, aozora: aozora))
         SourcePerfTrace.record("works.detail.versions", "copies=\(copies.count) members=\(members.count) versions=\(versions.count)",
                                since: started, thresholdMs: 0)
         return versions
+    }
+
+    /// The public-library book each copy was taken from, where no version lists it already:
+    /// a Gutenberg book by its number, a 青空文庫 work from the catalog.
+    private static func publicLibraryOrigins(of versions: [WorkDetailRoute],
+                                             aozora: AozoraCatalogIndex?) -> [WorkDetailRoute] {
+        var listed = Set(versions.filter(\.readsItsCopies).map(\.record.key))
+        var origins: [WorkDetailRoute] = []
+        for copy in versions where copy.record.copyID != nil && !listed.contains(copy.record.key) {
+            let key = copy.record.key
+            let origin: WorkDetailRoute?
+            switch key.instance.type {
+            case .aozora:
+                origin = aozora.flatMap { index in index.worksByID[key.item].map { WorkDetailRoute(.aozora($0, index)) } }
+            case .gutenberg:
+                origin = Int(key.item).map { number in
+                    WorkDetailRoute(.gutenberg(GutenbergBook(id: number, title: copy.record.title,
+                                                             author: copy.record.authors.first ?? "")))
+                }
+            case .opds, .calibre, .webDAV, .bookSource, .library, .bibliographic:
+                // A remote library's item is listed through its connection's index or feed.
+                origin = nil
+            }
+            if let origin, listed.insert(key).inserted { origins.append(origin) }
+        }
+        return origins
     }
 
     /// The picked nodes as items: a shelf copy as the shelf shows it, an indexed file as its
