@@ -257,6 +257,18 @@
       - 5f-5: 已知的閱讀來源.
       - 5f-4c: search results, redone after 5f-5.
 
+33. **Given 2026-10-12, after the Gutenberg 簡介 report** (maintainer, a pasted proposal). Which description a work shows is decided in one place, not by each entry.
+    - **One renderer, already shared:** `BookDetailIntroSection` (`OnlineBookView`, `AudiobookDetailView`, `RemoteLibraryBookDetailView`, `WorkDetailView`). No second renderer.
+    - **One resolver for the data:** the description goes through `MetadataResolver` (`MetadataField.intro`), as title, authors and cover do in 5f-4d. Every entry (探索, 書架, 搜尋, the reader) gets the same one for the same work, version and chosen metadata. Today none of the detail pages resolves it: `WorkDetailView` reads the library item or the card's blurb, `OnlineBookView` the source's `intro`.
+    - **Precedence**, as decision 32: the reader's edit; confirmed official metadata; a provider the reader chose; the current reading source; what was stored when the work was first found. Tiers 2 and 3 still do not exist.
+    - **A reader's edit is work metadata:** `WorkDecision.override(.intro)` anchored on the copy (so it survives 換源), never one `OnlineBook.intro`. 編輯資訊 gets a 簡介 field.
+    - **Versions keep their own:** a different translation or revision is another copy with its own description; an edit never overwrites another version's.
+    - **Interactive descriptions stay in their source:** a Legado description's `<useweb>`/`<usehtml>` actions run only when the resolved description is the current book source's own. One from another place is shown as text.
+    - **Parsing stays per source:** each source's own rules (Gutenberg's labelled record, OPDS HTML, Legado's prefixes) produce clean text before it reaches the resolver.
+    - **Step:** folded into 5f-4d (title, authors, cover and description through the resolver, plus the 簡介 edit).
+
+34. **Given 2026-10-12** (maintainer, with an Emby screenshot of 選擇模板). Adding a section shows what each layout looks like: the layout choice is a list of live previews (real covers, the layout's own shape: 列表預覽－全寬, 海報牆－雙排…) titled by the layout's name, not a picker of names. Built with 30's layout work (精選, 專題集合), in 新增欄目 and the section form's 呈現方式.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -1171,3 +1183,15 @@ Decisions 29 and 32. Branch `unified-library/5f4b-reader-work`.
   - `WorkDetailUITests` adds a TXT's reader → 作品詳情 (來源 書架) → 繼續閱讀 → back to the shelf.
   - Both failed at the reader menu's 作品詳情 before the change. Both passed on iOS 27 and iOS 17.5.
   - iOS 27 regression: `testShelfOnlineBookOpensWorkDetail`, `testClassicReaderControlsFromExploreAreAccessible` and `testDetailReaderLoadsAndReturns` passed.
+
+### Gutenberg's 簡介 is its Summary (2026-10-12)
+
+- **Reported:** 作品詳情 for a Gutenberg book showed the whole bibliographic record as 簡介 (LoC No., Title, Contents, Credits, EBook No., Published, Downloads, Language, Subject, LoCC, Category, Rights).
+- **Root cause:** Gutenberg's XML book feed puts the record in Atom `<content type="xhtml">`, one labelled `<p>` per field. The Atom parser joined every paragraph with a space and SwiftSoup's `text()` collapsed the rest, so the record became one line and was taken as the description. The list feeds' content (the creator, or "N downloads") also became the cards' blurb, which 作品詳情 falls back to.
+- **Fix (parsing stays per source, decision 33):**
+  - `OPDSClient.paragraphBreak` / `plainParagraphs`: the Atom parser keeps paragraph boundaries; a description is one line per paragraph, for xhtml and escaped HTML alike (OPDS 2's `description` too). Every other field reads the break as a space.
+  - `GutenbergBookDetail` (the one place every Gutenberg route builds its item: 作品詳情, the storefront page, imports' captured metadata) keeps only the record's `Summary:` field, for the XML endpoint. A record without one has no 簡介.
+  - `WorkSummary.opds` gives Gutenberg list entries no blurb (both callers: `OPDSFeedProviding.page`, `WorkVersions`).
+- **Visible change:** books whose record has no Summary (e.g. *Hero stories of France*) now show no 簡介 instead of the record. Gutenberg's own "(This is an automatically generated summary.)" note is kept.
+- **Not migrated:** a Gutenberg book imported before this keeps the record already captured in its metadata sidecar.
+- **Tests:** `PublicLibraryStorefrontTests` (+3: the Summary alone from fixture 1342, nil without one, no list blurb), `OPDSParserTests` (paragraphs kept; xhtml title on one line; escaped-HTML paragraphs). `PublicLibraryStorefrontUITests`' fixture is now a real Gutenberg record, and it asserts the record's fields are not in 簡介. iOS 27: 17 suites, 127 unit tests passed; the UI suite passed (2 run, 3 skipped as before).

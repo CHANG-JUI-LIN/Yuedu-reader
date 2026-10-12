@@ -16,7 +16,20 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
             let xml = """
             <feed xmlns="http://www.w3.org/2005/Atom"><title>\(title)</title>
             <entry><id>urn:gutenberg:\(id):3</id><title>\(title)</title><author><name>\(author)</name></author>
-            <summary>這是書店互動測試使用的書籍介紹。測試只讀取本機目錄，不下載正文。</summary>
+            <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">
+            <p>This edition has images.</p>
+            <p>
+            Title:
+            \(title)
+            </p>
+            <p>
+            Summary:
+            這是書店互動測試使用的書籍介紹。測試只讀取本機目錄，不下載正文。
+            </p>
+            <p>EBook No.: \(id)</p>
+            <p>Downloads: 1000</p>
+            <p>Rights: Public domain in the USA.</p>
+            </div></content>
             <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://www.gutenberg.org/ebooks/\(id).epub3.images" length="1000"/>
             <link rel="related" type="application/atom+xml" title="By \(author)…" href="/ebooks/author/\(person).opds"/>
             </entry></feed>
@@ -146,8 +159,11 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         XCTAssertTrue(format.waitForExistence(timeout: 10), "The catalog entry is read on the page.\n\(app.debugDescription)")
         XCTAssertEqual(format.value as? String, "EPUB")
         XCTAssertTrue(app.buttons["下載供離線閱讀"].firstMatch.exists, app.debugDescription)
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '書店互動測試'")).firstMatch.exists,
-                      "The entry's description.\n\(app.debugDescription)")
+        // Gutenberg's content is the book's record; the description is its Summary field alone.
+        let description = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '書店互動測試'")).firstMatch
+        XCTAssertTrue(description.exists, "The entry's description.\n\(app.debugDescription)")
+        XCTAssertFalse(description.label.contains("EBook No."), "The record's other fields are not the description: \(description.label)")
+        XCTAssertFalse(description.label.hasPrefix("Summary"), description.label)
         screenshot(app, "work-detail-from-collection")
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10), "Back from 作品詳情 returns to the page it was opened from")

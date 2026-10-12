@@ -240,6 +240,31 @@ struct OPDSClient {
         }
     }
 
+    /// What the Atom parser leaves where a block element (p, div, br, li) ended, so that a
+    /// description keeps its paragraphs. Every other field reads it as a space.
+    static let paragraphBreak = "\u{2029}"
+
+    /// A description as plain text, one line per paragraph, whether the feed wrote the
+    /// paragraphs as xhtml (the parser's `paragraphBreak`s) or as escaped HTML.
+    static func plainParagraphs(_ value: String, limit: Int) -> String {
+        let bounded = String(value.prefix(limit * 4))
+        let text: String
+        do {
+            let document = try SwiftSoup.parseBodyFragment(bounded)
+            for block in try document.select("p, div, br, li").array() {
+                try block.after(TextNode(paragraphBreak, nil))
+            }
+            text = try document.text()
+        } catch {
+            AppLogger.error("Unable to sanitize OPDS metadata: \(error)")
+            text = bounded
+        }
+        let paragraphs = text.components(separatedBy: paragraphBreak)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return String(paragraphs.joined(separator: "\n").prefix(limit))
+    }
+
     fileprivate static func decodedBraces(_ string: String) -> String {
         string.replacingOccurrences(of: "%7B", with: "{", options: .caseInsensitive)
             .replacingOccurrences(of: "%7D", with: "}", options: .caseInsensitive)
@@ -280,7 +305,7 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         let parent = elements.last?.name
         if !elements.isEmpty {
             elements[elements.count - 1].text += element.text
-            if ["p", "div", "br", "li"].contains(element.name) { elements[elements.count - 1].text += " " }
+            if ["p", "div", "br", "li"].contains(element.name) { elements[elements.count - 1].text += OPDSClient.paragraphBreak }
         }
         switch element.name {
         case "title":
@@ -289,7 +314,7 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         case "id": if parent == "entry" { current?.id = value }
         case "name": if parent == "author", current != nil, !value.isEmpty { authors.append(Self.plain(value, limit: 256)) }
         case "summary", "content":
-            if parent == "entry", current?.summary == nil, !value.isEmpty { current?.summary = Self.plain(value, limit: 8_000) }
+            if parent == "entry", current?.summary == nil, !value.isEmpty { current?.summary = OPDSClient.plainParagraphs(value, limit: 8_000) }
         // The parser processes namespaces, so `dc:language` arrives as its local name.
         case "language":
             if parent == "entry", current?.language == nil, !value.isEmpty { current?.language = Self.plain(value, limit: 64) }
@@ -309,7 +334,9 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         }
     }
 
-    private static func plain(_ value: String, limit: Int) -> String { OPDSClient.plainMetadata(value, limit: limit) }
+    private static func plain(_ value: String, limit: Int) -> String {
+        OPDSClient.plainMetadata(value.replacingOccurrences(of: OPDSClient.paragraphBreak, with: " "), limit: limit)
+    }
 
     private func handleLink(_ attributes: [String: String], base: URL) {
         guard let href = attributes["href"], !href.isEmpty else { return }
