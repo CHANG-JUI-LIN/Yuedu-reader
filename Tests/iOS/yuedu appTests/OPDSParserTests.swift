@@ -103,10 +103,26 @@ struct OPDSParserTests {
         """
         let entry = try #require(OPDSClient.parseFeed(data: Data(xml.utf8), feedURL: feedURL).entries.first)
         #expect(entry.author == "One, Two")
-        #expect(entry.summary == "First bold. Second.")
+        // One line per paragraph, as the feed wrote them.
+        #expect(entry.summary == "First bold.\nSecond.")
         #expect(entry.title == "A & B")
         #expect(entry.bestAcquisition?.size == 2345)
         #expect(entry.bestAcquisition?.url.absoluteString == "https://example.com/proxy/opds/get/1.epub?library=main")
+    }
+
+    @Test("an xhtml title's paragraphs read as one line")
+    func xhtmlTitle() throws {
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><entry><id>b</id>
+          <title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>One</p><p>Two</p></div></title>
+          <summary type="html">&lt;p&gt;First.&lt;/p&gt;&lt;p&gt;Second.&lt;/p&gt;</summary>
+          <link rel="http://opds-spec.org/acquisition" href="get/1.epub" type="application/epub+zip"/></entry>
+        </feed>
+        """
+        let entry = try #require(OPDSClient.parseFeed(data: Data(xml.utf8), feedURL: feedURL).entries.first)
+        #expect(entry.title == "One Two")
+        // Escaped HTML keeps its paragraphs too.
+        #expect(entry.summary == "First.\nSecond.")
     }
 
     @Test("search templates retain braces and encode punctuation in path or query")

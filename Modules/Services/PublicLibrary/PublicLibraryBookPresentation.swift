@@ -153,6 +153,11 @@ struct GutenbergBookDetail {
         // OPDS 2 publications carry no text/html link; their identifier is the
         // book's page on gutenberg.org.
         combined.alternateURL = preferred.alternateURL ?? feed.alternateURL ?? Self.officialPage(preferred.id)
+        // The XML catalog's content is the book's bibliographic record, one labelled
+        // paragraph per field (Title, Credits, Summary, EBook No., Downloads, Rights…). Its
+        // description is the Summary field alone; a record without one has none. OPDS 2's
+        // `description` is the description itself.
+        if endpoint == .xml { combined.summary = Self.recordSummary(preferred.summary) }
         item = RemoteLibraryBookRoute(entry: combined, connectionID: PublicLibraryID.gutenberg.rawValue).item
         var seenAuthors = Set<URL>()
         authors = editions.flatMap(\.relatedLinks).compactMap { link in
@@ -162,6 +167,13 @@ struct GutenbergBookDetail {
                     .trimmingCharacters(in: CharacterSet(charactersIn: ".…"))
             return GutenbergAuthor(name: name, url: link.url)
         }
+    }
+
+    static func recordSummary(_ record: String?) -> String? {
+        let label = "Summary:"
+        guard let field = record?.split(separator: "\n").first(where: { $0.hasPrefix(label) }) else { return nil }
+        let text = field.dropFirst(label.count).trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
     }
 
     private static func officialPage(_ identifier: String) -> URL? {
