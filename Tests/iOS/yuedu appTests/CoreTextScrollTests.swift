@@ -893,7 +893,9 @@ struct CoreTextScrollTests {
             if index == output.chunks.indices.last {
                 #expect(chunk.width <= 480)
             } else {
-                #expect(chunk.width == 480)
+                // Ends where its next column starts (`ScrollChunkSeamSpacingTests`), which
+                // is within a column of the cap.
+                #expect(abs(chunk.width - 480) < 18 * 3)
             }
             #expect(chunk.height == 320)
         }

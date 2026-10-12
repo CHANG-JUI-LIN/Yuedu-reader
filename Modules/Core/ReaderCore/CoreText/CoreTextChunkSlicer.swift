@@ -224,6 +224,26 @@ enum CoreTextChunkSlicer {
                 )
             }
 
+            // The 段距 between this chunk's last paragraph and the next chunk's first lives
+            // in neither frame: Core Text puts nothing under a frame's last line and drops
+            // `paragraphSpacingBefore` on its first. Chunks stack edge to edge, so the
+            // break would read as an ordinary line step. A frame lays its lines out from
+            // the top, so the extra height lands under the last line. Measure from where
+            // the text ends, not from the rounded-up height, or the seam carries that
+            // rounding on top of the 段距.
+            let seamGap = paragraphGap(after: actualRange, in: attrStr)
+            if seamGap > 0 {
+                actualHeight = max(actualHeight, textBottom(of: frameBuild.frame, height: actualHeight) + seamGap)
+                frameBuild = makeHorizontalFrame(
+                    framesetter: framesetter,
+                    attrStr: attrStr,
+                    range: actualRange,
+                    chunkSize: CGSize(width: contentWidth, height: actualHeight),
+                    writingMode: writingMode,
+                    metrics: &metrics
+                )
+            }
+
             let chunk = makeHorizontalChunk(
                 frameBuild: frameBuild,
                 framesetter: framesetter,
@@ -412,7 +432,35 @@ enum CoreTextChunkSlicer {
             }
             var finalFrame = frame
             var finalChunkWidth = chunkWidth
-            if actualRange.location + actualRange.length >= totalLen {
+            if actualRange.location + actualRange.length < totalLen,
+               let fittedWidth = verticalSeamWidth(
+                   framesetter: framesetter,
+                   frame: frame,
+                   width: chunkWidth,
+                   columnHeight: chunkHeight,
+                   nextLocation: actualRange.location + actualRange.length,
+                   writingMode: writingMode,
+                   metrics: &metrics
+               ) {
+                // Chunks stack edge to edge, so a chunk has to end exactly where the next
+                // chunk's first column needs it to. Left at `widthCap`, the strip too narrow
+                // for another column widened every seam, and when a paragraph ended the
+                // chunk its 段距 lived in neither frame. Columns are laid out from the right
+                // edge, so changing the path's width leaves every one of them where it was.
+                let fittedPath = CGPath(
+                    rect: CGRect(x: 0, y: 0, width: fittedWidth, height: chunkHeight),
+                    transform: nil
+                )
+                finalFrame = metrics.measuringCreateFrame {
+                    CoreTextPaginator.makeFrame(
+                        framesetter: framesetter,
+                        range: actualRange,
+                        path: fittedPath,
+                        writingMode: writingMode
+                    )
+                }
+                finalChunkWidth = fittedWidth
+            } else {
                 // Same backdrop rule as `padForBackdrop`, applied where vertical-rl decides
                 // the chapter's final column-block width: the scroll axis here is width, so
                 // compacting a short chapter to its used width cropped a full-bleed backdrop
@@ -493,6 +541,63 @@ enum CoreTextChunkSlicer {
             attributedString: attrStr,
             metrics: metrics
         )
+    }
+
+    /// Width a vertical chunk ending at `nextLocation` needs so that, stacked against the
+    /// chunk that starts there, the next column lands at the pitch Core Text gives it inside
+    /// one frame — the line step, or the paragraph step when a paragraph ends the chunk
+    /// (Core Text drops `paragraphSpacingBefore` on a frame's first column, so the next
+    /// chunk cannot carry it). Both distances are measured from small frames rather than
+    /// derived from font metrics: Core Text's vertical line pitch is not ascent + descent.
+    /// Nil only when the chunk lays out no column, or the next column is too wide for any
+    /// chunk; the chunk then keeps the cap width, as every vertical chunk used to.
+    private static func verticalSeamWidth(
+        framesetter: CTFramesetter,
+        frame: CTFrame,
+        width: CGFloat,
+        columnHeight: CGFloat,
+        nextLocation: CFIndex,
+        writingMode: ReaderWritingMode,
+        metrics: inout CoreTextSliceMetrics
+    ) -> CGFloat? {
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard let lastLine = lines.last else { return nil }
+        var lastOrigin = CGPoint.zero
+        CTFrameGetLineOrigins(frame, CFRange(location: lines.count - 1, length: 1), &lastOrigin)
+        let lastStart = CTLineGetStringRange(lastLine).location
+
+        // Enough text for the next column: the suggestion ignores a first-line indent, so
+        // it can only overshoot the column's real length, and only the first column of each
+        // probe is read.
+        let typesetter = CTFramesetterGetTypesetter(framesetter)
+        let nextLength = CTTypesetterSuggestLineBreak(typesetter, nextLocation, Double(columnHeight))
+        guard nextLength > 0 else { return nil }
+
+        func columnsFromRight(_ range: CFRange, probeWidth: CGFloat) -> [CGFloat] {
+            let probe = metrics.measuringCreateFrame {
+                CoreTextPaginator.makeFrame(
+                    framesetter: framesetter,
+                    range: range,
+                    path: CGPath(rect: CGRect(x: 0, y: 0, width: probeWidth, height: columnHeight), transform: nil),
+                    writingMode: writingMode
+                )
+            }
+            let count = CFArrayGetCount(CTFrameGetLines(probe))
+            var origins = [CGPoint](repeating: .zero, count: count)
+            CTFrameGetLineOrigins(probe, CFRange(location: 0, length: count), &origins)
+            return origins.map { probeWidth - $0.x }
+        }
+        // The chunk's last column followed by the next, as one frame lays them out. Each
+        // fits in `width` on its own; twice that holds both.
+        let pair = columnsFromRight(
+            CFRange(location: lastStart, length: nextLocation + nextLength - lastStart),
+            probeWidth: width * 2
+        )
+        // The next column where the next chunk's frame will put it.
+        let opening = columnsFromRight(CFRange(location: nextLocation, length: nextLength), probeWidth: width)
+        guard pair.count >= 2, let nextOffset = opening.first else { return nil }
+
+        return (width - lastOrigin.x) + (pair[1] - pair[0]) - nextOffset
     }
 
     private static func verticalUsedWidth(of frame: CTFrame) -> CGFloat {
@@ -624,6 +729,35 @@ enum CoreTextChunkSlicer {
             floatAttachments: [attachment],
             splitBeforeFloatLocation: nil
         )
+    }
+
+    /// The space Core Text puts between two paragraphs in one frame — the first one's
+    /// `paragraphSpacing` plus the second one's `paragraphSpacingBefore` — when `range`
+    /// ends at a paragraph break with more text after it. Zero at the chapter's end, or
+    /// when the range stops inside a paragraph.
+    private static func paragraphGap(after range: CFRange, in attrStr: NSAttributedString) -> CGFloat {
+        let end = range.location + range.length
+        guard end > 0, end < attrStr.length,
+              (attrStr.string as NSString).character(at: end - 1) == 0x000A
+        else { return 0 }
+        let ending = attrStr.attribute(.paragraphStyle, at: end - 1, effectiveRange: nil) as? NSParagraphStyle
+        let opening = attrStr.attribute(.paragraphStyle, at: end, effectiveRange: nil) as? NSParagraphStyle
+        return max(0, ending?.paragraphSpacing ?? 0) + max(0, opening?.paragraphSpacingBefore ?? 0)
+    }
+
+    /// How far below the top of a `height`-tall frame its deepest line ends.
+    private static func textBottom(of frame: CTFrame, height: CGFloat) -> CGFloat {
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return 0 }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: lines.count), &origins)
+        var bottom: CGFloat = 0
+        for (index, line) in lines.enumerated() {
+            var descent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(line, nil, &descent, nil)
+            bottom = max(bottom, height - origins[index].y + max(0, descent))
+        }
+        return bottom
     }
 
     /// Height a rectangular frame needs to keep every line of `range`: the deepest line's
