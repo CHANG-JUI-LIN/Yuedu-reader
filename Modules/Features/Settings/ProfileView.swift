@@ -42,7 +42,8 @@ struct SettingsView: View {
     }
 
     private var appLanguageFooter: String {
-        let appName = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "App"
+        // The name iOS Settings lists the app under: the display name (閱讀), not the bundle name.
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "App"
         let template = localized("跟隨系統語言。可在「設定 → %@ → 語言」單獨設定")
         return String(format: template, appName)
     }

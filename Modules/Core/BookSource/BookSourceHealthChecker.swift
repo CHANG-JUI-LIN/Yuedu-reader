@@ -217,7 +217,7 @@ enum ValidationStage: Int, CaseIterable, Identifiable {
         switch self {
         case .search:    return localized("搜索書籍")
         case .discovery: return localized("發現分類")
-        case .detail:    return localized("書籍詳情")
+        case .detail:    return localized("詳情頁")
         case .toc:       return localized("章節目錄")
         case .content:   return localized("正文內容")
         }
