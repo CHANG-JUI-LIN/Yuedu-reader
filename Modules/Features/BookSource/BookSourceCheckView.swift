@@ -271,7 +271,7 @@ private struct BookSourceCheckResultRow: View {
 
             if item.isFinished, !item.overallPass {
                 HStack(spacing: DSSpacing.xs) {
-                    Text(localized("失敗類型") + "：")
+                    Text(localized("失敗類型："))
                     Text(item.failureCategory?.title ?? localized("網站失效"))
                 }
                 .font(DSFont.caption)

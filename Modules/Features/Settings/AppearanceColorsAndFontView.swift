@@ -157,7 +157,7 @@ struct AppearanceColorsAndFontView: View {
     /// user handed over does (2026-09-29). Spoken alone, the two 亮色模式 would be the
     /// same row to VoiceOver, so each says whose it is — the way 頁首頁尾's colour rows do.
     private func modeLabel(section: String, mode: String) -> String {
-        "\(localized(section))，\(localized(mode))"
+        localized(section) + localized("，") + localized(mode)
     }
 
     /// A row's title in 主文字, like every settings row with a symbol

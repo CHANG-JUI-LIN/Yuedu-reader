@@ -137,7 +137,7 @@ struct SettingsView: View {
                         DSSettingsRow(
                             icon: "arrow.down.circle.fill",
                             title: localized("下載管理"),
-                            detail: "\(downloadedBooksCount) \(localized("本"))",
+                            detail: String(format: localized("%d 本"), downloadedBooksCount),
                             action: { showDownloadManager = true }
                         )
 

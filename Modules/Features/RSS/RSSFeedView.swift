@@ -113,7 +113,7 @@ struct RSSSmartFeedView: View {
                         .foregroundColor(DSColor.textPrimary)
                         .lineLimit(1)
 
-                    Text("\(unreadCount) \(localized("未讀"))")
+                    Text(String(format: localized("%d 未讀"), unreadCount))
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }
@@ -337,7 +337,7 @@ struct RSSFeedView: View {
                         .foregroundColor(DSColor.textPrimary)
                         .lineLimit(1)
 
-                    Text("\(unreadCount) \(localized("未讀"))")
+                    Text(String(format: localized("%d 未讀"), unreadCount))
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                 }

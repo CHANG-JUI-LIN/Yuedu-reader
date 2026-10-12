@@ -146,8 +146,8 @@ struct ReaderBookmarkListView: View {
     // MARK: - Editing helpers
 
     private var selectedCountText: String {
-        let noun = segment == .bookmark ? localized("書籤") : localized("重點")
-        return String(format: localized("已選取 %1$d 個%2$@"), selection.count, noun)
+        let format = segment == .bookmark ? localized("已選取 %d 個書籤") : localized("已選取 %d 個重點")
+        return String(format: format, selection.count)
     }
 
     private func deleteSelected() {

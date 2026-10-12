@@ -1022,5 +1022,101 @@
 			<string>%d sources</string>
 		</dict>
 	</dict>
+	<key>「%1$@」%2$d 本</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>“%1$@”: %2$#@b@</string>
+		<key>b</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d book</string>
+			<key>other</key>
+			<string>%d books</string>
+		</dict>
+	</dict>
+	<key>抓取 %d 字</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Fetched %d character</string>
+			<key>other</key>
+			<string>Fetched %d characters</string>
+		</dict>
+	</dict>
+	<key>%d 段落</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d segment</string>
+			<key>other</key>
+			<string>%d segments</string>
+		</dict>
+	</dict>
+	<key>%d 分鐘</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d minute</string>
+			<key>other</key>
+			<string>%d minutes</string>
+		</dict>
+	</dict>
+	<key>已選取 %d 個書籤</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Bookmark Selected</string>
+			<key>other</key>
+			<string>%d Bookmarks Selected</string>
+		</dict>
+	</dict>
+	<key>已選取 %d 個重點</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Highlight Selected</string>
+			<key>other</key>
+			<string>%d Highlights Selected</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

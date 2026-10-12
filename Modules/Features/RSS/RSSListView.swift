@@ -1397,7 +1397,7 @@ private struct ImportLegadoJSONURLSheet: View {
             let (data, _) = try await URLSession.shared.data(from: url)
             let sources = try LegadoSourceJSONParser.parse(data: data)
             let addedCount = store.addSources(sources)
-            message = "\(localized("成功匯入")) \(addedCount) \(localized("個訂閱源"))"
+            message = String(format: localized("已匯入 %d 個訂閱源"), addedCount)
             showMessage = true
         } catch {
             message = "❌ \(String(format: localized("Legado JSON 匯入失敗：%@"), error.localizedDescription))"

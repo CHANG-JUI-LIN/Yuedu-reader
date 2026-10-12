@@ -560,9 +560,9 @@ final class BookSourceHealthChecker: ObservableObject {
         let deleted = deleteIds.isEmpty ? 0 : store.delete(ids: deleteIds)
 
         var parts: [String] = []
-        if !toDisable.isEmpty { parts.append("\(localized("已停用")) \(toDisable.count)") }
-        if deleted > 0 { parts.append("\(localized("已刪除")) \(deleted)") }
-        lastSummary = parts.isEmpty ? nil : parts.joined(separator: "，")
+        if !toDisable.isEmpty { parts.append(String(format: localized("已停用 %d"), toDisable.count)) }
+        if deleted > 0 { parts.append(String(format: localized("已刪除 %d"), deleted)) }
+        lastSummary = parts.isEmpty ? nil : parts.joined(separator: localized("，"))
     }
 
     // MARK: - Per-source five-stage run
@@ -954,7 +954,7 @@ final class BookSourceHealthChecker: ObservableObject {
             ) else {
                 return .failure(.searchFailed, localized("搜索失效"))
             }
-            return .success(book, "「\(keyword)」\(books.count) \(localized("本"))")
+            return .success(book, String(format: localized("「%1$@」%2$d 本"), keyword, books.count))
         } catch {
             return .failure(.siteError, error.localizedDescription)
         }
@@ -990,7 +990,7 @@ final class BookSourceHealthChecker: ObservableObject {
                 return .failure(.discoveryFailed, localized("發現失效"))
             }
             let title = section.title ?? localized("發現")
-            return .success(book, "「\(title)」\(books.count) \(localized("本"))")
+            return .success(book, String(format: localized("「%1$@」%2$d 本"), title, books.count))
         } catch {
             return .failure(.siteError, error.localizedDescription)
         }
@@ -1061,7 +1061,7 @@ final class BookSourceHealthChecker: ObservableObject {
             first.runtimeVariables = mergedVariables.isEmpty ? nil : mergedVariables
             return .success(
                 ValidatedChapter(ref: first, tocURL: package.tocURL),
-                "\(localized("章節")) \(package.chapters.count) \(localized("章"))"
+                String(format: localized("共 %d 章"), package.chapters.count)
             )
         } catch {
             return .failure(.siteError, error.localizedDescription)
@@ -1087,7 +1087,7 @@ final class BookSourceHealthChecker: ObservableObject {
             guard !ChapterFetchManager.isSuspiciousChapterContent(text) else {
                 return .failure(.contentEmpty, localized("正文疑似包含多章內容"))
             }
-            return .success(count, "\(localized("抓取")) \(count) \(localized("字"))")
+            return .success(count, String(format: localized("抓取 %d 字"), count))
         } catch {
             return .failure(.siteError, error.localizedDescription)
         }

@@ -758,7 +758,7 @@ struct BookSourceListView: View {
                         model.isPageFullySelected
                             ? DSColor.accent : Color(UIColor.systemGray3))
                     .accessibilityHidden(true)
-                    Text(localized("全選") + "(\(model.pageSelectedCount)/\(model.pageCount))")
+                    Text(String(format: localized("全選(%1$d/%2$d)"), model.pageSelectedCount, model.pageCount))
                         .font(DSFont.fixed(size: 13))
                         .foregroundColor(DSColor.textPrimary)
                 }
@@ -927,9 +927,9 @@ struct BookSourceListView: View {
             await healthChecker.runAll()
             if !showSourceCheck {
                 let passed = healthChecker.passedCount
-                var msg = "\(localized("驗證完成"))：\(passed)/\(healthChecker.items.count) \(localized("通過"))"
+                var msg = String(format: localized("驗證完成：%1$d/%2$d 通過"), passed, healthChecker.items.count)
                 if let summary = healthChecker.lastSummary {
-                    msg += "，\(summary)"
+                    msg += localized("，") + summary
                 }
                 checkToast = msg
             }

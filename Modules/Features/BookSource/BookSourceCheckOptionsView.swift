@@ -140,7 +140,7 @@ struct BookSourceCheckOptionsView: View {
 
                 Picker(localized("超時"), selection: $policy.timeoutSeconds) {
                     ForEach(BookSourceCheckPolicy.timeoutOptionsSeconds, id: \.self) { seconds in
-                        Text("\(seconds) \(localized("秒"))").tag(seconds)
+                        Text(String(format: localized("%d 秒"), seconds)).tag(seconds)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -167,7 +167,7 @@ struct BookSourceCheckOptionsView: View {
                 if policy.disableSlow {
                     Picker(localized("過慢閾值"), selection: $policy.slowThresholdMs) {
                         ForEach(BookSourceCheckPolicy.slowOptionsMs, id: \.self) { ms in
-                            Text("\(ms / 1000) \(localized("秒"))").tag(ms)
+                            Text(String(format: localized("%d 秒"), ms / 1000)).tag(ms)
                         }
                     }
                     .pickerStyle(.segmented)

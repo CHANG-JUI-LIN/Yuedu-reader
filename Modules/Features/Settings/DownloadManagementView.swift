@@ -104,18 +104,15 @@ struct DownloadManagementView: View {
         Section(header: Text(localized("總覽")).foregroundStyle(DSColor.textSecondary)) {
             statRow(
                 title: localized("下載中"),
-                value: "\(activeDownloads.count)",
-                detail: localized("本")
+                value: String(format: localized("%d 本"), activeDownloads.count)
             )
             statRow(
                 title: localized("已下載"),
-                value: "\(downloadedBooks.count)",
-                detail: localized("本")
+                value: String(format: localized("%d 本"), downloadedBooks.count)
             )
             statRow(
                 title: localized("佔用空間"),
-                value: String(format: "%.1f", totalDownloadedMegabytes),
-                detail: "MB"
+                value: String(format: "%.1f MB", totalDownloadedMegabytes)
             )
         }
         .interfaceSectionSurface()
@@ -237,7 +234,7 @@ struct DownloadManagementView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(book.title)
                             Text(
-                                "\(progressLabel(for: book)) \(localized("章"))  ·  \(rangeLabel(for: book))  ·  \(String(format: "%.1f", cacheSizeMB(for: book))) MB"
+                                "\(String(format: localized("%@ 章"), progressLabel(for: book)))  ·  \(rangeLabel(for: book))  ·  \(String(format: "%.1f", cacheSizeMB(for: book))) MB"
                             )
                             .font(DSFont.caption)
                             .foregroundColor(DSColor.textSecondary)
@@ -270,12 +267,12 @@ struct DownloadManagementView: View {
         .interfaceSectionSurface()
     }
 
-    private func statRow(title: String, value: String, detail: String) -> some View {
+    private func statRow(title: String, value: String) -> some View {
         HStack {
             Text(title)
                 .foregroundStyle(DSColor.textPrimary)
             Spacer()
-            Text("\(value) \(detail)")
+            Text(value)
                 .foregroundColor(DSColor.textSecondary)
         }
     }

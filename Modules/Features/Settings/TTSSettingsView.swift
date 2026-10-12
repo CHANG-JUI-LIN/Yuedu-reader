@@ -415,7 +415,7 @@ struct TTSSettingsView: View {
                             ? DSColor.accent : Color(UIColor.systemGray3)
                     )
                     .accessibilityHidden(true)
-                    Text(localized("全選") + "(\(selectedSourceIds.count)/\(gs.importedTTSSources.count))")
+                    Text(String(format: localized("全選(%1$d/%2$d)"), selectedSourceIds.count, gs.importedTTSSources.count))
                         .font(DSFont.fixed(size: 13))
                         .foregroundColor(DSColor.textPrimary)
                 }
