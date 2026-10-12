@@ -163,6 +163,20 @@ struct OnlineBookView: View {
         return b
     }
 
+    /// The book on the shelf this page shows, while it is on the shelf.
+    private var shelvedCopy: ReadingBook? {
+        guard alreadyInShelf, let id = addedBookId else { return nil }
+        return bookStore.shelfRecord(id: id)
+    }
+
+    /// The title and author the page shows: a shelved copy's own (5f-4d, decision 32: the
+    /// reader's edits come first), else the source's. `displayName` and `displayAuthor` stay
+    /// the source's, for its scripts and for what a shelf add writes.
+    private var shownMetadata: (name: String, author: String) {
+        let copy = shelvedCopy.map(bookStore.copyMetadata(of:))
+        return (copy?.title ?? displayName, copy?.author ?? displayAuthor)
+    }
+
     private var displayIntro: String {
         if let detail = detailInfo?.intro, !detail.isEmpty {
             return detail
@@ -208,16 +222,17 @@ struct OnlineBookView: View {
     // MARK: Body
 
     var body: some View {
-        BookDetailScaffold(
-            title: displayName,
+        let shown = shownMetadata
+        return BookDetailScaffold(
+            title: shown.name,
             compactAction: readAction,
             onRefresh: { await loadTOC(forceRefresh: true) }
         ) {
             BookDetailHero(
                 artworkShape: .book,
-                cover: coverArtwork,
-                title: displayName,
-                author: displayAuthor,
+                cover: coverArtwork(shown),
+                title: shown.name,
+                author: shown.author,
                 meta: tags.joined(separator: " · "),
                 primary: readAction,
                 secondary: shelfAction,
@@ -348,7 +363,20 @@ struct OnlineBookView: View {
 
     // MARK: Hero
 
-    private var coverArtwork: some View {
+    /// A shelved copy's own artwork, custom cover included, as the shelf draws it; else the
+    /// source's cover.
+    @ViewBuilder
+    private func coverArtwork(_ shown: (name: String, author: String)) -> some View {
+        if let copy = shelvedCopy {
+            HomeCoverArtwork(cover: .shelf(copy), title: shown.name,
+                             author: shown.author == localized("未知作者") ? "" : shown.author,
+                             size: CGSize(width: DSLayout.bookCoverHeroWidth, height: DSLayout.bookCoverHeroHeight))
+        } else {
+            sourceCoverArtwork
+        }
+    }
+
+    private var sourceCoverArtwork: some View {
         BookCoverImage(
             coverURL: displayCoverUrl,
             title: displayName,

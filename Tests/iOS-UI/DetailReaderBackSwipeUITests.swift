@@ -880,7 +880,10 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Contents"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         attachScreenshot(app, named: "Work detail - edited title")
         XCTAssertTrue(app.staticTexts[edited].firstMatch.exists, "The copy's own title is shown.\n\(app.debugDescription)")
-        XCTAssertFalse(app.staticTexts["Navigation Swipe Fixture"].exists, "Not the source's title.\n\(app.debugDescription)")
+        // The fixture's source has the book's name too; only its 來源 cell may show it.
+        let sourceCell = app.descendants(matching: .any)["detail.info.source"].firstMatch.frame
+        let sourceTitles = app.staticTexts.matching(NSPredicate(format: "label == %@", "Navigation Swipe Fixture")).allElementsBoundByIndex
+        XCTAssertTrue(sourceTitles.allSatisfy { sourceCell.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }, "Not the source's title.\n\(app.debugDescription)")
 
         // Leaves the shelf as it found it.
         let pageButton = remove.frame
