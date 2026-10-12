@@ -460,7 +460,7 @@ enum DiscoverDefaultCoverSeed {
 /// A cover with its title and author under it. Both text lines reserve their space
 /// so every card is the same height — the shelf is a `LazyHStack` whose height
 /// tracks only the cards built so far, and it must not grow as more scroll in.
-private struct DiscoverFeaturedCard: View {
+struct DiscoverFeaturedCard: View {
     let display: DiscoverBookDisplay
     let section: DiscoverShowcaseSection
 
@@ -595,9 +595,12 @@ private struct DiscoverBookRow: View {
 struct DiscoverCategoryView: View {
     let section: DiscoverShowcaseSection
     let source: BookSource
+    /// What a tapped book does where Explore's routes are not registered (a detail page's
+    /// genre link); nil pushes `ExploreNavigationRoute.book`.
+    var onSelectBook: ((OnlineBook) -> Void)? = nil
 
     var body: some View {
-        DiscoverCategoryBookList(section: section, source: source)
+        DiscoverCategoryBookList(section: section, source: source, onSelectBook: onSelectBook)
             .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
             .pageBackgroundToolbar(for: .explore)
             .navigationTitle(section.title)
@@ -626,6 +629,8 @@ struct DiscoverCategoryBookList: View {
     let source: BookSource
     /// Pull to refresh, where the page around the list offers it.
     var onRefresh: (() -> Void)?
+    /// See `DiscoverCategoryView.onSelectBook`.
+    var onSelectBook: ((OnlineBook) -> Void)?
 
     var pageLoader: SectionPageLoader = .live
 
@@ -635,11 +640,13 @@ struct DiscoverCategoryBookList: View {
     init(
         section: DiscoverShowcaseSection,
         source: BookSource,
-        onRefresh: (() -> Void)? = nil
+        onRefresh: (() -> Void)? = nil,
+        onSelectBook: ((OnlineBook) -> Void)? = nil
     ) {
         self.section = section
         self.source = source
         self.onRefresh = onRefresh
+        self.onSelectBook = onSelectBook
         _books = State(initialValue: section.books)
         _paging = State(initialValue: SectionPaging(firstPageLoaded: !section.books.isEmpty))
     }
@@ -652,7 +659,7 @@ struct DiscoverCategoryBookList: View {
                         Divider()
                             .padding(.leading, DSLayout.discoverRowCoverWidth + DSSpacing.md)
                     }
-                    NavigationLink(value: ExploreNavigationRoute.book(display.book)) {
+                    bookLink(display) {
                         DiscoverBookRow(
                             rank: section.style == .ranked ? index + 1 : nil,
                             display: display,
@@ -687,6 +694,15 @@ struct DiscoverCategoryBookList: View {
             list.refreshable { onRefresh() }
         } else {
             list
+        }
+    }
+
+    @ViewBuilder
+    private func bookLink<Label: View>(_ display: DiscoverBookDisplay, @ViewBuilder label: () -> Label) -> some View {
+        if let onSelectBook {
+            Button { onSelectBook(display.book) } label: { label() }
+        } else {
+            NavigationLink(value: ExploreNavigationRoute.book(display.book)) { label() }
         }
     }
 

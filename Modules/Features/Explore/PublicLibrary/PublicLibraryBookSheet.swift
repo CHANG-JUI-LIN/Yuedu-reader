@@ -262,13 +262,7 @@ private struct PublicLibraryDestinations: ViewModifier {
                     .reservingNavigationBackSwipe()
             }
             .navigationDestination(for: PublicLibraryAuthorDestination.self) { destination in
-                switch destination {
-                case .gutenberg(let author):
-                    PublicLibraryFeedView(route: OPDSFeedRoute(catalogID: PublicLibraryID.gutenberg.rawValue,
-                        url: author.url.absoluteString, title: author.name, presentation: .storefront))
-                case .aozora(let author, let index):
-                    AozoraWorksView(index: index, works: index.works(forPerson: author.id), title: author.name)
-                }
+                PublicLibraryAuthorPage(destination: destination)
             }
     }
 }
@@ -804,11 +798,12 @@ private struct GutenbergBookDetailPage: View {
                 BookDetailScaffold(title: book.title, compactAction: loadingAction) {
                     BookDetailHero(artworkShape: .book,
                         cover: PublicLibraryCoverArtwork(title: book.title, author: book.author, coverURL: book.coverURL),
-                        title: book.title, author: book.author, meta: localized("Project Gutenberg"),
+                        title: book.title, author: book.author, meta: "",
                         primary: loadingAction,
-                        secondary: BookDetailAction(title: localized("下載"), systemImage: "arrow.down.circle",
+                        secondary: BookDetailAction(title: localized("下載"), systemImage: "arrow.down",
                                                     isEnabled: false, action: {}),
-                        artworkHeight: sheet?.artworkHeight)
+                        artworkHeight: sheet?.artworkHeight,
+                        facts: BookDetailFacts(text: localized("Project Gutenberg")))
                 } content: {
                     VStack(spacing: DSSpacing.lg) {
                         if model.isLoading { ProgressView(localized("正在載入書庫")) }

@@ -5,6 +5,10 @@ private enum WorkDetailPush: Hashable {
     case reader(UUID)
     /// 編輯遠端資料, for the version shown.
     case editor
+    /// A public library's author page, from the author's name or 作者其他作品's 查看全部.
+    case author(PublicLibraryAuthorDestination)
+    /// Another work, from 作者其他作品.
+    case work(WorkDetailRoute)
 }
 
 /// When 作品詳情 reads its versions: once no action runs, and again when asked.
@@ -57,6 +61,7 @@ struct WorkDetailView: View {
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @StateObject private var actions = RemoteLibraryActionModel()
+    @StateObject private var authorWorks = AuthorWorksModel()
     @State private var versions: [WorkDetailRoute]
     @State private var versionsLoaded = false
     /// The version picked from 來源; nil shows the primary one.
@@ -69,6 +74,8 @@ struct WorkDetailView: View {
     /// its catalog entry, and one edited through 編輯遠端資料 as saved.
     @State private var items: [SourceItemKey: RemoteLibraryItem] = [:]
     @State private var gutenbergLoads: [SourceItemKey: GutenbergLoad] = [:]
+    /// A Gutenberg book's authors from its catalog entry, by version.
+    @State private var gutenbergAuthors: [SourceItemKey: [GutenbergAuthor]] = [:]
     /// The format picked per version; absent, the preferred one.
     @State private var formatIDs: [SourceItemKey: String] = [:]
     /// Whether the shown copy's offline file exists, checked when the copy or its file changes
@@ -111,6 +118,7 @@ struct WorkDetailView: View {
             .task(id: offlineProbe) {
                 offlineFileExists = libraryCopy.map { dependencies.remoteLibrary.hasOfflineCopy($0) } ?? false
             }
+            .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: store) }
             .onDisappear { actions.cancelForDisappearance() }
     }
 
@@ -147,7 +155,10 @@ struct WorkDetailView: View {
         BookDetailScaffold(title: route.summary.title, compactAction: primaryAction) {
             BookDetailHero(artworkShape: route.record.contentKind == .audio ? .square : .book,
                            cover: cover, title: route.summary.title, author: author,
-                           meta: selected.map(sourceName(of:)) ?? "", primary: primaryAction, secondary: secondaryAction)
+                           meta: "", primary: primaryAction, secondary: secondaryAction,
+                           authorActions: authorLinks,
+                           progress: readingCopy?.currentPosition,
+                           facts: selected.map { BookDetailFacts(text: sourceName(of: $0)) })
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
                 status
@@ -157,7 +168,6 @@ struct WorkDetailView: View {
                     }
                 }
                 gutenbergStatus
-                BookDetailInfoStrip(items: infoItems)
                 if let selected, let item = libraryItem(of: selected) {
                     libraryActions(selected, item: item)
                 }
@@ -169,6 +179,13 @@ struct WorkDetailView: View {
                 if let selected, case .aozora(let work) = selected.opening {
                     aozoraDetails(work)
                 }
+                BookDetailInfoSection(items: infoItems)
+                BookDetailAuthorWorksSection(
+                    state: authorWorks.state,
+                    onShowAll: authorWorksRequest?.authorPage.map { page in { pushed = .author(page) } },
+                    onSelect: { pushed = .work($0) },
+                    onRetry: { Task { await authorWorks.retry(authorWorksRequest, store: store) } }
+                )
             }
         }
         .navigationDestination(item: $pushed) { push in
@@ -191,7 +208,52 @@ struct WorkDetailView: View {
                     }
                     .environmentObject(store)
                 }
+            case .author(let destination):
+                WorkDetailAuthorPage(destination: destination).environmentObject(store)
+            case .work(let route):
+                WorkDetailView(route: route).environmentObject(store)
             }
+        }
+    }
+
+    // MARK: Author
+
+    /// The author's page in the public library the version is from; elsewhere the author is
+    /// plain text. None on the page a reader opened, where another book could open a second
+    /// reader (decision 32).
+    private var authorLinks: [BookDetailAuthorAction] {
+        guard readerContext == nil, let selected else { return [] }
+        switch selected.opening {
+        case .aozora(let work):
+            guard let index = aozora.catalog else { return [] }
+            return work.credits.compactMap { credit in
+                guard let person = index.personsByID[credit.person] else { return nil }
+                return BookDetailAuthorAction(id: person.id + credit.role, name: person.name,
+                                              action: { pushed = .author(.aozora(person, index)) })
+            }
+        case .gutenberg:
+            return (gutenbergAuthors[selected.nodeKey] ?? []).map { author in
+                BookDetailAuthorAction(id: author.id, name: author.name, action: { pushed = .author(.gutenberg(author)) })
+            }
+        case .copy, .opdsEntry, .webDAVFile, .onlineBook:
+            return []
+        }
+    }
+
+    /// Where 作者其他作品 reads from for the version shown: its library's record of the author,
+    /// or the shelf's for a copy or a library file. Once the versions are read, so none of
+    /// them is offered as another work; not on the page a reader opened (decision 32).
+    private var authorWorksRequest: AuthorWorksRequest? {
+        guard readerContext == nil, versionsLoaded, let selected else { return nil }
+        switch selected.opening {
+        case .aozora(let work):
+            return aozora.catalog.map { .aozora(work, $0) }
+        case .gutenberg(let book):
+            return gutenbergAuthors[selected.nodeKey]?.first.map { .gutenberg($0, excluding: book) }
+        case .copy, .opdsEntry, .webDAVFile:
+            return .shelf(versions: versions)
+        case .onlineBook:
+            return nil
         }
     }
 
@@ -225,7 +287,7 @@ struct WorkDetailView: View {
             .reference(route.summary.cover, session: HomeCardContent.session(for: route.opening, connections: .shared))
         }
         return HomeCoverArtwork(cover: content, title: route.summary.title, author: author,
-                                size: CGSize(width: DSLayout.bookCoverHeroWidth, height: DSLayout.bookCoverHeroHeight))
+                                size: CGSize(width: DSLayout.bookDetailCoverWidth, height: DSLayout.bookDetailCoverHeight))
     }
 
     private var primaryAction: BookDetailAction {
@@ -251,7 +313,7 @@ struct WorkDetailView: View {
     /// 加入書架 for the version shown; 已加入書架 once its copy is on the shelf.
     private var secondaryAction: BookDetailAction? {
         guard let version = selected else { return nil }
-        let added = BookDetailAction(title: localized("已加入書架"), systemImage: "checkmark.circle", isEnabled: false, action: {})
+        let added = BookDetailAction(title: localized("已加入書架"), systemImage: "checkmark", isEnabled: false, action: {})
         switch version.opening {
         case .copy(let id):
             return copy(id)?.isInBookshelf == true ? added : nil
@@ -464,6 +526,17 @@ struct WorkDetailView: View {
         store.copyLookup().copies(for: .copy(id)).first
     }
 
+    /// The copy 開始閱讀／繼續閱讀 opens for the version shown: its progress is the page's.
+    private var readingCopy: ReadingBook? {
+        guard let version = selected else { return nil }
+        switch version.opening {
+        case .copy(let id): return copy(id)
+        case .aozora: return shelfCopy(of: version)
+        case .opdsEntry, .webDAVFile, .gutenberg: return libraryCopy
+        case .onlineBook: return nil
+        }
+    }
+
     private func shelfCopy(of version: WorkDetailRoute) -> ReadingBook? {
         store.copyLookup().copies(for: version.record.key).first(where: \.isInBookshelf)
     }
@@ -543,6 +616,7 @@ struct WorkDetailView: View {
         await model.load()
         if let detail = model.detail {
             items[key] = detail.item
+            gutenbergAuthors[key] = detail.authors
             gutenbergLoads[key] = nil
         } else if let message = model.errorMessage {
             gutenbergLoads[key] = .failed(message)

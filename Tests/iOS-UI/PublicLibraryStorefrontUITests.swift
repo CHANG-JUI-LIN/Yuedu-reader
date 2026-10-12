@@ -191,6 +191,29 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: enabled, evaluatedWith: read)], timeout: 10), .completed,
                        "Reads once the catalog entry is in.\n\(app.debugDescription)")
         screenshot(app, "work-detail-from-home")
+
+        // Editorial Minimalism: the author leads to their page, and 作者其他作品 lists their
+        // other books from that page's feed, without this one.
+        let author = app.buttons["publicLibrary.author.https://www.gutenberg.org/ebooks/author/10001.opds"].firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 10), app.debugDescription)
+        author.tap()
+        XCTAssertTrue(app.navigationBars["曹雪芹"].waitForExistence(timeout: 10), app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(author.waitForExistence(timeout: 10), app.debugDescription)
+        let otherWorks = app.staticTexts["作者其他作品"].firstMatch
+        for _ in 0..<6 where !(otherWorks.exists && otherWorks.isHittable) { app.swipeUp() }
+        XCTAssertTrue(otherWorks.waitForExistence(timeout: 10), app.debugDescription)
+        let cards = app.buttons.matching(identifier: "detail.authorWorks.book")
+        let other = cards.matching(NSPredicate(format: "label CONTAINS '作者作品測試'")).firstMatch
+        XCTAssertTrue(other.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(cards.count, 1, "Not the book on the page.\n\(app.debugDescription)")
+        screenshot(app, "work-detail-author-works")
+        other.tap()
+        // Its own page: the card reads as one button, so only the page's title is this text.
+        XCTAssertTrue(app.staticTexts["作者作品測試"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(otherWorks.waitForExistence(timeout: 10), app.debugDescription)
+
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(homeCard(app, 24264).waitForExistence(timeout: 10))
         XCTAssertTrue(explore.isHittable, "Back from 作品詳情 returns to the home")

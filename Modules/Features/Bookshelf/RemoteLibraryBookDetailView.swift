@@ -131,17 +131,18 @@ struct RemoteLibraryBookDetailView: View {
             BookDetailHero(artworkShape: .book,
                 cover: PublicLibraryCoverArtwork(title: artworkTitle ?? item.title, author: artworkAuthor ?? item.author,
                                                  coverURL: artworkCoverURL),
-                title: item.title, author: item.author ?? "", meta: localized("Project Gutenberg"),
+                title: item.title, author: item.author ?? "", meta: "",
                 primary: readAction,
                 secondary: BookDetailAction(title: localized(isOffline ? "已下載" : "下載"),
-                    systemImage: isOffline ? "checkmark.circle" : "arrow.down.circle",
+                    systemImage: isOffline ? "checkmark" : "arrow.down",
                     isBusy: action == .download, isEnabled: canAct && !isOffline, action: { begin(.download) }),
                 authorActions: authors.map { author in
                     BookDetailAuthorAction(id: author.id, name: author.name, action: { sheet?.openAuthor(.gutenberg(author)) })
-                }, artworkHeight: sheet?.artworkHeight)
+                }, artworkHeight: sheet?.artworkHeight,
+                progress: book?.currentPosition,
+                facts: BookDetailFacts(text: localized("Project Gutenberg")))
         } content: {
             Section {
-                BookDetailInfoStrip(items: infoItems)
                 if let action {
                     ProgressView(action.progressTitle)
                     Button(localized("取消"), role: .cancel) { cancelAction() }
@@ -162,6 +163,7 @@ struct RemoteLibraryBookDetailView: View {
                 Link(localized("在書庫網站查看"), destination: url)
                     .font(DSFont.subheadline).padding(.horizontal, DSSpacing.lg)
             }
+            BookDetailInfoSection(items: infoItems)
         } actions: {
             Button { begin(.addToShelf) } label: {
                 BookDetailCardIcon(title: localized(isOnShelf ? "已加入書架" : "加入書架"), systemImage: isOnShelf ? "checkmark" : "plus")
