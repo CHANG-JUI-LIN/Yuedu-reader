@@ -58,10 +58,10 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path
         app.launch()
 
-        let tab = app.tabBars.buttons["搜索"].firstMatch
+        let tab = app.tabBars.buttons["搜尋"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        XCTAssertTrue(app.staticTexts["輸入書名或作者搜索"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["輸入書名或作者搜尋"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
 
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))

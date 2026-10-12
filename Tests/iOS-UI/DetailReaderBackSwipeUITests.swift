@@ -220,7 +220,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
                                "-yd_root_tab_visible_ids", "(bookshelf, explore, settings, search)"]
         app.launch()
-        let searchTab = app.tabBars.buttons["搜索"]
+        let searchTab = app.tabBars.buttons["搜尋"]
         XCTAssertTrue(searchTab.waitForExistence(timeout: 15), app.debugDescription)
         searchTab.tap()
         let search = app.searchFields.firstMatch
