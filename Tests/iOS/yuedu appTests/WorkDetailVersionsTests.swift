@@ -38,16 +38,43 @@ struct WorkDetailVersionsTests {
             tapped: tapped,
             copies: [(older, Date(timeIntervalSinceReferenceDate: 1)), (never, nil), (newer, Date(timeIntervalSinceReferenceDate: 2))],
             members: [older, davFile, newer, davFile])
-        #expect(versions.map(\.nodeKey) == [newer.nodeKey, older.nodeKey, never.nodeKey, tapped.nodeKey, davFile.nodeKey])
+        // `older` was taken from the Gutenberg book tapped, which stands in its place.
+        #expect(versions.map(\.nodeKey) == [newer.nodeKey, tapped.nodeKey, never.nodeKey, davFile.nodeKey])
         #expect(WorkVersions.primary(in: versions) == newer)
     }
 
-    @Test("a tapped copy is listed once, under its own key")
+    @Test("a tapped copy of no listed item is listed once, under its own key")
     func tappedCopy() {
         let id = UUID()
-        let tapped = copy(id, of: SourceItemKey(instance: Self.dav, item: "三體.epub"))
+        let tapped = copy(id)
         let versions = WorkVersions.merge(tapped: tapped, copies: [(tapped, Date())], members: [tapped, file("三體.epub")])
         #expect(versions.map(\.nodeKey) == [.copy(id), SourceItemKey(instance: Self.dav, item: "三體.epub")])
+    }
+
+    /// 2026-10-12: read from 青空文庫, the copy led as 「書架」 and the work's page lost its
+    /// 青空文庫 details, author link and 公開日.
+    @Test("a copy taken from a listed library item is that item's version, in the copy's place")
+    func copyFoldsIntoItsItem() throws {
+        let work = AozoraWork(id: "001234", title: "和蘭人形", yomi: "", sortYomi: "", subtitle: "",
+                              kanaStyle: "", ndc: "", published: "", updated: "", card: "", text: "",
+                              textUpdated: "", credits: [], source: "", sourcePublisher: "")
+        let aozora = WorkDetailRoute(record: SourceRecord.derived(from: work), summary: WorkSummary(
+            title: work.title, authors: [], cover: nil, blurb: nil, language: "ja", contentKind: .text), opening: .aozora(work))
+        let read = copy(of: aozora.record.key)
+        let older = copy()
+        let versions = WorkVersions.merge(tapped: aozora,
+                                          copies: [(older, Date(timeIntervalSinceReferenceDate: 1)),
+                                                   (read, Date(timeIntervalSinceReferenceDate: 2))],
+                                          members: [read, older])
+        #expect(versions.map(\.nodeKey) == [aozora.nodeKey, older.nodeKey])
+        #expect(WorkVersions.primary(in: versions) == aozora)
+
+        // A copy of a WebDAV file the work lists, opened from the shelf, is the file's version.
+        let id = UUID()
+        let davFile = file("三體.epub")
+        let tapped = copy(id, of: davFile.record.key)
+        #expect(WorkVersions.merge(tapped: tapped, copies: [(tapped, Date())], members: [tapped, davFile])
+            .map(\.nodeKey) == [davFile.nodeKey])
     }
 
     @Test("data only: a file the app cannot read is listed but never read, and with nothing else there is no main version")
@@ -147,12 +174,9 @@ struct WorkDetailShelfVersionsTests {
         let provider = ShelfProvider(store: store, webDAVRoots: { [instance.id: root] })
         let tapped = WorkDetailRoute(.gutenberg(gutenberg))
         let versions = await provider.versions(of: tapped)
-        #expect(versions.map(\.nodeKey) == [.copy(copy.id), tapped.nodeKey, fileRecord.key])
-        guard case .copy(let opened) = WorkVersions.primary(in: versions)?.opening else {
-            Issue.record("the copy on the shelf is read first")
-            return
-        }
-        #expect(opened == copy.id)
+        // The copy was taken from the Gutenberg book, whose page reads it.
+        #expect(versions.map(\.nodeKey) == [tapped.nodeKey, fileRecord.key])
+        #expect(WorkVersions.primary(in: versions) == tapped)
 
         // Tapped as the shelf shows it, the copy finds the same work.
         let fromShelf = try #require(provider.items([copy]).first.flatMap(WorkDetailRoute.init))

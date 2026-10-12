@@ -298,6 +298,10 @@ struct WorkDetailView: View {
         case .onlineBook:
             // Drawn by the source's own page instead (see `page`).
             return BookDetailAction(title: localized("開始閱讀"), systemImage: "book", isEnabled: false, action: {})
+        case .gutenberg where shelfCopy(of: version) != nil:
+            return BookDetailAction(title: localized(hasBeenOpened(version) ? "繼續閱讀" : "開始閱讀"), systemImage: "book",
+                                    isEnabled: actions.action == nil,
+                                    detail: resumeDetail, action: { read(version) })
         case .opdsEntry, .webDAVFile, .gutenberg:
             return BookDetailAction(title: localized(libraryCopy?.lastOpenedDate == nil ? "開始閱讀" : "繼續閱讀"),
                                     systemImage: "book",
@@ -326,6 +330,8 @@ struct WorkDetailView: View {
             return copy(id)?.isInBookshelf == true ? added : nil
         case .onlineBook:
             return nil
+        case .gutenberg where shelfCopy(of: version) != nil:
+            return added
         case .opdsEntry, .webDAVFile, .gutenberg:
             if libraryCopy?.isInBookshelf == true { return added }
             return BookDetailAction(title: localized("加入書架"), systemImage: "plus",
@@ -524,12 +530,16 @@ struct WorkDetailView: View {
     }
 
     /// The copy 開始閱讀／繼續閱讀 opens for the version shown: its progress is the page's.
+    /// A public library's book has one copy, found by the book alone, so a Gutenberg book's
+    /// is read without its catalog entry (offline too); another library's is the copy of the
+    /// format shown.
     private var readingCopy: ReadingBook? {
         guard let version = selected else { return nil }
         switch version.opening {
         case .copy(let id): return copy(id)
         case .aozora: return shelfCopy(of: version)
-        case .opdsEntry, .webDAVFile, .gutenberg: return libraryCopy
+        case .gutenberg: return shelfCopy(of: version) ?? libraryCopy
+        case .opdsEntry, .webDAVFile: return libraryCopy
         case .onlineBook: return nil
         }
     }
@@ -557,6 +567,11 @@ struct WorkDetailView: View {
     private func selectedFormat(of version: WorkDetailRoute) -> RemoteLibraryFormat? {
         guard let item = libraryItem(of: version) else { return nil }
         if let id = formatIDs[version.nodeKey], let format = item.formats.first(where: { $0.id == id }) { return format }
+        // The format of the copy on the shelf, which this version stands for (`WorkVersions.merge`).
+        if let copy = shelfCopy(of: version),
+           let format = item.formats.first(where: { copy.remoteSource?.matches(item: item, format: $0) == true }) {
+            return format
+        }
         return RemoteLibraryBrowsePresentation.preferredFormat(in: item)
     }
 
@@ -631,7 +646,13 @@ struct WorkDetailView: View {
                 return
             }
             pushed = .aozoraReader(work)
-        case .opdsEntry, .webDAVFile, .gutenberg:
+        case .gutenberg:
+            if let book = shelfCopy(of: version) {
+                openCopy(book.id)
+                return
+            }
+            begin(.read)
+        case .opdsEntry, .webDAVFile:
             begin(.read)
         case .onlineBook:
             // Read from the source's own page (see `page`).
