@@ -40,6 +40,60 @@ struct PublicLibraryStorefrontTests {
         #expect(detail.authors.map(\.url.lastPathComponent) == ["1.opds", "2.opds"])
     }
 
+    /// Gutenberg's Atom content is its bibliographic record, one `<p>` per field (Title,
+    /// Credits, Summary, EBook No., Downloads, Subject, Rights…). 簡介 is its Summary field
+    /// alone, and nothing when the book has none: the record is never the description.
+    @Test func descriptionIsTheRecordsSummaryAlone() throws {
+        let detail = try GutenbergBookDetail(feed: fixture("1342"))
+        let summary = try #require(detail.item.summary)
+        #expect(summary.hasPrefix("\"Pride and Prejudice\" by Jane Austen is a novel published in 1813."))
+        #expect(!summary.hasPrefix("Summary"))
+        for field in ["EBook No.", "Downloads:", "Credits:", "Rights:", "LoCC:", "Reading Level:"] {
+            #expect(!summary.contains(field), "\(field) is not the description")
+        }
+    }
+
+    @Test func aRecordWithoutASummaryHasNoDescription() throws {
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><entry>
+        <id>https://www.gutenberg.org/ebooks/79765.images</id><title>Hero stories of France</title>
+        <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">
+        <p>This edition has images.</p>
+        <p>LoC No.: 20007446</p>
+        <p>
+        Contents:
+        Vercingetorix, the Hero Patriot -- Saint Denis, the Missionary
+        </p>
+        <p>Author: Tappan, Eva March, 1854-1930</p>
+        <p>EBook No.: 79765</p>
+        <p>Downloads: 0</p>
+        <p>Rights: Public domain in the USA.</p>
+        </div></content>
+        <author><name>Tappan, Eva March</name></author>
+        <link rel="http://opds-spec.org/acquisition" href="https://www.gutenberg.org/ebooks/79765.epub3.images" type="application/epub+zip"/>
+        </entry></feed>
+        """
+        let feed = try OPDSClient.parseFeed(data: Data(xml.utf8), feedURL: URL(string: "https://www.gutenberg.org/ebooks/79765.opds")!)
+        #expect(try GutenbergBookDetail(feed: feed).item.summary == nil)
+    }
+
+    /// A Gutenberg list's Atom content is the creator or a download count, never a description,
+    /// so its cards carry none for 作品詳情 to fall back on.
+    @Test func listEntriesCarryNoBlurb() async throws {
+        var entry = OPDSEntry(id: "https://www.gutenberg.org/ebooks/1342", title: "Pride and Prejudice")
+        entry.summary = "Austen, Jane"
+        entry.navigationURL = URL(string: "https://www.gutenberg.org/ebooks/1342.opds")
+        let page = await GutenbergProvider.page(
+            from: OPDSFeed(entries: [entry]), connectionID: PublicLibraryID.gutenberg.rawValue,
+            record: { GutenbergBook(entry: $0).map(SourceRecord.derived(from:)) },
+            opening: { .opdsEntry($0, connectionID: PublicLibraryID.gutenberg.rawValue) })
+        guard case .item(let record, let summary, _) = try #require(page.entries.first) else {
+            Issue.record("The entry is a book"); return
+        }
+        #expect(record.authors == ["Austen, Jane"], "The creator is the author")
+        #expect(summary.blurb == nil)
+    }
+
     @Test func listBookSnapshotsDoNotTreatCategoriesAsBooks() throws {
         let root = try fixture("root")
         #expect(root.entries.compactMap(GutenbergBook.init(entry:)).isEmpty)

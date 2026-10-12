@@ -62,7 +62,10 @@ extension WorkSummary {
             authors: record.authors,
             cover: PublicLibrary.listCoverURL(for: entry, connectionID: connectionID)
                 .map { .remote($0, headers: [:]) } ?? .generated(seed: entry.title),
-            blurb: entry.summary.map { OPDSClient.plainMetadata($0, limit: WorkSummary.blurbLimit) },
+            // A Gutenberg list entry's content is its creator or a download count
+            // (`GutenbergBook.init?(entry:)`), never a description.
+            blurb: connectionID == PublicLibraryID.gutenberg.rawValue
+                ? nil : entry.summary.map { OPDSClient.plainMetadata($0, limit: WorkSummary.blurbLimit) },
             language: entry.language,
             contentKind: record.contentKind
         )
