@@ -42,7 +42,12 @@ final class UserFontStorageManager {
         self.fileManager = fileManager
     }
 
-    func importFont(fileURL: URL) throws -> UserFontInfo {
+    /// Copies a font into the library. A font in `existingFonts` with the same
+    /// PostScript name is the version this one replaces: its file is unregistered and
+    /// deleted before the new file registers, so the name resolves to the new file and
+    /// no copy is left behind. Re-importing an appearance pack re-imports its font, and
+    /// before this every import kept another 13–28 MB copy (a device reached 1 GB).
+    func importFont(fileURL: URL, replacing existingFonts: [UserFontInfo] = []) throws -> UserFontInfo {
         let sourceExtension = fileURL.pathExtension.lowercased()
         guard ["ttf", "otf"].contains(sourceExtension) else {
             throw UserFontStorageError.unsupportedFileType
@@ -66,6 +71,11 @@ final class UserFontStorageManager {
             throw UserFontStorageError.invalidFontFile
         }
 
+        for replaced in existingFonts
+        where replaced.postScriptName == metadata.postScriptName
+            && replaced.fileName != destination.lastPathComponent {
+            delete(replaced)
+        }
         Self.registerFont(at: destination)
 
         return UserFontInfo(
@@ -92,9 +102,47 @@ final class UserFontStorageManager {
         }
     }
 
+    /// Deletes the copies that re-imports left behind before `importFont` replaced the
+    /// old file. Only provable duplicates go: an unlisted file whose PostScript name a
+    /// listed font already owns. An unlisted file with a name of its own stays — this
+    /// directory is visible in the Files app, so it may have been put there by hand.
+    ///
+    /// One-time migration, run every launch because it is a directory listing once the
+    /// copies are gone. Delete once no install from before 2026-10-12 is left.
+    func removeSupersededCopies(keeping listedFonts: [UserFontInfo]) {
+        let listedNames = Set(listedFonts.map(\.postScriptName))
+        guard !listedNames.isEmpty else { return }
+        let listedFiles = Set(listedFonts.map(\.fileName))
+
+        let urls: [URL]
+        do {
+            let directory = try fontsDirectoryURL()
+            guard fileManager.fileExists(atPath: directory.path) else { return }
+            urls = try fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            AppLogger.error("UserFontStorage could not list the fonts directory", error: error)
+            return
+        }
+
+        for url in urls
+        where ["ttf", "otf"].contains(url.pathExtension.lowercased())
+            && !listedFiles.contains(url.lastPathComponent) {
+            guard let metadata = Self.fontMetadata(from: url),
+                  listedNames.contains(metadata.postScriptName) else { continue }
+            removeFile(at: url)
+        }
+    }
+
     func delete(_ font: UserFontInfo) {
-        guard let url = try? fileURL(for: font) else { return }
-        try? fileManager.removeItem(at: url)
+        do {
+            removeFile(at: try fileURL(for: font))
+        } catch {
+            AppLogger.error("UserFontStorage could not resolve \(font.fileName)", error: error)
+        }
     }
 
     func fileURL(for font: UserFontInfo) throws -> URL {
@@ -109,6 +157,22 @@ final class UserFontStorageManager {
             throw UserFontStorageError.missingDocumentsDirectory
         }
         return documentsURL.appendingPathComponent("fonts", isDirectory: true)
+    }
+
+    private func removeFile(at url: URL) {
+        Self.unregisterFont(at: url)
+        do {
+            try fileManager.removeItem(at: url)
+        } catch {
+            AppLogger.error("UserFontStorage could not delete \(url.lastPathComponent)", error: error)
+        }
+    }
+
+    /// Undoes `registerFont(at:)` in whichever scope it took. The other scope reports
+    /// the URL as not registered, which is the expected outcome, not a failure.
+    private static func unregisterFont(at url: URL) {
+        CTFontManagerUnregisterFontsForURL(url as CFURL, .persistent, nil)
+        CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil)
     }
 
     private static func registerFont(at url: URL) {

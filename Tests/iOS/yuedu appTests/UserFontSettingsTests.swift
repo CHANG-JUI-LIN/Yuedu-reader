@@ -25,6 +25,63 @@ struct UserFontSettingsTests {
         #expect(UIFont(name: info.postScriptName, size: 18) != nil)
     }
 
+    /// Re-importing a font — every time an appearance pack carrying it is imported
+    /// again — used to drop the old list entry but leave its file behind: a device
+    /// reached 1 GB of identical copies in `Documents/fonts`.
+    @Test("re-importing a font replaces its file instead of piling up copies")
+    func reimportingFontReplacesItsFile() throws {
+        let settings = GlobalSettings.shared
+        let previousFonts = settings.userFonts
+        let fixtureURL = Self.ahemFixtureURL
+        let before = try Self.fontFiles()
+
+        let first = try settings.importUserFont(from: fixtureURL)
+        let second = try settings.importUserFont(from: fixtureURL)
+        defer {
+            UserFontStorageManager.shared.delete(second)
+            settings.userFonts = previousFonts
+        }
+
+        let added = try Self.fontFiles().subtracting(before)
+        #expect(added == [second.fileName])
+        #expect(!added.contains(first.fileName))
+        #expect(settings.userFonts.filter { $0.postScriptName == "Ahem" }.map(\.fileName) == [second.fileName])
+        #expect(UIFont(name: "Ahem", size: 18) != nil)
+    }
+
+    @Test("launch cleanup removes copies superseded by a listed font and keeps the rest")
+    func launchCleanupRemovesSupersededCopies() throws {
+        let manager = UserFontStorageManager.shared
+        let listed = try manager.importFont(fileURL: Self.ahemFixtureURL)
+        let orphan = try manager.importFont(fileURL: Self.ahemFixtureURL)
+        defer {
+            manager.delete(listed)
+            manager.delete(orphan)
+        }
+
+        // Nothing listed under the orphan's name: it is not provably a duplicate.
+        manager.removeSupersededCopies(keeping: [])
+        #expect(try Self.fontFiles().isSuperset(of: [listed.fileName, orphan.fileName]))
+
+        manager.removeSupersededCopies(keeping: [listed])
+        let remaining = try Self.fontFiles()
+        #expect(remaining.contains(listed.fileName))
+        #expect(!remaining.contains(orphan.fileName))
+    }
+
+    private static var ahemFixtureURL: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+    }
+
+    private static func fontFiles() throws -> Set<String> {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("fonts", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+        return Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
+    }
+
     @Test("TXT builder uses selected reader font")
     func txtBuilderUsesSelectedReaderFont() async throws {
         let previousFont = GlobalSettings.shared.selectedReaderFontPostScript

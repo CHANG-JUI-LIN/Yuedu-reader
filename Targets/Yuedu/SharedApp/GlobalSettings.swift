@@ -3641,7 +3641,7 @@ class GlobalSettings {
     /// pack's own font before the user's is captured.
     @discardableResult
     func importUserFont(from url: URL) throws -> UserFontInfo {
-        let info = try UserFontStorageManager.shared.importFont(fileURL: url)
+        let info = try UserFontStorageManager.shared.importFont(fileURL: url, replacing: userFonts)
         userFonts.removeAll { $0.postScriptName == info.postScriptName }
         userFonts.append(info)
         userFonts.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }

@@ -142,6 +142,7 @@ struct yuedu_appApp: App {
                 + "browserEnabled=\(BrowserLayoutFeature.browserEnabled)"
         )
         #endif
+        UserFontStorageManager.shared.removeSupersededCopies(keeping: GlobalSettings.shared.userFonts)
         UserFontStorageManager.shared.registerAllOnLaunch()
         GlobalSettings.shared.validateGlobalFontSelection()
         // Must run before any source JS does: a source reads its cached device id
