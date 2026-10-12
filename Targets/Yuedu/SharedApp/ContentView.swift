@@ -363,6 +363,12 @@ struct ContentView: View {
         gs.usesCustomRootTabIconSize
     }
 
+    /// 探索's 訂閱的最新文章 opens the RSS tab as its 查看全部; nothing while that tab is hidden.
+    private var openRSSTab: (@MainActor () -> Void)? {
+        guard gs.isRootTabVisible(.rss) else { return nil }
+        return { selectedRootTab = .rss }
+    }
+
     @ViewBuilder
     private func rootTabContent(for tab: RootTabItem) -> some View {
         switch tab {
@@ -370,6 +376,7 @@ struct ContentView: View {
             HomeView()
         case .explore:
             BrowserView()
+                .environment(\.openRSSTab, openRSSTab)
         case .rss:
             RSSListView()
         case .settings:

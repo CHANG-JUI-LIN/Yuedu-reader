@@ -108,6 +108,12 @@ struct SubscriptionArticleRoute: Hashable {
     let articleID: String
 }
 
+extension EnvironmentValues {
+    /// Switches to the RSS tab: 訂閱的最新文章's 查看全部 (Phase 5 plan, decision 29). Nil while
+    /// the reader hides that tab, so the section offers no 查看全部.
+    @Entry var openRSSTab: (@MainActor () -> Void)? = nil
+}
+
 enum ExplorePush: Hashable {
     case work(WorkDetailRoute)
     case reader(PublicLibraryReaderRoute)
@@ -196,7 +202,7 @@ enum ExplorePlace {
         case .aozoraIndex(let kind):
             guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
-        // 訂閱的最新文章: the rest is the RSS tab's, a tab root that cannot be pushed.
+        // 訂閱的最新文章: the rest is the RSS tab, switched to (`openRSSTab`), not pushed.
         case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .unknown:
             return nil
         }

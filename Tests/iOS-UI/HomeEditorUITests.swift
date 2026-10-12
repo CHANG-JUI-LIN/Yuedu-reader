@@ -330,7 +330,6 @@ final class HomeEditorUITests: XCTestCase {
         attach(app, "home-subscription-read")
 
         // A sideways layout draws landscape article cards, several to a screen, not book covers.
-        // The header has no 查看全部 (the rest is the RSS tab's), so it is no button.
         let header = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
                                                       "home.row.header.", "訂閱的最新文章")).firstMatch
         XCTAssertTrue(header.waitForExistence(timeout: 5), app.debugDescription)
@@ -346,5 +345,11 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertEqual(newest.label, "首頁訂閱測試文章一")
         for _ in 0..<5 where !newest.isHittable { app.swipeUp() }
         attach(app, "home-subscription-row")
+
+        // 查看全部 is the RSS tab (decision 29), with the same feed in it.
+        header.tap()
+        let rssTab = app.tabBars.buttons["RSS 訂閱"].firstMatch
+        wait(for: [expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: rssTab)], timeout: 5)
+        attach(app, "home-subscription-show-all")
     }
 }

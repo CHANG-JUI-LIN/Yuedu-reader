@@ -40,8 +40,8 @@ struct SubscriptionArticle: Hashable, Sendable {
 }
 
 /// Serves 訂閱的最新文章 from the articles the RSS tab has stored; it sends no request. Feeds
-/// are fetched where they were before 5g: the RSS tab, its background refresh and its
-/// notifications (`RSSFeedRefreshService`).
+/// are fetched through `RSSFeedRefreshService`: by the RSS tab, its background refresh, and
+/// 探索's pull to refresh when the home shows this section (decision 29).
 ///
 /// Its key is App 資料's own place on this device (`.library`), not a `ProviderType` of its own:
 /// `SourceInstanceKey` is written into files older builds read (書庫順序, 顯示在最新, the work
