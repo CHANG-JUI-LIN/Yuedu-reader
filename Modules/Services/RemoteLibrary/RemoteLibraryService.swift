@@ -7,7 +7,7 @@ import UIKit
 protocol RemoteLibraryServing: AnyObject {
     var failurePublisher: AnyPublisher<RemoteLibraryReadFailure, Never> { get }
     func book(for item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) -> ReadingBook?
-    func read(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) async throws -> ReadingBook
+    func readingCopy(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) throws -> ReadingBook
     func addToShelf(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) throws -> ReadingBook
     func downloadOffline(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) async throws -> ReadingBook
     func prepare(bookID: UUID, store: BookStore) async throws -> ReadingBook
@@ -109,9 +109,17 @@ final class RemoteLibraryService: RemoteLibraryServing {
         return saved
     }
 
+    /// The copy a reader opens for `item` in `format`, recorded but not yet prepared: the
+    /// reader prepares it (`BookReaderView`, 正在開啟書籍), so a detail page opens the reader at
+    /// once instead of waiting on the download itself.
+    func readingCopy(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) throws -> ReadingBook {
+        try record(item: item, format: format, store: store)
+    }
+
+    /// Records and prepares the copy, as opening it in a reader does.
     func read(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) async throws -> ReadingBook {
         try Task.checkCancellation()
-        let book = try record(item: item, format: format, store: store)
+        let book = try readingCopy(item: item, format: format, store: store)
         return try await prepare(bookID: book.id, store: store)
     }
 

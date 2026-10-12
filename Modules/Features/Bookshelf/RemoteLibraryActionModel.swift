@@ -23,21 +23,30 @@ final class RemoteLibraryActionModel: ObservableObject {
     @Published private(set) var failed = false
     private var task: Task<Void, Never>?
 
-    /// Starts `action` unless one is running. A read hands the copy it opened to `onRead`.
+    /// Starts `action` unless one is running. A read records the copy and hands it to
+    /// `onRead` at once: the reader downloads and prepares it under its own 正在開啟書籍
+    /// (`BookReaderView`), so the page never shows that wait itself.
     func begin(_ action: Action, item: RemoteLibraryItem, format: RemoteLibraryFormat,
                service: any RemoteLibraryServing, store: BookStore, onRead: @escaping (UUID) -> Void) {
         guard self.action == nil else { return }
-        begin(action) {
-            switch action {
-            case .read:
-                let book = try await service.read(item: item, format: format, store: store)
-                try Task.checkCancellation()
-                onRead(book.id)
-                return nil
-            case .addToShelf:
+        switch action {
+        case .read:
+            message = nil
+            failed = false
+            do {
+                onRead(try service.readingCopy(item: item, format: format, store: store).id)
+            } catch {
+                failed = true
+                message = error.localizedDescription
+                UIAccessibility.post(notification: .announcement, argument: error.localizedDescription)
+            }
+        case .addToShelf:
+            begin(action) {
                 _ = try service.addToShelf(item: item, format: format, store: store)
                 return localized("已加入書架")
-            case .download:
+            }
+        case .download:
+            begin(action) {
                 _ = try await service.downloadOffline(item: item, format: format, store: store)
                 try Task.checkCancellation()
                 return localized("下載完成")

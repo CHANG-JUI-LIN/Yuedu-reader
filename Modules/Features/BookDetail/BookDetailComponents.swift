@@ -909,10 +909,20 @@ struct BookDetailInfoSection: View {
                 .foregroundStyle(DSColor.textSecondary)
             Spacer(minLength: DSSpacing.md)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(item.value)
-                    .foregroundStyle(DSColor.textPrimary)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
+                // A choice or link without a detail line ends its value with the chevron, on
+                // the same line, as a Settings menu row does.
+                HStack(alignment: .firstTextBaseline, spacing: DSSpacing.xs) {
+                    Text(item.value)
+                        .foregroundStyle(DSColor.textPrimary)
+                        .multilineTextAlignment(.trailing)
+                        .lineLimit(2)
+                    if item.detail == nil, item.isInteractive {
+                        Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
+                            .font(DSFont.caption2.weight(.semibold))
+                            .foregroundStyle(DSColor.textSecondary)
+                            .accessibilityHidden(true)
+                    }
+                }
                 if let detail = item.detail {
                     HStack(spacing: DSSpacing.xs) {
                         Text(detail)
@@ -925,11 +935,6 @@ struct BookDetailInfoSection: View {
                     .font(DSFont.footnote)
                     .foregroundStyle(item.isInteractive ? DSColor.accent : DSColor.textSecondary)
                     .lineLimit(1)
-                } else if item.isInteractive {
-                    Image(systemName: item.choice == nil ? "chevron.right" : "chevron.up.chevron.down")
-                        .font(DSFont.caption2.weight(.semibold))
-                        .foregroundStyle(DSColor.textSecondary)
-                        .accessibilityHidden(true)
                 }
             }
         }
@@ -1328,6 +1333,9 @@ extension View {
             BookDetailInfoSection(items: [
                 BookDetailInfoItem(id: "wordCount", label: "字數", value: "298萬字"),
                 BookDetailInfoItem(id: "chapters", label: "章節", value: "1,450"),
+                BookDetailInfoItem(id: "format", label: "格式", value: "EPUB", choice: BookDetailInfoChoice(
+                    options: [.init(id: "epub", title: "EPUB"), .init(id: "pdf", title: "PDF")],
+                    selection: .constant("epub"))),
                 .source(name: "示範來源配置") {},
             ])
         }
