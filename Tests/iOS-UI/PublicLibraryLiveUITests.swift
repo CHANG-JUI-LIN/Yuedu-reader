@@ -133,6 +133,55 @@ final class PublicLibraryLiveUITests: XCTestCase {
         app.buttons["全部"].firstMatch.tap()
     }
 
+    /// 作品詳情's order (maintainer, 2026-10-12): the work's 分類 under the author open 依分類's
+    /// list; 作品關聯 comes before 作品資訊, which ends the page and holds the bibliography (底本).
+    @MainActor
+    func testAozoraWorkDetailOrder() throws {
+        guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+                               "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home"]
+        app.launch()
+        let tab = app.tabBars.buttons["探索"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 30))
+        tab.tap()
+        let menu = app.buttons["explore.scopeMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        menu.tap()
+        let aozora = app.buttons["青空文庫"].firstMatch
+        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
+        aozora.tap()
+        // A work from 依分類's 小說・故事: a newly added work can have no NDC yet, and then no 分類.
+        let byCategory = app.buttons["依分類"].firstMatch
+        XCTAssertTrue(byCategory.waitForExistence(timeout: 90), app.debugDescription)
+        byCategory.tap()
+        XCTAssertTrue(app.staticTexts["小說・故事"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        let work = app.collectionViews.buttons.firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 10), app.debugDescription)
+        work.tap()
+
+        let classification = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "detail.link.classification.")).firstMatch
+        XCTAssertTrue(classification.waitForExistence(timeout: 15), app.debugDescription)
+        let name = classification.label
+        screenshot(app, "aozora-detail-top")
+
+        // The end of the page: 作者其他作品 above 作品資訊, which holds 底本.
+        let basis = app.descendants(matching: .any)["detail.info.basis"].firstMatch
+        for _ in 0..<6 where !(basis.exists && basis.isHittable) { app.swipeUp() }
+        XCTAssertTrue(basis.waitForExistence(timeout: 10), app.debugDescription)
+        let other = app.descendants(matching: .any)["detail.authorWorks.book"].firstMatch
+        if other.exists {
+            XCTAssertLessThan(other.frame.maxY, basis.frame.minY, "作品資訊 comes after 作者其他作品")
+        }
+        screenshot(app, "aozora-detail-bottom")
+
+        // The 分類 opens its works.
+        for _ in 0..<6 where !classification.isHittable { app.swipeDown() }
+        classification.tap()
+        XCTAssertTrue(app.navigationBars[name].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        screenshot(app, "aozora-classification-page")
+    }
+
     /// 2026-10-12: back from reading a 青空文庫 work, its 作品詳情 listed the copy the reading
     /// made as 「書架」 and lost the work's details. The work stands for its copy now.
     @MainActor

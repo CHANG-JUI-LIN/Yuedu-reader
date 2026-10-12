@@ -95,11 +95,32 @@ struct BookDetailCoverShelf: View {
 /// on top, keeping the author's page to come back to.
 struct WorkDetailAuthorPage: View {
     let destination: PublicLibraryAuthorDestination
-    @EnvironmentObject private var store: BookStore
-    @State private var pushedWork: WorkDetailRoute?
 
     var body: some View {
         PublicLibraryAuthorPage(destination: destination)
+            .opensWorkDetail()
+    }
+}
+
+/// A 青空文庫 分類's works, from 作品詳情's hero: the list 依分類 opens, each work opening its
+/// 作品詳情 on top.
+struct WorkDetailAozoraWorksPage: View {
+    let title: String
+    let works: [AozoraWork]
+    let index: AozoraCatalogIndex
+
+    var body: some View {
+        AozoraWorksView(index: index, works: works, title: title)
+            .opensWorkDetail()
+    }
+}
+
+private struct OpensWorkDetail: ViewModifier {
+    @EnvironmentObject private var store: BookStore
+    @State private var pushedWork: WorkDetailRoute?
+
+    func body(content: Content) -> some View {
+        content
             .environment(\.openPublicLibraryBooks) { selection in
                 if let book = selection.selectedBook { pushedWork = WorkDetailRoute(book) }
             }
@@ -107,6 +128,11 @@ struct WorkDetailAuthorPage: View {
                 WorkDetailView(route: route).environmentObject(store)
             }
     }
+}
+
+private extension View {
+    /// A public library's book on this page opens its 作品詳情 on the same stack.
+    func opensWorkDetail() -> some View { modifier(OpensWorkDetail()) }
 }
 
 /// An author's page in a public library: Gutenberg's feed of their books, or 青空文庫's list of
@@ -123,6 +149,14 @@ struct PublicLibraryAuthorPage: View {
             AozoraWorksView(index: index, works: index.works(forPerson: author.id), title: author.name)
         }
     }
+}
+
+#Preview("青空文庫分類") {
+    let index = AozoraCatalogIndex.preview
+    return NavigationStack {
+        WorkDetailAozoraWorksPage(title: localized("小説・物語"), works: index.newWorks, index: index)
+    }
+    .environmentObject(BookStore())
 }
 
 #Preview("作者其他作品") {

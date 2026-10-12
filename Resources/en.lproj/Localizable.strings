@@ -3751,6 +3751,9 @@
 "第 %@ 冊" = "Book %@";
 "顯示這個系列的作品" = "Shows works in this series.";
 
+/* 作品詳情 · 作品資訊（青空文庫） */
+"副標題" = "Subtitle";
+
 /* 作品詳情 · 其他貢獻者（作品資訊的角色列） */
 "插畫" = "Illustrator";
 "評註" = "Commentator";

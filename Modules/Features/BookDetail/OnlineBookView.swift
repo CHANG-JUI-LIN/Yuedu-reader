@@ -289,7 +289,6 @@ struct OnlineBookView: View {
                     action: { openReader(chapterIndex: chapter.index) }
                 )
             }
-            BookDetailInfoSection(items: infoItems)
             if onContinueReading == nil {
                 BookDetailRelatedSection(
                     related: genres.related,
@@ -301,6 +300,8 @@ struct OnlineBookView: View {
                     }
                 )
             }
+            // 作品資訊 last: the first half serves reading and finding more (2026-10-12).
+            BookDetailInfoSection(items: infoItems)
         }
         .environment(\.locale, Locale(identifier: gs.localeIdentifier))
         .toolbar {
