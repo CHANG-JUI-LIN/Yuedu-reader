@@ -1025,6 +1025,9 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             : app.textViews["bookInfo.intro"].firstMatch
         for _ in 0..<6 where !(introField.exists && introField.isHittable) { app.swipeUp() }
         XCTAssertTrue(introField.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Leave blank to show the description from the book or its source."].firstMatch.exists,
+                      "The 簡介 footer says where an empty field's description comes from.\n\(app.debugDescription)")
+        attachScreenshot(app, named: "編輯資訊 簡介 footer")
         introField.tap()
         app.typeText(ownIntro)
         let save = app.buttons.matching(NSPredicate(format: "label IN %@", ["Save", "Done"])).firstMatch

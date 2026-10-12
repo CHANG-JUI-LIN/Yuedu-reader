@@ -1404,10 +1404,17 @@ struct EditBookSheet: View {
                         }
                     }
                     .interfaceSectionSurface()
-                    Section(header: Text(localized("簡介")).foregroundStyle(DSColor.textSecondary)) {
+                    Section {
                         TextField(localized("簡介"), text: $introInput, axis: .vertical)
                             .lineLimit(3...10)
                             .accessibilityIdentifier("bookInfo.intro")
+                    } header: {
+                        Text(localized("簡介")).foregroundStyle(DSColor.textSecondary)
+                    } footer: {
+                        // The field holds only the reader's own text, so it is empty for a book
+                        // whose page does show a description; this says where that one comes from.
+                        Text(localized("留空時顯示書本或來源提供的簡介。"))
+                            .dsSectionFooter()
                     }
                     .interfaceSectionSurface()
                     Section(header: Text(localized("閱讀進度")).foregroundStyle(DSColor.textSecondary)) {
