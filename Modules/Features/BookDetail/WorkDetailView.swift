@@ -31,9 +31,13 @@ private enum GutenbergLoad {
 /// `RemoteLibraryActionModel`, a 青空文庫 work through `AozoraLibraryDownloading`. A
 /// book-source version is that source's own page, drawn here in place (5f-3): its chapter
 /// list, 換源, shelf and reader are `OnlineBookView`'s (or `AudiobookDetailView`'s), with the
-/// work's other versions first in its 換源 sheet.
+/// work's other versions first in its 換源 sheet. A book-source book on the shelf is that
+/// page too (5f-4): the shelf has no second 書籍詳情.
 struct WorkDetailView: View {
     let route: WorkDetailRoute
+    /// Takes the page off its stack when the shelf copy it was opened for leaves the shelf
+    /// from its source's page; without it the page stays and reads its versions again.
+    let onRemoveFromShelf: (() -> Void)?
     @EnvironmentObject private var store: BookStore
     @Environment(\.appDependencies) private var dependencies
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
@@ -60,8 +64,9 @@ struct WorkDetailView: View {
     /// are read again without the copy.
     @State private var versionsRevision = 0
 
-    init(route: WorkDetailRoute) {
+    init(route: WorkDetailRoute, onRemoveFromShelf: (() -> Void)? = nil) {
         self.route = route
+        self.onRemoveFromShelf = onRemoveFromShelf
         _versions = State(initialValue: [route])
     }
 
@@ -77,7 +82,7 @@ struct WorkDetailView: View {
                 versionsLoaded = true
                 // A book-source page keeps its place once shown: the copy its 加入書架 makes would
                 // otherwise come first and take the page from under its reader.
-                if chosen == nil, let shown = selected, case .onlineBook = shown.opening { chosen = shown.nodeKey }
+                if chosen == nil, let shown = selected, onlineBook(of: shown) != nil { chosen = shown.nodeKey }
             }
             .task(id: selected?.nodeKey) { await prepare(selected) }
             .task(id: offlineProbe) {
@@ -86,15 +91,14 @@ struct WorkDetailView: View {
             .onDisappear { actions.cancelForDisappearance() }
     }
 
-    /// A book-source version is its source's own page; every other version is this one's.
-    /// Each has one item destination of its own (guardrail 12).
+    /// A book-source version, found or on the shelf, is its source's own page; every other
+    /// version is this one's. Each has one item destination of its own (guardrail 12).
     @ViewBuilder
     private var page: some View {
-        if let version = selected, case .onlineBook(let frozen) = version.opening {
+        if let version = selected, let book = onlineBook(of: version) {
             OnlineBookDetailDestination(
-                .book(frozen.book),
-                // The page stays when its book leaves the shelf: the version is still there.
-                onRemoveFromShelf: { versionsRevision += 1 },
+                .book(book),
+                onRemoveFromShelf: { leftShelf(version) },
                 workVersions: versionChoice(version)
             )
             .environmentObject(store)
@@ -154,6 +158,27 @@ struct WorkDetailView: View {
                     .environmentObject(store)
                 }
             }
+        }
+    }
+
+    /// The book a book-source version's page shows: the found one's frozen card, or an
+    /// online shelf copy as the reader opens it.
+    private func onlineBook(of version: WorkDetailRoute) -> OnlineBook? {
+        switch version.opening {
+        case .onlineBook(let frozen): frozen.book
+        case .copy(let id): copy(id).flatMap(OnlineBook.init(shelfCopy:))
+        case .opdsEntry, .webDAVFile, .gutenberg, .aozora: nil
+        }
+    }
+
+    /// A book-source page took its book off the shelf. The copy the page was opened for takes
+    /// the page with it when its stack can; a found version's page stays, as the version is
+    /// still there, and the versions are read again without the copy.
+    private func leftShelf(_ version: WorkDetailRoute) {
+        if case .copy = version.opening, version.nodeKey == route.nodeKey, let onRemoveFromShelf {
+            onRemoveFromShelf()
+        } else {
+            versionsRevision += 1
         }
     }
 
