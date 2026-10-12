@@ -809,6 +809,88 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(cell.waitForNonExistence(timeout: 10), "The book leaves the shelf.\n\(app.debugDescription)")
     }
 
+    /// A title the reader gave a shelf book is the one its 作品詳情 shows, not the source's
+    /// (5f-4d, decision 32: the reader's own edits come first).
+    @MainActor
+    func testWorkDetailShowsTheShelfCopysEditedTitle() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(explore, settings)"]
+        app.launch()
+        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
+        let remove = app.buttons["Remove from Library"]
+        let add = app.buttons["Bookmarked"]
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Bookmarked", "Remove from Library"])).firstMatch.waitForExistence(timeout: 15))
+        if remove.exists {
+            // On the shelf from an earlier run, maybe renamed: put back with the source's title.
+            let pageButton = remove.frame
+            remove.tap()
+            XCTAssertTrue(app.staticTexts["Remove This Book from the Shelf?"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+            app.buttons.matching(NSPredicate(format: "label == %@", "Remove from Library"))
+                .allElementsBoundByIndex.first { $0.frame != pageButton }?.tap()
+            XCTAssertTrue(add.waitForExistence(timeout: 10), app.debugDescription)
+        }
+        if add.exists {
+            let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: add)
+            XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
+            add.tap()
+            XCTAssertTrue(remove.waitForExistence(timeout: 10), app.debugDescription)
+        }
+        XCUIDevice.shared.press(.home)
+        let left = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.state == .runningBackground || app.state == .runningBackgroundSuspended
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed)
+        app.terminate()
+        app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(bookshelf, settings)", "-bookLayoutIsGrid", "NO"]
+        app.launch()
+
+        // 編輯書籍資訊 renames the copy.
+        let edited = "Renamed On The Shelf"
+        let cell = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Navigation Swipe Fixture，")).firstMatch
+        XCTAssertTrue(cell.waitForExistence(timeout: 15), app.debugDescription)
+        cell.buttons["More"].firstMatch.tap()
+        let editInfo = app.buttons["Edit Info"].firstMatch
+        XCTAssertTrue(editInfo.waitForExistence(timeout: 5), app.debugDescription)
+        editInfo.tap()
+        // 書名 is under the cover's section: the field holding the source's title.
+        XCTAssertTrue(app.navigationBars["Book Info"].waitForExistence(timeout: 5), app.debugDescription)
+        let titleField = app.textFields.matching(NSPredicate(format: "value == %@", "Navigation Swipe Fixture")).firstMatch
+        for _ in 0..<6 where !(titleField.exists && titleField.isHittable) { app.swipeUp() }
+        XCTAssertTrue(titleField.waitForExistence(timeout: 5), app.debugDescription)
+        // At its end, so the deletes take the whole title.
+        titleField.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        // Into the focused field: once edited, the query by its old value finds nothing.
+        app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Navigation Swipe Fixture".count + 4) + edited)
+        let save = app.buttons.matching(NSPredicate(format: "label IN %@", ["Save", "Done"])).firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 5), app.debugDescription)
+        save.tap()
+        let renamed = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", edited + "，")).firstMatch
+        XCTAssertTrue(renamed.waitForExistence(timeout: 10), app.debugDescription)
+
+        // 作品詳情 shows the copy's title once its source has answered with its own.
+        renamed.buttons["More"].firstMatch.tap()
+        let work = app.buttons["Work Details"].firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 5), app.debugDescription)
+        work.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["detail.info.chapters"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Contents"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        attachScreenshot(app, named: "Work detail - edited title")
+        XCTAssertTrue(app.staticTexts[edited].firstMatch.exists, "The copy's own title is shown.\n\(app.debugDescription)")
+        XCTAssertFalse(app.staticTexts["Navigation Swipe Fixture"].exists, "Not the source's title.\n\(app.debugDescription)")
+
+        // Leaves the shelf as it found it.
+        let pageButton = remove.frame
+        remove.tap()
+        XCTAssertTrue(app.staticTexts["Remove This Book from the Shelf?"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons.matching(NSPredicate(format: "label == %@", "Remove from Library"))
+            .allElementsBoundByIndex.first { $0.frame != pageButton }?.tap()
+        XCTAssertTrue(renamed.waitForNonExistence(timeout: 10), app.debugDescription)
+    }
+
     /// The classic reader's 選單 → 作品詳情 (5f-4b, decision 32), which shows the book being read.
     @MainActor
     private func openWorkDetailFromReader(_ app: XCUIApplication) {
