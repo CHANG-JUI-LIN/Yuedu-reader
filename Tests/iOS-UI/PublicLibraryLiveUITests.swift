@@ -123,9 +123,10 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let aozora = app.buttons["青空文庫"].firstMatch
         XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
         aozora.tap()
-        // 範圍 shows 青空文庫's own page (decision 35): its indexes, once the catalog is read.
-        let newest = app.buttons["新上架作品"].firstMatch
-        XCTAssertTrue(newest.waitForExistence(timeout: 90), app.debugDescription)
+        // 範圍 shows 青空文庫's own sections (decision 35): 新上架作品's covers, once the catalog is read.
+        let cover = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
+        XCTAssertTrue(cover.waitForExistence(timeout: 90), app.debugDescription)
+        XCTAssertTrue(app.buttons["新上架作品"].firstMatch.exists, app.debugDescription)
         screenshot(app, "aozora-from-website")
 
         menu.tap()
@@ -151,13 +152,10 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let aozora = app.buttons["青空文庫"].firstMatch
         XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
         aozora.tap()
-        // 青空文庫's own page (decision 35) → 新上架作品 → its first work.
-        let newest = app.buttons["新上架作品"].firstMatch
-        XCTAssertTrue(newest.waitForExistence(timeout: 90), app.debugDescription)
+        // 青空文庫's own sections (decision 35) → 新上架作品's first work.
+        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
         screenshot(app, "aozora-scope-page")
-        newest.tap()
-        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "publicLibrary.book.aozora")).firstMatch
-        XCTAssertTrue(work.waitForExistence(timeout: 15), app.debugDescription)
         work.tap()
 
         let source = app.descendants(matching: .any)["detail.info.source"].firstMatch

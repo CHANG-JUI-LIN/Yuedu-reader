@@ -1360,6 +1360,17 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
 - **Left in place:** `HomeScopeFilter`'s `scope` parameter now always gets nil from the app. Delete it when 範圍 leaves Explore (decision 30), together with its tests.
 - **Tests:** `ExploreHomeUITests.testScopeFiltersTheHomeAndBack` → `testScopeShowsTheLibrarysOwnPage`; `testConnectionIsInScope` and the live Aozora tests are updated. iOS 27: `testScopeShowsTheLibrarysOwnPage`, `testConnectionIsInScope`, `testConfigurationsAndTheBrowser`, and live `testAozoraCatalogFromTheWebsite` + `testAozoraWorkKeepsItsPageAfterReading` passed.
 
+#### What landed — a public library in 範圍 is a home of its own sections (decision 35 revised, 2026-10-12)
+
+- **Report (maintainer's screenshot):** 青空文庫 in 範圍 showed `AozoraHomePage`, a List of 新上架作品 / 依作家 / 依作品名 / 依分類. The maintainer wanted the home's presentation, not a list: 「佈局已經做好了，但是我佈局的內容和標題換成新上架作品」.
+- **Decision 35, revised:** a public library in 範圍 shows the home's sections and layouts, filled with the library's own content and titled by it (`LibraryHomePage`):
+  - 青空文庫: 新上架作品 as a row of covers, then 依作家 / 依作品名 / 依分類 as chip rows. Each header's 查看全部 opens the full list or index.
+  - Gutenberg: its shelves (熱門, 最新, the reader's languages), then the four bundled lists. 瀏覽所有分類 sits at the end of the page. In the toolbar, beside 範圍 and the long title, it pushed both buttons under 「更多」.
+  - No 繼續閱讀: a shelf copy opened from there still shows only itself (see the fold entry's "Not covered").
+  - The page is made, never saved, so it is not a 首頁配置. Section ids are derived from library + binding, so a rebuild does not reload rows. It syncs a second `HomeModel`, so the home's rows stay loaded behind it. Its sections have no long-press edits and there is no 編輯首頁. The title is the library's name. The footer keeps the store page's attribution (青空文庫 CC BY / Gutenberg public domain).
+- **Not changed:** a connection (OPDS, Calibre, WebDAV) and a book source still show their own page (root feed, folder, discover page). WebDAV serves only 最新, and a book source's categories need a discover fetch per source. `GutenbergHomePage` / `AozoraHomePage` stay for the store's routes. `HomeScopeFilter`'s `scope` is in use again: the library page passes its key, which keeps only that library's rows.
+- **Tests:** `LibraryHomePageTests` (new: sections per library, stable ids, connections and sources keep their pages). `ExploreHomeUITests.testScopeShowsTheLibrarysOwnPage` now asserts section headers and covers. The live Aozora tests tap 新上架作品's first cover. iOS 27: 11 unit tests in 2 suites passed. `testScopeShowsTheLibrarysOwnPage`, `testConnectionIsInScope`, and live `testAozoraCatalogFromTheWebsite` + `testAozoraWorkKeepsItsPageAfterReading` passed. The first run read another checkout's build, installed on the same simulator at the same time; the rerun confirmed the installed binary first.
+
 #### What landed — the hero names the author; other contributors are 作品資訊 rows (2026-10-12)
 
 - **Report (maintainer's screenshot):** the illustrated Sense and Sensibility (Gutenberg #21839) drew three author lines in 作品詳情's hero (Austen, Dobson, Thomson), each as 「Last, First」. Gutenberg links every credited person; the page listed each as an author.
