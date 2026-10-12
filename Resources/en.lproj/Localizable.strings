@@ -3711,3 +3711,7 @@
 "提示：作品詳情" = "Opens Book Details.";
 "章節 %d" = "Chapter %d";
 "標題：章節" = "Chapter";
+
+/* 閱讀設定 · 排版 · 底部對齊 */
+"底部對齊" = "Align to Bottom";
+"底部對齊：開啟後每頁文字會自動調整行間距以填滿頁面，使底部對齊整齊。" = "Align to Bottom: each page adjusts its line spacing slightly to fill the page, so the last line sits on the bottom edge.";

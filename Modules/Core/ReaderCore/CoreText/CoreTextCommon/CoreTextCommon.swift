@@ -32,7 +32,6 @@ import CoreText
 //   CoreTextPaginator.swift:
 //     • frameAttributes(for:)     → vertical: kCTFrameProgression.rightToLeft
 //     • preparedAttributedString  → vertical: normalizedForVerticalLayout() + CTFont cascade + paragraph style + kCTVerticalFormsAttributeName with ASCII exceptions
-//     • gridAlignedContentInsets  → vertical: skip; horizontal: snap to line grid
 //     • makeFrame(…)              → shared: creates CTFrame from framesetter
 //     • computeLayout()           → shared: pagination loop
 //     • applyOrphanControl()      → shared: widow/orphan prevention

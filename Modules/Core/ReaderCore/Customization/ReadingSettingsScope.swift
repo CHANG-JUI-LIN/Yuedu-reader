@@ -34,6 +34,7 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
     case letterSpacing
     case paragraphSpacing
     case pageMargins
+    case bottomJustify
     case headerFooter
     case chapterTitle
     case background
@@ -56,6 +57,7 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
         case .letterSpacing: return "字距"
         case .paragraphSpacing: return "段距"
         case .pageMargins: return "頁面邊距"
+        case .bottomJustify: return "底部對齊"
         case .headerFooter: return "頁首頁尾"
         case .chapterTitle: return "章節標題樣式"
         // Its own key: the shared 閱讀背景 is lower-case English, written for use
@@ -84,6 +86,7 @@ enum ReadingSettingsScopeItem: String, Codable, CaseIterable, Identifiable, Send
         case .letterSpacing: return "arrow.left.and.right.text.vertical"
         case .paragraphSpacing: return "paragraphsign"
         case .pageMargins: return "arrow.left.and.line.vertical.and.arrow.right"
+        case .bottomJustify: return "align.vertical.bottom"
         case .headerFooter: return "rectangle.split.3x1"
         case .chapterTitle: return "t.square"
         case .background: return "photo.on.rectangle"
@@ -156,6 +159,8 @@ extension AppearanceThemeReadingSettings {
             pageMarginV = nil
             pageMarginTop = nil
             pageMarginBottom = nil
+        case .bottomJustify:
+            bottomJustify = nil
         case .headerFooter:
             barLayout = nil
             headerVisible = nil

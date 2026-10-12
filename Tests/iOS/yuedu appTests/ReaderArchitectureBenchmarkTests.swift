@@ -76,7 +76,7 @@ struct ReaderArchitectureBenchmarkTests {
                     await paginator.paginateFirstPage(spineIndex: 0, attrStr: document.attributedString,
                         imagePage: document.imagePage, pageBackgroundImage: document.pageBackgroundImage,
                         pageBackgroundColor: document.pageBackgroundColor, anchorOffsets: document.anchorOffsets,
-                        renderSize: size, fontSize: settings.fontSize, lineSpacing: settings.lineSpacing,
+                        renderSize: size, fontSize: settings.fontSize,
                         paragraphSpacing: settings.paragraphSpacing, letterSpacing: settings.letterSpacing,
                         contentInsets: settings.contentInsets, writingMode: settings.writingMode, revision: document.revision)
                 }
@@ -88,7 +88,7 @@ struct ReaderArchitectureBenchmarkTests {
                     await paginator.paginate(spineIndex: 0, attrStr: document.attributedString,
                         imagePage: document.imagePage, pageBackgroundImage: document.pageBackgroundImage,
                         pageBackgroundColor: document.pageBackgroundColor, anchorOffsets: document.anchorOffsets,
-                        renderSize: size, fontSize: settings.fontSize, lineSpacing: settings.lineSpacing,
+                        renderSize: size, fontSize: settings.fontSize,
                         paragraphSpacing: settings.paragraphSpacing, letterSpacing: settings.letterSpacing,
                         contentInsets: settings.contentInsets, writingMode: settings.writingMode, revision: document.revision)
                 }

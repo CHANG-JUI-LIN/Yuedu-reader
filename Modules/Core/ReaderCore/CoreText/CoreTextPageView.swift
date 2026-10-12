@@ -749,12 +749,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             drawHorizontalFrame(
                 frame,
                 contentPathRect: contentPathRect,
-                isLastPage: pageIndex == layout.pageRanges.count - 1,
+                // The artifact's origins carry 底部對齊; hand-built test layouts have none.
+                lineOrigins: layout.pageArtifacts.indices.contains(pageIndex)
+                    ? layout.pageArtifacts[pageIndex].lineOrigins
+                    : nil,
                 attributedString: layout.attributedString,
                 suppressedRanges: suppressedRanges,
-                // Decoration rects are anchored to the unshifted line origins — bottom
-                // justification would move the text out from under its boxes.
-                bottomJustified: (layout.blockRenderables[pageIndex] ?? []).isEmpty,
                 in: ctx
             )
         }
@@ -959,13 +959,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         return String(normalized.prefix(limit))
     }
 
-    /// Draws all text lines of a CTFrame line-by-line, applying CTLineCreateJustifiedLine for justified non-last lines.
-    /// Shared between draw(_ rect:) and CoreTextPageEngine.generateSnapshot().
-    /// The CTM must already be configured for the CoreText coordinate system (y-axis flipped upward) before calling.
-    /// - Parameters:
-    ///   - contentMinX: Left edge of the content area (CoreText coordinates), used for drawing HR line start points
-    ///   - contentMinY: Bottom of the content area (CoreText coordinates), used for calculating last-page remaining space
-    ///   - isLastPage: Whether this is the last page of the chapter; last pages do not apply vertical justification
     // MARK: - Phase 2a: Vertical text rendering
 
     /// Draw a CTFrame in vertical-rl mode.
@@ -1010,10 +1003,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     private nonisolated static func drawHorizontalFrame(
         _ frame: CTFrame,
         contentPathRect: CGRect,
-        isLastPage: Bool,
+        lineOrigins: [CGPoint]?,
         attributedString: NSAttributedString,
         suppressedRanges: [NSRange],
-        bottomJustified: Bool,
         in ctx: CGContext
     ) {
         CoreTextHorizontalLineDrawer.drawLines(
@@ -1021,11 +1013,10 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             contentWidth: contentPathRect.width,
             contentMinX: contentPathRect.minX,
             contentMinY: contentPathRect.minY,
-            isLastPage: isLastPage,
+            lineOrigins: lineOrigins,
             attrStr: attributedString,
             suppressedRanges: suppressedRanges,
             hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,
-            bottomJustified: bottomJustified,
             in: ctx
         )
     }

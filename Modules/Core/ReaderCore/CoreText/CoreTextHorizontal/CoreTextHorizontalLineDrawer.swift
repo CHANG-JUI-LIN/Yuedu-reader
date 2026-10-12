@@ -29,8 +29,8 @@ struct ReaderTextUnderlineDecoration: Equatable {
 
 /// Horizontal writing mode text rendering.
 ///
-/// Draws CTFrame line-by-line with CJK-optimized justification,
-/// paragraph gap distribution, and HR divider lines.
+/// Draws CTFrame line-by-line with CJK-optimized justification
+/// and HR divider lines.
 /// NOT used in vertical writing mode — vertical uses CTFrameDraw directly.
 enum CoreTextHorizontalLineDrawer {
 
@@ -41,11 +41,10 @@ enum CoreTextHorizontalLineDrawer {
         contentWidth: CGFloat,
         contentMinX: CGFloat,
         contentMinY: CGFloat,
-        isLastPage: Bool,
+        lineOrigins: [CGPoint]? = nil,
         attrStr: NSAttributedString,
         suppressedRanges: [NSRange] = [],
         hrDividerKey: NSAttributedString.Key,
-        bottomJustified: Bool = true,
         lineIndices: IndexSet? = nil,
         underline: ReaderTextUnderlineDecoration? = .current(),
         in ctx: CGContext
@@ -53,63 +52,32 @@ enum CoreTextHorizontalLineDrawer {
         let lines = CTFrameGetLines(frame) as! [CTLine]
         guard !lines.isEmpty else { return }
 
-        var origins = [CGPoint](repeating: .zero, count: lines.count)
-        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        // Pages pass their artifact's origins, which carry 底部對齊 — the same geometry
+        // selection, TTS highlight and inline images read. Everything else uses the frame's own.
+        let origins: [CGPoint]
+        if let lineOrigins {
+            assert(lineOrigins.count == lines.count, "line origins belong to a different frame")
+            origins = lineOrigins
+        } else {
+            var frameOrigins = [CGPoint](repeating: .zero, count: lines.count)
+            CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &frameOrigins)
+            origins = frameOrigins
+        }
 
         let nsString = attrStr.string as NSString
         let stringLength = attrStr.length
 
-        // Phase 5A: distribute bottom space across paragraph gaps on non-last pages.
-        // Callers disable this on pages carrying block decorations: the shift moves the glyph
-        // lines, but decoration rects were extracted from the UNSHIFTED line origins, so boxes
-        // would detach from their own text (a `.sys` pill drifting onto the paragraphs above),
-        // and authored-tight gaps (`.sys p { margin: 0 }`) would inflate by the distributed slack.
-        var extraSpacePerGap: CGFloat = 0
-        var paragraphGapAfterLine: Set<Int> = []
-
-        if bottomJustified && !isLastPage && lines.count > 1 {
-            for i in 0..<(lines.count - 1) {
-                let r = CTLineGetStringRange(lines[i])
-                let checkIdx = r.location + r.length
-                if checkIdx < stringLength {
-                    let ch = nsString.character(at: checkIdx)
-                    if ch == 0x000A || ch == 0x2028 || ch == 0x2029 {
-                        paragraphGapAfterLine.insert(i)
-                    }
-                }
-            }
-            if !paragraphGapAfterLine.isEmpty {
-                var lastDescent: CGFloat = 0
-                CTLineGetTypographicBounds(lines.last!, nil, &lastDescent, nil)
-                let lastBaseline = origins[lines.count - 1].y
-                let usedBottom = lastBaseline + lastDescent
-                let extraSpace = usedBottom - contentMinY
-                if extraSpace > 2 {
-                    extraSpacePerGap = extraSpace / CGFloat(paragraphGapAfterLine.count)
-                }
-            }
-        }
-
         // Resolved up front rather than inside the loop: 對話氣泡 has to be
-        // painted before any glyph is drawn, and it needs the same shifted
-        // origins the glyphs will use — a bubble measured from the unshifted
-        // ones detaches from its own text on bottom-justified pages.
-        var accumulatedShift: CGFloat = 0
-        var shiftedOrigins = [CGPoint](repeating: .zero, count: lines.count)
-        for lineIdx in lines.indices {
-            if lineIdx > 0 && paragraphGapAfterLine.contains(lineIdx - 1) {
-                accumulatedShift -= extraSpacePerGap
-            }
-            shiftedOrigins[lineIdx] = CGPoint(
-                x: origins[lineIdx].x + contentMinX,
-                y: origins[lineIdx].y + accumulatedShift + contentMinY
-            )
+        // painted before any glyph is drawn, and it needs the same absolute
+        // origins the glyphs will use.
+        let absoluteOrigins = origins.map {
+            CGPoint(x: $0.x + contentMinX, y: $0.y + contentMinY)
         }
 
         ReaderDialogueBubbleRenderer.draw(
             ReaderDialogueBubbleRenderer.bubbles(
                 lines: lines,
-                origins: shiftedOrigins,
+                origins: absoluteOrigins,
                 attributedString: attrStr,
                 writingMode: .horizontal
             ),
@@ -124,7 +92,7 @@ enum CoreTextHorizontalLineDrawer {
             // The continuous viewport owns small, retained paint surfaces.
             // Unrelated lines must not be justified or submitted to Core Graphics.
             if let lineIndices, !lineIndices.contains(lineIdx) { continue }
-            var origin = shiftedOrigins[lineIdx]
+            var origin = absoluteOrigins[lineIdx]
 
             let lineRange = CTLineGetStringRange(line)
             let lineStart = lineRange.location

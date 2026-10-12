@@ -625,7 +625,6 @@ private final class ChapterTitlePreviewDrawView: UIView {
             contentWidth: bounds.width,
             contentMinX: 0,
             contentMinY: 0,
-            isLastPage: true,
             attrStr: attributed,
             suppressedRanges: suppressedRanges,
             hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,

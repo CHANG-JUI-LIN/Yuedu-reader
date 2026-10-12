@@ -11,12 +11,12 @@ struct PaginationRequest {
     let anchorOffsets: [String: Int]
     let renderSize: CGSize
     let fontSize: CGFloat
-    let lineSpacing: CGFloat
     let paragraphSpacing: CGFloat
     let letterSpacing: CGFloat
     let contentInsets: UIEdgeInsets
     let revision: ContentRevision
     var writingMode: ReaderWritingMode = .horizontal
+    var bottomJustify: Bool = false
 }
 
 struct PaginationResult {
@@ -42,11 +42,11 @@ final class PaginationManager {
             anchorOffsets: request.anchorOffsets,
             renderSize: request.renderSize,
             fontSize: request.fontSize,
-            lineSpacing: request.lineSpacing,
             paragraphSpacing: request.paragraphSpacing,
             letterSpacing: request.letterSpacing,
             contentInsets: request.contentInsets,
             writingMode: request.writingMode,
+            bottomJustify: request.bottomJustify,
             revision: request.revision
         )
         return PaginationResult(layout: layout)
@@ -65,11 +65,11 @@ final class PaginationManager {
             anchorOffsets: request.anchorOffsets,
             renderSize: request.renderSize,
             fontSize: request.fontSize,
-            lineSpacing: request.lineSpacing,
             paragraphSpacing: request.paragraphSpacing,
             letterSpacing: request.letterSpacing,
             contentInsets: request.contentInsets,
             writingMode: request.writingMode,
+            bottomJustify: request.bottomJustify,
             revision: request.revision
         )
         return layout.map { PaginationResult(layout: $0) }

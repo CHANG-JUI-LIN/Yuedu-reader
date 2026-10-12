@@ -719,7 +719,7 @@ private enum FidelityEngineCapture {
                 let painted = inkExtent(in: strip) { context in
                     CoreTextHorizontalLineDrawer.drawLines(
                         of: frame, contentWidth: chunk.width, contentMinX: 0,
-                        contentMinY: -(lineOrigin.y - descent - pad), isLastPage: true, attrStr: attributed,
+                        contentMinY: -(lineOrigin.y - descent - pad), attrStr: attributed,
                         suppressedRanges: suppressed, hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,
                         lineIndices: IndexSet(integer: index), underline: nil, in: context)
                 }

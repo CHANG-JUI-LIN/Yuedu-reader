@@ -889,7 +889,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 ?? publicationResolver?(families, weight, italic, size)
             },
             writingMode: settings.writingMode,
-            cjkTypographyStyle: cjkTypographyStyle
+            cjkTypographyStyle: cjkTypographyStyle,
+            // Scroll settings always carry false: a scroll column has no page bottom.
+            bottomJustify: settings.bottomJustify
         )
     }
 

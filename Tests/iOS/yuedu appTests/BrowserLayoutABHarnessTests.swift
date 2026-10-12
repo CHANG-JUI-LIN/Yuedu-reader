@@ -226,7 +226,6 @@ struct BrowserLayoutABHarnessTests {
                 attrStr: result.attributedString,
                 renderSize: renderSize,
                 fontSize: settings.fontSize,
-                lineSpacing: settings.lineSpacing,
                 paragraphSpacing: settings.paragraphSpacing,
                 letterSpacing: settings.letterSpacing,
                 contentInsets: settings.contentInsets

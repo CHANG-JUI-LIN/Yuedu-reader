@@ -759,6 +759,15 @@ class GlobalSettings {
             recordReadingSettingEdit { $0.pageMarginBottom = pageMarginBottom }
         }
     }
+    /// 底部對齊 (legado 底部对齐): in paged mode, a page CoreText filled to the bottom
+    /// spreads its leftover space evenly over its lines so the last line sits on the
+    /// content bottom. Part of `ReaderRenderSettings`, so a change re-paginates.
+    var readerBottomJustify: Bool {
+        didSet {
+            UserDefaults.standard.set(readerBottomJustify, forKey: "yd_reader_bottom_justify")
+            recordReadingSettingEdit { $0.bottomJustify = readerBottomJustify }
+        }
+    }
     var pageMarginV: Double {
         didSet {
             UserDefaults.standard.set(pageMarginV, forKey: "yd_page_margin_v")
@@ -1918,6 +1927,7 @@ class GlobalSettings {
             ?? loadedPageMarginV
         pageMarginBottom = (UserDefaults.standard.object(forKey: "yd_page_margin_bottom") as? Double)
             ?? loadedPageMarginV
+        readerBottomJustify = (UserDefaults.standard.object(forKey: "yd_reader_bottom_justify") as? Bool) ?? true
         readerTextColorOverrides =
             (UserDefaults.standard.dictionary(forKey: Self.readerTextColorOverridesKey) as? [String: Int])?
                 .mapValues { UInt32(clamping: $0) } ?? [:]

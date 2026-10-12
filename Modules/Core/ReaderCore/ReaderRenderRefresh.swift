@@ -162,6 +162,8 @@ extension ReaderRenderSettings {
             || textConversion != old.textConversion
             // 整章翻譯 splices translations into the string.
             || translation != old.translation
+            // 底部對齊 moves line origins, which pagination stores in each page.
+            || bottomJustify != old.bottomJustify
             || regexRefresh == .relayout
 
         if layoutChanged { return .layout }

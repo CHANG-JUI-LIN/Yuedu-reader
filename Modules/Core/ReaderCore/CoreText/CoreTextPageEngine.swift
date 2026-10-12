@@ -1180,12 +1180,12 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
             anchorOffsets: buildResult.anchorOffsets,
             renderSize: renderSize,
             fontSize: renderSettings.fontSize,
-            lineSpacing: renderSettings.lineSpacing,
             paragraphSpacing: renderSettings.paragraphSpacing,
             letterSpacing: renderSettings.letterSpacing,
             contentInsets: currentContentInsets(),
             revision: buildResult.revision,
-            writingMode: renderSettings.writingMode
+            writingMode: renderSettings.writingMode,
+            bottomJustify: renderSettings.bottomJustify
         )
 
         // Two-phase open for long chapters (Legado TextChapterLayout idea): lay

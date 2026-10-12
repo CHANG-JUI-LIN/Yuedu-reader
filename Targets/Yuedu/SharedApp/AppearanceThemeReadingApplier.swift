@@ -140,15 +140,22 @@ extension GlobalSettings {
     }
 
     /// The shared setup must be complete, so wearing it sets every field. One saved
-    /// before a field joined the setup has none for it: 排版方向 (2026-10-06) is taken
-    /// once from what is on screen, which no theme had a value for yet. A theme with
-    /// no value of its own would otherwise keep the previous theme's direction. Can go
-    /// once no install still holds a shared setup from before that build.
+    /// before a field joined the setup has none for it: 排版方向 (2026-10-06) and 底部對齊
+    /// (2026-10-12) are taken once from what is on screen, which no theme had a value for
+    /// yet. A theme with no value of its own would otherwise keep the previous theme's
+    /// value. Can go once no install still holds a shared setup from before those builds.
     @discardableResult
     private func completeLaterFields(of reading: inout AppearanceThemeReadingSettings) -> Bool {
-        guard reading.writingMode == nil else { return false }
-        reading.writingMode = readerWritingMode.rawValue
-        return true
+        var completed = false
+        if reading.writingMode == nil {
+            reading.writingMode = readerWritingMode.rawValue
+            completed = true
+        }
+        if reading.bottomJustify == nil {
+            reading.bottomJustify = readerBottomJustify
+            completed = true
+        }
+        return completed
     }
 
     private func storeGlobalReadingSettings(_ reading: AppearanceThemeReadingSettings) {
@@ -300,6 +307,7 @@ extension GlobalSettings {
         snapshot.pageMarginV = pageMarginV
         snapshot.pageMarginTop = pageMarginTop
         snapshot.pageMarginBottom = pageMarginBottom
+        snapshot.bottomJustify = readerBottomJustify
         snapshot.pageTurnStyle = pageTurnStyle.rawValue
         snapshot.scrollMode = scrollMode
         snapshot.writingMode = readerWritingMode.rawValue
@@ -399,6 +407,7 @@ extension GlobalSettings {
         assign(\.pageMarginV, reading.pageMarginV)
         assign(\.pageMarginTop, reading.pageMarginTop)
         assign(\.pageMarginBottom, reading.pageMarginBottom)
+        assign(\.readerBottomJustify, reading.bottomJustify)
         assign(\.pageTurnStyle, reading.pageTurnStyle.flatMap(PageTurnStyle.init(rawValue:)))
         assign(\.scrollMode, reading.scrollMode)
         assign(\.readerWritingMode, reading.writingMode.flatMap(ReaderWritingMode.init(rawValue:)))

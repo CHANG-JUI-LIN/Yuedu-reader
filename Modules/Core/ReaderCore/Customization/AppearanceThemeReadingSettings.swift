@@ -62,6 +62,8 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
     var pageMarginV: Double?
     var pageMarginTop: Double?
     var pageMarginBottom: Double?
+    /// 底部對齊: paged text spreads each full page's leftover space over its lines.
+    var bottomJustify: Bool?
 
     // MARK: 翻頁
 
@@ -125,6 +127,7 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         case fontPostScript, fontSize, isBold, textColorOverrides
         case lineHeightMultiple, letterSpacing, paragraphSpacingMultiplier
         case pageMarginH, pageMarginV, pageMarginTop, pageMarginBottom
+        case bottomJustify
         case pageTurnStyle, scrollMode
         case writingMode
         case barLayout, headerVisible, footerVisible, headerTopPadding, headerTextGap
@@ -163,6 +166,7 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         pageMarginV = field(.pageMarginV)
         pageMarginTop = field(.pageMarginTop)
         pageMarginBottom = field(.pageMarginBottom)
+        bottomJustify = field(.bottomJustify)
         pageTurnStyle = field(.pageTurnStyle)
         scrollMode = field(.scrollMode)
         writingMode = field(.writingMode)
@@ -205,6 +209,7 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         merged.pageMarginV = other.pageMarginV ?? pageMarginV
         merged.pageMarginTop = other.pageMarginTop ?? pageMarginTop
         merged.pageMarginBottom = other.pageMarginBottom ?? pageMarginBottom
+        merged.bottomJustify = other.bottomJustify ?? bottomJustify
         merged.pageTurnStyle = other.pageTurnStyle ?? pageTurnStyle
         merged.scrollMode = other.scrollMode ?? scrollMode
         merged.writingMode = other.writingMode ?? writingMode
@@ -243,6 +248,7 @@ extension AppearanceThemeReadingSettings: Hashable {
         hasher.combine(fontSize)
         hasher.combine(isBold)
         hasher.combine(lineHeightMultiple)
+        hasher.combine(bottomJustify)
         hasher.combine(pageTurnStyle)
         hasher.combine(scrollMode)
         hasher.combine(writingMode)

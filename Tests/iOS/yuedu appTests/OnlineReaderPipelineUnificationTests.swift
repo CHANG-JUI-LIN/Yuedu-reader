@@ -767,7 +767,6 @@ struct OnlineReaderPipelineUnificationTests {
             attrStr: attributed,
             renderSize: renderSize,
             fontSize: Self.settings.fontSize,
-            lineSpacing: Self.settings.lineSpacing,
             paragraphSpacing: Self.settings.paragraphSpacing,
             letterSpacing: Self.settings.letterSpacing
         )

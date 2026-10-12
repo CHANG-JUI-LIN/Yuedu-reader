@@ -61,7 +61,7 @@ struct BrowserLayoutPageDiffDiagnosticsTests {
             let legacyLayout = await paginator.paginate(
                 spineIndex: spine, attrStr: legacyResult.attributedString,
                 renderSize: renderSize, fontSize: settings.fontSize,
-                lineSpacing: settings.lineSpacing, paragraphSpacing: settings.paragraphSpacing,
+                paragraphSpacing: settings.paragraphSpacing,
                 letterSpacing: settings.letterSpacing, contentInsets: settings.contentInsets
             )
             let legacyText = legacyResult.attributedString.string as NSString

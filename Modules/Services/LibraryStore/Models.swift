@@ -929,6 +929,9 @@ struct ReaderRenderSettings: Equatable {
     /// The book being laid out. `CJKTypographyStyleResolver` keeps one CJK typography
     /// style per book, so its titles and chapters are set alike. Nil outside a book.
     var bookID: UUID? = nil
+    /// 底部對齊: spread each filled page's leftover space over its lines so the last line
+    /// sits on the content bottom. Paged surface only; the scroll surface always carries false.
+    var bottomJustify: Bool = false
 }
 
 enum TOCLayoutMode {
@@ -984,23 +987,6 @@ enum ReaderLayoutMetrics {
     ) -> CGFloat {
         guard headerVisible else { return topInset(safeTop: safeTop) }
         return headerTopPadding + headerHeight + headerTextGap
-    }
-
-    /// Returns the extra bottom padding CoreText's grid alignment will inject
-    /// so the content area snaps to whole line heights. The footer overlay must
-    /// shift up by this amount so the visual gap equals `footerTextGap`.
-    static func gridAdjustment(
-        viewHeight: CGFloat,
-        topInset: CGFloat,
-        bottomInset: CGFloat,
-        fontSize: CGFloat,
-        lineSpacing: CGFloat
-    ) -> CGFloat {
-        let lineHeight = max(1, fontSize + lineSpacing)
-        let rawHeight = viewHeight - topInset - bottomInset
-        let lineCount = floor(rawHeight / lineHeight)
-        guard lineCount >= 1 else { return 0 }
-        return rawHeight - lineCount * lineHeight
     }
 
     /// The text area's top and bottom insets with the header/footer bars taken

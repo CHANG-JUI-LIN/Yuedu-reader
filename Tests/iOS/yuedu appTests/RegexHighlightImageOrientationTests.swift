@@ -121,7 +121,6 @@ struct RegexHighlightImageOrientationTests {
                 contentWidth: Self.width,
                 contentMinX: 0,
                 contentMinY: 0,
-                isLastPage: true,
                 attrStr: attr,
                 hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,
                 in: ctx

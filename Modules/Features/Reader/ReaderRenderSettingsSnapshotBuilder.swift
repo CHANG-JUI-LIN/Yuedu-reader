@@ -23,6 +23,7 @@ struct ReaderRenderSettingsSnapshotInput {
     var textConversion: TextConversion = .original
     var translation: ReaderTranslationPresentation = .off
     var bookID: UUID? = nil
+    var bottomJustify: Bool = false
 }
 
 enum ReaderRenderSurface {
@@ -38,12 +39,18 @@ enum ReaderRenderSettingsSnapshotBuilder {
         let contentInsets: UIEdgeInsets
         let marginV: CGFloat
         let footerHeight: CGFloat
+        let isPaged: Bool
         switch surface {
-        case let .paged(insets, verticalMargin, height),
-             let .scroll(insets, verticalMargin, height):
+        case let .paged(insets, verticalMargin, height):
             contentInsets = insets
             marginV = verticalMargin
             footerHeight = height
+            isPaged = true
+        case let .scroll(insets, verticalMargin, height):
+            contentInsets = insets
+            marginV = verticalMargin
+            footerHeight = height
+            isPaged = false
         }
 
         return ReaderRenderSettings(
@@ -70,7 +77,9 @@ enum ReaderRenderSettingsSnapshotBuilder {
             dialogueBubbleStyle: input.dialogueBubbleStyle,
             textConversion: input.textConversion,
             translation: input.translation,
-            bookID: input.bookID
+            bookID: input.bookID,
+            // A scroll column has no page bottom to reach.
+            bottomJustify: isPaged && input.bottomJustify
         )
     }
 }

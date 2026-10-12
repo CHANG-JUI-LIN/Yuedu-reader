@@ -600,7 +600,6 @@ final class ReaderDialogueBubblePreviewView: UIView {
             contentWidth: bounds.width,
             contentMinX: 0,
             contentMinY: 0,
-            isLastPage: true,
             attrStr: attributed,
             hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,
             in: ctx

@@ -795,10 +795,8 @@ final class RegexHighlightLivePreviewView: UIView {
             contentWidth: contentRect.width,
             contentMinX: contentRect.minX,
             contentMinY: contentRect.minY,
-            isLastPage: true,
             attrStr: attributed,
             hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,
-            bottomJustified: false,
             in: context
         )
         context.restoreGState()

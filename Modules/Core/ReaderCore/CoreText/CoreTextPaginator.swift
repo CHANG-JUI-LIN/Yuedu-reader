@@ -261,6 +261,9 @@ final class CoreTextPaginator {
         var translation: ReaderTranslationLayout? = nil
         /// pageIndex → authored 縦中横 cells, drawn after the text.
         var combinedUprightCells: [Int: [RenderedCombinedUpright]] = [:]
+        /// 底部對齊: the pages whose line origins are spread to the content bottom.
+        /// Kept so an appearance update rebuilds the artifacts with the same geometry.
+        var bottomJustifiedPages = IndexSet()
 
         /// Page count for global-offset/progress math: the real count when
         /// complete, the extrapolated estimate while partial.
@@ -490,7 +493,8 @@ final class CoreTextPaginator {
                     writingMode: writingMode
                 ),
                 writingMode: writingMode,
-                floatNotches: pageFloatNotches
+                floatNotches: pageFloatNotches,
+                bottomJustifiedPages: bottomJustifiedPages
             )
             return ChapterLayout(
                 spineIndex: spineIndex,
@@ -517,7 +521,8 @@ final class CoreTextPaginator {
                 isPartial: isPartial,
                 estimatedPageCount: estimatedPageCount,
                 translation: translation,
-                combinedUprightCells: combinedUprightCells
+                combinedUprightCells: combinedUprightCells,
+                bottomJustifiedPages: bottomJustifiedPages
             )
         }
 
@@ -609,10 +614,10 @@ final class CoreTextPaginator {
         let marginH: CGFloat
         let marginV: CGFloat
         let bottomInset: CGFloat
-        let lineSpacing: CGFloat
         let paragraphSpacing: CGFloat
         let letterSpacing: CGFloat
         let writingMode: ReaderWritingMode
+        let bottomJustify: Bool
         let contentIdentity: ContentIdentity
         let pageBackgroundColorFingerprint: UInt32?
     }
@@ -728,11 +733,11 @@ final class CoreTextPaginator {
         anchorOffsets: [String: Int] = [:],
         renderSize: CGSize,
         fontSize: CGFloat,
-        lineSpacing: CGFloat = 0,
         paragraphSpacing: CGFloat = 0,
         letterSpacing: CGFloat = 0,
         contentInsets: UIEdgeInsets = .zero,
         writingMode: ReaderWritingMode = .horizontal,
+        bottomJustify: Bool = false,
         revision: ContentRevision? = nil
     ) async -> ChapterLayout {
         let contentIdentity: ContentIdentity
@@ -760,10 +765,10 @@ final class CoreTextPaginator {
                            marginH: contentInsets.left,
                            marginV: contentInsets.top,
                            bottomInset: contentInsets.bottom,
-                           lineSpacing: lineSpacing,
                            paragraphSpacing: paragraphSpacing,
                            letterSpacing: letterSpacing,
                            writingMode: writingMode,
+                           bottomJustify: bottomJustify,
                            contentIdentity: contentIdentity,
                            pageBackgroundColorFingerprint: Self.colorFingerprint(pageBackgroundColor))
         Self.debugVerticalLog("EPUBFLOW paginator.request spine=\(spineIndex) writingMode=\(writingMode) isVertical=\(writingMode.isVertical) size=\(renderSize) fontSize=\(fontSize) insets=\(contentInsets) attrLen=\(attrStr.length) contentIdentity=\(key.contentIdentity)")
@@ -809,9 +814,9 @@ final class CoreTextPaginator {
                                anchorOffsets: anchorOffsets,
                                renderSize: renderSize,
                                fontSize: fontSize,
-                               lineSpacing: lineSpacing,
                                contentInsets: contentInsets,
-                               writingMode: writingMode)
+                               writingMode: writingMode,
+                               bottomJustify: bottomJustify)
         }.value
 
         storeLayout(layout, for: key)
@@ -836,11 +841,11 @@ final class CoreTextPaginator {
         anchorOffsets: [String: Int] = [:],
         renderSize: CGSize,
         fontSize: CGFloat,
-        lineSpacing: CGFloat = 0,
         paragraphSpacing: CGFloat = 0,
         letterSpacing: CGFloat = 0,
         contentInsets: UIEdgeInsets = .zero,
         writingMode: ReaderWritingMode = .horizontal,
+        bottomJustify: Bool = false,
         revision: ContentRevision? = nil
     ) async -> ChapterLayout? {
         guard imagePage == nil else { return nil }
@@ -869,10 +874,10 @@ final class CoreTextPaginator {
                            marginH: contentInsets.left,
                            marginV: contentInsets.top,
                            bottomInset: contentInsets.bottom,
-                           lineSpacing: lineSpacing,
                            paragraphSpacing: paragraphSpacing,
                            letterSpacing: letterSpacing,
                            writingMode: writingMode,
+                           bottomJustify: bottomJustify,
                            contentIdentity: contentIdentity,
                            pageBackgroundColorFingerprint: Self.colorFingerprint(pageBackgroundColor))
         let cacheTrace = ReaderPerfTrace.begin(
@@ -908,9 +913,9 @@ final class CoreTextPaginator {
                                anchorOffsets: anchorOffsets,
                                renderSize: renderSize,
                                fontSize: fontSize,
-                               lineSpacing: lineSpacing,
                                contentInsets: contentInsets,
                                writingMode: writingMode,
+                               bottomJustify: bottomJustify,
                                maxPages: 1)
         }.value
     }
@@ -955,18 +960,11 @@ final class CoreTextPaginator {
         anchorOffsets: [String: Int],
         renderSize: CGSize,
         fontSize: CGFloat,
-        lineSpacing: CGFloat,
         contentInsets: UIEdgeInsets,
         writingMode: ReaderWritingMode,
+        bottomJustify: Bool,
         maxPages: Int? = nil
     ) -> ChapterLayout {
-        let contentInsets = gridAlignedContentInsets(
-            contentInsets,
-            renderSize: renderSize,
-            fontSize: fontSize,
-            lineSpacing: lineSpacing,
-            writingMode: writingMode
-        )
         let contentRect = uiContentRect(
             renderSize: renderSize,
             contentInsets: contentInsets,
@@ -1091,6 +1089,8 @@ final class CoreTextPaginator {
         let floatMarkers = writingMode.isVertical ? [] : Self.floatMarkers(in: attrStr)
         var pageFloatNotches: [Int: CGRect] = [:]
         var pageFloatAttachments: [Int: [RenderedAttachment]] = [:]
+        // 底部對齊 candidates: pages that end only because CoreText ran out of room.
+        var columnFilledPages = IndexSet()
 
         while currentLocation < attrStr.length {
             if let breakRange = forcedPageBreakRanges.first(where: { $0.location <= currentLocation && currentLocation < $0.location + $0.length }) {
@@ -1167,10 +1167,18 @@ final class CoreTextPaginator {
             )
             var advance = min(remainingLength, max(1, protectedEnd - currentLocation))
             let naturalBoundary = currentLocation + advance
+            var keptTogether = false
             if let protectedRange = keepTogetherRanges.first(where: { range in
                 range.location < naturalBoundary && naturalBoundary < range.location + range.length
             }), protectedRange.location > currentLocation {
                 advance = max(1, protectedRange.location - currentLocation)
+                keptTogether = true
+            }
+            // Text continues past this page only because the column is full. A page that
+            // ends at a forced break or the chapter end, or that keep-together cut short,
+            // is short by design and keeps its natural line positions.
+            if visibleRange.length > 0, visibleRange.length < remainingLength, !keptTogether {
+                columnFilledPages.insert(pageIndex)
             }
             pageRanges.append(CFRangeMake(currentLocation, advance))
             let pageEnd = currentLocation + advance
@@ -1219,12 +1227,20 @@ final class CoreTextPaginator {
                 executor: Thread.isMainThread ? "main" : "background"
             )
         )
+        // 底部對齊 stretches only pages CoreText filled; `bottomJustifiedOrigins` then
+        // checks that what did not fit was an ordinary line. A float page wraps text
+        // around an image that stays put. Vertical writing has no bottom edge: its
+        // columns run right to left.
+        let bottomJustifiedPages = bottomJustify && !writingMode.isVertical
+            ? columnFilledPages.filteredIndexSet { pageFloatNotches[$0] == nil && pageFloatAttachments[$0] == nil }
+            : IndexSet()
         let pageArtifacts = makePageArtifacts(
             framesetter: framesetter,
             pageRanges: pageRanges,
             contentPathRect: contentPathRect,
             writingMode: writingMode,
-            floatNotches: pageFloatNotches
+            floatNotches: pageFloatNotches,
+            bottomJustifiedPages: bottomJustifiedPages
         )
         let (inlineAttachments, blockAttachmentsBase, pageKinds) = extractImages(
             pageArtifacts: pageArtifacts,
@@ -1319,7 +1335,8 @@ final class CoreTextPaginator {
             pageFloatNotches: pageFloatNotches,
             isPartial: isPartial,
             estimatedPageCount: estimatedPageCount,
-            combinedUprightCells: uprightCells
+            combinedUprightCells: uprightCells,
+            bottomJustifiedPages: bottomJustifiedPages
         )
     }
 
@@ -1596,23 +1613,43 @@ final class CoreTextPaginator {
         pageRanges: [CFRange],
         contentPathRect: CGRect,
         writingMode: ReaderWritingMode,
-        floatNotches: [Int: CGRect] = [:]
+        floatNotches: [Int: CGRect] = [:],
+        bottomJustifiedPages: IndexSet = []
     ) -> [PageLayoutArtifact] {
-        pageRanges.enumerated().map { pageIndex, range in
-            let path = framePath(
-                contentPathRect: contentPathRect,
-                floatNotch: floatNotches[pageIndex]
-            )
-            let frame = makeFrame(
+        let frames = pageRanges.enumerated().map { pageIndex, range in
+            makeFrame(
                 framesetter: framesetter,
                 range: range,
-                path: path,
+                path: framePath(contentPathRect: contentPathRect, floatNotch: floatNotches[pageIndex]),
                 writingMode: writingMode
             )
+        }
+        /// The line that did not fit on `pageIndex`. A partial layout's last page has
+        /// no next frame yet, so that one line is set on its own.
+        func lineAfter(page pageIndex: Int) -> CTLine? {
+            let nextFrame: CTFrame
+            if frames.indices.contains(pageIndex + 1) {
+                nextFrame = frames[pageIndex + 1]
+            } else {
+                let range = pageRanges[pageIndex]
+                nextFrame = makeFrame(
+                    framesetter: framesetter,
+                    range: CFRangeMake(range.location + range.length, 0),
+                    path: framePath(contentPathRect: contentPathRect, floatNotch: nil),
+                    writingMode: writingMode
+                )
+            }
+            return (CTFrameGetLines(nextFrame) as! [CTLine]).first
+        }
+        return zip(pageRanges, frames).enumerated().map { pageIndex, page in
+            let (range, frame) = page
             let lines = CTFrameGetLines(frame) as! [CTLine]
             var origins = [CGPoint](repeating: .zero, count: lines.count)
             if !lines.isEmpty {
                 CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+            }
+            if bottomJustifiedPages.contains(pageIndex), let overflowLine = lineAfter(page: pageIndex) {
+                origins = bottomJustifiedOrigins(lines: lines, origins: origins, overflowLine: overflowLine)
             }
             return PageLayoutArtifact(
                 range: range,
@@ -1686,6 +1723,51 @@ final class CoreTextPaginator {
         }
         path.closeSubpath()
         return path
+    }
+
+    /// Moves every line after the first down by an equal share of the space left under the
+    /// last line, so the last line's descent sits on the frame path's bottom edge. Origins
+    /// are relative to the path's bounding box, whose bottom edge is y = 0.
+    ///
+    /// Only for a page whose column CoreText filled, and only when `overflowLine` — the
+    /// one that did not fit — is an ordinary line, at most twice the last line's height.
+    /// A taller one is an image, an image's spacer or a display heading: it can leave
+    /// most of the page empty, and spreading that would tear the page apart. legado has
+    /// no break reason and guesses from the leftover's size instead (a page whose
+    /// leftover could hold another line keeps its positions), which leaves every page
+    /// that ends at a paragraph with wide 段距 unaligned. Like legado, a page ending in
+    /// a block image keeps its lines.
+    static func bottomJustifiedOrigins(lines: [CTLine], origins: [CGPoint], overflowLine: CTLine) -> [CGPoint] {
+        guard lines.count > 1, lines.count == origins.count, let lastLine = lines.last else {
+            return origins
+        }
+        if lineContainsBlockImage(lastLine) { return origins }
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        CTLineGetTypographicBounds(lastLine, &ascent, &descent, nil)
+        var overflowAscent: CGFloat = 0
+        var overflowDescent: CGFloat = 0
+        CTLineGetTypographicBounds(overflowLine, &overflowAscent, &overflowDescent, nil)
+        guard overflowAscent + overflowDescent <= 2 * (ascent + descent) else { return origins }
+        let surplus = origins[origins.count - 1].y - descent
+        guard surplus > 0.5 else { return origins }
+        let step = surplus / CGFloat(lines.count - 1)
+        return origins.enumerated().map { index, origin in
+            CGPoint(x: origin.x, y: origin.y - step * CGFloat(index))
+        }
+    }
+
+    private static func lineContainsBlockImage(_ line: CTLine) -> Bool {
+        let delegateKey = kCTRunDelegateAttributeName as String
+        for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+            let attributes = CTRunGetAttributes(run) as NSDictionary
+            guard let delegate = attributes[delegateKey] else { continue }
+            let info = Unmanaged<ImageRunInfo>
+                .fromOpaque(CTRunDelegateGetRefCon(delegate as! CTRunDelegate))
+                .takeUnretainedValue()
+            if !(info is InlineAnnotationRunInfo), info.displayMode == .block { return true }
+        }
+        return false
     }
 
     /// The top edge (CoreText y-up, absolute coords) of the line containing `offset` within `frame`.
@@ -2123,33 +2205,6 @@ final class CoreTextPaginator {
         if let value = value as? CGFloat { return value }
         if let value = value as? NSNumber { return CGFloat(truncating: value) }
         return nil
-    }
-
-    /// Horizontal mode: snaps bottom inset to integer line grid for clean page fill.
-    /// Vertical mode returns contentInsets unchanged — column-based layout doesn't
-    /// use horizontal line-grid alignment.
-    private static func gridAlignedContentInsets(
-        _ contentInsets: UIEdgeInsets,
-        renderSize: CGSize,
-        fontSize: CGFloat,
-        lineSpacing: CGFloat,
-        writingMode: ReaderWritingMode
-    ) -> UIEdgeInsets {
-        guard !writingMode.isVertical, contentInsets.bottom > 0 else {
-            return contentInsets
-        }
-        let rawHeight = renderSize.height - contentInsets.top - contentInsets.bottom
-        let lineHeight = max(1, fontSize + lineSpacing)
-        let lineCount = floor(rawHeight / lineHeight)
-        guard lineCount >= 1 else { return contentInsets }
-
-        let alignedHeight = lineCount * lineHeight
-        let alignedBottom = renderSize.height - contentInsets.top - alignedHeight
-        guard alignedBottom.isFinite else { return contentInsets }
-
-        var insets = contentInsets
-        insets.bottom = max(contentInsets.bottom, alignedBottom)
-        return insets
     }
 
     static func uiContentRect(

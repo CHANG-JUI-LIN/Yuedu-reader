@@ -498,6 +498,13 @@ struct ReaderSettingsView: View {
                 )
             }
 
+            if showsBottomJustify {
+                Toggle(isOn: $settings.readerBottomJustify) {
+                    SettingsRowLabel(localized(ReadingSettingsScopeItem.bottomJustify.titleKey),
+                                     systemImage: ReadingSettingsScopeItem.bottomJustify.systemImage)
+                }
+            }
+
             Button(role: .destructive) {
                 showingLayoutResetConfirmation = true
             } label: {
@@ -509,11 +516,23 @@ struct ReaderSettingsView: View {
                 .foregroundStyle(DSColor.textSecondary)
         } footer: {
             if supportsLineHeight, !settings.scrollMode {
-                Text(localized("上下邊距同時是頁首頁尾的容身空間，改動不會移動頁首頁尾本身。"))
-                    .dsSectionFooter()
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                    Text(localized("上下邊距同時是頁首頁尾的容身空間，改動不會移動頁首頁尾本身。"))
+                    if showsBottomJustify {
+                        Text(localized("底部對齊：開啟後每頁文字會自動調整行間距以填滿頁面，使底部對齊整齊。"))
+                    }
+                }
+                .dsSectionFooter()
             }
         }
         .interfaceSectionSurface()
+    }
+
+    /// 底部對齊 spreads a page's leftover space over its lines; a scroll column has no
+    /// page bottom, and vertical columns are not justified, so the switch only shows
+    /// for horizontal pages.
+    private var showsBottomJustify: Bool {
+        supportsLineHeight && !settings.scrollMode && !isVerticalWritingMode
     }
 
     private var hasCustomLayout: Bool {
@@ -527,7 +546,8 @@ struct ReaderSettingsView: View {
                 || abs(readerConfig.pageMarginTop - defaultPageMarginV) > 0.001
                 || abs(readerConfig.pageMarginBottom - defaultPageMarginV) > 0.001
         )
-        return spacing || margins
+        let bottomJustify = showsBottomJustify && !settings.readerBottomJustify
+        return spacing || margins || bottomJustify
     }
 
     /// The bars' own space is computed from their height, so there is no separate
@@ -543,6 +563,9 @@ struct ReaderSettingsView: View {
             readerConfig.pageMarginV = defaultPageMarginV
             readerConfig.pageMarginTop = defaultPageMarginV
             readerConfig.pageMarginBottom = defaultPageMarginV
+        }
+        if showsBottomJustify {
+            settings.readerBottomJustify = true
         }
     }
 

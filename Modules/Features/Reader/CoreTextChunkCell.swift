@@ -192,7 +192,6 @@ enum CoreTextChunkPainter {
                 contentWidth: bounds.width,
                 contentMinX: 0,
                 contentMinY: 0,
-                isLastPage: true,
                 attrStr: content.attributedString,
                 suppressedRanges: suppressedRanges,
                 hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,

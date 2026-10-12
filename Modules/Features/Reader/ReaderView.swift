@@ -530,25 +530,6 @@ struct ReaderView: View {
         ReaderLayoutMetrics.minimumVerticalPadding
     }
 
-    /// Extra offset that CoreText paginator's grid alignment adds to the bottom
-    /// content inset. Footer overlay must shift up by this amount so the visual
-    /// gap matches `footerTextGap + footerBottomPadding`.
-    /// Grid alignment has to be computed from the *same* insets pagination uses.
-    /// It was not: this read a header-aware `topInset` overload while paged
-    /// pagination took its inset from the hand-tuned content reservation, so the
-    /// two could differ by 50pt and the footer gap drifted accordingly. Both now
-    /// come from `readerBarContentInsets`.
-    var gridAdjustment: CGFloat {
-        let insets = readerBarContentInsets
-        return ReaderLayoutMetrics.gridAdjustment(
-            viewHeight: currentReaderRenderSize.height,
-            topInset: insets.top,
-            bottomInset: insets.bottom,
-            fontSize: readerConfig.fontSize,
-            lineSpacing: readerConfig.lineSpacing
-        )
-    }
-
     // ── Derived Properties ──
     var book: ReadingBook? { store.readingBook(id: bookId) }
 
