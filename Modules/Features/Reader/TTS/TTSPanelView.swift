@@ -158,7 +158,7 @@ struct TTSPanelView: View {
                 Section {
                     VStack(spacing: 16) {
                         if tts.playbackState != .stopped, tts.totalSegments > 0 {
-                            Text("\(localized("章節進度")) \(tts.currentSegmentIndex + 1) / \(tts.totalSegments)")
+                            Text(String(format: localized("章節進度 %1$d / %2$d"), tts.currentSegmentIndex + 1, tts.totalSegments))
                                 .font(DSFont.caption)
                                 .foregroundColor(DSColor.textSecondary)
                         }
@@ -300,7 +300,7 @@ struct TTSPanelView: View {
                             .foregroundColor(DSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
-                    Text("\(localized("當前速度"))：\(speechRateText)")
+                    Text(String(format: localized("當前速度：%@"), speechRateText))
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                     if systemVoiceRateIsCapped {
@@ -320,7 +320,7 @@ struct TTSPanelView: View {
                     Menu {
                         Button(localized("不定時")) { tts.setSleepTimer(minutes: 0) }
                         ForEach([15, 30, 60, 90], id: \.self) { min in
-                            Button("\(min) \(localized("分鐘"))") { tts.setSleepTimer(minutes: min) }
+                            Button(String(format: localized("%d 分鐘"), min)) { tts.setSleepTimer(minutes: min) }
                         }
                     } label: {
                         HStack {
@@ -464,7 +464,7 @@ struct TTSPanelView: View {
 
 private extension TTSPanelView {
     var sleepTimerLabel: String {
-        tts.sleepMinutes == 0 ? localized("不定時") : "\(tts.sleepMinutes) \(localized("分鐘"))"
+        tts.sleepMinutes == 0 ? localized("不定時") : String(format: localized("%d 分鐘"), tts.sleepMinutes)
     }
 
     var ttsHighlightEnabledBinding: Binding<Bool> {

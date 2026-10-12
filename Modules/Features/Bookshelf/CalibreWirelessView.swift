@@ -129,13 +129,13 @@ struct CalibreWirelessView: View {
             if let completed = current.last(where: { entry in
                 entry.phase == .completed && previous.first(where: { $0.id == entry.id })?.phase != .completed
             }) {
-                UIAccessibility.post(notification: .announcement, argument: completed.title + "，" + localized("已加入書架"))
+                UIAccessibility.post(notification: .announcement, argument: completed.title + localized("，") + localized("已加入書架"))
             }
         }
         .onChange(of: service.state) { _, current in
             switch current {
             case .connected(let name):
-                UIAccessibility.post(notification: .announcement, argument: localized("已連線") + "，" + name)
+                UIAccessibility.post(notification: .announcement, argument: localized("已連線") + localized("，") + name)
             case .failed(let message):
                 UIAccessibility.post(notification: .announcement, argument: message)
             default: break

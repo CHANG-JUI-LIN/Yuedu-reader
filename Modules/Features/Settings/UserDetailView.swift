@@ -65,7 +65,7 @@ struct UserDetailView: View {
                         .clipShape(Capsule())
 
                         if gs.isLoggedIn, let date = firestoreSync.lastSyncDate {
-                            Text("\(localized("上次同步")) \(date.formatted(date: .abbreviated, time: .shortened))")
+                            Text(String(format: localized("上次同步 %@"), date.formatted(date: .abbreviated, time: .shortened)))
                                 .font(DSFont.fixed(size: 10))
                                 .foregroundStyle(DSColor.textSecondary)
                         }
@@ -380,14 +380,14 @@ struct UserDetailView: View {
                     }
                     .font(DSFont.fixed(size: 15, weight: .semibold))
                     .disabled(isLinking)
-                    .accessibilityLabel("\(title) \(localized("解除連結"))")
+                    .accessibilityLabel(String(format: localized("%@ 解除連結"), title))
                 }
             } else if isLinking {
                 ProgressView()
             } else {
                 Button(localized("連結")) { startLink(providerID) }
                     .font(DSFont.fixed(size: 15, weight: .semibold))
-                    .accessibilityLabel("\(title) \(localized("連結"))")
+                    .accessibilityLabel(String(format: localized("%@ 連結"), title))
             }
         }
         .buttonStyle(.borderless)

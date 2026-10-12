@@ -21,7 +21,7 @@ struct EPUBMediaOverlayPlayerView: View {
                         .font(DSFont.headline)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(DSColor.textPrimary)
-                    Text("\(overlay.fragments.count) \(localized("段落"))")
+                    Text(String(format: localized("%d 段落"), overlay.fragments.count))
                         .font(DSFont.footnote)
                         .foregroundStyle(DSColor.textSecondary)
                 }

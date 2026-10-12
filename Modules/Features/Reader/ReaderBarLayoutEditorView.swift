@@ -194,9 +194,9 @@ struct ReaderBarLayoutEditorView: View {
 
             if field(kind, in: slot)?.color?.source == .custom {
                 ColorPicker(localized("亮色模式"), selection: colorBinding(dark: false, field: kind, slot: slot))
-                    .accessibilityLabel("\(title)，\(localized("亮色模式"))")
+                    .accessibilityLabel(title + localized("，") + localized("亮色模式"))
                 ColorPicker(localized("深色模式"), selection: colorBinding(dark: true, field: kind, slot: slot))
-                    .accessibilityLabel("\(title)，\(localized("深色模式"))")
+                    .accessibilityLabel(title + localized("，") + localized("深色模式"))
             }
         } label: {
             Text(title)

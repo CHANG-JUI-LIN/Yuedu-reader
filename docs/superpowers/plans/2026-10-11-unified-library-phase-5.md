@@ -1308,6 +1308,14 @@ Decisions 29 and 32. Branch `unified-library/5f4b-reader-work`.
 - **Translations:** 狀態：關閉 Off/オフ/끔; 動作：開啟 Open/開く/열기; 動作：新增 Add/追加/추가; 動作：啟用 Enable; 動作：隱藏 Hide/非表示にする/숨기기; 狀態：顯示 Shown/表示/표시됨; 動作：建立副本 Duplicate/複製を作成/복제; 播放：繼續 Resume/再開/재개; 簡介：更多 More/続きを読む/더 보기; 網頁：重新整理 Reload/再読み込み/새로 고침; 值：是／否 Yes/No, あり/なし, 있음/없음; 會員：重新驗證 Verify Again/再確認/다시 확인; hints 提示：編輯規則／隱藏已讀／作品詳情 as sentences; `章節 %d` Chapter %d/第%d章/챕터 %d and 標題：章節 Chapter (local audiobook chapter titles).
 - **Tests:** `LocalizationIdiomTests.splitKeysSayTheOtherMeaning` (each split differs from its base in English, equals it in zh-Hant; the ja/ko answers; the chapter format). iOS 27: `LocalizationIdiomTests` (7) passed, `check_localizations.rb` OK.
 
+### Fragment rewrites (2026-10-12)
+
+- **Landed:** sentences glued from a count and a unit word, or from a label and a value, are one format each, so word order and English number agree: the source check (已停用／已刪除 N, 「keyword」N 本, 章節 N 章 → 共 %d 章, 抓取 N 字, 驗證完成 p/t 通過 and its 「，」 joins), sleep timers (`%d 分鐘`, AudiobookView ×2, TTSPanel ×2), TTS 章節進度 and 當前速度, 下載管理 (`%d 本` in Profile and the two stat rows — `statRow` now takes one value string — and `%@ 章`), 全選(n/m) ×2, 上次同步 %@, the account rows' VoiceOver 「%@ 解除連結／連結」 (English "Unlink Google"), RSS `%d 未讀` ×2 and its import toast (reuses 已匯入 %d 個訂閱源, so zh-Hant reads 已匯入 instead of 成功匯入), timeout pickers (`%d 秒`), 失敗類型：, and 已選取 N 個書籤／重點 (the noun inside 「已選取 %1$d 個%2$@」 could not agree; now two keys). VoiceOver labels that joined with a literal 「，」 use the new `，` key (English ", ").
+- **Bug found on the way:** the EPUB media overlay's 「N 段落」 used key 段落, which no table had — every language showed Chinese. Now `%d 段落`.
+- **English plurals:** six new stringsdict entries (「%1$@」%2$d 本, 抓取 %d 字, %d 段落, %d 分鐘, 已選取 %d 個書籤／重點). Other languages need none.
+- **Left as is:** 「AutoRead.Format.Interval」 already formats one sentence (`%@` + "s" in English); joins with 「·」, bullets, 「❌」 and newlines; the dialogue-bubble preview's 「」 (the detector needs those quotes); 個結果 no longer exists in code. The old fragment keys (本, 分鐘, 個訂閱源, 已選取 %1$d 個%2$@ …) stay in the tables where still used or for the strings cleanup.
+- **Tests:** `LocalizationIdiomTests.countsAreWholeSentences`. iOS 27: `LocalizationIdiomTests` (8), `HomeCardTests` + `HomeCompactReadingCardTests` (10) passed; `check_localizations.rb` OK, `plutil -lint` OK.
+
 #### Inventory (2026-10-12)
 
 Convention chosen: a new key is `情境：原字` (e.g. `狀態：關閉`), its zh-Hant value the same text, so only the other languages diverge. The base key keeps the majority meaning.

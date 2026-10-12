@@ -7,7 +7,7 @@ enum BookshelfAccessibility {
         if !book.author.isEmpty { parts.append(book.author) }
         if book.resolvedPipelineKind == .audio { parts.append(localized("有聲書")) }
         if let latest = book.latestChapterDisplayTitle {
-            parts.append(localized("最新") + "，" + latest)
+            parts.append(localized("最新") + localized("，") + latest)
         }
         if book.hasNewChapterUpdate { parts.append(localized("有新章節")) }
         parts.append(readingStatus(for: book))

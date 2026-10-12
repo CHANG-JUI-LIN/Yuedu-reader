@@ -83,6 +83,25 @@ struct LocalizationIdiomTests {
         #expect(try text("標題：章節", "en") == "Chapter")
     }
 
+    /// A count and its unit were glued from fragments (`"\(n) \(localized("分鐘"))"`), so English
+    /// said "1 min" beside "3 books" and could never agree in number; each is one format now.
+    @Test func countsAreWholeSentences() throws {
+        let english = Locale(identifier: "en")
+        func en(_ key: String, _ args: CVarArg...) throws -> String {
+            String(format: try text(key, "en"), locale: english, arguments: args)
+        }
+        #expect(try en("%d 分鐘", 1) == "1 minute")
+        #expect(try en("%d 分鐘", 30) == "30 minutes")
+        #expect(try en("已選取 %d 個書籤", 1) == "1 Bookmark Selected")
+        #expect(try en("已選取 %d 個重點", 2) == "2 Highlights Selected")
+        #expect(try en("「%1$@」%2$d 本", "Dune", 1) == "“Dune”: 1 book")
+        #expect(try en("抓取 %d 字", 2) == "Fetched 2 characters")
+        #expect(try en("%@ 解除連結", "Google") == "Unlink Google")
+        #expect(try text("，", "en") == ", ")
+        #expect(try text("%d 段落", "ja") == "%d段落", "the overlay's segment count had no key in any table")
+        #expect(try text("全選(%1$d/%2$d)", "zh-Hant") == "全選(%1$d/%2$d)")
+    }
+
     /// 「來源配置」 stands in for 書源 on purpose: no language may say it.
     @Test func noLanguageSaysBookSource() throws {
         for language in ["zh-Hant", "zh-Hans", "en", "ja", "ko"] {

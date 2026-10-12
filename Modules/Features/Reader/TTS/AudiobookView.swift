@@ -420,7 +420,7 @@ struct AudiobookReaderView: View {
         switch player.sleepOption {
         case .off: return localized("定時")
         case .endOfChapter: return localized("本章結束")
-        case .minutes(let m): return "\(m)\(localized("分鐘"))"
+        case .minutes(let m): return String(format: localized("%d 分鐘"), m)
         }
     }
 
@@ -519,7 +519,7 @@ struct AudiobookSleepTimerView: View {
                     player.setSleepOption(.endOfChapter)
                 }
                 ForEach(minuteOptions, id: \.self) { m in
-                    option("\(m) \(localized("分鐘"))", isSelected: player.sleepOption == .minutes(m)) {
+                    option(String(format: localized("%d 分鐘"), m), isSelected: player.sleepOption == .minutes(m)) {
                         player.setSleepOption(.minutes(m))
                     }
                 }

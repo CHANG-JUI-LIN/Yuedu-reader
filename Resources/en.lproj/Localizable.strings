@@ -3711,3 +3711,24 @@
 "提示：作品詳情" = "Opens Book Details.";
 "章節 %d" = "Chapter %d";
 "標題：章節" = "Chapter";
+
+/* 片段改寫：數字和單位拼成的句子改成整句格式 */
+"已停用 %d" = "%d disabled";
+"已刪除 %d" = "%d deleted";
+"，" = ", ";
+"「%1$@」%2$d 本" = "“%1$@”: %2$d books";
+"抓取 %d 字" = "Fetched %d characters";
+"驗證完成：%1$d/%2$d 通過" = "Validation Complete: %1$d/%2$d passed";
+"%d 段落" = "%d segments";
+"%d 分鐘" = "%d minutes";
+"章節進度 %1$d / %2$d" = "Chapter Progress %1$d / %2$d";
+"當前速度：%@" = "Current Speed: %@";
+"%@ 章" = "%@ chapters";
+"全選(%1$d/%2$d)" = "Select All (%1$d/%2$d)";
+"上次同步 %@" = "Last Synced %@";
+"%@ 解除連結" = "Unlink %@";
+"%@ 連結" = "Link %@";
+"%d 未讀" = "%d Unread";
+"失敗類型：" = "Failure Type:";
+"已選取 %d 個書籤" = "%d Bookmarks Selected";
+"已選取 %d 個重點" = "%d Highlights Selected";

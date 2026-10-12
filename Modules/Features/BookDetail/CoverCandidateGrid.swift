@@ -126,7 +126,7 @@ struct CoverCandidateGrid: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(localized("封面") + "，" + candidate.providerName)
+        .accessibilityLabel(localized("封面") + localized("，") + candidate.providerName)
         .accessibilityHint(localized("點兩下使用這張封面"))
         .accessibilityAddTraits(.isButton)
     }
