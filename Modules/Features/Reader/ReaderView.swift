@@ -22,8 +22,9 @@ private struct ReaderFontImportPresentationError: Identifiable {
 struct ReaderView: View {
     let bookId: UUID
 
-    init(bookId: UUID) {
+    init(bookId: UUID, openingTOCTarget: ReaderTOCTarget? = nil) {
         self.bookId = bookId
+        _pendingOpeningTOCTarget = State(initialValue: openingTOCTarget)
         // The book's 整章翻譯 setting is part of the first layout, so a translated book never
         // opens on its untranslated text first.
         _readerTranslation = State(initialValue: ReaderTranslationSettingsStore.presentation(for: bookId))
@@ -222,7 +223,15 @@ struct ReaderView: View {
     @State var showDownloadOptions = false
     @State var showWorkDetail = false
     @State var workDetailSnapshot: WorkDetailRoute?
-    @State var pendingDetailChapterIndex: Int?
+    @State var pendingDetailTOCTarget: ReaderTOCTarget?
+    /// 作品詳情's 目錄 entry this reader was opened at. The opening restore lands on its spine
+    /// item first; the entry's anchor is then reached by the reader's own 目錄 jump, once.
+    @State var pendingOpeningTOCTarget: ReaderTOCTarget?
+    /// Bumped by every chapter jump: a 目錄 jump still waiting on its spine item's layout lands
+    /// only if no other jump came since.
+    @State var chapterJumpGeneration = 0
+    /// Scroll mode's 目錄 entry waiting for its anchor's spine item (`jumpToTOCEntry`).
+    @State var pendingScrollTOCEntry: ReaderPendingTOCEntry?
     /// 現代 interface: the card hanging off the cover thumbnail in the top bar.
     @State var showModernBookCard = false
     /// 書卡裡按下的動作。每個動作都要開 sheet，而 sheet 在 popover 還在收的時候會被系統丟掉
@@ -598,7 +607,7 @@ struct ReaderView: View {
         }
     }
 
-    private func tocAnchorOffset(
+    func tocAnchorOffset(
         for chapter: BookChapter,
         engine: any PageRenderingProvider
     ) -> Int? {
@@ -620,6 +629,10 @@ struct ReaderView: View {
             )
         }
 
+        // Scroll mode lays its chapters out itself; the paged engine knows only those it paged.
+        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
+            return scrollEngine.anchorOffsets(forChapter: chapter.index)?[fragment]
+        }
         return engine.charOffset(forSpine: chapter.index, fragment: fragment)
     }
 
@@ -2049,9 +2062,9 @@ struct ReaderView: View {
                 snapshotBook = book
                 restoreReaderDisplayStateAfterResume()
             }
-            if let chapterIndex = pendingDetailChapterIndex {
-                pendingDetailChapterIndex = nil
-                jumpToChapter(chapterIndex)
+            if let target = pendingDetailTOCTarget {
+                pendingDetailTOCTarget = nil
+                jumpToTOCEntry(target.entry)
             }
             rebuildReaderOverlayLegacyContentIndex()
             beginReadingStatsSession()
@@ -2162,6 +2175,9 @@ struct ReaderView: View {
         .onReceive(epubRenderer.$scrollEngine) { engine in
             guard engine != nil else { return }
             syncCoreTextTextAnnotations()
+        }
+        .onReceive(scrollChaptersInserted) { _ in
+            resolvePendingScrollTOCEntry()
         }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
@@ -3033,6 +3049,7 @@ struct ReaderView: View {
                 moveReaderSession(to: position, source: .restored, shouldPersist: false)
                 savedCoreTextRestoreTarget = nil
                 isRestoringPosition = false
+                openAtOpeningTOCTarget(restoredSpine: position.spineIndex)
             }
             return
         }
@@ -3080,6 +3097,7 @@ struct ReaderView: View {
                     self.epubRenderer.updateCurrentPosition(globalPage: resolvedPage, engine: engine)
                     self.savedCoreTextRestoreTarget = nil
                     self.isRestoringPosition = false
+                    self.openAtOpeningTOCTarget(restoredSpine: spineIndex)
                 }
                 return
             }
@@ -3124,6 +3142,8 @@ struct ReaderView: View {
 
     func handleScrollModeChanged(_ enabled: Bool) {
         let targetMode: ReaderDisplayMode = enabled ? .scroll : .paged
+        // The mode switch carries the reader's own position; a 目錄 anchor still waiting stays behind.
+        pendingScrollTOCEntry = nil
         let position: CoreTextReadingPosition
         if enabled {
             guard let pagedPosition = currentPagedReadingPositionForModeSwitch() else { return }

@@ -108,6 +108,9 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// UTF-16 character counts retained independently of rendered chunks so
     /// scroll positions can be converted to stable book-wide content units.
     private var chapterCharacterCounts: [Int: Int] = [:]
+    /// Anchor id → offset, in the chapter's own text, for the chapters this engine laid out:
+    /// what a 目錄 entry's `#fragment` resolves against in scroll mode.
+    private var chapterAnchorOffsets: [Int: [String: Int]] = [:]
 
     // MARK: - Scroll geometry
 
@@ -337,6 +340,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             if let chapter = browserChapter(at: spine) { bindViewportSnapshots(of: chapter) }
         }
         chapterCharacterCounts = replacement.chapterCharacterCounts
+        chapterAnchorOffsets = replacement.chapterAnchorOffsets
         loadedChapters = replacement.loadedChapters
         slicingChapters = [:]
         pendingMissingChapters = replacement.pendingMissingChapters
@@ -413,6 +417,11 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// In the chapter's own text, like every position.
     func characterCount(forChapter chapterIndex: Int) -> Int? {
         chapterCharacterCounts[chapterIndex]
+    }
+
+    /// The chapter's anchors, in its own text; nil until the chapter is laid out here.
+    func anchorOffsets(forChapter chapterIndex: Int) -> [String: Int]? {
+        chapterAnchorOffsets[chapterIndex]
     }
 
     private func prepareAttributedString(_ raw: NSAttributedString) -> NSAttributedString {
@@ -557,6 +566,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                 guard generation == resliceGeneration, !Task.isCancelled else { return }
                 chapterTranslations[chapterIndex] = nil
                 chapterCharacterCounts[chapterIndex] = (chapter.document.sourceText as NSString).length
+                chapterAnchorOffsets[chapterIndex] = chapter.facts?.anchorOffsets ?? chapter.document.anchorOffsets
                 let vacatedIndex = removeLoadingPlaceholder(for: chapterIndex)
                 bindViewportSnapshots(of: chapter)
                 insert(items: chapter.tiles(width: contentWidth, heightCap: renderSettings.writingMode.isVertical ? max(1, viewportExtent) : browserPaintTileHeight), chapterIndex: chapterIndex, at: vacatedIndex)
@@ -630,6 +640,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             if let imagePage = result.imagePage, let img = imagePage.image {
                 chapterTranslations[chapterIndex] = nil
                 chapterCharacterCounts[chapterIndex] = attrStr.length
+                chapterAnchorOffsets[chapterIndex] = result.anchorOffsets
                 let chunk = makeImageOnlyChunk(
                     image: img,
                     chapterIndex: cIdx,
@@ -706,6 +717,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             let insertStart = CoreTextSliceMetrics.now
             chapterTranslations[chapterIndex] = result.translation
             chapterCharacterCounts[chapterIndex] = result.translation?.sourceLength ?? attrStr.length
+            chapterAnchorOffsets[chapterIndex] = result.anchorOffsets
             let vacatedIndex = removeLoadingPlaceholder(for: chapterIndex)
             insert(
                 chunks: output.chunks,

@@ -87,6 +87,11 @@ struct WorkTableOfContentsTests {
                                                                            positions: Positions()))
         #expect(chapters.map(\.title) == ["一", "二", "三"])
         #expect(chapters.map(\.index) == [1, 2, 2], "a position opens the spine item the entry points at")
+        #expect(chapters.map(WorkTableOfContents.target(of:)) == [
+            ReaderTOCTarget(spineIndex: 1, fragment: nil),
+            ReaderTOCTarget(spineIndex: 2, fragment: nil),
+            ReaderTOCTarget(spineIndex: 2, fragment: "later"),
+        ], "an entry inside a spine item opens at its anchor, as the reader's own 目錄 does")
         #expect(library.released == 0, "a copy on this device holds no library session")
 
         let after = try #require(store.readingBook(id: book.id))

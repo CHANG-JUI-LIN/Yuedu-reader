@@ -2,7 +2,8 @@ import SwiftUI
 
 /// What 作品詳情 pushes. One item, so the page has one destination (iOS 17 guardrail 12).
 private enum WorkDetailPush: Hashable {
-    case reader(UUID)
+    /// A copy's reader; at a 目錄 entry's anchor when one was picked.
+    case reader(UUID, ReaderTOCTarget? = nil)
     /// A 青空文庫 work not on the shelf yet: the reader imports it under its own 正在開啟書籍.
     case aozoraReader(AozoraWork)
     /// 編輯遠端資料, for the version shown.
@@ -51,7 +52,7 @@ struct WorkDetailReaderContext {
     /// The book the reader has open; a book-source page switches this book's source.
     let bookId: UUID
     /// Back to the reader, at a chapter when one was picked on the page.
-    let continueReading: (Int?) -> Void
+    let continueReading: (ReaderTOCTarget?) -> Void
     /// The book left the shelf from the page; the reader closes with it.
     let removedFromShelf: () -> Void
 }
@@ -171,7 +172,9 @@ struct WorkDetailView: View {
             // 換源 rebinds this copy (`sourceSwitchBookId`), mapping the chapter.
             OnlineBookView(book: book, sourceSwitchBookId: readerContext.bookId,
                            onRemoveFromShelf: readerContext.removedFromShelf,
-                           onContinueReading: readerContext.continueReading)
+                           onContinueReading: { chapterIndex in
+                               readerContext.continueReading(chapterIndex.map { ReaderTOCTarget(spineIndex: $0, fragment: nil) })
+                           })
                 .environmentObject(store)
                 // The reader's own navigator, unlike the other branch: its detail returns to it.
                 .id(version.nodeKey)
@@ -252,11 +255,11 @@ struct WorkDetailView: View {
         }
         .navigationDestination(item: $pushed) { push in
             switch push {
-            case .reader(let id):
+            case .reader(let id, let target):
                 // Pushed by this page on whichever stack it is on, as every detail page pushes
                 // its reader. Never the shelf's UIKit card driver: closing onto a pushed page,
                 // it left iOS 17's navigation bar off screen.
-                BookReaderView(bookId: id).environmentObject(store)
+                BookReaderView(bookId: id, openingTOCTarget: target).environmentObject(store)
                     .environment(\.readerNavigator, nil)
                     .environment(\.readerUsesParentNavigationStack, true)
                     .navigationBarBackButtonHidden(true)
@@ -346,13 +349,20 @@ struct WorkDetailView: View {
         }
     }
 
-    /// Opens the copy at `chapter`, its position saved first so the reader restores to it.
+    /// Opens the copy at `chapter`: its spine item's position is saved first so the reader
+    /// restores to it, and the reader then goes on to the entry's anchor as its own 目錄 does.
     private func openChapter(_ chapter: OnlineChapterRef) {
         guard case .loaded(let bookID, _) = toc.state else { return }
+        let target = WorkTableOfContents.target(of: chapter)
+        // From a reader, its own book jumps there in that reader.
+        if let readerContext, bookID == readerContext.bookId {
+            readerContext.continueReading(target)
+            return
+        }
         Task {
             await dependencies.readingPositionStore.save(CoreTextReadingPosition(spineIndex: chapter.index, charOffset: 0),
                                                          for: bookID.uuidString)
-            openCopy(bookID)
+            pushed = .reader(bookID, target.fragment == nil ? nil : target)
         }
     }
 
@@ -745,7 +755,7 @@ struct WorkDetailView: View {
     /// The copy a reader pushed from this page reads.
     private func readCopyID(_ push: WorkDetailPush) -> UUID? {
         switch push {
-        case .reader(let id): id
+        case .reader(let id, _): id
         case .aozoraReader(let work): readCopy(of: SourceRecord.derived(from: work).key)?.id
         case .editor, .author, .work, .series, .aozoraClassification: nil
         }

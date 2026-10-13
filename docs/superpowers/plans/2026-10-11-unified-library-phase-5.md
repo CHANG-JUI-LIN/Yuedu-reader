@@ -1498,3 +1498,22 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
     - The 9 page-turn gesture tests failed at the assertions recorded before Phase 5.
     - 4 manga tests failed: `testDetailMangaReaderLoadsAndReturns`, `testSearchDetailMangaReaderLoadsAndReturns`, `testShelfMangaOpensOnThePage`, `testMangaPageZoomsWithPinchAndDoubleTap`. A 5th, `testWebtoonStripZoomsAndPansSideways`, failed the same way. All expected "Page 1 of 3" but got the page or mode left by earlier runs: the shelved fixture manga resumes on page 2, and reran alone it opens in webtoon mode.
     - These tests go through a book source's page and the manga reader. Neither reads 目錄: a book-source version has no copy here, and `.manga` is not listed. This is the test-order state recorded before, which now persists on the simulator.
+
+#### What landed — 作品詳情 目錄 chapters open at their #anchor (2026-10-13)
+
+- **Request (maintainer):** 「把古騰堡點章節跳到錨點也修好」. Resolves the anchor limit recorded in the previous entry, in paged and scroll mode.
+- **Changes:**
+  - `WorkTableOfContents.epubChapters` keeps an entry's anchor in its `url` as the EPUB writes it (`href#fragment`); `target(of:)` turns a row into a `ReaderTOCTarget(spineIndex:fragment:)`. A TXT row's `url` is its index number, which has no anchor.
+  - `WorkDetailView.openChapter` still saves the spine item's position first, then pushes `.reader(id, target)` → `BookReaderView(openingTOCTarget:)` → `ReaderView`. Once the opening restore has landed (paged: the end of `applyInitialProgressIfNeeded`'s restore task; scroll: its scroll branch), `openAtOpeningTOCTarget` calls the reader's own `jumpToTOCEntry` once. A restore that landed on another spine item drops it, logged.
+  - `jumpToTOCEntry` lands on an anchor whose spine item is not laid out yet instead of falling to offset 0:
+    - Paged: awaits `engine.preloadChapter`, as `resolveInternalLink` does, then jumps once.
+    - Scroll: jumps to the item's start, keeps one pending entry, and resolves it when the item's content enters the scroll window (`CoreTextScrollEngine.$chapterRanges`, on whichever engine is current after a reslice). Measured why a preload cannot work here: the paged engine's scroll build at the page's size was cancelled by the host's own build (`content preparation failed … CancellationError`), and Gutenberg's chapter 1 is laid out by the scroll engine's `ChapterDocumentStore` path, which the paged engine never sees.
+    - `CoreTextScrollEngine` records each laid-out chapter's anchors (`anchorOffsets(forChapter:)`, beside `chapterCharacterCounts`), and in scroll mode `ReaderView.tocAnchorOffset` asks it.
+    - A later jump (`chapterJumpGeneration`) or a mode switch drops a waiting entry. A miss is logged (`⟐ tocJump anchor not found`), never silently 0.
+  - From a reader → 作品詳情 → 目錄 on the same book: the chapter now jumps there in that reader (`WorkDetailReaderContext.continueReading` takes a `ReaderTOCTarget?`). Before, it returned to the reader without moving.
+- **Behaviour change (disclosed):** the reader's own 目錄 now waits for layout before landing on a sub-entry of a spine item not yet laid out (paged: the preload; scroll: the insertion), instead of landing on the item's start.
+- **Limits:** a CFI fragment in scroll mode still resolves through the paged engine's anchors, as before.
+- **Tests:**
+  - Unit: `WorkTableOfContentsTests.epubChapters` expects the targets `[1 nil, 2 nil, 2 "later"]`. With `CoreTextScrollTests`, `ContinuousScrollRestoreTests`, `BrowserViewportHostTests`, `ChapterDocumentStoreTests`, `CoreTextScrollOnlineCacheTests`: 60 tests in 6 suites passed.
+  - Live UI `testGutenbergWorkListsItsChapters`: sets 翻頁 explicitly (滑動, then 捲動) from the reader's 設定 panel, then opens row 2 「I hope Mr. Bingley will like it. CHAPTER II.」 and requires the controls' chapter page > 1 (paged mode draws its 頁尾 into the page, so the controls are what both modes expose). Before: 1/141. After: paged 52/161, scroll 43/141, both on CHAPTER II (offset 31165 in both modes). Puts back the mode it found when that was not 捲動.
+  - Also passed: `WorkDetailUITests`, `testAozoraWorkListsItsChapters`, and `DetailReaderBackSwipeUITests`' `testDetailReaderLoadsAndReturns`, `testReaderOpensWorkDetailAndReturnsToIt`, `testSearchDetailReaderLoadsAndReturns`.

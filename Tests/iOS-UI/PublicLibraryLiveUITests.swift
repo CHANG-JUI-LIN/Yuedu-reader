@@ -326,6 +326,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
+                               "-yd_appearance_reader_interface", "classic",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
         let tab = app.tabBars.buttons["探索"].firstMatch
@@ -350,19 +351,29 @@ final class PublicLibraryLiveUITests: XCTestCase {
         screenshot(app, "gutenberg-detail-toc")
         if offShelf { XCTAssertTrue(app.buttons["加入書架"].firstMatch.exists, "making the copy did not shelve it") }
 
-        let row = app.buttons["detail.toc.2"].exists ? 2 : app.buttons["detail.toc.1"].exists ? 1 : 0
-        // Its chapters share spine files, and an entry's #anchor opens at its file's start (not
-        // yet resolved from outside the reader), so only the opening is checked.
-        openChapterAndSwipeBack(app, row: row, offShelf: offShelf, landsOnTitle: false)
-        XCTAssertTrue(first.waitForExistence(timeout: 15), app.debugDescription)
+        // Its chapters share spine files: an entry inside one opens at its #anchor, past the
+        // file's first page, in either mode. The reader opens in the mode its theme keeps, so
+        // each run sets it first, and the mode found is put back.
+        XCTAssertTrue(app.buttons["detail.toc.2"].exists, "the work has a third 目錄 entry\n\(app.debugDescription)")
+        var original: String?
+        for mode in ["滑動", "捲動"] {
+            let previous = setReaderMode(app, mode, offShelf: offShelf)
+            if original == nil { original = previous }
+            XCTAssertTrue(first.waitForExistence(timeout: 15), app.debugDescription)
+            openChapterAndSwipeBack(app, row: 2, offShelf: offShelf, landsOnTitle: false, landsInsideItsFile: true)
+            XCTAssertTrue(first.waitForExistence(timeout: 15), app.debugDescription)
+        }
+        if let original, original != "捲動" {
+            _ = setReaderMode(app, original, offShelf: offShelf)
+            XCTAssertTrue(first.waitForExistence(timeout: 15), app.debugDescription)
+        }
         // The session 目錄 opened is gone; reading prepares the book again.
         for _ in 0..<4 where !app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch.isHittable {
             app.swipeDown()
         }
         let read = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀' OR label BEGINSWITH '繼續閱讀'")).firstMatch
         read.tap()
-        XCTAssertTrue(app.otherElements["頁尾"].firstMatch.waitForExistence(timeout: 90), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["載入中…"].firstMatch.waitForNonExistence(timeout: 90), "read again\n\(app.debugDescription)")
+        showReaderControls(app, "read again")
         screenshot(app, "gutenberg-read-again")
         let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
         edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
@@ -377,13 +388,23 @@ final class PublicLibraryLiveUITests: XCTestCase {
     /// Opens `row` of 目錄, checks the reader is at that chapter, and swipes back to the page,
     /// declining 「加入書架？」 for a copy off the shelf.
     @MainActor
-    private func openChapterAndSwipeBack(_ app: XCUIApplication, row: Int, offShelf: Bool, landsOnTitle: Bool) {
+    private func openChapterAndSwipeBack(_ app: XCUIApplication, row: Int, offShelf: Bool, landsOnTitle: Bool,
+                                         landsInsideItsFile: Bool = false) {
         let entry = app.buttons["detail.toc.\(row)"].firstMatch
         for _ in 0..<4 where !entry.isHittable { app.swipeUp() }
         let chapter = entry.label.trimmingCharacters(in: .whitespaces)
         entry.tap()
-        XCTAssertTrue(app.otherElements["頁尾"].firstMatch.waitForExistence(timeout: 90), "\(chapter)\n\(app.debugDescription)")
-        XCTAssertTrue(app.staticTexts["載入中…"].firstMatch.waitForNonExistence(timeout: 90), "\(chapter)\n\(app.debugDescription)")
+        showReaderControls(app, chapter)
+        if landsInsideItsFile {
+            // The controls' 「N/M · x%」: the entry's anchor is past its file's first page.
+            let progress = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+/[0-9]+ .*")).firstMatch
+            let landed = XCTNSPredicateExpectation(predicate: NSPredicate { object, _ in
+                guard let progress = object as? XCUIElement, progress.exists else { return false }
+                return (Self.chapterPage(progress.label) ?? 0) > 1
+            }, object: progress)
+            XCTAssertEqual(XCTWaiter().wait(for: [landed], timeout: 60), .completed,
+                           "「\(chapter)」 opens at its anchor, not its file's start: \(progress.exists ? progress.label : "no progress")")
+        }
         if landsOnTitle, row > 0 {
             let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", chapter)).firstMatch
             XCTAssertTrue(text.waitForExistence(timeout: 30), "the reader opens at 「\(chapter)」\n\(app.debugDescription)")
@@ -396,6 +417,65 @@ final class PublicLibraryLiveUITests: XCTestCase {
             XCTAssertTrue(prompt.waitForExistence(timeout: 10), "the copy read is asked about\n\(app.debugDescription)")
             prompt.buttons["不加入"].tap()
         }
+    }
+
+    /// The chapter page in the reader controls' progress, 「N/M  ·  x%」.
+    private static func chapterPage(_ label: String) -> Int? {
+        guard let range = label.range(of: #"^\d+/"#, options: .regularExpression) else { return nil }
+        return Int(label[range].filter(\.isNumber))
+    }
+
+    /// Waits for the reader a 作品詳情 tap pushed to load, and shows its controls. Paged mode
+    /// draws its 頁尾 into the page, so the controls are what both modes expose.
+    @MainActor
+    private func showReaderControls(_ app: XCUIApplication, _ context: String) {
+        XCTAssertTrue(app.descendants(matching: .any)["detail.info.source"].firstMatch.waitForNonExistence(timeout: 30),
+                      "\(context)\n\(app.debugDescription)")
+        XCTAssertTrue(app.staticTexts["載入中…"].firstMatch.waitForNonExistence(timeout: 90), "\(context)\n\(app.debugDescription)")
+        let settings = app.buttons["reader_tool_settings"].firstMatch
+        for _ in 0..<5 where !settings.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            _ = settings.waitForExistence(timeout: 3)
+        }
+        XCTAssertTrue(settings.exists, "\(context)\n\(app.debugDescription)")
+    }
+
+    /// Opens 目錄's third entry (the first two are a cover and a frontispiece, whose images a
+    /// tap opens), sets the reader's 翻頁 to `mode` from its 設置 panel, and swipes back to the
+    /// page. Returns the mode the reader had.
+    @MainActor
+    private func setReaderMode(_ app: XCUIApplication, _ mode: String, offShelf: Bool) -> String? {
+        let entry = app.buttons["detail.toc.2"].firstMatch
+        for _ in 0..<4 where !entry.isHittable { app.swipeUp() }
+        entry.tap()
+        showReaderControls(app, "set 翻頁 to \(mode)")
+        app.buttons["reader_tool_settings"].firstMatch.tap()
+        let turn = app.buttons["翻頁"].firstMatch
+        XCTAssertTrue(turn.waitForExistence(timeout: 10), app.debugDescription)
+        let previous = turn.value as? String
+        if previous != mode {
+            turn.tap()
+            let option = app.buttons[mode].firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
+            option.tap()
+            let set = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", mode), object: turn)
+            XCTAssertEqual(XCTWaiter().wait(for: [set], timeout: 5), .completed, "翻頁 is \(mode)\n\(app.debugDescription)")
+        }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        if !turn.waitForNonExistence(timeout: 3) {
+            turn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+        }
+        XCTAssertTrue(turn.waitForNonExistence(timeout: 5), "the 設置 panel closes\n\(app.debugDescription)")
+        screenshot(app, "reader-mode-\(mode)")
+        let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        if offShelf {
+            let prompt = app.alerts.firstMatch
+            XCTAssertTrue(prompt.waitForExistence(timeout: 10), app.debugDescription)
+            prompt.buttons["不加入"].tap()
+        }
+        return previous
     }
 
     @MainActor
