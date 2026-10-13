@@ -109,3 +109,14 @@ ForYouProvider (.forYou, policy .withHome)
 - Tags: `WorkMatchKey`'s fold; dropped when one character or only ASCII digits after NFKC (a Chinese numeral is not a digit here). A source's `kind` splits on `WorkSummary.sourceKindSeparators`, now shared with `category(fromSourceKind:)`. A copy's sidecar tags win over its source's kind.
 - Recorded by `BookStore.updateLastOpened`, which every open path calls (the reader, the fixed-page reader, the shelf, 搜索's 最近閱讀), through the recorder only the app's own store is given (`readingGenres: .shared`, as `offShelfReadRecordsDefaults`); the once-a-day rule absorbs the paths that both call it. Tag reading (sidecar, cached detail page) runs off the main thread.
 - Tests (written first): `ReadingGenreProfileTests` (decay, scaling, normalization, cap, once a day, a copy's tags), `ReadingGenreRecorderTests` (persists, unreadable + log): 8 passed on iOS 27; `FeaturedLayoutTests`, `HomeCompactReadingCardTests`, `RemoteReadingRecordTests` still pass.
+
+### 7a-3 (branch `discovery/7a-3-ranker`)
+
+- `Modules/Services/ForYou/ForYouRanker.swift`: `ForYouCandidate` (entry, source, position, normalized tags) and `ForYouRanker.rank(candidates:shelf:weights:recent:recentlyShown:languages:seed:limit:)`.
+  - Dedupe and shelf exclusion by `WorkMatchKey` title + compatible authors; `shelfWorks(_:)` takes every shelf copy, online ones included. Under 只推薦, books known to be in another language are left out before the slots are filled.
+  - Score: tag weights + 繼續閱讀 author (1.0) / shared tag (0.5) + up to 0.2 for the source's own order; constants in one place.
+  - Mix: bands of 0.25; within a band sources take turns; at most `ceil(limit / 3)` per source (so with fewer than three sources the section is shorter than `limit`).
+  - Explore: `limit / 4` books not shown in 7 days, shuffled by the seed (`SplitMix64`, moved out of `PurchaseCelebration` into `Modules/Core/SplitMix64.swift` to be shared), placed at every fourth place; leftovers fill when too few are unseen.
+  - Languages: `ReadingLanguagePreferences.arrange` last, as the other sections.
+- `ForYouExposureLog`: work keys with the date shown, 7-day window, pruned on record.
+- Tests (written first): `ForYouRankerTests` (dedupe, shelf incl. online, cap, new reader, preferences, exploration, languages), `ForYouExposureLogTests`: 8 passed on iOS 27.
