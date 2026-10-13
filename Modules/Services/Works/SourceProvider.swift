@@ -165,13 +165,15 @@ struct WorkSummary: Hashable, Sendable {
             .flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// What a book source's `kind` separates its tags with.
+    nonisolated static let sourceKindSeparators = CharacterSet(charactersIn: ",，、|/;；").union(.whitespacesAndNewlines)
+
     /// A book source's `kind` mixes its tags: genre, status, a date, a word count. The first one
     /// with no digit in it, which is the genre the sources put first. A plain split: a search
     /// route builds this where its destination is made (Technotes/iOS17SearchWatchdogPostmortem.md,
     /// guardrail 5).
     nonisolated static func category(fromSourceKind kind: String) -> String? {
-        let separators = CharacterSet(charactersIn: ",，、|/;；").union(.whitespacesAndNewlines)
-        return kind.prefix(1_000).components(separatedBy: separators)
+        kind.prefix(1_000).components(separatedBy: sourceKindSeparators)
             .first { tag in !tag.isEmpty && !tag.contains { ("0"..."9").contains($0) || ("０"..."９").contains($0) } }
             .map { String($0.prefix(categoryLimit)) }
     }
