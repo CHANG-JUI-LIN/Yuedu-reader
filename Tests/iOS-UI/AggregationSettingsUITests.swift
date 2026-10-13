@@ -1,9 +1,10 @@
 import XCTest
 
-/// Unified library 5d-3d and 5d-3e: 設定 → 聚合設定 (Phase 5 plan, decision 21). 偏好閱讀語言
-/// starts as the interface language; a language added there leads Gutenberg's categories once
-/// moved first, and the choice survives a relaunch. 書庫順序 orders the libraries' rows. 隱藏已讀
-/// starts on for 最新 and 相關. 首頁欄目 edits the home 探索 saved.
+/// Unified library 5d-3d and 5d-3e: 設定 → 聚合設定 (Phase 5 plan, decision 21), laid out as
+/// Emby's Home Screen page since decision 36. 偏好閱讀語言 starts as the interface language; a
+/// language added there leads Gutenberg's categories once moved first, and the choice survives
+/// a relaunch. 書庫順序 orders the libraries' rows. 隱藏已讀, one switch, starts on. The home's
+/// sections are listed on the page and edit the home 探索 saved.
 final class AggregationSettingsUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -129,30 +130,37 @@ final class AggregationSettingsUITests: XCTestCase {
         application(fresh: true).launch()
     }
 
+    /// Decision 36: one 隱藏已讀 for the whole home, at the bottom of the page, under the home's
+    /// sections, which are under 書庫順序 and the languages.
     @MainActor
-    func testHideReadSwitches() {
+    func testHideReadSwitch() {
         let app = application(fresh: true)
         app.launch()
         openAggregationSettings(app)
-        let latest = app.switches["aggregation.hideRead.latest"].firstMatch
-        let related = app.switches["aggregation.hideRead.related"].firstMatch
-        reveal(related, in: app)
-        XCTAssertTrue(related.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(latest.value as? String, "1")
-        XCTAssertEqual(related.value as? String, "1")
+        let language = app.staticTexts["aggregation.language.zh"].firstMatch
+        XCTAssertTrue(language.waitForExistence(timeout: 5), app.debugDescription)
+        let library = app.descendants(matching: .any)["aggregation.library.gutenberg.builtin.gutenberg"].firstMatch
+        reveal(library, in: app)
+        XCTAssertTrue(library.exists, app.debugDescription)
+        let hideRead = app.switches["aggregation.hideRead"].firstMatch
+        reveal(hideRead, in: app)
+        XCTAssertTrue(hideRead.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(isAbove(library, hideRead), "隱藏已讀 is last")
+        XCTAssertFalse(app.switches["aggregation.hideRead.latest"].exists, "the two switches are one")
+        XCTAssertFalse(app.staticTexts["顯示在最新"].exists, "顯示在最新 is in 最新's options")
+        XCTAssertEqual(hideRead.value as? String, "1")
         // The switch sits at the row's trailing end (the row is the element on iOS 17).
-        related.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
-        XCTAssertEqual(related.value as? String, "0")
+        hideRead.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
+        XCTAssertEqual(hideRead.value as? String, "0")
         attach(app, "aggregation-hide-read")
 
         app.terminate()
         let relaunched = application(fresh: false)
         relaunched.launch()
         openAggregationSettings(relaunched)
-        let reread = relaunched.switches["aggregation.hideRead.related"].firstMatch
+        let reread = relaunched.switches["aggregation.hideRead"].firstMatch
         reveal(reread, in: relaunched)
         XCTAssertEqual(reread.value as? String, "0")
-        XCTAssertEqual(relaunched.switches["aggregation.hideRead.latest"].firstMatch.value as? String, "1")
         relaunched.terminate()
         application(fresh: true).launch()
     }
@@ -162,12 +170,10 @@ final class AggregationSettingsUITests: XCTestCase {
         let app = application(fresh: true)
         app.launch()
         openAggregationSettings(app)
-        let entry = app.buttons["aggregation.homeSections"].firstMatch
-        XCTAssertTrue(entry.waitForExistence(timeout: 5), app.debugDescription)
-        entry.tap()
         // Before 探索 first opens there is no home yet.
-        XCTAssertTrue(app.staticTexts["打開探索後，首頁欄目會列在這裡。"].waitForExistence(timeout: 5), app.debugDescription)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let notYet = app.staticTexts["打開探索後，首頁欄目會列在這裡。"].firstMatch
+        reveal(notYet, in: app)
+        XCTAssertTrue(notYet.waitForExistence(timeout: 5), app.debugDescription)
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
         let exploreTab = app.tabBars.buttons["探索"].firstMatch
@@ -177,8 +183,9 @@ final class AggregationSettingsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["home.card.gutenberg.24264"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
 
         openAggregationSettings(app)
-        app.buttons["aggregation.homeSections"].firstMatch.tap()
+        // On the page itself, as Emby lists its Home Sections (decision 36).
         let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "aggregation.homeSection."))
+        reveal(rows.firstMatch, in: app)
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         // A row reads its section's name, and 已隱藏 when hidden.
         XCTAssertFalse(rows.firstMatch.label.contains("已隱藏"), rows.firstMatch.label)

@@ -258,6 +258,8 @@ final class HomeEditorUITests: XCTestCase {
         for _ in 0..<10 where !(latest.exists && latest.isHittable) { app.swipeDown() }
         latest.tap()
         let addLatest = app.buttons["homeSection.latest.add"].firstMatch
+        // Under 顯示在最新's libraries (decision 36).
+        for _ in 0..<4 where !(addLatest.exists && addLatest.isHittable) { app.swipeUp() }
         XCTAssertTrue(addLatest.waitForExistence(timeout: 5), app.debugDescription)
         addLatest.tap()
         XCTAssertTrue(sourceRow.waitForExistence(timeout: 10), app.debugDescription)

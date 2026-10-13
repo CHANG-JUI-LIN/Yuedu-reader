@@ -281,6 +281,7 @@
     - **顯示在最新 moves into the 最新 section's own options,** as Emby 4.10 moved "Latest" inclusion into each section's Libraries option. 聚合設定 no longer lists it; it is still set in one place.
     - **隱藏已讀 becomes one switch for the whole home,** as Emby's "Hide fully played content". 繼續閱讀 is unaffected. Either old switch being off migrates to off.
     - **Steps:** 探索's ••• first (this decision's first three points), then 聚合設定 rearranged.
+    - **Answered the same day, by option:** the home's sections are listed on 聚合設定 itself, as Emby lists its Home Sections, each opening its own options; the separate 首頁欄目 page folds in. 編輯首頁's card that holds the browser's switch is titled 更多.
 
 ### Open, for the maintainer (each with a recommendation)
 
@@ -1590,3 +1591,35 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - UI, iOS 17.5 (the chooser): `testMoreOpensAggregationSettings`, `testConfigurationsAndTheBrowser`, `testCustomPageMovesIn`, `testNewInstallShowsTheDefaultSections`, `HomeEditorUITests.testEditHomeInPlace` passed.
   - The live `PublicLibraryLiveUITests` were not run (network; opt-in).
 - **Next:** 聚合設定 rearranged on Emby's Home Screen page (decision 36's last three points).
+
+#### What landed — 聚合設定 on Emby's Home Screen page (2026-10-13)
+
+- **Decision 36's last three points.** Branch `settings/aggregation-emby`.
+- **Changes:**
+  - **Order.** 聚合設定 now reads top to bottom: 偏好閱讀語言, 推薦範圍, 書庫順序, the home's sections, 隱藏已讀.
+  - **The home's sections are on the page** (answered the same day, by option), as Emby lists its Home Sections. Each opens its own form (`HomeSectionPage`, the page 編輯首頁 pushes) and can be dragged to reorder, with 上移／下移 for VoiceOver. The 首頁配置 they belong to is the section's first row.
+    - `HomeSectionsSettingsView` is deleted and folded in, so there is one list.
+    - Before 探索 first opens, the section shows its footer 「打開探索後，首頁欄目會列在這裡。」 and no rows.
+  - **隱藏已讀 is one switch** (`AggregationSettings.hidesRead`, id `aggregation.hideRead`), with no header and the existing footer.
+    - Until set, it reads as off if either old switch (`hidesReadInLatest`, `hidesReadInRelated`) was off. Those values stay stored and are never written again, so a build before decision 36 still reads its own.
+    - `HomeReadFilter(hides:isRead:)` applies it to every section of books: 最新, 相關, book-source categories, OPDS feeds, Gutenberg's lists, feeds and shelves, and 青空文庫's 新上架作品. It does not apply to 繼續閱讀, 系列下一本, 訂閱的最新文章 (an article's read state belongs to the RSS tab), an index's chips, or unknown sections.
+  - **顯示在最新 is in 最新's form**, above its 參數, with the libraries in 書庫順序. It is still 聚合設定's one value (`hiddenFromLatest`), so every 最新 section in every 首頁配置 shares it, and the section's footer says so.
+    - On a section already on the home, a switch writes at once, as the rest of the form does.
+    - In 新增欄目, the editor keeps the choice (`HomeSectionEditor.pendingLatest`) until 新增, so 取消 leaves 聚合設定 as it was.
+    - The preview reloads when the choice changes.
+  - **Strings.**
+    - 書庫順序's footer no longer names 範圍 (a leftover from the ••• step): 「最新照這個順序；來源配置排在書庫之後，照它們自己的順序。」.
+    - New: 「每個首頁配置的最新都用這份設定。」.
+    - Removed, now unused: the old footer and 提示：隱藏已讀.
+    - All five tables.
+- **Behaviour changes, for the maintainer to veto:**
+  - **Wider 隱藏已讀.** 精選, 古騰堡熱門 and the other rows of books now leave out books read to the end. Before, only 最新 and 相關 did. Answered as "one switch for the whole home".
+  - **Migration.** A reader who had turned off only 相關's switch now sees read books in 最新 again, since the merged switch starts off. This follows the answer: either one off means off.
+- **Test-first:** `HideReadTests` and `HomeSectionEditorTests.latestLibraries` were written against the new API before it existed, so they failed to compile before the change.
+- **Found on the way:** with an empty value, `LabeledContent` left a section row's own element unlabelled on iOS 27 (its text was on the children only). A shown section's row is now a plain `Text`, and a hidden one keeps 「已隱藏」 as its value.
+- **Tests:**
+  - Unit: `HideReadTests` (new `filtered`, `migration`, `saved`), `HomeSectionEditorTests.latestLibraries` (new), with `ShowInLatestTests`, `LibraryOrderTests`, `HomeModelTests`: 32 tests in 5 suites passed (iOS 27).
+  - UI: `AggregationSettingsUITests.testHideReadSwitch` replaces `testHideReadSwitches`: the one switch, last on the page, below 書庫順序, and saved. `testHomeSections` finds the rows on the page. `ExploreHomeUITests.testShowInLatestOff` turns Gutenberg off in 聚合設定 → 最新. `HomeEditorUITests.testAddSections` scrolls to 最新's 新增來源配置, which now sits under the libraries.
+  - UI, iOS 27: `AggregationSettingsUITests` (4), `ExploreHomeUITests` (9) and `HomeEditorUITests` (5) passed. `testShowInLatestOff` and `testAddSections` failed on the first run for the two reasons above, and passed after the fixes, along with `testHomeSections`.
+  - UI, iOS 17.5: `AggregationSettingsUITests` (4), `testShowInLatestOff`, `testMoreOpensAggregationSettings` and `testAddSections` passed. `testHomeSections` passed again after the row fix.
+- **Next:** decisions 30 and 34: the 精選 and 專題集合 layouts, and 新增欄目's layout choice as live previews.

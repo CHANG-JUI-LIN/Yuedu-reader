@@ -100,9 +100,7 @@ private struct ExploreHomeRoot: View {
         let lookup = store.copyLookup()
         return model.groups(in: scope, languages: aggregation.readingLanguages,
                             libraryOrder: aggregation.settings.libraryOrder,
-                            readFilter: HomeReadFilter(hidesInLatest: aggregation.hidesReadInLatest,
-                                                       hidesInRelated: aggregation.hidesReadInRelated,
-                                                       isRead: lookup.isRead))
+                            readFilter: HomeReadFilter(hides: aggregation.hidesRead, isRead: lookup.isRead))
     }
 
     /// 範圍's public library's sections; nil for 全部, a connection or a book source.

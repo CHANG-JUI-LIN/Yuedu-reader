@@ -32,22 +32,29 @@ final class HomeSectionEditor: ObservableObject {
     let isNew: Bool
     let preview: HomeModel
     private let store: HomePageStore
+    private let aggregation: AggregationSettingsStore
+    /// 新增欄目's 顯示在最新 choices, written on 新增 (`isNew` only).
+    @Published private var pendingLatest: [SourceInstanceKey: Bool] = [:]
     /// The title the last choice gave, which the next one may replace.
     private var chosenTitle = ""
 
     /// 新增欄目: `layout` chosen first (Rex's order, decision 23).
-    init(newSectionIn store: HomePageStore? = nil, layout: HomeSectionLayout, preview: HomeModel) {
+    init(newSectionIn store: HomePageStore? = nil, layout: HomeSectionLayout,
+         aggregation: AggregationSettingsStore? = nil, preview: HomeModel) {
         draft = Draft(id: UUID(), layout: layout, title: "", binding: nil, isEnabled: true, parameters: [:])
         isNew = true
         self.store = store ?? .shared
+        self.aggregation = aggregation ?? .shared
         self.preview = preview
     }
 
-    init(section: HomeSection, store: HomePageStore? = nil, preview: HomeModel) {
+    init(section: HomeSection, store: HomePageStore? = nil, aggregation: AggregationSettingsStore? = nil,
+         preview: HomeModel) {
         draft = Draft(id: section.id, layout: section.layout, title: section.title, binding: section.binding,
                       isEnabled: section.isEnabled, parameters: section.parameters)
         isNew = false
         self.store = store ?? .shared
+        self.aggregation = aggregation ?? .shared
         self.preview = preview
     }
 
@@ -116,11 +123,39 @@ final class HomeSectionEditor: ObservableObject {
         HomeSection.filterValues(in: draft.parameters, sourceURL: sourceURL)
     }
 
-    /// 新增: the section at the end of the selected 首頁配置. False when it has no binding yet.
+    // MARK: 最新's libraries
+
+    /// 顯示在最新, set in 最新's form as Emby 4.10 sets a section's libraries (decision 36). It
+    /// stays 聚合設定's one value (`AggregationSettingsStore.hiddenFromLatest`), which every 最新
+    /// section shares; 新增欄目 keeps the reader's choice until 新增.
+    func isShownInLatest(_ key: SourceInstanceKey) -> Bool {
+        pendingLatest[key] ?? aggregation.isShownInLatest(key)
+    }
+
+    func setShownInLatest(_ shown: Bool, for key: SourceInstanceKey) {
+        if isNew { pendingLatest[key] = shown } else { aggregation.setShownInLatest(shown, for: key) }
+    }
+
+    /// The libraries 最新 leaves out, with the form's choices: what the preview loads without.
+    var hiddenFromLatest: Set<SourceInstanceKey> {
+        var hidden = Set(aggregation.settings.hiddenFromLatest ?? [])
+        for (key, shown) in pendingLatest {
+            if shown { hidden.remove(key) } else { hidden.insert(key) }
+        }
+        return hidden
+    }
+
+    /// 新增: the section at the end of the selected 首頁配置, and, for 最新, its libraries' choices.
+    /// False when it has no binding yet.
     @discardableResult
     func add() -> Bool {
         guard isNew, let section = draft.section else { return false }
         store.edit { $0.appendSection(section) }
+        if section.binding == .latest {
+            for (key, shown) in pendingLatest.sorted(by: { $0.key.id < $1.key.id }) {
+                aggregation.setShownInLatest(shown, for: key)
+            }
+        }
         return true
     }
 
