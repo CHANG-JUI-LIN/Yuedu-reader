@@ -1532,15 +1532,16 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
 
 - **Decision 29, redone on decision 32's rule after 5f-5.** A work has one page wherever it is opened from: a result of 搜索 now opens `WorkDetailView`, as a book-source row of 探索 does. Branch `detail/search-work`.
 - **Changes:**
-  - `SearchResultDestination` (the one destination of both pushes: iOS 18's value route and iOS 17's `SearchPagePush.result`) builds `WorkDetailRoute(searchResult:)` once in its `init`, from the snapshot the route froze, and draws `WorkDetailView(route:searchResult:)`. Routing, the page's one item destination and `SearchTabNavigation` are unchanged (guardrails 1–3, 11–13).
+  - `SearchResultDestination` (the one destination of both pushes: iOS 18's value route and iOS 17's `SearchPagePush.result`) builds `WorkDetailRoute(searchResult:)` in its `init` (which SwiftUI may run again as the page updates; an indexed source lookup and the snapshot's values only), from the snapshot the route froze, and draws `WorkDetailView(route:searchResult:)`. Routing, the page's one item destination and `SearchTabNavigation` are unchanged (guardrails 1–3, 11–13).
   - One factory for a book-source item, `CollectionEntry.onlineBook(_:source:contentKind:blurb:)`, used by `BookSourceProvider`'s rows and the search route. For a result, the version is the origin its page opens on (an audiobook's first audio origin, else the first), its kind is the snapshot's, and its blurb is the row's precomputed text, so nothing is inferred or HTML-parsed where the destination is built (guardrail 5). The detail book keeps `SearchResultDetailIdentity`'s id.
   - `WorkDetailView` draws a search result's version as `OnlineBookDetailDestination(.search(snapshot))`, so 換源 still lists the result's own origins (選擇來源); every other book-source version stays `.book`.
   - `.search` pages take the work's versions as `.book` pages do. `SourcePickerSheet` lists them under 已知的閱讀來源, above the result's origins and kept apart from them (decision 32). The version row is shared with `SourceSearchSheet` (`SourceVersionRow`).
-  - A result whose source was deleted after the search shows 來源配置已被刪除 (an existing string) and logs `⟐ search result's source is gone`, since the route's key needs the source's address.
+  - A result whose opening origin's source was deleted after the search shows 來源配置已被刪除 (an existing string) and logs `⟐ search result's source is gone`, since the route's key needs that source's address.
+    - **Behaviour change, for the maintainer to veto:** this holds even when the result's other origins' sources are still installed. Before, the page opened on the first origin and 換源 could reach the others. No second path was added for it.
   - Postmortem: the Detached Destination section records the new destination.
 - **What the reader sees: the same page as before.**
   - A book-source version's versions are only itself, from 探索's rows exactly as from 搜索: `CopyLookup` does not key online copies by their source (`guard !book.isOnline`), and a book-source page keeps its copy apart (`readsItsCopies`). The source page handles the shelf state itself.
-  - So the 已知的閱讀來源 section in `SourcePickerSheet` has nothing to list today. It is there so a `.search` page does not silently drop versions that a `.book` page shows.
+  - So the 已知的閱讀來源 section in `SourcePickerSheet` has nothing to list today. It is there so a `.search` page does not silently drop versions that a `.book` page shows; its `#Preview` shows a state the app cannot produce yet.
 - **Not test-first:**
   - The first test asserted that 換源 lists 已知的閱讀來源 for a result on the shelf. It failed on the new code for the reason above. With no visible difference, there is no failing-before UI test.
   - Setting the production edits aside to rerun on the old code was also refused (no `git stash` here).

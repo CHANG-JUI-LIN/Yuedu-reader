@@ -73,8 +73,9 @@ private struct SearchPagePushDestination: View {
 /// the existing detail-view environment contract.
 ///
 /// A result opens 作品詳情 (unified library 5f-4c, decision 29: a work has one page wherever it
-/// is opened from), made once from the route's snapshot. Its version is drawn as the result's
-/// own page, with the work's known reading sources first in 換源.
+/// is opened from), made in `init` from the route's snapshot: SwiftUI may build the destination
+/// again as the page updates, so it reads only the snapshot and an indexed source lookup. Its
+/// version is drawn as the result's own page, with the work's known reading sources first in 換源.
 private struct SearchResultDestination: View {
     let route: BookSearchResultRoute
     private let work: WorkDetailRoute?
