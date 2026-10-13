@@ -169,3 +169,51 @@ Measured with `ForYouMeasurementTests` (iOS 27 simulator, Debug): a home of 5 so
 
 - UI, iOS 27 and iOS 17.5: ForYouSection, RemoteLibraryNavigation, PublicLibraryStorefront, ExploreHome, HomeEditor, AggregationSettings, LibraryTab, DiscoverDisplaySettings, RemoteLibrarySettings, BookSourceManagement, PublicLibrarySearchTab — 43 tests each (5 skipped by design). iOS 27 all passed. iOS 17.5 failed one: `ForYouSectionUITests.testFormAddsAndRemovesACategory` tapped the 設定 *tab*, which iOS 17 lists before the header menu's 設定; the test now takes the button outside the tab bar (48138941) and passes on both, with HomeEditor, 11 of 11 each.
 - `AggregationSettingsUITests.testLibraryOrder`, flaky in an earlier run, passed on both.
+
+---
+
+# Discovery, Phase 7b: where else a work can be read — plan
+
+**Goal:** 作品詳情 lists more of the places the reader can already read a work, without a request, and searches the reader's enabled sources for it when asked.
+
+**Found while planning (2026-10-13):** every 為你推薦 book comes from a source the reader has, so 「未找到可用來源」 cannot occur until recommendations include works without a source (the server step). Nothing searches all sources for a work by title and author outside 搜索 and 換源; Phase 4's unified search is not built. Decision 32 forbids 作品詳情 searching on its own.
+
+## Maintainer's decisions (2026-10-13, by option)
+
+1. **No-request listing plus search on request.** Same-work books the reader's sources already listed (the candidate cache), and the 青空文庫 catalog, join 作品詳情's 來源 with no request. A 「尋找可用來源」 button searches the enabled sources only when tapped.
+2. **The button is on every 作品詳情** of the work page (not on a book-source version's own page, which has 換源).
+3. **The listing applies to every 作品詳情**, from any row, the shelf or 搜索: one path, `ShelfProvider.versions(of:aozora:)`.
+
+## Settled here (each changeable on the maintainer's word)
+
+- **Matching is the design's confidence B** (`Technotes/UnifiedLibrary-2026-10-08-design.md` §7): `WorkMatchKey` title equal and both sides' authors present and compatible. A title alone (C) never joins. Same content kind.
+- **One version per source** from the cache: the first book a source listed of the work. A source no longer installed or disabled is left out.
+- **Found by search, kept for the page's life:** what 「尋找可用來源」 found is not saved; opening the page again shows only the no-request versions. (Saving would be a new store: not in this phase.)
+- **Search goes through the existing path:** `SearchAggregator` with origin `.changeSource`, as 換源 does; its results become versions through `WorkDetailRoute(searchResult:)`.
+
+## Steps
+
+### 7b-1: versions from the candidate cache and the 青空文庫 catalog
+- `ForYouCandidateStore.savedBooks()` reads every saved category once; `WorkOffers.matching(_:in:sources:)` (pure) keeps the books of the tapped work, one per installed enabled source, as `WorkDetailRoute`s through `CollectionEntry.onlineBook`.
+- `AozoraCatalogIndex` works whose title and author match, for any work (not only a 青空文庫 copy's origin).
+- `ShelfProvider.versions(of:aozora:offers:)` merges them after the index members (`WorkVersions.merge`). Span `works.detail.offers`; measured with a large cache.
+- Tests first: `WorkOffersTests` (B joins, C does not, author-less does not, one per source, uninstalled/disabled source out, the tapped book not twice), `ShelfProviderVersionsTests` additions.
+
+### 7b-2: 「尋找可用來源」
+- `WorkSourceFinder` (`@MainActor` model): runs `SearchAggregator` for the work's title over the enabled sources, keeps the results whose origins match the work (B), as routes. States: idle, searching (count found so far), done (found N / 沒有找到), failed.
+- 作品詳情: the button under 作品資訊's 來源, its state, found versions joining 來源 (and a book-source version's 換源 sheet lists them first, as other versions are).
+- Strings in all five languages; VoiceOver: the button, its progress and outcome announced. `#Preview`s.
+- Tests first: `WorkSourceFinderTests` (matching, dedupe against listed versions, empty, failure); UI: the button on a library work's page searches and says 沒有找到 when nothing matches.
+
+### 7b-3: acceptance
+- UI regression on iOS 27 and iOS 17.5 (the 7a list plus the work-detail suites).
+
+## What landed (7b)
+
+### 7b-1 (branch `discovery/7b-1-cached-offers`)
+- `WorkOffers` (pure): `books(of:in:sources:)` keeps the tapped work's books (title key equal, authors compatible on both sides, same content kind), one per installed enabled source, as `.onlineBook` versions; `aozora(of:in:)` the 青空文庫 works of the same title and author (never for a 青空文庫 work).
+- `ForYouCandidateStore.savedBooks(sources:)` reads every saved category of an installed source, ordered by source then category.
+- `ShelfProvider.versions(of:aozora:)` adds them after the index members and the copies' public-library origins; matching runs detached. `ShelfProvider` takes the candidate store and the installed sources (tests pass an empty store).
+- Measured (iOS 27 simulator, Debug, `WorkDetailShelfVersionsTests.offersLargeCache`): 1600 cached books from 20 sources, `versions` 28 / 18 / 18 ms over three runs (`works.detail.offers` 23 / 17 / 18 ms), 20 offers.
+- Tests: `WorkOffersTests` (written first, failed against an empty stub: 4 of 6), `WorkDetailShelfVersionsTests.offers` (written with the code), the two existing shelf-versions tests pinned to an empty cache. With the provider, home and for-you suites: 122 passed on iOS 27.
+- Found on the way: `DiscoverFirstPagesTests.homesShareTheQueue` hung whenever the preview's request started before the home's (since 7a-5 an ask reads the store first); the test now waits for the home's request before the preview asks. Product behaviour unchanged.

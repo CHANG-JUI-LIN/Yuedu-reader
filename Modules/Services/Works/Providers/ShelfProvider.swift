@@ -9,10 +9,17 @@ final class ShelfProvider: CollectionBrowsing {
     private let store: BookStore
     /// Each WebDAV connection's root, which an indexed file's address is built under.
     private let webDAVRoots: @MainActor () -> [String: URL]
+    /// What the home's categories fetched, which 作品詳情's versions read (7b-1).
+    private let candidates: ForYouCandidateStore
+    /// The installed sources, turned on or not.
+    private let sources: @MainActor () -> [BookSource]
 
-    init(store: BookStore, webDAVRoots: @escaping @MainActor () -> [String: URL] = ShelfProvider.liveWebDAVRoots) {
+    init(store: BookStore, webDAVRoots: @escaping @MainActor () -> [String: URL] = ShelfProvider.liveWebDAVRoots,
+         candidates: ForYouCandidateStore = .shared, sources: @escaping @MainActor () -> [BookSource] = { BookSourceStore.shared.sources }) {
         self.store = store
         self.webDAVRoots = webDAVRoots
+        self.candidates = candidates
+        self.sources = sources
     }
 
     static func liveWebDAVRoots() -> [String: URL] {
@@ -195,6 +202,9 @@ final class ShelfProvider: CollectionBrowsing {
     /// `WorkVersions.known`). Only shelf copies and WebDAV files are indexed, so a library or
     /// public-library book reaches its work through a copy of it.
     ///
+    /// Then, with no request (7b-1, maintainer 2026-10-13): 青空文庫's work of the same title
+    /// and author, and the books of it the reader's sources listed on the home (`WorkOffers`).
+    ///
     /// A copy taken from a public library is listed as the library's book even when nothing
     /// else lists it — opened from 書架 or 繼續閱讀, its work holds no public-library item
     /// (2026-10-12: ホノルル from 書架 showed only 來源 書架).
@@ -228,10 +238,25 @@ final class ShelfProvider: CollectionBrowsing {
         let versions = WorkVersions.merge(
             tapped: tapped,
             copies: zip(copyRoutes, copies.map(\.lastOpenedDate)).map { ($0, $1) },
-            members: memberRoutes + Self.publicLibraryOrigins(of: [tapped] + copyRoutes + memberRoutes, aozora: aozora))
+            members: memberRoutes + Self.publicLibraryOrigins(of: [tapped] + copyRoutes + memberRoutes, aozora: aozora)
+                + (await offers(of: tapped, aozora: aozora)))
         SourcePerfTrace.record("works.detail.versions", "copies=\(copies.count) members=\(members.count) versions=\(versions.count)",
                                since: started, thresholdMs: 0)
         return versions
+    }
+
+    /// `WorkOffers`' versions of the tapped work, matched off the main actor: a full cache is
+    /// a few thousand titles to fold.
+    private func offers(of tapped: WorkDetailRoute, aozora: AozoraCatalogIndex?) async -> [WorkDetailRoute] {
+        let started = SourcePerfTrace.now
+        let installed = Dictionary(sources().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ids = Dictionary(installed.values.map { ($0.bookSourceUrl, $0.id) }, uniquingKeysWith: { first, _ in first })
+        let books = await candidates.savedBooks(sources: ids)
+        let offers = await Task.detached(priority: .userInitiated) {
+            (aozora.map { WorkOffers.aozora(of: tapped, in: $0) } ?? []) + WorkOffers.books(of: tapped, in: books, sources: installed)
+        }.value
+        SourcePerfTrace.record("works.detail.offers", "cached=\(books.count) offers=\(offers.count)", since: started, thresholdMs: 0)
+        return offers
     }
 
     /// The public-library book each copy was taken from, where no version lists it already:
